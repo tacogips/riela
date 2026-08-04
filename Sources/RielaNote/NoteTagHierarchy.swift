@@ -1,31 +1,56 @@
 import RielaSQLite
 
-func expandedTagFilterNames(
-  _ tagNames: [String],
+func expandedTagFilterIds(
+  _ tagIds: [String],
   in database: SQLiteDatabase
 ) throws -> [String] {
-  let roots = orderedUnique(tagNames)
-  guard !roots.isEmpty else {
-    return []
-  }
+  let roots = orderedUnique(tagIds)
+  guard !roots.isEmpty else { return [] }
+  let existingRoots = try database.query(
+    "SELECT tag_id FROM tags WHERE tag_id IN (\(placeholders(count: roots.count)))",
+    bindings: roots.map(SQLiteValue.text)
+  ).compactMap { $0["tag_id"] }
+  guard existingRoots.count == roots.count else { return [] }
   return try database.query(
     """
-    WITH RECURSIVE descendant_tags(tag_id, name) AS (
-      SELECT tag_id, name
+    WITH RECURSIVE descendant_tags(tag_id) AS (
+      SELECT tag_id
       FROM tags
-      WHERE name IN (\(placeholders(count: roots.count)))
+      WHERE tag_id IN (\(placeholders(count: roots.count)))
       UNION
-      SELECT child.tag_id, child.name
+      SELECT child.tag_id
       FROM tags child
-      INNER JOIN descendant_tags parent
-        ON child.parent_tag_id = parent.tag_id
+      INNER JOIN descendant_tags parent ON child.parent_tag_id = parent.tag_id
     )
-    SELECT name
-    FROM descendant_tags
-    ORDER BY name
+    SELECT tag_id FROM descendant_tags ORDER BY tag_id
     """,
     bindings: roots.map(SQLiteValue.text)
-  ).compactMap { $0["name"] }
+  ).compactMap { $0["tag_id"] }
+}
+
+func expandedLegacyTagFilterIds(
+  _ names: [String],
+  in database: SQLiteDatabase
+) throws -> [String] {
+  var roots: [String] = []
+  for name in orderedUnique(names) {
+    guard let tag = try findTag(name: name, in: database) else { return [] }
+    roots.append(tag.tagId)
+  }
+  return try expandedTagFilterIds(roots, in: database)
+}
+
+func canonicalTagFilterGroups(
+  _ groups: [[String]],
+  discardingEmpty: Bool
+) -> [[String]] {
+  var canonical: [[String]] = []
+  for group in groups {
+    let normalized = orderedUnique(group).sorted()
+    if normalized.isEmpty, discardingEmpty { continue }
+    if !canonical.contains(normalized) { canonical.append(normalized) }
+  }
+  return canonical
 }
 
 func validateTagParent(

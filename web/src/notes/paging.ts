@@ -8,7 +8,7 @@ export interface NotebookPageClient {
   notebooks(
     offset: number,
     sort: NoteListSort,
-    tagFilterGroups: string[][],
+    tagFilterIdGroups: string[][],
     limit?: number,
     created?: { createdAfter?: string; createdBefore?: string },
   ): Promise<Notebook[]>
@@ -27,7 +27,7 @@ export class NotebookPartialLoadError extends Error {
 export async function loadNotebookPages(
   client: NotebookPageClient,
   sort: NoteListSort,
-  tagFilterGroups: string[][],
+  tagFilterIdGroups: string[][],
   isCurrent: () => boolean,
   onPage: (notebooks: Notebook[], hasMore: boolean) => void,
   pageCap = notebookPageCap,
@@ -38,7 +38,7 @@ export async function loadNotebookPages(
   let offset = 0
   const effectivePageCap = Math.min(Math.max(pageCap, 1), notebookPageCap)
   for (let pageIndex = 0; pageIndex < effectivePageCap; pageIndex += 1) {
-    const page = await client.notebooks(offset, sort, tagFilterGroups, notebookPageLimit, created)
+    const page = await client.notebooks(offset, sort, tagFilterIdGroups, notebookPageLimit, created)
     if (!isCurrent()) return undefined
     let added = 0
     for (const notebook of page) {

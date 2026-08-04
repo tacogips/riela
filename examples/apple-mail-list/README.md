@@ -10,7 +10,16 @@ apple-gateway graphql --query '<query>'
 
 ## Setup
 
-Install or build `apple-gateway` outside this repository:
+Install `apple-gateway` 0.1.6 or newer outside this repository. Version 0.1.6
+added runtime Mail Envelope Index schema detection required by current Mail
+databases. For a Homebrew installation, verify and update it with:
+
+```bash
+apple-gateway --version
+brew upgrade apple-gateway
+```
+
+Alternatively, build the current source checkout:
 
 ```bash
 git clone https://github.com/tacogips/apple-gateway.git

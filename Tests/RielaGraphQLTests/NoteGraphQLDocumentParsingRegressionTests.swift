@@ -306,22 +306,37 @@ final class NoteGraphQLParsingRegressionTests: XCTestCase {
 
   private func objectValue(_ value: JSONValue?, field: String) throws -> JSONObject {
     guard case let .object(object) = value else {
-      throw XCTSkip("Expected object at \(field), got \(String(describing: value))")
+      throw unexpectedShapeError(expected: "object", value: value, field: field)
     }
     return object
   }
 
   private func arrayValue(_ value: JSONValue?, field: String) throws -> [JSONValue] {
     guard case let .array(array) = value else {
-      throw XCTSkip("Expected array at \(field), got \(String(describing: value))")
+      throw unexpectedShapeError(expected: "array", value: value, field: field)
     }
     return array
   }
 
   private func stringValue(_ value: JSONValue?, field: String) throws -> String {
     guard case let .string(string) = value else {
-      throw XCTSkip("Expected string at \(field), got \(String(describing: value))")
+      throw unexpectedShapeError(expected: "string", value: value, field: field)
     }
     return string
+  }
+
+  private func unexpectedShapeError(
+    expected: String,
+    value: JSONValue?,
+    field: String
+  ) -> NSError {
+    NSError(
+      domain: "NoteGraphQLDocumentParsingRegressionTests",
+      code: 1,
+      userInfo: [
+        NSLocalizedDescriptionKey:
+          "Expected \(expected) at \(field), got \(String(describing: value))"
+      ]
+    )
   }
 }

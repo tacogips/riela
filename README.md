@@ -204,6 +204,13 @@ would create a self- or ancestor-cycle are rejected. The seeded `folder` tag
 class is available for notebook organization; it classifies notebook tags and
 does not introduce filesystem folder or ownership semantics.
 
+Schema v7 keeps `tag_id` as canonical identity and scopes folder names to their
+parent: duplicate sibling and duplicate root-folder names are rejected, while
+the same display name can exist under different parents. Non-folder names stay
+globally unique. Folder assignment, removal, filtering, and Kanban scope use
+tag IDs, and legacy name-only access fails closed when a folder/non-folder or
+cross-parent candidate set is ambiguous.
+
 Every notebook has one kanban status name. The seeded immutable default set
 defines `none`, `pending`, `progress`, `review`, and `done` (new notebooks
 default to `none`), and custom status sets extend that vocabulary: a set is an
@@ -227,9 +234,12 @@ result instead of silently overwriting.
 The note GraphQL surface exposes `NoteTag.parentTagId`,
 `NoteTag.statusSetId`, `Notebook.progress` (a status name string),
 `DefineNoteTagInput.parentTagId`, the `KanbanStatusCategory` enum,
-`kanbanStatusSets` / `effectiveKanbanStatuses(tagName)` queries,
+`kanbanStatusSets` / `effectiveKanbanStatuses(tagName)` /
+`effectiveKanbanStatusesByTagId(tagId)` queries,
 status-set mutations (`createKanbanStatusSet`, `updateKanbanStatusSet`,
-`deleteKanbanStatusSet`, `assignKanbanStatusSet`), and
+`deleteKanbanStatusSet`, `assignKanbanStatusSet`,
+`assignKanbanStatusSetByTagId`), `ApplyNotebookTagIdsInput`, ID-based notebook
+tag mutations (`applyNotebookTagIds`, `removeNotebookTagById`), and
 `setNotebookProgress(notebookId:progress:expectedProgress)`.
 Workflow nodes can drive a board deterministically with the built-in
 `riela/note-kanban-task-create`, `riela/note-kanban-move`, and
@@ -244,7 +254,9 @@ returns no notebooks, empty groups are ignored, and a non-empty grouped filter
 takes precedence over the existing single-group `tagFilter`. Grouped requests
 are bounded to 64 groups, 256 input names, and 900 expanded names; oversized
 requests fail as controlled `invalid_request` results. Existing `tagFilter`
-callers retain their prior descendant-expanded behavior.
+callers retain their prior descendant-expanded behavior. Canonical Web callers
+instead send `tagFilterIdGroups`; non-empty ID groups take precedence over name
+filters and retain the same group and expansion bounds.
 
 Common local commands:
 
@@ -386,8 +398,12 @@ class-grouped tag chips, and a read-only note preview. Cards and rows show the
 first note excerpt and note count when available. The detail panel can add only
 existing catalog tags and exposes removal only for deletable assignments.
 Folder creation is create-only, so a same-name collision never reparents or
-reclassifies an existing tag. Clicking a folder or tag replaces the current
-filter; its adjacent **+** action adds another constraint. Active constraints
+reclassifies an existing tag. Collision checks are sibling-scoped, and folder
+trees, filters, pickers, Kanban scope, assignment chips, and note-search matches
+show ancestor-qualified labels. Missing, cyclic, or over-depth ancestry stays
+visibly incomplete instead of resolving by global name. Clicking a folder or
+tag replaces the current filter; its adjacent **+** action adds another
+constraint. Active constraints
 appear as removable chips with **Clear all**, and both List and Board show only
 notebooks matching every chip while retaining descendant expansion within each
 chip. Catalog refreshes drop only constraints whose tags disappeared. Board
@@ -434,6 +450,10 @@ separate process arguments and does not vendor the gateway source. Executable
 resolution is `addon.config.binaryPath`, then `APPLE_GATEWAY_BIN`, then `PATH`;
 these add-ons reject authored `addon.env` and forward only the minimal process
 environment required by the shared gateway bridge.
+
+Apple Mail access requires `apple-gateway` 0.1.6 or newer so the gateway can
+adapt to the installed Mail Envelope Index schema. Check or update a Homebrew
+installation with `apple-gateway --version` and `brew upgrade apple-gateway`.
 
 Current Apple gateway add-ons include `riela/apple-notes-list`,
 `riela/apple-notifications-list`, `riela/apple-notification-post`, and
@@ -724,3 +744,20 @@ and verify the Swift CLI.
 The TypeScript workspace source is intentionally not copied into this repo.
 Historical deletion-readiness evidence remains under `packaging/` where it is
 needed by Swift tests and migration records.
+
+# RielaApp private assistant runs
+
+For non-trivial assistant requests, RielaApp creates a dedicated workflow in an
+invocation-private root, requires the assistant to validate and run it directly,
+and removes that root when the invocation finishes. The resulting session is
+stored in the active profile's shared session store. The assistant creates one
+run notebook, organized with workflow-ID / history-date folder tags, containing
+Input, Work log, and Response notes; Response includes a
+`#/runs/{sessionId}` Web link.
+Folder identity is parent-scoped, so assistants use the workflow ID as the
+parent and a reusable `history-YYYY-MM-DD` child, for example
+`build-release/history-2026-08-03`.
+
+Private here means isolation from Riela workflow registry, discovery, imports,
+catalogs, and reuse. It is not a security boundary against arbitrary processes
+running under the same OS account.

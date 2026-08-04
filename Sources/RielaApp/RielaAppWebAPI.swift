@@ -255,6 +255,12 @@ extension RielaApp {
       }
       return webRevokeNoteClient(clientId: clientId, expectedProfile: body.expectedProfile)
     }
+    if components.count == 4,
+       components[0...2] == ["api", "v1", "executions"],
+       request.method == "GET",
+       let sessionId = components[3].removingPercentEncoding {
+      return webGlobalExecutionDetail(sessionId: sessionId)
+    }
     guard components.count == 4 || components.count == 5 || components.count == 6,
           components[0...2] == ["api", "v1", "instances"],
           let identity = components[3].removingPercentEncoding else {
@@ -531,6 +537,46 @@ extension RielaApp {
     } catch {
       return webError(status: 500, code: "session_load_failed", message: "The persisted workflow session could not be loaded")
     }
+  }
+
+  /// Global links are deliberately session-store scoped. Existing instance
+  /// routes retain their definition-backed behavior; this route also finds a
+  /// private session after its definition has been cleaned up.
+  private func webGlobalExecutionDetail(sessionId: String) -> RielaHTTPResponse {
+    // Private definitions can be gone by the time a Web link is opened. Read
+    // the profile-owned runtime record directly, without resolving a workflow
+    // directory, before trying the legacy instance-bound projection.
+    let runtimeRoot = URL(fileURLWithPath: webSessionStoreRootPath, isDirectory: true)
+      .appendingPathComponent("runtime-records", isDirectory: true).path
+    if let snapshot = try? SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).load(sessionId: sessionId) {
+      let formatter = ISO8601DateFormatter()
+      let projection = WorkflowWebProjectionPolicy()
+      let sessionIdentifier = projection.identifier(snapshot.session.sessionId)
+      let workflowIdentifier = projection.identifier(snapshot.session.workflowId)
+      let currentStepIdentifier = snapshot.session.currentStepId.map(projection.identifier)
+      return webBoundedRunDetailJSON([
+        "revision": .number(Double(webRevision)),
+        "instanceId": .string("private"), "instanceIdTruncated": .bool(false),
+        "session": .object([
+          "sessionId": .string(sessionIdentifier.value), "sessionIdTruncated": .bool(sessionIdentifier.truncated),
+          "workflowId": .string(workflowIdentifier.value), "workflowIdTruncated": .bool(workflowIdentifier.truncated),
+          "status": .string(snapshot.session.status.rawValue),
+          "currentStepId": currentStepIdentifier.map { .string($0.value) } ?? .null,
+          "currentStepIdTruncated": .bool(currentStepIdentifier?.truncated ?? false),
+          "updatedAt": .string(formatter.string(from: snapshot.session.updatedAt))
+        ]),
+        "steps": .array([]), "stepsTotalCount": .number(0), "stepsTruncated": .bool(false),
+        "logs": .array([]), "logsTotalCount": .number(0), "logsTruncated": .bool(false),
+        "diagnostics": .array([]), "diagnosticsTotalCount": .number(0), "diagnosticsTruncated": .bool(false),
+        "gates": .array([]), "gatesTotalCount": .number(0), "gatesTruncated": .bool(false),
+        "recovery": .null, "truncated": .bool(false)
+      ])
+    }
+    for instance in daemonInstances {
+      let response = webExecutionDetail(identity: instance.identity, sessionId: sessionId)
+      if response.status != 404 { return response }
+    }
+    return webError(status: 404, code: "session_not_found", message: "Workflow session was not found")
   }
 
   private func webWorkflowDefinition(sourceId: String) -> RielaHTTPResponse {
@@ -851,7 +897,8 @@ extension RielaApp {
   }
 
   private var webSessionStoreRootPath: String {
-    webSessionStoreRootOverride ?? RielaAppDaemonWorkflowRuntime.defaultSessionStoreRootPath
+    webSessionStoreRootOverride ?? appHomeDirectory
+      .appendingPathComponent(".riela/profiles/\(daemonProfileName.rawValue)/sessions", isDirectory: true).path
   }
 
   private func webSafeSummary(_ value: String) -> String {

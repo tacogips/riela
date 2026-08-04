@@ -18,7 +18,9 @@ export function RunDetailView(props: {
   const detail = createPollingResource(
     () => `${props.profileKey}:${props.instanceId}:${props.workflowId}:${props.sessionId}`,
     (signal) => api.get<RunDetailResponse>(
-      `/api/v1/instances/${encodeURIComponent(props.instanceId)}/executions/${encodeURIComponent(props.sessionId)}`,
+      props.instanceId
+        ? `/api/v1/instances/${encodeURIComponent(props.instanceId)}/executions/${encodeURIComponent(props.sessionId)}`
+        : `/api/v1/executions/${encodeURIComponent(props.sessionId)}`,
       signal,
     ),
   )

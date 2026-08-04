@@ -162,12 +162,20 @@ extension NoteService {
 
   @discardableResult
   public func assignKanbanStatusSet(tagName: String, setId: String?) throws -> Tag {
+    let tagId = try driver.withDatabase { database in
+      try requireTag(name: tagName, in: database).tagId
+    }
+    return try assignKanbanStatusSetByTagId(tagId: tagId, setId: setId)
+  }
+
+  @discardableResult
+  public func assignKanbanStatusSetByTagId(tagId: String, setId: String?) throws -> Tag {
     let tag = try driver.withDatabase { database in
       try database.transaction { db in
-        let tag = try requireTag(name: tagName, in: db)
+        let tag = try requireTag(id: tagId, in: db)
         guard tag.classId == "folder" else {
           throw NoteServiceError.invalidInput(
-            "kanban status sets can only be bound to folder-class tags; '\(tagName)' has class \(tag.classId ?? "none")"
+            "kanban status sets can only be bound to folder-class tags; '\(tag.name)' has class \(tag.classId ?? "none")"
           )
         }
         if let setId {
@@ -180,26 +188,52 @@ extension NoteService {
           "UPDATE tags SET status_set_id = ? WHERE tag_id = ?",
           bindings: [.optionalText(setId), .text(tag.tagId)]
         )
-        return try requireTag(name: tagName, in: db)
+        return try requireTag(id: tagId, in: db)
       }
     }
     publishChange(NoteChangeEvent(
       kind: NoteChangeEventKind.statusSets,
-      tagNames: [tagName]
+      tagNames: [tag.name]
     ))
     return tag
   }
 
   public func effectiveKanbanStatuses(tagName: String?) throws -> KanbanStatusSet {
     try driver.withDatabase { database in
-      try effectiveKanbanStatusSet(tagName: tagName, in: database)
+      guard let tagName else { return try systemKanbanStatusSet(in: database) }
+      let tag = try requireTag(name: tagName, in: database)
+      return try effectiveKanbanStatusSet(tagId: tag.tagId, in: database)
+    }
+  }
+
+  public func effectiveKanbanStatusesByTagId(tagId: String) throws -> KanbanStatusSet {
+    try driver.withDatabase { database in
+      _ = try requireTag(id: tagId, in: database)
+      return try effectiveKanbanStatusSet(tagId: tagId, in: database)
     }
   }
 
   public func kanbanBoard(tagName: String, limit: Int = 200, offset: Int = 0) throws -> [KanbanBoardColumn] {
-    let notebooks = try listNotebooks(limit: limit, offset: offset, tagFilter: [tagName])
+    let tagId = try driver.withDatabase { database in
+      try requireTag(name: tagName, in: database).tagId
+    }
+    return try kanbanBoard(tagId: tagId, limit: limit, offset: offset)
+  }
+
+  public func kanbanBoard(tagId: String, limit: Int = 200, offset: Int = 0) throws -> [KanbanBoardColumn] {
+    let notebooks = try listNotebooks(
+      limit: limit,
+      offset: offset,
+      tagFilterIdGroups: [[tagId]]
+    )
     return try driver.withDatabase { database in
-      let scopeSet = try effectiveKanbanStatusSet(tagName: tagName, in: database)
+      let tag = try requireTag(id: tagId, in: database)
+      guard tag.classId == "folder" else {
+        throw NoteServiceError.invalidInput(
+          "kanban boards require a folder-class tag; '\(tag.name)' has class \(tag.classId ?? "none")"
+        )
+      }
+      let scopeSet = try effectiveKanbanStatusSet(tagId: tagId, in: database)
       return try groupIntoKanbanColumns(notebooks: notebooks, scopeSet: scopeSet, in: database)
     }
   }
@@ -269,12 +303,17 @@ func effectiveKanbanStatusSet(tagName: String?, in database: SQLiteDatabase) thr
   guard let tagName else {
     return try systemKanbanStatusSet(in: database)
   }
+  let tag = try requireTag(name: tagName, in: database)
+  return try effectiveKanbanStatusSet(tagId: tag.tagId, in: database)
+}
+
+func effectiveKanbanStatusSet(tagId: String, in database: SQLiteDatabase) throws -> KanbanStatusSet {
   let rows = try database.query(
     """
     WITH RECURSIVE chain(tag_id, parent_tag_id, status_set_id, depth) AS (
       SELECT tag_id, parent_tag_id, status_set_id, 0
       FROM tags
-      WHERE name = ?
+      WHERE tag_id = ?
       UNION ALL
       SELECT parent.tag_id, parent.parent_tag_id, parent.status_set_id, chain.depth + 1
       FROM tags parent
@@ -287,7 +326,7 @@ func effectiveKanbanStatusSet(tagName: String?, in database: SQLiteDatabase) thr
     ORDER BY depth
     LIMIT 1
     """,
-    bindings: [.text(tagName)]
+    bindings: [.text(tagId)]
   )
   if let setId = rows.first?["status_set_id"] ?? nil,
      let set = try kanbanStatusSet(setId: setId, in: database) {
@@ -303,7 +342,7 @@ func allowedKanbanStatusNames(notebookId: String, in database: SQLiteDatabase) t
   var allowed = Set(try systemKanbanStatusSet(in: database).statuses.map(\.name))
   let notebook = try requireNotebook(notebookId, in: database)
   for assignment in notebook.tags where assignment.tag.classId == "folder" {
-    let set = try effectiveKanbanStatusSet(tagName: assignment.tag.name, in: database)
+    let set = try effectiveKanbanStatusSet(tagId: assignment.tag.tagId, in: database)
     allowed.formUnion(set.statuses.map(\.name))
   }
   return allowed

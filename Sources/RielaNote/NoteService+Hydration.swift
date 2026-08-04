@@ -1,5 +1,14 @@
 import RielaSQLite
 
+private let sqliteConstraintPrimaryCode: Int32 = 19
+private let sqliteUniqueConstraintMessage = "unique constraint failed"
+
+func isSQLiteUniqueConstraintViolation(_ error: SQLiteError) -> Bool {
+  error.operation == .execute
+    && error.code == sqliteConstraintPrimaryCode
+    && error.message.lowercased().contains(sqliteUniqueConstraintMessage)
+}
+
 func requireNotebook(_ notebookId: String, in database: SQLiteDatabase) throws -> Notebook {
   let rows = try database.query(
     """
@@ -80,15 +89,85 @@ func requireNotes(_ noteIds: [String], in database: SQLiteDatabase) throws -> [S
   return notesById
 }
 
-func requireTag(name: String, in database: SQLiteDatabase) throws -> Tag {
+func findTag(name: String, in database: SQLiteDatabase) throws -> Tag? {
   let rows = try database.query(
-    "SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at FROM tags WHERE name = ? LIMIT 1",
+    """
+    SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
+    FROM tags
+    WHERE name = ?
+    ORDER BY tag_id
+    """,
     bindings: [.text(name)]
   )
-  guard let row = rows.first else {
+  guard rows.count <= 1 else {
+    throw NoteServiceError.invalidInput("tag name is ambiguous: \(name)")
+  }
+  return try rows.first.map(tag(from:))
+}
+
+func requireTag(name: String, in database: SQLiteDatabase) throws -> Tag {
+  guard let tag = try findTag(name: name, in: database) else {
     throw NoteServiceError.notFound("tag not found: \(name)")
   }
+  return tag
+}
+
+func requireTag(id tagId: String, in database: SQLiteDatabase) throws -> Tag {
+  let rows = try database.query(
+    """
+    SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
+    FROM tags
+    WHERE tag_id = ?
+    """,
+    bindings: [.text(tagId)]
+  )
+  guard let row = rows.first else {
+    throw NoteServiceError.notFound("tag not found: \(tagId)")
+  }
   return try tag(from: row)
+}
+
+func findFolderTag(
+  name: String,
+  parentTagId: String?,
+  in database: SQLiteDatabase
+) throws -> Tag? {
+  let parentPredicate = parentTagId == nil ? "parent_tag_id IS NULL" : "parent_tag_id = ?"
+  let rows = try database.query(
+    """
+    SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
+    FROM tags
+    WHERE name = ? AND class_id = 'folder' AND \(parentPredicate)
+    """,
+    bindings: [.text(name)] + (parentTagId.map { [.text($0)] } ?? [])
+  )
+  guard rows.count <= 1 else {
+    throw NoteServiceError.invalidInput("duplicate sibling folder name: \(name)")
+  }
+  return try rows.first.map(tag(from:))
+}
+
+func findNonFolderTag(name: String, in database: SQLiteDatabase) throws -> Tag? {
+  let rows = try database.query(
+    """
+    SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
+    FROM tags
+    WHERE name = ? AND (class_id IS NULL OR class_id <> 'folder')
+    ORDER BY tag_id
+    """,
+    bindings: [.text(name)]
+  )
+  guard rows.count <= 1 else {
+    throw NoteServiceError.invalidInput("non-folder tag name is ambiguous: \(name)")
+  }
+  return try rows.first.map(tag(from:))
+}
+
+func requireNonFolderTag(name: String, in database: SQLiteDatabase) throws -> Tag {
+  guard let tag = try findNonFolderTag(name: name, in: database) else {
+    throw NoteServiceError.notFound("non-folder tag not found: \(name)")
+  }
+  return tag
 }
 
 func notebook(from row: SQLiteRow, in database: SQLiteDatabase) throws -> Notebook {

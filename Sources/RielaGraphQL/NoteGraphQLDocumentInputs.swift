@@ -51,6 +51,25 @@ public struct GraphQLApplyNotebookTagsInput: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLApplyNotebookTagIdsInput: Codable, Equatable, Sendable {
+  public var notebookId: String
+  public var tagIds: [String]
+  public var provenance: String?
+  public var assignedBy: String?
+
+  public init(
+    notebookId: String,
+    tagIds: [String],
+    provenance: String? = nil,
+    assignedBy: String? = nil
+  ) {
+    self.notebookId = notebookId
+    self.tagIds = tagIds
+    self.provenance = provenance
+    self.assignedBy = assignedBy
+  }
+}
+
 public struct GraphQLAddNoteCommentInput: Codable, Equatable, Sendable {
   public var noteId: String
   public var bodyMarkdown: String

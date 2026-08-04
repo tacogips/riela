@@ -301,6 +301,7 @@ private struct NotePersonaHandoffDecision {
   var visitedPersonas: [String]
   var trail: [String]
   var selectedTarget: String?
+  var recoveredFromTarget: String?
   var maxTurns: Int
   var blocked: Bool
   var reason: NotePersonaHandoffBlockReason?
@@ -333,7 +334,21 @@ private func notePersonaHandoffDecision(
       handoffs[key] = key == "handoff_\(selected)"
     }
   }
-  let selected = targets.first { handoffs["handoff_\($0)"] == true }
+  let originallySelected = targets.first { handoffs["handoff_\($0)"] == true }
+  var selected = originallySelected
+  var recoveredFromTarget: String?
+  let selectedAlreadyReplied = selected == personaId || selected.map(visitedPersonas.contains) == true
+  if selectedAlreadyReplied,
+     let recoveryTarget = requestedNotePersonaIds(variables, targets: targets).first(where: {
+       $0 != personaId && !visitedPersonas.contains($0)
+     }),
+     visitedPersonas.count + 1 < maxTurns {
+    for key in handoffs.keys {
+      handoffs[key] = key == "handoff_\(recoveryTarget)"
+    }
+    recoveredFromTarget = selected
+    selected = recoveryTarget
+  }
   let reason: NotePersonaHandoffBlockReason?
   if selected == personaId || visitedPersonas.contains(personaId) {
     reason = .currentPersonaAlreadyReplied
@@ -353,6 +368,7 @@ private func notePersonaHandoffDecision(
     visitedPersonas: visitedPersonas,
     trail: trail,
     selectedTarget: selected,
+    recoveredFromTarget: recoveredFromTarget,
     maxTurns: maxTurns,
     blocked: reason != nil,
     reason: reason
@@ -369,14 +385,15 @@ private func notePersonaSanitizedReplyText(
   fallback: String
 ) -> String {
   let personasToRemove: [String]
-  if decision.blocked, let selectedTarget = decision.selectedTarget {
+  if let recoveredFromTarget = decision.recoveredFromTarget {
+    personasToRemove = [recoveredFromTarget]
+  } else if decision.blocked, let selectedTarget = decision.selectedTarget {
     personasToRemove = [selectedTarget]
   } else if decision.selectedTarget == nil, decision.trail.count >= decision.maxTurns {
     personasToRemove = decision.visitedPersonas
   } else {
     personasToRemove = []
   }
-  guard !personasToRemove.isEmpty else { return text }
   let kept = notePersonaSentenceFragments(text).filter { fragment in
     !personasToRemove.contains { personaId in
       notePersonaContainsHandoffAddress(fragment, personaId: personaId)
@@ -384,7 +401,29 @@ private func notePersonaSanitizedReplyText(
     }
   }
   let sanitized = kept.joined().trimmingCharacters(in: .whitespacesAndNewlines)
-  return sanitized.isEmpty ? fallback : sanitized
+  let base = sanitized.isEmpty ? fallback : sanitized
+  guard decision.recoveredFromTarget != nil, let selectedTarget = decision.selectedTarget else {
+    return base
+  }
+  return "\(base) @\(selectedTarget.capitalized)、あなたの観点をお願いします。"
+}
+
+private func requestedNotePersonaIds(_ variables: JSONObject, targets: [String]) -> [String] {
+  let humanInput = notePersonaObject(variables["humanInput"])
+  let workflowInput = notePersonaObject(variables["workflowInput"])
+  let event = notePersonaObject(variables["event"])
+  let eventInput = notePersonaObject(event["input"])
+  let candidates = [humanInput, workflowInput, eventInput]
+    .compactMap { nonEmptyString($0["request"]) ?? nonEmptyString($0["text"]) }
+  let request = candidates.first ?? ""
+  let normalized = request.lowercased()
+  return targets.compactMap { target -> (String, String.Index)? in
+    guard let range = normalized.range(of: target.lowercased()) else { return nil }
+    return (target, range.lowerBound)
+  }.sorted { lhs, rhs in
+    if lhs.1 == rhs.1 { return lhs.0 < rhs.0 }
+    return lhs.1 < rhs.1
+  }.map(\.0)
 }
 
 private func notePersonaSentenceFragments(_ text: String) -> [String] {

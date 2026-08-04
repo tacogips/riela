@@ -13,6 +13,13 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
   private let identity = "project-workflow:/tmp/riela:review-loop"
   private let secret = "SENTINEL_SECRET_MUST_NOT_RENDER"
 
+  func testPrivateAssistantPromptUsesParentScopedWorkflowHistoryConvention() {
+    let prompt = RielaApp().assistantSystemPrompt(workingDirectory: "/tmp/project")
+    XCTAssertTrue(prompt.contains("<workflow-id>/history-YYYY-MM-DD"))
+    XCTAssertTrue(prompt.contains("repeated runs for one workflow and date reuse that leaf"))
+    XCTAssertTrue(prompt.contains("another workflow receives a distinct leaf ID"))
+  }
+
   func testCompositeIdentityRoutesDecodeExactlyOnceAndRedactSecrets() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -195,6 +202,40 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertFalse(body.contains("correcthorsebatterystaple"))
     XCTAssertFalse(body.contains("12345678"))
     XCTAssertTrue(body.contains("<redacted>"))
+  }
+
+  func testGlobalExecutionDetailLoadsProfileSessionWithoutWorkflowDefinitionOrInstance() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let sessionStore = fixture.root.appendingPathComponent("private-sessions", isDirectory: true)
+    fixture.app.webSessionStoreRootOverride = sessionStore.path
+    let now = Date()
+    let session = WorkflowSession(
+      workflowId: String(repeating: "private-workflow-", count: 32),
+      sessionId: "private-session",
+      status: .running,
+      entryStepId: "work",
+      currentStepId: "review",
+      createdAt: now,
+      updatedAt: now
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: sessionStore.appendingPathComponent("runtime-records", isDirectory: true).path
+    ).save(WorkflowRuntimePersistenceSnapshot(session: session))
+
+    let response = await fixture.app.webAPIResponse(
+      for: RielaHTTPRequest(method: "GET", path: "/api/v1/executions/private-session"),
+      csrfToken: "csrf"
+    )
+    XCTAssertEqual(response.status, 200)
+    let json = try jsonObject(response)
+    XCTAssertEqual(json["instanceId"] as? String, "private")
+    let returnedSession = try XCTUnwrap(json["session"] as? [String: Any])
+    XCTAssertEqual(returnedSession["sessionId"] as? String, "private-session")
+    XCTAssertEqual(returnedSession["status"] as? String, "running")
+    XCTAssertEqual(returnedSession["currentStepId"] as? String, "review")
+    XCTAssertEqual(returnedSession["workflowIdTruncated"] as? Bool, true)
+    XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(session.workflowId) ?? true)
   }
 
   func testMissingSourceInstanceIsVisibleAndRedacted() async throws {

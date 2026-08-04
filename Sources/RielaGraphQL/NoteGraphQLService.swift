@@ -38,6 +38,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
     offset: Int = 0,
     tagFilter: [String] = [],
     tagFilterGroups: [[String]] = [],
+    tagFilterIdGroups: [[String]] = [],
     sort: String? = nil,
     createdAfter: String? = nil,
     createdBefore: String? = nil
@@ -48,6 +49,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
         offset: offset,
         tagFilter: tagFilter,
         tagFilterGroups: tagFilterGroups,
+        tagFilterIdGroups: tagFilterIdGroups,
         sort: try graphQLNoteListSort(sort),
         createdAfter: createdAfter,
         createdBefore: createdBefore
@@ -166,6 +168,7 @@ public struct GraphQLNoteGraphQLService: Sendable {
       let notebook = try service.createNotebook(
         title: input.title,
         kindTagName: input.kindTagName,
+        folderPath: input.folderPath ?? [],
         metaJSON: input.metaJSON,
         originatingActionId: input.originatingActionId
       )
@@ -248,6 +251,20 @@ public struct GraphQLNoteGraphQLService: Sendable {
     }
   }
 
+  public func applyNotebookTagIds(
+    _ input: GraphQLApplyNotebookTagIdsInput
+  ) async -> GraphQLNoteMutationResult {
+    noteMutation {
+      let notebook = try service.applyNotebookTagIds(
+        notebookId: input.notebookId,
+        tagIds: input.tagIds,
+        provenance: try graphQLNoteProvenance(input.provenance ?? NoteProvenance.ai.rawValue),
+        assignedBy: input.assignedBy
+      )
+      return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
+    }
+  }
+
   public func removeNotebookTag(
     notebookId: String,
     tagName: String,
@@ -257,6 +274,21 @@ public struct GraphQLNoteGraphQLService: Sendable {
       let notebook = try service.removeNotebookTag(
         notebookId: notebookId,
         tagName: tagName,
+        removedBy: try graphQLNoteProvenance(provenance)
+      )
+      return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
+    }
+  }
+
+  public func removeNotebookTagById(
+    notebookId: String,
+    tagId: String,
+    provenance: String = NoteProvenance.human.rawValue
+  ) async -> GraphQLNoteMutationResult {
+    noteMutation {
+      let notebook = try service.removeNotebookTagById(
+        notebookId: notebookId,
+        tagId: tagId,
         removedBy: try graphQLNoteProvenance(provenance)
       )
       return .init(result: .ok, notebook: GraphQLNotebookDTO(notebook: notebook))
@@ -303,6 +335,14 @@ public struct GraphQLNoteGraphQLService: Sendable {
     }
   }
 
+  public func effectiveKanbanStatusesByTagId(
+    tagId: String
+  ) async -> GraphQLNoteQueryResult<GraphQLKanbanStatusSetDTO> {
+    noteResult {
+      GraphQLKanbanStatusSetDTO(set: try service.effectiveKanbanStatusesByTagId(tagId: tagId))
+    }
+  }
+
   public func createKanbanStatusSet(
     name: String,
     statuses: [GraphQLKanbanStatusInput]
@@ -345,6 +385,16 @@ public struct GraphQLNoteGraphQLService: Sendable {
   public func assignKanbanStatusSet(tagName: String, setId: String?) async -> GraphQLNoteMutationResult {
     noteMutation {
       let tag = try service.assignKanbanStatusSet(tagName: tagName, setId: setId)
+      return .init(result: .ok, tag: GraphQLNoteTagDTO(tag: tag))
+    }
+  }
+
+  public func assignKanbanStatusSetByTagId(
+    tagId: String,
+    setId: String?
+  ) async -> GraphQLNoteMutationResult {
+    noteMutation {
+      let tag = try service.assignKanbanStatusSetByTagId(tagId: tagId, setId: setId)
       return .init(result: .ok, tag: GraphQLNoteTagDTO(tag: tag))
     }
   }

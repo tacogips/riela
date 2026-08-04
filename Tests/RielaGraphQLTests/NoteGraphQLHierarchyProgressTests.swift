@@ -5,7 +5,7 @@ import RielaNote
 import XCTest
 
 final class NoteGraphQLHierarchyProgressTests: XCTestCase {
-  func testDefineTagCreateOnlyProjectsAndRejectsCollisionAtomically() async throws {
+  func testDefineTagCreateOnlyUsesScopedIdentityDomainsAtomically() async throws {
     let service = try makeHierarchyGraphQLService()
     let first = await service.defineTag(
       GraphQLDefineNoteTagInput(name: "Web Folder", classId: "folder", createOnly: true)
@@ -33,12 +33,21 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
     ))
     let payload = try payloadObject(response.body, field: "defineNoteTag")
     let result = try objectValue(payload["result"], field: "result")
-    XCTAssertEqual(result["accepted"], .bool(false))
-    XCTAssertEqual(result["status"], .string("invalid_request"))
+    XCTAssertEqual(result["accepted"], .bool(true))
+    XCTAssertEqual(result["status"], .string("ok"))
+    let duplicateTopic = await service.defineTag(
+      GraphQLDefineNoteTagInput(name: "Web Folder", classId: "topic", createOnly: true)
+    )
+    XCTAssertFalse(duplicateTopic.result.accepted)
+    XCTAssertEqual(duplicateTopic.result.status, "invalid_request")
     let persisted = await service.tags()
     let tag = try XCTUnwrap(persisted.value?.first { $0.tagId == tagId })
     XCTAssertEqual(tag.classId, "folder")
     XCTAssertNil(tag.parentTagId)
+    XCTAssertEqual(
+      persisted.value?.filter { $0.name == "Web Folder" }.compactMap(\.classId).sorted(),
+      ["folder", "topic"]
+    )
 
     let decoded = try JSONDecoder().decode(
       GraphQLDefineNoteTagInput.self,
@@ -314,6 +323,268 @@ final class NoteGraphQLHierarchyProgressTests: XCTestCase {
       }
       XCTAssertEqual(optionalValues.count, 2)
     }
+  }
+
+  func testDocumentExecutorValidatesTagIdGroupsWithoutFailingOpen() async throws {
+    let service = try makeHierarchyGraphQLService()
+    let folder = await service.defineTag(
+      GraphQLDefineNoteTagInput(name: "ID Root", classId: "folder")
+    )
+    let folderId = try XCTUnwrap(folder.tag?.tagId)
+    let created = await service.createNotebook(GraphQLCreateNotebookInput(title: "ID matched"))
+    let notebookId = try XCTUnwrap(created.notebook?.notebookId)
+    _ = await service.applyNotebookTagIds(GraphQLApplyNotebookTagIdsInput(
+      notebookId: notebookId,
+      tagIds: [folderId]
+    ))
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+    let query = """
+    query GroupedById($tagFilterIdGroups: [[String!]!]) {
+      notebooks(tagFilterIdGroups: $tagFilterIdGroups) {
+        result { accepted status diagnostics }
+        value { notebookId }
+      }
+    }
+    """
+
+    for malformedVariables: JSONObject in [
+      ["tagFilterIdGroups": .string(folderId)],
+      ["tagFilterIdGroups": .array([.string(folderId)])],
+      ["tagFilterIdGroups": .array([.array([.string(folderId), .integer(1)])])]
+    ] {
+      let response = await executor.execute(GraphQLDocumentRequest(
+        query: query,
+        variables: malformedVariables,
+        operationName: "GroupedById"
+      ))
+      XCTAssertNotNil(response.body["errors"])
+      XCTAssertEqual(
+        try objectValue(response.body["data"], field: "data")["notebooks"],
+        .null
+      )
+    }
+
+    for optionalVariables: JSONObject in [
+      [:],
+      ["tagFilterIdGroups": .null],
+      ["tagFilterIdGroups": .array([.array([])])]
+    ] {
+      let response = await executor.execute(GraphQLDocumentRequest(
+        query: query,
+        variables: optionalVariables,
+        operationName: "GroupedById"
+      ))
+      let payload = try payloadObject(response.body, field: "notebooks")
+      guard case let .array(values)? = payload["value"] else {
+        return XCTFail("expected empty ID groups to preserve the unfiltered request")
+      }
+      XCTAssertTrue(values.contains { value in
+        guard case let .object(notebook) = value else { return false }
+        return notebook["notebookId"] == .string(notebookId)
+      })
+    }
+
+    let unknown = await executor.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: ["tagFilterIdGroups": .array([.array([.string("unknown-id")])])],
+      operationName: "GroupedById"
+    ))
+    XCTAssertEqual(try payloadObject(unknown.body, field: "notebooks")["value"], .array([]))
+
+    for oversizedGroups: [[JSONValue]] in [
+      Array(
+        repeating: [.string(folderId)],
+        count: 65
+      ),
+      [Array(
+        repeating: .string(folderId),
+        count: 257
+      )]
+    ] {
+      let response = await executor.execute(GraphQLDocumentRequest(
+        query: query,
+        variables: [
+          "tagFilterIdGroups": .array(oversizedGroups.map(JSONValue.array))
+        ],
+        operationName: "GroupedById"
+      ))
+      let payload = try payloadObject(response.body, field: "notebooks")
+      let result = try objectValue(payload["result"], field: "notebooks.result")
+      XCTAssertEqual(result["accepted"], JSONValue.bool(false))
+      XCTAssertEqual(result["status"], JSONValue.string("invalid_request"))
+      XCTAssertEqual(payload["value"], JSONValue.null)
+    }
+  }
+
+  func testDocumentExecutorUsesTagIdsForAmbiguousFolderMutationsAndScope() async throws {
+    let service = try makeHierarchyGraphQLService()
+    let firstParent = await service.defineTag(
+      GraphQLDefineNoteTagInput(name: "Workflow A", classId: "folder")
+    )
+    let secondParent = await service.defineTag(
+      GraphQLDefineNoteTagInput(name: "Workflow B", classId: "folder")
+    )
+    let firstHistory = await service.defineTag(GraphQLDefineNoteTagInput(
+      name: "history",
+      classId: "folder",
+      parentTagId: try XCTUnwrap(firstParent.tag?.tagId)
+    ))
+    let secondHistory = await service.defineTag(GraphQLDefineNoteTagInput(
+      name: "history",
+      classId: "folder",
+      parentTagId: try XCTUnwrap(secondParent.tag?.tagId)
+    ))
+    let firstHistoryId = try XCTUnwrap(firstHistory.tag?.tagId)
+    let secondHistoryId = try XCTUnwrap(secondHistory.tag?.tagId)
+    XCTAssertNotEqual(firstHistoryId, secondHistoryId)
+    let firstBoard = await service.createKanbanStatusSet(
+      name: "Workflow A Board",
+      statuses: [
+        GraphQLKanbanStatusInput(name: "queued-a", category: "pending"),
+        GraphQLKanbanStatusInput(name: "done-a", category: "done")
+      ]
+    )
+    let secondBoard = await service.createKanbanStatusSet(
+      name: "Workflow B Board",
+      statuses: [
+        GraphQLKanbanStatusInput(name: "queued-b", category: "pending"),
+        GraphQLKanbanStatusInput(name: "done-b", category: "done")
+      ]
+    )
+    let firstBoardId = try XCTUnwrap(firstBoard.value?.setId)
+    let secondBoardId = try XCTUnwrap(secondBoard.value?.setId)
+    let firstAssignment = await service.assignKanbanStatusSetByTagId(
+      tagId: firstHistoryId,
+      setId: firstBoardId
+    )
+    XCTAssertEqual(firstAssignment.tag?.tagId, firstHistoryId)
+    XCTAssertEqual(firstAssignment.tag?.statusSetId, firstBoardId)
+
+    let created = await service.createNotebook(GraphQLCreateNotebookInput(title: "ID scoped"))
+    let notebookId = try XCTUnwrap(created.notebook?.notebookId)
+    let executor = NoteGraphQLDocumentExecutor(service: service)
+
+    let applied = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation ApplyById($input: ApplyNotebookTagIdsInput!) {
+        applyNotebookTagIds(input: $input) {
+          result { accepted status diagnostics }
+          notebook { notebookId tags { tag { tagId name parentTagId } } }
+        }
+      }
+      """,
+      variables: [
+        "input": .object([
+          "notebookId": .string(notebookId),
+          "tagIds": .array([.string(secondHistoryId)]),
+          "provenance": .string("human")
+        ])
+      ],
+      operationName: "ApplyById"
+    ))
+    let appliedPayload = try payloadObject(applied.body, field: "applyNotebookTagIds")
+    let appliedResult = try objectValue(appliedPayload["result"], field: "result")
+    XCTAssertEqual(appliedResult["accepted"], .bool(true))
+
+    let filtered = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      query FilterById($tagFilter: [String!], $tagFilterIdGroups: [[String!]!]) {
+        notebooks(tagFilter: $tagFilter, tagFilterIdGroups: $tagFilterIdGroups) {
+          result { accepted status }
+          value { notebookId }
+        }
+      }
+      """,
+      variables: [
+        "tagFilter": .array([.string("history")]),
+        "tagFilterIdGroups": .array([
+          .array([.string(secondHistoryId), .string(secondHistoryId)]),
+          .array([.string(secondHistoryId)])
+        ])
+      ],
+      operationName: "FilterById"
+    ))
+    let filteredPayload = try payloadObject(filtered.body, field: "notebooks")
+    guard case let .array(values)? = filteredPayload["value"],
+          case let .object(notebook)? = values.first else {
+      return XCTFail("expected ID-filtered notebook")
+    }
+    XCTAssertEqual(notebook["notebookId"], .string(notebookId))
+
+    let legacyAmbiguous = await service.notebooks(tagFilter: ["history"])
+    XCTAssertFalse(legacyAmbiguous.result.accepted)
+    XCTAssertEqual(legacyAmbiguous.result.status, "invalid_request")
+
+    let assigned = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation AssignKanbanById($tagId: String!, $setId: String) {
+        assignKanbanStatusSetByTagId(tagId: $tagId, setId: $setId) {
+          result { accepted status }
+          tag { tagId statusSetId }
+        }
+      }
+      """,
+      variables: ["tagId": .string(secondHistoryId), "setId": .string(secondBoardId)],
+      operationName: "AssignKanbanById"
+    ))
+    let assignedPayload = try payloadObject(
+      assigned.body,
+      field: "assignKanbanStatusSetByTagId"
+    )
+    let assignedResult = try objectValue(assignedPayload["result"], field: "result")
+    XCTAssertEqual(assignedResult["accepted"], .bool(true))
+    let assignedTag = try objectValue(assignedPayload["tag"], field: "tag")
+    XCTAssertEqual(assignedTag["tagId"], .string(secondHistoryId))
+    XCTAssertEqual(assignedTag["statusSetId"], .string(secondBoardId))
+
+    let effective = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      query EffectiveById($tagId: String!) {
+        effectiveKanbanStatusesByTagId(tagId: $tagId) {
+          result { accepted status }
+          value { setId name }
+        }
+      }
+      """,
+      variables: ["tagId": .string(secondHistoryId)],
+      operationName: "EffectiveById"
+    ))
+    let effectivePayload = try payloadObject(
+      effective.body,
+      field: "effectiveKanbanStatusesByTagId"
+    )
+    let effectiveResult = try objectValue(effectivePayload["result"], field: "result")
+    XCTAssertEqual(effectiveResult["accepted"], .bool(true))
+    let effectiveSet = try objectValue(effectivePayload["value"], field: "value")
+    XCTAssertEqual(effectiveSet["setId"], .string(secondBoardId))
+    XCTAssertEqual(effectiveSet["name"], .string("Workflow B Board"))
+    let firstEffective = await service.effectiveKanbanStatusesByTagId(tagId: firstHistoryId)
+    XCTAssertEqual(firstEffective.value?.setId, firstBoardId)
+    XCTAssertNotEqual(effectiveSet["setId"], .string(firstBoardId))
+
+    let removed = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation RemoveById($notebookId: String!, $tagId: String!) {
+        removeNotebookTagById(notebookId: $notebookId, tagId: $tagId) {
+          result { accepted status }
+          notebook { tags { tag { tagId } } }
+        }
+      }
+      """,
+      variables: [
+        "notebookId": .string(notebookId),
+        "tagId": .string(secondHistoryId)
+      ],
+      operationName: "RemoveById"
+    ))
+    let removedPayload = try payloadObject(removed.body, field: "removeNotebookTagById")
+    let removedNotebook = try objectValue(removedPayload["notebook"], field: "notebook")
+    guard case let .array(tags)? = removedNotebook["tags"] else {
+      return XCTFail("expected projected notebook tags")
+    }
+    XCTAssertTrue(tags.isEmpty)
+    XCTAssertTrue(GraphQLContractProjector.schemaContract.contains("tagFilterIdGroups"))
+    XCTAssertTrue(GraphQLContractProjector.schemaContract.contains("ApplyNotebookTagIdsInput"))
   }
 
   private func makeHierarchyGraphQLService(

@@ -1,12 +1,14 @@
 import { For, Show, createSignal, onMount } from 'solid-js'
 import type { NoteGraphQLClient } from '../notes/client'
-import type { NoteSearchResult } from '../notes/types'
+import type { NoteSearchResult, NoteTag } from '../notes/types'
+import { qualifiedTagLabel } from '../notes/tree'
 import { noteDisplayTitle, searchPageSize, workspaceErrorMessage } from './NoteDetailLogic'
 
 /** Full-text note search presented as a popup, mirroring
  * RielaNoteSearchPopupSheet: picking a result opens that note and dismisses. */
 export function NoteSearchPopup(props: {
   client: NoteGraphQLClient
+  tags: NoteTag[]
   initialQuery?: string
   onOpenNote: (noteId: string, notebookId: string) => void
   onClose: () => void
@@ -109,7 +111,7 @@ export function NoteSearchPopup(props: {
               <span class="note-search-meta">
                 #{result.note.noteNumber}
                 <Show when={result.isLinkedNeighbor}><em> · linked neighbor</em></Show>
-                <For each={result.matchedTags}>{(tag) => <em> · {tag.name}</em>}</For>
+                <For each={result.matchedTags}>{(tag) => <em> · {qualifiedTagLabel(props.tags, tag.tagId)}</em>}</For>
               </span>
             </button>
           </li>}

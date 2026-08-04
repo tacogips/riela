@@ -401,17 +401,20 @@ public struct GraphQLCreateNoteInput: Codable, Equatable, Sendable {
 public struct GraphQLCreateNotebookInput: Codable, Equatable, Sendable {
   public var title: String
   public var kindTagName: String?
+  public var folderPath: [String]?
   public var metaJSON: String?
   public var originatingActionId: String?
 
   public init(
     title: String,
     kindTagName: String? = nil,
+    folderPath: [String]? = nil,
     metaJSON: String? = nil,
     originatingActionId: String? = nil
   ) {
     self.title = title
     self.kindTagName = kindTagName
+    self.folderPath = folderPath
     self.metaJSON = metaJSON
     self.originatingActionId = originatingActionId
   }

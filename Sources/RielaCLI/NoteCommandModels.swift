@@ -39,6 +39,7 @@ struct NoteCommandOptions: ParsableArguments {
   @Option var offset = 0
   @Option var title: String?
   @Option(name: [.customLong("kind-tag"), .customLong("kind-tag-name")]) var kindTagName: String?
+  @Option(name: [.customLong("folder"), .customLong("folder-path")]) var folderPath: [String] = []
   @Option(name: [.customLong("profile"), .customLong("s3-profile"), .customLong("s3-profile-name")])
   var s3ProfileName = "default-s3"
   @Option var s3Endpoint: String?

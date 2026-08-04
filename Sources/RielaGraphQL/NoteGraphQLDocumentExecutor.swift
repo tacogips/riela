@@ -193,6 +193,7 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
         offset: validatedOffset(try optionalInt("offset", variables: variables)),
         tagFilter: try optionalStringArray("tagFilter", variables: variables) ?? [],
         tagFilterGroups: try optionalStringArrayArray("tagFilterGroups", variables: variables) ?? [],
+        tagFilterIdGroups: try optionalStringArrayArray("tagFilterIdGroups", variables: variables) ?? [],
         sort: try optionalString("sort", variables: variables),
         createdAfter: try optionalString("createdAfter", variables: variables),
         createdBefore: try optionalString("createdBefore", variables: variables)
@@ -241,6 +242,10 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
       return try await encodedJSONValue(service.effectiveKanbanStatuses(
         tagName: try optionalString("tagName", variables: variables)
       ))
+    case "effectiveKanbanStatusesByTagId":
+      return try await encodedJSONValue(service.effectiveKanbanStatusesByTagId(
+        tagId: requiredString("tagId", variables: variables)
+      ))
     case "noteFile":
       return try await encodedJSONValue(service.noteFile(fileId: requiredString("fileId", variables: variables)))
     case "autoActions":
@@ -288,10 +293,20 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
       var input: GraphQLApplyNotebookTagsInput = try requiredInput("input", variables: variables)
       input.assignedBy = try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request)
       return try await encodedJSONValue(service.applyNotebookTags(input))
+    case "applyNotebookTagIds":
+      var input: GraphQLApplyNotebookTagIdsInput = try requiredInput("input", variables: variables)
+      input.assignedBy = try noteAPIAssignedBy(input.assignedBy, field: "assignedBy", request: request)
+      return try await encodedJSONValue(service.applyNotebookTagIds(input))
     case "removeNotebookTag":
       return try await encodedJSONValue(service.removeNotebookTag(
         notebookId: requiredString("notebookId", variables: variables),
         tagName: requiredString("tagName", variables: variables),
+        provenance: try optionalString("provenance", variables: variables) ?? "human"
+      ))
+    case "removeNotebookTagById":
+      return try await encodedJSONValue(service.removeNotebookTagById(
+        notebookId: requiredString("notebookId", variables: variables),
+        tagId: requiredString("tagId", variables: variables),
         provenance: try optionalString("provenance", variables: variables) ?? "human"
       ))
     case "setNotebookProgress":
@@ -329,6 +344,11 @@ public struct NoteGraphQLDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocu
     case "assignKanbanStatusSet":
       return try await encodedJSONValue(service.assignKanbanStatusSet(
         tagName: requiredString("tagName", variables: variables),
+        setId: try optionalString("setId", variables: variables)
+      ))
+    case "assignKanbanStatusSetByTagId":
+      return try await encodedJSONValue(service.assignKanbanStatusSetByTagId(
+        tagId: requiredString("tagId", variables: variables),
         setId: try optionalString("setId", variables: variables)
       ))
     case "setNoteReadOnly":
@@ -566,6 +586,7 @@ let supportedNoteGraphQLFields: Set<String> = [
   "tagClasses",
   "kanbanStatusSets",
   "effectiveKanbanStatuses",
+  "effectiveKanbanStatusesByTagId",
   "noteFile",
   "autoActions",
   "createNote",
@@ -577,13 +598,16 @@ let supportedNoteGraphQLFields: Set<String> = [
   "deleteNote",
   "deleteNotebook",
   "applyNotebookTags",
+  "applyNotebookTagIds",
   "removeNotebookTag",
+  "removeNotebookTagById",
   "setNotebookProgress",
   "setNotebookReadOnly",
   "createKanbanStatusSet",
   "updateKanbanStatusSet",
   "deleteKanbanStatusSet",
   "assignKanbanStatusSet",
+  "assignKanbanStatusSetByTagId",
   "setNoteReadOnly",
   "applyNoteTags",
   "removeNoteTag",
@@ -610,6 +634,7 @@ private let noteGraphQLQueryFields: Set<String> = [
   "tagClasses",
   "kanbanStatusSets",
   "effectiveKanbanStatuses",
+  "effectiveKanbanStatusesByTagId",
   "noteFile",
   "autoActions"
 ]
@@ -740,6 +765,7 @@ private let noteGraphQLRootSelectionTypes: [String: String] = [
   "tagClasses": "NoteTagClassesQueryPayload",
   "kanbanStatusSets": "KanbanStatusSetsQueryPayload",
   "effectiveKanbanStatuses": "KanbanStatusSetQueryPayload",
+  "effectiveKanbanStatusesByTagId": "KanbanStatusSetQueryPayload",
   "createKanbanStatusSet": "KanbanStatusSetQueryPayload",
   "updateKanbanStatusSet": "KanbanStatusSetQueryPayload",
   "deleteKanbanStatusSet": "ControlPlaneResult",
@@ -965,169 +991,4 @@ private func noteFileMigrationControlResult(
     status: hasMigratedFiles ? "partial" : "failed",
     diagnostics: [graphQLNotePublicDiagnostic(for: error)]
   )
-}
-
-enum NoteGraphQLDocumentExecutorError: Error, Equatable {
-  case missingVariable(String)
-  case invalidVariable(String)
-  case invalidSelection(String)
-  case operationFieldMismatch(operation: String, fieldName: String)
-}
-
-private func encodedJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
-  try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
-}
-
-private func requiredInput<T: Decodable>(_ key: String, variables: JSONObject) throws -> T {
-  guard let value = variables[key], value != .null else {
-    throw NoteGraphQLDocumentExecutorError.missingVariable(key)
-  }
-  return try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
-}
-
-private func requiredString(_ key: String, variables: JSONObject) throws -> String {
-  guard case let .string(value)? = variables[key] else {
-    throw NoteGraphQLDocumentExecutorError.missingVariable(key)
-  }
-  guard !value.isEmpty else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must not be empty")
-  }
-  return value
-}
-
-private func optionalString(_ key: String, variables: JSONObject) throws -> String? {
-  guard let value = variables[key], value != .null else {
-    return nil
-  }
-  guard case let .string(string) = value else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be a string")
-  }
-  guard !string.isEmpty else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must not be empty")
-  }
-  return string
-}
-
-private func requiredBool(_ key: String, variables: JSONObject) throws -> Bool {
-  guard case let .bool(value)? = variables[key] else {
-    throw NoteGraphQLDocumentExecutorError.missingVariable(key)
-  }
-  return value
-}
-
-private func optionalBool(_ key: String, variables: JSONObject) throws -> Bool? {
-  guard let value = variables[key], value != .null else {
-    return nil
-  }
-  guard case let .bool(bool) = value else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be a boolean")
-  }
-  return bool
-}
-
-private func optionalInt(_ key: String, variables: JSONObject) throws -> Int? {
-  guard let value = variables[key], value != .null else {
-    return nil
-  }
-  switch value {
-  case let .integer(integer):
-    guard let converted = Int(exactly: integer) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) is out of range")
-    }
-    return converted
-  case let .number(number):
-    guard let converted = Int(exactly: number) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an integer")
-    }
-    return converted
-  default:
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an integer")
-  }
-}
-
-/// The maximum page size accepted by `limit` on every list/search field.
-/// Mirrored in the SDL contract text (`GraphQLNoteSchemaContract.swift`).
-let noteGraphQLMaximumLimit = 200
-/// The maximum `offset` accepted on every list/search field.
-let noteGraphQLMaximumOffset = 1_000_000
-
-private func validatedLimit(_ value: Int?, defaultValue: Int) throws -> Int {
-  guard let value else {
-    return defaultValue
-  }
-  guard (0...noteGraphQLMaximumLimit).contains(value) else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
-      "limit must be between 0 and \(noteGraphQLMaximumLimit)"
-    )
-  }
-  return value
-}
-
-/// Graph fields (`noteGraphNeighbors`, `proposeNoteLinks`) can return at most
-/// `NoteGraphPolicy.maximumLimit` rows; the contract promise is "rejected
-/// rather than silently clamped", so a larger `limit` is an error here instead
-/// of being truncated by the service.
-private func validatedGraphLimit(_ value: Int?, defaultValue: Int) throws -> Int {
-  guard let value else {
-    return defaultValue
-  }
-  guard (0...NoteGraphPolicy.maximumLimit).contains(value) else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
-      "limit must be between 0 and \(NoteGraphPolicy.maximumLimit) for graph fields"
-    )
-  }
-  return value
-}
-
-private func validatedOffset(_ value: Int?) throws -> Int {
-  guard let value else {
-    return 0
-  }
-  guard (0...noteGraphQLMaximumOffset).contains(value) else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
-      "offset must be between 0 and \(noteGraphQLMaximumOffset)"
-    )
-  }
-  return value
-}
-
-private func optionalStringArray(_ key: String, variables: JSONObject) throws -> [String]? {
-  guard let value = variables[key], value != .null else {
-    return nil
-  }
-  guard case let .array(values) = value else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an array of strings")
-  }
-  return try values.map { value in
-    guard case let .string(string) = value else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable("\(key) must be an array of strings")
-    }
-    return string
-  }
-}
-
-private func optionalStringArrayArray(_ key: String, variables: JSONObject) throws -> [[String]]? {
-  guard let value = variables[key], value != .null else {
-    return nil
-  }
-  guard case let .array(groups) = value else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
-      "\(key) must be an array of string arrays"
-    )
-  }
-  return try groups.map { group in
-    guard case let .array(values) = group else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
-        "\(key) must be an array of string arrays"
-      )
-    }
-    return try values.map { value in
-      guard case let .string(string) = value else {
-        throw NoteGraphQLDocumentExecutorError.invalidVariable(
-          "\(key) must be an array of string arrays"
-        )
-      }
-      return string
-    }
-  }
 }

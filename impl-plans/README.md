@@ -92,6 +92,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |
 | `web-cross-tag-filter-and-fixes` | 2026-07-27 | `design-web-cross-tag-filter-and-fixes` |
 | `web-tags-and-card-preview` | 2026-07-26 | `design-web-tags-and-card-preview` |
 | `riela-note-book-like-reader`                 | 2026-07-21 | `design-riela-note-ui-refinements#book-like-reader-addendum-2026-07-20`                                                                                                                      |

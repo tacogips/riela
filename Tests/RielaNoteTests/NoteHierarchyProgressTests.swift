@@ -4,7 +4,30 @@ import RielaSQLite
 import XCTest
 
 final class NoteHierarchyProgressTests: NoteTestCase {
-  func testCreateOnlyTagRejectsCollisionWithoutChangingClassOrParent() throws {
+  func testTagInsertCollisionClassificationRejectsNonConstraintFailures() {
+    XCTAssertTrue(isSQLiteUniqueConstraintViolation(SQLiteError(
+      operation: .execute,
+      code: 19,
+      message: "UNIQUE constraint failed: tags.name"
+    )))
+    XCTAssertFalse(isSQLiteUniqueConstraintViolation(SQLiteError(
+      operation: .execute,
+      code: 5,
+      message: "database is locked"
+    )))
+    XCTAssertFalse(isSQLiteUniqueConstraintViolation(SQLiteError(
+      operation: .query,
+      code: 19,
+      message: "query constraint"
+    )))
+    XCTAssertFalse(isSQLiteUniqueConstraintViolation(SQLiteError(
+      operation: .execute,
+      code: 19,
+      message: "FOREIGN KEY constraint failed"
+    )))
+  }
+
+  func testCreateOnlyTagUsesIdentityDomainWithoutChangingExistingFolder() throws {
     let service = try NoteService(driver: makeNoteDriver())
     let parent = try service.defineTag(name: "Parent", classId: "folder")
     let existing = try service.defineTag(
@@ -13,18 +36,16 @@ final class NoteHierarchyProgressTests: NoteTestCase {
       parentTagId: parent.tagId
     )
 
-    XCTAssertThrowsError(
-      try service.defineTag(name: "Shared", classId: "topic", createOnly: true)
-    ) { error in
-      XCTAssertEqual(error as? NoteServiceError, .invalidInput("tag already exists: Shared"))
-    }
+    let topic = try service.defineTag(name: "Shared", classId: "topic", createOnly: true)
+    XCTAssertNotEqual(topic.tagId, existing.tagId)
     let persisted = try XCTUnwrap(try service.listTags().first { $0.tagId == existing.tagId })
     XCTAssertEqual(persisted.classId, "folder")
     XCTAssertEqual(persisted.parentTagId, parent.tagId)
 
     let updated = try service.defineTag(name: "Shared", classId: "topic")
-    XCTAssertEqual(updated.classId, "topic", "omitted createOnly must retain upsert compatibility")
-    XCTAssertEqual(updated.parentTagId, parent.tagId)
+    XCTAssertEqual(updated.tagId, topic.tagId, "non-folder upsert must stay in its identity domain")
+    XCTAssertEqual(updated.classId, "topic")
+    XCTAssertNil(updated.parentTagId)
   }
 
   func testV3MigrationPreservesRowsAndAddsHierarchyAndProgressConstraints() throws {
@@ -226,6 +247,53 @@ final class NoteHierarchyProgressTests: NoteTestCase {
     XCTAssertTrue(try service.listNotebooks(tagFilter: ["unknown-tag"]).isEmpty)
   }
 
+  func testLegacyNoteFiltersRejectAmbiguousFolderNamesBeforeIdExpansion() throws {
+    let service = try NoteService(driver: makeNoteDriver())
+    let work = try service.defineTag(name: "Work", classId: "folder")
+    let archive = try service.defineTag(name: "Archive", classId: "folder")
+    let workShared = try service.defineTag(
+      name: "Shared",
+      classId: "folder",
+      parentTagId: work.tagId
+    )
+    let archiveShared = try service.defineTag(
+      name: "Shared",
+      classId: "folder",
+      parentTagId: archive.tagId
+    )
+    let workTopic = try service.defineTag(
+      name: "Work topic",
+      classId: "topic",
+      parentTagId: workShared.tagId
+    )
+    let archiveTopic = try service.defineTag(
+      name: "Archive topic",
+      classId: "topic",
+      parentTagId: archiveShared.tagId
+    )
+    _ = try service.createNote(
+      bodyMarkdown: "# Work branch\nShared search text",
+      tags: [NoteTagInput(name: workTopic.name)]
+    )
+    _ = try service.createNote(
+      bodyMarkdown: "# Archive branch\nShared search text",
+      tags: [NoteTagInput(name: archiveTopic.name)]
+    )
+
+    for operation in [
+      { try service.listNotes(tagFilter: ["Shared"]).count },
+      { try service.searchNotes(query: "Shared", tagFilter: ["Shared"]).count },
+      { try service.searchNotes(query: "", tagFilter: ["Shared"]).count }
+    ] {
+      XCTAssertThrowsError(try operation()) { error in
+        guard case let NoteServiceError.invalidInput(message) = error else {
+          return XCTFail("expected ambiguous legacy filter failure, got \(error)")
+        }
+        XCTAssertTrue(message.contains("ambiguous"))
+      }
+    }
+  }
+
   func testGroupedNotebookFiltersIntersectExpandedUnionsAndPreserveFlatCompatibility() throws {
     let service = try NoteService(driver: makeNoteDriver())
     let folder = try service.defineTag(name: "Work", classId: "folder")
@@ -286,6 +354,17 @@ final class NoteHierarchyProgressTests: NoteTestCase {
       ).map(\.notebookId).sorted(),
       [launchUrgent.notebookId, urgentOnly.notebookId].sorted()
     )
+    XCTAssertEqual(
+      try service.listNotebooks(
+        tagFilter: [normal.name],
+        tagFilterGroups: [[normal.name]],
+        tagFilterIdGroups: [[folder.tagId], [urgent.tagId]]
+      ).map(\.notebookId),
+      [launchUrgent.notebookId]
+    )
+    XCTAssertTrue(
+      try service.listNotebooks(tagFilterIdGroups: [[folder.tagId], ["unknown-id"]]).isEmpty
+    )
   }
 
   func testGroupedNotebookFilterBoundsDeduplicateAndFailClosedBeforeFurtherExpansion() throws {
@@ -308,6 +387,12 @@ final class NoteHierarchyProgressTests: NoteTestCase {
       try service.listNotebooks(
         tagFilterGroups: [["unknown"], [work.name]]
       ).isEmpty
+    )
+    XCTAssertEqual(
+      try service.listNotebooks(
+        tagFilterIdGroups: [[work.tagId, work.tagId], [work.tagId], []]
+      ).map(\.notebookId),
+      [notebook.notebookId]
     )
 
     XCTAssertThrowsError(
@@ -337,6 +422,36 @@ final class NoteHierarchyProgressTests: NoteTestCase {
         error as? NoteServiceError,
         .invalidInput(
           "tagFilterGroups supports at most \(NoteService.maximumNotebookTagFilterNames) tag names"
+        )
+      )
+    }
+    XCTAssertThrowsError(
+      try service.listNotebooks(
+        tagFilterIdGroups: Array(
+          repeating: [work.tagId],
+          count: NoteService.maximumNotebookTagFilterGroups + 1
+        )
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          "tagFilterIdGroups supports at most \(NoteService.maximumNotebookTagFilterGroups) groups"
+        )
+      )
+    }
+    XCTAssertThrowsError(
+      try service.listNotebooks(
+        tagFilterIdGroups: [Array(
+          repeating: work.tagId,
+          count: NoteService.maximumNotebookTagFilterNames + 1
+        )]
+      )
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          "tagFilterIdGroups supports at most \(NoteService.maximumNotebookTagFilterNames) tag IDs"
         )
       )
     }
@@ -373,6 +488,19 @@ final class NoteHierarchyProgressTests: NoteTestCase {
           """
           tagFilterGroups expands to at most \
           \(NoteService.maximumExpandedNotebookTagFilterNames) tag names
+          """
+        )
+      )
+    }
+    XCTAssertThrowsError(
+      try service.listNotebooks(tagFilterIdGroups: [[root.tagId]])
+    ) { error in
+      XCTAssertEqual(
+        error as? NoteServiceError,
+        .invalidInput(
+          """
+          tagFilterIdGroups expands to at most \
+          \(NoteService.maximumExpandedNotebookTagFilterNames) tag IDs
           """
         )
       )
@@ -434,9 +562,9 @@ final class NoteHierarchyProgressTests: NoteTestCase {
       )
     }
     let expanded = try driver.withDatabase { database in
-      try expandedTagFilterNames([parent.name], in: database)
+      try expandedTagFilterIds([parent.tagId], in: database)
     }
-    XCTAssertEqual(Set(expanded), Set([parent.name, child.name]))
+    XCTAssertEqual(Set(expanded), Set([parent.tagId, child.tagId]))
   }
 
   func testFolderTagsAndTypedProgressRoundTrip() throws {

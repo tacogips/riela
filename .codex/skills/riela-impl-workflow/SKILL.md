@@ -244,3 +244,57 @@ accepted residual risks and verification gaps explicit in handoffs:
   mutation-race, partial-failure, and focus checks remain operator-owned; and
 - repository-wide `cd web && bun run lint` remains blocked by diagnostics in
   excluded pre-existing `web/verify-live.mjs`.
+
+## Parent-Scoped Riela Note Folder Identity
+
+Riela Note schema v7 keeps `tag_id` as canonical identity while scoping folder
+display-name uniqueness to the parent. Root folders reject duplicate root
+names, nested folders reject duplicate sibling names, and non-folder names
+remain globally unique. A folder and non-folder may share a display name, so
+legacy generic name lookups must fail closed when more than one tag matches.
+
+- Folder paths resolve each component by exact parent ID plus name. Notebook
+  assignment/removal, grouped filtering, and folder-scoped Kanban operations
+  use tag IDs; name-based fields remain compatibility paths only when the
+  complete candidate set is unambiguous.
+- GraphQL exposes `ApplyNotebookTagIdsInput`, `applyNotebookTagIds`,
+  `removeNotebookTagById`, `tagFilterIdGroups`,
+  `effectiveKanbanStatusesByTagId`, and `assignKanbanStatusSetByTagId` as the
+  canonical additive surface.
+- Web folder and tag selection surfaces render path-qualified labels such as
+  `Workflow A / history-2026-08-03`. Missing, cyclic, or over-depth ancestry
+  remains visibly incomplete instead of falling back to a global-name match.
+- Private workflow-run notebooks use
+  `<workflow-id>/history-YYYY-MM-DD`, reusing the leaf only beneath the same
+  workflow parent.
+- Existing-store migration must preserve tag and assignment IDs, restore and
+  verify foreign keys on every exit, leave post-commit failures as recoverable
+  markerless-v7 stores, and evict any database handle whose operation throws.
+
+Use these focused gates when this contract changes:
+
+```bash
+swift test --filter NoteStoreSchemaTests
+swift test --filter 'NoteHierarchyProgressTests|NoteServiceTests'
+swift test --filter 'NoteGraphQLHierarchyProgressTests|NoteGraphQLParsingRegressionTests'
+swift test --filter NoteCommandTests
+swift test --filter RielaAppSupportTests
+(cd web && bun test src && ./node_modules/.bin/tsc --noEmit && bun run lint && bun run build && bun run test:e2e)
+```
+
+The Step 7 decision was
+`accepted_adversarial_review_with_low_finding`: no blocking high- or
+mid-severity production finding remained. The final browser gate was:
+
+```bash
+(cd web && CI=1 bun run test:e2e)
+```
+
+It passed 49 tests in 27.6 seconds. Keep these accepted residual risks explicit
+in handoffs:
+
+- folder-removal success, active-filter ejection, and partial-refresh messages
+  still use an unqualified display name, so duplicate branches can make the
+  feedback ambiguous; and
+- those duplicate-branch removal outcomes do not yet have complete browser
+  coverage.

@@ -4,6 +4,8 @@ import RielaSQLite
 public protocol NoteDatabaseDriving: Sendable {
   var databasePath: String { get }
 
+  /// Runs work on a cached connection. A thrown body invalidates that exact
+  /// handle; a later call must open and configure a new connection.
   func withDatabase<T>(_ body: (SQLiteDatabase) throws -> T) throws -> T
 }
 
@@ -63,6 +65,13 @@ public final class SQLiteNoteDatabaseConnection: @unchecked Sendable {
     }
     let database = try database ?? SQLiteDatabase.open(path: databasePath, options: openOptions)
     self.database = database
-    return try body(database)
+    do {
+      return try body(database)
+    } catch {
+      // Never return a handle that may have failed while transaction or
+      // connection-level PRAGMA state was changing to the reusable slot.
+      self.database = nil
+      throw error
+    }
   }
 }

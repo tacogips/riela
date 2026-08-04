@@ -23,6 +23,12 @@ export interface TagAssignmentGroup {
   assignments: NoteTagAssignment[]
 }
 
+export interface TagBreadcrumbSegment {
+  label: string
+  tag?: NoteTag
+  incomplete: boolean
+}
+
 export function folderTags(tags: NoteTag[]): NoteTag[] {
   return tags.filter((tag) => tag.classId === 'folder')
 }
@@ -82,6 +88,37 @@ export function tagBreadcrumb(
 
 export function folderBreadcrumb(tags: NoteTag[], selectedId?: string): NoteTag[] {
   return tagBreadcrumb(tags, selectedId, 'folder')
+}
+
+export function qualifiedTagBreadcrumb(
+  tags: NoteTag[],
+  selectedId: string | undefined,
+  depthLimit = 64,
+): TagBreadcrumbSegment[] {
+  if (!selectedId) return []
+  const byId = new Map(tags.map((tag) => [tag.tagId, tag]))
+  const leaf = byId.get(selectedId)
+  if (!leaf) return [{ label: `[missing: ${selectedId}]`, incomplete: true }]
+  const segments: TagBreadcrumbSegment[] = []
+  const visited = new Set<string>()
+  let current: NoteTag | undefined = leaf
+  for (let depth = 0; current && depth < depthLimit; depth += 1) {
+    if (visited.has(current.tagId)) {
+      segments.unshift({ label: `[cycle: ${current.tagId}]`, incomplete: true })
+      return segments
+    }
+    visited.add(current.tagId)
+    segments.unshift({ label: current.name, tag: current, incomplete: false })
+    if (!current.parentTagId) return segments
+    const parent = byId.get(current.parentTagId)
+    if (!parent) {
+      segments.unshift({ label: `[missing: ${current.parentTagId}]`, incomplete: true })
+      return segments
+    }
+    current = parent
+  }
+  segments.unshift({ label: `[depth: ${selectedId}]`, incomplete: true })
+  return segments
 }
 
 export function navigationTagGroups(
@@ -147,9 +184,21 @@ export function groupTagAssignments(
   ]
 }
 
-export function folderNameCollision(tags: NoteTag[], candidate: string): NoteTag | undefined {
+export function folderNameCollision(
+  tags: NoteTag[],
+  candidate: string,
+  parentTagId?: string,
+): NoteTag | undefined {
   const normalized = candidate.trim()
-  return tags.find((tag) => tag.name.trim() === normalized)
+  return tags.find((tag) => tag.classId === 'folder'
+    && tag.name.trim() === normalized
+    && tag.parentTagId === (parentTagId ?? null))
+}
+
+export function qualifiedTagLabel(tags: NoteTag[], tagId: string, depthLimit = 64): string {
+  return qualifiedTagBreadcrumb(tags, tagId, depthLimit)
+    .map((segment) => segment.label)
+    .join(' / ')
 }
 
 export function matchesCreatedFolder(

@@ -62,7 +62,11 @@ public extension NoteService {
         if let classId, !classId.isEmpty {
           _ = try requireTagClass(classId: classId, in: db)
         }
-        let existing = try findTag(name: name, in: db)
+        let isFolder = classId == "folder"
+        let normalizedParentTagId = parentTagId?.isEmpty == true ? nil : parentTagId
+        let existing = isFolder
+          ? try findFolderTag(name: name, parentTagId: normalizedParentTagId, in: db)
+          : try findNonFolderTag(name: name, in: db)
         if createOnly, existing != nil {
           throw NoteServiceError.invalidInput("tag already exists: \(name)")
         }
@@ -79,23 +83,47 @@ public extension NoteService {
         if let parentTagId, !parentTagId.isEmpty {
           try validateTagParent(childTagId: tagId, parentTagId: parentTagId, in: db)
         }
-        try db.execute(
-          """
-          INSERT INTO tags (tag_id, name, class_id, parent_tag_id, is_system, created_at)
-          VALUES (?, ?, ?, ?, 0, ?)
-          ON CONFLICT(name) DO UPDATE SET
-            class_id = coalesce(excluded.class_id, tags.class_id),
-            parent_tag_id = coalesce(excluded.parent_tag_id, tags.parent_tag_id)
-          """,
-          bindings: [
-            .text(tagId),
-            .text(name),
-            .optionalText(classId?.isEmpty == true ? nil : classId),
-            .optionalText(parentTagId?.isEmpty == true ? nil : parentTagId),
-            .text(NoteStoreClock.system.now())
-          ]
-        )
-        return try requireCatalogTag(name: name, in: db)
+        if let existing {
+          try db.execute(
+            """
+            UPDATE tags
+            SET class_id = coalesce(?, class_id),
+                parent_tag_id = coalesce(?, parent_tag_id)
+            WHERE tag_id = ?
+            """,
+            bindings: [
+              .optionalText(classId?.isEmpty == true ? nil : classId),
+              .optionalText(normalizedParentTagId),
+              .text(existing.tagId)
+            ]
+          )
+          return try requireTag(id: existing.tagId, in: db)
+        }
+        do {
+          try db.execute(
+            """
+            INSERT INTO tags (tag_id, name, class_id, parent_tag_id, is_system, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            bindings: [
+              .text(tagId),
+              .text(name),
+              .optionalText(classId?.isEmpty == true ? nil : classId),
+              .optionalText(normalizedParentTagId),
+              .text(NoteStoreClock.system.now())
+            ]
+          )
+        } catch let error as SQLiteError where isSQLiteUniqueConstraintViolation(error) {
+          let raced = isFolder
+            ? try findFolderTag(name: name, parentTagId: normalizedParentTagId, in: db)
+            : try findNonFolderTag(name: name, in: db)
+          guard let raced else { throw error }
+          guard !createOnly else {
+            throw NoteServiceError.invalidInput("tag already exists in this identity scope: \(name)")
+          }
+          return raced
+        }
+        return try requireTag(id: tagId, in: db)
       }
     }
   }
@@ -106,7 +134,7 @@ public extension NoteService {
         """
         SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
         FROM tags
-        ORDER BY name
+        ORDER BY name, ifnull(parent_tag_id, ''), tag_id
         """
       ).map(noteCatalogTag(from:))
     }
@@ -144,19 +172,7 @@ func requireTagClass(classId: String, in database: SQLiteDatabase) throws -> Tag
   return tagClass
 }
 
-private func findTag(name: String, in database: SQLiteDatabase) throws -> Tag? {
-  try database.query(
-    """
-    SELECT tag_id, name, class_id, parent_tag_id, status_set_id, is_system, created_at
-    FROM tags
-    WHERE name = ?
-    LIMIT 1
-    """,
-    bindings: [.text(name)]
-  ).first.map(noteCatalogTag(from:))
-}
-
-private func requireCatalogTag(name: String, in database: SQLiteDatabase) throws -> Tag {
+func requireCatalogTag(name: String, in database: SQLiteDatabase) throws -> Tag {
   guard let tag = try findTag(name: name, in: database) else {
     throw NoteServiceError.notFound("tag not found: \(name)")
   }

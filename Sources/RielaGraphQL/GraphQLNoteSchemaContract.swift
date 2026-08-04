@@ -70,7 +70,7 @@ input CreateNoteInput {
   metaJSON: String
   originatingActionId: String
 }
-input CreateNotebookInput { title: String!, kindTagName: String, metaJSON: String, originatingActionId: String }
+input CreateNotebookInput { title: String!, kindTagName: String, folderPath: [String!], metaJSON: String, originatingActionId: String }
 input DefineNoteTagClassInput { classId: String!, label: String!, description: String }
 input DefineNoteTagInput { name: String!, classId: String, parentTagId: String, createOnly: Boolean }
 input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: String!, notebookKindTag: String, assignedBy: String, translationEnabled: Boolean }
@@ -78,6 +78,7 @@ input ScaffoldNoteIngestionWorkflowInput { workflowRoot: String!, workflowId: St
 input UpdateNoteInput { noteId: String!, bodyMarkdown: String!, originatingActionId: String }
 input ApplyNoteTagsInput { noteId: String!, tags: [NoteTagInput!]!, provenance: String, assignedBy: String }
 input ApplyNotebookTagsInput { notebookId: String!, tags: [String!]!, provenance: String, assignedBy: String }
+input ApplyNotebookTagIdsInput { notebookId: String!, tagIds: [String!]!, provenance: String, assignedBy: String }
 input AddNoteCommentInput { noteId: String!, bodyMarkdown: String!, author: String }
 input LinkNotesInput { fromNoteId: String!, toNoteId: String!, linkKind: String, provenance: String }
 input AttachNoteFileInput { noteId: String!, contentBase64: String!, role: String, mediaType: String!, originalFilename: String, position: Int }

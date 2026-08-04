@@ -390,6 +390,24 @@ final class AutoActionTests: NoteTestCase {
     XCTAssertEqual(dispatcher.records().map(\.action.actionId), ["memo-kind"])
   }
 
+  func testAutoActionNotebookKindFilterUsesNonFolderTagIdentity() async throws {
+    let dispatcher = RecordingAutoActionDispatcher()
+    let service = try makeService(autoActionDispatcher: dispatcher)
+    let kindName = "notebook-kind:shared-display"
+    _ = try service.configureAutoAction(
+      actionId: "shared-kind",
+      trigger: .notebookCreated,
+      workflowId: "shared-kind-workflow",
+      filterJSON: #"{"notebookKindTag":"notebook-kind:shared-display"}"#
+    )
+
+    _ = try service.createNotebook(title: "Folder only", folderPath: [kindName])
+    _ = try service.createNotebook(title: "Actual kind", kindTagName: kindName)
+    await service.drainAutoActionDispatches()
+
+    XCTAssertEqual(dispatcher.records().map(\.action.actionId), ["shared-kind"])
+  }
+
   func testSaveConversationDispatchesNotebookAndNoteCreatedActions() async throws {
     let dispatcher = RecordingAutoActionDispatcher()
     let service = try makeService(autoActionDispatcher: dispatcher)

@@ -825,17 +825,26 @@ private func kanbanTaskCreate(_ context: NoteAddonContext) throws -> JSONObject 
   // Folder path segments are plain tag names chained through parent_tag_id;
   // the leaf segment scopes the board.
   var parentTagId: String?
+  var leafTagId: String?
   var leafTagName = folderTagPath
   for segment in folderTagPath.split(separator: "/").map(String.init) {
     let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { continue }
     let tag = try context.service.defineTag(name: trimmed, classId: "folder", parentTagId: parentTagId)
     parentTagId = tag.tagId
+    leafTagId = tag.tagId
     leafTagName = tag.name
+  }
+  guard let leafTagId else {
+    throw noteAddonInvalidInput("\(context.input.addon.name) folderTagName must contain a folder name")
   }
 
   var existingByTaskKey: [String: Notebook] = [:]
-  for notebook in try context.service.listNotebooks(limit: 200, offset: 0, tagFilter: [leafTagName]) {
+  for notebook in try context.service.listNotebooks(
+    limit: 200,
+    offset: 0,
+    tagFilterIdGroups: [[leafTagId]]
+  ) {
     guard notebook.progress != "done",
           let taskKey = kanbanTaskKey(fromMetaJSON: notebook.metaJSON) else {
       continue
@@ -880,9 +889,9 @@ private func kanbanTaskCreate(_ context: NoteAddonContext) throws -> JSONObject 
         metaJSON: String(data: metaData, encoding: .utf8),
         originatingActionId: nil
       )
-      _ = try context.service.applyNotebookTags(
+      _ = try context.service.applyNotebookTagIds(
         notebookId: created.notebookId,
-        tags: [leafTagName],
+        tagIds: [leafTagId],
         provenance: .ai,
         assignedBy: context.input.addon.name
       )
@@ -921,6 +930,7 @@ private func kanbanTaskCreate(_ context: NoteAddonContext) throws -> JSONObject 
     taskRecords.append(.object(record))
   }
   return [
+    "folderTagId": .string(leafTagId),
     "folderTagName": .string(leafTagName),
     "initialProgress": .string(initialProgress),
     "tasks": .array(taskRecords)
@@ -953,33 +963,6 @@ private func kanbanMove(_ context: NoteAddonContext) throws -> JSONObject {
       "expectedProgress": .string(expected)
     ]
   }
-}
-
-private func kanbanBoard(_ context: NoteAddonContext) throws -> JSONObject {
-  let tagName = try context.requiredString("tagName", "folderTagName", fieldName: "tagName")
-  let limit = max(1, min(context.int("limit", default: 200), 200))
-  let columns = try context.service.kanbanBoard(tagName: tagName, limit: limit)
-  return [
-    "tagName": .string(tagName),
-    "columns": .array(columns.map { column in
-      .object([
-        "status": .object([
-          "name": .string(column.status.name),
-          "category": .string(column.status.category.rawValue),
-          "position": .number(Double(column.status.position))
-        ]),
-        "notebooks": .array(column.notebooks.map { notebook in
-          .object([
-            "notebookId": .string(notebook.notebookId),
-            "title": .string(notebook.title),
-            "progress": .string(notebook.progress),
-            "updatedAt": .string(notebook.updatedAt),
-            "metaJSON": notebook.metaJSON.map { .string($0) } ?? .null
-          ])
-        })
-      ])
-    })
-  ]
 }
 
 private func kanbanTaskKey(fromMetaJSON metaJSON: String?) -> String? {

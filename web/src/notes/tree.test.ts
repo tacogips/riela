@@ -8,6 +8,8 @@ import {
   groupTagAssignments,
   matchesCreatedFolder,
   navigationTagGroups,
+  qualifiedTagBreadcrumb,
+  qualifiedTagLabel,
   tagBreadcrumb,
 } from './tree'
 import type { NoteTag, NoteTagAssignment, NoteTagClass } from './types'
@@ -49,11 +51,38 @@ describe('folder tree', () => {
     expect(folderBreadcrumb(tags, 'grandchild').map((value) => value.name)).toEqual(['Work', 'Project', 'Launch'])
   })
 
-  test('terminates malformed cycles and detects global trimmed-name collisions', () => {
-    const tags = [tag('one', 'One', 'two'), tag('two', 'Two', 'one'), tag('topic', ' Shared ', null, 'topic')]
+  test('terminates malformed cycles and detects sibling-only trimmed-name collisions', () => {
+    const tags = [
+      tag('one', 'One', 'two'),
+      tag('two', 'Two', 'one'),
+      tag('root-a', 'A'),
+      tag('root-b', 'B'),
+      tag('child-a', ' Shared ', 'root-a'),
+      tag('child-b', 'Shared', 'root-b'),
+      tag('topic', 'Shared', null, 'topic'),
+    ]
     const tree = buildFolderTree(tags, 'en')
     expect(tree.length).toBeGreaterThan(0)
-    expect(folderNameCollision(tags, 'Shared')?.tagId).toBe('topic')
+    expect(folderNameCollision(tags, 'Shared')).toBeUndefined()
+    expect(folderNameCollision(tags, 'Shared', 'root-a')?.tagId).toBe('child-a')
+    expect(folderNameCollision(tags, 'Shared', 'root-b')?.tagId).toBe('child-b')
+    expect(qualifiedTagLabel(tags, 'child-a')).toBe('A /  Shared ')
+    expect(qualifiedTagLabel(tags, 'missing')).toBe('[missing: missing]')
+    expect(qualifiedTagLabel(tags, 'one')).toContain('[cycle:')
+    expect(qualifiedTagBreadcrumb(tags, 'child-a').map((segment) => segment.label))
+      .toEqual(['A', ' Shared '])
+    expect(qualifiedTagBreadcrumb(tags, 'one').map((segment) => segment.label))
+      .toEqual(['[cycle: one]', 'Two', 'One'])
+    expect(qualifiedTagBreadcrumb([
+      tag('orphan', 'Orphan', 'absent'),
+    ], 'orphan').map((segment) => segment.label))
+      .toEqual(['[missing: absent]', 'Orphan'])
+    expect(qualifiedTagBreadcrumb([
+      tag('topic-child', 'Child', 'missing-topic', 'topic'),
+    ], 'topic-child').map((segment) => segment.label))
+      .toEqual(['[missing: missing-topic]', 'Child'])
+    expect(qualifiedTagBreadcrumb(tags, 'child-a', 1).map((segment) => segment.label))
+      .toEqual(['[depth: child-a]', ' Shared '])
   })
 
   test('validates the authoritative class and parent returned for creation', () => {

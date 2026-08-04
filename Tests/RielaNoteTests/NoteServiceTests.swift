@@ -3,6 +3,145 @@ import RielaNote
 import XCTest
 
 final class NoteServiceTests: NoteTestCase {
+  func testCreateNotebookFolderPathUsesParentScopedIdentityAndRejectsUnsafePathsAtomically() throws {
+    let service = try makeService()
+    let initialNotebookCount = try service.listNotebooks().count
+
+    let notebook = try service.createNotebook(
+      title: "Assistant run",
+      folderPath: ["workflow", "2026-08-03"]
+    )
+    let tags = try service.listTags()
+    let workflow = try XCTUnwrap(tags.first { $0.name == "workflow" })
+    let date = try XCTUnwrap(tags.first { $0.name == "2026-08-03" })
+    XCTAssertEqual(workflow.classId, "folder")
+    XCTAssertEqual(date.classId, "folder")
+    XCTAssertEqual(date.parentTagId, workflow.tagId)
+    XCTAssertEqual(try service.getNotebook(notebook.notebookId).tags.map(\.tag.name), ["2026-08-03"])
+
+    for unsafePath in [["."], [".."], ["workflow/child"], ["workflow\\child"]] {
+      XCTAssertThrowsError(try service.createNotebook(title: "Unsafe", folderPath: unsafePath))
+    }
+    XCTAssertEqual(
+      try service.listNotebooks().count,
+      initialNotebookCount + 1,
+      "invalid paths must roll back the new notebook"
+    )
+
+    let firstHistory = try service.createNotebook(
+      title: "Build history",
+      folderPath: ["build", "history-2026-08-03"]
+    )
+    let repeatedHistory = try service.createNotebook(
+      title: "Build history repeated",
+      folderPath: ["build", "history-2026-08-03"]
+    )
+    let otherHistory = try service.createNotebook(
+      title: "Deploy history",
+      folderPath: ["deploy", "history-2026-08-03"]
+    )
+    let firstLeaf = try XCTUnwrap(firstHistory.tags.first?.tag)
+    XCTAssertEqual(repeatedHistory.tags.first?.tag.tagId, firstLeaf.tagId)
+    XCTAssertNotEqual(otherHistory.tags.first?.tag.tagId, firstLeaf.tagId)
+
+    _ = try service.defineTag(name: "shared", classId: "topic")
+    let sameNamedFolder = try service.defineTag(name: "shared", classId: "folder", createOnly: true)
+    XCTAssertEqual(sameNamedFolder.classId, "folder")
+    XCTAssertThrowsError(try service.applyNotebookTags(
+      notebookId: notebook.notebookId,
+      tags: ["shared"],
+      provenance: .human
+    )) { error in
+      guard case let .invalidInput(message)? = error as? NoteServiceError else {
+        return XCTFail("expected ambiguous legacy lookup, got \(error)")
+      }
+      XCTAssertTrue(message.contains("ambiguous"))
+    }
+    XCTAssertThrowsError(
+      try service.defineTag(name: "shared", classId: "folder", createOnly: true)
+    )
+
+    let idTagged = try service.applyNotebookTagIds(
+      notebookId: notebook.notebookId,
+      tagIds: [otherHistory.tags[0].tag.tagId],
+      provenance: .human
+    )
+    XCTAssertTrue(idTagged.tags.contains { $0.tag.tagId == otherHistory.tags[0].tag.tagId })
+    XCTAssertEqual(
+      Set(try service.listNotebooks(tagFilterIdGroups: [[otherHistory.tags[0].tag.tagId]])
+        .map(\.notebookId)),
+      Set([notebook.notebookId, otherHistory.notebookId])
+    )
+    let idRemoved = try service.removeNotebookTagById(
+      notebookId: notebook.notebookId,
+      tagId: otherHistory.tags[0].tag.tagId,
+      removedBy: .human
+    )
+    XCTAssertFalse(idRemoved.tags.contains { $0.tag.tagId == otherHistory.tags[0].tag.tagId })
+  }
+
+  func testConcurrentFolderPathCreationReusesOnlyTheExactSibling() throws {
+    let service = try makeService()
+    let results = ConcurrentFolderPathResults()
+
+    DispatchQueue.concurrentPerform(iterations: 16) { index in
+      do {
+        let notebook = try service.createNotebook(
+          title: "Concurrent \(index)",
+          folderPath: ["concurrent-workflow", "history-2026-08-03"]
+        )
+        if let tagId = notebook.tags.first?.tag.tagId {
+          results.record(tagId: tagId)
+        }
+      } catch {
+        results.record(error: error)
+      }
+    }
+
+    XCTAssertTrue(results.errors.isEmpty, results.errors.joined(separator: "\n"))
+    XCTAssertEqual(Set(results.tagIds).count, 1)
+    XCTAssertEqual(results.tagIds.count, 16)
+    let tags = try service.listTags()
+    let parent = try XCTUnwrap(tags.first { $0.name == "concurrent-workflow" })
+    XCTAssertEqual(
+      tags.filter {
+        $0.name == "history-2026-08-03" && $0.parentTagId == parent.tagId
+      }.count,
+      1
+    )
+  }
+
+  func testNotebookKindCreationIgnoresSameNamedFolderAcrossCreationPaths() throws {
+    let service = try makeService()
+    let kindName = "notebook-kind:shared-display"
+    let folderNotebook = try service.createNotebook(
+      title: "Folder only",
+      folderPath: [kindName]
+    )
+    let folder = try XCTUnwrap(folderNotebook.tags.first?.tag)
+    XCTAssertEqual(folder.classId, "folder")
+
+    let created = try service.createNotebook(title: "Created", kindTagName: kindName)
+    let note = try service.createNote(
+      notebookKindTagName: kindName,
+      bodyMarkdown: "# Created with note"
+    )
+    let ingested = try service.createNotebookWithNotes(
+      title: "Ingested",
+      kindTagName: kindName,
+      pages: [NotePageDraft(bodyMarkdown: "# Page")]
+    )
+
+    let kind = try XCTUnwrap(try service.listTags().first {
+      $0.name == kindName && $0.classId == "document-kind"
+    })
+    XCTAssertNotEqual(kind.tagId, folder.tagId)
+    for notebook in [created, try service.getNotebook(note.notebookId), ingested.notebook] {
+      XCTAssertTrue(notebook.tags.contains { $0.tag.tagId == kind.tagId })
+      XCTAssertFalse(notebook.tags.contains { $0.tag.tagId == folder.tagId })
+    }
+  }
+
   func testCreateNoteDerivesTitleAndListShowsFirstNotePreview() throws {
     let service = try makeService()
 
@@ -729,6 +868,27 @@ final class NoteServiceTests: NoteTestCase {
     XCTAssertEqual(links.first?.provenance, .system)
   }
 
+  func testConversationKindUsesSeededSystemTagWhenFolderSharesItsName() throws {
+    let service = try makeService()
+    let kindName = "notebook-kind:agent-conversation"
+    let seededKind = try XCTUnwrap(try service.listTags().first {
+      $0.name == kindName && $0.classId == "document-kind" && $0.isSystem
+    })
+    let sameNamedFolder = try service.defineTag(
+      name: kindName,
+      classId: "folder"
+    )
+
+    let saved = try service.saveConversation(
+      title: "Identity-safe conversation",
+      transcript: [NoteConversationTurn(userMarkdown: "Hello", assistantMarkdown: "Hi")]
+    )
+    let assignment = try XCTUnwrap(saved.notebook.tags.first)
+    XCTAssertEqual(assignment.tag.tagId, seededKind.tagId)
+    XCTAssertEqual(assignment.tag.classId, "document-kind")
+    XCTAssertNotEqual(assignment.tag.tagId, sameNamedFolder.tagId)
+  }
+
   func testSearchNotesWithMaxOffsetDoesNotOverflow() throws {
     let service = try makeService()
     _ = try service.createNote(bodyMarkdown: "# Overflow\n\nSearchable overflow body")
@@ -737,6 +897,36 @@ final class NoteServiceTests: NoteTestCase {
     // `limit` to compute the fetch window; the query simply returns no page.
     let results = try service.searchNotes(query: "overflow", limit: 5, offset: Int.max)
     XCTAssertTrue(results.isEmpty)
+  }
+}
+
+private final class ConcurrentFolderPathResults: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storedTagIds: [String] = []
+  private var storedErrors: [String] = []
+
+  var tagIds: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return storedTagIds
+  }
+
+  var errors: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return storedErrors
+  }
+
+  func record(tagId: String) {
+    lock.lock()
+    storedTagIds.append(tagId)
+    lock.unlock()
+  }
+
+  func record(error: Error) {
+    lock.lock()
+    storedErrors.append(String(describing: error))
+    lock.unlock()
   }
 }
 

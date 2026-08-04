@@ -673,7 +673,13 @@ private func autoAction(_ action: AutoAction, matches event: NoteAutoActionEvent
     guard let notebookId = try eventNotebookId(event, in: database) else {
       return false
     }
-    guard try notebookTagNames(notebookId: notebookId, in: database).contains(notebookKindTag) else {
+    guard let kindTag = try findNonFolderTag(name: notebookKindTag, in: database),
+          kindTag.classId == "document-kind",
+          try notebookTagAssignment(
+            notebookId: notebookId,
+            tagId: kindTag.tagId,
+            in: database
+          ) != nil else {
       return false
     }
   }
@@ -704,19 +710,6 @@ private func noteTagNames(noteId: String, in database: SQLiteDatabase) throws ->
     ORDER BY t.name
     """,
     bindings: [.text(noteId)]
-  ).compactMap { $0["name"] }
-}
-
-private func notebookTagNames(notebookId: String, in database: SQLiteDatabase) throws -> [String] {
-  try database.query(
-    """
-    SELECT t.name
-    FROM notebook_tags nt
-    INNER JOIN tags t ON t.tag_id = nt.tag_id
-    WHERE nt.notebook_id = ?
-    ORDER BY t.name
-    """,
-    bindings: [.text(notebookId)]
   ).compactMap { $0["name"] }
 }
 

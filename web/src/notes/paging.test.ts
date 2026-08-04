@@ -26,16 +26,16 @@ describe('notebook paging', () => {
     ]
     const result = await loadNotebookPages(
       {
-        notebooks: async (offset, sort, tagFilterGroups, limit) => {
+        notebooks: async (offset, sort, tagFilterIdGroups, limit) => {
           offsets.push(offset)
           expect(sort).toBe('title')
-          expect(tagFilterGroups).toEqual([['Work'], ['Launch']])
+          expect(tagFilterIdGroups).toEqual([['folder-work'], ['topic-launch']])
           expect(limit).toBe(notebookPageLimit)
           return pages.shift() ?? []
         },
       },
       'title',
-      [['Work'], ['Launch']],
+      [['folder-work'], ['topic-launch']],
       () => true,
       (values, hasMore) => snapshots.push({ count: values.length, hasMore }),
     )

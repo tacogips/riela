@@ -98,13 +98,13 @@ export class NoteGraphQLClient {
   async notebooks(
     offset: number,
     sort: NoteListSort,
-    tagFilterGroups: string[][],
+    tagFilterIdGroups: string[][],
     limit = notebookPageLimit,
     created: { createdAfter?: string; createdBefore?: string } = {},
   ): Promise<Notebook[]> {
     const values = await this.queryValue<{ notebooks: QueryPayload<Notebook[]> }, Notebook[]>('Notebooks', `
-      query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilter: [String!], $tagFilterGroups: [[String!]!], $createdAfter: String, $createdBefore: String) {
-        notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilter: $tagFilter, tagFilterGroups: $tagFilterGroups, createdAfter: $createdAfter, createdBefore: $createdBefore) {
+      query Notebooks($limit: Int, $offset: Int, $sort: NoteListSort, $tagFilterIdGroups: [[String!]!], $createdAfter: String, $createdBefore: String) {
+        notebooks(limit: $limit, offset: $offset, sort: $sort, tagFilterIdGroups: $tagFilterIdGroups, createdAfter: $createdAfter, createdBefore: $createdBefore) {
           result { accepted status diagnostics }
           value { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
@@ -113,8 +113,7 @@ export class NoteGraphQLClient {
       limit,
       offset,
       sort,
-      tagFilter: [],
-      tagFilterGroups,
+      tagFilterIdGroups,
       ...(created.createdAfter ? { createdAfter: created.createdAfter } : {}),
       ...(created.createdBefore ? { createdBefore: created.createdBefore } : {}),
     }, (data) => data.notebooks)
@@ -157,26 +156,26 @@ export class NoteGraphQLClient {
     return payload.tag
   }
 
-  async applyTag(notebookId: string, tagName: string): Promise<Notebook> {
-    return this.notebookMutation('ApplyNotebookTag', `
-      mutation ApplyNotebookTag($input: ApplyNotebookTagsInput!) {
-        applyNotebookTags(input: $input) {
+  async applyTagById(notebookId: string, tagId: string): Promise<Notebook> {
+    return this.notebookMutation('ApplyNotebookTagIds', `
+      mutation ApplyNotebookTagIds($input: ApplyNotebookTagIdsInput!) {
+        applyNotebookTagIds(input: $input) {
           result { accepted status diagnostics }
           notebook { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
-    `, { input: { notebookId, tags: [tagName], provenance: 'human', assignedBy: 'riela-web' } }, 'applyNotebookTags')
+    `, { input: { notebookId, tagIds: [tagId], provenance: 'human', assignedBy: 'riela-web' } }, 'applyNotebookTagIds')
   }
 
-  async removeTag(notebookId: string, tagName: string): Promise<Notebook> {
-    return this.notebookMutation('RemoveNotebookTag', `
-      mutation RemoveNotebookTag($notebookId: String!, $tagName: String!, $provenance: String) {
-        removeNotebookTag(notebookId: $notebookId, tagName: $tagName, provenance: $provenance) {
+  async removeTagById(notebookId: string, tagId: string): Promise<Notebook> {
+    return this.notebookMutation('RemoveNotebookTagById', `
+      mutation RemoveNotebookTagById($notebookId: String!, $tagId: String!, $provenance: String) {
+        removeNotebookTagById(notebookId: $notebookId, tagId: $tagId, provenance: $provenance) {
           result { accepted status diagnostics }
           notebook { notebookId title progress readOnly createdAt updatedAt firstNotePreview noteCount tags { provenance assignedBy deletable createdAt tag { tagId name classId parentTagId isSystem createdAt } } }
         }
       }
-    `, { notebookId, tagName, provenance: 'human' }, 'removeNotebookTag')
+    `, { notebookId, tagId, provenance: 'human' }, 'removeNotebookTagById')
   }
 
   async setProgress(notebookId: string, progress: string, expectedProgress?: string): Promise<Notebook> {
@@ -207,15 +206,21 @@ export class NoteGraphQLClient {
     `, {}, (data) => data.kanbanStatusSets)
   }
 
-  async effectiveKanbanStatuses(tagName?: string): Promise<KanbanStatusSet> {
+  async effectiveKanbanStatuses(): Promise<KanbanStatusSet> {
     return this.queryValue<{ effectiveKanbanStatuses: QueryPayload<KanbanStatusSet> }, KanbanStatusSet>('EffectiveKanbanStatuses', `
-      query EffectiveKanbanStatuses($tagName: String) {
-        effectiveKanbanStatuses(tagName: $tagName) {
+      query EffectiveKanbanStatuses { effectiveKanbanStatuses { result { accepted status diagnostics } value { setId name isSystem statuses { statusId name category position } } } }
+    `, {}, (data) => data.effectiveKanbanStatuses)
+  }
+
+  async effectiveKanbanStatusesByTagId(tagId: string): Promise<KanbanStatusSet> {
+    return this.queryValue<{ effectiveKanbanStatusesByTagId: QueryPayload<KanbanStatusSet> }, KanbanStatusSet>('EffectiveKanbanStatusesByTagId', `
+      query EffectiveKanbanStatusesByTagId($tagId: String!) {
+        effectiveKanbanStatusesByTagId(tagId: $tagId) {
           result { accepted status diagnostics }
           value { setId name isSystem statuses { statusId name category position } }
         }
       }
-    `, tagName ? { tagName } : {}, (data) => data.effectiveKanbanStatuses)
+    `, { tagId }, (data) => data.effectiveKanbanStatusesByTagId)
   }
 
   async createKanbanStatusSet(name: string, statuses: Array<{ name: string; category: string }>): Promise<KanbanStatusSet> {
@@ -253,15 +258,15 @@ export class NoteGraphQLClient {
     ensureAccepted(data.deleteKanbanStatusSet)
   }
 
-  async assignKanbanStatusSet(tagName: string, setId: string | null): Promise<NoteTag> {
-    const payload = await this.mutation('AssignKanbanStatusSet', `
-      mutation AssignKanbanStatusSet($tagName: String!, $setId: String) {
-        assignKanbanStatusSet(tagName: $tagName, setId: $setId) {
+  async assignKanbanStatusSetByTagId(tagId: string, setId: string | null): Promise<NoteTag> {
+    const payload = await this.mutation('AssignKanbanStatusSetByTagId', `
+      mutation AssignKanbanStatusSetByTagId($tagId: String!, $setId: String) {
+        assignKanbanStatusSetByTagId(tagId: $tagId, setId: $setId) {
           result { accepted status diagnostics }
           tag { tagId name classId parentTagId statusSetId isSystem createdAt }
         }
       }
-    `, { tagName, setId }, 'assignKanbanStatusSet')
+    `, { tagId, setId }, 'assignKanbanStatusSetByTagId')
     if (!payload.tag) throw new NoteTransportError('The server did not return the updated tag.', 'result')
     return payload.tag
   }

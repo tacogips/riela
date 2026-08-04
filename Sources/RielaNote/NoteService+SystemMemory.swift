@@ -98,7 +98,7 @@ extension NoteService {
         )
         try applyNotebookTag(
           notebookId: notebookId,
-          tagName: NoteStoreSchema.systemMemoryNotebookKindTag,
+          tagId: NoteStoreSchema.systemMemoryNotebookKindTagId,
           provenance: .system,
           assignedBy: "riela-note",
           deletable: false,
@@ -616,13 +616,12 @@ private extension NoteService {
 func systemMemoryNotebookIds(in database: SQLiteDatabase) throws -> [String] {
   try database.query(
     """
-    SELECT nt.notebook_id
-    FROM notebook_tags nt
-    INNER JOIN tags t ON t.tag_id = nt.tag_id
-    WHERE t.name = ?
-    ORDER BY nt.notebook_id
+    SELECT notebook_id
+    FROM notebook_tags
+    WHERE tag_id = ?
+    ORDER BY notebook_id
     """,
-    bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTag)]
+    bindings: [.text(NoteStoreSchema.systemMemoryNotebookKindTagId)]
   ).compactMap { $0["notebook_id"] }
 }
 
@@ -648,7 +647,7 @@ func validateCanonicalSystemMemoryNotebook(
 ) throws {
   guard let assignment = try notebookTagAssignment(
     notebookId: notebookId,
-    tagName: NoteStoreSchema.systemMemoryNotebookKindTag,
+    tagId: NoteStoreSchema.systemMemoryNotebookKindTagId,
     in: database
   ), assignment.tag.isSystem,
      assignment.tag.classId == "document-kind",

@@ -9,7 +9,7 @@ func noteTags(noteId: String, in database: SQLiteDatabase) throws -> [TagAssignm
       FROM note_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
       WHERE nt.note_id = ?
-      ORDER BY t.name
+      ORDER BY t.name, ifnull(t.parent_tag_id, ''), t.tag_id
       """,
     id: noteId,
     in: database
@@ -28,7 +28,7 @@ func noteTags(noteIds: [String], in database: SQLiteDatabase) throws -> [String:
       FROM note_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
       WHERE nt.note_id IN (\(placeholders(count: orderedNoteIds.count)))
-      ORDER BY nt.note_id, t.name
+      ORDER BY nt.note_id, t.name, ifnull(t.parent_tag_id, ''), t.tag_id
       """,
     bindings: orderedNoteIds.map(SQLiteValue.text)
   )
@@ -51,7 +51,7 @@ func notebookTags(notebookId: String, in database: SQLiteDatabase) throws -> [Ta
       FROM notebook_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
       WHERE nt.notebook_id = ?
-      ORDER BY t.name
+      ORDER BY t.name, ifnull(t.parent_tag_id, ''), t.tag_id
       """,
     id: notebookId,
     in: database
@@ -66,7 +66,7 @@ func tagAssignment(noteId: String, tagName: String, in database: SQLiteDatabase)
       FROM note_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
       WHERE nt.note_id = ? AND t.name = ?
-      LIMIT 1
+        AND (t.class_id IS NULL OR t.class_id <> 'folder')
       """,
     bindings: [.text(noteId), .text(tagName)],
     in: database
@@ -74,16 +74,20 @@ func tagAssignment(noteId: String, tagName: String, in database: SQLiteDatabase)
 }
 
 func notebookTagAssignment(notebookId: String, tagName: String, in database: SQLiteDatabase) throws -> TagAssignment? {
+  guard let tag = try findTag(name: tagName, in: database) else { return nil }
+  return try notebookTagAssignment(notebookId: notebookId, tagId: tag.tagId, in: database)
+}
+
+func notebookTagAssignment(notebookId: String, tagId: String, in database: SQLiteDatabase) throws -> TagAssignment? {
   try tagAssignments(
     sql: """
       SELECT t.tag_id, t.name, t.class_id, t.parent_tag_id, t.status_set_id, t.is_system, t.created_at,
         nt.provenance, nt.assigned_by, nt.deletable, nt.created_at AS assigned_at
       FROM notebook_tags nt
       INNER JOIN tags t ON t.tag_id = nt.tag_id
-      WHERE nt.notebook_id = ? AND t.name = ?
-      LIMIT 1
+      WHERE nt.notebook_id = ? AND t.tag_id = ?
       """,
-    bindings: [.text(notebookId), .text(tagName)],
+    bindings: [.text(notebookId), .text(tagId)],
     in: database
   ).first
 }

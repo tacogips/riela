@@ -374,16 +374,13 @@ private func applyConversationNotebookKind(
   assignedBy: String?,
   in database: SQLiteDatabase
 ) throws {
-  let tagRows = try database.query(
-    """
-    SELECT tag_id
-    FROM tags
-    WHERE name = 'notebook-kind:agent-conversation'
-    LIMIT 1
-    """
-  )
-  guard let tagId = tagRows.first?["tag_id"] else {
-    throw NoteServiceError.notFound("system tag not found: notebook-kind:agent-conversation")
+  let tag = try requireTag(id: NoteStoreSchema.agentConversationNotebookKindTagId, in: database)
+  guard tag.name == NoteStoreSchema.agentConversationNotebookKindTag,
+        tag.classId == "document-kind",
+        tag.isSystem else {
+    throw NoteServiceError.invalidInput(
+      "system tag ownership is invalid: \(NoteStoreSchema.agentConversationNotebookKindTag)"
+    )
   }
   try database.execute(
     """
@@ -394,7 +391,7 @@ private func applyConversationNotebookKind(
     """,
     bindings: [
       .text(notebookId),
-      .text(tagId),
+      .text(tag.tagId),
       .optionalText(assignedBy ?? "riela-note"),
       .text(NoteStoreClock.system.now())
     ]

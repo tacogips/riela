@@ -240,6 +240,62 @@ final class NoteCommandTests: XCTestCase {
     XCTAssertEqual(try string(listedNotebook["notebookId"], field: "listed notebook.notebookId"), importedId)
   }
 
+  func testNotebookFolderPathReusesExactParentAndRejectsAmbiguousLegacyFilter() async throws {
+    let noteRoot = try makeNoteCommandRoot()
+    defer {
+      try? FileManager.default.removeItem(atPath: noteRoot)
+    }
+    let app = RielaCLIApplication()
+    let environment = ["RIELA_NOTE_ROOT": noteRoot]
+
+    let first = await app.run([
+      "note", "notebook", "create", "Workflow A first",
+      "--folder", "workflow-a",
+      "--folder", "history-2026-08-03",
+      "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(first.exitCode, .success, first.stderr + first.stdout)
+    let firstHistoryId = try notebookTagId(
+      in: jsonObject(first.stdout),
+      named: "history-2026-08-03"
+    )
+
+    let repeated = await app.run([
+      "note", "notebook", "create", "Workflow A repeated",
+      "--folder", "workflow-a",
+      "--folder", "history-2026-08-03",
+      "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(repeated.exitCode, .success, repeated.stderr + repeated.stdout)
+    XCTAssertEqual(
+      try notebookTagId(in: jsonObject(repeated.stdout), named: "history-2026-08-03"),
+      firstHistoryId
+    )
+
+    let otherParent = await app.run([
+      "note", "notebook", "create", "Workflow B",
+      "--folder", "workflow-b",
+      "--folder", "history-2026-08-03",
+      "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(otherParent.exitCode, .success, otherParent.stderr + otherParent.stdout)
+    XCTAssertNotEqual(
+      try notebookTagId(in: jsonObject(otherParent.stdout), named: "history-2026-08-03"),
+      firstHistoryId
+    )
+
+    let ambiguous = await app.run([
+      "note", "notebook", "list",
+      "--tag", "history-2026-08-03",
+      "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(ambiguous.exitCode, .failure)
+    XCTAssertTrue(
+      (ambiguous.stderr + ambiguous.stdout).contains("ambiguous"),
+      ambiguous.stderr + ambiguous.stdout
+    )
+  }
+
   func testNoteCommandRoundTripUsesNoteRoot() async throws {
     let noteRoot = try makeNoteCommandRoot()
     defer {
@@ -566,10 +622,12 @@ final class NoteCommandTests: XCTestCase {
 
   private func jsonObject(_ text: String?) throws -> JSONObject {
     guard let text, let data = text.data(using: .utf8) else {
-      throw XCTSkip("missing JSON text")
+      XCTFail("missing JSON text")
+      return [:]
     }
     guard case let .object(object) = try JSONDecoder().decode(JSONValue.self, from: data) else {
-      throw XCTSkip("expected JSON object")
+      XCTFail("expected JSON object")
+      return [:]
     }
     return object
   }
@@ -596,6 +654,20 @@ final class NoteCommandTests: XCTestCase {
       return ""
     }
     return string
+  }
+
+  private func notebookTagId(in payload: JSONObject, named name: String) throws -> String {
+    let notebook = try object(payload["notebook"], field: "notebook")
+    let assignments = try array(notebook["tags"], field: "notebook.tags")
+    for assignmentValue in assignments {
+      let assignment = try object(assignmentValue, field: "notebook.tags[]")
+      let tag = try object(assignment["tag"], field: "notebook.tags[].tag")
+      if tag["name"] == .string(name) {
+        return try string(tag["tagId"], field: "notebook.tags[].tag.tagId")
+      }
+    }
+    XCTFail("expected notebook tag named \(name)")
+    return ""
   }
 }
 

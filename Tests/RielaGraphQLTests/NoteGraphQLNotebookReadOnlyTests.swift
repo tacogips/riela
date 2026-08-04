@@ -112,6 +112,29 @@ final class NoteGraphQLNotebookReadOnlyTests: XCTestCase {
     )
     try assertReservedSystemMemoryRejection(applyTag)
 
+    let reservedTagId = try XCTUnwrap(
+      service.service.listTags().first { $0.name == reservedTag }?.tagId
+    )
+    let applyTagId = try await executeMutation(
+      executor: executor,
+      field: "applyNotebookTagIds",
+      operationName: "ApplyReservedNotebookTagId",
+      query: """
+      mutation ApplyReservedNotebookTagId($input: ApplyNotebookTagIdsInput!) {
+        applyNotebookTagIds(input: $input) {
+          result { accepted status diagnostics }
+          notebook { notebookId }
+        }
+      }
+      """,
+      variables: ["input": .object([
+        "notebookId": .string(ordinary.notebookId),
+        "tagIds": .array([.string(reservedTagId)]),
+        "provenance": .string("human")
+      ])]
+    )
+    try assertReservedSystemMemoryRejection(applyTagId)
+
     XCTAssertEqual(
       try service.service.listNotebooks(tagFilter: [reservedTag]).map(\.notebookId),
       [canonical.notebookId]

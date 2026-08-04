@@ -776,7 +776,8 @@ final class NoteGraphQLTests: XCTestCase {
     XCTAssertTrue(normalizedSchema.contains(
       """
       notebooks( limit: Int, offset: Int, tagFilter: [String!], \
-      tagFilterGroups: [[String!]!], sort: NoteListSort, createdAfter: String, \
+      tagFilterGroups: [[String!]!], tagFilterIdGroups: [[String!]!], \
+      sort: NoteListSort, createdAfter: String, \
       createdBefore: String ): NotebooksQueryPayload!
       """
     ))
@@ -818,6 +819,7 @@ final class NoteGraphQLTests: XCTestCase {
       "tagClasses",
       "kanbanStatusSets",
       "effectiveKanbanStatuses",
+      "effectiveKanbanStatusesByTagId",
       "noteFile",
       "autoActions"
     ]
@@ -831,13 +833,16 @@ final class NoteGraphQLTests: XCTestCase {
       "deleteNote",
       "deleteNotebook",
       "applyNotebookTags",
+      "applyNotebookTagIds",
       "removeNotebookTag",
+      "removeNotebookTagById",
       "setNotebookProgress",
       "setNotebookReadOnly",
       "createKanbanStatusSet",
       "updateKanbanStatusSet",
       "deleteKanbanStatusSet",
       "assignKanbanStatusSet",
+      "assignKanbanStatusSetByTagId",
       "setNoteReadOnly",
       "applyNoteTags",
       "removeNoteTag",

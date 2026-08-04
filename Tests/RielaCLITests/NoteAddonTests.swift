@@ -755,61 +755,6 @@ extension NoteAddonTests {
     XCTAssertEqual(try stringValue(objectValue(links[0])["linkKind"], field: "linkKind"), "source-citation")
   }
 
-  func testKanbanTaskCreateIsIdempotentAndShapesFanoutItems() async throws {
-    let noteRoot = try makeNoteAddonRoot()
-    defer {
-      try? FileManager.default.removeItem(atPath: noteRoot)
-    }
-    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
-    let config: JSONObject = [
-      "folderTagName": .string("orchestrations/demo-run"),
-      "runLabel": .string("demo"),
-      "tasks": .array([
-        .object([
-          "taskKey": .string("first-card"),
-          "title": .string("First card"),
-          "briefMarkdown": .string("Do the first thing."),
-          "acceptanceMarkdown": .string("- done well")
-        ]),
-        .object([
-          "taskKey": .string("second-card"),
-          "title": .string("Second card"),
-          "briefMarkdown": .string("Do the second thing.")
-        ])
-      ])
-    ]
-
-    let first = try await resolver.execute(
-      noteInput(name: "riela/note-kanban-task-create", config: config),
-      context: AdapterExecutionContext()
-    )
-    XCTAssertEqual(first.payload["folderTagName"], .string("demo-run"))
-    let firstTasks = try arrayValue(first.payload["tasks"], field: "tasks").map(objectValue)
-    XCTAssertEqual(firstTasks.count, 2)
-    XCTAssertEqual(firstTasks.map { $0["taskKey"] }, [.string("first-card"), .string("second-card")])
-    XCTAssertEqual(firstTasks.map { $0["progress"] }, [.string("pending"), .string("pending")])
-    XCTAssertEqual(firstTasks.map { $0["reused"] }, [.bool(false), .bool(false)])
-    let firstNotebookIds = try firstTasks.map { try stringValue($0["notebookId"], field: "notebookId") }
-
-    let second = try await resolver.execute(
-      noteInput(name: "riela/note-kanban-task-create", config: config),
-      context: AdapterExecutionContext()
-    )
-    let secondTasks = try arrayValue(second.payload["tasks"], field: "tasks").map(objectValue)
-    XCTAssertEqual(secondTasks.map { $0["reused"] }, [.bool(true), .bool(true)])
-    XCTAssertEqual(
-      try secondTasks.map { try stringValue($0["notebookId"], field: "notebookId") },
-      firstNotebookIds
-    )
-
-    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
-    let folderTag = try service.listTags().first { $0.name == "demo-run" }
-    XCTAssertEqual(try XCTUnwrap(folderTag).classId, "folder")
-    let parentTag = try service.listTags().first { $0.name == "orchestrations" }
-    XCTAssertEqual(try XCTUnwrap(folderTag).parentTagId, try XCTUnwrap(parentTag).tagId)
-    XCTAssertEqual(try service.listNotebooks(tagFilter: ["demo-run"]).count, 2)
-  }
-
   func testKanbanMoveReportsConflictAsBranchLocalOutcome() async throws {
     let noteRoot = try makeNoteAddonRoot()
     defer {
@@ -865,7 +810,7 @@ extension NoteAddonTests {
       try? FileManager.default.removeItem(atPath: noteRoot)
     }
     let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
-    _ = try service.defineTag(name: "board-folder", classId: "folder")
+    let boardFolder = try service.defineTag(name: "board-folder", classId: "folder")
     let reviewing = try service.createNotebook(title: "Reviewing")
     _ = try service.applyNotebookTags(notebookId: reviewing.notebookId, tags: ["board-folder"], provenance: .ai)
     _ = try service.setNotebookProgress(notebookId: reviewing.notebookId, progress: "review")
@@ -877,6 +822,7 @@ extension NoteAddonTests {
       noteInput(name: "riela/note-kanban-board", config: ["tagName": .string("board-folder")]),
       context: AdapterExecutionContext()
     )
+    XCTAssertEqual(board.payload["folderTagId"], .string(boardFolder.tagId))
     XCTAssertEqual(board.payload["tagName"], .string("board-folder"))
     let columns = try arrayValue(board.payload["columns"], field: "columns").map(objectValue)
     XCTAssertEqual(columns.count, 5)
@@ -892,7 +838,7 @@ extension NoteAddonTests {
     XCTAssertEqual(notebooksByColumn[3].first?["notebookId"], .string(reviewing.notebookId))
   }
 
-  private func noteInput(
+  func noteInput(
     name: String,
     config: JSONObject,
     variables: JSONObject = [:],
@@ -908,7 +854,7 @@ extension NoteAddonTests {
     )
   }
 
-  private func makeNoteAddonRoot(function: String = #function) throws -> String {
+  func makeNoteAddonRoot(function: String = #function) throws -> String {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       .appendingPathComponent("tmp/RielaCLITests", isDirectory: true)
       .appendingPathComponent("NoteAddonTests", isDirectory: true)
@@ -918,14 +864,25 @@ extension NoteAddonTests {
     return root.path
   }
 
-  private func objectValue(_ value: JSONValue?) throws -> JSONObject {
+  func objectValue(_ value: JSONValue?) throws -> JSONObject {
     guard case let .object(object)? = value else {
-      throw XCTSkip("expected object")
+      XCTFail("expected object")
+      return [:]
     }
     return object
   }
 
-  private func arrayValue(_ value: JSONValue?, field: String) throws -> [JSONValue] {
+  func kanbanNotebookIds(from output: AdapterExecutionOutput) throws -> Set<String> {
+    let columns = try arrayValue(output.payload["columns"], field: "columns")
+    let notebooks = try columns.flatMap { column in
+      try arrayValue(try objectValue(column)["notebooks"], field: "notebooks")
+    }
+    return Set(try notebooks.map { notebook in
+      try stringValue(try objectValue(notebook)["notebookId"], field: "notebookId")
+    })
+  }
+
+  func arrayValue(_ value: JSONValue?, field: String) throws -> [JSONValue] {
     guard case let .array(values)? = value else {
       XCTFail("expected \(field) array")
       return []
@@ -933,7 +890,7 @@ extension NoteAddonTests {
     return values
   }
 
-  private func stringValue(_ value: JSONValue?, field: String) throws -> String {
+  func stringValue(_ value: JSONValue?, field: String) throws -> String {
     guard case let .string(string)? = value else {
       XCTFail("expected \(field) string")
       return ""

@@ -239,6 +239,16 @@ final class NoteSystemMemoryTests: NoteTestCase {
         provenance: .human
       )
     }
+    let reservedTagId = try XCTUnwrap(
+      service.listTags().first { $0.name == reservedTag }?.tagId
+    )
+    XCTAssertReservedSystemMemoryTag {
+      try service.applyNotebookTagIds(
+        notebookId: ordinary.notebookId,
+        tagIds: [reservedTagId],
+        provenance: .human
+      )
+    }
 
     XCTAssertEqual(
       try service.listNotebooks(tagFilter: [reservedTag]).map(\.notebookId),
@@ -251,6 +261,58 @@ final class NoteSystemMemoryTests: NoteTestCase {
 
     let reopened = try NoteService(driver: driver)
     XCTAssertEqual(try reopened.systemMemoryNotebook().notebookId, canonical.notebookId)
+  }
+
+  func testSameNamedFolderDoesNotCollideWithSystemMemoryIdentity() throws {
+    let root = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: root)
+    let service = try NoteService(driver: driver)
+    let canonical = try service.systemMemoryNotebook()
+
+    let folderNotebook = try service.createNotebook(
+      title: "Reserved display name folder",
+      folderPath: [NoteStoreSchema.systemMemoryNotebookKindTag]
+    )
+    let folder = try XCTUnwrap(folderNotebook.tags.first?.tag)
+    XCTAssertEqual(folder.name, NoteStoreSchema.systemMemoryNotebookKindTag)
+    XCTAssertEqual(folder.classId, "folder")
+    XCTAssertNotEqual(folder.tagId, NoteStoreSchema.systemMemoryNotebookKindTagId)
+
+    let reopened = try NoteService(driver: driver)
+    XCTAssertEqual(try reopened.systemMemoryNotebook().notebookId, canonical.notebookId)
+    XCTAssertEqual(
+      try reopened.listNotebooks(tagFilterIdGroups: [[folder.tagId]]).map(\.notebookId),
+      [folderNotebook.notebookId]
+    )
+  }
+
+  func testBootstrapUsesCanonicalSystemMemoryTagWhenSameNamedFolderAlreadyExists() throws {
+    let root = try makeNoteRoot(function: #function)
+    let driver = SQLiteNoteDatabaseDriver(noteRoot: root)
+    try NoteStoreSchema.prepare(on: driver)
+    let folderId = "folder-system-memory-display"
+    try driver.withDatabase { database in
+      try database.execute(
+        """
+        INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
+        VALUES (?, ?, 'folder', 0, '2026-08-04T00:00:00Z')
+        """,
+        bindings: [
+          .text(folderId),
+          .text(NoteStoreSchema.systemMemoryNotebookKindTag)
+        ]
+      )
+    }
+
+    let service = try NoteService(driver: driver)
+    let canonical = try service.systemMemoryNotebook()
+    XCTAssertTrue(canonical.tags.contains {
+      $0.tag.tagId == NoteStoreSchema.systemMemoryNotebookKindTagId
+    })
+    XCTAssertFalse(canonical.tags.contains { $0.tag.tagId == folderId })
+    XCTAssertTrue(try service.listTags().contains {
+      $0.tagId == folderId && $0.classId == "folder"
+    })
   }
 
   func testBootstrapRejectsMultipleSystemMemoryTaggedNotebooks() throws {

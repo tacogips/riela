@@ -1,0 +1,8 @@
+{
+  "id": "intake-or-plan",
+  "description": "Turn the requested agent-private workflow and Note logging behavior into an evidence-backed implementation plan.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.6-terra",
+  "promptTemplateFile": "prompts/intake-or-plan.md",
+  "variables": {}
+}

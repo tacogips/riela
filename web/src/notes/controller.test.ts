@@ -305,10 +305,10 @@ describe('cross-field notebook convergence', () => {
 describe('notebook scope generation', () => {
   test('preserves single-filter replacement and supports ordered intersection groups', () => {
     const controller = new NotebookScopeController()
-    expect(controller.tagFilterGroups()).toEqual([])
+    expect(controller.tagFilterIdGroups()).toEqual([])
 
     controller.select({ kind: 'folder', tagId: 'folder-work', tagName: 'Work' })
-    expect(controller.tagFilterGroups()).toEqual([['Work']])
+    expect(controller.tagFilterIdGroups()).toEqual([['folder-work']])
 
     controller.add({ kind: 'tag', tagId: 'topic-launch', tagName: 'Launch', classId: 'topic' })
     expect(controller.current().constraints).toEqual([
@@ -320,12 +320,12 @@ describe('notebook scope generation', () => {
       classId: 'topic',
       },
     ])
-    expect(controller.tagFilterGroups()).toEqual([['Work'], ['Launch']])
+    expect(controller.tagFilterIdGroups()).toEqual([['folder-work'], ['topic-launch']])
 
     controller.remove('folder-work')
-    expect(controller.tagFilterGroups()).toEqual([['Launch']])
+    expect(controller.tagFilterIdGroups()).toEqual([['topic-launch']])
     controller.clear()
-    expect(controller.tagFilterGroups()).toEqual([])
+    expect(controller.tagFilterIdGroups()).toEqual([])
   })
 
   test('invalidates older folder-to-tag and tag-to-folder completions', () => {

@@ -392,7 +392,7 @@ public struct NoteCommandRunner: Sendable {
         field: "createNotebook",
         query: NoteCommandGraphQLDocuments.createNotebook,
         variables: [
-          "input": try jsonValue(GraphQLCreateNotebookInput(title: title, kindTagName: parsed.kindTagName))
+          "input": try jsonValue(GraphQLCreateNotebookInput(title: title, kindTagName: parsed.kindTagName, folderPath: parsed.folderPath))
         ],
         options: parsed
       )

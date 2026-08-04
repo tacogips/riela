@@ -25,8 +25,8 @@ func searchNotesInDatabase(
   offset: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
-  let expandedTagFilter = try expandedTagFilterNames(tagFilter, in: database)
-  guard tagFilter.isEmpty || !expandedTagFilter.isEmpty else {
+  let expandedTagFilterIds = try expandedLegacyTagFilterIds(tagFilter, in: database)
+  guard tagFilter.isEmpty || !expandedTagFilterIds.isEmpty else {
     return []
   }
   let requestedLimit = max(0, limit)
@@ -46,7 +46,7 @@ func searchNotesInDatabase(
     let results: [NoteSearchResult]
     if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       results = try searchNotesByFilters(
-        tagFilter: expandedTagFilter,
+        tagFilterIds: expandedTagFilterIds,
         classFilter: classFilter,
         sort: sort,
         createdAfter: createdAfter,
@@ -57,7 +57,7 @@ func searchNotesInDatabase(
     } else {
       results = try searchNotesByTextLike(
         query: query,
-        tagFilter: expandedTagFilter,
+        tagFilterIds: expandedTagFilterIds,
         classFilter: classFilter,
         excludedNoteIds: [],
         sort: sort,
@@ -71,7 +71,7 @@ func searchNotesInDatabase(
       ? appendLinkedNeighborResults(
           to: results,
           query: query,
-          tagFilter: expandedTagFilter,
+          tagFilterIds: expandedTagFilterIds,
           classFilter: classFilter,
           sort: sort,
           createdAfter: createdAfter,
@@ -98,18 +98,17 @@ func searchNotesInDatabase(
     sql: &sql,
     bindings: &bindings
   )
-  if !expandedTagFilter.isEmpty {
+  if !expandedTagFilterIds.isEmpty {
     sql += """
 
       AND EXISTS (
         SELECT 1
         FROM note_tags nt
-        INNER JOIN tags t ON t.tag_id = nt.tag_id
         WHERE nt.note_id = n.note_id
-          AND t.name IN (\(placeholders(count: expandedTagFilter.count)))
+          AND nt.tag_id IN (\(placeholders(count: expandedTagFilterIds.count)))
       )
       """
-    bindings.append(contentsOf: expandedTagFilter.map(SQLiteValue.text))
+    bindings.append(contentsOf: expandedTagFilterIds.map(SQLiteValue.text))
   }
   if !classFilter.isEmpty {
     sql += """
@@ -147,7 +146,7 @@ func searchNotesInDatabase(
   if shouldRunTextLikeFallback(query: query, ftsResultCount: results.count) {
     let fallback = try searchNotesByTextLike(
       query: query,
-      tagFilter: expandedTagFilter,
+      tagFilterIds: expandedTagFilterIds,
       classFilter: classFilter,
       excludedNoteIds: Set(results.map(\.note.noteId)),
       sort: sort,
@@ -162,7 +161,7 @@ func searchNotesInDatabase(
     ? appendLinkedNeighborResults(
         to: results,
         query: query,
-        tagFilter: expandedTagFilter,
+        tagFilterIds: expandedTagFilterIds,
         classFilter: classFilter,
         sort: sort,
         createdAfter: createdAfter,
@@ -180,7 +179,7 @@ private func shouldRunTextLikeFallback(query: String, ftsResultCount: Int) -> Bo
 }
 
 private func searchNotesByFilters(
-  tagFilter: [String],
+  tagFilterIds: [String],
   classFilter: [String],
   sort: NoteListSort,
   createdAfter: String?,
@@ -188,24 +187,23 @@ private func searchNotesByFilters(
   limit: Int,
   in database: SQLiteDatabase
 ) throws -> [NoteSearchResult] {
-  guard !tagFilter.isEmpty || !classFilter.isEmpty || createdAfter != nil || createdBefore != nil else {
+  guard !tagFilterIds.isEmpty || !classFilter.isEmpty || createdAfter != nil || createdBefore != nil else {
     return []
   }
   var predicates: [String] = []
   var bindings: [SQLiteValue] = []
-  if !tagFilter.isEmpty {
+  if !tagFilterIds.isEmpty {
     predicates.append(
       """
       EXISTS (
         SELECT 1
         FROM note_tags nt
-        INNER JOIN tags t ON t.tag_id = nt.tag_id
         WHERE nt.note_id = n.note_id
-          AND t.name IN (\(placeholders(count: tagFilter.count)))
+          AND nt.tag_id IN (\(placeholders(count: tagFilterIds.count)))
       )
       """
     )
-    bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+    bindings.append(contentsOf: tagFilterIds.map(SQLiteValue.text))
   }
   if !classFilter.isEmpty {
     predicates.append(
@@ -258,7 +256,7 @@ private func searchNotesByFilters(
 
 private func searchNotesByTextLike(
   query: String,
-  tagFilter: [String],
+  tagFilterIds: [String],
   classFilter: [String],
   excludedNoteIds: Set<String>,
   sort: NoteListSort,
@@ -292,19 +290,18 @@ private func searchNotesByTextLike(
     predicates.append("n.note_id NOT IN (\(placeholders(count: excludedNoteIds.count)))")
     bindings.append(contentsOf: excludedNoteIds.sorted().map(SQLiteValue.text))
   }
-  if !tagFilter.isEmpty {
+  if !tagFilterIds.isEmpty {
     predicates.append(
       """
       EXISTS (
         SELECT 1
         FROM note_tags nt
-        INNER JOIN tags t ON t.tag_id = nt.tag_id
         WHERE nt.note_id = n.note_id
-          AND t.name IN (\(placeholders(count: tagFilter.count)))
+          AND nt.tag_id IN (\(placeholders(count: tagFilterIds.count)))
       )
       """
     )
-    bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+    bindings.append(contentsOf: tagFilterIds.map(SQLiteValue.text))
   }
   if !classFilter.isEmpty {
     predicates.append(
@@ -358,7 +355,7 @@ private func searchNotesByTextLike(
 private func appendLinkedNeighborResults(
   to directResults: [NoteSearchResult],
   query: String,
-  tagFilter: [String],
+  tagFilterIds: [String],
   classFilter: [String],
   sort: NoteListSort,
   createdAfter: String?,
@@ -404,7 +401,7 @@ private func appendLinkedNeighborResults(
   )
   appendTagPredicates(
     alias: "n",
-    tagFilter: tagFilter,
+    tagFilterIds: tagFilterIds,
     classFilter: classFilter,
     predicates: &predicates,
     bindings: &bindings
@@ -462,24 +459,23 @@ func notebookSortOrderClause(alias: String, sort: NoteListSort) -> String {
 
 private func appendTagPredicates(
   alias: String,
-  tagFilter: [String],
+  tagFilterIds: [String],
   classFilter: [String],
   predicates: inout [String],
   bindings: inout [SQLiteValue]
 ) {
-  if !tagFilter.isEmpty {
+  if !tagFilterIds.isEmpty {
     predicates.append(
       """
       EXISTS (
         SELECT 1
         FROM note_tags nt
-        INNER JOIN tags t ON t.tag_id = nt.tag_id
         WHERE nt.note_id = \(alias).note_id
-          AND t.name IN (\(placeholders(count: tagFilter.count)))
+          AND nt.tag_id IN (\(placeholders(count: tagFilterIds.count)))
       )
       """
     )
-    bindings.append(contentsOf: tagFilter.map(SQLiteValue.text))
+    bindings.append(contentsOf: tagFilterIds.map(SQLiteValue.text))
   }
   if !classFilter.isEmpty {
     predicates.append(

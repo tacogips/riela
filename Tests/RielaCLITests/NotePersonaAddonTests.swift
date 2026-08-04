@@ -396,6 +396,50 @@ final class NotePersonaAddonTests: XCTestCase {
     XCTAssertEqual(guardPayload["selectedTarget"], .string("rina"))
   }
 
+  func testVisitedHandoffRecoversToNextRequestedUnvisitedPersona() async throws {
+    let noteRoot = try makeNotePersonaAddonRoot()
+    defer { try? FileManager.default.removeItem(atPath: noteRoot) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["RIELA_NOTE_ROOT": noteRoot])
+
+    let output = try await resolver.execute(
+      notePersonaInput(
+        name: "riela/note-persona-context-write",
+        config: [
+          "personaId": .string("mika"),
+          "personaName": .string("Mika Trend"),
+          "teamPersonaIds": .array([.string("yui"), .string("mika"), .string("rina")])
+        ],
+        variables: [
+          "workflowInput": .object([
+            "request": .string("Yui, ask Mika, then Rina for their views.")
+          ]),
+          "payload": .object([
+            "replyText": .string("いいじゃん。@Yui、運用面はどう？"),
+            "handoff_yui": .bool(true),
+            "handoff_rina": .bool(false),
+            "noteEntries": .array([])
+          ]),
+          "runtime": .object([
+            "executedStepIds": .array([
+              .string("route-message"),
+              .string("send-yui-reply")
+            ])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(output.when["handoff_yui"], false)
+    XCTAssertEqual(output.when["handoff_rina"], true)
+    XCTAssertEqual(output.payload["handoff_yui"], .bool(false))
+    XCTAssertEqual(output.payload["handoff_rina"], .bool(true))
+    XCTAssertEqual(output.payload["replyText"], .string("いいじゃん。 @Rina、あなたの観点をお願いします。"))
+    let guardPayload = try XCTUnwrap(jsonObject(output.payload["handoffGuard"]))
+    XCTAssertEqual(guardPayload["blocked"], .bool(false))
+    XCTAssertEqual(guardPayload["selectedTarget"], .string("rina"))
+  }
+
   func testFinalTurnRemovesContinuationToVisitedPersonaWithoutRequestedHandoff() async throws {
     let noteRoot = try makeNotePersonaAddonRoot()
     defer { try? FileManager.default.removeItem(atPath: noteRoot) }

@@ -70,12 +70,28 @@ extension RielaApp {
     workingDirectory: String
   ) async -> String {
     do {
-      let vendor = try resolvedAssistantVendor(settings.vendor)
-      let output = try await assistantAdapter(for: vendor).execute(
-        assistantInput(settings: settings, vendor: vendor, message: message, workingDirectory: workingDirectory),
-        context: AdapterExecutionContext(deadline: Date().addingTimeInterval(120))
-      )
-      return assistantReplyText(from: output)
+      let invocation = try makeAssistantInvocation()
+      do {
+        let vendor = try resolvedAssistantVendor(settings.vendor)
+        let output = try await assistantAdapter(for: vendor).execute(
+          assistantInput(settings: settings, vendor: vendor, message: message, workingDirectory: workingDirectory, invocation: invocation),
+          // Complex tasks now include workflow authoring, validation, execution, and
+          // Note handoff. Keep a finite invocation boundary without cutting normal
+          // multi-step runs off at the former two-minute limit.
+          context: AdapterExecutionContext(deadline: Date().addingTimeInterval(60 * 60))
+        )
+        try FileManager.default.removeItem(at: invocation.root)
+        return assistantReplyText(from: output)
+      } catch {
+        do {
+          if FileManager.default.fileExists(atPath: invocation.root.path) {
+            try FileManager.default.removeItem(at: invocation.root)
+          }
+        } catch {
+          return "Assistant error: private workflow cleanup failed: \(error.localizedDescription)"
+        }
+        throw error
+      }
     } catch let error as AdapterExecutionError {
       return "Assistant error: \(error.message)"
     } catch {
@@ -132,7 +148,8 @@ extension RielaApp {
     settings: RielaAppAssistantSettings,
     vendor: RielaAppAssistantVendor,
     message: String,
-    workingDirectory: String
+    workingDirectory: String,
+    invocation: AssistantInvocation
   ) -> AdapterExecutionInput {
     AdapterExecutionInput(
       node: AgentNodePayload(
@@ -143,19 +160,19 @@ extension RielaApp {
       ),
       promptText: assistantPrompt(message: message, settings: settings, workingDirectory: workingDirectory),
       systemPromptText: assistantSystemPrompt(workingDirectory: workingDirectory),
-      agentEnvironment: assistantAgentEnvironment(vendor: vendor, workingDirectory: workingDirectory)
+      agentEnvironment: assistantAgentEnvironment(vendor: vendor, workingDirectory: workingDirectory, invocation: invocation)
     )
   }
 
   private func assistantAgentEnvironment(
     vendor: RielaAppAssistantVendor,
-    workingDirectory: String
+    workingDirectory: String,
+    invocation: AssistantInvocation
   ) -> [String: String] {
-    guard vendor == .cursorAPI else {
-      return [:]
-    }
+    var values = invocation.environment
+    guard vendor == .cursorAPI else { return values }
     let environment = ProcessInfo.processInfo.environment
-    return [
+    values.merge([
       "CURSOR_REPOSITORY_URL": environment["CURSOR_REPOSITORY_URL"] ?? gitValue(
         arguments: ["config", "--get", "remote.origin.url"],
         workingDirectory: workingDirectory
@@ -169,7 +186,8 @@ extension RielaApp {
     ].compactMapValues { value in
       let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       return trimmed.isEmpty ? nil : trimmed
-    }
+    }, uniquingKeysWith: { _, new in new })
+    return values
   }
 
   private func assistantExecutionBackend(for vendor: RielaAppAssistantVendor) -> NodeExecutionBackend {
@@ -189,10 +207,26 @@ extension RielaApp {
     }
   }
 
-  private func assistantSystemPrompt(workingDirectory: String) -> String {
+  func assistantSystemPrompt(workingDirectory: String) -> String {
     [
-      "You are the Riela Setup Assistant inside RielaApp.",
-      "Your primary job is to help users set up Riela and create or configure Riela workflow instances in RielaApp.",
+      "You are the Riela Assistant inside RielaApp.",
+      "For every non-trivial task, create a dedicated workflow only under " +
+        "RIELA_PRIVATE_WORKFLOW_ROOT, validate it, execute it directly using " +
+        "RIELA_WORKFLOW_DEFINITION_DIR, and record its session ID. Your task is incomplete " +
+        "until a run has produced that session ID; authoring or validating alone is insufficient.",
+      "Never register, import, catalog, list, configure as an instance, or reuse that private " +
+        "definition. It is invocation-private at Riela's registry/discovery/reuse boundary; it is " +
+        "not a security boundary against arbitrary processes under the same OS account.",
+      "The app removes the private root after this invocation. Do not move or copy it elsewhere.",
+      "Use RIELA_SESSION_STORE and RIELA_NOTE_ROOT. Create one run notebook under workflow/date " +
+        "folder tags with Input, Work log, and Response notes. The Response must include the " +
+        "session ID and a link made from RIELA_WEB_RUN_LINK_TEMPLATE. Use the parent-scoped " +
+        "folder components '<workflow-id>/history-YYYY-MM-DD'; repeated runs for one workflow " +
+        "and date reuse that leaf, while another workflow receives a distinct leaf ID.",
+      "When using the Riela CLI, validate with --workflow-definition-dir " +
+        "RIELA_WORKFLOW_DEFINITION_DIR and run with both --workflow-definition-dir " +
+        "RIELA_WORKFLOW_DEFINITION_DIR and --session-store RIELA_SESSION_STORE so the Web " +
+        "application can read the resulting session.",
       "Only work for the active RielaApp profile named '\(daemonProfileName.rawValue)'.",
       "Treat '\(workingDirectory)' as the only allowed working directory.",
       "Do not suggest or perform file operations outside that directory or this profile's workflow/package state.",
@@ -203,6 +237,23 @@ extension RielaApp {
       "After creation guidance, include a validation or first-run check and the next fix for missing environment values.",
       "Reply in the user's language and prefer concrete Riela instance steps over general coding advice."
     ].joined(separator: "\n")
+  }
+
+  private func makeAssistantInvocation() throws -> AssistantInvocation {
+    let profileRoot = appHomeDirectory.appendingPathComponent(".riela/profiles/\(daemonProfileName.rawValue)", isDirectory: true)
+    let root = profileRoot.appendingPathComponent("private-workflows/\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: true,
+      attributes: [.posixPermissions: 0o700]
+    )
+    return AssistantInvocation(root: root, environment: [
+      "RIELA_PRIVATE_WORKFLOW_ROOT": root.path,
+      "RIELA_WORKFLOW_DEFINITION_DIR": root.path,
+      "RIELA_SESSION_STORE": profileRoot.appendingPathComponent("sessions", isDirectory: true).path,
+      "RIELA_NOTE_ROOT": noteRootURL(profileName: daemonProfileName).path,
+      "RIELA_WEB_RUN_LINK_TEMPLATE": "#/runs/{sessionId}"
+    ])
   }
 
   private func assistantPrompt(
@@ -266,5 +317,10 @@ extension RielaApp {
     }
     return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
   }
+}
+
+private struct AssistantInvocation {
+  let root: URL
+  let environment: [String: String]
 }
 #endif

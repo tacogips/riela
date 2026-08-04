@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from 'solid-js'
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { APIError, api } from './api'
 import { NotebookExpansionPanel } from './components/NotebookExpansionPanel'
 import type { Bootstrap } from './contracts'
@@ -55,6 +55,20 @@ export function App() {
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
   const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve' ? navigation.filter((item) => item.id === 'notes') : navigation)
   let previousProfileKey: string | undefined
+  const restoreRunHash = () => {
+    const match = window.location.hash.match(/^#\/runs\/([^/]+)$/)
+    if (!match) return
+    const sessionId = decodeURIComponent(match[1]!)
+    if (!sessionId) return
+    setSelectedInstanceId('')
+    setSelectedRun({ sessionId, workflowId: 'private workflow' })
+    setView('run-detail')
+  }
+  onMount(() => {
+    restoreRunHash()
+    window.addEventListener('hashchange', restoreRunHash)
+    onCleanup(() => window.removeEventListener('hashchange', restoreRunHash))
+  })
   createEffect(() => {
     const nextProfileKey = profileKey()
     const transition = profileViewTransition(previousProfileKey, nextProfileKey, host.data()?.mode, view())

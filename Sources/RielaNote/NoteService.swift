@@ -53,6 +53,7 @@ public struct NoteService: Sendable {
   public func createNotebook(
     title: String,
     kindTagName: String? = nil,
+    folderPath: [String] = [],
     metaJSON: String? = nil,
     originatingActionId: String? = nil
   ) throws -> Notebook {
@@ -74,14 +75,20 @@ public struct NoteService: Sendable {
           ]
         )
         if let kindTagName {
-          try ensureNotebookKindTag(kindTagName, in: db)
+          let kindTag = try ensureNotebookKindTag(kindTagName, in: db)
           try applyNotebookTag(
             notebookId: notebookId,
-            tagName: kindTagName,
+            tagId: kindTag.tagId,
             provenance: .system,
             assignedBy: "riela-note",
             deletable: false,
             in: db
+          )
+        }
+        if let leaf = try defineNotebookFolderPath(folderPath, in: db) {
+          try applyNotebookTag(
+            notebookId: notebookId, tagId: leaf.tagId, provenance: .system,
+            assignedBy: "riela-note", deletable: false, in: db
           )
         }
         let notebook = try requireNotebook(notebookId, in: db)
@@ -103,6 +110,46 @@ public struct NoteService: Sendable {
       tagNames: folderTagNames(of: result.notebook)
     ))
     return result.notebook
+  }
+
+  /// Creates or reuses a hierarchy of `folder` tags without silently changing
+  /// an existing tag's class or parent. Every component is resolved only among
+  /// folder siblings under the current parent.
+  private func defineNotebookFolderPath(_ rawPath: [String], in db: SQLiteDatabase) throws -> Tag? {
+    let path = rawPath.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    guard path.allSatisfy({ component in
+      !component.isEmpty
+        && component != "."
+        && component != ".."
+        && !component.contains("/")
+        && !component.contains("\\")
+        && !component.contains("\0")
+    }) else {
+      throw NoteServiceError.invalidInput("folder path components must be non-empty safe names")
+    }
+    var parent: Tag?
+    for name in path {
+      if let existing = try findFolderTag(name: name, parentTagId: parent?.tagId, in: db) {
+        parent = existing
+        continue
+      }
+      _ = try requireTagClass(classId: "folder", in: db)
+      let tagId = makeNoteId(prefix: "tag")
+      if let parent { try validateTagParent(childTagId: tagId, parentTagId: parent.tagId, in: db) }
+      do {
+        try db.execute(
+          "INSERT INTO tags (tag_id, name, class_id, parent_tag_id, is_system, created_at) VALUES (?, ?, 'folder', ?, 0, ?)",
+          bindings: [.text(tagId), .text(name), .optionalText(parent?.tagId), .text(NoteStoreClock.system.now())]
+        )
+        parent = try requireTag(id: tagId, in: db)
+      } catch let error as SQLiteError where isSQLiteUniqueConstraintViolation(error) {
+        guard let raced = try findFolderTag(name: name, parentTagId: parent?.tagId, in: db) else {
+          throw error
+        }
+        parent = raced
+      }
+    }
+    return parent
   }
 
   @discardableResult
@@ -143,10 +190,10 @@ public struct NoteService: Sendable {
             bindings: [.text(notebookId), .text(derivedTitle), .text(now), .text(now)]
           )
           if let notebookKindTagName {
-            try ensureNotebookKindTag(notebookKindTagName, in: db)
+            let kindTag = try ensureNotebookKindTag(notebookKindTagName, in: db)
             try applyNotebookTag(
               notebookId: notebookId,
-              tagName: notebookKindTagName,
+              tagId: kindTag.tagId,
               provenance: .system,
               assignedBy: "riela-note",
               deletable: false,
@@ -299,10 +346,10 @@ public struct NoteService: Sendable {
       ]
     )
     if let kindTagName {
-      try ensureNotebookKindTag(kindTagName, in: db)
+      let kindTag = try ensureNotebookKindTag(kindTagName, in: db)
       try applyNotebookTag(
         notebookId: notebookId,
-        tagName: kindTagName,
+        tagId: kindTag.tagId,
         provenance: .system,
         assignedBy: "riela-note",
         deletable: false,
@@ -459,105 +506,6 @@ public struct NoteService: Sendable {
     return (notebook: result.notebook, note: result.note)
   }
 
-  public func listNotebooks(
-    limit: Int = 50,
-    offset: Int = 0,
-    tagFilter: [String] = [],
-    tagFilterGroups: [[String]] = [],
-    sort: NoteListSort = .createdAtDesc,
-    createdAfter: String? = nil,
-    createdBefore: String? = nil
-  ) throws -> [Notebook] {
-    try driver.withDatabase { database in
-      if !tagFilterGroups.isEmpty {
-        guard tagFilterGroups.count <= Self.maximumNotebookTagFilterGroups else {
-          throw NoteServiceError.invalidInput(
-            "tagFilterGroups supports at most \(Self.maximumNotebookTagFilterGroups) groups"
-          )
-        }
-        var inputNameCount = 0
-        for group in tagFilterGroups {
-          guard group.count <= Self.maximumNotebookTagFilterNames - inputNameCount else {
-            throw NoteServiceError.invalidInput(
-              "tagFilterGroups supports at most \(Self.maximumNotebookTagFilterNames) tag names"
-            )
-          }
-          inputNameCount += group.count
-        }
-        guard tagFilterGroups.allSatisfy({ !$0.isEmpty }) else { return [] }
-      }
-      var requestedGroups: [[String]] = []
-      for group in tagFilterGroups {
-        let canonicalGroup = orderedUnique(group).sorted()
-        if !requestedGroups.contains(canonicalGroup) {
-          requestedGroups.append(canonicalGroup)
-        }
-      }
-      let normalizedGroups = requestedGroups.isEmpty
-        ? (tagFilter.isEmpty ? [] : [tagFilter])
-        : requestedGroups
-      var expandedGroups: [[String]] = []
-      var expandedNameCount = 0
-      for group in normalizedGroups {
-        let expandedGroup = try expandedTagFilterNames(group, in: database)
-        guard !expandedGroup.isEmpty else { return [] }
-        guard expandedGroup.count
-          <= Self.maximumExpandedNotebookTagFilterNames - expandedNameCount else {
-          throw NoteServiceError.invalidInput(
-            """
-            tagFilterGroups expands to at most \
-            \(Self.maximumExpandedNotebookTagFilterNames) tag names
-            """
-          )
-        }
-        expandedNameCount += expandedGroup.count
-        expandedGroups.append(expandedGroup)
-      }
-      var predicates: [String] = []
-      var bindings: [SQLiteValue] = []
-      for expandedGroup in expandedGroups {
-        predicates.append(
-          """
-          EXISTS (
-            SELECT 1
-            FROM notebook_tags nt
-            INNER JOIN tags t ON t.tag_id = nt.tag_id
-            WHERE nt.notebook_id = notebooks.notebook_id
-              AND t.name IN (\(placeholders(count: expandedGroup.count)))
-          )
-          """
-        )
-        bindings.append(contentsOf: expandedGroup.map(SQLiteValue.text))
-      }
-      appendCreatedAtPredicates(
-        alias: "notebooks",
-        createdAfter: createdAfter,
-        createdBefore: createdBefore,
-        predicates: &predicates,
-        bindings: &bindings
-      )
-      let whereClause = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
-      bindings.append(.int(Int64(limit)))
-      bindings.append(.int(Int64(offset)))
-      var notebooks = try database.query(
-        """
-        SELECT notebook_id, title, status AS progress, read_only, created_at, updated_at,
-          CASE WHEN meta_json IS NULL THEN NULL ELSE json(meta_json) END AS meta_json
-        FROM notebooks
-        \(whereClause)
-        ORDER BY \(notebookSortOrderClause(alias: "notebooks", sort: sort))
-        LIMIT ? OFFSET ?
-        """,
-        bindings: bindings
-      )
-      .map { row in
-        try notebook(from: row, in: database)
-      }
-      try enrichNotebookListMetadata(&notebooks, in: database)
-      return notebooks
-    }
-  }
-
   public func getNotebook(_ notebookId: String) throws -> Notebook {
     try driver.withDatabase { database in
       try requireNotebook(notebookId, in: database)
@@ -633,8 +581,8 @@ public struct NoteService: Sendable {
     tagFilter: [String] = []
   ) throws -> [Note] {
     try driver.withDatabase { database in
-      let expandedTagFilter = try expandedTagFilterNames(tagFilter, in: database)
-      guard tagFilter.isEmpty || !expandedTagFilter.isEmpty else {
+      let expandedTagFilterIds = try expandedLegacyTagFilterIds(tagFilter, in: database)
+      guard tagFilter.isEmpty || !expandedTagFilterIds.isEmpty else {
         return []
       }
       var predicates: [String] = []
@@ -644,19 +592,18 @@ public struct NoteService: Sendable {
         predicates.append("notebook_id = ?")
         bindings.append(.text(notebookId))
       }
-      if !expandedTagFilter.isEmpty {
+      if !expandedTagFilterIds.isEmpty {
         predicates.append(
           """
           EXISTS (
             SELECT 1
             FROM note_tags nt
-            INNER JOIN tags t ON t.tag_id = nt.tag_id
             WHERE nt.note_id = notes.note_id
-              AND t.name IN (\(placeholders(count: expandedTagFilter.count)))
+              AND nt.tag_id IN (\(placeholders(count: expandedTagFilterIds.count)))
           )
           """
         )
-        bindings.append(contentsOf: expandedTagFilter.map(SQLiteValue.text))
+        bindings.append(contentsOf: expandedTagFilterIds.map(SQLiteValue.text))
       }
       let whereClause = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
       // A notebook-scoped listing returns the notebook's pages in their intrinsic
@@ -867,16 +814,42 @@ func applyNotebookTag(
   allowsSystemMemoryIdentityCreation: Bool = false,
   in database: SQLiteDatabase
 ) throws {
-  if tagName == NoteStoreSchema.systemMemoryNotebookKindTag {
+  let tag: Tag
+  if let existing = try findTag(name: tagName, in: database) {
+    tag = existing
+  } else {
+    try ensureTag(NoteTagInput(name: tagName), in: database)
+    tag = try requireTag(name: tagName, in: database)
+  }
+  try applyNotebookTag(
+    notebookId: notebookId,
+    tagId: tag.tagId,
+    provenance: provenance,
+    assignedBy: assignedBy,
+    deletable: deletable,
+    allowsSystemMemoryIdentityCreation: allowsSystemMemoryIdentityCreation,
+    in: database
+  )
+}
+
+func applyNotebookTag(
+  notebookId: String,
+  tagId: String,
+  provenance: NoteProvenance,
+  assignedBy: String?,
+  deletable: Bool,
+  allowsSystemMemoryIdentityCreation: Bool = false,
+  in database: SQLiteDatabase
+) throws {
+  let tag = try requireTag(id: tagId, in: database)
+  if tag.tagId == NoteStoreSchema.systemMemoryNotebookKindTagId {
     try validateSystemMemoryNotebookTagAssignment(
       notebookId: notebookId,
       allowsIdentityCreation: allowsSystemMemoryIdentityCreation,
       in: database
     )
   }
-  try ensureTag(NoteTagInput(name: tagName), in: database)
-  let tag = try requireTag(name: tagName, in: database)
-  let existing = try notebookTagAssignment(notebookId: notebookId, tagName: tagName, in: database)
+  let existing = try notebookTagAssignment(notebookId: notebookId, tagId: tagId, in: database)
   if let existing, existing.provenance == .system, provenance != .system {
     return
   }
@@ -926,7 +899,7 @@ func applyTag(
   if let existing, existing.provenance == .system, provenance != .system {
     return
   }
-  let storedTag = try requireTag(name: tag.name, in: database)
+  let storedTag = try requireNonFolderTag(name: tag.name, in: database)
   try database.execute(
     """
     INSERT INTO note_tags (
@@ -957,24 +930,37 @@ func applyTag(
   )
 }
 
-private func ensureTag(_ tag: NoteTagInput, in database: SQLiteDatabase) throws {
+func ensureTag(_ tag: NoteTagInput, in database: SQLiteDatabase) throws {
   if let classId = tag.classId?.trimmingCharacters(in: .whitespacesAndNewlines), !classId.isEmpty {
     _ = try requireTagClass(classId: classId, in: database)
   }
-  try database.execute(
-    """
-    INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
-    VALUES (?, ?, ?, 0, ?)
-    ON CONFLICT(name) DO UPDATE SET
-      class_id = coalesce(tags.class_id, excluded.class_id)
-    """,
-    bindings: [
-      .text(makeNoteId(prefix: "tag")),
-      .text(tag.name),
-      .optionalText(tag.classId),
-      .text(NoteStoreClock.system.now())
-    ]
-  )
+  if let existing = try findNonFolderTag(name: tag.name, in: database) {
+    if existing.classId == nil, let classId = tag.classId, !classId.isEmpty {
+      try database.execute(
+        "UPDATE tags SET class_id = ? WHERE tag_id = ?",
+        bindings: [.text(classId), .text(existing.tagId)]
+      )
+    }
+    return
+  }
+  do {
+    try database.execute(
+      """
+      INSERT INTO tags (tag_id, name, class_id, is_system, created_at)
+      VALUES (?, ?, ?, 0, ?)
+      """,
+      bindings: [
+        .text(makeNoteId(prefix: "tag")),
+        .text(tag.name),
+        .optionalText(tag.classId),
+        .text(NoteStoreClock.system.now())
+      ]
+    )
+  } catch let error as SQLiteError where isSQLiteUniqueConstraintViolation(error) {
+    guard try findNonFolderTag(name: tag.name, in: database) != nil else {
+      throw error
+    }
+  }
 }
 
 func deleteNoteRows(noteId: String, in database: SQLiteDatabase) throws {

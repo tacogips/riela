@@ -65,8 +65,8 @@ export class NotebookScopeController {
     return snapshot.generation === this.generation
   }
 
-  tagFilterGroups(snapshot = this.snapshot()): string[][] {
-    return snapshot.scope.constraints.map((constraint) => [constraint.tagName])
+  tagFilterIdGroups(snapshot = this.snapshot()): string[][] {
+    return snapshot.scope.constraints.map((constraint) => [constraint.tagId])
   }
 
   private replace(constraints: NotebookConstraint[]): NotebookScopeSnapshot {

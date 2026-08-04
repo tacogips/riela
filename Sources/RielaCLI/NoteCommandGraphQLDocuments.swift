@@ -3,7 +3,7 @@ import RielaCore
 enum NoteCommandGraphQLDocuments {
   static let controlResult = "accepted status diagnostics"
 
-  static let tag = "tagId name classId isSystem createdAt"
+  static let tag = "tagId name classId parentTagId isSystem createdAt"
 
   static let tagAssignment = """
   provenance assignedBy deletable createdAt

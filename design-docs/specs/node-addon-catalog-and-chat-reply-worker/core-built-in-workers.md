@@ -213,6 +213,11 @@ revoke accepted output: startup reconciliation compares the token with the
 durable accepted step output before cleanup. A journal without accepted output
 is retained for explicit retry or bounded failed-session garbage collection;
 garbage collection never changes Git refs, indexes, or locks.
+Accepted-token markers are retained at least through the failed-artifact age
+cutoff. A marker becomes eligible for the same bounded, snapshot-validated
+garbage collection only when it decodes to its create-only content, its name
+matches the digest of its reconstructed token, and its journal is no longer
+retained; mismatched or still-journaled markers are kept.
 
 ### Push boundary and data flow
 

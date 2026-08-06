@@ -374,6 +374,74 @@ final class GitAddonGarbageCollectionSafetyTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: candidate.path))
   }
 
+  func testGarbageCollectionRemovesOldAcceptedMarkerWithoutRetainedJournal() throws {
+    let fixture = try GitFinalizationStoreFixture()
+    try fixture.store.acknowledge(WorkflowAddonFinalizationToken(
+      value: "git-finalization-v1:\(String(repeating: "c", count: 64)):collected-token"
+    ))
+    try setAcceptedMarkerDates(fixture: fixture, date: Date(timeIntervalSince1970: 1))
+
+    try fixture.store.garbageCollectFailedArtifacts(olderThan: Date(), limit: 1)
+
+    XCTAssertEqual(try acceptedMarkerNames(fixture: fixture), [])
+  }
+
+  func testGarbageCollectionRetainsRecentAcceptedMarker() throws {
+    let fixture = try GitFinalizationStoreFixture()
+    try fixture.store.acknowledge(WorkflowAddonFinalizationToken(
+      value: "git-finalization-v1:\(String(repeating: "d", count: 64)):recent-token"
+    ))
+
+    try fixture.store.garbageCollectFailedArtifacts(limit: 1)
+
+    XCTAssertEqual(try acceptedMarkerNames(fixture: fixture).count, 1)
+  }
+
+  func testGarbageCollectionRetainsOldAcceptedMarkerWhoseJournalRemains() throws {
+    let fixture = try GitFinalizationStoreFixture()
+    let journalKey = String(repeating: "e", count: 64)
+    try fixture.store.acknowledge(WorkflowAddonFinalizationToken(
+      value: "git-finalization-v1:\(journalKey):\(journalKey)"
+    ))
+    _ = try fixture.writeJournal(key: journalKey, executionID: "retained-journal-execution")
+    try setAcceptedMarkerDates(fixture: fixture, date: Date(timeIntervalSince1970: 1))
+
+    try fixture.store.garbageCollectFailedArtifacts(olderThan: Date(), limit: 1)
+
+    XCTAssertEqual(try acceptedMarkerNames(fixture: fixture).count, 1)
+  }
+
+  func testGarbageCollectionRetainsOldAcceptedMarkerWithMismatchedName() throws {
+    let fixture = try GitFinalizationStoreFixture()
+    let acceptedDirectory = fixture.root.appendingPathComponent("accepted", isDirectory: true)
+    let markerURL = acceptedDirectory.appendingPathComponent(String(repeating: "f", count: 64) + ".json")
+    let markerData = Data(
+      "{\"journalKey\":\"\(String(repeating: "0", count: 64))\",\"operationToken\":\"mismatched\"}".utf8
+    )
+    XCTAssertTrue(FileManager.default.createFile(atPath: markerURL.path, contents: markerData))
+    try setAcceptedMarkerDates(fixture: fixture, date: Date(timeIntervalSince1970: 1))
+
+    try fixture.store.garbageCollectFailedArtifacts(olderThan: Date(), limit: 1)
+
+    XCTAssertEqual(try acceptedMarkerNames(fixture: fixture).count, 1)
+  }
+
+  private func acceptedMarkerNames(fixture: GitFinalizationStoreFixture) throws -> [String] {
+    try FileManager.default.contentsOfDirectory(
+      atPath: fixture.root.appendingPathComponent("accepted", isDirectory: true).path
+    ).filter { !$0.hasPrefix(".") }
+  }
+
+  private func setAcceptedMarkerDates(fixture: GitFinalizationStoreFixture, date: Date) throws {
+    let acceptedDirectory = fixture.root.appendingPathComponent("accepted", isDirectory: true)
+    for name in try acceptedMarkerNames(fixture: fixture) {
+      try FileManager.default.setAttributes(
+        [.modificationDate: date],
+        ofItemAtPath: acceptedDirectory.appendingPathComponent(name).path
+      )
+    }
+  }
+
   func testGarbageCollectionRejectsDirectoryEntryLimitExhaustion() throws {
     let fixture = try GitFinalizationStoreFixture()
     let temporaryDirectory = fixture.root.appendingPathComponent("tmp", isDirectory: true)

@@ -530,6 +530,16 @@ struct GitFinalizationStore: Sendable {
       )
     }
     if remaining > 0 {
+      remaining = try garbageCollectAcceptedMarkers(
+        retainedJournalKeys: retainedJournalKeys,
+        cutoff: cutoff,
+        remaining: remaining,
+        entryLimit: entryLimit,
+        beforeRemoval: beforeRemoval,
+        afterValidation: afterRemovalValidation
+      )
+    }
+    if remaining > 0 {
       _ = try garbageCollectOrphanTransportRepositories(
         cutoff: cutoff,
         remaining: remaining,
@@ -658,6 +668,49 @@ struct GitFinalizationStore: Sendable {
       }
     }
     return remaining
+  }
+
+  private func garbageCollectAcceptedMarkers(
+    retainedJournalKeys: Set<String>,
+    cutoff: Date,
+    remaining: Int,
+    entryLimit: Int,
+    beforeRemoval: (URL) throws -> Void,
+    afterValidation: (URL) throws -> Void
+  ) throws -> Int {
+    var remaining = remaining
+    var removedMarker = false
+    let candidates = try managedDirectoryEntries(
+      at: acceptedDirectory,
+      maximumEntries: entryLimit
+    )
+    for candidate in candidates where remaining > 0 {
+      try checkGitFinalizationFilesystemDeadline()
+      guard let marker = try? decodeBounded(AcceptedMarker.self, from: candidate, maxBytes: 8 * 1024),
+            candidate.lastPathComponent == acceptedMarkerFileName(for: marker),
+            !retainedJournalKeys.contains(marker.journalKey),
+            let snapshot = artifactSnapshots([candidate], olderThan: cutoff)?[candidate.path] else {
+        continue
+      }
+      if try removeEntryIfPresent(
+        at: candidate,
+        expected: snapshot,
+        beforeRemoval: beforeRemoval,
+        afterValidation: afterValidation
+      ) {
+        remaining -= 1
+        removedMarker = true
+      }
+    }
+    if removedMarker {
+      try synchronizeDirectory(acceptedDirectory)
+    }
+    return remaining
+  }
+
+  private func acceptedMarkerFileName(for marker: AcceptedMarker) -> String {
+    let tokenValue = "git-finalization-v1:\(marker.journalKey):\(marker.operationToken)"
+    return sha256(Data(tokenValue.utf8)) + ".json"
   }
 
   @discardableResult

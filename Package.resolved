@@ -1,5 +1,5 @@
 {
-  "originHash" : "30a68e55c6b05d962d7859b364d2df7b682c3065489c102c1da3239795644d21",
+  "originHash" : "2b1c813f0cb58d309854df9be0ebec0beabf67ca240ec4260f77141f55f7ca5e",
   "pins" : [
     {
       "identity" : "swift-argument-parser",
@@ -26,6 +26,15 @@
       "state" : {
         "revision" : "47d3869a7291f085c1fb9fb1e6d3b97a793f45c6",
         "version" : "4.5.1"
+      }
+    },
+    {
+      "identity" : "web-hooky",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/web-hooky.git",
+      "state" : {
+        "revision" : "34a27e3ac6b042d498673a8de9cf42c136ebb8c2",
+        "version" : "0.2.0"
       }
     }
   ],

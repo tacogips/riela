@@ -57,6 +57,7 @@ struct DefaultEventLiveServer: EventLiveServing {
   var discordAPI: any DiscordGatewayAPI
   var slackAPI: any SlackGatewayAPI
   var matrixAPI: any MatrixGatewayAPI
+  var webhookyStreamer: any WebhookyRecordStreaming
   var workflowRunner: any EventWorkflowRunning
   var telemetry: any RielaTelemetry
 
@@ -65,6 +66,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     discordAPI: any DiscordGatewayAPI = URLSessionDiscordGatewayAPI(),
     slackAPI: any SlackGatewayAPI = URLSessionSlackGatewayAPI(),
     matrixAPI: any MatrixGatewayAPI = URLSessionMatrixGatewayAPI(),
+    webhookyStreamer: any WebhookyRecordStreaming = SDKWebhookyRecordStreamer(),
     workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner(),
     telemetry: (any RielaTelemetry)? = nil
   ) {
@@ -72,6 +74,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     self.discordAPI = discordAPI
     self.slackAPI = slackAPI
     self.matrixAPI = matrixAPI
+    self.webhookyStreamer = webhookyStreamer
     self.workflowRunner = workflowRunner
     self.telemetry = telemetry ?? RielaTelemetryFactory.make(configuration: .fromEnvironment(
       CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -108,8 +111,9 @@ struct DefaultEventLiveServer: EventLiveServing {
     let slackSources = try liveConfig.slackSources(eventRoot: eventRoot)
     let matrixSources = try liveConfig.matrixSources(eventRoot: eventRoot)
     let cronSources = try liveConfig.cronSources(eventRoot: eventRoot)
+    let webhookySources = try liveConfig.webhookySources(eventRoot: eventRoot)
     guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty || !matrixSources.isEmpty
-      || !cronSources.isEmpty else {
+      || !cronSources.isEmpty || !webhookySources.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
@@ -119,6 +123,7 @@ struct DefaultEventLiveServer: EventLiveServing {
       try discordSources.forEach { try $0.validateEnvironment(environment: environment) }
       try slackSources.forEach { try $0.validateEnvironment(environment: environment) }
       try matrixSources.forEach { try $0.validateEnvironment(environment: environment) }
+      try webhookySources.forEach { try $0.validateEnvironment(environment: environment) }
     } catch {
       try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
       throw error
@@ -130,7 +135,39 @@ struct DefaultEventLiveServer: EventLiveServing {
     var cronLastCheckedAt: [String: Date] = Dictionary(
       uniqueKeysWithValues: cronSources.map { ($0.id, serveStartedAt) }
     )
+    let webhookyBuffer = WebhookyRecordBuffer()
+    let webhookyTasks = startWebhookyStreams(
+      sources: webhookySources,
+      buffer: webhookyBuffer,
+      eventRoot: eventRoot
+    )
+    defer {
+      webhookyTasks.forEach { $0.cancel() }
+    }
+    let webhookySourcesById = Dictionary(uniqueKeysWithValues: webhookySources.map { ($0.id, $0) })
     repeat {
+      for (sourceId, record) in await webhookyBuffer.drain() {
+        guard let source = webhookySourcesById[sourceId] else {
+          continue
+        }
+        processedEvents += try await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "webhooky"
+        ) {
+          try await dispatchWebhookyRecord(
+            source: source,
+            record: record,
+            config: liveConfig,
+            eventRoot: eventRoot,
+            parsed: parsed
+          )
+        }
+        if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
+          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+        }
+      }
       for source in cronSources {
         let now = Date()
         let lastCheckedAt = cronLastCheckedAt[source.id] ?? now
@@ -209,10 +246,10 @@ struct DefaultEventLiveServer: EventLiveServing {
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
-      let onlyCronSourcesRemain = telegramSources.isEmpty && discordSources.isEmpty
+      let noGatewaySourcesRemain = telegramSources.isEmpty && discordSources.isEmpty
         && slackSources.isEmpty && matrixSources.isEmpty
-      if maximumEvents == nil || onlyCronSourcesRemain {
-        try await Task.sleep(nanoseconds: 1_000_000_000)
+      if maximumEvents == nil || noGatewaySourcesRemain {
+        try await Task.sleep(nanoseconds: webhookySources.isEmpty ? 1_000_000_000 : 200_000_000)
       }
     } while maximumEvents == nil || processedEvents < (maximumEvents ?? 0)
 

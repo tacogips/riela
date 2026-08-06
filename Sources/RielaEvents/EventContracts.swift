@@ -6,6 +6,7 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
 
   case cron
   case webhook
+  case webhooky
   case chatSdk
   case discordGateway
   case fileChange
@@ -22,6 +23,8 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
       self = .cron
     case "webhook":
       self = .webhook
+    case "webhooky":
+      self = .webhooky
     case "chat-sdk":
       self = .chatSdk
     case "discord-gateway":
@@ -49,6 +52,8 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
       "cron"
     case .webhook:
       "webhook"
+    case .webhooky:
+      "webhooky"
     case .chatSdk:
       "chat-sdk"
     case .discordGateway:
@@ -72,7 +77,7 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
 
   public var supportsLiveEventServe: Bool {
     switch self {
-    case .telegramGateway, .discordGateway, .slackGateway, .matrix, .cron:
+    case .telegramGateway, .discordGateway, .slackGateway, .matrix, .cron, .webhooky:
       true
     case .webhook, .chatSdk, .fileChange, .s3Repository, .sequentialList, .custom:
       false

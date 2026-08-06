@@ -647,7 +647,7 @@ struct AnydocResolvedBinary {
 /// Resolves the `anydoc-swift` executable from `config.binaryPath`, then
 /// `ANYDOC_SWIFT_BIN`, then `PATH`. Never from node payload variables.
 struct AnydocBinaryResolver {
-  private static let executableNames = ["anydoc-swift", "anydoc-swift-sdk"]
+  private static let executableName = "anydoc-swift"
   private static let executableEnvironmentName = "ANYDOC_SWIFT_BIN"
 
   var addonName: String
@@ -675,14 +675,12 @@ struct AnydocBinaryResolver {
       }
       return AnydocResolvedBinary(path: path, source: .environment)
     }
-    for name in Self.executableNames {
-      if let path = resolveExecutable(name, searchPath: searchPath) {
-        return AnydocResolvedBinary(path: path, source: .path)
-      }
+    if let path = resolveExecutable(Self.executableName, searchPath: searchPath) {
+      return AnydocResolvedBinary(path: path, source: .path)
     }
     throw AdapterExecutionError(
       .policyBlocked,
-      "\(addonName) requires anydoc-swift; set config.binaryPath, \(Self.executableEnvironmentName), or PATH"
+      "\(addonName) requires \(Self.executableName); set config.binaryPath, \(Self.executableEnvironmentName), or PATH"
     )
   }
 }

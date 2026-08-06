@@ -327,8 +327,11 @@ Normalized input should include:
 
 - change type as `create`, `modify`, or `delete`
 - source id and provider `local-fs`
-- watched directory as an operator-facing configured path label
-- normalized file path relative to the watched directory
+- watched directory as an operator-facing configured path label, plus the
+  resolved absolute directory as `watch.resolvedDirectory` so workflows can
+  reach the file without knowing the listener's working directory
+- normalized file path relative to the watched directory, plus the resolved
+  `file.absolutePath` (resolved directory joined with the relative path)
 - file name and extension when available
 - current file metadata for create and modify events when available, including
   size and mtime
@@ -348,11 +351,13 @@ Recommended runtime variable shape:
       "name": "release.md",
       "extension": ".md",
       "size": 12842,
-      "mtime": "2026-05-19T00:00:00.000Z"
+      "mtime": "2026-05-19T00:00:00.000Z",
+      "absolutePath": "/abs/watched-docs/plans/release.md"
     },
     "watch": {
       "sourceId": "local-docs",
-      "directory": "./watched-docs"
+      "directory": "./watched-docs",
+      "resolvedDirectory": "/abs/watched-docs"
     }
   }
 }
@@ -360,8 +365,14 @@ Recommended runtime variable shape:
 
 Rules:
 
-- file contents are not read or copied by default; the first implementation
-  passes metadata and a safe relative path only
+- file contents are not read or copied by default; the implementation passes
+  metadata, a safe relative path, and the resolved absolute path only
+- `filters.suffixes` matches case-insensitively; hidden files (dot-prefixed
+  names) are skipped by the scanner
+- the Swift implementation is a polling scanner inside `events serve`: each
+  serve tick diffs a directory snapshot, and a pending create or modify
+  dispatches once the file's size and mtime have stayed unchanged for
+  `stabilityWindowMs`
 - every emitted relative path must be non-empty, use forward slashes, and reject
   absolute paths, backslashes, `.` segments, and `..` segments
 - `changeTypes` controls dispatch after normalization, so disabled change types

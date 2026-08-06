@@ -44,6 +44,18 @@ extension RielaExampleParityTests {
           "sourceDocumentRef": .string(sourcePDF.absoluteString)
         ])
       ])
+    case "document-inbox-notebook":
+      try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
+      let sourceDocument = noteRoot.appendingPathComponent("sample.pdf")
+      try Data("mock source pdf bytes".utf8).write(to: sourceDocument)
+      return try noteExampleJSON([
+        "noteRoot": .string(noteRoot.path),
+        "workflowInput": .object([
+          "path": .string(sourceDocument.path),
+          "title": .string("sample.pdf"),
+          "sourceDocumentRef": .string(sourceDocument.path)
+        ])
+      ])
     case "note-quick-memo":
       return try noteExampleJSON([
         "noteRoot": .string(noteRoot.path),

@@ -485,9 +485,16 @@ riela events emit gmail-latest-mail-hourly-cron \
 
 The `local-docs` source demonstrates local filesystem notifications. It
 watches `examples/event-sources/watched-docs` for `create`, `modify`, and
-`delete` changes to `.md` and `.json` files. The source emits
-`file.change.created`, `file.change.modified`, or `file.change.deleted` with
-safe relative file metadata only; file contents are not read.
+`delete` changes to `.md` and `.json` files (suffix match is
+case-insensitive; hidden files are skipped). The serve loop snapshots the
+directory at startup, so files that already exist never dispatch; observed
+changes are held until the file's metadata stays unchanged for
+`stabilityWindowMs` (default 1000) and then emit `file.change.created`,
+`file.change.modified`, or `file.change.deleted`. The event input carries the
+change type, the relative path plus name/extension/size/mtime metadata, the
+resolved `file.absolutePath`, and the `watch` descriptor; file contents are
+not read. See `examples/document-inbox-notebook` for a full
+file-drop-to-notebook workflow built on this source kind.
 
 Serve it and create a matching file:
 

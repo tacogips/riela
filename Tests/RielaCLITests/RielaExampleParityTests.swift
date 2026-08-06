@@ -29,6 +29,7 @@ private func rielaExampleWorkflowNames() -> [String] {
     "discord-codex-chat",
     "discord-persona-chat",
     "dispatcher-llm-resolver-stub",
+    "document-inbox-notebook",
     "enterprise-matrix-agent-personas",
     "enterprise-matrix-customer-escalation",
     "enterprise-matrix-security-incident",
@@ -91,7 +92,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 41
+    static let expectedMockScenarioCount = 42
     static let expectedNodeMockScenarioCount = 0
   }
 

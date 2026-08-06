@@ -576,7 +576,8 @@ fileprivate extension ScopedParityCommandRunner {
     case "validate":
       try FileManager.default.createDirectory(at: receiptsRoot(eventRoot: root), withIntermediateDirectories: true)
       let config = try loadEventConfigIfPresent(eventRoot: root)
-      let diagnostics = config.map { EventContractValidator.validate(sources: $0.sources, bindings: $0.bindings) } ?? []
+      var diagnostics = config.map { EventContractValidator.validate(sources: $0.sources, bindings: $0.bindings) } ?? []
+      diagnostics.append(contentsOf: fileChangeSourceDiagnostics(eventRoot: root))
       return ScopedParityCommandResult(
         scope: "events",
         command: action,

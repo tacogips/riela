@@ -408,23 +408,6 @@ notebook whose first note carries the comment body and links the source note
 to that new note (`related`, human provenance), surfacing the link in the
 detail Links section. The Agent tab query pathway is unchanged.
 
-The regular-width RielaApp Notes workspace has a left pane with **Tree** and
-**Notes** modes. Tree mode shows notebooks with lazily loaded note children and
-a load-more row for large notebooks; explicit refreshes and note-store changes
-invalidate the cached children so created and deleted notes reappear without an
-app restart. Notes mode lists the selected notebook's notes in the same order as
-the detail pager, highlights the current note, shows row positions such as
-`3/12`, and selects through the same unsaved-edit guard as the pager and links.
-Selecting a search result while body edits are unsaved dismisses the search
-sheet and surfaces the root **Discard / Keep Editing** confirmation; Discard
-navigates to the result and Keep Editing preserves the draft. Plain Return is
-owned by the focused agent composer only: Return in note body, comment, tag,
-rewrite, search, or link text inputs does not trigger agent send. The left and
-right pane expansion state, selected Tree/Notes mode, and folded bottom-agent
-bar persist across relaunches. Custom workspace panels use semantic SwiftUI
-roles so the agent bar, attachment chips, pane backgrounds, and selected rows
-remain legible in dark and light appearances.
-
 The web dashboard includes a **Notes** workspace with Folder and Tags
 navigation, descendant-scoped List and Board views, notebook progress,
 class-grouped tag chips, and a read-only note preview. Cards and rows show the

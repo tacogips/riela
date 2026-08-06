@@ -110,8 +110,11 @@ final class ServerContractsTests: XCTestCase {
     guard case let .string(schema)? = graphql["schema"] else {
       return XCTFail("expected schema string")
     }
-    XCTAssertTrue(schema.contains("createNote(input: CreateNoteInput!)"))
-    XCTAssertTrue(schema.contains("searchNotes(query: String!"))
+    // The schema wraps long argument lists across lines, so compare with
+    // whitespace stripped rather than pinning a formatting style.
+    let compactSchema = schema.filter { !$0.isWhitespace }
+    XCTAssertTrue(compactSchema.contains("createNote(input:CreateNoteInput!)"))
+    XCTAssertTrue(compactSchema.contains("searchNotes(query:String!"))
     guard case let .object(contextObject)? = response.body["context"] else {
       return XCTFail("expected context body")
     }

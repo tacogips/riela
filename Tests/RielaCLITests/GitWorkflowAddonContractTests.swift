@@ -9,6 +9,26 @@ import Glibc
 #endif
 
 final class GitWorkflowAddonContractTests: XCTestCase {
+  func testGitSafetyArgumentsDoNotSetAnEmptySSLCertificate() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("git-safety-arguments")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = CapturingGitCommandRunner()
+    let resolver = BuiltinWorkflowAddonResolver(
+      workingDirectory: root,
+      gitCommandRunner: runner,
+      gitFinalizationStore: GitFinalizationStore(
+        rootDirectory: root.appendingPathComponent("finalization", isDirectory: true)
+      )
+    )
+
+    _ = try resolver.runGit(["version"])
+
+    let arguments = try XCTUnwrap(runner.arguments)
+    XCTAssertFalse(arguments.contains("http.sslCert="))
+    XCTAssertTrue(arguments.contains("http.sslKey="))
+    XCTAssertTrue(arguments.contains("credential.interactive=never"))
+  }
+
   func testCommitSupportsExactTrackedDeletion() async throws {
     let repository = try GitTestRepository()
     try FileManager.default.removeItem(at: repository.root.appendingPathComponent("tracked.txt"))
@@ -893,6 +913,22 @@ func makeGitPushInput(
       attempt: 1
     )
   )
+}
+
+private final class CapturingGitCommandRunner: GitCommandRunning, @unchecked Sendable {
+  private let lock = NSLock()
+  private var capturedArguments: [String]?
+
+  var arguments: [String]? {
+    lock.withLock { capturedArguments }
+  }
+
+  func run(_ invocation: GitCommandInvocation) throws -> GitCommandResult {
+    lock.withLock {
+      capturedArguments = invocation.arguments
+    }
+    return GitCommandResult(exitCode: 0, output: "")
+  }
 }
 
 private struct SensitiveFailingGitCommandRunner: GitCommandRunning {

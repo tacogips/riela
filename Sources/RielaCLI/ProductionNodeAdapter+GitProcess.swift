@@ -431,7 +431,6 @@ extension BuiltinWorkflowAddonResolver {
       "-c", "core.gitProxy=",
       "-c", "http.extraHeader=",
       "-c", "http.cookieFile=",
-      "-c", "http.sslCert=",
       "-c", "http.sslKey=",
       "-c", "core.pager=cat",
       "-c", "pager.branch=false"

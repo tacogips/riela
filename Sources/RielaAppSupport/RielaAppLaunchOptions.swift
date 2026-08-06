@@ -2,16 +2,6 @@
 import Foundation
 
 public struct RielaAppLaunchOptions: Equatable, Sendable {
-  public struct InitialViewer: Equatable, Sendable {
-    public var workflowPath: String
-    public var sessionStoreRoot: String?
-
-    public init(workflowPath: String, sessionStoreRoot: String? = nil) {
-      self.workflowPath = workflowPath
-      self.sessionStoreRoot = sessionStoreRoot
-    }
-  }
-
   public var arguments: [String]
   public var environment: [String: String]
   public var workingDirectory: String
@@ -67,16 +57,6 @@ public struct RielaAppLaunchOptions: Equatable, Sendable {
     !arguments.contains("--no-autostart-daemons")
   }
 
-  public var initialViewer: InitialViewer? {
-    guard let workflowPath = value(flag: "--open-viewer") else {
-      return nil
-    }
-    return InitialViewer(
-      workflowPath: absolutePath(workflowPath, isDirectory: true),
-      sessionStoreRoot: value(flag: "--session-store-root").map { absolutePath($0, isDirectory: true) }
-    )
-  }
-
   public func homeDirectory(defaultHome: String) -> URL {
     if let path = configuredPath(flag: "--home-root", environmentName: "RIELA_APP_HOME")
       ?? environment["HOME"].flatMap({ $0.isEmpty ? nil : $0 }) {
@@ -103,10 +83,6 @@ public struct RielaAppLaunchOptions: Equatable, Sendable {
       }
     }
     return results.filter { !$0.isEmpty }
-  }
-
-  private func absolutePath(_ rawPath: String, isDirectory: Bool = false) -> String {
-    absoluteURL(rawPath, isDirectory: isDirectory).path
   }
 
   private func absoluteURL(_ rawPath: String, isDirectory: Bool = false) -> URL {

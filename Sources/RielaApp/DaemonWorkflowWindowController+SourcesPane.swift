@@ -324,9 +324,9 @@ extension DaemonWorkflowWindowController {
   private func workflowSourceActionsSection() -> RielaAppSettingsSectionView {
     rielaAppSettingsSection(rows: [
       actionRow(
-        title: "Open in Viewer",
-        detail: "Inspect sessions, logs, and node structure for this workflow source.",
-        action: #selector(openSelectedWorkflowSourceViewer)
+        title: "Open in Web UI",
+        detail: "Inspect workflow sources, sessions, and logs in the browser.",
+        action: #selector(openWorkflowSourcesInWebUI)
       )
     ])
   }

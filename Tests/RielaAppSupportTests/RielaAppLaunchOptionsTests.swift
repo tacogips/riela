@@ -11,8 +11,6 @@ final class RielaAppLaunchOptionsTests: XCTestCase {
         "--project-root", "projects/demo",
         "--import-workflow-or-package", "archives/demo.rielapkg",
         "--import-workflow-or-package=workflows/local-demo",
-        "--open-viewer", "workflows/view-demo",
-        "--session-store-root", "sessions/view-demo",
         "--open-notes",
         "--open-note-settings"
       ],
@@ -27,10 +25,6 @@ final class RielaAppLaunchOptionsTests: XCTestCase {
       "/tmp/riela-launch/archives/demo.rielapkg",
       "/tmp/riela-launch/workflows/local-demo"
     ])
-    XCTAssertEqual(options.initialViewer, RielaAppLaunchOptions.InitialViewer(
-      workflowPath: "/tmp/riela-launch/workflows/view-demo",
-      sessionStoreRoot: "/tmp/riela-launch/sessions/view-demo"
-    ))
     XCTAssertTrue(options.opensNotes)
     XCTAssertTrue(options.opensNoteSettings)
   }

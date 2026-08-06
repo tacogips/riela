@@ -426,8 +426,13 @@ public struct SessionRerunCommand: Sendable {
         nodePayloads: bundle.nodePayloads
       )
       bundle.nodePayloads = instanceResolution.nodePayloads
+      let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
       let adapter = try makeAdapter(
-        mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
+        mockScenarioPath: effectiveMockScenarioPath,
+        workingDirectory: options.workingDirectory
+      )
+      let addonResolver = try await makeScenarioBackedAddonResolver(
+        scenarioPath: effectiveMockScenarioPath,
         workingDirectory: options.workingDirectory
       )
       // Rerun re-acquires the same advisory per-workflow lease as a fresh run
@@ -457,8 +462,9 @@ public struct SessionRerunCommand: Sendable {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
+        addonResolver: addonResolver,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
-        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil,
+        simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
       )
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
@@ -669,8 +675,13 @@ public struct SessionResumeCommand: Sendable {
         commandName: "resume"
       )
       bundle.nodePayloads = instanceResolution.nodePayloads
+      let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
       let adapter = try makeSessionNodeAdapter(
-        mockScenarioPath: options.mockScenarioPath ?? persisted.mockScenarioPath,
+        mockScenarioPath: effectiveMockScenarioPath,
+        workingDirectory: options.workingDirectory
+      )
+      let addonResolver = try await makeScenarioBackedAddonResolver(
+        scenarioPath: effectiveMockScenarioPath,
         workingDirectory: options.workingDirectory
       )
       // Resume re-acquires the same advisory per-workflow lease as a fresh
@@ -701,11 +712,11 @@ public struct SessionResumeCommand: Sendable {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
+        addonResolver: addonResolver,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
-        simulatesCrossWorkflowDispatch: (options.mockScenarioPath ?? persisted.mockScenarioPath) != nil,
+        simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
       )
-      let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
       let eventHandler = await makeSessionCommandLivePersistenceHandler(
         configuration: SessionLivePersistenceConfig(

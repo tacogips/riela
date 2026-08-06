@@ -6,6 +6,17 @@ func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   for (key, value) in input.resolvedInputPayload {
     variables[key] = value
   }
+  if case let .object(inputMetadata)? = input.resolvedInputPayload["_rielaInput"],
+     case let .object(latest)? = inputMetadata["latest"],
+     case let .object(latestPayload)? = latest["payload"] {
+    variables["inbox"] = .object([
+      "latest": .object([
+        "output": .object([
+          "payload": .object(latestPayload)
+        ])
+      ])
+    ])
+  }
   variables["input"] = .object(input.resolvedInputPayload)
   variables["workflowId"] = .string(input.workflowId)
   variables["stepId"] = .string(input.stepId)

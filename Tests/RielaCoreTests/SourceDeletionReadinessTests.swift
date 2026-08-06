@@ -5,9 +5,12 @@ final class SourceDeletionReadinessTests: XCTestCase {
   // `web/` is the explicitly retained SolidJS SPA: its TypeScript sources,
   // e2e specs, and local node_modules are not deletion-blocking remnants of
   // the removed TypeScript runtime.
+  // `.claude/` holds session-local agent state, including nested worktrees
+  // with their own `.build` checkouts; nothing under it is repository source.
   private static let ignoredRepositoryPathPrefixes = [
     ".git/",
     ".build/",
+    ".claude/",
     ".direnv/",
     ".riela/",
     "dist/",

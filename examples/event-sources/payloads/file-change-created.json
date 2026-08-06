@@ -1,6 +1,26 @@
 {
-  "changeType": "create",
-  "path": "plans/release.md",
-  "size": 12842,
-  "mtime": "2026-05-19T00:00:00.000Z"
+  "sourceId": "local-docs",
+  "eventId": "local-docs-fixture-created-1",
+  "provider": "local-fs",
+  "eventType": "file.change.created",
+  "receivedAt": "2026-05-19T00:00:00Z",
+  "dedupeKey": "local-docs:create:plans/release.md:12842:1747612800000",
+  "input": {
+    "change": {
+      "type": "create"
+    },
+    "file": {
+      "path": "plans/release.md",
+      "name": "release.md",
+      "extension": ".md",
+      "size": 12842,
+      "mtime": "2026-05-19T00:00:00.000Z",
+      "absolutePath": "/tmp/riela-event-source-demo/watched-docs/plans/release.md"
+    },
+    "watch": {
+      "sourceId": "local-docs",
+      "directory": "../../watched-docs",
+      "resolvedDirectory": "/tmp/riela-event-source-demo/watched-docs"
+    }
+  }
 }

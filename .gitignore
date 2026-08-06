@@ -56,6 +56,13 @@ impl-plans/.progress.lock
 **/.envrc.private*
 .private*/
 
+# riela event-source runtime artifacts inside checked-in example event roots
+examples/**/.riela-events/serve-record.json
+examples/**/.riela-events/receipts/
+examples/**/.riela-events/attachments/
+examples/document-inbox-notebook/inbox/*
+!examples/document-inbox-notebook/inbox/.gitkeep
+
 # riela runtime artifacts and session store (default paths)
 .riela/*
 !.riela/workflows/

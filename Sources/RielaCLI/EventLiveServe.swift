@@ -112,8 +112,15 @@ struct DefaultEventLiveServer: EventLiveServing {
     let matrixSources = try liveConfig.matrixSources(eventRoot: eventRoot)
     let cronSources = try liveConfig.cronSources(eventRoot: eventRoot)
     let webhookySources = try liveConfig.webhookySources(eventRoot: eventRoot)
+    let fileChangeSources: [FileChangeWatchSource]
+    do {
+      fileChangeSources = try liveConfig.fileChangeSources(eventRoot: eventRoot)
+    } catch {
+      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
+      throw error
+    }
     guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty || !matrixSources.isEmpty
-      || !cronSources.isEmpty || !webhookySources.isEmpty else {
+      || !cronSources.isEmpty || !webhookySources.isEmpty || !fileChangeSources.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
@@ -135,6 +142,17 @@ struct DefaultEventLiveServer: EventLiveServing {
     var cronLastCheckedAt: [String: Date] = Dictionary(
       uniqueKeysWithValues: cronSources.map { ($0.id, serveStartedAt) }
     )
+    // Startup snapshots so files that already exist never dispatch events;
+    // only changes observed after listener start are announced.
+    let fileChangeStates: [String: FileChangeWatchState]
+    do {
+      fileChangeStates = Dictionary(uniqueKeysWithValues: try fileChangeSources.map {
+        ($0.id, try FileChangeWatchState(source: $0))
+      })
+    } catch {
+      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
+      throw error
+    }
     let webhookyBuffer = WebhookyRecordBuffer()
     let webhookyTasks = startWebhookyStreams(
       sources: webhookySources,
@@ -184,6 +202,28 @@ struct DefaultEventLiveServer: EventLiveServing {
             source: source,
             scheduledAt: scheduledAt,
             firedAt: now,
+            config: liveConfig,
+            eventRoot: eventRoot,
+            parsed: parsed
+          )
+        }
+        if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
+          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+        }
+      }
+      for source in fileChangeSources {
+        guard let state = fileChangeStates[source.id] else {
+          continue
+        }
+        processedEvents += try await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "file-change"
+        ) {
+          try await pollFileChangeSource(
+            source: source,
+            state: state,
             config: liveConfig,
             eventRoot: eventRoot,
             parsed: parsed

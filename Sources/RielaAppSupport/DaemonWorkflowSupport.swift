@@ -700,7 +700,9 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     [
       EventSourceKind.discordGateway,
       .slackGateway,
-      .telegramGateway
+      .telegramGateway,
+      .cron,
+      .webhooky
     ]
     .filter(\.supportsLiveEventServe)
     .map(\.rawValue)

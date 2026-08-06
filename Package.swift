@@ -52,7 +52,8 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
-    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2")
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
+    .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0")
   ],
   targets: [
     .target(
@@ -190,6 +191,7 @@ let package = Package(
         "RielaHook",
         "RielaWorkflowRegistry",
         .product(name: "Crypto", package: "swift-crypto"),
+        .product(name: "WebHooky", package: "web-hooky"),
         "CodexAgent",
         "ClaudeCodeAgent",
         "CursorCLIAgent"

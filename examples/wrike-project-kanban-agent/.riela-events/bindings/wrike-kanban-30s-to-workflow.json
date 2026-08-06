@@ -1,0 +1,45 @@
+{
+  "id": "wrike-kanban-30s-to-workflow",
+  "sourceId": "wrike-kanban-30s-cron",
+  "workflowName": "wrike-project-kanban-agent",
+  "match": {
+    "eventType": "cron.tick"
+  },
+  "inputMapping": {
+    "mode": "template",
+    "template": {
+      "request": "Poll the Wrike project todo column and process one waiting task through doing to done.",
+      "projectFolderId": "REPLACE_WITH_PROJECT_FOLDER_ID",
+      "todoStatusId": "REPLACE_WITH_TODO_CUSTOM_STATUS_ID",
+      "doingStatusId": "REPLACE_WITH_DOING_CUSTOM_STATUS_ID",
+      "doneStatusId": "REPLACE_WITH_DONE_CUSTOM_STATUS_ID",
+      "selfContactId": "REPLACE_WITH_SELF_CONTACT_ID",
+      "scheduledAt": "{{event.input.scheduledAt}}",
+      "firedAt": "{{event.input.firedAt}}",
+      "timezone": "{{event.input.timezone}}"
+    },
+    "mirrorToHumanInput": false
+  },
+  "execution": {
+    "async": false,
+    "dedupeWindowMs": 25000,
+    "maxConcurrentPerKey": 1,
+    "concurrencyKey": "{{event.sourceId}}"
+  },
+  "taskPlanning": {
+    "enabled": false
+  },
+  "mailboxBridge": {
+    "output": {
+      "reply": {
+        "mode": "none"
+      },
+      "progress": {
+        "mode": "none"
+      },
+      "control": {
+        "mode": "none"
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "wrike-webhooky-stream",
+  "kind": "webhooky",
+  "baseUrlEnv": "RIELA_WEBHOOKY_URL",
+  "credentialEnv": "RIELA_WEBHOOKY_WRIKE_CREDENTIAL",
+  "fetchUuidEnv": "RIELA_WEBHOOKY_WRIKE_FETCH_UUID",
+  "eventType": "webhook.record"
+}

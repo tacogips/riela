@@ -40,6 +40,35 @@ Scheduled cron behavior:
 - the cron adapter preserves existing config, binding, input mapping, dedupe,
   and event receipt behavior
 
+### Web-Hooky Stream
+
+`webhooky` subscribes to a [web-hooky](https://github.com/tacogips/web-hooky)
+webhook destination server over its `/_ws/{fetchUuid}` WebSocket surface, so
+vendor webhooks (Wrike, GitHub, ...) that the server authenticated and
+persisted trigger workflows in near real time without riela exposing a public
+HTTP endpoint itself. The connection uses the WebHooky Swift client with
+reconnect and capped exponential backoff.
+
+Source config:
+
+- `kind: "webhooky"`
+- `baseUrlEnv`: environment variable naming the server base URL
+- `credentialEnv`: environment variable holding the fetch API credential as
+  `keyId:secret`
+- `fetchUuidEnv`: environment variable naming the destination fetch UUID
+- optional `eventType` stamped on emitted envelopes (default `webhook.record`)
+- optional `includeFetched` to also dispatch records already marked fetched
+  (default false, so reconnect backlogs are not replayed)
+
+Normalized input includes:
+
+- `receivedAt`: server receipt time
+- `fetched`: the record's prior fetched flag
+- `payload`: the vendor addon output, verbatim
+
+Each envelope carries a payload-digest dedupe key; live serve drains streamed
+records through the same trigger, binding, and dedupe path as polled sources.
+
 ### Sequential List
 
 Sequential list is a local event source for operators who want to preconfigure

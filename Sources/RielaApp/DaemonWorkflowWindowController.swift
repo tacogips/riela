@@ -89,9 +89,9 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let onRelinkInstance: (String, String) -> Void
   private let onRenameWorkflow: (String) -> Void
   private let onRemoveInstance: (String) -> Void
-  private let onOpenViewer: (String) -> Void
-  private let onOpenExecutionLog: (String) -> Void
-  private let onOpenWorkflowSourceViewer: (String) -> Void
+  /// Opens the web UI, which replaced the removed AppKit workflow viewer.
+  /// The parameter is the noun phrase naming the surface being opened.
+  private let onOpenWebUI: (String) -> Void
   let defaultInstanceId: (String) -> String
   private let onStartInstance: (String) -> Void
   private let onStopInstance: (String) -> Void
@@ -160,8 +160,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var variablesSettingRow: NSView?
   weak var eventSourcesSettingRow: NSView?
   weak var relinkSourceActionRow: NSView?
-  weak var openViewerActionRow: NSView?
-  weak var openExecutionLogActionRow: NSView?
+  weak var openWebUIActionRow: NSView?
   weak var startInstanceActionRow: NSView?
   weak var stopInstanceActionRow: NSView?
   weak var restartInstanceActionRow: NSView?
@@ -230,9 +229,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onRelinkInstance: @escaping (String, String) -> Void,
     onRenameWorkflow: @escaping (String) -> Void,
     onRemoveInstance: @escaping (String) -> Void,
-    onOpenViewer: @escaping (String) -> Void = { _ in },
-    onOpenExecutionLog: @escaping (String) -> Void = { _ in },
-    onOpenWorkflowSourceViewer: @escaping (String) -> Void = { _ in },
+    onOpenWebUI: @escaping (String) -> Void = { _ in },
     defaultInstanceId: @escaping (String) -> String = { _ in "" },
     onStartInstance: @escaping (String) -> Void,
     onStopInstance: @escaping (String) -> Void,
@@ -265,9 +262,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onRelinkInstance = onRelinkInstance
     self.onRenameWorkflow = onRenameWorkflow
     self.onRemoveInstance = onRemoveInstance
-    self.onOpenViewer = onOpenViewer
-    self.onOpenExecutionLog = onOpenExecutionLog
-    self.onOpenWorkflowSourceViewer = onOpenWorkflowSourceViewer
+    self.onOpenWebUI = onOpenWebUI
     self.defaultInstanceId = defaultInstanceId
     self.onStartInstance = onStartInstance
     self.onStopInstance = onStopInstance
@@ -556,25 +551,15 @@ extension DaemonWorkflowWindowController {
     showInstanceDetailOverview()
   }
 
-  @objc func openSelectedInstanceViewer() {
+  @objc func openSelectedInstanceInWebUI() {
     guard let row = selectedRow(), row.state != .needsSource else {
       return
     }
-    onOpenViewer(row.id)
+    onOpenWebUI("Run logs")
   }
 
-  @objc func openSelectedInstanceExecutionLog() {
-    guard let row = selectedRow(), row.state != .needsSource else {
-      return
-    }
-    onOpenExecutionLog(row.id)
-  }
-
-  @objc func openSelectedWorkflowSourceViewer() {
-    guard let selectedWorkflowSourceId else {
-      return
-    }
-    onOpenWorkflowSourceViewer(selectedWorkflowSourceId)
+  @objc func openWorkflowSourcesInWebUI() {
+    onOpenWebUI("Workflow sources")
   }
 
   @objc func startSelectedInstance() {
@@ -804,8 +789,7 @@ extension DaemonWorkflowWindowController {
     variablesSettingRow?.isHidden = needsSource
     eventSourcesSettingRow?.isHidden = needsSource
     relinkSourceActionRow?.isHidden = !needsSource
-    openViewerActionRow?.isHidden = needsSource
-    openExecutionLogActionRow?.isHidden = needsSource
+    openWebUIActionRow?.isHidden = needsSource
     startInstanceActionRow?.isHidden = !showsStartAction(for: state)
     stopInstanceActionRow?.isHidden = !showsStopAction(for: state)
     restartInstanceActionRow?.isHidden = !showsRestartAction(for: state)

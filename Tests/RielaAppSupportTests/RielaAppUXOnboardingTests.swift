@@ -151,9 +151,9 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "No instances match the current filter." })
   }
 
-  func testInstanceDetailShowsSnapshotDetailAndCanOpenViewer() throws {
-    var openedIdentity: String?
-    let controller = makeController(onOpenViewer: { openedIdentity = $0 })
+  func testInstanceDetailShowsSnapshotDetailAndCanOpenWebUI() throws {
+    var openedContext: String?
+    let controller = makeController(onOpenWebUI: { openedContext = $0 })
     let source = workflowSource(requiredEnvironment: [
       RielaAppEnvRequirement(name: "TOKEN", description: nil, secret: true)
     ])
@@ -185,8 +185,8 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
 
     XCTAssertEqual(controller.instanceRows.first?.stateDetail, "event source failed")
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Failed - event source failed" })
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Open in Viewer", in: root)).accessibilityPerformPress())
-    XCTAssertEqual(openedIdentity, "chat-instance")
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Open in Web UI", in: root)).accessibilityPerformPress())
+    XCTAssertEqual(openedContext, "Run logs")
   }
 
   func testInstanceRemovalRequiresConfirmationAndKeepsSourceScopeVisible() throws {
@@ -264,7 +264,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
 
   private func makeController(
     onRemoveInstance: @escaping (String) -> Void = { _ in },
-    onOpenViewer: @escaping (String) -> Void = { _ in },
+    onOpenWebUI: @escaping (String) -> Void = { _ in },
     onRegisterEventSource: @escaping (String, String, String) -> String? = { _, _, _ in nil }
   ) -> DaemonWorkflowWindowController {
     DaemonWorkflowWindowController(
@@ -279,8 +279,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
       onRelinkInstance: { _, _ in },
       onRenameWorkflow: { _ in },
       onRemoveInstance: onRemoveInstance,
-      onOpenViewer: onOpenViewer,
-      onOpenWorkflowSourceViewer: { _ in },
+      onOpenWebUI: onOpenWebUI,
       defaultInstanceId: { "\($0)-instance" },
       onStartInstance: { _ in },
       onStopInstance: { _ in },

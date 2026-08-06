@@ -41,5 +41,33 @@ extension RielaApp {
   @objc func openWebServerFromMenu() {
     webServerController?.openInBrowser()
   }
+
+  /// Starts the local web server when needed and opens it in the browser.
+  /// Every "open" action funnels through here because the AppKit workflow
+  /// viewer window was removed once the web app took over run inspection.
+  /// - Parameter context: Noun phrase naming the surface, used in status text.
+  func openWebUI(context: String) {
+    Task { @MainActor [weak self] in
+      guard let self else {
+        return
+      }
+      guard let webServerController else {
+        status = webServerSetupError ?? "Web Server: Unavailable"
+        rebuildMenu()
+        return
+      }
+      if webServerController.endpointURL == nil {
+        await webServerController.start()
+      }
+      guard webServerController.endpointURL != nil else {
+        status = "Failed to open \(context): the web server did not start."
+        rebuildMenu()
+        return
+      }
+      webServerController.openInBrowser()
+      status = "Opened \(context) (web) for profile \(daemonProfileName.rawValue)."
+      rebuildMenu()
+    }
+  }
 }
 #endif

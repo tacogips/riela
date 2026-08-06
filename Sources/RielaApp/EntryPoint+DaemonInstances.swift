@@ -319,26 +319,6 @@ extension RielaApp {
     }
   }
 
-  func setDaemonWorkflowEnvironmentVariables(identity: String) {
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance could not be found"
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    let existing = environmentText(from: resolved.preference.environmentVariables)
-    guard let text = promptForMultilineValue(
-      title: "Environment Variables",
-      message: "Enter KEY=VALUE lines for instance \(resolved.candidate.displayName).",
-      value: existing
-    ) else {
-      return
-    }
-    if let error = saveDaemonWorkflowEnvironmentVariables(identity: identity, text: text) {
-      status = error
-      refreshDaemonWorkflowWindow()
-    }
-  }
-
   func saveDaemonWorkflowEnvironmentVariables(identity: String, text: String) -> String? {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       return "Instance could not be found"
@@ -360,26 +340,6 @@ extension RielaApp {
       return nil
     } catch {
       return "Invalid environment variables: \(error.localizedDescription)"
-    }
-  }
-
-  func setDaemonWorkflowDefaultVariables(identity: String) {
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance could not be found"
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    let existing = workflowVariablesText(from: resolved.preference.defaultVariables)
-    guard let text = promptForMultilineValue(
-      title: "Workflow Variables",
-      message: "Enter workflow variables for \(resolved.candidate.displayName). Use key=value or key:=JSON lines.",
-      value: existing
-    ) else {
-      return
-    }
-    if let error = saveDaemonWorkflowDefaultVariables(identity: identity, text: text) {
-      status = error
-      refreshDaemonWorkflowWindow()
     }
   }
 
@@ -446,10 +406,6 @@ extension RielaApp {
     return InstancePromptResult(identity: identity, displayName: displayName.isEmpty ? nil : displayName)
   }
 
-  private func promptForMultilineValue(title: String, message: String, value: String) -> String? {
-    RielaAppSettingsEditorWindowController.editMultiline(title: title, message: message, value: value)
-  }
-
   func uniqueDaemonInstanceId(for candidate: RielaAppDaemonWorkflowCandidate) -> String {
     let base = sanitizedDaemonInstanceId("\(candidate.sourceIdentity)-instance")
     var candidateId = base
@@ -470,12 +426,6 @@ extension RielaApp {
     return String(mapped).trimmingCharacters(in: CharacterSet(charactersIn: ".-_ :"))
   }
 
-  private func environmentText(from variables: [String: String]) -> String {
-    variables.keys.sorted().map { key in
-      "\(key)=\(variables[key] ?? "")"
-    }.joined(separator: "\n")
-  }
-
   private func parseEnvironmentVariables(_ text: String) throws -> [String: String] {
     var variables: [String: String] = [:]
     for rawLine in text.components(separatedBy: .newlines) {
@@ -493,18 +443,6 @@ extension RielaApp {
       variables[name] = String(line[line.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
     }
     return variables
-  }
-
-  private func workflowVariablesText(from variables: JSONObject) -> String {
-    variables.keys.sorted().map { key in
-      guard let value = variables[key] else {
-        return "\(key)="
-      }
-      if case let .string(stringValue) = value {
-        return "\(key)=\(stringValue)"
-      }
-      return "\(key):=\(jsonText(from: value))"
-    }.joined(separator: "\n")
   }
 
   private func parseWorkflowVariables(_ text: String) throws -> JSONObject {
@@ -538,13 +476,6 @@ extension RielaApp {
     return variables
   }
 
-  private func jsonText(from value: JSONValue) -> String {
-    guard let data = try? JSONEncoder().encode(value),
-          let text = String(data: data, encoding: .utf8) else {
-      return "null"
-    }
-    return text
-  }
 }
 
 @MainActor

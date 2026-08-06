@@ -3,15 +3,7 @@ import AppKit
 @testable import RielaApp
 @testable import RielaAppSupport
 import RielaCore
-import RielaViewer
 import XCTest
-
-private struct CapturedManagerMessage {
-  var workflowId: String
-  var sessionId: String
-  var stepId: String
-  var message: String
-}
 
 @MainActor
 final class RielaAppControllerLayoutTests: XCTestCase {
@@ -331,254 +323,6 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     )
   }
 
-  func testWorkflowViewerSessionPopupResyncsWhenSelectedSessionDisappears() throws {
-    let temp = try scratchRoot(name: "riela-app-viewer-session-\(UUID().uuidString)")
-    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
-    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
-    let runtimeRoot = sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true)
-    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: temp) }
-
-    try writeWorkflow(id: "viewer-select", to: workflowDirectory)
-    let newer = workflowSession(
-      id: "newer",
-      stepId: "second",
-      updatedAt: Date(timeIntervalSince1970: 2)
-    )
-    let older = workflowSession(
-      id: "older",
-      stepId: "first",
-      updatedAt: Date(timeIntervalSince1970: 1)
-    )
-    try saveSessions([newer, older], runtimeRoot: runtimeRoot)
-
-    let controller = WorkflowViewerWindowController()
-    controller.show(
-      workflowDirectory: workflowDirectory.path,
-      sessionStoreRoot: sessionStoreRoot.path
-    )
-    let root = try XCTUnwrap(controller.window?.contentView)
-    let sessionPopup = try XCTUnwrap(sessionPopup(in: root))
-    sessionPopup.selectItem(at: 1)
-
-    try FileManager.default.removeItem(at: runtimeRoot)
-    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
-    try saveSessions([newer], runtimeRoot: runtimeRoot)
-
-    XCTAssertTrue(NSApp.sendAction(sessionPopup.action!, to: sessionPopup.target, from: sessionPopup))
-    controller.window?.layoutIfNeeded()
-
-    XCTAssertEqual(sessionPopup.numberOfItems, 1)
-    XCTAssertEqual(sessionPopup.indexOfSelectedItem, 0)
-    XCTAssertTrue(sessionPopup.titleOfSelectedItem?.contains("newer") == true)
-  }
-
-  func testWorkflowViewerUsesSettingsRowsForEditableControlsAtRuntime() throws {
-    let temp = try scratchRoot(name: "riela-app-viewer-controls-\(UUID().uuidString)")
-    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
-    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
-    let runtimeRoot = sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true)
-    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: temp) }
-
-    try writeWorkflow(id: "viewer-controls", to: workflowDirectory)
-    try saveSessions([
-      workflowSession(
-        id: "controls",
-        stepId: "first",
-        updatedAt: Date(timeIntervalSince1970: 3),
-        workflowId: "viewer-controls"
-      )
-    ], runtimeRoot: runtimeRoot)
-
-    var managerMessageRequest: CapturedManagerMessage?
-    let controller = WorkflowViewerWindowController()
-    controller.show(
-      workflowDirectory: workflowDirectory.path,
-      sessionStoreRoot: sessionStoreRoot.path,
-      onSendManagerMessage: { workflowId, sessionId, stepId, message in
-        managerMessageRequest = CapturedManagerMessage(
-          workflowId: workflowId,
-          sessionId: sessionId,
-          stepId: stepId,
-          message: message
-        )
-        return nil
-      }
-    )
-    let window = try XCTUnwrap(controller.window)
-    window.layoutIfNeeded()
-    XCTAssertEqual(window.minSize, NSSize(width: 560, height: 380))
-    XCTAssertEqual(window.frame.size.width, 640, accuracy: 0.1)
-    let root = try XCTUnwrap(controller.window?.contentView)
-    let splitView = try XCTUnwrap(firstSubview(of: NSSplitView.self, in: root))
-    XCTAssertEqual(splitView.subviews.first?.frame.size.width ?? 0, 180, accuracy: 2)
-    let tabView = try XCTUnwrap(firstSubview(of: NSTabView.self, in: root))
-    XCTAssertEqual(tabView.tabViewItems.map(\.label), ["Overview", "Variables", "Graph", "Timeline", "Run Log", "Structure"])
-    XCTAssertEqual(tabView.contentCompressionResistancePriority(for: .vertical), .defaultLow)
-    XCTAssertFalse(hasHeightConstraint(tabView, relation: .greaterThanOrEqual, constant: 300))
-    let preferredHeight = try XCTUnwrap(heightConstraint(tabView, relation: .equal, constant: 300))
-    XCTAssertEqual(preferredHeight.priority, .defaultLow)
-    let editPopupLabels = Set(visiblePopUpButtons(in: root).compactMap { $0.accessibilityLabel() })
-    XCTAssertTrue(editPopupLabels.isSuperset(of: ["Session", "Template"]))
-    let respondButton = try XCTUnwrap(button(accessibilityLabel: "Respond to Workflow Run", in: root))
-    XCTAssertTrue(respondButton.isEnabled)
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Awaiting response at first" })
-    controller.submitManagerResponse(" Continue now ")
-    XCTAssertEqual(managerMessageRequest?.workflowId, "viewer-controls")
-    XCTAssertEqual(managerMessageRequest?.sessionId, "controls")
-    XCTAssertEqual(managerMessageRequest?.stepId, "first")
-    XCTAssertEqual(managerMessageRequest?.message, "Continue now")
-    XCTAssertEqual(controller.managerResponseStatusLabel.stringValue, "Response sent.")
-
-    try selectTab(named: "Graph", in: tabView)
-    controller.window?.layoutIfNeeded()
-    let graphPane = try XCTUnwrap(firstSubview(of: DaemonWorkflowGraphPaneView.self, in: root))
-    XCTAssertFalse(graphPane.hasHiddenAncestor)
-    XCTAssertEqual(graphPane.accessibilityLabel(), "Workflow Graph")
-    XCTAssertEqual(graphPane.canvasView.model?.workflowId, "viewer-controls")
-    let graphTexts = visibleTextFields(in: root).map(\.stringValue)
-    XCTAssertTrue(graphTexts.contains("Graph"))
-    XCTAssertTrue(graphTexts.contains { $0.hasPrefix("Legend:") })
-    let zoomInButton = try XCTUnwrap(button(accessibilityLabel: "Zoom In Graph", in: root))
-    let zoomOutButton = try XCTUnwrap(button(accessibilityLabel: "Zoom Out Graph", in: root))
-    let resetZoomButton = try XCTUnwrap(button(accessibilityLabel: "Reset Graph Zoom", in: root))
-    XCTAssertEqual(zoomInButton.title, "")
-    XCTAssertEqual(zoomOutButton.title, "")
-    XCTAssertEqual(resetZoomButton.title, "")
-    let initialZoom = graphPane.canvasView.zoomScale
-    zoomInButton.performClick(nil)
-    XCTAssertGreaterThan(graphPane.canvasView.zoomScale, initialZoom)
-    resetZoomButton.performClick(nil)
-    XCTAssertEqual(graphPane.canvasView.zoomScale, 1, accuracy: 0.01)
-
-    try selectTab(named: "Variables", in: tabView)
-    controller.window?.layoutIfNeeded()
-
-    let visibleTexts = Set(visibleTextFields(in: root).map(\.stringValue))
-    XCTAssertTrue(visibleTexts.contains("Runtime Overrides"))
-    XCTAssertFalse(visibleTexts.contains("Actions"))
-    let variablesPopupLabels = Set(visiblePopUpButtons(in: root).compactMap { $0.accessibilityLabel() })
-    XCTAssertTrue(variablesPopupLabels.isSuperset(of: ["Session", "Model", "Backend", "Reasoning Effort"]))
-    let modelOverrideRow = try XCTUnwrap(settingsGroupRow(accessibilityLabel: "Model", in: root))
-    XCTAssertEqual(modelOverrideRow.alphaValue, 0.55, accuracy: 0.01)
-    XCTAssertFalse(modelOverrideRow.isAccessibilityEnabled())
-    XCTAssertFalse(modelOverrideRow.accessibilityHelp()?.isEmpty ?? true)
-    let nodePatchOverrideRow = try XCTUnwrap(settingsGroupRow(accessibilityLabel: "Runtime Overrides", in: root))
-    XCTAssertEqual(nodePatchOverrideRow.alphaValue, 0.55, accuracy: 0.01)
-    XCTAssertFalse(nodePatchOverrideRow.isAccessibilityEnabled())
-    XCTAssertFalse(nodePatchOverrideRow.accessibilityHelp()?.isEmpty ?? true)
-
-    let savePatchButton = try XCTUnwrap(button(accessibilityLabel: "Save Node Patch", in: root))
-    XCTAssertEqual(savePatchButton.title, "")
-    XCTAssertNotNil(savePatchButton.image)
-    let clearPatchButton = try XCTUnwrap(button(accessibilityLabel: "Clear Node Patch", in: root))
-    XCTAssertEqual(clearPatchButton.title, "")
-    XCTAssertNotNil(clearPatchButton.image)
-
-    let currentDirectoryRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Current Directory", in: root))
-    XCTAssertEqual(currentDirectoryRow.accessibilityRole(), .button)
-    XCTAssertEqual(currentDirectoryRow.accessibilityHelp(), "Current Directory cannot be edited here")
-    XCTAssertFalse(currentDirectoryRow.rielaAccessibilityEnabled)
-    XCTAssertFalse(currentDirectoryRow.acceptsFirstResponder)
-
-    controller.show(
-      workflowDirectory: workflowDirectory.path,
-      sessionStoreRoot: sessionStoreRoot.path,
-      onSetWorkingDirectory: { "/tmp/work" },
-      onSetEnvironmentVariables: { "1 variable" },
-      onSetWorkflowVariables: { "2 variables" }
-    )
-    window.layoutIfNeeded()
-    XCTAssertEqual(currentDirectoryRow.accessibilityHelp(), "Change Current Directory")
-    XCTAssertTrue(currentDirectoryRow.rielaAccessibilityEnabled)
-    XCTAssertTrue(currentDirectoryRow.acceptsFirstResponder)
-  }
-
-  func testWorkflowViewerTreeRowsAreAccessibleButtonsAtRuntime() throws {
-    let temp = try scratchRoot(name: "riela-app-viewer-tree-\(UUID().uuidString)")
-    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
-    let sessionStoreRoot = temp.appendingPathComponent(".riela/sessions", isDirectory: true)
-    let runtimeRoot = sessionStoreRoot.appendingPathComponent("runtime-records", isDirectory: true)
-    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: temp) }
-
-    try writeWorkflow(id: "viewer-tree", to: workflowDirectory)
-    try saveSessions([
-      workflowSession(
-        id: "tree",
-        stepId: "first",
-        updatedAt: Date(timeIntervalSince1970: 4)
-      )
-    ], runtimeRoot: runtimeRoot)
-
-    let controller = WorkflowViewerWindowController()
-    controller.show(
-      workflowDirectory: workflowDirectory.path,
-      sessionStoreRoot: sessionStoreRoot.path
-    )
-    let root = try XCTUnwrap(controller.window?.contentView)
-    let outlineView = try XCTUnwrap(firstSubview(of: NSOutlineView.self, in: root))
-    let secondRow = try XCTUnwrap((0..<outlineView.numberOfRows).first { row in
-      (outlineView.item(atRow: row) as? WorkflowViewerNode)?.nodeId == "second"
-    })
-    let cell = try XCTUnwrap(
-      outlineView.view(atColumn: 0, row: secondRow, makeIfNecessary: true) as? RielaAppTableSelectionCellView
-    )
-    XCTAssertEqual(cell.accessibilityRole(), .button)
-    XCTAssertEqual(cell.accessibilityLabel(), "second")
-    XCTAssertEqual(cell.accessibilityValue() as? String, "Idle")
-    XCTAssertEqual(cell.accessibilityHelp(), "Show workflow node details")
-    XCTAssertTrue(cell.accessibilityPerformPress())
-    controller.window?.layoutIfNeeded()
-
-    XCTAssertEqual(outlineView.selectedRow, secondRow)
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("Node second") })
-  }
-
-  func testWorkflowViewerTemplateDetailUsesMetadataTextAtRuntime() throws {
-    let temp = try scratchRoot(name: "riela-app-viewer-template-detail-\(UUID().uuidString)")
-    let workflowDirectory = temp.appendingPathComponent("workflows/demo", isDirectory: true)
-    try FileManager.default.createDirectory(
-      at: workflowDirectory.appendingPathComponent("nodes", isDirectory: true),
-      withIntermediateDirectories: true
-    )
-    try FileManager.default.createDirectory(
-      at: workflowDirectory.appendingPathComponent("prompts", isDirectory: true),
-      withIntermediateDirectories: true
-    )
-    defer { try? FileManager.default.removeItem(at: temp) }
-
-    try writeWorkflow(id: "viewer-template-detail", to: workflowDirectory)
-    try writeNode(
-      AgentNodePayload(
-        id: "first",
-        model: "gpt-5",
-        modelFreeze: false,
-        promptTemplateFile: "prompts/first.md"
-      ),
-      to: workflowDirectory.appendingPathComponent("nodes/first.json")
-    )
-    try "template".write(
-      to: workflowDirectory.appendingPathComponent("prompts/first.md"),
-      atomically: true,
-      encoding: .utf8
-    )
-
-    let controller = WorkflowViewerWindowController()
-    controller.show(workflowDirectory: workflowDirectory.path, sessionStoreRoot: nil)
-    let detailText = textViews(in: try XCTUnwrap(controller.window?.contentView))
-      .map(\.string)
-      .joined(separator: "\n")
-
-    XCTAssertTrue(detailText.contains("Template Files"))
-    XCTAssertTrue(detailText.contains("Field promptTemplateFile"))
-    XCTAssertFalse(detailText.contains("[promptTemplateFile]"))
-  }
-
   func testDaemonInstancePromptFactoryUsesCompressibleSettingsRowsAtRuntime() {
     let factory = DaemonInstancePromptViewFactory()
     let idField = NSTextField(string: "demo-instance")
@@ -801,35 +545,12 @@ private extension RielaAppControllerLayoutTests {
     }
   }
 
-  private func sessionPopup(in root: NSView) -> NSPopUpButton? {
-    allSubviews(of: NSPopUpButton.self, in: root).first { popup in
-      (0..<popup.numberOfItems).contains { index in
-        popup.itemTitle(at: index).contains("newer") || popup.itemTitle(at: index).contains("older")
-      }
-    }
-  }
-
-  private func selectTab(named label: String, in tabView: NSTabView) throws {
-    guard let item = tabView.tabViewItems.first(where: { $0.label == label }) else {
-      throw NSError(
-        domain: "RielaAppControllerLayoutTests",
-        code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "Tab not found: \(label)"]
-      )
-    }
-    tabView.selectTabViewItem(item)
-  }
-
   private func visibleTextFields(in root: NSView) -> [NSTextField] {
     allSubviews(of: NSTextField.self, in: root).filter { !$0.hasHiddenAncestor }
   }
 
   private func visiblePopUpButtons(in root: NSView) -> [NSPopUpButton] {
     allSubviews(of: NSPopUpButton.self, in: root).filter { !$0.hasHiddenAncestor }
-  }
-
-  private func textViews(in root: NSView) -> [NSTextView] {
-    allSubviews(of: NSTextView.self, in: root).filter { !$0.hasHiddenAncestor }
   }
 
   private func selectableRow(accessibilityLabel: String, in root: NSView) -> RielaAppSelectableSettingsRow? {
@@ -893,32 +614,6 @@ private extension RielaAppControllerLayoutTests {
     }
   }
 
-  private func writeWorkflow(id: String, to workflowDirectory: URL) throws {
-    let workflow = WorkflowDefinition(
-      workflowId: id,
-      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
-      entryStepId: "first",
-      nodeRegistry: [WorkflowNodeRegistryRef(id: "first"), WorkflowNodeRegistryRef(id: "second")],
-      steps: [
-        WorkflowStepRef(id: "first", nodeId: "first", transitions: [WorkflowStepTransition(toStepId: "second")]),
-        WorkflowStepRef(id: "second", nodeId: "second")
-      ],
-      nodes: [
-        WorkflowNodeRef(id: "first", nodeFile: "nodes/first.json"),
-        WorkflowNodeRef(id: "second", nodeFile: "nodes/second.json")
-      ]
-    )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(workflow).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
-  }
-
-  private func writeNode(_ node: AgentNodePayload, to url: URL) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(node).write(to: url)
-  }
-
   private func scratchRoot(name: String) throws -> URL {
     let root = try repositoryRoot().appendingPathComponent("tmp", isDirectory: true)
     let scratch = root.appendingPathComponent(name, isDirectory: true)
@@ -939,41 +634,6 @@ private extension RielaAppControllerLayoutTests {
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: "Package.swift not found"]
     )
-  }
-}
-
-private extension RielaAppControllerLayoutTests {
-  func workflowSession(
-    id: String,
-    stepId: String,
-    updatedAt: Date,
-    workflowId: String = "viewer-select"
-  ) -> WorkflowSession {
-    WorkflowSession(
-      workflowId: workflowId,
-      sessionId: id,
-      status: .running,
-      entryStepId: "first",
-      currentStepId: stepId,
-      createdAt: updatedAt,
-      updatedAt: updatedAt,
-      executions: [WorkflowStepExecution(
-        executionId: "exec-\(id)",
-        stepId: stepId,
-        nodeId: stepId,
-        attempt: 1,
-        status: .running,
-        createdAt: updatedAt,
-        updatedAt: updatedAt
-      )]
-    )
-  }
-
-  func saveSessions(_ sessions: [WorkflowSession], runtimeRoot: URL) throws {
-    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path)
-    for session in sessions {
-      try store.save(WorkflowRuntimePersistenceSnapshot(session: session))
-    }
   }
 }
 

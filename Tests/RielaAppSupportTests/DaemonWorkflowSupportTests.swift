@@ -339,8 +339,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         "--import-workflow-or-package=/tmp/other-workflow",
         "--open-workflows",
         "--open-note-settings",
-        "--open-viewer", "/tmp/workflow",
-        "--session-store-root", "/tmp/sessions",
         "--no-autostart-daemons"
       ],
       environment: [:]
@@ -353,10 +351,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(options.importSources.map(\.path), ["/tmp/demo.rielapkg", "/tmp/other-workflow"])
     XCTAssertEqual(options.opensWorkflows, true)
     XCTAssertEqual(options.opensNoteSettings, true)
-    XCTAssertEqual(options.initialViewer, RielaAppLaunchOptions.InitialViewer(
-      workflowPath: "/tmp/workflow",
-      sessionStoreRoot: "/tmp/sessions"
-    ))
     XCTAssertEqual(options.autostartsDaemonWorkflows, false)
   }
 
@@ -384,8 +378,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         "--open-workflows",
         "--import-workflow-or-package",
         "--no-autostart-daemons",
-        "--open-viewer",
-        "--session-store-root",
         "--project-root",
         "--app-root",
         "--home-root"
@@ -395,7 +387,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
 
     XCTAssertNil(options.profileName)
     XCTAssertEqual(options.importSources, [])
-    XCTAssertNil(options.initialViewer)
     XCTAssertNil(options.projectRoot)
     XCTAssertNil(options.appRoot)
     XCTAssertEqual(options.homeDirectory(defaultHome: "/tmp/default-home").path, "/tmp/default-home")

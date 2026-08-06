@@ -8,15 +8,10 @@ extension DaemonWorkflowWindowController {
       detail: "Choose a workflow source for this saved instance.",
       action: #selector(relinkSelectedSource)
     )
-    let openViewerRow = actionRow(
-      title: "Open in Viewer",
-      detail: "Inspect sessions, logs, and node structure for this instance.",
-      action: #selector(openSelectedInstanceViewer)
-    )
-    let executionLogRow = actionRow(
-      title: "View Execution Log",
-      detail: "Open the latest session timeline with node bars, transitions, logs, inbox, and outbox.",
-      action: #selector(openSelectedInstanceExecutionLog)
+    let openWebUIRow = actionRow(
+      title: "Open in Web UI",
+      detail: "Inspect sessions, step executions, logs, and routing evidence in the browser.",
+      action: #selector(openSelectedInstanceInWebUI)
     )
     let startRow = actionRow(
       title: "Start",
@@ -78,8 +73,7 @@ extension DaemonWorkflowWindowController {
     variablesSettingRow = variablesRow
     eventSourcesSettingRow = eventSourcesRow
     relinkSourceActionRow = relinkRow
-    openViewerActionRow = openViewerRow
-    openExecutionLogActionRow = executionLogRow
+    openWebUIActionRow = openWebUIRow
     startInstanceActionRow = startRow
     stopInstanceActionRow = stopRow
     restartInstanceActionRow = restartRow
@@ -101,8 +95,7 @@ extension DaemonWorkflowWindowController {
       eventSourcesRow
     ])
     let actionsSection = rielaAppSettingsSection(rows: [
-      openViewerRow,
-      executionLogRow,
+      openWebUIRow,
       relinkRow,
       startRow,
       stopRow,

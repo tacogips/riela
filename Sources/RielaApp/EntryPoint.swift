@@ -9,7 +9,6 @@ import UniformTypeIdentifiers
 @MainActor
 final class RielaApp: NSObject, NSApplicationDelegate {
   let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-  private let controller = WorkflowServingController()
   let launchOptions = RielaAppLaunchOptions.current()
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   let daemonRuntime = RielaAppDaemonWorkflowRuntime()
@@ -18,9 +17,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonStore = RielaAppDaemonWorkflowStore(profileName: .default)
   let launchAtLogin = RielaLaunchAtLoginController()
   private let daemonStatusRefreshInterval: TimeInterval = 2
-  var selectedWorkflow: WorkflowServeSelection?
-  var selectedWorkingDirectory = FileManager.default.currentDirectoryPath
-  var selectedSessionStoreRoot: String?
   var status = "Ready" {
     didSet {
       statusMessageSequence += 1
@@ -43,7 +39,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
-  var viewerWindowController: WorkflowViewerWindowController?
   var webServerController: RielaAppWebServerController?
   var webServerSetupError: String?
   var webRevision = 1
@@ -98,7 +93,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
-    openInitialViewerIfRequested()
     openInitialWorkflowsIfRequested()
     if launchOptions.opensNotes || launchOptions.opensNoteSettings {
       openNotes()
@@ -132,22 +126,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
-  }
-
-  @objc func selectWorkflow() {
-    let panel = NSOpenPanel()
-    panel.title = "Choose Workflow to View"
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    guard panel.runModal() == .OK, let url = panel.url else {
-      return
-    }
-    selectedWorkflow = .directDirectory(url.path, identifier: url.lastPathComponent)
-    selectedWorkingDirectory = url.deletingLastPathComponent().path
-    selectedSessionStoreRoot = nil
-    status = "Workflow ready to view"
-    rebuildMenu()
   }
 
   @objc func openDaemonInstances() {
@@ -201,14 +179,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onRemoveInstance: { [weak self] identity in
           self?.removeDaemonWorkflowInstance(identity: identity)
         },
-        onOpenViewer: { [weak self] identity in
-          self?.openDaemonWorkflowViewer(identity: identity)
-        },
-        onOpenExecutionLog: { [weak self] identity in
-          self?.openDaemonWorkflowViewer(identity: identity, openTimeline: true)
-        },
-        onOpenWorkflowSourceViewer: { [weak self] sourceId in
-          self?.openWorkflowSourceViewer(sourceId: sourceId)
+        onOpenWebUI: { [weak self] context in
+          self?.openWebUI(context: context)
         },
         defaultInstanceId: { [weak self] sourceIdentity in
           guard let self,
@@ -393,74 +365,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     daemonStatusRefreshTimer = timer
   }
 
-  @objc private func serveWorkflow() {
-    guard let selectedWorkflow else {
-      return
-    }
-    Task { @MainActor in
-      do {
-        let state = try await controller.start(WorkflowServeStartRequest(
-          selection: selectedWorkflow,
-          server: daemonServerConfiguration(profileName: daemonProfileName),
-          workingDirectory: selectedWorkingDirectory
-        ))
-        apply(state)
-      } catch {
-        status = "Failed: \(error)"
-        rebuildMenu()
-      }
-    }
-  }
-
-  @objc private func stopWorkflow() {
-    Task { @MainActor in
-      do {
-        apply(try await controller.stop())
-      } catch {
-        status = "Failed: \(error)"
-        rebuildMenu()
-      }
-    }
-  }
-
-  @objc private func restartWorkflow() {
-    Task { @MainActor in
-      do {
-        apply(try await controller.restart())
-      } catch {
-        status = "Failed: \(error)"
-        rebuildMenu()
-      }
-    }
-  }
-
-  @objc private func updateWorkflow() {
-    Task { @MainActor in
-      do {
-        apply(try await controller.reload(WorkflowServeReloadRequest()))
-      } catch {
-        let current = await controller.currentState()
-        status = current.status == .running ? "Update failed, still running" : "Failed: \(error)"
-        rebuildMenu()
-      }
-    }
-  }
-
-  private func openInitialViewerIfRequested() {
-    guard let initialViewer = launchOptions.initialViewer else {
-      return
-    }
-    let path = initialViewer.workflowPath
-    selectedWorkflow = .directDirectory(path, identifier: URL(fileURLWithPath: path, isDirectory: true).lastPathComponent)
-    selectedWorkingDirectory = URL(fileURLWithPath: path, isDirectory: true).deletingLastPathComponent().path
-    selectedSessionStoreRoot = initialViewer.sessionStoreRoot
-    status = "Workflow ready to view"
-    rebuildMenu()
-    DispatchQueue.main.async { [weak self] in
-      self?.openViewer()
-    }
-  }
-
   private func openInitialWorkflowsIfRequested() {
     guard launchOptions.opensWorkflows else {
       return
@@ -475,9 +379,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   func restoreAccessoryActivationPolicyIfNoAppWindows() {
-    guard daemonWindowController?.window?.isVisible != true,
-      viewerWindowController?.window?.isVisible != true
-    else {
+    guard daemonWindowController?.window?.isVisible != true else {
       return
     }
     NSApp.setActivationPolicy(.accessory)
@@ -490,7 +392,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     } catch {
       status = "Failed to update Launch on Login: \(error.localizedDescription)"
     }
-    viewerWindowController?.updateAssistantPanel(settings: daemonState.assistant, profileName: daemonProfileName)
     rebuildMenu()
   }
 
@@ -931,24 +832,6 @@ extension RielaApp {
 
   @objc func quit() {
     NSApplication.shared.terminate(nil)
-  }
-
-  private func apply(_ state: WorkflowServeState) {
-    switch state.status {
-    case .running:
-      status = "Running"
-    case .stopped:
-      status = "Stopped"
-    case .starting:
-      status = "Starting"
-    case .reloading:
-      status = "Updating"
-    case .stopping:
-      status = "Stopping"
-    case .failed:
-      status = state.diagnostics.first?.message ?? "Failed"
-    }
-    rebuildMenu()
   }
 }
 

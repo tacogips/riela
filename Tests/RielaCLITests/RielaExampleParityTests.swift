@@ -79,6 +79,7 @@ private func rielaExampleWorkflowNames() -> [String] {
     "workflow-call-live-echo-callee",
     "workflow-call-review-target",
     "workflow-call-simple",
+    "wrike-project-kanban-agent",
     "x-follower-ai-business-digest"
   ]
 }

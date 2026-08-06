@@ -493,6 +493,14 @@ Initial built-in add-ons:
 - `riela/mail-gateway`: worker node that runs the full
   `mail-gateway graphql --query` surface for intentional query or send-mutation
   documents in a Docker-compatible container
+- `riela/wrike-gateway-read`: worker node that runs the locally installed
+  read-only `wrike-gateway-reader graphql query` surface
+- `riela/wrike-gateway-write`: worker node that runs the locally installed
+  `wrike-gateway-writer graphql query` surface, including create/update
+  mutations but never deletes
+- `riela/wrike-gateway-admin`: worker node that runs the locally installed
+  `wrike-gateway-admin graphql query` surface, including reviewed delete
+  mutations
 
 Detailed design:
 `design-docs/specs/design-node-addon-catalog-and-chat-reply-worker.md`.

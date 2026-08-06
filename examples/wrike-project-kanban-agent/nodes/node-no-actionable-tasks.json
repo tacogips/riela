@@ -1,0 +1,15 @@
+{
+  "id": "no-actionable-tasks",
+  "description": "Terminal projection when the polled Wrike project has no task waiting in the todo column.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest Wrike poll payload.",
+  "variables": {},
+  "output": {
+    "description": "Latest Wrike todo poll payload with has_todo_task=false.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

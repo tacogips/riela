@@ -1746,6 +1746,100 @@ Failure rules:
 - duplicate dispatch for the same idempotency key must return the original
   dispatch result when the adapter can determine it
 
+## Built-in `riela/wrike-gateway-read`, `riela/wrike-gateway-write`, and `riela/wrike-gateway-admin`
+
+### Purpose
+
+The three wrike-gateway add-ons run GraphQL documents against Wrike through the
+locally installed wrike-gateway CLI tier binaries. Capability boundaries are
+enforced by the pinned binary itself, so each add-on maps to exactly one tier
+and workflow authors cannot swap in a broader executable through inputs,
+variables, or upstream payload data:
+
+| Add-on | Binary | Surface |
+| --- | --- | --- |
+| `riela/wrike-gateway-read` | `wrike-gateway-reader` | queries only |
+| `riela/wrike-gateway-write` | `wrike-gateway-writer` | queries plus create/update/upload mutations, never deletes |
+| `riela/wrike-gateway-admin` | `wrike-gateway-admin` | full surface including reviewed deletes |
+
+All three are worker-only version `1` add-ons that follow the Shared Local CLI
+Gateway Rules. Binary resolution order is `addon.config.binaryPath`, then the
+per-tier environment fallback (`WRIKE_GATEWAY_READER_BIN`,
+`WRIKE_GATEWAY_WRITER_BIN`, `WRIKE_GATEWAY_ADMIN_BIN`), then `PATH` lookup of
+the fixed tier executable name.
+
+### Authored Example
+
+```json
+{
+  "id": "fetch-todo-task",
+  "addon": {
+    "name": "riela/wrike-gateway-read",
+    "version": "1",
+    "env": {
+      "WRIKE_GATEWAY_ACCESS_TOKEN": { "fromEnv": "RIELA_WRIKE_ACCESS_TOKEN" },
+      "WRIKE_GATEWAY_API_BASE_URL": { "fromEnv": "RIELA_WRIKE_API_BASE_URL" }
+    },
+    "config": {
+      "queryTemplate": "query Todo($fid: ID!) { tasks(scope: { folderId: $fid }, status: Active) { nodes { id title customStatusId } } }",
+      "variablesTemplate": { "fid": "{{workflowInput.projectFolderId}}" },
+      "selectFirst": {
+        "path": "data.tasks.nodes",
+        "where": { "customStatusId": "{{workflowInput.todoStatusId}}" }
+      },
+      "whenFlags": { "has_todo_task": "selected.id" }
+    }
+  }
+}
+```
+
+### Config Contract
+
+- `queryTemplate` (required): GraphQL document template rendered with node
+  variables; must render non-empty. Rendered documents run as
+  `<binary> graphql query <document>`.
+- `variablesTemplate` (optional object): rendered with node variables and
+  passed as `--variables <compact-json>`; prefer it over interpolating values
+  into the document.
+- `selectFirst` (optional object): `path` is a dot path (numeric segments
+  index arrays) resolved against `{ "data": ... }`; `where` is an equality
+  match object rendered with node variables. The first matching array element
+  becomes `payload.selected`; no match yields `payload.selected = null`.
+- `whenFlags` (optional object): flag name to dot path resolved against
+  `{ "data": ..., "selected": ... }`; truthiness (non-null, non-empty,
+  non-zero, true) becomes a `when` flag for transition labels. `always` and
+  `ok` are always emitted.
+- `payloadExtras` (optional object): rendered with node variables and merged
+  into the output payload top level; used to carry objects such as the claimed
+  task across single-inbox step chains.
+
+### Environment Contract
+
+`addon.env` bindings are explicit and validated: only the wrike-gateway
+credential contract names `WRIKE_GATEWAY_API_CLIENT_ID`,
+`WRIKE_GATEWAY_API_CLIENT_SECRET`, `WRIKE_GATEWAY_ACCESS_TOKEN`,
+`WRIKE_GATEWAY_API_BASE_URL`, and `WRIKE_GATEWAY_OAUTH_CALLBACK_PORT` are
+accepted as target names. Any other target name fails the node with a policy
+error, so the binding mechanism cannot inject arbitrary variables into the
+child process. Required bindings with unavailable source values fail before
+the process starts; ambient runtime environment variables are never forwarded.
+
+### Output and Failure Rules
+
+- payload: `status`, `addon`, `stepId`, `data` (GraphQL data object),
+  `requestId`, `replyText`, `wrikeGateway.binary.{path,source}`, plus
+  `selected` and `payloadExtras` keys when configured
+- a GraphQL error envelope fails the node with the joined error messages and
+  `extensions` (including the stable wrike-gateway `code`) in the diagnostic
+- a nonzero exit without a parseable JSON envelope fails the node with the
+  exit code and compacted stderr
+- mutations are never retried by the add-on; transition design should re-check
+  state on the next tick rather than re-sending a mutation blindly
+
+The `examples/wrike-project-kanban-agent` workflow demonstrates the three-tier
+split with a 30-second cron poll that claims one todo task, performs the ticket
+work with an agent node, posts the result as a comment, and completes the task.
+
 ## Built-in `riela/calendar-*` and `riela/event-*`
 
 ### Purpose

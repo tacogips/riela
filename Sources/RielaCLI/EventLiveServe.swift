@@ -107,7 +107,9 @@ struct DefaultEventLiveServer: EventLiveServing {
     let discordSources = try liveConfig.discordSources(eventRoot: eventRoot)
     let slackSources = try liveConfig.slackSources(eventRoot: eventRoot)
     let matrixSources = try liveConfig.matrixSources(eventRoot: eventRoot)
-    guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty || !matrixSources.isEmpty else {
+    let cronSources = try liveConfig.cronSources(eventRoot: eventRoot)
+    guard !telegramSources.isEmpty || !discordSources.isEmpty || !slackSources.isEmpty || !matrixSources.isEmpty
+      || !cronSources.isEmpty else {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
@@ -124,7 +126,37 @@ struct DefaultEventLiveServer: EventLiveServing {
     try writeServeRecord(eventRoot: eventRoot, status: "ready")
     var processedEvents = 0
     let maximumEvents = parsed.limit
+    let serveStartedAt = Date()
+    var cronLastCheckedAt: [String: Date] = Dictionary(
+      uniqueKeysWithValues: cronSources.map { ($0.id, serveStartedAt) }
+    )
     repeat {
+      for source in cronSources {
+        let now = Date()
+        let lastCheckedAt = cronLastCheckedAt[source.id] ?? now
+        cronLastCheckedAt[source.id] = now
+        guard let scheduledAt = source.dueTick(after: lastCheckedAt, until: now) else {
+          continue
+        }
+        processedEvents += try await pollSourceSafely(
+          eventRoot: eventRoot,
+          sourceId: source.id,
+          sourceKind: "cron"
+        ) {
+          try await dispatchCronTick(
+            source: source,
+            scheduledAt: scheduledAt,
+            firedAt: now,
+            config: liveConfig,
+            eventRoot: eventRoot,
+            parsed: parsed
+          )
+        }
+        if let maximumEvents, processedEvents >= maximumEvents {
+          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
+          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+        }
+      }
       for source in telegramSources {
         processedEvents += try await pollSourceSafely(
           eventRoot: eventRoot,
@@ -177,7 +209,9 @@ struct DefaultEventLiveServer: EventLiveServing {
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
-      if maximumEvents == nil {
+      let onlyCronSourcesRemain = telegramSources.isEmpty && discordSources.isEmpty
+        && slackSources.isEmpty && matrixSources.isEmpty
+      if maximumEvents == nil || onlyCronSourcesRemain {
         try await Task.sleep(nanoseconds: 1_000_000_000)
       }
     } while maximumEvents == nil || processedEvents < (maximumEvents ?? 0)

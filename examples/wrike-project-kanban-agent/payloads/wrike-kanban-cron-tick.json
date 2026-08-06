@@ -1,0 +1,13 @@
+{
+  "eventId": "wrike-kanban-30s-cron-fixture",
+  "eventType": "cron.tick",
+  "provider": "riela",
+  "sourceId": "wrike-kanban-30s-cron",
+  "receivedAt": "2026-08-06T00:00:00Z",
+  "input": {
+    "scheduledAt": "2026-08-06T00:00:00.000Z",
+    "scheduledLocalTime": "2026-08-06 09:00:00",
+    "firedAt": "2026-08-06T00:00:00.400Z",
+    "timezone": "Asia/Tokyo"
+  }
+}

@@ -397,6 +397,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/x-digest" {
       return try executeXDigest(input)
     }
+    if let wrikeGatewayAddon = BuiltinWrikeGatewayAddon(rawValue: input.addon.name) {
+      return try executeWrikeGatewayAddon(input, operation: wrikeGatewayAddon, context: context)
+    }
     if input.addon.name == "riela/gmail-digest" {
       return try executeGmailDigest(input)
     }

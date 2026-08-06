@@ -72,9 +72,9 @@ public enum EventSourceKind: RawRepresentable, Codable, Equatable, Sendable {
 
   public var supportsLiveEventServe: Bool {
     switch self {
-    case .telegramGateway, .discordGateway, .slackGateway, .matrix:
+    case .telegramGateway, .discordGateway, .slackGateway, .matrix, .cron:
       true
-    case .cron, .webhook, .chatSdk, .fileChange, .s3Repository, .sequentialList, .custom:
+    case .webhook, .chatSdk, .fileChange, .s3Repository, .sequentialList, .custom:
       false
     }
   }

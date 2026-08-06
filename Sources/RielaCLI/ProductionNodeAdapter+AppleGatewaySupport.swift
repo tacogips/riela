@@ -25,6 +25,10 @@ struct AppleGatewayProcessRunner {
   /// this runner (for example the anydoc-swift document converter) override it
   /// so failures do not read as apple-gateway failures.
   var toolLabel: String = "apple-gateway"
+  /// Explicitly resolved add-on environment bindings injected on top of the
+  /// sanitized allowlist. Callers must only pass values the add-on contract
+  /// declares; ambient secrets are never forwarded implicitly.
+  var extraChildEnvironment: [String: String] = [:]
 
   func run(
     executablePath: String,
@@ -121,6 +125,9 @@ struct AppleGatewayProcessRunner {
       guard let value = runtimeEnvironment[name], !value.isEmpty else {
         continue
       }
+      childEnvironment[name] = value
+    }
+    for (name, value) in extraChildEnvironment where !value.isEmpty {
       childEnvironment[name] = value
     }
     return childEnvironment

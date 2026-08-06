@@ -63,21 +63,23 @@ main() {
   mkdir -p "$(dirname "$output")"
   cat > "$output" <<EOF
 cask "riela" do
-  version "$version"
   arch arm: "darwin-arm64", intel: "darwin-x64"
 
-  sha256 arm: "$darwin_arm64_sha",
+  version "$version"
+  sha256 arm:   "$darwin_arm64_sha",
          intel: "$darwin_x64_sha"
 
   url "$release_base_url/riela-#{version}-#{arch}.dmg"
   name "riela"
-  desc "Swift-native workflow runtime with the macOS menu bar app and CLI"
+  desc "Swift-native workflow runtime with a menu bar app and CLI"
   homepage "https://github.com/tacogips/riela"
 
   livecheck do
     url :url
     strategy :github_latest
   end
+
+  depends_on :macos
 
   app "RielaApp.app"
   binary "riela"

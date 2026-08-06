@@ -25,6 +25,11 @@ description. If the ticket asks for something you cannot actually do from
 here (deploying, purchasing, contacting people), instead produce a concrete,
 actionable completion plan and state clearly that the plan is the deliverable.
 
+- Write the deliverable in the same language as the task title and
+  description (Japanese task, Japanese answer; English task, English answer).
+- When the description enumerates specific points or questions, address every
+  one of them explicitly, in the same order and numbering the ticket uses.
+
 ## Output contract
 
 Return JSON only:

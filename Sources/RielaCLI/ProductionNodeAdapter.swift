@@ -220,7 +220,8 @@ actor ScenarioWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   func consumedResponseCounts() -> [String: Int] { counts }
 }
 
-actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
+actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving, WorkflowAddonFinalizationAcknowledging,
+  WorkflowAddonTerminalRecording {
   private let scenario: WorkflowMockScenario
   private let fallback: any WorkflowAddonResolving
   private var counts: [String: Int] = [:]
@@ -263,6 +264,26 @@ actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving {
   }
 
   func consumedResponseCounts() -> [String: Int] { counts }
+
+  func acknowledgeAcceptedFinalization(_ token: WorkflowAddonFinalizationToken) async throws {
+    guard let acknowledger = fallback as? any WorkflowAddonFinalizationAcknowledging else {
+      return
+    }
+    try await acknowledger.acknowledgeAcceptedFinalization(token)
+  }
+
+  func recordTerminalFinalization(
+    workflowExecutionId: String,
+    stepExecutionIds: [String]
+  ) async throws {
+    guard let recorder = fallback as? any WorkflowAddonTerminalRecording else {
+      return
+    }
+    try await recorder.recordTerminalFinalization(
+      workflowExecutionId: workflowExecutionId,
+      stepExecutionIds: stepExecutionIds
+    )
+  }
 }
 
 typealias GeminiAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
@@ -306,6 +327,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var anthropicAdapterFactory: AnthropicAddonAdapterFactory
   var cursorAdapterFactory: CursorAddonAdapterFactory
   var geminiAdapterFactory: GeminiAddonAdapterFactory
+  var gitCommandRunner: any GitCommandRunning
+  var gitExecutableURL: URL
+  var gitExecutablePolicy: GitExecutablePolicy
+  var gitFinalizationStore: GitFinalizationStore
+  var gitFailureInjector: any GitFinalizationFailureInjecting
+  var gitPushTransportPolicy: any GitPushTransportValidating
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -322,7 +349,13 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     },
     geminiAdapterFactory: @escaping GeminiAddonAdapterFactory = { configuration in
       GeminiSDKAdapter(configuration: configuration)
-    }
+    },
+    gitCommandRunner: any GitCommandRunning = FoundationGitCommandRunner(),
+    gitExecutableURL: URL = GitExecutablePolicy.versionOneURL,
+    gitExecutablePolicy: GitExecutablePolicy = GitExecutablePolicy(),
+    gitFinalizationStore: GitFinalizationStore = GitFinalizationStore(),
+    gitFailureInjector: any GitFinalizationFailureInjecting = NoGitFinalizationFailureInjector(),
+    gitPushTransportPolicy: any GitPushTransportValidating = VersionOneGitPushTransportPolicy()
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -331,6 +364,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.anthropicAdapterFactory = anthropicAdapterFactory
     self.cursorAdapterFactory = cursorAdapterFactory
     self.geminiAdapterFactory = geminiAdapterFactory
+    self.gitCommandRunner = gitCommandRunner
+    self.gitExecutableURL = gitExecutableURL
+    self.gitExecutablePolicy = gitExecutablePolicy
+    self.gitFinalizationStore = gitFinalizationStore
+    self.gitFailureInjector = gitFailureInjector
+    self.gitPushTransportPolicy = gitPushTransportPolicy
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -351,6 +390,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
     if input.addon.name == "riela/workflow-create-register-run" {
       return try await executeWorkflowCreateRegisterRun(input)
+    }
+    if let gitAddon = BuiltinGitAddon(rawValue: input.addon.name) {
+      return try executeGitAddon(input, operation: gitAddon, deadline: context.deadline)
     }
     if input.addon.name == "riela/x-digest" {
       return try executeXDigest(input)

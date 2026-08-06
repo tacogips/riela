@@ -7,6 +7,81 @@
   "promptTemplateFile": "prompts/workflow-output.md",
   "variables": {},
   "output": {
-    "description": "Return either the accepted design-and-plan handoff or the final issue-resolution handoff, with review summaries, documentation refresh details, commit/push details, and residual risks."
+    "description": "Return either the accepted design-and-plan handoff or the final issue-resolution handoff, with review summaries, documentation refresh details, commit/push details, and residual risks.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "accepted"
+        },
+        "workflowMode": {
+          "enum": [
+            "design-plan-only",
+            "issue-resolution"
+          ]
+        },
+        "commitMessage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commitHash": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "committedFiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2048,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "pushedRemote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pushedBranch": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "status",
+        "workflowMode"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "workflowMode": {
+              "const": "design-plan-only"
+            }
+          },
+          "required": [
+            "commitMessage",
+            "commitHash",
+            "committedFiles",
+            "pushedRemote",
+            "pushedBranch"
+          ]
+        },
+        {
+          "properties": {
+            "workflowMode": {
+              "const": "issue-resolution"
+            }
+          },
+          "required": [
+            "commitMessage",
+            "commitHash",
+            "committedFiles",
+            "pushedRemote",
+            "pushedBranch"
+          ]
+        }
+      ],
+      "additionalProperties": true
+    }
   }
 }

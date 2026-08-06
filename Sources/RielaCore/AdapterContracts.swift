@@ -219,6 +219,7 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
   public var when: [String: Bool]
   public var payload: JSONObject
   public var usage: AdapterUsage?
+  public var runtimeFinalizationToken: WorkflowAddonFinalizationToken?
 
   public init(
     provider: String,
@@ -227,7 +228,8 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     completionPassed: Bool,
     when: [String: Bool] = ["always": true],
     payload: JSONObject,
-    usage: AdapterUsage? = nil
+    usage: AdapterUsage? = nil,
+    runtimeFinalizationToken: WorkflowAddonFinalizationToken? = nil
   ) {
     self.provider = provider
     self.model = model
@@ -236,6 +238,40 @@ public struct AdapterExecutionOutput: Codable, Equatable, Sendable {
     self.when = when
     self.payload = payload
     self.usage = usage
+    self.runtimeFinalizationToken = runtimeFinalizationToken
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case provider
+    case model
+    case promptText
+    case completionPassed
+    case when
+    case payload
+    case usage
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    provider = try container.decode(String.self, forKey: .provider)
+    model = try container.decode(String.self, forKey: .model)
+    promptText = try container.decode(String.self, forKey: .promptText)
+    completionPassed = try container.decode(Bool.self, forKey: .completionPassed)
+    when = try container.decodeIfPresent([String: Bool].self, forKey: .when) ?? ["always": true]
+    payload = try container.decode(JSONObject.self, forKey: .payload)
+    usage = try container.decodeIfPresent(AdapterUsage.self, forKey: .usage)
+    runtimeFinalizationToken = nil
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(provider, forKey: .provider)
+    try container.encode(model, forKey: .model)
+    try container.encode(promptText, forKey: .promptText)
+    try container.encode(completionPassed, forKey: .completionPassed)
+    try container.encode(when, forKey: .when)
+    try container.encode(payload, forKey: .payload)
+    try container.encodeIfPresent(usage, forKey: .usage)
   }
 }
 

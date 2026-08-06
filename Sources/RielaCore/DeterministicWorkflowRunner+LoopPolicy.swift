@@ -108,6 +108,13 @@ extension DeterministicWorkflowRunner {
     step: WorkflowStepRef,
     request: DeterministicWorkflowRunRequest
   ) -> WorkflowPrePersistenceRoutingDecider? {
+    if Self.requiresGitFinalizationEvidence(workflow: workflow, terminalStep: step) {
+      return { context in
+        let policy = try Self.requiredGitFinalizationEvidencePolicy(workflow: workflow, terminalStep: step)
+        try Self.validateGitFinalizationEvidence(context: context, policy: policy)
+        return .unchanged(context)
+      }
+    }
     guard effectiveLoopConvergencePolicy(
       workflow: workflow,
       disableDefaultLoopGuard: request.disableDefaultLoopGuard

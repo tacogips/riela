@@ -117,6 +117,7 @@ public struct WorkflowAcceptedOutputMetadata: Codable, Equatable, Sendable {
     case isRootOutput
     case acceptedAt
     case routingDiagnostics
+    case runtimeFinalizationToken
   }
 
   public var payload: JSONObject
@@ -124,19 +125,22 @@ public struct WorkflowAcceptedOutputMetadata: Codable, Equatable, Sendable {
   public var isRootOutput: Bool
   public var acceptedAt: Date
   public var routingDiagnostics: [String]
+  public var runtimeFinalizationToken: WorkflowAddonFinalizationToken?
 
   public init(
     payload: JSONObject,
     when: [String: Bool],
     isRootOutput: Bool = false,
     acceptedAt: Date,
-    routingDiagnostics: [String] = []
+    routingDiagnostics: [String] = [],
+    runtimeFinalizationToken: WorkflowAddonFinalizationToken? = nil
   ) {
     self.payload = payload
     self.when = when
     self.isRootOutput = isRootOutput
     self.acceptedAt = acceptedAt
     self.routingDiagnostics = routingDiagnostics
+    self.runtimeFinalizationToken = runtimeFinalizationToken
   }
 
   public init(from decoder: Decoder) throws {
@@ -146,6 +150,10 @@ public struct WorkflowAcceptedOutputMetadata: Codable, Equatable, Sendable {
     self.isRootOutput = try container.decodeIfPresent(Bool.self, forKey: .isRootOutput) ?? false
     self.acceptedAt = try container.decode(Date.self, forKey: .acceptedAt)
     self.routingDiagnostics = try container.decodeIfPresent([String].self, forKey: .routingDiagnostics) ?? []
+    self.runtimeFinalizationToken = try container.decodeIfPresent(
+      WorkflowAddonFinalizationToken.self,
+      forKey: .runtimeFinalizationToken
+    )
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -157,6 +165,7 @@ public struct WorkflowAcceptedOutputMetadata: Codable, Equatable, Sendable {
     if !routingDiagnostics.isEmpty {
       try container.encode(routingDiagnostics, forKey: .routingDiagnostics)
     }
+    try container.encodeIfPresent(runtimeFinalizationToken, forKey: .runtimeFinalizationToken)
   }
 }
 

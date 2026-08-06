@@ -92,6 +92,7 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
       "maximum",
       "minItems",
       "maxItems",
+      "uniqueItems",
       "anyOf",
       "oneOf",
       "allOf"
@@ -122,6 +123,7 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
     validateSchemaIntegerBound("minItems", schema: schema, path: path, errors: &errors)
     validateSchemaIntegerBound("maxItems", schema: schema, path: path, errors: &errors)
     validateSchemaOrderedBounds(minKey: "minItems", maxKey: "maxItems", schema: schema, path: path, errors: &errors)
+    validateSchemaBoolean("uniqueItems", schema: schema, path: path, errors: &errors)
     validateSchemaCombinator("anyOf", schema: schema, path: path, errors: &errors)
     validateSchemaCombinator("oneOf", schema: schema, path: path, errors: &errors)
     validateSchemaCombinator("allOf", schema: schema, path: path, errors: &errors)
@@ -219,6 +221,20 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
       return
     }
     validateSchemaNode(value, path: "\(path).additionalProperties", errors: &errors)
+  }
+
+  private func validateSchemaBoolean(
+    _ key: String,
+    schema: JSONObject,
+    path: String,
+    errors: inout [(path: String, message: String)]
+  ) {
+    guard let value = schema[key], case .bool = value else {
+      if schema[key] != nil {
+        errors.append(("\(path).\(key)", "must be a boolean when provided"))
+      }
+      return
+    }
   }
 
   private func validateSchemaEnum(
@@ -418,6 +434,11 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
     }
     if let maxItems = schema["maxItems"]?.numberValue, value.count > Int(maxItems) {
       return "output contract \(path) must contain at most \(formatNumber(maxItems)) items"
+    }
+    if schema["uniqueItems"] == .bool(true) {
+      for index in value.indices where value[..<index].contains(value[index]) {
+        return "output contract \(path) must contain unique items"
+      }
     }
     if let items = schema["items"] {
       for (index, entry) in value.enumerated() {

@@ -230,10 +230,202 @@ final class WorkflowModelTests: XCTestCase {
     let gitCommitNode = try XCTUnwrap(workflow.nodes.first { $0.id == "step10-git-commit" })
     XCTAssertNil(gitCommitNode.nodeFile)
     XCTAssertEqual(gitCommitNode.addon?.name, "riela/git-commit")
+    XCTAssertEqual(gitCommitNode.addon?.version, "1")
+    XCTAssertEqual(gitCommitNode.addon?.config?["allowCommit"], .bool(true))
 
     let gitPushNode = try XCTUnwrap(workflow.nodes.first { $0.id == "step11-git-push" })
     XCTAssertNil(gitPushNode.nodeFile)
     XCTAssertEqual(gitPushNode.addon?.name, "riela/git-push")
+    XCTAssertEqual(gitPushNode.addon?.version, "1")
+    XCTAssertEqual(gitPushNode.addon?.config?["allowPush"], .bool(true))
+    XCTAssertEqual(
+      gitPushNode.addon?.config?["expectedCommitHashTemplate"],
+      .string("{{inbox.latest.output.payload.git.commitHash}}")
+    )
+
+    let outputStep = try XCTUnwrap(workflow.steps.first { $0.id == "workflow-output" })
+    XCTAssertEqual(
+      DeterministicWorkflowRunner.gitFinalizationEvidencePolicy(
+        workflow: workflow,
+        terminalStep: outputStep
+      ),
+      WorkflowGitFinalizationEvidencePolicy(
+        commitStepId: "step10-git-commit",
+        pushStepId: "step11-git-push",
+        planningModeStepIds: ["step5-impl-plan-review", "step5-feature-plan-join"]
+      )
+    )
+    var unrelatedWorkflow = workflow
+    unrelatedWorkflow.workflowId = "design-and-implement-review-loop"
+    XCTAssertNil(DeterministicWorkflowRunner.gitFinalizationEvidencePolicy(
+      workflow: unrelatedWorkflow,
+      terminalStep: outputStep
+    ))
+  }
+
+  func testProtectedGitFinalizationPolicyFailsClosedOnTopologyDrift() throws {
+    let fixtureURL = try repositoryRoot().appendingPathComponent(
+      ".riela/workflows/codex-design-and-implement-review-loop/workflow.json"
+    )
+    let workflow = try XCTUnwrap(validateAuthoredWorkflowData(Data(contentsOf: fixtureURL)).workflow)
+    let outputStep = try XCTUnwrap(workflow.steps.first { $0.id == "workflow-output" })
+    XCTAssertNoThrow(try DeterministicWorkflowRunner.requiredGitFinalizationEvidencePolicy(
+      workflow: workflow,
+      terminalStep: outputStep
+    ))
+
+    var intermediateStepWorkflow = workflow
+    let pushIndex = try XCTUnwrap(intermediateStepWorkflow.steps.firstIndex { $0.id == "step11-git-push" })
+    intermediateStepWorkflow.steps[pushIndex].transitions = [WorkflowStepTransition(toStepId: "post-push-audit")]
+    intermediateStepWorkflow.steps.append(WorkflowStepRef(
+      id: "post-push-audit",
+      nodeId: "workflow-output",
+      transitions: [WorkflowStepTransition(toStepId: "workflow-output")]
+    ))
+    try assertProtectedGitFinalizationPolicyRejected(intermediateStepWorkflow)
+
+    var renamedPlanningRouteWorkflow = workflow
+    for index in renamedPlanningRouteWorkflow.steps.indices {
+      renamedPlanningRouteWorkflow.steps[index].transitions = renamedPlanningRouteWorkflow.steps[index].transitions?.map {
+        var transition = $0
+        if transition.label?.contains("planning_only") == true {
+          transition.label = "renamed-planning-route"
+        }
+        return transition
+      }
+    }
+    try assertProtectedGitFinalizationPolicyRejected(renamedPlanningRouteWorkflow)
+
+    var missingPushNodeWorkflow = workflow
+    missingPushNodeWorkflow.nodes.removeAll { $0.id == "step11-git-push" }
+    try assertProtectedGitFinalizationPolicyRejected(missingPushNodeWorkflow)
+
+    var ambiguousPushWorkflow = workflow
+    ambiguousPushWorkflow.steps.append(WorkflowStepRef(
+      id: "duplicate-git-push",
+      nodeId: "step11-git-push",
+      transitions: [WorkflowStepTransition(toStepId: "workflow-output")]
+    ))
+    try assertProtectedGitFinalizationPolicyRejected(ambiguousPushWorkflow)
+
+    var detachedPushWorkflow = workflow
+    let duplicatePushAddon = try XCTUnwrap(
+      detachedPushWorkflow.nodes.first { $0.id == "step11-git-push" }?.addon
+    )
+    detachedPushWorkflow.nodes.append(WorkflowNodeRef(
+      id: "detached-git-push",
+      addon: duplicatePushAddon
+    ))
+    detachedPushWorkflow.steps.append(WorkflowStepRef(
+      id: "detached-git-push",
+      nodeId: "detached-git-push"
+    ))
+    try assertProtectedGitFinalizationPolicyRejected(detachedPushWorkflow)
+
+    var outOfChainCommitWorkflow = workflow
+    let duplicateCommitAddon = try XCTUnwrap(
+      outOfChainCommitWorkflow.nodes.first { $0.id == "step10-git-commit" }?.addon
+    )
+    outOfChainCommitWorkflow.nodes.append(WorkflowNodeRef(
+      id: "out-of-chain-git-commit",
+      addon: duplicateCommitAddon
+    ))
+    outOfChainCommitWorkflow.steps.append(WorkflowStepRef(
+      id: "out-of-chain-git-commit",
+      nodeId: "out-of-chain-git-commit",
+      transitions: [WorkflowStepTransition(toStepId: "step1-issue-intake")]
+    ))
+    try assertProtectedGitFinalizationPolicyRejected(outOfChainCommitWorkflow)
+  }
+
+  func testWorkflowOutputPromptRejectsMissingStaleOrMismatchedGitEvidence() throws {
+    let promptURL = try repositoryRoot().appendingPathComponent(
+      ".riela/workflows/codex-design-and-implement-review-loop/prompts/workflow-output.md"
+    )
+    let prompt = try String(contentsOf: promptURL, encoding: .utf8)
+    let normalizedPrompt = prompt.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+
+    XCTAssertTrue(normalizedPrompt.contains("Treat only `step10-git-commit`'s accepted `payload.git` object as commit evidence"))
+    XCTAssertTrue(normalizedPrompt.contains("only `step11-git-push`'s accepted `payload.git` object as push evidence"))
+    XCTAssertTrue(normalizedPrompt.contains("require Step 11's `commitHash` to match it"))
+    XCTAssertTrue(normalizedPrompt.contains("If any required field is missing or mismatched"))
+    XCTAssertTrue(normalizedPrompt.contains("do not fabricate finalization evidence"))
+    for requiredField in ["commitMessage", "commitHash", "committedFiles", "pushedRemote", "pushedBranch"] {
+      XCTAssertTrue(prompt.contains("`\(requiredField)`"), requiredField)
+    }
+
+    let nodeURL = try repositoryRoot().appendingPathComponent(
+      ".riela/workflows/codex-design-and-implement-review-loop/nodes/node-workflow-output.json"
+    )
+    let payload = try JSONDecoder().decode(AgentNodePayload.self, from: Data(contentsOf: nodeURL))
+    let schema = try XCTUnwrap(payload.output?.jsonSchema)
+    XCTAssertEqual(schema["type"], .string("object"))
+    guard case let .object(properties)? = schema["properties"],
+          case let .object(statusSchema)? = properties["status"] else {
+      return XCTFail("missing status output schema")
+    }
+    XCTAssertEqual(statusSchema["const"], .string("accepted"))
+    guard case let .array(requiredValues)? = schema["required"] else {
+      return XCTFail("missing required output fields")
+    }
+    let required = Set(requiredValues.compactMap { value -> String? in
+      guard case let .string(text) = value else { return nil }
+      return text
+    })
+    XCTAssertEqual(required, ["status", "workflowMode"])
+    guard case let .array(modeSchemas)? = schema["oneOf"], modeSchemas.count == 2,
+          case let .object(planningSchema) = modeSchemas[0],
+          case let .array(planningRequiredValues)? = planningSchema["required"],
+          case let .object(issueSchema) = modeSchemas[1],
+          case let .array(issueRequiredValues)? = issueSchema["required"] else {
+      return XCTFail("missing mode-conditional evidence schema")
+    }
+    let planningRequired = Set(planningRequiredValues.compactMap { value -> String? in
+      guard case let .string(text) = value else { return nil }
+      return text
+    })
+    let issueRequired = Set(issueRequiredValues.compactMap { value -> String? in
+      guard case let .string(text) = value else { return nil }
+      return text
+    })
+    let finalizationEvidenceFields: Set<String> = [
+      "commitMessage", "commitHash", "committedFiles", "pushedRemote", "pushedBranch"
+    ]
+    XCTAssertEqual(planningRequired, finalizationEvidenceFields)
+    XCTAssertEqual(issueRequired, finalizationEvidenceFields)
+
+    let validator = DefaultWorkflowOutputValidator()
+    let contract = WorkflowOutputContract(schema: schema, requiredObject: true)
+    let commitHash = String(repeating: "a", count: 40)
+    let planningResult = try validator.validate(
+      RuntimeOutputCandidate(source: .inlineCandidate, payload: [
+        "status": .string("accepted"),
+        "workflowMode": .string("design-plan-only"),
+        "commitMessage": .string("docs: record accepted plan"),
+        "commitHash": .string(commitHash),
+        "committedFiles": .array([.string("impl-plans/completed/accepted-plan.md")]),
+        "pushedRemote": .string("origin"),
+        "pushedBranch": .string("main")
+      ]),
+      contract: contract
+    )
+    XCTAssertEqual(planningResult.status, .accepted)
+    let missingPlanningEvidence = try validator.validate(
+      RuntimeOutputCandidate(source: .inlineCandidate, payload: [
+        "status": .string("accepted"),
+        "workflowMode": .string("design-plan-only")
+      ]),
+      contract: contract
+    )
+    XCTAssertEqual(missingPlanningEvidence.status, .rejected)
+    let missingIssueEvidence = try validator.validate(
+      RuntimeOutputCandidate(source: .inlineCandidate, payload: [
+        "status": .string("accepted"),
+        "workflowMode": .string("issue-resolution")
+      ]),
+      contract: contract
+    )
+    XCTAssertEqual(missingIssueEvidence.status, .rejected)
   }
 
   func testCommandExecutionDecodesRielaScriptPathShape() throws {
@@ -592,5 +784,27 @@ final class WorkflowModelTests: XCTestCase {
       current.deleteLastPathComponent()
     }
     throw NSError(domain: "WorkflowModelTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Package.swift not found"])
+  }
+
+  private func assertProtectedGitFinalizationPolicyRejected(
+    _ workflow: WorkflowDefinition,
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) throws {
+    let outputStep = try XCTUnwrap(
+      workflow.steps.first { $0.id == "workflow-output" },
+      file: file,
+      line: line
+    )
+    XCTAssertThrowsError(
+      try DeterministicWorkflowRunner.requiredGitFinalizationEvidencePolicy(
+        workflow: workflow,
+        terminalStep: outputStep
+      ),
+      file: file,
+      line: line
+    ) { error in
+      XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidOutput, file: file, line: line)
+    }
   }
 }

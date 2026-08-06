@@ -87,6 +87,39 @@ interactive package creation and import flows. Use `--output json` only when a
 legacy caller explicitly needs a single non-streaming JSON document after
 completion.
 
+## Built-in Git Workflow Finalization
+
+`riela/git-commit@1` and `riela/git-push@1` are opt-in workflow add-ons for
+reviewed repository finalization. Merely selecting an add-on does not authorize
+the mutation: a commit node must set `config.allowCommit: true`, and a push node
+must independently set `config.allowPush: true`. Commit input includes a
+bounded message and an ordered, unique list of exact repository-relative files;
+directories, repository escapes, `.git` paths, custom clean filters, and
+pre-existing staged paths outside that list are rejected. Unstaged and
+untracked files outside the list remain untouched.
+
+Commit preparation uses an isolated index and a runtime-owned crash journal
+outside the repository. Publication compares the recorded branch state, never
+removes a foreign Git index lock, and supports evidence-backed idempotent retry.
+Successful commit output reports `operation`, `status`, the full `commitHash`,
+the accepted `commitMessage`, and `committedFiles` in their authored order.
+
+Push requires `expectedCommitHashTemplate` to resolve to the accepted commit
+hash and requires the current `HEAD` to equal it. Version 1 accepts a named
+branch only when its configured upstream is the same branch, validates the live
+remote tip, and permits at most the single accepted unpublished commit. It uses
+a non-force push and verifies the live remote again before reporting `pushed`
+or `already-pushed`. Successful output includes the validated remote name and
+branch, never the remote URL or credentials.
+
+Production invokes only the trusted system Git at `/usr/bin/git` with argument
+arrays, a minimal environment, disabled hooks/signing/prompts, and bounded
+diagnostics; it never searches `PATH` or evaluates a shell command. Version 1
+supports validated HTTPS and SSH network transports but rejects local/file and
+external-helper transports. Additional Git installations, credential-helper
+locations, or transport policies require a new explicitly tested runtime
+policy version.
+
 ## Session Observability
 
 Session observers open the runtime store read-only and never create, migrate,

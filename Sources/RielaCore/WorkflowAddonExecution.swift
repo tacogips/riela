@@ -240,6 +240,37 @@ private enum ProjectedAttachmentContent {
   }
 }
 
+public struct WorkflowAddonExecutionIdentity: Codable, Equatable, Sendable {
+  public var workflowExecutionId: String
+  public var stepExecutionId: String
+  public var attempt: Int
+  public var predecessorStepExecutionId: String?
+  public var predecessorStepExecutionIds: [String]?
+
+  public init(
+    workflowExecutionId: String,
+    stepExecutionId: String,
+    attempt: Int,
+    predecessorStepExecutionId: String? = nil,
+    predecessorStepExecutionIds: [String]? = nil
+  ) {
+    self.workflowExecutionId = workflowExecutionId
+    self.stepExecutionId = stepExecutionId
+    self.attempt = attempt
+    self.predecessorStepExecutionId = predecessorStepExecutionId
+    self.predecessorStepExecutionIds = predecessorStepExecutionIds
+      ?? predecessorStepExecutionId.map { [$0] }
+  }
+}
+
+public struct WorkflowAddonFinalizationToken: Codable, Equatable, Hashable, Sendable {
+  public var value: String
+
+  public init(value: String) {
+    self.value = value
+  }
+}
+
 public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
   public var workflowId: String
   public var stepId: String
@@ -248,6 +279,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
   public var variables: JSONObject
   public var resolvedInputPayload: JSONObject
   public var attachments: [String: WorkflowAddonAttachmentValue]
+  public var executionIdentity: WorkflowAddonExecutionIdentity?
 
   public init(
     workflowId: String,
@@ -256,7 +288,8 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     addon: WorkflowNodeAddonRef,
     variables: JSONObject = [:],
     resolvedInputPayload: JSONObject = [:],
-    attachments: [String: WorkflowAddonAttachmentValue] = [:]
+    attachments: [String: WorkflowAddonAttachmentValue] = [:],
+    executionIdentity: WorkflowAddonExecutionIdentity? = nil
   ) {
     self.workflowId = workflowId
     self.stepId = stepId
@@ -265,6 +298,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     self.variables = variables
     self.resolvedInputPayload = resolvedInputPayload
     self.attachments = attachments
+    self.executionIdentity = executionIdentity
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -275,6 +309,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     case variables
     case resolvedInputPayload
     case attachments
+    case executionIdentity
   }
 
   public init(from decoder: Decoder) throws {
@@ -286,6 +321,7 @@ public struct WorkflowAddonExecutionInput: Codable, Equatable, Sendable {
     self.variables = try container.decodeIfPresent(JSONObject.self, forKey: .variables) ?? [:]
     self.resolvedInputPayload = try container.decodeIfPresent(JSONObject.self, forKey: .resolvedInputPayload) ?? [:]
     self.attachments = try container.decodeIfPresent([String: WorkflowAddonAttachmentValue].self, forKey: .attachments) ?? [:]
+    self.executionIdentity = try container.decodeIfPresent(WorkflowAddonExecutionIdentity.self, forKey: .executionIdentity)
   }
 }
 
@@ -300,4 +336,15 @@ private func sha256Digest(for data: Data) -> String {
 
 public protocol WorkflowAddonResolving: Sendable {
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput
+}
+
+public protocol WorkflowAddonFinalizationAcknowledging: Sendable {
+  func acknowledgeAcceptedFinalization(_ token: WorkflowAddonFinalizationToken) async throws
+}
+
+public protocol WorkflowAddonTerminalRecording: Sendable {
+  func recordTerminalFinalization(
+    workflowExecutionId: String,
+    stepExecutionIds: [String]
+  ) async throws
 }

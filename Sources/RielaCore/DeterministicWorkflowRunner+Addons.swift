@@ -24,6 +24,18 @@ extension DeterministicWorkflowRunner {
       guard let addonResolver else {
         throw AdapterExecutionError(.providerError, "missing add-on resolver for '\(addon.name)'")
       }
+      let predecessorExecutionIds = retryPredecessorExecutionIds(
+        session: session,
+        step: step
+      )
+      let startedExecution = try await recordStepStartedExecution(
+        workflowId: workflow.workflowId,
+        sessionId: sessionId,
+        step: step,
+        attempt: executionIndex,
+        backend: nil,
+        handler: request.eventHandler
+      )
       let addonInput = WorkflowAddonExecutionInput(
         workflowId: workflow.workflowId,
         stepId: step.id,
@@ -31,16 +43,18 @@ extension DeterministicWorkflowRunner {
         addon: addon,
         variables: request.variables,
         resolvedInputPayload: workflowAddonResolvedInputPayload(resolvedInputPayload, session: session),
-        attachments: attachments
+        attachments: attachments,
+        executionIdentity: WorkflowAddonExecutionIdentity(
+          workflowExecutionId: sessionId,
+          stepExecutionId: startedExecution.execution.executionId,
+          attempt: executionIndex,
+          predecessorStepExecutionId: predecessorExecutionIds.first,
+          predecessorStepExecutionIds: predecessorExecutionIds
+        )
       )
-      adapterOutput = try await executeAddon(
-        addonResolver,
-        input: addonInput,
-        sessionId: sessionId,
-        workflow: workflow,
-        step: step,
-        request: request,
-        executionIndex: executionIndex
+      adapterOutput = try await addonResolver.execute(
+        addonInput,
+        context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
       )
     } catch let adapterFailure as AdapterExecutionError {
       if step.failurePolicy == .advisory {
@@ -107,6 +121,27 @@ extension DeterministicWorkflowRunner {
     )
   }
 
+  private func retryPredecessorExecutionIds(
+    session: WorkflowSession,
+    step: WorkflowStepRef
+  ) -> [String] {
+    let matchingExecutions = session.executions.filter {
+      $0.stepId == step.id && $0.nodeId == step.nodeId
+    }
+    guard let previousExecution = matchingExecutions.last,
+          isUnacceptedRetryPredecessor(previousExecution) else {
+      return []
+    }
+    return matchingExecutions.reversed().prefix {
+      isUnacceptedRetryPredecessor($0)
+    }.map(\.executionId)
+  }
+
+  private func isUnacceptedRetryPredecessor(_ execution: WorkflowStepExecution) -> Bool {
+    (execution.status == .failed || execution.status == .running)
+      && execution.acceptedOutput == nil
+  }
+
   private func projectedAddonAttachments(
     addon: WorkflowNodeAddonRef,
     sessionId: String,
@@ -136,26 +171,41 @@ extension DeterministicWorkflowRunner {
     }
   }
 
-  private func executeAddon(
-    _ addonResolver: any WorkflowAddonResolving,
-    input addonInput: WorkflowAddonExecutionInput,
-    sessionId: String,
-    workflow: WorkflowDefinition,
-    step: WorkflowStepRef,
-    request: DeterministicWorkflowRunRequest,
-    executionIndex: Int
-  ) async throws -> AdapterExecutionOutput {
-    _ = try await recordStepStartedExecution(
-      workflowId: workflow.workflowId,
-      sessionId: sessionId,
-      step: step,
-      attempt: executionIndex,
-      backend: nil,
-      handler: request.eventHandler
+  func reconcileAcceptedFinalizations(in session: WorkflowSession) async {
+    guard let acknowledger = addonResolver as? any WorkflowAddonFinalizationAcknowledging else {
+      return
+    }
+    let tokens = Set<WorkflowAddonFinalizationToken>(session.executions.compactMap { execution in
+      guard execution.status == .completed else {
+        return nil
+      }
+      return execution.acceptedOutput?.runtimeFinalizationToken
+    })
+    for token in tokens {
+      try? await acknowledger.acknowledgeAcceptedFinalization(token)
+    }
+  }
+
+  func acknowledgeAcceptedFinalization(in execution: WorkflowStepExecution) async {
+    guard execution.status == .completed,
+          let token = execution.acceptedOutput?.runtimeFinalizationToken,
+          let acknowledger = addonResolver as? any WorkflowAddonFinalizationAcknowledging else {
+      return
+    }
+    try? await acknowledger.acknowledgeAcceptedFinalization(token)
+  }
+
+  func recordTerminalFinalization(in session: WorkflowSession) async {
+    let isTerminal = session.status == .completed || (
+      session.status == .failed && session.failureKind != .maxStepsExceeded
     )
-    return try await addonResolver.execute(
-      addonInput,
-      context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
+    guard isTerminal,
+          let recorder = addonResolver as? any WorkflowAddonTerminalRecording else {
+      return
+    }
+    try? await recorder.recordTerminalFinalization(
+      workflowExecutionId: session.sessionId,
+      stepExecutionIds: session.executions.map(\.executionId)
     )
   }
 }

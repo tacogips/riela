@@ -206,6 +206,7 @@
         "name": "riela/git-commit",
         "version": "1",
         "config": {
+          "allowCommit": true,
           "commitMessageTemplate": "{{inbox.latest.output.payload.commitMessage}}",
           "committedFilesTemplate": "{{inbox.latest.output.payload.committedFiles}}"
         }
@@ -216,7 +217,10 @@
       "addon": {
         "name": "riela/git-push",
         "version": "1",
-        "config": {}
+        "config": {
+          "allowPush": true,
+          "expectedCommitHashTemplate": "{{inbox.latest.output.payload.git.commitHash}}"
+        }
       }
     },
     {

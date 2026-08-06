@@ -194,11 +194,14 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let entryContext: SessionEntryContext
     switch try await resolveSessionEntry(effectiveRequest) {
     case let .terminal(result):
+      await reconcileAcceptedFinalizations(in: result.session)
+      await recordTerminalFinalization(in: result.session)
       return result
     case let .proceed(context):
       entryContext = context
     }
     var session = entryContext.session
+    await reconcileAcceptedFinalizations(in: session)
     var currentStepId = entryContext.currentStepId
     effectiveRequest.parentSessionId = session.parentSessionId
     effectiveRequest.rootSessionId = session.rootSessionId ?? session.sessionId
@@ -218,7 +221,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var visitedSteps = 0
     var publishedTransitions = 0
     var rootOutput: JSONObject?
-    var executionCounts: [String: Int] = [:]
+    var executionCounts = Dictionary(grouping: session.executions, by: \.stepId).mapValues { executions in
+      executions.map(\.attempt).max() ?? 0
+    }
     while let stepId = currentStepId {
       guard let step = executionPlan.step(id: stepId) else {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
@@ -316,6 +321,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         }
       }
       session = publishResult.session
+      await acknowledgeAcceptedFinalization(in: publishResult.stepExecution)
       try await enforceLoopConvergenceIfNeeded(
         publishResult: publishResult,
         workflow: effectiveRequest.workflow,
@@ -379,6 +385,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       transitions: publishedTransitions,
       recovery: recoveryLineage
     )
+    await recordTerminalFinalization(in: loadedSession)
     await emitSessionCompletedEvent(result: completedResult, handler: effectiveRequest.eventHandler)
     await finishOwnedWorkflowRun(ownedWorkflowRunId)
     return completedResult

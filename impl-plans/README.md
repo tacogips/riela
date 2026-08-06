@@ -92,6 +92,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
 | `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |
 | `web-cross-tag-filter-and-fixes` | 2026-07-27 | `design-web-cross-tag-filter-and-fixes` |
 | `web-tags-and-card-preview` | 2026-07-26 | `design-web-tags-and-card-preview` |

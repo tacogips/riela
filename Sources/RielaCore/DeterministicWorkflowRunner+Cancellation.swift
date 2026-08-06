@@ -24,6 +24,8 @@ extension DeterministicWorkflowRunner {
       return
     }
 
+    await recordTerminalFinalization(in: failedSession)
+
     let result = WorkflowRunResult(
       workflowId: request.workflow.workflowId,
       session: failedSession,

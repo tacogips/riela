@@ -509,7 +509,8 @@ private struct ContainerAddonSandboxPolicy {
   }
 }
 
-struct CompositeWorkflowAddonResolver: WorkflowAddonResolving {
+struct CompositeWorkflowAddonResolver: WorkflowAddonResolving, WorkflowAddonFinalizationAcknowledging,
+  WorkflowAddonTerminalRecording {
   var primary: any WorkflowAddonResolving
   var fallback: any WorkflowAddonResolving
 
@@ -518,6 +519,26 @@ struct CompositeWorkflowAddonResolver: WorkflowAddonResolving {
       return try await primary.execute(input, context: context)
     }
     return try await fallback.execute(input, context: context)
+  }
+
+  func acknowledgeAcceptedFinalization(_ token: WorkflowAddonFinalizationToken) async throws {
+    guard let acknowledger = primary as? any WorkflowAddonFinalizationAcknowledging else {
+      return
+    }
+    try await acknowledger.acknowledgeAcceptedFinalization(token)
+  }
+
+  func recordTerminalFinalization(
+    workflowExecutionId: String,
+    stepExecutionIds: [String]
+  ) async throws {
+    guard let recorder = primary as? any WorkflowAddonTerminalRecording else {
+      return
+    }
+    try await recorder.recordTerminalFinalization(
+      workflowExecutionId: workflowExecutionId,
+      stepExecutionIds: stepExecutionIds
+    )
   }
 }
 

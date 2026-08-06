@@ -13,9 +13,10 @@ Rules:
 - If the workflow was issue-resolution, summarize the accepted implementation,
   verification, design, plan, implementation-plan completion check, and
   user-facing documentation updates.
-- Include any moved implementation-plan source and destination paths plus
-  `impl-plans/README.md` in `committedFiles` when Step 8 archived completed
-  implementation plans out of `impl-plans/active`.
+- Include an archived implementation-plan destination and
+  `impl-plans/README.md` in `committedFiles`. Include the source path only when
+  it is an actual tracked deletion in the current Git diff; omit an absent
+  source that was never tracked, because it is not part of the commit target.
 
 Return JSON with:
 - `workflowMode`

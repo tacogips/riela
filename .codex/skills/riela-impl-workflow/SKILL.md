@@ -27,6 +27,63 @@ commit handoff.
   workflow skill or README section.
 - Keep final workflow responses machine-readable when requested by the runtime.
 
+## Safe Git Finalization for Issue 80
+
+Issue `tacogips/riela#80` adds the versioned built-ins
+`riela/git-commit@1` and `riela/git-push@1` to the full issue-resolution path.
+The accepted workflow contract is:
+
+- Step 9 emits one bounded commit message and the exact ordered, unique
+  repository-relative file allowlist. Step 10 must set `allowCommit: true` and
+  supplies that message and allowlist to `riela/git-commit@1`.
+- Commit preparation uses an isolated index and runtime-owned durable journal.
+  It rejects repository escapes, directories, unsafe Git metadata, custom
+  clean filters, allowlist-external staged changes, ambiguous retry state, and
+  foreign index locks. Output includes the validated commit hash, message, and
+  exact committed-file array.
+- Step 11 must independently set `allowPush: true`, pass the accepted Step 10
+  hash through `expectedCommitHashTemplate`, and use `riela/git-push@1`. The
+  add-on requires that hash to equal `HEAD`, a named branch with a same-name
+  upstream, and, when publication is needed, exactly one accepted unpublished
+  commit above both the local tracking and live remote tips. An idempotent retry
+  may instead prove that the live remote already equals `HEAD`. Push is
+  non-force and live-verified.
+- Production uses only the trusted `/usr/bin/git` executable, argument arrays,
+  a minimal environment, disabled hooks/signing/prompts, validated HTTPS or SSH
+  transport, and bounded path-free diagnostics. It does not search `PATH`, run
+  shell command strings, expose remote URLs or credentials, or accept local and
+  file transports.
+- The runtime owns execution identity, predecessor linkage, finalization
+  tokens, durable output acceptance, reconciliation, and terminal-session
+  cleanup. Authored workflow data cannot override those identities.
+- Terminal workflow output is valid only when commit and push hashes match and
+  `committedFiles` exactly matches accepted commit evidence in order and
+  uniqueness. Missing, reordered, mismatched, or fabricated evidence is
+  rejected before publication.
+
+The Step 7/7b decision for workflow execution
+`codex-design-and-implement-review-loop-session-59` was
+`accepted_with_low_findings`. Browser E2E was correctly skipped because no web
+file changed. Accepted verification included:
+
+```bash
+swift build
+swift test --filter GitWorkflowAddon
+swift test --filter GitAddonGarbageCollectionSafetyTests
+swift test --filter 'RuntimeOutputValidationTests|WorkflowModelTests'
+swift test --filter 'RielaCLITests|RielaCoreTests'
+swift run riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json
+git diff --check
+git diff --cached --check
+```
+
+Keep these accepted low-severity follow-ups explicit in later handoffs:
+
+- accepted-token marker files do not yet have bounded retention; and
+- the short `GitWorkflowAddon` test filter does not select the separate
+  garbage-collection safety suite, so run the explicit filter or the aggregate
+  CLI/Core gate as well.
+
 ## Riela Note Workspace Behavior
 
 Accepted Riela Note workspace hardening on

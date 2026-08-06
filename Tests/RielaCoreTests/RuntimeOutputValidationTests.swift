@@ -52,6 +52,7 @@ final class RuntimeOutputValidationTests: XCTestCase {
             "type": .string("array"),
             "minItems": .number(1),
             "maxItems": .number(2),
+            "uniqueItems": .bool(true),
             "items": .object([
               "type": .string("object"),
               "required": .array([.string("id")]),
@@ -101,6 +102,17 @@ final class RuntimeOutputValidationTests: XCTestCase {
       ),
       contract: contract
     )
+    let duplicateFailure = try validator.validate(
+      RuntimeOutputCandidate(
+        source: .inlineCandidate,
+        payload: payload(
+          acceptedPayload,
+          setting: "items",
+          to: .array([.object(["id": .string("ab")]), .object(["id": .string("ab")])])
+        )
+      ),
+      contract: contract
+    )
     let constFailure = try validator.validate(
       RuntimeOutputCandidate(
         source: .inlineCandidate,
@@ -117,6 +129,7 @@ final class RuntimeOutputValidationTests: XCTestCase {
     XCTAssertEqual(enumFailure.reason, "output contract $.status must equal one of the declared enum values")
     XCTAssertEqual(integerFailure.reason, "output contract $.count must be of type integer")
     XCTAssertEqual(nestedFailure.reason, "output contract $.items[0].id must have length >= 2")
+    XCTAssertEqual(duplicateFailure.reason, "output contract $.items must contain unique items")
     XCTAssertEqual(constFailure.reason, "output contract $.meta.kind must equal the declared const value")
     XCTAssertEqual(patternFailure.reason, "output contract $.code must match the declared pattern")
   }
@@ -215,6 +228,10 @@ final class RuntimeOutputValidationTests: XCTestCase {
       (
         WorkflowOutputContract(schema: ["required": .array([.string("")])], requiredObject: true),
         "output contract $schema.required[0] must be a non-empty string"
+      ),
+      (
+        WorkflowOutputContract(schema: ["uniqueItems": .string("yes")], requiredObject: true),
+        "output contract $schema.uniqueItems must be a boolean when provided"
       )
     ]
 

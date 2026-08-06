@@ -391,6 +391,10 @@
       "implPlanReviewSummary": "Implementation plan and design consistency review accepted after transcript edge-case tasks were added.",
       "commitMessage": "docs: add codex-reference session history design and plan",
       "commitHash": "fedcba9876543210fedcba9876543210fedcba98",
+      "committedFiles": [
+        "design-docs/specs/design-codex-reference-session-history.md",
+        "impl-plans/active/codex-reference-session-history.md"
+      ],
       "pushedRemote": "origin",
       "pushedBranch": "main",
       "nextStep": "Run a full issue-resolution execution for impl-plans/active/codex-reference-session-history.md when implementation is approved.",

@@ -538,7 +538,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       when: candidate.when,
       isRootOutput: ordinaryCompletion.publishesRootOutput,
       acceptedAt: clock.now(),
-      routingDiagnostics: candidate.routingDiagnostics
+      routingDiagnostics: candidate.routingDiagnostics,
+      runtimeFinalizationToken: request.adapterOutputMetadataSource?.runtimeFinalizationToken
     )
 
     if request.prePersistenceRoutingDecider != nil {

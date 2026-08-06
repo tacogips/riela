@@ -696,6 +696,17 @@
       "implPlanCompletionSummary": "Archived the completed implementation plan from active to completed before commit generation.",
       "commitMessage": "feat: persist workflow review findings across reruns",
       "commitHash": "abc123def4567890abc123def4567890abc123de",
+      "committedFiles": [
+        "design-docs/specs/design-workflow-review-findings.md",
+        "design-docs/user-qa/qa-review-finding-retention.md",
+        "impl-plans/active/workflow-review-findings.md",
+        "impl-plans/completed/workflow-review-findings.md",
+        "impl-plans/README.md",
+        "packages/riela/src/workflow/review-findings.ts",
+        "packages/riela/src/workflow/review-findings.test.ts",
+        "README.md",
+        ".agents/skills/riela-impl-workflow/SKILL.md"
+      ],
       "pushedRemote": "origin",
       "pushedBranch": "main",
       "verification": [

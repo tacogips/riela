@@ -33,6 +33,7 @@ private func rielaExampleWorkflowNames() -> [String] {
     "enterprise-matrix-customer-escalation",
     "enterprise-matrix-security-incident",
     "enterprise-matrix-vendor-onboarding",
+    "file-markdown-convert",
     "first-four-arithmetic-pipeline",
     "gemini-ocr-worker",
     "gemini-sdk-worker",

@@ -21,6 +21,10 @@ struct AppleGatewayProcessRunner {
   ]
 
   var runtimeEnvironment: [String: String]
+  /// Names the external tool in process diagnostics. Other add-ons that reuse
+  /// this runner (for example the anydoc-swift document converter) override it
+  /// so failures do not read as apple-gateway failures.
+  var toolLabel: String = "apple-gateway"
 
   func run(
     executablePath: String,
@@ -68,7 +72,7 @@ struct AppleGatewayProcessRunner {
     do {
       try process.run()
     } catch {
-      throw AdapterExecutionError(.providerError, "apple-gateway failed to start: \(error.localizedDescription)")
+      throw AdapterExecutionError(.providerError, "\(toolLabel) failed to start: \(error.localizedDescription)")
     }
     let stdoutDrain = AppleGatewayPipeDrain(
       handle: outputPipe.fileHandleForReading,
@@ -84,7 +88,7 @@ struct AppleGatewayProcessRunner {
       stderrDrain.cancel()
       _ = stdoutDrain.waitForData(timeout: .now() + 1)
       _ = stderrDrain.waitForData(timeout: .now() + 1)
-      throw AdapterExecutionError(.timeout, "apple-gateway exceeded deadline and was terminated")
+      throw AdapterExecutionError(.timeout, "\(toolLabel) exceeded deadline and was terminated")
     }
     process.terminationHandler = nil
     let stdoutData = try collectPipeDataAfterTermination(
@@ -101,7 +105,7 @@ struct AppleGatewayProcessRunner {
     let stderr = String(data: stderrData, encoding: .utf8) ?? ""
     guard process.terminationStatus == 0 || allowNonzeroExit else {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
-      throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(process.terminationStatus): \(detail)")
+      throw AdapterExecutionError(.providerError, "\(toolLabel) failed with exit code \(process.terminationStatus): \(detail)")
     }
     return AppleGatewayProcessDataOutput(
       stdoutData: stdoutData,
@@ -136,7 +140,8 @@ struct AppleGatewayProcessRunner {
       arguments: arguments,
       environment: sanitizedChildEnvironment(),
       stdoutPipe: outputPipe,
-      stderrPipe: errorPipe
+      stderrPipe: errorPipe,
+      toolLabel: toolLabel
     )
     outputPipe.fileHandleForWriting.closeFile()
     errorPipe.fileHandleForWriting.closeFile()
@@ -155,7 +160,7 @@ struct AppleGatewayProcessRunner {
       stderrDrain.cancel()
       _ = stdoutDrain.waitForData(timeout: .now() + 1)
       _ = stderrDrain.waitForData(timeout: .now() + 1)
-      throw AdapterExecutionError(.timeout, "apple-gateway exceeded deadline and was terminated")
+      throw AdapterExecutionError(.timeout, "\(toolLabel) exceeded deadline and was terminated")
     }
     let stdoutData = try collectPipeDataAfterTermination(
       stdoutDrain,
@@ -172,7 +177,7 @@ struct AppleGatewayProcessRunner {
     let terminationStatus = termination.exitStatus()
     guard terminationStatus == 0 || allowNonzeroExit else {
       let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
-      throw AdapterExecutionError(.providerError, "apple-gateway failed with exit code \(terminationStatus): \(detail)")
+      throw AdapterExecutionError(.providerError, "\(toolLabel) failed with exit code \(terminationStatus): \(detail)")
     }
     return AppleGatewayProcessDataOutput(
       stdoutData: stdoutData,
@@ -237,7 +242,8 @@ private func spawnProcessGroup(
   arguments: [String],
   environment: [String: String],
   stdoutPipe: Pipe,
-  stderrPipe: Pipe
+  stderrPipe: Pipe,
+  toolLabel: String
 ) throws -> pid_t {
   #if canImport(Glibc)
   var fileActions = posix_spawn_file_actions_t()
@@ -254,27 +260,31 @@ private func spawnProcessGroup(
   }
   try appleGatewaySpawnCheck(
     posix_spawn_file_actions_adddup2(&fileActions, stdoutPipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO),
-    operation: "prepare stdout pipe"
+    operation: "prepare stdout pipe",
+    toolLabel: toolLabel
   )
   try appleGatewaySpawnCheck(
     posix_spawn_file_actions_adddup2(&fileActions, stderrPipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO),
-    operation: "prepare stderr pipe"
+    operation: "prepare stderr pipe",
+    toolLabel: toolLabel
   )
   try appleGatewaySpawnCheck(
     posix_spawn_file_actions_addclose(&fileActions, stdoutPipe.fileHandleForReading.fileDescriptor),
-    operation: "close child stdout read pipe"
+    operation: "close child stdout read pipe",
+    toolLabel: toolLabel
   )
   try appleGatewaySpawnCheck(
     posix_spawn_file_actions_addclose(&fileActions, stderrPipe.fileHandleForReading.fileDescriptor),
-    operation: "close child stderr read pipe"
+    operation: "close child stderr read pipe",
+    toolLabel: toolLabel
   )
   #if canImport(Darwin)
   let flags = Int16(POSIX_SPAWN_SETSID)
-  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set session flag")
+  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set session flag", toolLabel: toolLabel)
   #else
   let flags = Int16(POSIX_SPAWN_SETPGROUP)
-  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set process-group flag")
-  try appleGatewaySpawnCheck(posix_spawnattr_setpgroup(&attributes, 0), operation: "set process group")
+  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set process-group flag", toolLabel: toolLabel)
+  try appleGatewaySpawnCheck(posix_spawnattr_setpgroup(&attributes, 0), operation: "set process group", toolLabel: toolLabel)
   #endif
 
   var pid = pid_t()
@@ -292,17 +302,17 @@ private func spawnProcessGroup(
   if result != 0 {
     throw AdapterExecutionError(
       .providerError,
-      "apple-gateway failed to start: \(String(cString: strerror(result)))"
+      "\(toolLabel) failed to start: \(String(cString: strerror(result)))"
     )
   }
   return pid
 }
 
-private func appleGatewaySpawnCheck(_ result: Int32, operation: String) throws {
+private func appleGatewaySpawnCheck(_ result: Int32, operation: String, toolLabel: String) throws {
   guard result == 0 else {
     throw AdapterExecutionError(
       .providerError,
-      "apple-gateway failed to \(operation): \(String(cString: strerror(result)))"
+      "\(toolLabel) failed to \(operation): \(String(cString: strerror(result)))"
     )
   }
 }

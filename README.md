@@ -458,6 +458,31 @@ Static hosting preserves POST `/note/register` and `/graphql` service
 precedence, rejects traversal and symlink escapes, and does not require CORS or
 introduce another authentication system.
 
+## Document Conversion Add-On
+
+`riela/file-markdown-convert` converts local documents (pdf, doc, docx, ppt,
+pptx, xls/xlsx, odt, ods, odp, rtf, epub, csv) to GitHub-Flavored Markdown
+through the external [`anydoc-swift`](https://github.com/tacogips/anydoc-swift)
+executable, which wraps [firecrawl/anydoc](https://github.com/firecrawl/anydoc).
+The runtime does not vendor the converter: it invokes
+`anydoc-swift convert <path> --json` with separate process arguments and reads
+the result envelope, so a failed document keeps its machine-readable error kind
+(`unsupported`, `malformed`, `encrypted`, `resourceLimit`, `io`, ...) instead of
+a prose message. Version 0.1.1 or newer is required.
+
+Executable resolution is `addon.config.binaryPath`, then `ANYDOC_SWIFT_BIN`,
+then `PATH`; document paths come from `addon.inputs.path` / `addon.inputs.paths`
+only. The add-on rejects authored `addon.env`, caps input size, document count,
+and emitted Markdown size, and can be restricted to `config.allowedRoots`.
+
+```bash
+riela workflow validate file-markdown-convert --workflow-definition-dir examples
+riela workflow run file-markdown-convert --workflow-definition-dir examples \
+  --variables '{"workflowInput":{"path":"/abs/path/report.pdf"}}'
+```
+
+The reference bundle is `examples/file-markdown-convert`.
+
 ## Apple Gateway Add-Ons
 
 Riela includes built-in worker add-ons for local Apple integrations through an

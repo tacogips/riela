@@ -79,7 +79,7 @@ cask "riela" do
     strategy :github_latest
   end
 
-  depends_on :macos
+  depends_on macos: :sonoma
 
   app "RielaApp.app"
   binary "riela"

@@ -349,7 +349,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(script.contains("sha256 arm:   \"$darwin_arm64_sha\","))
     XCTAssertTrue(script.contains("riela-#{version}-#{arch}.dmg"))
     XCTAssertTrue(script.contains("desc \"Swift-native workflow runtime with a menu bar app and CLI\""))
-    XCTAssertTrue(script.contains("depends_on :macos"))
+    XCTAssertTrue(script.contains("depends_on macos: :sonoma"))
     XCTAssertTrue(script.contains("app \"RielaApp.app\""))
     XCTAssertTrue(script.contains("binary \"riela\""))
     XCTAssertFalse(script.contains("uninstall pkgutil"))

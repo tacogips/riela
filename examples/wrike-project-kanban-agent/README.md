@@ -48,13 +48,31 @@ environment variables are never forwarded to the gateway binaries.
 | `todoStatusId` | custom status id of the todo column |
 | `doingStatusId` | custom status id of the doing column |
 | `doneStatusId` | custom status id of the done column |
+| `selfContactId` | Wrike contact id of the agent's own account (mention target) |
 
 Discover the ids once with the reader binary:
 
 ```bash
 wrike-gateway-reader graphql query '{ folders { id title scope } }'
 wrike-gateway-reader graphql query '{ workflows { id name customStatuses { id name group } } }'
+wrike-gateway-reader graphql query '{ contacts(me: true) { id } }'
 ```
+
+## Follow-up mentions on completed tasks
+
+When a tick finds no todo-column task, it checks for follow-up work instead:
+tasks in the done column whose `updatedDate` changed in the last 15 minutes
+(wrike-gateway 0.2.0+ exposes the `updatedDate` range filter) are inspected,
+and if the newest comment mentions `selfContactId` (Wrike stores mentions as
+`<a ... rel="<contact-id>">@Name</a>` markup) and is not itself a reply, an
+agent node answers it as a new comment on the same task. The task's status is
+not changed. Wrike returns task comments newest-first, so the default
+`selectFirst` position picks the most recent mention.
+
+Duplicate replies are prevented statelessly: every posted reply ends with a
+`[re:<comment-id>]` marker, mention candidates whose text contains `[re:` are
+skipped, and a mention that already has a matching marker comment is treated
+as answered.
 
 ## One-shot run
 

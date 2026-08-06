@@ -117,6 +117,137 @@
       }
     },
     {
+      "id": "fetch-recent-done-task",
+      "addon": {
+        "name": "riela/wrike-gateway-read",
+        "version": "1",
+        "env": {
+          "WRIKE_GATEWAY_ACCESS_TOKEN": {
+            "fromEnv": "RIELA_WRIKE_ACCESS_TOKEN"
+          },
+          "WRIKE_GATEWAY_API_BASE_URL": {
+            "fromEnv": "RIELA_WRIKE_API_BASE_URL"
+          }
+        },
+        "config": {
+          "queryTemplate": "query Done($fid: ID!, $r: InstantRangeInput) { tasks(scope: { folderId: $fid }, status: Completed, updatedDate: $r) { nodes { id title description permalink customStatusId } } }",
+          "nowVariables": {
+            "recentSince": -900
+          },
+          "variablesTemplate": {
+            "fid": "{{workflowInput.projectFolderId}}",
+            "r": {
+              "start": "{{recentSince}}"
+            }
+          },
+          "selectFirst": {
+            "path": "data.tasks.nodes"
+          },
+          "whenFlags": {
+            "has_recent_done_task": "selected.id"
+          }
+        }
+      }
+    },
+    {
+      "id": "fetch-mention-comment",
+      "addon": {
+        "name": "riela/wrike-gateway-read",
+        "version": "1",
+        "env": {
+          "WRIKE_GATEWAY_ACCESS_TOKEN": {
+            "fromEnv": "RIELA_WRIKE_ACCESS_TOKEN"
+          },
+          "WRIKE_GATEWAY_API_BASE_URL": {
+            "fromEnv": "RIELA_WRIKE_API_BASE_URL"
+          }
+        },
+        "config": {
+          "queryTemplate": "query C($tid: ID!) { comments(scope: { taskId: $tid }) { id authorId text createdDate } }",
+          "variablesTemplate": {
+            "tid": "{{input.selected.id}}"
+          },
+          "selectFirst": {
+            "path": "data.comments",
+            "where": {
+              "text": {
+                "contains": "rel=\"{{workflowInput.selfContactId}}\"",
+                "notContains": "[re:"
+              }
+            }
+          },
+          "whenFlags": {
+            "has_mention_comment": "selected.id"
+          },
+          "payloadExtras": {
+            "task": "{{input.selected}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "check-existing-reply",
+      "addon": {
+        "name": "riela/wrike-gateway-read",
+        "version": "1",
+        "env": {
+          "WRIKE_GATEWAY_ACCESS_TOKEN": {
+            "fromEnv": "RIELA_WRIKE_ACCESS_TOKEN"
+          },
+          "WRIKE_GATEWAY_API_BASE_URL": {
+            "fromEnv": "RIELA_WRIKE_API_BASE_URL"
+          }
+        },
+        "config": {
+          "queryTemplate": "query C($tid: ID!) { comments(scope: { taskId: $tid }) { id text } }",
+          "variablesTemplate": {
+            "tid": "{{input.task.id}}"
+          },
+          "selectFirst": {
+            "path": "data.comments",
+            "where": {
+              "text": {
+                "contains": "[re:{{input.selected.id}}]"
+              }
+            }
+          },
+          "whenFlags": {
+            "already_replied": "selected.id"
+          },
+          "payloadExtras": {
+            "task": "{{input.task}}",
+            "mentionComment": "{{input.selected}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "compose-mention-reply",
+      "nodeFile": "nodes/node-compose-mention-reply.json"
+    },
+    {
+      "id": "post-mention-reply",
+      "addon": {
+        "name": "riela/wrike-gateway-write",
+        "version": "1",
+        "env": {
+          "WRIKE_GATEWAY_ACCESS_TOKEN": {
+            "fromEnv": "RIELA_WRIKE_ACCESS_TOKEN"
+          },
+          "WRIKE_GATEWAY_API_BASE_URL": {
+            "fromEnv": "RIELA_WRIKE_API_BASE_URL"
+          }
+        },
+        "config": {
+          "queryTemplate": "mutation Reply($tid: ID!, $text: String!) { createComment(scope: { taskId: $tid }, input: { text: $text }) { comment { id } } }",
+          "variablesTemplate": {
+            "tid": "{{input.taskId}}",
+            "text": "{{input.replyText}}\n\n[re:{{input.commentId}}]"
+          }
+        }
+      }
+    },
+    {
       "id": "no-actionable-tasks",
       "kind": "output",
       "nodeFile": "nodes/node-no-actionable-tasks.json"
@@ -129,7 +260,7 @@
       "role": "worker",
       "transitions": [
         {
-          "toStepId": "no-actionable-tasks",
+          "toStepId": "fetch-recent-done-task",
           "label": "!has_todo_task"
         },
         {
@@ -137,6 +268,66 @@
           "label": "has_todo_task"
         }
       ]
+    },
+    {
+      "id": "fetch-recent-done-task",
+      "nodeId": "fetch-recent-done-task",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "no-actionable-tasks",
+          "label": "!has_recent_done_task"
+        },
+        {
+          "toStepId": "fetch-mention-comment",
+          "label": "has_recent_done_task"
+        }
+      ]
+    },
+    {
+      "id": "fetch-mention-comment",
+      "nodeId": "fetch-mention-comment",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "no-actionable-tasks",
+          "label": "!has_mention_comment"
+        },
+        {
+          "toStepId": "check-existing-reply",
+          "label": "has_mention_comment"
+        }
+      ]
+    },
+    {
+      "id": "check-existing-reply",
+      "nodeId": "check-existing-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "no-actionable-tasks",
+          "label": "already_replied"
+        },
+        {
+          "toStepId": "compose-mention-reply",
+          "label": "!already_replied"
+        }
+      ]
+    },
+    {
+      "id": "compose-mention-reply",
+      "nodeId": "compose-mention-reply",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "post-mention-reply"
+        }
+      ]
+    },
+    {
+      "id": "post-mention-reply",
+      "nodeId": "post-mention-reply",
+      "role": "worker"
     },
     {
       "id": "mark-task-doing",

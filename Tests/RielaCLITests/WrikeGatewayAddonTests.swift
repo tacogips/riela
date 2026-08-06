@@ -191,6 +191,56 @@ final class WrikeGatewayAddonTests: XCTestCase {
     )
   }
 
+  func testSelectFirstOperatorsAndLastPosition() async throws {
+    let fake = try FakeWrikeGateway(mode: "comments-success", requestId: "req-ops")
+    defer { fake.cleanup() }
+
+    let output = try await runWrike(
+      name: "riela/wrike-gateway-read",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "queryTemplate": .string("{ comments { id authorId text } }"),
+        "selectFirst": .object([
+          "path": .string("data.comments"),
+          "position": .string("last"),
+          "where": .object([
+            "text": .object([
+              "contains": .string("rel=\"KUAYWWKI\""),
+              "notContains": .string("[re:")
+            ]),
+            "authorId": .object(["ne": .string("BOT-1")])
+          ])
+        ]),
+        "whenFlags": .object(["has_mention": .string("selected.id")])
+      ]
+    )
+
+    let selected = try XCTUnwrap(wrikeTestObject(output.payload["selected"]))
+    XCTAssertEqual(selected["id"], .string("COMMENT-3"))
+    XCTAssertEqual(output.when["has_mention"], true)
+  }
+
+  func testNowVariablesRenderIntoQueryVariables() async throws {
+    let fake = try FakeWrikeGateway(mode: "tasks-success", requestId: "req-now")
+    defer { fake.cleanup() }
+
+    _ = try await runWrike(
+      name: "riela/wrike-gateway-read",
+      config: [
+        "binaryPath": .string(fake.executableURL.path),
+        "queryTemplate": .string("query T($r: InstantRangeInput) { tasks(updatedDate: $r) { nodes { id } } }"),
+        "nowVariables": .object(["since": .integer(-900)]),
+        "variablesTemplate": .object(["r": .object(["start": .string("{{since}}")])])
+      ]
+    )
+
+    let variablesJSON = try String(contentsOf: fake.variablesLogURL)
+    XCTAssertTrue(
+      variablesJSON.range(of: #""start":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z""#, options: .regularExpression) != nil,
+      variablesJSON
+    )
+  }
+
   func testPayloadExtrasCarryRenderedValues() async throws {
     let fake = try FakeWrikeGateway(mode: "tasks-success", requestId: "req-extras")
     defer { fake.cleanup() }
@@ -324,6 +374,21 @@ private struct FakeWrikeGateway {
           ],
           "pageInfo": {"resultCount": 2, "nextPageToken": null}
         }
+      },
+      "extensions": {"requestId": "\(requestId)"}
+    }
+    JSON
+        ;;
+      comments-success)
+        /bin/cat <<'JSON'
+    {
+      "data": {
+        "comments": [
+          {"id": "COMMENT-1", "authorId": "USER-1", "text": "<a rel=\\"KUAYWWKI\\">@Bot</a> first question"},
+          {"id": "COMMENT-2", "authorId": "BOT-1", "text": "answer text [re:COMMENT-1] <a rel=\\"KUAYWWKI\\">@Bot</a>"},
+          {"id": "COMMENT-3", "authorId": "USER-2", "text": "<a rel=\\"KUAYWWKI\\">@Bot</a> newest question"},
+          {"id": "COMMENT-4", "authorId": "BOT-1", "text": "<a rel=\\"KUAYWWKI\\">@Bot</a> self note"}
+        ]
       },
       "extensions": {"requestId": "\(requestId)"}
     }

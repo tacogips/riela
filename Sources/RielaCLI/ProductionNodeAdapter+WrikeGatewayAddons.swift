@@ -66,7 +66,10 @@ private struct WrikeGatewayAddonEngine {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    var variables = addonVariables(for: input)
+    for (name, value) in try nowVariables(config: config, addonName: input.addon.name) {
+      variables[name] = .string(value)
+    }
     let childEnvironment = try resolvedChildEnvironment(input)
     let resolvedBinary = try resolvedBinary(operation: operation, config: config, addonName: input.addon.name)
     let document = try renderedDocument(config: config, variables: variables, addonName: input.addon.name)
@@ -214,6 +217,24 @@ private struct WrikeGatewayAddonEngine {
     }
   }
 
+  private func nowVariables(config: JSONObject, addonName: String) throws -> [String: String] {
+    guard let value = config["nowVariables"] else {
+      return [:]
+    }
+    guard case let .object(offsets) = value else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) config.nowVariables must be an object")
+    }
+    let now = Date()
+    var resolved: [String: String] = [:]
+    for (name, offsetValue) in offsets {
+      guard let offsetSeconds = intValue(offsetValue) else {
+        throw AdapterExecutionError(.policyBlocked, "\(addonName) config.nowVariables.\(name) must be an integer second offset")
+      }
+      resolved[name] = wrikeGatewayInstantString(now.addingTimeInterval(TimeInterval(offsetSeconds)))
+    }
+    return resolved
+  }
+
   private func selectedValue(
     config: JSONObject,
     variables: JSONObject,
@@ -239,12 +260,17 @@ private struct WrikeGatewayAddonEngine {
       }
       conditions = rendered
     }
-    let match = candidates.first { candidate in
+    let position = nonEmptyString(selector["position"]) ?? "first"
+    guard position == "first" || position == "last" else {
+      throw AdapterExecutionError(.policyBlocked, "\(addonName) config.selectFirst.position must be 'first' or 'last'")
+    }
+    let ordered: [JSONValue] = position == "last" ? candidates.reversed() : candidates
+    let match = ordered.first { candidate in
       guard case let .object(entry) = candidate else {
         return false
       }
       return conditions.allSatisfy { key, expected in
-        wrikeGatewayValuesMatch(entry[key], expected)
+        wrikeGatewayConditionMatches(entry[key], expected)
       }
     }
     return match ?? JSONValue.null
@@ -340,4 +366,39 @@ private func wrikeGatewayValuesMatch(_ actual: JSONValue?, _ expected: JSONValue
     return String(number) == expectedText
   }
   return false
+}
+
+/// A where condition is either a plain value (equality) or an operator object
+/// combining `contains`, `notContains`, and `ne`, all of which must hold.
+private func wrikeGatewayConditionMatches(_ actual: JSONValue?, _ condition: JSONValue) -> Bool {
+  guard case let .object(operators) = condition,
+        !operators.isEmpty,
+        operators.keys.allSatisfy({ ["contains", "notContains", "ne"].contains($0) }) else {
+    return wrikeGatewayValuesMatch(actual, condition)
+  }
+  for (name, operand) in operators {
+    switch name {
+    case "contains", "notContains":
+      guard case let .string(needle) = operand, case let .string(haystack)? = actual else {
+        return false
+      }
+      let contains = haystack.contains(needle)
+      if (name == "contains") != contains {
+        return false
+      }
+    case "ne":
+      if wrikeGatewayValuesMatch(actual, operand) {
+        return false
+      }
+    default:
+      return false
+    }
+  }
+  return true
+}
+
+private func wrikeGatewayInstantString(_ date: Date) -> String {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime]
+  return formatter.string(from: date)
 }

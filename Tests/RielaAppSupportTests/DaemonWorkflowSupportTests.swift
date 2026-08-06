@@ -697,7 +697,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("telegram-gateway"))
     XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("discord-gateway"))
     XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("slack-gateway"))
-    XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("cron"))
+    XCTAssertTrue(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("cron"))
     XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("chat-sdk"))
     XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("webhook"))
     XCTAssertFalse(RielaAppDaemonWorkflowDiscovery.isDaemonSourceKind("custom-kind"))

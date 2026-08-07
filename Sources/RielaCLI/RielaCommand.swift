@@ -40,7 +40,6 @@ public enum RielaCommand: Equatable, Sendable {
   case package(PackageCommand)
   case node(NodeCommand)
   case setup(CLICommandOptions)
-  case note(NoteCommand)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
   case gc(CLICommandOptions)
@@ -135,33 +134,6 @@ public struct LoopCommand: Equatable, Sendable {
   public var options: CLICommandOptions
 
   public init(kind: LoopCommandKind, options: CLICommandOptions) {
-    self.kind = kind
-    self.options = options
-  }
-}
-
-public enum NoteCommandKind: String, Codable, Sendable {
-  case add
-  case edit
-  case delete
-  case show
-  case list
-  case search
-  case tag
-  case comment
-  case attach
-  case readonly
-  case notebook
-  case storage
-  case client
-  case autoAction = "auto-action"
-}
-
-public struct NoteCommand: Equatable, Sendable {
-  public var kind: NoteCommandKind
-  public var options: CLICommandOptions
-
-  public init(kind: NoteCommandKind, options: CLICommandOptions) {
     self.kind = kind
     self.options = options
   }
@@ -499,8 +471,6 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .node(try parseRrun(route.passthroughArguments))
     case let route as SetupRoute:
       return .setup(try parseSetup(route.passthroughArguments))
-    case let route as NoteRoute:
-      return .note(try parseNote(route.passthroughArguments))
     case let route as InstanceRoute:
       return .instance(try parseInstance(route.passthroughArguments))
     case let route as DoctorRoute:
@@ -860,77 +830,6 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       arguments: route.options,
       allowTableOutput: family.subcommand == .list,
       defaultOutput: family.subcommand == .list ? .table : .json
-    )
-  }
-
-  private func parseNote(_ arguments: [String]) throws -> NoteCommand {
-    let family = try ParsedNoteFamily.parseCLI(arguments)
-    let kind = family.subcommand
-    if kind == .notebook {
-      let route = try ParsedNoteNotebookRoute.parseCLI(family.remainder)
-      return NoteCommand(
-        kind: kind,
-        options: try parseGeneric(
-          scope: "note",
-          command: kind.rawValue,
-          target: route.action.rawValue,
-          arguments: route.options,
-          allowTableOutput: route.action == .list,
-          defaultOutput: .text
-        )
-      )
-    }
-    if kind == .storage {
-      let route = try ParsedNoteStorageRoute.parseCLI(family.remainder)
-      return NoteCommand(
-        kind: kind,
-        options: try parseGeneric(
-          scope: "note",
-          command: kind.rawValue,
-          target: route.action.rawValue,
-          arguments: route.options,
-          defaultOutput: .text
-        )
-      )
-    }
-    if kind == .client {
-      let route = try ParsedNoteClientRegistrationRoute.parseCLI(family.remainder)
-      return NoteCommand(
-        kind: kind,
-        options: try parseGeneric(
-          scope: "note",
-          command: kind.rawValue,
-          target: route.action.rawValue,
-          arguments: route.options,
-          allowTableOutput: route.action == .list,
-          defaultOutput: .text
-        )
-      )
-    }
-    if kind == .autoAction {
-      let route = try ParsedNoteAutoActionRoute.parseCLI(family.remainder)
-      return NoteCommand(
-        kind: kind,
-        options: try parseGeneric(
-          scope: "note",
-          command: kind.rawValue,
-          target: route.action.rawValue,
-          arguments: route.options,
-          defaultOutput: .text
-        )
-      )
-    }
-    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
-    return NoteCommand(
-      kind: kind,
-      options: try parseGeneric(
-        scope: "note",
-        command: kind.rawValue,
-        target: route.target,
-        arguments: route.options,
-        allowTableOutput: kind == .list || kind == .search,
-        defaultOutput: .text
-      )
     )
   }
 

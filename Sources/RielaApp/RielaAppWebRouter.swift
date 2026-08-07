@@ -49,26 +49,17 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
        let response = assetResolver.response(for: request) {
       return response
     }
-    if request.path == "/note/events" {
+    if request.path == "/graphql" {
       if let rejection = securityRejection(for: request) {
         return rejection
       }
       guard let app else {
         return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
       }
-      return await app.webNoteEventsResponse(for: request)
-    }
-    if request.path == "/graphql", let rejection = securityRejection(for: request) {
-      return rejection
-    }
-    if request.path == "/graphql" {
-      guard let app else {
-        return .json(status: 503, .object(["error": .string("RielaApp is unavailable")]))
-      }
       if let beforeGraphQLProfileBinding {
         await beforeGraphQLProfileBinding()
       }
-      return await app.webNoteGraphQLResponse(for: request)
+      return await app.webGraphQLResponse(for: request)
     }
     let deterministic = await deterministicAdapter.response(for: request)
     if deterministic.status != 404 {
@@ -101,7 +92,7 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
   }
 
   private func isFrontendNavigation(_ path: String) -> Bool {
-    guard !path.hasPrefix("/api/"), !path.hasPrefix("/note/") else {
+    guard !path.hasPrefix("/api/") else {
       return false
     }
     return path.split(separator: "/").last?.contains(".") != true

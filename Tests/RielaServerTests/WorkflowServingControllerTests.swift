@@ -1,6 +1,5 @@
 import Foundation
 import RielaCore
-import RielaNote
 import XCTest
 @testable import RielaServer
 
@@ -164,116 +163,7 @@ final class WorkflowServingControllerTests: XCTestCase {
     XCTAssertEqual(state.generation?.generationId, "generation-2")
   }
 
-  func testInProcessListenerConfiguresNoteAPIHandlerWhenEnabled() async throws {
-    let noteRoot = try temporaryDirectory().appendingPathComponent("note", isDirectory: true)
-    let factory = InProcessWorkflowServeListenerFactory()
-    let listener = try await factory.startListener(
-      for: WorkflowServeResolvedWorkflow(workflowId: "demo-flow", selectedIdentity: "demo-flow"),
-      request: WorkflowServeStartRequest(
-        selection: .scopedName("demo-flow"),
-        server: RielaServerConfiguration(noteAPIEnabled: true, noteRoot: noteRoot.path)
-      ),
-      generationId: "generation-1"
-    )
 
-    let inProcess = try XCTUnwrap(listener as? InProcessWorkflowServeListenerHandle)
-    let publicChallengeResponse = await inProcess.routeHandler.route(
-      .init(method: "GET", path: "/note/register", headers: ["Host": "127.0.0.1:8787"]),
-      context: .init()
-    )
-
-    XCTAssertEqual(publicChallengeResponse.status, 403)
-    let challenge = try XCTUnwrap(inProcess.registrationChallenge)
-    let registration = await inProcess.routeHandler.route(
-      .init(
-        method: "POST",
-        path: "/note/register",
-        body: Data(#"{"code":"\#(challenge.code)","displayName":"Phone"}"#.utf8)
-      ),
-      context: .init()
-    )
-    XCTAssertEqual(registration.status, 200)
-    XCTAssertNotNil(registration.body["credential"])
-  }
-
-  func testInProcessNoteAPIMigrationUsesConfiguredS3ProfileNameOnly() async throws {
-    let noteRoot = try temporaryDirectory().appendingPathComponent("note", isDirectory: true)
-    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
-    let note = try service.createNote(bodyMarkdown: "# Served Migration\n\nBody")
-    let attachment = try service.attachFile(noteId: note.noteId, data: Data("served migration".utf8), mediaType: "text/plain")
-    try service.registerAPIClient(displayName: "Server test", bearerToken: "served-token")
-    let s3Client = InMemoryServingS3HTTPClient()
-    let factory = InProcessWorkflowServeListenerFactory(s3HTTPClient: s3Client)
-    let listener = try await factory.startListener(
-      for: WorkflowServeResolvedWorkflow(workflowId: "demo-flow", selectedIdentity: "demo-flow"),
-      request: WorkflowServeStartRequest(
-        selection: .scopedName("demo-flow"),
-        server: RielaServerConfiguration(
-          noteAPIEnabled: true,
-          noteRoot: noteRoot.path,
-          noteS3Profiles: [
-            RielaServerS3StorageProfileConfiguration(
-              name: "served-s3",
-              endpoint: "https://s3.example.test",
-              region: "ap-northeast-1",
-              bucket: "notes",
-              accessKeyIdEnv: "SERVE_ACCESS_KEY_ID",
-              secretAccessKeyEnv: "SERVE_SECRET_ACCESS_KEY",
-              keyPrefix: "served"
-            )
-          ]
-        ),
-        inheritedEnvironment: [
-          "SERVE_ACCESS_KEY_ID": "access",
-          "SERVE_SECRET_ACCESS_KEY": "secret"
-        ]
-      ),
-      generationId: "generation-1"
-    )
-
-    let migrateBody = try JSONEncoder().encode(JSONValue.object([
-      "query": .string("""
-      mutation MigrateFile($input: MigrateNoteFileStorageInput!) {
-        migrateNoteFileStorage(input: $input) {
-          result { accepted status }
-          migrated { fileId storageKind s3Profile s3Key }
-          failures { fileId message }
-        }
-      }
-      """),
-      "variables": .object([
-        "input": .object([
-          "fileId": .string(attachment.file.fileId),
-          "s3ProfileName": .string("served-s3")
-        ])
-      ]),
-      "operationName": .string("MigrateFile")
-    ]))
-    let inProcess = try XCTUnwrap(listener as? InProcessWorkflowServeListenerHandle)
-    let response = await inProcess.routeHandler.route(
-      .init(
-        method: "POST",
-        path: "/graphql",
-        headers: ["Authorization": "Bearer served-token"],
-        body: migrateBody
-      ),
-      context: .init(inheritedEnvironment: [
-        "SERVE_ACCESS_KEY_ID": "must-not-be-needed-per-request",
-        "SERVE_SECRET_ACCESS_KEY": "must-not-be-needed-per-request"
-      ])
-    )
-
-    XCTAssertEqual(response.status, 200)
-    let payload = try graphQLPayload(response.body, field: "migrateNoteFileStorage")
-    let result = try resultObject(payload)
-    XCTAssertEqual(result["accepted"], .bool(true))
-    let migrated = try firstObject(payload["migrated"], field: "migrateNoteFileStorage.migrated")
-    XCTAssertEqual(migrated["fileId"], .string(attachment.file.fileId))
-    XCTAssertEqual(migrated["storageKind"], .string("s3"))
-    XCTAssertEqual(migrated["s3Profile"], .string("served-s3"))
-    XCTAssertEqual(migrated["s3Key"], .string("served/\(attachment.file.fileId)"))
-    XCTAssertEqual(s3Client.methods(), ["PUT"])
-  }
 
   func testServeScenarioPreservesInstanceParametersAcrossRestart() async throws {
     let eventSourceFactory = RequestRecordingEventSourceFactory()
@@ -450,23 +340,6 @@ private func objectValue(_ value: JSONValue?, field: String) throws -> JSONObjec
   return object
 }
 
-private final class InMemoryServingS3HTTPClient: S3HTTPClient, @unchecked Sendable {
-  private let lock = NSLock()
-  private var requests: [S3HTTPRequest] = []
-
-  func send(_ request: S3HTTPRequest) throws -> S3HTTPResponse {
-    lock.lock()
-    requests.append(request)
-    lock.unlock()
-    return S3HTTPResponse(statusCode: 200)
-  }
-
-  func methods() -> [String] {
-    lock.lock()
-    defer { lock.unlock() }
-    return requests.map(\.method)
-  }
-}
 
 private actor ServeRecorder {
   private var events: [String] = []

@@ -20,9 +20,9 @@
   user-facing replies; routing is enforced by the node-level filters.
 - `save-chat-event-memory` persists every accepted Telegram chat event as a
   note in the protected system-memory notebook through
-  `riela/note-memory-save` before persona routing.
+  `kaiba/note-memory-save` before persona routing.
 - Each persona loads recent workflow-scoped `chat-memory` notes through
-  `riela/note-memory-load` immediately before replying.
+  `kaiba/note-memory-load` immediately before replying.
 - Each persona prompt uses recent chat memory as context for follow-up
   questions. Follow-ups should refer back to the most recent relevant bot reply
   when memory provides enough context, and ask for clarification instead of

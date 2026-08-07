@@ -43,7 +43,7 @@ Persona memory:
 - Do not store secrets, tokens, private credentials, or raw attachment content.
 - Each memory entry should be concise markdown-safe text with `kind`,
   `importance`, `source`, and `content`. The workflow writes entries through
-  `riela/note-persona-context-write` with persona, kind, and importance tags.
+  `kaiba/note-persona-context-write` with persona, kind, and importance tags.
 
 Conversation behavior:
 

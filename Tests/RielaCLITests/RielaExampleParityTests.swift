@@ -1,6 +1,5 @@
 import Foundation
 import RielaCore
-import RielaNote
 import XCTest
 @testable import RielaCLI
 
@@ -29,7 +28,6 @@ private func rielaExampleWorkflowNames() -> [String] {
     "discord-codex-chat",
     "discord-persona-chat",
     "dispatcher-llm-resolver-stub",
-    "document-inbox-notebook",
     "enterprise-matrix-agent-personas",
     "enterprise-matrix-customer-escalation",
     "enterprise-matrix-security-incident",
@@ -49,17 +47,6 @@ private func rielaExampleWorkflowNames() -> [String] {
     "matrix-agent-trio-chat",
     "matrix-chat-reply",
     "node-combinations-showcase",
-    "note-agent",
-    "note-auto-tagging",
-    "note-config-agent",
-    "note-edit-rewrite",
-    "note-kanban-orchestrate",
-    "note-link-extract",
-    "note-notebook-compact",
-    "note-pdf-ingest",
-    "note-quick-memo",
-    "note-selection-question",
-    "note-youtube-transcript",
     "open-model-provider-codex",
     "recent-change-quality-loop",
     "required-loop-gate-failure",
@@ -92,7 +79,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 42
+    static let expectedMockScenarioCount = 30
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -291,9 +278,6 @@ final class RielaExampleParityTests: XCTestCase {
           #"{"noteRoot":"\#(noteRoot.path)","workflowInput":{"noteRoot":"\#(noteRoot.path)"}}"#
         ])
       }
-      if let variables = try noteExampleVariables(workflowName: workflowName, root: root) {
-        arguments.append(contentsOf: ["--variables", variables])
-      }
       let generatedWorkflowHome = sessionStore.appendingPathComponent("home", isDirectory: true)
       let result: CLICommandResult
       if workflowName.hasPrefix("enterprise-matrix-") {
@@ -444,77 +428,6 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertNil(payload.rootOutput)
   }
 
-  func testTelegramDiscordAndMatrixTrioChatNoteContextReadsAndWrites() async throws {
-    let root = repositoryRoot()
-    let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
-    let tempDir = root.appendingPathComponent("tmp/test-trio-chat-memory-regression-\(UUID().uuidString)", isDirectory: true)
-    defer {
-      try? FileManager.default.removeItem(at: tempDir)
-    }
-    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-    let cases = [
-      (WorkflowIds.telegramAgentTrioChatWorkflowName, "telegram", "Telegram seeded Yui memory"),
-      (WorkflowIds.discordAgentTrioChatWorkflowName, "discord", "Discord seeded Yui memory"),
-      (WorkflowIds.matrixAgentTrioChatWorkflowName, "matrix", "Matrix seeded Yui memory")
-    ]
-    let app = RielaCLIApplication()
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-
-    for (workflowName, provider, seededContext) in cases {
-      let workflowTempDir = tempDir.appendingPathComponent(workflowName, isDirectory: true)
-      let noteRoot = workflowTempDir.appendingPathComponent("note", isDirectory: true)
-      let noteService = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
-      _ = try noteService.appendSystemMemoryNote(
-        bodyMarkdown: seededContext,
-        tags: [
-          NoteTagInput(name: "persona:yui"),
-          NoteTagInput(name: "kind:user-instruction"),
-          NoteTagInput(name: "importance:medium")
-        ],
-        metaJSON: #"{"systemMemoryVersion":1,"personaId":"yui","workflowId":"seed"}"#
-      )
-
-      let scenario = try scenarioWithYuiNoteEntry(
-        examplesRoot: examplesRoot,
-        workflowName: workflowName,
-        outputDirectory: workflowTempDir,
-        marker: "\(provider) memory write marker"
-      )
-      let result = await app.run(WorkflowRunCLI.workflowRunArgumentsPrefix + [
-        workflowName,
-        WorkflowRunCLI.workflowDefinitionDirFlag, examplesRoot.path,
-        WorkflowRunCLI.mockScenarioFlag, scenario.path,
-        WorkflowRunCLI.sessionStoreFlag, workflowTempDir.appendingPathComponent("sessions", isDirectory: true).path,
-        WorkflowRunCLI.maxStepsFlag, WorkflowRunCLI.mockRunMaxSteps,
-        WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat,
-        "--variables", TrioChatMemoryMock.variables(
-          provider: provider,
-          text: "Yui, remember this \(provider) memory regression",
-          eventId: "\(provider)-memory-regression",
-          noteRoot: noteRoot.path
-        )
-      ])
-
-      XCTAssertEqual(result.exitCode, .success, "\(workflowName): \(result.stderr)\n\(result.stdout)")
-      let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
-      XCTAssertEqual(payload.status, .completed, workflowName)
-      let readYuiMemory = try XCTUnwrap(
-        payload.session.executions.first { $0.stepId == "read-yui-memory" }?.acceptedOutput?.payload,
-        workflowName
-      )
-      XCTAssertEqual(jsonNumber(readYuiMemory["noteCount"]), 1, workflowName)
-      XCTAssertTrue(jsonString(readYuiMemory["contextMarkdown"])?.contains(seededContext) == true, workflowName)
-      let writeYuiMemory = try XCTUnwrap(
-        payload.session.executions.first { $0.stepId == "write-yui-memory" }?.acceptedOutput?.payload,
-        workflowName
-      )
-      XCTAssertEqual(jsonNumber(writeYuiMemory["entriesWritten"]), 1, workflowName)
-      let writtenContext = try noteService.listSystemMemoryNotes(personaId: "yui", limit: 10)
-      XCTAssertEqual(writtenContext.count, 2, workflowName)
-      XCTAssertTrue(writtenContext.contains { $0.bodyMarkdown == "\(provider) memory write marker" }, workflowName)
-    }
-  }
 
   func testMatrixGatewayPayloadFixtureMatchesEventBinding() async throws {
     let tempDir = FileManager.default.temporaryDirectory
@@ -770,35 +683,6 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
-  private func scenarioWithYuiNoteEntry(
-    examplesRoot: URL,
-    workflowName: String,
-    outputDirectory: URL,
-    marker: String
-  ) throws -> URL {
-    let scenarioPath = examplesRoot
-      .appendingPathComponent(workflowName, isDirectory: true)
-      .appendingPathComponent(MockScenario.fileName)
-    let data = try Data(contentsOf: scenarioPath)
-    guard var scenario = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-      var yuiNode = scenario["yui-codex"] as? [String: Any],
-      var yuiPayload = yuiNode["payload"] as? [String: Any] else {
-      throw XCTSkip("scenario is not object-shaped: \(workflowName)")
-    }
-    yuiPayload["noteEntries"] = [[
-      "kind": "user-instruction",
-      "importance": "medium",
-      "source": "note-context-regression",
-      "content": marker
-    ]]
-    yuiNode["payload"] = yuiPayload
-    scenario["yui-codex"] = yuiNode
-    try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-    let outputPath = outputDirectory.appendingPathComponent("mock-scenario-with-note-context.json")
-    let outputData = try JSONSerialization.data(withJSONObject: scenario, options: [.prettyPrinted, .sortedKeys])
-    try outputData.write(to: outputPath)
-    return outputPath
-  }
 
   private func jsonString(_ value: JSONValue?) -> String? {
     guard case let .string(string)? = value else {

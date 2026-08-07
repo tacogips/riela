@@ -5,9 +5,6 @@ import RielaServer
 
 extension ScopedParityCommandRunner {
   func serverResponse(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ServerResponseDescriptor {
-    if parsed.noteAPIEnabled {
-      return try await noteAPIServeResponse(parsed: parsed)
-    }
     let action = options.command ?? "status"
     let handler = DeterministicServerRouteHandler()
     switch action {
@@ -45,36 +42,4 @@ extension ScopedParityCommandRunner {
     }
   }
 
-  private func noteAPIServeResponse(parsed: ParsedParityOptions) async throws -> ServerResponseDescriptor {
-    let noteRoot = resolvedServeNoteRoot(parsed: parsed)
-    let server = RielaServerConfiguration(
-      host: parsed.host ?? "127.0.0.1",
-      port: parsed.port ?? 8787,
-      noteAPIEnabled: true,
-      noteRoot: noteRoot
-    )
-    let listener = try await InProcessWorkflowServeListenerFactory().startListener(
-      for: WorkflowServeResolvedWorkflow(workflowId: "note-api", selectedIdentity: "note-api"),
-      request: WorkflowServeStartRequest(selection: .scopedName("note-api"), server: server),
-      generationId: "cli-note-api"
-    )
-    guard let inProcessListener = listener as? InProcessWorkflowServeListenerHandle else {
-      throw CLIUsageError("serve --note-api requires the in-process serve listener")
-    }
-    guard let challenge = inProcessListener.registrationChallenge else {
-      return ServerResponseDescriptor(status: 503, body: [
-        "error": .string("note API registration challenge is not available")
-      ])
-    }
-    return ServerResponseDescriptor(status: 200, body: [
-      "endpoint": .string(listener.endpoint),
-      "noteRoot": .string(noteRoot),
-      "registration": try encodedJSONValue(challenge)
-    ])
-  }
-
-}
-
-private func encodedJSONValue<T: Encodable>(_ value: T) throws -> JSONValue {
-  try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
 }

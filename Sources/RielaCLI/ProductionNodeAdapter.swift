@@ -373,7 +373,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    guard input.addon.name.hasPrefix("riela/") else {
+    guard input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") else {
       throw AdapterExecutionError(.providerError, "missing add-on resolver for '\(input.addon.name)'")
     }
     if input.addon.name == "riela/gemini-sdk-worker" {

@@ -84,28 +84,6 @@ enum PackageRegistryClientAction: String, CaseIterable, ExpressibleByArgument {
   case index
 }
 
-enum NoteNotebookClientAction: String, CaseIterable, ExpressibleByArgument {
-  case list
-  case show
-  case create
-  case delete
-}
-
-enum NoteStorageClientAction: String, CaseIterable, ExpressibleByArgument {
-  case migrate
-  case gc
-}
-
-enum NoteClientRegistrationAction: String, CaseIterable, ExpressibleByArgument {
-  case register
-  case list
-  case revoke
-}
-
-enum NoteAutoActionClientAction: String, CaseIterable, ExpressibleByArgument {
-  case retry
-}
-
 enum GraphQLClientAction: String, CaseIterable, ExpressibleByArgument {
   case schema
   case execute
@@ -178,11 +156,6 @@ struct ParsedNodeFamily: RielaClientFamilyArguments {
 
 struct ParsedLoopFamily: RielaClientFamilyArguments {
   @Argument var subcommand: LoopCommandKind
-  @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
-}
-
-struct ParsedNoteFamily: RielaClientFamilyArguments {
-  @Argument var subcommand: NoteCommandKind
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
 }
 
@@ -368,26 +341,6 @@ struct ParsedPackageRegistryRoute: RielaClientFamilyArguments {
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
 }
 
-struct ParsedNoteNotebookRoute: RielaClientFamilyArguments {
-  @Argument var action: NoteNotebookClientAction
-  @Argument(parsing: .captureForPassthrough) var options: [String] = []
-}
-
-struct ParsedNoteStorageRoute: RielaClientFamilyArguments {
-  @Argument var action: NoteStorageClientAction
-  @Argument(parsing: .captureForPassthrough) var options: [String] = []
-}
-
-struct ParsedNoteClientRegistrationRoute: RielaClientFamilyArguments {
-  @Argument var action: NoteClientRegistrationAction
-  @Argument(parsing: .captureForPassthrough) var options: [String] = []
-}
-
-struct ParsedNoteAutoActionRoute: RielaClientFamilyArguments {
-  @Argument var action: NoteAutoActionClientAction
-  @Argument(parsing: .captureForPassthrough) var options: [String] = []
-}
-
 struct ParsedGraphQLActionRoute: RielaClientFamilyArguments {
   @Argument var action: GraphQLClientAction
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
@@ -412,4 +365,3 @@ struct ParsedHookRoute: RielaClientFamilyArguments {
 extension PackageCommandKind: ExpressibleByArgument {}
 extension NodeCommandKind: ExpressibleByArgument {}
 extension LoopCommandKind: ExpressibleByArgument {}
-extension NoteCommandKind: ExpressibleByArgument {}

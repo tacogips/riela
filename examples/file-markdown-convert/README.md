@@ -120,7 +120,7 @@ A common pairing is document ingestion into notes:
 {
   "id": "save-note",
   "addon": {
-    "name": "riela/note-create",
+    "name": "kaiba/note-create",
     "version": "1",
     "config": {"noteRoot": "{{noteRoot}}"},
     "inputs": {"bodyMarkdown": "{{inbox.latest.output.payload.markdown}}"}

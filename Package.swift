@@ -9,14 +9,6 @@ let rielaVersionFileURL = URL(fileURLWithPath: #filePath)
 let rielaVersion = try String(contentsOf: rielaVersionFileURL, encoding: .utf8)
   .trimmingCharacters(in: .whitespacesAndNewlines)
 
-let enableLibSQLNoteTests = ProcessInfo.processInfo.environment["RIELA_NOTE_ENABLE_LIBSQL_TESTS"] == "1"
-let rielaNoteTestDependencies: [Target.Dependency] = enableLibSQLNoteTests
-  ? ["RielaNote", "RielaNoteLibSQL", "RielaSQLite"]
-  : ["RielaNote", "RielaSQLite"]
-let rielaNoteTestSwiftSettings: [SwiftSetting]? = enableLibSQLNoteTests
-  ? [.define("RIELA_NOTE_LIBSQL_TESTS")]
-  : nil
-
 let package = Package(
   name: "riela",
   platforms: [
@@ -26,10 +18,6 @@ let package = Package(
   products: [
     .library(name: "RielaCore", targets: ["RielaCore"]),
     .library(name: "RielaSQLite", targets: ["RielaSQLite"]),
-    .library(name: "RielaNote", targets: ["RielaNote"]),
-    .library(name: "RielaNoteLibSQL", targets: ["RielaNoteLibSQL"]),
-    .library(name: "RielaNoteWorkspace", targets: ["RielaNoteWorkspace"]),
-    .library(name: "RielaNoteDispatch", targets: ["RielaNoteDispatch"]),
     .library(name: "AgentRuntimeKit", targets: ["AgentRuntimeKit"]),
     .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
@@ -53,7 +41,8 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
-    .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0")
+    .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
+    .package(url: "https://github.com/tacogips/kaiba.git", from: "0.1.1")
   ],
   targets: [
     .target(
@@ -82,22 +71,6 @@ let package = Package(
         .target(name: "CRielaSQLite3", condition: .when(platforms: [.linux]))
       ]
     ),
-    .target(
-      name: "RielaNote",
-      dependencies: [
-        "RielaSQLite",
-        .product(name: "Crypto", package: "swift-crypto")
-      ]
-    ),
-    .target(
-      name: "RielaNoteLibSQL",
-      dependencies: [
-        "RielaNote",
-        "RielaSQLite"
-      ]
-    ),
-    .target(name: "RielaNoteWorkspace", dependencies: ["RielaNote"]),
-    .target(name: "RielaNoteDispatch", dependencies: ["RielaCore", "RielaNote"]),
     .systemLibrary(
       name: "CRielaSQLite3",
       providers: [
@@ -115,8 +88,8 @@ let package = Package(
       ]
     ),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
-    .target(name: "RielaGraphQL", dependencies: ["RielaCore", "RielaNote"]),
-    .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL", "RielaNote", "RielaObservability"]),
+    .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
+    .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL", "RielaObservability"]),
     .target(name: "RielaViewer", dependencies: ["RielaCore"]),
     .target(
       name: "RielaHook",
@@ -180,8 +153,8 @@ let package = Package(
         "RielaCore",
         "RielaVersion",
         "RielaSQLite",
-        "RielaNote",
-        "RielaNoteDispatch",
+        .product(name: "AppCore", package: "kaiba"),
+        .product(name: "AppGraphQL", package: "kaiba"),
         "RielaAdapters",
         "RielaAddons",
         "RielaEvents",
@@ -211,9 +184,6 @@ let package = Package(
         "RielaServer",
         "RielaViewer",
         "RielaObservability",
-        "RielaNote",
-        "RielaNoteWorkspace",
-        "RielaNoteDispatch",
         "RielaWorkflowRegistry"
       ]
     ),
@@ -225,16 +195,6 @@ let package = Package(
       ]
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
-    .testTarget(
-      name: "RielaNoteTests",
-      dependencies: rielaNoteTestDependencies,
-      swiftSettings: rielaNoteTestSwiftSettings
-    ),
-    .testTarget(name: "RielaNoteWorkspaceTests", dependencies: ["RielaNote", "RielaNoteWorkspace"]),
-    .testTarget(
-      name: "RielaNoteDispatchTests",
-      dependencies: ["RielaCore", "RielaNote", "RielaNoteDispatch"]
-    ),
     .testTarget(name: "AgentRuntimeKitTests", dependencies: ["AgentRuntimeKit", "RielaCore"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
@@ -245,8 +205,8 @@ let package = Package(
     ),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
-    .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaNote"]),
-    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaNote", "RielaServer", "RielaObservability"]),
+    .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
+    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
     .testTarget(
       name: "RielaAppSupportTests",
@@ -256,8 +216,6 @@ let package = Package(
         "RielaServer",
         "RielaApp",
         "RielaCLI",
-        "RielaNote",
-        "RielaNoteWorkspace"
       ]
     ),
     .testTarget(
@@ -267,7 +225,6 @@ let package = Package(
         "RielaAdapters",
         "RielaAppSupport",
         "RielaCLI",
-        "RielaNote",
         "RielaWorkflowRegistry"
       ]
     ),

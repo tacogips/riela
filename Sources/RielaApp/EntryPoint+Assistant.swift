@@ -218,11 +218,8 @@ extension RielaApp {
         "definition. It is invocation-private at Riela's registry/discovery/reuse boundary; it is " +
         "not a security boundary against arbitrary processes under the same OS account.",
       "The app removes the private root after this invocation. Do not move or copy it elsewhere.",
-      "Use RIELA_SESSION_STORE and RIELA_NOTE_ROOT. Create one run notebook under workflow/date " +
-        "folder tags with Input, Work log, and Response notes. The Response must include the " +
-        "session ID and a link made from RIELA_WEB_RUN_LINK_TEMPLATE. Use the parent-scoped " +
-        "folder components '<workflow-id>/history-YYYY-MM-DD'; repeated runs for one workflow " +
-        "and date reuse that leaf, while another workflow receives a distinct leaf ID.",
+      "Use RIELA_SESSION_STORE. The final response must include the session ID and a link " +
+        "made from RIELA_WEB_RUN_LINK_TEMPLATE.",
       "When using the Riela CLI, validate with --workflow-definition-dir " +
         "RIELA_WORKFLOW_DEFINITION_DIR and run with both --workflow-definition-dir " +
         "RIELA_WORKFLOW_DEFINITION_DIR and --session-store RIELA_SESSION_STORE so the Web " +
@@ -251,7 +248,6 @@ extension RielaApp {
       "RIELA_PRIVATE_WORKFLOW_ROOT": root.path,
       "RIELA_WORKFLOW_DEFINITION_DIR": root.path,
       "RIELA_SESSION_STORE": profileRoot.appendingPathComponent("sessions", isDirectory: true).path,
-      "RIELA_NOTE_ROOT": noteRootURL(profileName: daemonProfileName).path,
       "RIELA_WEB_RUN_LINK_TEMPLATE": "#/runs/{sessionId}"
     ])
   }

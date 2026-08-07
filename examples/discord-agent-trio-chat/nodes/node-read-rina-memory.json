@@ -3,7 +3,7 @@
   "modelFreeze": false,
   "description": "Read recent Rina Cursor note context from the configured local Riela Note root before the persona replies.",
   "addon": {
-    "name": "riela/note-persona-context-read",
+    "name": "kaiba/note-persona-context-read",
     "version": "1",
     "config": {
       "personaId": "rina",

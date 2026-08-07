@@ -3,7 +3,7 @@
   "modelFreeze": false,
   "description": "Persist Mika Trend note context entries proposed by the persona and pass through reply/handoff flags.",
   "addon": {
-    "name": "riela/note-persona-context-write",
+    "name": "kaiba/note-persona-context-write",
     "version": "1",
     "config": {
       "personaId": "mika",

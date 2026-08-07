@@ -399,17 +399,6 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertNoThrow(try JSONEncoder().encode(diffDTO))
   }
 
-  func testNoteGraphQLProjectionFieldsMatchSchemaContract() throws {
-    for (typeName, projectionFields) in noteGraphQLSelectionFields {
-      let schemaFields = try schemaFieldNames(typeName)
-
-      XCTAssertEqual(
-        Set(projectionFields.keys),
-        schemaFields,
-        "\(typeName) projection fields must match the GraphQL schema contract"
-      )
-    }
-  }
 
   func testSchemaContractFieldSetsMatchEncodedDTOs() throws {
     let date = Date(timeIntervalSince1970: 2_000)

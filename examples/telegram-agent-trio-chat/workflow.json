@@ -66,7 +66,7 @@
     {
       "id": "read-yui-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "yui",
@@ -77,7 +77,7 @@
     {
       "id": "write-yui-memory",
       "addon": {
-        "name": "riela/note-persona-context-write",
+        "name": "kaiba/note-persona-context-write",
         "version": "1",
         "config": {
           "personaId": "yui",
@@ -95,7 +95,7 @@
     {
       "id": "read-mika-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "mika",
@@ -106,7 +106,7 @@
     {
       "id": "write-mika-memory",
       "addon": {
-        "name": "riela/note-persona-context-write",
+        "name": "kaiba/note-persona-context-write",
         "version": "1",
         "config": {
           "personaId": "mika",
@@ -124,7 +124,7 @@
     {
       "id": "read-rina-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "rina",
@@ -135,7 +135,7 @@
     {
       "id": "write-rina-memory",
       "addon": {
-        "name": "riela/note-persona-context-write",
+        "name": "kaiba/note-persona-context-write",
         "version": "1",
         "config": {
           "personaId": "rina",

@@ -310,8 +310,8 @@ Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
 - Yui replies to explicit Yui mentions and also acts as the default responder
   when no Mika/Rina mention is present
 - accepted chat events are persisted as notes in the protected system-memory
-  notebook through `riela/note-memory-save`, and each persona loads recent
-  workflow-scoped `chat-memory` records through `riela/note-memory-load`
+  notebook through `kaiba/note-memory-save`, and each persona loads recent
+  workflow-scoped `chat-memory` records through `kaiba/note-memory-load`
   before replying
 - replies use `riela/chat-reply-worker` and dry-run when a local run has no
   Telegram chat target

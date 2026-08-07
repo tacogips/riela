@@ -338,7 +338,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
         "--import-workflow-or-package", "/tmp/demo.rielapkg",
         "--import-workflow-or-package=/tmp/other-workflow",
         "--open-workflows",
-        "--open-note-settings",
         "--no-autostart-daemons"
       ],
       environment: [:]
@@ -350,7 +349,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(options.projectRoot?.path, "/tmp/project")
     XCTAssertEqual(options.importSources.map(\.path), ["/tmp/demo.rielapkg", "/tmp/other-workflow"])
     XCTAssertEqual(options.opensWorkflows, true)
-    XCTAssertEqual(options.opensNoteSettings, true)
     XCTAssertEqual(options.autostartsDaemonWorkflows, false)
   }
 

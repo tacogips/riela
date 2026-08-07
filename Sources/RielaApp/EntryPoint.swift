@@ -43,9 +43,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var webServerSetupError: String?
   var webRevision = 1
   var webSessionStoreRootOverride: String?
-  /// Broadcaster behind the web view's `/note/events` long poll. Owned by the
-  /// app so it outlives the per-request NoteService values that publish to it.
-  let noteChangeFeed = NoteChangeFeed()
   private var terminationShutdownStarted = false
 
   var appearanceSettingsStore: RielaAppAppearanceSettingsStore {
@@ -94,9 +91,6 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
     openInitialWorkflowsIfRequested()
-    if launchOptions.opensNotes || launchOptions.opensNoteSettings {
-      openNotes()
-    }
     if shouldAutostartDaemonWorkflows() {
       autostartDaemonWorkflows()
     } else {

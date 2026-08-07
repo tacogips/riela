@@ -174,7 +174,8 @@ public struct NativeBundleAddonResolver: AddonResolving {
   }
 
   private func registration(matching request: AddonResolveRequest) -> RegistrationSelection {
-    if request.input.addonName.hasPrefix("riela/") || request.input.source.packageName == "riela" {
+    if request.input.addonName.hasPrefix("riela/") || request.input.addonName.hasPrefix("kaiba/")
+      || request.input.source.packageName == "riela" {
       return .builtin
     }
 

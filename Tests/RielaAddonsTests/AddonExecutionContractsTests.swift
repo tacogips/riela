@@ -82,12 +82,12 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-config-validate", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-file-download", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-cache-prune", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/notebook-ingest-pages", version: nil))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-memory-save", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-memory-load", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-persona-context-read", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/note-persona-context-write", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-create", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/notebook-ingest-pages", version: nil))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-memory-save", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-memory-load", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-persona-context-read", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-persona-context-write", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/file-markdown-convert", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/file-markdown-convert", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/file-markdown-convert", version: "2"))
@@ -95,8 +95,8 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/wrike-gateway-write", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/wrike-gateway-admin", version: "1"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/wrike-gateway-read", version: "2"))
-    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-create", version: "2"))
-    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/note-memory-save", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-create", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-memory-save", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-create", version: "2"))
@@ -162,24 +162,24 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertEqual(
       RielaBuiltinAddonCatalog.noteAddons.map(\.name),
       [
-        "riela/note-create",
-        "riela/note-update",
-        "riela/note-get",
-        "riela/note-search",
-        "riela/note-graph-neighbors",
-        "riela/note-tag-apply",
-        "riela/note-attach-file",
-        "riela/note-graphql-document",
-        "riela/note-comment-add",
-        "riela/notebook-ingest-pages",
-        "riela/note-conversation-save",
-        "riela/note-memory-save",
-        "riela/note-memory-load",
-        "riela/note-persona-context-read",
-        "riela/note-persona-context-write",
-        "riela/note-kanban-task-create",
-        "riela/note-kanban-move",
-        "riela/note-kanban-board"
+        "kaiba/note-create",
+        "kaiba/note-update",
+        "kaiba/note-get",
+        "kaiba/note-search",
+        "kaiba/note-graph-neighbors",
+        "kaiba/note-tag-apply",
+        "kaiba/note-attach-file",
+        "kaiba/note-graphql-document",
+        "kaiba/note-comment-add",
+        "kaiba/notebook-ingest-pages",
+        "kaiba/note-conversation-save",
+        "kaiba/note-memory-save",
+        "kaiba/note-memory-load",
+        "kaiba/note-persona-context-read",
+        "kaiba/note-persona-context-write",
+        "kaiba/note-kanban-task-create",
+        "kaiba/note-kanban-move",
+        "kaiba/note-kanban-board"
       ]
     )
   }

@@ -124,11 +124,11 @@ but check `examples/catalog/`.
 - `NoteService.createNotebook(title:kindTagName:metaJSON:originatingActionId:)` and
   `createNotebookWithNotes(…pages:provenance:assignedBy:…)` are the creation entry points.
 - Existing note add-ons to model the replacement on:
-  `riela/note-create`, `riela/note-update`, `riela/note-get`, `riela/note-search`,
-  `riela/note-tag-apply`, `riela/note-attach-file`, `riela/note-comment-add`,
-  `riela/note-conversation-save`, `riela/note-graph-neighbors`,
-  `riela/note-graphql-document`, `riela/notebook-ingest-pages`,
-  `riela/note-kanban-*` — all in `Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift`.
+  `kaiba/note-create`, `kaiba/note-update`, `kaiba/note-get`, `kaiba/note-search`,
+  `kaiba/note-tag-apply`, `kaiba/note-attach-file`, `kaiba/note-comment-add`,
+  `kaiba/note-conversation-save`, `kaiba/note-graph-neighbors`,
+  `kaiba/note-graphql-document`, `kaiba/notebook-ingest-pages`,
+  `kaiba/note-kanban-*` — all in `Sources/RielaCLI/ProductionNodeAdapter+NoteAddons.swift`.
 - Note has a full GraphQL surface (`Sources/RielaCLI/NoteCommandGraphQLDocuments.swift`
   shows `readOnly` already selected on note fields) and a SolidJS web UI under `web/`
   serving the notebook list/kanban/detail views. The unlock **button** belongs there.

@@ -20,12 +20,12 @@ describe('profile-owned view state', () => {
     )).toEqual({ clearSelection: false, view: 'workflows' })
   })
 
-  test('forces Notes-only mode and clears profile state for CLI serve', () => {
+  test('clears profile state and lands on instances for CLI serve', () => {
     expect(profileViewTransition(
       'riela-app:first',
       'cli-serve',
       'cli-serve',
       'workflows',
-    )).toEqual({ clearSelection: true, view: 'notes' })
+    )).toEqual({ clearSelection: true, view: 'instances' })
   })
 })

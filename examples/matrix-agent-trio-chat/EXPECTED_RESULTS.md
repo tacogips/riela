@@ -27,7 +27,7 @@
   root.
 - Each persona can return `noteEntries` for explicit remember requests,
   corrections, durable preferences, important events, or refreshed old memories;
-  the workflow writes them through `riela/note-persona-context-write` with
+  the workflow writes them through `kaiba/note-persona-context-write` with
   persona-scoped tags.
 - Matrix replies are sent through `riela/chat-reply-worker` to the same
   conversation and thread from the normalized chat event.

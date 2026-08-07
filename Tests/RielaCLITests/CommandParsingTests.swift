@@ -19,7 +19,7 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(
       Set(RielaClientCommandRouter.configuration.subcommands.map { $0._commandName }),
       Set([
-        "workflow", "package", "node", "rrun", "setup", "note", "instance", "doctor", "gc",
+        "workflow", "package", "node", "rrun", "setup", "instance", "doctor", "gc",
         "session", "loop", "graphql", "gql", "hook", "events", "serve", "call-step", "workflow-call", "version"
       ])
     )
@@ -515,27 +515,6 @@ final class CommandParsingTests: XCTestCase {
     }
   }
 
-  func testServeNoteAPIUsesConfiguredNoteRootAndRegistrationRoute() async throws {
-    let noteRoot = try scratchRoot(name: "serve-note-api-\(UUID().uuidString)")
-      .appendingPathComponent("note", isDirectory: true)
-    let result = await RielaCLIApplication().run([
-      "serve", "--note-api",
-      "--note-root", noteRoot.path,
-      "--host", "127.0.0.1",
-      "--port", "9876",
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(result.exitCode, .success, result.stderr)
-    let scoped = try decodeJSON(ScopedParityCommandResult.self, from: result.stdout)
-    XCTAssertEqual(scoped.status, "ok")
-    XCTAssertTrue(scoped.records.contains("status=200"))
-    let bodyRecord = try XCTUnwrap(scoped.records.first { $0.hasPrefix("body=") })
-    XCTAssertTrue(bodyRecord.contains("http://127.0.0.1:9876"))
-    XCTAssertTrue(bodyRecord.contains(noteRoot.path))
-    XCTAssertTrue(bodyRecord.contains("registrationURL"))
-    XCTAssertTrue(bodyRecord.contains("/note/register?code="))
-  }
 
   func testParsesDeclaredRielaCommandSurfaceForDeletionGate() throws {
     let parser = RielaArgumentParser()

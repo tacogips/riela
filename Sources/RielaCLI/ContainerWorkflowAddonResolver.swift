@@ -515,7 +515,7 @@ struct CompositeWorkflowAddonResolver: WorkflowAddonResolving, WorkflowAddonFina
   var fallback: any WorkflowAddonResolving
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    if input.addon.name.hasPrefix("riela/") {
+    if input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") {
       return try await primary.execute(input, context: context)
     }
     return try await fallback.execute(input, context: context)

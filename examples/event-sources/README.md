@@ -395,8 +395,8 @@ variant, enable that binding and disable
 `telegram-gateway-personas-to-workflow.json` so one Telegram message does not
 produce duplicate replies. Live SDK replies require `OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, and `CURSOR_API_KEY`. Its accepted events and bounded
-conversation context use `riela/note-memory-save` and
-`riela/note-memory-load` against the configured Riela Note system-memory
+conversation context use `kaiba/note-memory-save` and
+`kaiba/note-memory-load` against the configured Riela Note system-memory
 notebook; no standalone memory database or memory root is used.
 
 The `telegram-time-signal-cron` source demonstrates scheduled Telegram output
@@ -493,8 +493,9 @@ changes are held until the file's metadata stays unchanged for
 `file.change.modified`, or `file.change.deleted`. The event input carries the
 change type, the relative path plus name/extension/size/mtime metadata, the
 resolved `file.absolutePath`, and the `watch` descriptor; file contents are
-not read. See `examples/document-inbox-notebook` for a full
-file-drop-to-notebook workflow built on this source kind.
+not read. (The former `document-inbox-notebook` example — a full
+file-drop-to-notebook workflow built on this source kind — moved with the
+note subsystem to the kaiba package.)
 
 Serve it and create a matching file:
 

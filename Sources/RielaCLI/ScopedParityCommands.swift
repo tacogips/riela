@@ -152,8 +152,8 @@ fileprivate extension ScopedParityCommandRunner {
     switch action {
     case "schema":
       records = [GraphQLContractProjector.schemaContract]
-    case "execute", "document", "note-document":
-      records = [try await noteGraphQLDocumentRecord(options: options, parsed: parsed, action: action)]
+    case "execute", "document":
+      records = [try await graphQLDocumentRecord(options: options, parsed: parsed, action: action)]
     case "session", "inspect-session", "workflow-session":
       let snapshot = try loadRuntimeSnapshot(sessionId: options.target, parsed: parsed, action: action)
       let projected = GraphQLContractProjector.project(

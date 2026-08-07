@@ -14,7 +14,6 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("Use --output json only when a"))
     XCTAssertTrue(result.stdout.contains("legacy caller explicitly requires"))
     XCTAssertTrue(result.stdout.contains("riela serve [--host <host>] [--port <port>]"))
-    XCTAssertTrue(result.stdout.contains("riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]"))
     XCTAssertTrue(result.stdout.contains("remains active until SIGINT or"))
     XCTAssertTrue(result.stdout.contains("The default address is 127.0.0.1:8787"))
     XCTAssertTrue(result.stdout.contains("serve subcommands remain one-shot commands"))

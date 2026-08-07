@@ -370,28 +370,6 @@ final class GraphQLWorkflowRegistryTests: XCTestCase {
     XCTAssertEqual(deleteCalls, 0)
   }
 
-  func testCompositeRejectsIncompatibleUnselectedNoteVariableBeforeDispatch() async {
-    let provider = RecordingWorkflowRegistryProvider()
-    let executor = CompositeGraphQLDocumentExecutor(
-      workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(localProvider: provider),
-      fallback: StubNoteDocumentExecutor()
-    )
-    let response = await executor.execute(GraphQLDocumentRequest(
-      query: """
-      query Bad($sort: String!) {
-        searchNotes(query: "x", sort: $sort) { result { accepted } }
-      }
-      mutation Deactivate {
-        deactivateWorkflow(input: {target: {workflowId: "alpha"}}) { accepted }
-      }
-      """,
-      operationName: "Deactivate",
-      isLocallyTrusted: true
-    ))
-    XCTAssertEqual(errorCode(response), WorkflowRegistryErrorCode.invalidWorkflow.rawValue)
-    let activationCalls = await provider.activationCallCount()
-    XCTAssertEqual(activationCalls, 0)
-  }
 
   func testUnselectedOperationVariablesDoNotRequireRuntimeValues() async {
     let provider = RecordingWorkflowRegistryProvider()

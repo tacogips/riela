@@ -53,24 +53,24 @@ public enum RielaBuiltinAddonCatalog {
   ]
 
   public static let noteAddons: [RielaAddonDescriptor] = [
-    .init(name: "riela/note-create", version: "1"),
-    .init(name: "riela/note-update", version: "1"),
-    .init(name: "riela/note-get", version: "1"),
-    .init(name: "riela/note-search", version: "1"),
-    .init(name: "riela/note-graph-neighbors", version: "1"),
-    .init(name: "riela/note-tag-apply", version: "1"),
-    .init(name: "riela/note-attach-file", version: "1"),
-    .init(name: "riela/note-graphql-document", version: "1"),
-    .init(name: "riela/note-comment-add", version: "1"),
-    .init(name: "riela/notebook-ingest-pages", version: "1"),
-    .init(name: "riela/note-conversation-save", version: "1"),
-    .init(name: "riela/note-memory-save", version: "1"),
-    .init(name: "riela/note-memory-load", version: "1"),
-    .init(name: "riela/note-persona-context-read", version: "1"),
-    .init(name: "riela/note-persona-context-write", version: "1"),
-    .init(name: "riela/note-kanban-task-create", version: "1"),
-    .init(name: "riela/note-kanban-move", version: "1"),
-    .init(name: "riela/note-kanban-board", version: "1")
+    .init(name: "kaiba/note-create", version: "1"),
+    .init(name: "kaiba/note-update", version: "1"),
+    .init(name: "kaiba/note-get", version: "1"),
+    .init(name: "kaiba/note-search", version: "1"),
+    .init(name: "kaiba/note-graph-neighbors", version: "1"),
+    .init(name: "kaiba/note-tag-apply", version: "1"),
+    .init(name: "kaiba/note-attach-file", version: "1"),
+    .init(name: "kaiba/note-graphql-document", version: "1"),
+    .init(name: "kaiba/note-comment-add", version: "1"),
+    .init(name: "kaiba/notebook-ingest-pages", version: "1"),
+    .init(name: "kaiba/note-conversation-save", version: "1"),
+    .init(name: "kaiba/note-memory-save", version: "1"),
+    .init(name: "kaiba/note-memory-load", version: "1"),
+    .init(name: "kaiba/note-persona-context-read", version: "1"),
+    .init(name: "kaiba/note-persona-context-write", version: "1"),
+    .init(name: "kaiba/note-kanban-task-create", version: "1"),
+    .init(name: "kaiba/note-kanban-move", version: "1"),
+    .init(name: "kaiba/note-kanban-board", version: "1")
   ]
 
   public static let workflowAddons: [RielaAddonDescriptor] = [

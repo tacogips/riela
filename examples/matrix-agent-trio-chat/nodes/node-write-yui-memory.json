@@ -2,7 +2,7 @@
   "id": "write-yui-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "riela/note-persona-context-write",
+    "name": "kaiba/note-persona-context-write",
     "version": "1",
     "config": {
       "personaId": "yui",

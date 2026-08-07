@@ -14,7 +14,7 @@
     {
       "id": "save-chat-event-memory",
       "addon": {
-        "name": "riela/note-memory-save",
+        "name": "kaiba/note-memory-save",
         "version": "1",
         "config": {
           "streamId": "chat-memory",
@@ -35,7 +35,7 @@
     {
       "id": "load-yui-chat-memory",
       "addon": {
-        "name": "riela/note-memory-load",
+        "name": "kaiba/note-memory-load",
         "version": "1",
         "config": {
           "streamId": "chat-memory",
@@ -47,7 +47,7 @@
     {
       "id": "load-mika-chat-memory",
       "addon": {
-        "name": "riela/note-memory-load",
+        "name": "kaiba/note-memory-load",
         "version": "1",
         "config": {
           "streamId": "chat-memory",
@@ -59,7 +59,7 @@
     {
       "id": "load-rina-chat-memory",
       "addon": {
-        "name": "riela/note-memory-load",
+        "name": "kaiba/note-memory-load",
         "version": "1",
         "config": {
           "streamId": "chat-memory",

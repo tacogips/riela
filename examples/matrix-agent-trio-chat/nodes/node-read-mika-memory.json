@@ -2,7 +2,7 @@
   "id": "read-mika-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "riela/note-persona-context-read",
+    "name": "kaiba/note-persona-context-read",
     "version": "1",
     "config": {
       "personaId": "mika",

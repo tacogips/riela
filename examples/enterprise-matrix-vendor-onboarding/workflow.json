@@ -49,7 +49,7 @@
     {
       "id": "read-procurement-lead-own-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "procurement-lead",
@@ -71,7 +71,7 @@
     {
       "id": "read-procurement-lead-finance-analyst-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "finance-analyst",
@@ -93,7 +93,7 @@
     {
       "id": "read-procurement-lead-legal-counsel-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "legal-counsel",
@@ -122,7 +122,7 @@
     {
       "id": "write-procurement-lead-memory",
       "addon": {
-        "name": "riela/note-persona-context-write",
+        "name": "kaiba/note-persona-context-write",
         "version": "1",
         "config": {
           "personaId": "procurement-lead",
@@ -170,7 +170,7 @@
     {
       "id": "read-finance-analyst-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "finance-analyst",
@@ -197,7 +197,7 @@
     {
       "id": "write-finance-analyst-memory",
       "addon": {
-        "name": "riela/note-persona-context-write",
+        "name": "kaiba/note-persona-context-write",
         "version": "1",
         "config": {
           "personaId": "finance-analyst",
@@ -245,7 +245,7 @@
     {
       "id": "read-legal-counsel-memory",
       "addon": {
-        "name": "riela/note-persona-context-read",
+        "name": "kaiba/note-persona-context-read",
         "version": "1",
         "config": {
           "personaId": "legal-counsel",
@@ -272,7 +272,7 @@
     {
       "id": "write-legal-counsel-memory",
       "addon": {
-        "name": "riela/note-persona-context-write",
+        "name": "kaiba/note-persona-context-write",
         "version": "1",
         "config": {
           "personaId": "legal-counsel",

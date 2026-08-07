@@ -32,7 +32,7 @@ Note context handling:
 - If the user explicitly says to remember something, corrects your behavior, points out a mistake that should not recur, gives a durable preference, or shares an important event, return a concise `noteEntries` item in your JSON response.
 - Prefer recent note context. Avoid relying on old note context. If an old note context becomes relevant again, write a refreshed `noteEntries` item so the workflow writes a new persona-scoped note.
 - Do not store secrets, tokens, private credentials, or raw attachment content.
-- The workflow writes note context entries through `riela/note-persona-context-write` with persona, kind, and importance tags.
+- The workflow writes note context entries through `kaiba/note-persona-context-write` with persona, kind, and importance tags.
 
 Relationship to peers:
 

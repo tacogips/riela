@@ -70,13 +70,6 @@ extension RielaApp {
     for (name, value) in preference.environmentVariables {
       environment[name] = value
     }
-    let configuredNoteRoot = environment["RIELA_NOTE_ROOT"]?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    if configuredNoteRoot?.isEmpty != false {
-      let profileName = RielaAppProfileInstanceIdentity(rawValue: candidate.id)?.profileName
-        ?? daemonProfileName
-      environment["RIELA_NOTE_ROOT"] = noteRootURL(profileName: profileName).path
-    }
     return environment
   }
 
@@ -125,14 +118,7 @@ extension RielaApp {
   }
 
   func daemonServerConfiguration(profileName: RielaAppProfileName? = nil) -> RielaServerConfiguration {
-    let profileName = profileName ?? daemonProfileName
-    let noteRoot = noteRootURL(profileName: profileName)
-    let settings = RielaAppNoteSettingsStore(noteRoot: noteRoot).load()
-    return RielaServerConfiguration(
-      noteAPIEnabled: settings.exposesNoteAPI,
-      noteRoot: noteRoot.path,
-      noteS3Profiles: settings.s3Profiles.map(\.serverConfiguration)
-    )
+    RielaServerConfiguration()
   }
 
   private enum EnvironmentFileAction {
@@ -339,18 +325,4 @@ extension RielaApp {
   }
 }
 
-private extension RielaAppNoteS3ProfileSettings {
-  var serverConfiguration: RielaServerS3StorageProfileConfiguration {
-    RielaServerS3StorageProfileConfiguration(
-      name: name,
-      endpoint: endpoint,
-      region: region,
-      bucket: bucket,
-      accessKeyIdEnv: accessKeyIdEnv,
-      secretAccessKeyEnv: secretAccessKeyEnv,
-      sessionTokenEnv: sessionTokenEnv,
-      keyPrefix: keyPrefix
-    )
-  }
-}
 #endif

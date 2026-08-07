@@ -23,7 +23,6 @@ public struct RielaCLIApplication: Sendable {
   public var packageCommandRunner: WorkflowPackageCommandRunner
   public var nodeCommandRunner: NodeCommandRunner
   public var setupContainerCommand: SetupContainerCommand
-  public var noteCommandRunner: NoteCommandRunner
   public var instanceCommandRunner: InstanceCommandRunner
   public var doctorCommand: DoctorCommand
   public var garbageCollectionCommand: GarbageCollectionCommand
@@ -48,7 +47,6 @@ public struct RielaCLIApplication: Sendable {
     packageCommandRunner: WorkflowPackageCommandRunner = WorkflowPackageCommandRunner(),
     nodeCommandRunner: NodeCommandRunner = NodeCommandRunner(),
     setupContainerCommand: SetupContainerCommand = SetupContainerCommand(),
-    noteCommandRunner: NoteCommandRunner = NoteCommandRunner(),
     instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
     doctorCommand: DoctorCommand = DoctorCommand(),
     garbageCollectionCommand: GarbageCollectionCommand = GarbageCollectionCommand(),
@@ -72,7 +70,6 @@ public struct RielaCLIApplication: Sendable {
     self.packageCommandRunner = packageCommandRunner
     self.nodeCommandRunner = nodeCommandRunner
     self.setupContainerCommand = setupContainerCommand
-    self.noteCommandRunner = noteCommandRunner
     self.instanceCommandRunner = instanceCommandRunner
     self.doctorCommand = doctorCommand
     self.garbageCollectionCommand = garbageCollectionCommand
@@ -115,8 +112,6 @@ public struct RielaCLIApplication: Sendable {
         return await nodeCommandRunner.run(command)
       case let .setup(options):
         return await setupContainerCommand.run(options)
-      case let .note(command):
-        return await noteCommandRunner.run(command)
       case let .instance(options):
         return instanceCommandRunner.run(options)
       case let .doctor(options):
@@ -326,15 +321,7 @@ Usage:
   riela node run <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
   riela rrun <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
   riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
-  riela note add --body <markdown> [--tag <tag>] [--notebook-id <id>] [--note-root <dir>] [--output json|text]
-  riela note edit|show|delete|tag|comment|attach|readonly <note-id> [options]
-  riela note list|search [query] [--tag <tag>] [--limit 50] [--note-root <dir>] [--output json|text|table]
-  riela note notebook list|create|show|delete [target] [--note-root <dir>] [--output json|text|table]
-  riela note storage migrate <file-id|--all> --s3-endpoint <url> --s3-region <region> --s3-bucket <bucket> [--output json|text]
-  riela note client register|list|revoke [target] [--direct] [--note-root <dir>] [--output json|text|table]
   riela serve [--host <host>] [--port <port>]
-  riela serve --note-api [--note-root <dir>] [--host <host>] [--port <port>]
-  riela serve --note-api --web-root <dir> [--note-root <dir>] [--host <host>] [--port <port>]
   riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]

@@ -1,7 +1,6 @@
 import Foundation
 import RielaCore
 import RielaGraphQL
-import RielaNote
 import RielaObservability
 
 public protocol WorkflowServeResolving: Sendable {
@@ -435,11 +434,7 @@ public struct DefaultWorkflowServeResolver: WorkflowServeResolving {
 }
 
 public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactory {
-  public var s3HTTPClient: any S3HTTPClient
-
-  public init(s3HTTPClient: any S3HTTPClient = URLSessionS3HTTPClient()) {
-    self.s3HTTPClient = s3HTTPClient
-  }
+  public init() {}
 
   public func startListener(
     for resolvedWorkflow: WorkflowServeResolvedWorkflow,
@@ -450,8 +445,7 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
     let routeConfiguration = try await routeConfiguration(for: request, endpoint: endpoint)
     return InProcessWorkflowServeListenerHandle(
       endpoint: endpoint,
-      routeHandler: routeConfiguration.routeHandler,
-      registrationChallenge: routeConfiguration.registrationChallenge
+      routeHandler: routeConfiguration.routeHandler
     )
   }
 
@@ -459,99 +453,26 @@ public struct InProcessWorkflowServeListenerFactory: WorkflowServeListenerFactor
     for request: WorkflowServeStartRequest,
     endpoint: String
   ) async throws -> InProcessWorkflowServeRouteConfiguration {
-    guard request.server.noteAPIEnabled else {
-      return InProcessWorkflowServeRouteConfiguration(
-        routeHandler: DeterministicServerRouteHandler(
-          graphQLExecutor: WorkflowRegistryGraphQLDocumentExecutor()
-        )
+    InProcessWorkflowServeRouteConfiguration(
+      routeHandler: DeterministicServerRouteHandler(
+        graphQLExecutor: WorkflowRegistryGraphQLDocumentExecutor()
       )
-    }
-    guard let noteRoot = request.server.noteRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !noteRoot.isEmpty else {
-      throw WorkflowServeError.startupFailed(WorkflowServeDiagnostics(
-        code: "note_api_root_missing",
-        message: "note API serving requires server.noteRoot"
-      ))
-    }
-    let changeFeed = NoteChangeFeed()
-    let service = try NoteService(
-      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot),
-      autoActionDispatcher: ServedNoteAPIAutoActionDispatcher(),
-      changeObserver: NoteChangeFeedObserver(feed: changeFeed)
     )
-    let authenticator = QRClientRegistrationAuthenticator(
-      service: service,
-      registrationScope: URL(fileURLWithPath: noteRoot, isDirectory: true).standardizedFileURL.path
-    )
-    let routeHandler = DeterministicServerRouteHandler(
-      graphQLExecutor: CompositeGraphQLDocumentExecutor(
-        fallback: NoteGraphQLDocumentExecutor(
-          service: GraphQLNoteGraphQLService(service: service),
-          s3HTTPClient: s3HTTPClient,
-          s3Profiles: try noteS3Profiles(for: request)
-        )
-      ),
-      noteAPIAuthenticator: authenticator,
-      noteChangeFeed: changeFeed
-    )
-    let challenge = try await authenticator.createRegistrationChallenge(publicBaseURL: endpoint)
-    return InProcessWorkflowServeRouteConfiguration(
-      routeHandler: routeHandler,
-      registrationChallenge: challenge
-    )
-  }
-
-  private func noteS3Profiles(for request: WorkflowServeStartRequest) throws -> [S3StorageProfile] {
-    var environment = ProcessInfo.processInfo.environment
-    for (name, value) in request.configuration.inheritedEnvironment {
-      environment[name] = value
-    }
-    return try request.server.noteS3Profiles.map { profile in
-      let endpointRaw = profile.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-      let region = profile.region.trimmingCharacters(in: .whitespacesAndNewlines)
-      let bucket = profile.bucket.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard let endpoint = URL(string: endpointRaw), !region.isEmpty, !bucket.isEmpty else {
-        throw WorkflowServeError.startupFailed(WorkflowServeDiagnostics(
-          code: "note_api_s3_profile_invalid",
-          message: "note API S3 profile \(profile.name) requires endpoint, region, and bucket"
-        ))
-      }
-      return try S3StorageProfile.environmentBacked(
-        name: profile.name.isEmpty ? "default-s3" : profile.name,
-        endpoint: endpoint,
-        region: region,
-        bucket: bucket,
-        accessKeyIdEnv: profile.accessKeyIdEnv,
-        secretAccessKeyEnv: profile.secretAccessKeyEnv,
-        sessionTokenEnv: profile.sessionTokenEnv,
-        keyPrefix: profile.keyPrefix,
-        environment: environment
-      )
-    }
-  }
-}
-
-private struct ServedNoteAPIAutoActionDispatcher: AutoActionDispatching {
-  func dispatch(_ record: AutoActionDispatchRecord) async throws -> AutoActionDispatchOutcome {
-    .failed("served note API does not launch auto-action workflows; retry with a workflow dispatcher")
   }
 }
 
 public final class InProcessWorkflowServeListenerHandle: WorkflowServeListenerHandle, @unchecked Sendable {
   public let endpoint: String
   public let routeHandler: any ServerRouteHandling
-  public let registrationChallenge: NoteAPIRegistrationChallenge?
   private let lock = NSLock()
   private var stopped = false
 
   public init(
     endpoint: String,
-    routeHandler: any ServerRouteHandling = DeterministicServerRouteHandler(),
-    registrationChallenge: NoteAPIRegistrationChallenge? = nil
+    routeHandler: any ServerRouteHandling = DeterministicServerRouteHandler()
   ) {
     self.endpoint = endpoint
     self.routeHandler = routeHandler
-    self.registrationChallenge = registrationChallenge
   }
 
   public func shutdown() async throws {
@@ -563,7 +484,6 @@ public final class InProcessWorkflowServeListenerHandle: WorkflowServeListenerHa
 
 private struct InProcessWorkflowServeRouteConfiguration {
   var routeHandler: any ServerRouteHandling
-  var registrationChallenge: NoteAPIRegistrationChallenge?
 }
 
 public struct InProcessWorkflowServeEventSourceFactory: WorkflowServeEventSourceFactory {

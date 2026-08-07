@@ -39,8 +39,6 @@ struct ServeHTTPCommand: Sendable {
     let configuration = RielaServerConfiguration(
       host: host,
       port: requestedPort,
-      noteAPIEnabled: parsed.noteAPIEnabled,
-      noteRoot: parsed.noteAPIEnabled ? resolvedServeNoteRoot(parsed: parsed) : nil
     )
     let listenerHandle = try await inProcessListener(configuration: configuration)
     let adapter = DeterministicServerHTTPAdapter(
@@ -63,8 +61,6 @@ struct ServeHTTPCommand: Sendable {
       status: "running",
       records: readyRecords(
         endpoint: endpoint,
-        noteAPIEnabled: parsed.noteAPIEnabled,
-        registrationChallenge: listenerHandle.registrationChallenge,
         webRoot: webRoot
       )
     )
@@ -99,16 +95,11 @@ struct ServeHTTPCommand: Sendable {
 
   private func readyRecords(
     endpoint: String,
-    noteAPIEnabled: Bool,
-    registrationChallenge: NoteAPIRegistrationChallenge?,
     webRoot: URL?
   ) -> [String] {
-    var records = ["endpoint=\(endpoint)", "noteAPIEnabled=\(noteAPIEnabled)"]
+    var records = ["endpoint=\(endpoint)"]
     if let webRoot {
       records.append("webRoot=\(webRoot.path)")
-    }
-    if let registrationChallenge {
-      records.append("registrationURL=\(registrationChallenge.registrationURL)")
     }
     return records
   }

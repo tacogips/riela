@@ -208,255 +208,33 @@ registries, profiles, notes, and configuration files are not GC targets.
 `--scope all` covers both `~/.riela` and the current project's `.riela`;
 RielaApp automatically collects only its configured user home.
 
-## Riela Note
+## Kaiba Notes (external note store)
 
-Riela Note is the local notebook and note store for markdown notes, provenance
-aware hierarchical tags, typed notebook progress, per-tag grouped views,
-comments, links, file attachments, search, and workflow-backed note automation.
-The CLI stores notes under `~/.riela/note` by default; set
-`RIELA_NOTE_ROOT` or pass `--note-root <dir>` to use an isolated store.
-RielaApp uses the active profile's note root under
-`~/.riela/profiles/<profile>/note/`.
+The note subsystem formerly embedded here ("Riela Note") now lives in the
+standalone [kaiba](https://github.com/tacogips/kaiba) package: a local-first
+note store with notebooks, provenance-aware hierarchical tags, kanban status
+sets, typed notebook progress, comments, links, file attachments (local/S3),
+FTS5 search, a note GraphQL API, a `kaiba serve` web viewer, and API-key
+authentication (`kaiba client issue`).
 
-Each Note store includes one reserved `notebook-kind:system-memory` notebook.
-It is read-only for ordinary content writes by default, can be explicitly
-unlocked or relocked from the web workspace, and remains writable through the
-typed system path used by the six `riela/note-memory-*` and
-`riela/note-persona-memory-*` workflow add-ons. While locked, the workspace
-disables add/edit surfaces but keeps the read-only preview and **Expand with
-Agent** available because expansion consumes the notebook as a source and
-writes to a separate conversation. Standalone `riela memory` commands and
-`riela/memory-*` add-ons are not supported; existing `.riela/memory/` files are
-left untouched.
+Riela consumes kaiba as an addon knowledge/context source. The built-in
+`kaiba/*` addons expose kaiba-client-equivalent operations to workflows:
 
-Tags can have one optional parent. A tag filter resolves the selected tag plus
-all transitive descendants for notebook listing, note listing, text search,
-filter-only search, fallback search, and linked-note expansion. Filtering by a
-leaf remains exact, an unknown tag produces no matches, and parent changes that
-would create a self- or ancestor-cycle are rejected. The seeded `folder` tag
-class is available for notebook organization; it classifies notebook tags and
-does not introduce filesystem folder or ownership semantics.
+- `kaiba/note-create`, `kaiba/note-update`, `kaiba/note-get`,
+  `kaiba/note-search`, `kaiba/note-graph-neighbors`, `kaiba/note-tag-apply`,
+  `kaiba/note-attach-file`, `kaiba/note-comment-add`,
+  `kaiba/notebook-ingest-pages`, `kaiba/note-conversation-save`
+- Kanban: `kaiba/note-kanban-task-create`, `kaiba/note-kanban-move`,
+  `kaiba/note-kanban-board`
+- Memory/persona context: `kaiba/note-memory-save`, `kaiba/note-memory-load`,
+  `kaiba/note-persona-context-read`, `kaiba/note-persona-context-write`
+- Raw GraphQL: `kaiba/note-graphql-document`
 
-Schema v7 keeps `tag_id` as canonical identity and scopes folder names to their
-parent: duplicate sibling and duplicate root-folder names are rejected, while
-the same display name can exist under different parents. Non-folder names stay
-globally unique. Folder assignment, removal, filtering, and Kanban scope use
-tag IDs, and legacy name-only access fails closed when a folder/non-folder or
-cross-parent candidate set is ambiguous.
-
-Every notebook has one kanban status name. The seeded immutable default set
-defines `none`, `pending`, `progress`, `review`, and `done` (new notebooks
-default to `none`), and custom status sets extend that vocabulary: a set is an
-ordered list of named statuses, each mapped to one closed category
-(`none`/`pending`/`progress`/`review`/`done`), and can be bound to a
-folder-class tag — the folder's board (and its descendant folders without
-their own binding) then renders that set's columns. Validation accepts a
-status when the default set or any bound set on the notebook's folder tags
-defines it, so custom sets extend but never restrict. With a tag filter
-active, the compact notebook list and regular-width macOS search popup show
-matching notebooks grouped by the default statuses, including notebooks
-tagged through descendant tags. The web kanban board renders the effective
-set's columns, loads read-only with an explicit unlock toggle, and follows
-board changes live through the long-poll `GET /note/events` feed. Filtered
-loads fail closed rather than showing an unfiltered or previous-tag board,
-and stale refresh, pagination, or progress-mutation responses cannot replace
-the current board; concurrent writers are guarded by an optional
-`expectedProgress` compare-and-set that fails with a `progress_conflict`
-result instead of silently overwriting.
-
-The note GraphQL surface exposes `NoteTag.parentTagId`,
-`NoteTag.statusSetId`, `Notebook.progress` (a status name string),
-`DefineNoteTagInput.parentTagId`, the `KanbanStatusCategory` enum,
-`kanbanStatusSets` / `effectiveKanbanStatuses(tagName)` /
-`effectiveKanbanStatusesByTagId(tagId)` queries,
-status-set mutations (`createKanbanStatusSet`, `updateKanbanStatusSet`,
-`deleteKanbanStatusSet`, `assignKanbanStatusSet`,
-`assignKanbanStatusSetByTagId`), `ApplyNotebookTagIdsInput`, ID-based notebook
-tag mutations (`applyNotebookTagIds`, `removeNotebookTagById`), and
-`setNotebookProgress(notebookId:progress:expectedProgress)`.
-Workflow nodes can drive a board deterministically with the built-in
-`riela/note-kanban-task-create`, `riela/note-kanban-move`, and
-`riela/note-kanban-board` add-ons; the `examples/note-kanban-orchestrate`
-workflow decomposes one request into cards under a folder tag, executes them
-through a parallel `collect-partial` fan-out, routes every card through
-`review` with bounded rework rounds, and moves passed cards to `done`.
-Notebook listing also accepts
-`tagFilterGroups: [[String!]!]`: names within a group are unioned after
-descendant expansion, while non-empty groups are intersected. An unknown group
-returns no notebooks, empty groups are ignored, and a non-empty grouped filter
-takes precedence over the existing single-group `tagFilter`. Grouped requests
-are bounded to 64 groups, 256 input names, and 900 expanded names; oversized
-requests fail as controlled `invalid_request` results. Existing `tagFilter`
-callers retain their prior descendant-expanded behavior. Canonical Web callers
-instead send `tagFilterIdGroups`; non-empty ID groups take precedence over name
-filters and retain the same group and expansion bounds.
-
-Common local commands:
-
-```bash
-riela note add --body '# Idea\n\nShip the small version first.' --tag idea
-riela note list --limit 20 --output table
-riela note search "small version" --tag idea
-riela note show <note-id> --output text
-riela note edit <note-id> --body-file ./updated.md
-riela note tag <note-id> --add shipped --remove idea
-riela note comment <note-id> --body "Reviewed."
-riela note attach <note-id> ./diagram.png --role related
-riela note readonly <note-id> --on
-riela note delete <note-id>
-```
-
-Notebook, file-storage, and API-client management are in the same command
-family:
-
-```bash
-riela note notebook create "Project notes"
-riela note notebook list --output table
-riela note storage migrate --all --to s3 --profile archive \
-  --s3-endpoint https://s3.example.com --s3-region us-east-1 --s3-bucket notes
-riela note storage gc --grace-hours 24
-riela note auto-action retry
-riela note client register "iPad" --output json
-riela note client list --output table
-riela note client revoke <client-id>
-```
-
-`riela note storage gc` reclaims file rows and blobs no note or notebook
-references anymore and sweeps stray blob/temp files older than the grace
-period (default 24 hours); referenced files still survive note deletion.
-`riela note auto-action retry` reclaims interrupted auto-action dispatches
-whose lease went stale and retries pending ones — dispatch rows are
-lease-owned, so concurrent CLI or app processes never double-run a live
-dispatch.
-
-`riela note` executes note operations through the note GraphQL service against
-the local store, so the CLI, built-in note add-ons, the web note workspace, and server note
-surface share the same `NoteService` write path. Example workflow bundles live
-under `examples/note-quick-memo`, `examples/note-pdf-ingest`,
-`examples/note-youtube-transcript`, `examples/note-auto-tagging`,
-`examples/note-agent`, `examples/note-config-agent`,
-`examples/note-link-extract`, `examples/note-edit-rewrite`, and
-`examples/note-selection-question`, and `examples/note-notebook-compact`.
-
-Notebook rows in both the notebook list and file-tree pane provide **Expand
-with Agent**. The first expansion of a notebook revision runs
-`note-notebook-compact`, caches versioned key points in the source notebook's
-metadata, and creates a linked `notebook-kind:agent-conversation` notebook.
-Later questions are grounded only in that compact summary; every saved turn has
-AI `source-citation` links back to all source notes. Configure discovery with
-`RIELA_NOTE_NOTEBOOK_COMPACT_WORKFLOW_DIR` and
-`RIELA_NOTE_NOTEBOOK_COMPACT_RIELA_EXECUTABLE`. If the provider is absent, the
-action reports that expansion is not configured without changing the notebook.
-Notebook data is processed by an ephemeral, no-ambient-tool worker whose
-private variables and workflow session store are removed after each invocation;
-timeout and cancellation terminate the complete subprocess group. Opening a
-new expansion preserves current Agent drafts and unsaved turns unless the user
-explicitly confirms discard.
-
-Linked search is now backed by the same bounded Graph-RAG policy used by note
-agents and related-note proposals. Default search is unchanged because
-`includeLinked` remains false. When a caller explicitly enables
-`includeLinked`, depth defaults to one and candidates may come from explicit
-links, eligible IDF-weighted shared entity tags, or seed-only lexical overlap;
-callers may request a smaller or larger depth, but `NoteService` always caps it
-at five. Related-note proposals remain tighter at depth two and still require a
-separate confirmation before any link is written. Workflows can call
-`riela/note-graph-neighbors` for ranked path evidence and use `riela/note-get`
-with either `noteId` or `noteIds` to retrieve source bodies.
-
-In the Notes workspace (served by RielaApp's web UI — the former native Notes
-window was replaced by it), the note detail pane is a read-first vertical
-reader: each note occupies one snapping page, and approaching either edge of a
-mid-notebook window loads only the next bounded page instead of scanning the
-whole notebook. Each page keeps **Ask agent** and **Add comment** one tap away
-through the existing agent bar and comment service. **Ask agent** expands and
-focuses the existing composer with the current note attached. Bounded page
-loads are generation-guarded, so a late load from earlier navigation cannot
-replace the note selected most recently. The header action row also carries an
-**Edit** control at the top-left and **copy**, **download**, and **expand**
-buttons at the top-right (copy/download/expand stay available on read-only
-notes; only the Edit control is hidden). Pressing Edit disables pager movement,
-enables manual markdown editing, and reveals an **"Ask for changes"** agent
-pill. Submitting the pill
-asks the edit agent to rewrite the note; on macOS you can also select text in
-the body and press **⌘K** (or the floating "Ask for changes ⌘K" chip) to scope
-the request to that selection, falling back to whole-note scope when the
-selection is no longer valid. Agent rewrites land only in the edit draft for
-review — nothing is persisted until you Save. The pill is backed by the
-sequential `examples/note-edit-rewrite` workflow (`riela workflow run
-note-edit-rewrite`), wired into RielaApp via
-`RIELA_NOTE_EDIT_REWRITE_WORKFLOW_DIR` /
-`RIELA_NOTE_EDIT_REWRITE_RIELA_EXECUTABLE` overrides; when no
-`note-edit-rewrite` workflow is found the pill surfaces an
-"edit agent is not configured" error instead of editing the draft.
-
-While editing, the floating selection chip row also offers an
-**"Ask question ⇧⌘K"** action next to "Ask for changes". With body text
-selected it arms question mode on the top pill (separate from the rewrite
-pathway): submitting sends the question plus the selected text to a new
-selection-question pathway backed by the sequential
-`examples/note-selection-question` workflow (`riela workflow run
-note-selection-question`), wired into RielaApp via
-`RIELA_NOTE_SELECTION_QUESTION_WORKFLOW_DIR` /
-`RIELA_NOTE_SELECTION_QUESTION_RIELA_EXECUTABLE` overrides. A successful
-answer is auto-saved as a `note-agent`-authored comment (blockquoted
-selection + question + answer), the Comments section expands, and the pill
-shows a transient "Saved as comment" caption; the note body/draft is never
-modified, and failures persist nothing. Each comment gains a
-**"Create notebook"** action that promotes it in one transaction into a new
-notebook whose first note carries the comment body and links the source note
-to that new note (`related`, human provenance), surfacing the link in the
-detail Links section. The Agent tab query pathway is unchanged.
-
-The web dashboard includes a **Notes** workspace with Folder and Tags
-navigation, descendant-scoped List and Board views, notebook progress,
-class-grouped tag chips, and a read-only note preview. Cards and rows show the
-first note excerpt and note count when available. The detail panel can add only
-existing catalog tags and exposes removal only for deletable assignments.
-Folder creation is create-only, so a same-name collision never reparents or
-reclassifies an existing tag. Collision checks are sibling-scoped, and folder
-trees, filters, pickers, Kanban scope, assignment chips, and note-search matches
-show ancestor-qualified labels. Missing, cyclic, or over-depth ancestry stays
-visibly incomplete instead of resolving by global name. Clicking a folder or
-tag replaces the current filter; its adjacent **+** action adds another
-constraint. Active constraints
-appear as removable chips with **Clear all**, and both List and Board show only
-notebooks matching every chip while retaining descendant expansion within each
-chip. Catalog refreshes drop only constraints whose tags disappeared. Board
-refreshes retain the accepted board until the current bounded load finishes,
-membership writes are serialized, and stale scope, preview, paging, or
-mutation completions cannot replace current state. Unknown server progress is
-shown visibly in **None** instead of dropping the notebook.
-
-The RielaApp-hosted dashboard also exposes workflow observability and
-management views. **Instances** and **Run logs** poll every five seconds while
-the tab is visible, retain manual Refresh, and pause while hidden. Run-log rows
-open persisted step details with bounded, redacted diagnostics and gate/loop
-evidence. Instances validate workflow-variable JSON before Save and show
-read-only node patches. **Workflows** provides source-scoped read-only
-definition inspection plus user-mutable registry list, paste-register, edit,
-activate/deactivate, and confirmed delete operations. Registry writes reuse the
-CLI registry's canonical locks, validation, activation store, and exact
-revision conflicts; sensitive definition values use opaque retain handles
-instead of being returned to the browser. The standalone `riela serve` host
-remains Notes-only.
-
-RielaApp serves the Notes GraphQL documents at its existing `/graphql` route
-against the active profile's note root, protected by the dashboard's Host,
-Origin, CSRF, and JSON checks. For a standalone same-origin web view, build the
-SPA and pass its output directory to the local listener:
-
-```bash
-cd web && bun run build
-riela serve --note-api --web-root web/dist
-```
-
-The command prints a one-use `/note/register?code=...` URL. Opening that URL
-loads the SPA, removes the code from browser history, redeems it through the
-existing registration flow, and keeps the bearer token in session storage.
-Static hosting preserves POST `/note/register` and `/graphql` service
-precedence, rejects traversal and symlink escapes, and does not require CORS or
-introduce another authentication system.
+Addons operate on a local note root (config `noteRoot`, env
+`KAIBA_NOTE_ROOT`, default `~/.kaiba`) through the imported kaiba library, or
+remotely against a running `kaiba serve` by setting `endpoint` in the addon
+config plus an API key in the env var named by `apiKeyEnv` (default
+`KAIBA_API_KEY`; issue keys with `kaiba client issue`).
 
 ## Document Conversion Add-On
 

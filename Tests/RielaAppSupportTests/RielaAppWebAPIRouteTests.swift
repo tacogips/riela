@@ -3,7 +3,6 @@ import Foundation
 import RielaAppSupport
 import RielaCLI
 import RielaCore
-import RielaNote
 import RielaServer
 @testable import RielaApp
 import XCTest
@@ -13,11 +12,11 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
   private let identity = "project-workflow:/tmp/riela:review-loop"
   private let secret = "SENTINEL_SECRET_MUST_NOT_RENDER"
 
-  func testPrivateAssistantPromptUsesParentScopedWorkflowHistoryConvention() {
+  func testPrivateAssistantPromptRequiresSessionEvidence() {
     let prompt = RielaApp().assistantSystemPrompt(workingDirectory: "/tmp/project")
-    XCTAssertTrue(prompt.contains("<workflow-id>/history-YYYY-MM-DD"))
-    XCTAssertTrue(prompt.contains("repeated runs for one workflow and date reuse that leaf"))
-    XCTAssertTrue(prompt.contains("another workflow receives a distinct leaf ID"))
+    XCTAssertTrue(prompt.contains("Use RIELA_SESSION_STORE."))
+    XCTAssertTrue(prompt.contains("must include the session ID and a link"))
+    XCTAssertTrue(prompt.contains("RIELA_WEB_RUN_LINK_TEMPLATE"))
   }
 
   func testCompositeIdentityRoutesDecodeExactlyOnceAndRedactSecrets() async throws {
@@ -395,15 +394,10 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     let currentProfile = fixture.app.daemonProfileName.rawValue
     let originalDirectories = fixture.app.daemonState.workflowDirectories
     let originalAssistant = fixture.app.daemonState.assistant
-    let noteStore = RielaAppNoteSettingsStore(
-      noteRoot: fixture.app.noteRootURL(profileName: fixture.app.daemonProfileName)
-    )
-    let originalNoteSettings = noteStore.load()
 
     for path in [
       "/api/v1/workflows/sources",
-      "/api/v1/settings/assistant",
-      "/api/v1/settings/notes"
+      "/api/v1/settings/assistant"
     ] {
       let response = await fixture.app.webAPIResponse(
         for: RielaHTTPRequest(method: "GET", path: path),
@@ -451,20 +445,6 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertEqual(fixture.app.daemonState.assistant.vendor, originalAssistant.vendor)
     XCTAssertEqual(fixture.app.daemonState.assistant.normalizedModel, originalAssistant.normalizedModel)
 
-    let staleNotes = await fixture.app.webAPIResponse(
-      for: try request(path: "/api/v1/settings/notes", body: [
-        "expectedRevision": fixture.app.webRevision,
-        "expectedProfile": "previous-profile",
-        "exposesNoteAPI": !originalNoteSettings.exposesNoteAPI
-      ]),
-      csrfToken: "csrf"
-    )
-    XCTAssertEqual(staleNotes.status, 409)
-    XCTAssertEqual(
-      (try jsonObject(staleNotes)["error"] as? [String: Any])?["code"] as? String,
-      "profile_conflict"
-    )
-    XCTAssertEqual(noteStore.load().exposesNoteAPI, originalNoteSettings.exposesNoteAPI)
     XCTAssertEqual(fixture.app.webRevision, 1)
   }
 
@@ -485,141 +465,7 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertEqual(response.status, 403)
   }
 
-  func testGraphQLUsesCurrentProfileAndRejectsStaleSameIdentifierMutation() async throws {
-    let fixture = try makeFixture()
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
-    let defaultService = try NoteService(
-      driver: SQLiteNoteDatabaseDriver(
-        noteRoot: try prepareNoteRoot(for: fixture.app, profileName: .default).path
-      )
-    )
-    _ = try defaultService.createNotebook(title: "Default profile notebook")
 
-    let missingCSRF = await router.response(for: graphQLRequest(csrfToken: nil))
-    XCTAssertEqual(missingCSRF.status, 403)
-    let defineFolderQuery = """
-      mutation DefineFolder($input: DefineNoteTagInput!) {
-        defineNoteTag(input: $input) {
-          result { accepted status diagnostics }
-          tag { tagId name classId }
-        }
-      }
-      """
-    let sharedInput: [String: Any] = [
-      "input": [
-        "name": "profile-bound-folder",
-        "classId": "folder",
-        "createOnly": true
-      ]
-    ]
-    var response = await router.response(for: graphQLRequest(csrfToken: router.csrfToken))
-    XCTAssertTrue(String(data: response.body, encoding: .utf8)?.contains("Default profile notebook") == true)
-    response = await router.response(for: graphQLRequest(
-      csrfToken: router.csrfToken,
-      query: defineFolderQuery,
-      operationName: "DefineFolder",
-      variables: sharedInput
-    ))
-    XCTAssertEqual(response.status, 200)
-    XCTAssertTrue(String(data: response.body, encoding: .utf8)?.contains("profile-bound-folder") == true)
-
-    fixture.app.daemonProfileName = RielaAppProfileName("second")
-    let secondService = try NoteService(
-      driver: SQLiteNoteDatabaseDriver(
-        noteRoot: try prepareNoteRoot(
-          for: fixture.app,
-          profileName: fixture.app.daemonProfileName
-        ).path
-      )
-    )
-    _ = try secondService.createNotebook(title: "Second profile notebook")
-    response = await router.response(for: graphQLRequest(
-      csrfToken: router.csrfToken,
-      query: defineFolderQuery,
-      operationName: "DefineFolder",
-      variables: sharedInput
-    ))
-    XCTAssertEqual(response.status, 409)
-    XCTAssertEqual(try jsonObject(response)["error"] as? String, "profile_conflict")
-
-    response = await router.response(for: graphQLRequest(
-      csrfToken: router.csrfToken,
-      profile: fixture.app.daemonProfileName.rawValue,
-      query: "query Tags { tags { result { accepted } value { name } } }",
-      operationName: "Tags"
-    ))
-    XCTAssertEqual(response.status, 200)
-    XCTAssertFalse(
-      String(data: response.body, encoding: .utf8)?.contains("profile-bound-folder") == true
-    )
-
-    response = await router.response(for: graphQLRequest(
-      csrfToken: router.csrfToken,
-      profile: fixture.app.daemonProfileName.rawValue
-    ))
-    let body = String(data: response.body, encoding: .utf8) ?? ""
-    XCTAssertTrue(body.contains("Second profile notebook"), body)
-    XCTAssertFalse(body.contains("Default profile notebook"), body)
-  }
-
-  func testGraphQLProfileBindingIsAtomicAcrossRouterInterleaving() async throws {
-    let fixture = try makeFixture()
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let secondProfile = RielaAppProfileName("second")
-    _ = try NoteService(
-      driver: SQLiteNoteDatabaseDriver(
-        noteRoot: try prepareNoteRoot(for: fixture.app, profileName: secondProfile).path
-      )
-    )
-    let router = RielaAppWebRouter(
-      app: fixture.app,
-      assetRoot: fixture.root,
-      configuredPort: 19_091,
-      beforeGraphQLProfileBinding: {
-        fixture.app.daemonProfileName = secondProfile
-      }
-    )
-    let defineFolderQuery = """
-      mutation DefineFolder($input: DefineNoteTagInput!) {
-        defineNoteTag(input: $input) {
-          result { accepted status diagnostics }
-          tag { tagId name classId }
-        }
-      }
-      """
-    let response = await router.response(for: graphQLRequest(
-      csrfToken: router.csrfToken,
-      query: defineFolderQuery,
-      operationName: "DefineFolder",
-      variables: [
-        "input": [
-          "name": "atomic-profile-folder",
-          "classId": "folder",
-          "createOnly": true
-        ]
-      ]
-    ))
-    XCTAssertEqual(fixture.app.daemonProfileName, secondProfile)
-    XCTAssertEqual(response.status, 409)
-    XCTAssertEqual(try jsonObject(response)["error"] as? String, "profile_conflict")
-
-    let inspectionRouter = RielaAppWebRouter(
-      app: fixture.app,
-      assetRoot: fixture.root,
-      configuredPort: 19_091
-    )
-    let tags = await inspectionRouter.response(for: graphQLRequest(
-      csrfToken: inspectionRouter.csrfToken,
-      profile: secondProfile.rawValue,
-      query: "query Tags { tags { result { accepted } value { name } } }",
-      operationName: "Tags"
-    ))
-    XCTAssertEqual(tags.status, 200)
-    XCTAssertFalse(
-      String(data: tags.body, encoding: .utf8)?.contains("atomic-profile-folder") == true
-    )
-  }
 
   func testGraphQLRegistryBridgeAuthorizesOnlyAfterTheWebSecurityGate() async throws {
     let fixture = try makeFixture()
@@ -701,39 +547,6 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     )
   }
 
-  func testGraphQLConstructionFailureIsSanitizedAndOtherRoutesRemainAvailable() async throws {
-    let fixture = try makeFixture()
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    try Data("<main>Dashboard</main>".utf8).write(
-      to: fixture.root.appendingPathComponent("index.html")
-    )
-    let blockedHome = fixture.root.appendingPathComponent("blocked-home")
-    try Data("not a directory".utf8).write(to: blockedHome)
-    fixture.app.appHomeDirectory = blockedHome
-    let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
-
-    let unavailable = await router.response(for: graphQLRequest(csrfToken: router.csrfToken))
-    XCTAssertEqual(unavailable.status, 503)
-    let unavailableJSON = try jsonObject(unavailable)
-    XCTAssertEqual(unavailableJSON["error"] as? String, "note_graphql_unavailable")
-    XCTAssertEqual(
-      unavailableJSON["message"] as? String,
-      "The active profile's Notes service is unavailable."
-    )
-    let unavailableBody = String(data: unavailable.body, encoding: .utf8) ?? ""
-    XCTAssertFalse(unavailableBody.contains(blockedHome.path), unavailableBody)
-    XCTAssertFalse(unavailableBody.localizedCaseInsensitiveContains("sqlite"), unavailableBody)
-
-    let apiResponse = await router.response(for: RielaHTTPRequest(
-      method: "GET",
-      path: "/api/v1/instances",
-      headers: ["Host": "127.0.0.1:19091"]
-    ))
-    XCTAssertEqual(apiResponse.status, 200)
-    let staticResponse = await router.response(for: RielaHTTPRequest(method: "GET", path: "/"))
-    XCTAssertEqual(staticResponse.status, 200)
-    XCTAssertEqual(staticResponse.body, Data("<main>Dashboard</main>".utf8))
-  }
 
   private func makeFixture() throws -> (app: RielaApp, root: URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -741,7 +554,6 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     app.appHomeDirectory = root
     app.profileStore = RielaAppProfileStore(appRootURL: root)
     try app.profileStore.prepareInitialProfile(.default, persistsSelection: false)
-    _ = try prepareNoteRoot(for: app, profileName: .default)
     let candidate = RielaAppDaemonWorkflowCandidate(
       id: "source-review-loop",
       workflowId: "review-loop",
@@ -767,14 +579,6 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     return (app, root)
   }
 
-  private func prepareNoteRoot(
-    for app: RielaApp,
-    profileName: RielaAppProfileName
-  ) throws -> URL {
-    let noteRoot = app.noteRootURL(profileName: profileName)
-    try FileManager.default.createDirectory(at: noteRoot, withIntermediateDirectories: true)
-    return noteRoot
-  }
 
   private func assertGraphQLSecurityRejection(
     _ router: RielaAppWebRouter,

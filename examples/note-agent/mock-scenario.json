@@ -1,0 +1,23 @@
+{
+  "answer-with-citations": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "status": "answered",
+      "answerMarkdown": "The architecture note says Riela Note keeps source-backed notebooks searchable and cites the matching note.",
+      "citations": [
+        {
+          "noteId": "note-agent-source",
+          "title": "Architecture Note",
+          "snippet": "source-backed notebooks"
+        }
+      ],
+      "sourceNoteIds": [
+        "note-agent-source"
+      ]
+    }
+  }
+}

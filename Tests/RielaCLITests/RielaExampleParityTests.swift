@@ -1,3 +1,4 @@
+import AppCore
 import Foundation
 import RielaCore
 import XCTest
@@ -47,6 +48,8 @@ private func rielaExampleWorkflowNames() -> [String] {
     "matrix-agent-trio-chat",
     "matrix-chat-reply",
     "node-combinations-showcase",
+    "note-agent",
+    "note-link-extract",
     "open-model-provider-codex",
     "recent-change-quality-loop",
     "required-loop-gate-failure",
@@ -79,7 +82,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 30
+    static let expectedMockScenarioCount = 32
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -206,6 +209,33 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
+  /// The graph-RAG examples drive the `kaiba/*` retrieval add-ons for real (only
+  /// their agent step is mocked), so the mock run needs a note root that already
+  /// contains a bounded graph. Seeding `subject -> hop-one -> hop-two` lets the
+  /// traversal return actual neighbors instead of failing on missing input.
+  private enum GraphRAGExampleFixture {
+    static let workflowNames: Set<String> = ["note-agent", "note-link-extract"]
+
+    static func variables(noteRoot: String, workflowName: String) throws -> String {
+      try FileManager.default.createDirectory(
+        atPath: noteRoot,
+        withIntermediateDirectories: true
+      )
+      let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
+      let subject = try service.createNote(bodyMarkdown: "# Subject\n\nprojectalpha kickoff planning")
+      let hopOne = try service.createNote(bodyMarkdown: "# Hop One\n\nprojectalpha design decisions")
+      let hopTwo = try service.createNote(bodyMarkdown: "# Hop Two\n\nrollout notes")
+      try service.linkNotes(from: subject.noteId, to: hopOne.noteId)
+      try service.linkNotes(from: hopOne.noteId, to: hopTwo.noteId)
+      let input: [String: Any] = workflowName == "note-link-extract"
+        ? ["noteId": subject.noteId, "limit": 8]
+        : ["query": "projectalpha", "limit": 5]
+      let payload: [String: Any] = ["noteRoot": noteRoot, "workflowInput": input]
+      let data = try JSONSerialization.data(withJSONObject: payload)
+      return String(decoding: data, as: UTF8.self)
+    }
+  }
+
   func testAllRielaExampleWorkflowsArePortedAndValidateInSwift() throws {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
@@ -276,6 +306,13 @@ final class RielaExampleParityTests: XCTestCase {
         arguments.append(contentsOf: [
           "--variables",
           #"{"noteRoot":"\#(noteRoot.path)","workflowInput":{"noteRoot":"\#(noteRoot.path)"}}"#
+        ])
+      }
+      if GraphRAGExampleFixture.workflowNames.contains(workflowName) {
+        let noteRoot = sessionStore.appendingPathComponent("notes", isDirectory: true)
+        arguments.append(contentsOf: [
+          "--variables",
+          try GraphRAGExampleFixture.variables(noteRoot: noteRoot.path, workflowName: workflowName)
         ])
       }
       let generatedWorkflowHome = sessionStore.appendingPathComponent("home", isDirectory: true)

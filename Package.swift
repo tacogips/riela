@@ -225,7 +225,8 @@ let package = Package(
         "RielaAdapters",
         "RielaAppSupport",
         "RielaCLI",
-        "RielaWorkflowRegistry"
+        "RielaWorkflowRegistry",
+        .product(name: "AppCore", package: "kaiba")
       ]
     ),
     .testTarget(

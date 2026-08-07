@@ -1,0 +1,12 @@
+{
+  "id": "answer-with-citations",
+  "description": "Answer a Riela Note chat request using retrieved note candidates.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/answer-with-citations.md",
+  "variables": {},
+  "output": {
+    "description": "Return answerMarkdown and citations. Each citation must include noteId and may include title and snippet."
+  }
+}

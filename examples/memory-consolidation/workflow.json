@@ -1,0 +1,165 @@
+{
+  "workflowId": "memory-consolidation",
+  "description": "Consolidate riela short-term chat memory into kaiba long-term memory and recall it back for prompts.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Consolidate short-term memory records into durable long-term memory entries and keep the source record ids exact."
+  },
+  "memories": [
+    {
+      "id": "chat-memory",
+      "description": "Workflow-scoped short-term chat memory owned by riela.",
+      "purpose": "Persist every incoming chat event and provide the recent window that the consolidation pass distills.",
+      "scope": "workflow",
+      "defaultLimit": 50
+    }
+  ],
+  "entryStepId": "save-chat-event",
+  "nodes": [
+    {
+      "id": "save-chat-event",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "save the incoming chat event as a short-term record"
+        }
+      ],
+      "addon": {
+        "name": "riela/memory-save",
+        "version": "1",
+        "config": {
+          "memoryId": "chat-memory",
+          "memoryRoot": "{{memoryRoot}}",
+          "nodeId": "chat-event",
+          "payloadTemplate": {
+            "text": "{{workflowInput.text}}",
+            "actor": "{{workflowInput.actor}}",
+            "conversationId": "{{workflowInput.conversationId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "load-recent-memories",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load the recent short-term window to consolidate"
+        }
+      ],
+      "addon": {
+        "name": "riela/memory-load",
+        "version": "1",
+        "config": {
+          "memoryId": "chat-memory",
+          "memoryRoot": "{{memoryRoot}}",
+          "workflowScopeOnly": true,
+          "limit": 50
+        }
+      }
+    },
+    {
+      "id": "summarize-memories",
+      "nodeFile": "nodes/node-summarize-memories.json"
+    },
+    {
+      "id": "consolidate-long-term",
+      "addon": {
+        "name": "kaiba/memory-consolidate",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "autoAssociate": true,
+          "associationLimit": 8,
+          "idempotencyKey": "{{workflowInput.consolidationKey}}"
+        }
+      }
+    },
+    {
+      "id": "recall-long-term",
+      "addon": {
+        "name": "kaiba/memory-recall",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "project-atlas",
+          "limit": 10,
+          "includeAssociations": true,
+          "associationDepth": 2,
+          "passthrough": {
+            "entriesWritten": "{{entriesWritten}}",
+            "consolidatedNoteIds": "{{noteIds}}",
+            "notebookId": "{{notebookId}}",
+            "idempotentReplay": "{{idempotentReplay}}",
+            "associations": "{{associations}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "save-chat-event",
+      "nodeId": "save-chat-event",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "load-recent-memories"
+        }
+      ]
+    },
+    {
+      "id": "load-recent-memories",
+      "nodeId": "load-recent-memories",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "summarize-memories"
+        }
+      ]
+    },
+    {
+      "id": "summarize-memories",
+      "nodeId": "summarize-memories",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "consolidate-long-term"
+        }
+      ]
+    },
+    {
+      "id": "consolidate-long-term",
+      "nodeId": "consolidate-long-term",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "recall-long-term"
+        }
+      ]
+    },
+    {
+      "id": "recall-long-term",
+      "nodeId": "recall-long-term",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

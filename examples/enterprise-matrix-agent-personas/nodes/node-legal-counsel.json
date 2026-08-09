@@ -20,7 +20,7 @@
         "replyText",
         "llm_only",
         "run_workflow",
-        "noteEntries"
+        "memoryEntries"
       ],
       "properties": {
         "replyText": {
@@ -41,7 +41,7 @@
           },
           "additionalProperties": false
         },
-        "noteEntries": {
+        "memoryEntries": {
           "type": "array",
           "items": {
             "type": "object",

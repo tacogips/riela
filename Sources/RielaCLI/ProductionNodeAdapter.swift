@@ -5,6 +5,7 @@ import Foundation
 import RielaAdapters
 import RielaAddons
 import RielaCore
+import RielaMemory
 
 func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
@@ -388,6 +389,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/chat-reply-worker" {
       return try executeChatReplyWorker(input)
     }
+    if input.addon.name == "riela/chat-persona-memory-read" {
+      return try executeChatPersonaMemoryRead(input)
+    }
+    if input.addon.name == "riela/chat-persona-memory-write" {
+      return try executeChatPersonaMemoryWrite(input)
+    }
     if input.addon.name == "riela/workflow-create-register-run" {
       return try await executeWorkflowCreateRegisterRun(input)
     }
@@ -447,6 +454,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
       return try await executeNoteAddon(input, operation: noteAddon)
+    }
+    if let longTermMemoryAddon = BuiltinKaibaLongTermMemoryAddon(rawValue: input.addon.name) {
+      return try executeKaibaLongTermMemoryAddon(input, operation: longTermMemoryAddon)
+    }
+    if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
+      return try executeMemoryAddon(input, operation: memoryAddon)
     }
     if Self.deferredContainerAddons.contains(input.addon.name) {
       return AdapterExecutionOutput(

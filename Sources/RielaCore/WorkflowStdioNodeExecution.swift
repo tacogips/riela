@@ -15,6 +15,8 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
   public var node: AgentNodePayload
   public var variables: JSONObject
   public var resolvedInputPayload: JSONObject
+  public var memoryRootDirectory: String?
+  public var availableMemories: [WorkflowMemoryDeclaration]
   public var policy: LoopPolicyStepDecision?
 
   public init(
@@ -27,6 +29,8 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
     node: AgentNodePayload,
     variables: JSONObject,
     resolvedInputPayload: JSONObject,
+    memoryRootDirectory: String? = nil,
+    availableMemories: [WorkflowMemoryDeclaration] = [],
     policy: LoopPolicyStepDecision? = nil
   ) {
     self.workflowId = workflowId
@@ -38,6 +42,8 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
     self.node = node
     self.variables = variables
     self.resolvedInputPayload = resolvedInputPayload
+    self.memoryRootDirectory = memoryRootDirectory
+    self.availableMemories = availableMemories
     self.policy = policy
   }
 }
@@ -61,6 +67,8 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
   public var nodeType: String
   public var variables: JSONObject
   public var input: JSONObject
+  public var memoryRootDirectory: String?
+  public var availableMemories: [WorkflowMemoryDeclaration]
   public var policy: LoopPolicyStepDecision?
 
   public init(
@@ -72,6 +80,8 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
     nodeType: String,
     variables: JSONObject,
     input: JSONObject,
+    memoryRootDirectory: String? = nil,
+    availableMemories: [WorkflowMemoryDeclaration] = [],
     policy: LoopPolicyStepDecision? = nil
   ) {
     self.workflowId = workflowId
@@ -82,6 +92,8 @@ public struct WorkflowStdioNodeInvocationEnvelope: Codable, Equatable, Sendable 
     self.nodeType = nodeType
     self.variables = variables
     self.input = input
+    self.memoryRootDirectory = memoryRootDirectory
+    self.availableMemories = availableMemories
     self.policy = policy
   }
 }

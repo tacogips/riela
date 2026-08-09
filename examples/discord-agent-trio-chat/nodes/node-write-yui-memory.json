@@ -1,16 +1,18 @@
 {
   "id": "write-yui-memory",
   "modelFreeze": false,
-  "description": "Persist Yui Codex note context entries proposed by the persona and pass through reply/handoff flags.",
+  "description": "Persist Yui Codex memory entries proposed by the persona and pass through reply/handoff flags.",
   "addon": {
-    "name": "kaiba/note-persona-context-write",
+    "name": "riela/chat-persona-memory-write",
     "version": "1",
     "config": {
       "personaId": "yui",
-      "personaName": "Yui Codex"
+      "personaName": "Yui Codex",
+      "memoryId": "persona-chat-memory"
     }
   },
+  "memories": [{"id": "persona-chat-memory", "purpose": "persist Yui memory entries"}],
   "output": {
-    "description": "Return Yui Codex replyText and handoff flags after writing any note context entries."
+    "description": "Return Yui Codex replyText and handoff flags after writing any memoryEntries."
   }
 }

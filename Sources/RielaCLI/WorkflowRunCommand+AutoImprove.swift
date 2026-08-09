@@ -416,6 +416,7 @@ extension WorkflowRunCommand {
       addonAttachmentDescriptors: base.addonAttachmentDescriptors,
       rerunFromSessionId: sourceSessionId,
       rerunFromStepId: targetStepId,
+      memoryRootDirectory: base.memoryRootDirectory,
       agentSilenceWarningMs: options.agentSilenceWarningMs,
       agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
       eventHandler: base.eventHandler

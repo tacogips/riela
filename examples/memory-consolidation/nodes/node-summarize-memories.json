@@ -1,0 +1,12 @@
+{
+  "id": "summarize-memories",
+  "description": "Distill the recent riela short-term memory window into long-term memory entries.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplateFile": "prompts/summarize-memories.md",
+  "variables": {},
+  "output": {
+    "description": "Return memoryEntries[]. Each entry must include content (markdown) and may include topicTags, relatedNoteIds, sourceMemoryRecordIds, periodStart, and periodEnd."
+  }
+}

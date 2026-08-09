@@ -13,12 +13,11 @@
     "backendName": "official/openai-sdk",
     "peerSummary": "Yui Codex is a refined secretary and default coordinator. Mika Trend is a gyaru entertainment and trend expert backed by claude-code-agent.",
     "personaId": "rina",
-    "cursorAdditionalArgs": [
-      "--trust"
-    ]
+    "memoryRoot": "{{workflowInput.memoryRoot}}",
+    "cursorAdditionalArgs": ["--trust"]
   },
   "output": {
-    "description": "Return Rina's chat reply; optional handoff flags are adapter-level when values; optional noteEntries are written by the following deterministic memory node.",
+    "description": "Return Rina's chat reply; optional handoff flags are adapter-level when values; optional memoryEntries are written by the following deterministic memory node.",
     "jsonSchema": {
       "type": "object",
       "required": [
@@ -28,7 +27,7 @@
         "replyText": {
           "type": "string"
         },
-        "noteEntries": {
+        "memoryEntries": {
           "type": "array",
           "items": {
             "type": "object",

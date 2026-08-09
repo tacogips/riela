@@ -2,14 +2,16 @@
   "id": "write-rina-memory",
   "modelFreeze": false,
   "addon": {
-    "name": "kaiba/note-persona-context-write",
+    "name": "riela/chat-persona-memory-write",
     "version": "1",
     "config": {
       "personaId": "rina",
-      "personaName": "Rina Cursor"
+      "personaName": "Rina Cursor",
+      "memoryId": "persona-chat-memory"
     }
   },
+  "memories": [{"id": "persona-chat-memory", "purpose": "persist Rina Cursor memory entries"}],
   "output": {
-    "description": "Persist Rina Cursor note context entries and pass through reply/handoff flags."
+    "description": "Persist Rina Cursor memory entries and pass through reply/handoff flags."
   }
 }

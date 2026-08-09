@@ -84,7 +84,7 @@ final class RielaSlackExampleParityTests: XCTestCase {
         .appendingPathComponent("slack-agent-trio-chat", isDirectory: true)
         .appendingPathComponent("mock-scenario.json").path,
       "--session-store", sessionStore.path,
-      "--variables", "{\"noteRoot\":\"\(sessionStore.appendingPathComponent("notes").path)\"}",
+      "--variables", "{\"memoryRoot\":\"\(sessionStore.appendingPathComponent("memory").path)\"}",
       "--output", "json"
     ])
 

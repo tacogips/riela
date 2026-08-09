@@ -5,6 +5,13 @@
     "maxLoopIterations": 24,
     "nodeTimeoutMs": 180000
   },
+  "memories": [
+    {
+      "id": "persona-chat-memory",
+      "purpose": "shared persona chat memory stream for enterprise personas",
+      "scope": "cross-workflow"
+    }
+  ],
   "entryStepId": "route-message",
   "nodes": [
     {
@@ -49,68 +56,56 @@
     {
       "id": "read-support-lead-own-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "support-lead",
-          "actorPersonaId": "support-lead",
-          "allowedReadPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
-          "teamPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent support-lead memory"
+        }
+      ]
     },
     {
       "id": "read-support-lead-product-engineer-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "product-engineer",
-          "actorPersonaId": "support-lead",
-          "allowedReadPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
-          "teamPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent product-engineer memory"
+        }
+      ]
     },
     {
       "id": "read-support-lead-customer-success-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "customer-success",
-          "actorPersonaId": "support-lead",
-          "allowedReadPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
-          "teamPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent customer-success memory"
+        }
+      ]
     },
     {
       "id": "support-lead",
@@ -122,15 +117,12 @@
     {
       "id": "write-support-lead-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "support-lead",
           "personaName": "Hana Support Lead",
-          "actorPersonaId": "support-lead",
-          "allowedReadPersonaIds": [
-            "support-lead"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "support-lead",
             "product-engineer",
@@ -138,7 +130,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist support-lead memory entries"
+        }
+      ]
     },
     {
       "id": "generate-support-lead-workflow",
@@ -170,22 +168,20 @@
     {
       "id": "read-product-engineer-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "product-engineer",
-          "actorPersonaId": "product-engineer",
-          "allowedReadPersonaIds": [
-            "product-engineer"
-          ],
-          "teamPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent product-engineer memory"
+        }
+      ]
     },
     {
       "id": "product-engineer",
@@ -197,15 +193,12 @@
     {
       "id": "write-product-engineer-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "product-engineer",
           "personaName": "Rei Product Engineer",
-          "actorPersonaId": "product-engineer",
-          "allowedReadPersonaIds": [
-            "product-engineer"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "support-lead",
             "product-engineer",
@@ -213,7 +206,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist product-engineer memory entries"
+        }
+      ]
     },
     {
       "id": "generate-product-engineer-workflow",
@@ -245,22 +244,20 @@
     {
       "id": "read-customer-success-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "customer-success",
-          "actorPersonaId": "customer-success",
-          "allowedReadPersonaIds": [
-            "customer-success"
-          ],
-          "teamPersonaIds": [
-            "support-lead",
-            "product-engineer",
-            "customer-success"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent customer-success memory"
+        }
+      ]
     },
     {
       "id": "customer-success",
@@ -272,15 +269,12 @@
     {
       "id": "write-customer-success-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "customer-success",
           "personaName": "Mio Customer Success",
-          "actorPersonaId": "customer-success",
-          "allowedReadPersonaIds": [
-            "customer-success"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "support-lead",
             "product-engineer",
@@ -288,7 +282,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist customer-success memory entries"
+        }
+      ]
     },
     {
       "id": "generate-customer-success-workflow",

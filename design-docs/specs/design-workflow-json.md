@@ -467,16 +467,24 @@ Initial built-in add-ons:
   prompt-size limit. Model output cannot provide paths, commands, credentials,
   node definitions, or arbitrary workflow JSON. Generated prompts are stored
   as separate `prompts/*.md` files
-- `riela/note-persona-context-read` and
-  `riela/note-persona-context-write`: worker nodes that read and append
-  persona-scoped context in the Riela Note system-memory notebook. Workflows
-  may declare `actorPersonaId`, `allowedReadPersonaIds`, and `teamPersonaIds`;
-  the runtime permits only declared reads and always restricts writes to the
-  actor's own persona id. Persona identities and prompts remain workflow-owned
-  data rather than built-in runtime policy
-- `riela/note-memory-save` and `riela/note-memory-load`: worker nodes that
-  append and read workflow-scoped streams in the Riela Note system-memory
-  notebook; no update, search, or raw/daily-summary operation is provided
+- `riela/chat-persona-memory-read` and
+  `riela/chat-persona-memory-write`: worker nodes that read and append
+  persona-scoped records in the SQLite-backed `persona-chat-memory` database
+  under the configured memory root. The write node also arbitrates
+  `handoff_<persona-id>` flags; a `teamPersonaIds` config array replaces the
+  built-in trio handoff targets so team workflows can route between arbitrary
+  persona ids. Writes are idempotent per step execution: a replayed execution
+  (session resume/rerun, event redelivery) returns the already-written record
+  ids instead of appending duplicates. Persona identities and prompts remain
+  workflow-owned data rather than built-in runtime policy
+- `riela/memory-save`, `riela/memory-update`, `riela/memory-load`, and
+  `riela/memory-search`: worker nodes that persist and read workflow-scoped
+  records in per-memory-id SQLite databases under the configured memory root;
+  nodes using them must declare matching `memories` entries at the workflow
+  and node level
+- `riela/chat-memory-raw-daily-summary`: worker node that appends a raw chat
+  log record and creates or updates the per-day summary record in two distinct
+  memory databases
 - `riela/x-digest`: worker node that summarizes X/Twitter data through the
   production X digest adapter
 - `riela/gmail-digest`: worker node that summarizes Gmail/mail-gateway data

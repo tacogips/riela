@@ -2,6 +2,7 @@ import Foundation
 import RielaAdapters
 import RielaAddons
 import RielaCore
+import RielaMemory
 import XCTest
 @testable import RielaCLI
 
@@ -53,6 +54,39 @@ extension WorkflowCommandTests {
 
   func packageChecksum(packageRoot: URL) throws -> String {
     try WorkflowPackageChecksum.md5(packageRoot: packageRoot)
+  }
+
+  func objectPayload(_ value: MemoryJSONValue) -> [String: MemoryJSONValue]? {
+    guard case let .object(object) = value else {
+      return nil
+    }
+    return object
+  }
+
+  func memoryString(_ value: MemoryJSONValue?) -> String? {
+    guard case let .string(string)? = value else {
+      return nil
+    }
+    return string
+  }
+
+  func memoryNumber(_ value: MemoryJSONValue?) -> Int? {
+    guard case let .number(number)? = value, number.rounded() == number else {
+      return nil
+    }
+    return Int(number)
+  }
+
+  func memoryInt64Array(_ value: MemoryJSONValue?) -> [Int64] {
+    guard case let .array(values)? = value else {
+      return []
+    }
+    return values.compactMap { value in
+      guard case let .number(number) = value else {
+        return nil
+      }
+      return Int64(exactly: number)
+    }
   }
 
   func repositoryRoot() -> String {

@@ -294,7 +294,8 @@ extension WorkflowRegistryBundleLoader {
         role: step.role,
         execution: registryNode.execution,
         repeatPolicy: registryNode.repeatPolicy,
-        inputFilters: registryNode.inputFilters
+        inputFilters: registryNode.inputFilters,
+        memories: registryNode.memories
       )
     }
   }
@@ -312,6 +313,7 @@ extension WorkflowRegistryBundleLoader {
     node.kind = node.kind ?? shared.kind
     node.repeatPolicy = node.repeatPolicy ?? shared.repeatPolicy
     node.inputFilters = node.inputFilters ?? shared.inputFilters
+    node.memories = node.memories ?? shared.memories
     return node
   }
 

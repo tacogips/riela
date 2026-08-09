@@ -22,13 +22,17 @@
   all handoff flags and close the final reply so the workflow stops without a
   dangling mention or runaway loop.
 - Each persona reads only its own recent records from the declared
-  `notebook-kind:system-memory` system-memory notebook before replying, using
-  `workflowInput.noteRoot`, `RIELA_NOTE_ROOT`, or the default Riela memory
+  `persona-chat-memory` memory database before replying, using
+  `workflowInput.memoryRoot`, `RIELA_MEMORY_ROOT`, or the default Riela memory
   root.
-- Each persona can return `noteEntries` for explicit remember requests,
+- Each persona can return `memoryEntries` for explicit remember requests,
   corrections, durable preferences, important events, or refreshed old memories;
-  the workflow writes them through `kaiba/note-persona-context-write` with
+  the workflow writes them through `riela/chat-persona-memory-write` with
   persona-scoped tags.
+- The bundled mock scenario has Yui return one `memoryEntries` item, so a mock
+  run reports `entriesWritten: 1` on `write-yui-memory`, and a second run
+  against the same memory root surfaces that record on `read-yui-memory`
+  (`memoryRecordCount: 1` with the stored content in `memoryMarkdown`).
 - Matrix replies are sent through `riela/chat-reply-worker` to the same
   conversation and thread from the normalized chat event.
 - Matrix event source fixtures validate with `matrix-agent-trio-to-workflow`.

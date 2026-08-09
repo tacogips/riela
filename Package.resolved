@@ -1,13 +1,13 @@
 {
-  "originHash" : "e3f3eea9d0f873fc212046399707316f49048b3693a064ed6ab7ace9e06f3fcf",
+  "originHash" : "87323cfab562d83a87bfa6fbaae29a010ed8271b5352450b28a89d2964abdcd9",
   "pins" : [
     {
       "identity" : "kaiba",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "5a241e2339ad161b59d9368e753b0ffcf97fa499",
-        "version" : "0.1.1"
+        "revision" : "5b64b764b5dacd75a2715aac44b33878926752a2",
+        "version" : "0.1.4"
       }
     },
     {

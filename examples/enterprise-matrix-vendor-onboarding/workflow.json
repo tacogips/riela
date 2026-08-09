@@ -5,6 +5,13 @@
     "maxLoopIterations": 24,
     "nodeTimeoutMs": 180000
   },
+  "memories": [
+    {
+      "id": "persona-chat-memory",
+      "purpose": "shared persona chat memory stream for enterprise personas",
+      "scope": "cross-workflow"
+    }
+  ],
   "entryStepId": "route-message",
   "nodes": [
     {
@@ -49,68 +56,56 @@
     {
       "id": "read-procurement-lead-own-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "procurement-lead",
-          "actorPersonaId": "procurement-lead",
-          "allowedReadPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
-          "teamPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent procurement-lead memory"
+        }
+      ]
     },
     {
       "id": "read-procurement-lead-finance-analyst-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "finance-analyst",
-          "actorPersonaId": "procurement-lead",
-          "allowedReadPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
-          "teamPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent finance-analyst memory"
+        }
+      ]
     },
     {
       "id": "read-procurement-lead-legal-counsel-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "legal-counsel",
-          "actorPersonaId": "procurement-lead",
-          "allowedReadPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
-          "teamPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent legal-counsel memory"
+        }
+      ]
     },
     {
       "id": "procurement-lead",
@@ -122,15 +117,12 @@
     {
       "id": "write-procurement-lead-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "procurement-lead",
           "personaName": "Nao Procurement Lead",
-          "actorPersonaId": "procurement-lead",
-          "allowedReadPersonaIds": [
-            "procurement-lead"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "procurement-lead",
             "finance-analyst",
@@ -138,7 +130,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist procurement-lead memory entries"
+        }
+      ]
     },
     {
       "id": "generate-procurement-lead-workflow",
@@ -170,22 +168,20 @@
     {
       "id": "read-finance-analyst-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "finance-analyst",
-          "actorPersonaId": "finance-analyst",
-          "allowedReadPersonaIds": [
-            "finance-analyst"
-          ],
-          "teamPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent finance-analyst memory"
+        }
+      ]
     },
     {
       "id": "finance-analyst",
@@ -197,15 +193,12 @@
     {
       "id": "write-finance-analyst-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "finance-analyst",
           "personaName": "Yuna Finance Analyst",
-          "actorPersonaId": "finance-analyst",
-          "allowedReadPersonaIds": [
-            "finance-analyst"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "procurement-lead",
             "finance-analyst",
@@ -213,7 +206,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist finance-analyst memory entries"
+        }
+      ]
     },
     {
       "id": "generate-finance-analyst-workflow",
@@ -245,22 +244,20 @@
     {
       "id": "read-legal-counsel-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "legal-counsel",
-          "actorPersonaId": "legal-counsel",
-          "allowedReadPersonaIds": [
-            "legal-counsel"
-          ],
-          "teamPersonaIds": [
-            "procurement-lead",
-            "finance-analyst",
-            "legal-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent legal-counsel memory"
+        }
+      ]
     },
     {
       "id": "legal-counsel",
@@ -272,15 +269,12 @@
     {
       "id": "write-legal-counsel-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "legal-counsel",
           "personaName": "Ema Legal Counsel",
-          "actorPersonaId": "legal-counsel",
-          "allowedReadPersonaIds": [
-            "legal-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "procurement-lead",
             "finance-analyst",
@@ -288,7 +282,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist legal-counsel memory entries"
+        }
+      ]
     },
     {
       "id": "generate-legal-counsel-workflow",

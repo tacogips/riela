@@ -21,6 +21,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   /// entries derive `rootSessionId`/`attemptNumber` from it; absent lineage is
   /// treated as attempt one.
   public var sourceRecoveryLineage: LoopRecoveryLineage?
+  public var memoryRootDirectory: String?
   public var agentSilenceWarningMs: Int?
   public var agentSilenceMonitorIntervalMs: Int
   public var effectiveInstance: EffectiveWorkflowInstance?
@@ -51,6 +52,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     rerunFromStepId: String? = nil,
     resumeSessionId: String? = nil,
     sourceRecoveryLineage: LoopRecoveryLineage? = nil,
+    memoryRootDirectory: String? = nil,
     agentSilenceWarningMs: Int? = nil,
     agentSilenceMonitorIntervalMs: Int = 1_000,
     effectiveInstance: EffectiveWorkflowInstance? = nil,
@@ -73,6 +75,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromStepId = rerunFromStepId
     self.resumeSessionId = resumeSessionId
     self.sourceRecoveryLineage = sourceRecoveryLineage
+    self.memoryRootDirectory = memoryRootDirectory
     self.agentSilenceWarningMs = agentSilenceWarningMs
     self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
     self.effectiveInstance = effectiveInstance
@@ -309,7 +312,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         ) {
           publishResult = skipped
         } else {
-          publishResult = try await executeNodeAndPublish(
+          publishResult = try await executeNodeAndRecordMemory(
             registryNode: registryNode,
             request: effectiveRequest,
             session: session,
@@ -441,7 +444,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
   }
 
-  private func executeNodeAndPublish(
+  private func executeNodeAndRecordMemory(
     registryNode: WorkflowNodeRegistryRef,
     request: DeterministicWorkflowRunRequest,
     session: WorkflowSession,
@@ -450,36 +453,81 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     transitions: [WorkflowStepTransition],
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
+    let publishResult: WorkflowPublicationResult
     let basePayload = request.nodePayloads[step.nodeId]
-    if let basePayload {
-      return try await executePayloadNodeAndPublish(
-        basePayload: basePayload,
-        registryNode: registryNode,
-        request: request,
-        session: session,
-        step: step,
-        resolvedInput: resolvedInput,
-        transitions: transitions,
-        executionIndex: executionIndex
-      )
+    let recordsAutomaticMemory = shouldRecordAutomaticMemory(for: registryNode)
+    try registerMemoryMetadata(
+      workflow: request.workflow,
+      step: step,
+      payload: basePayload,
+      request: request
+    )
+    do {
+      if let basePayload {
+        publishResult = try await executePayloadNodeAndRecordMemory(
+          basePayload: basePayload,
+          registryNode: registryNode,
+          request: request,
+          session: session,
+          step: step,
+          resolvedInput: resolvedInput,
+          transitions: transitions,
+          executionIndex: executionIndex
+        )
+      } else if let addon = registryNode.addon {
+        if recordsAutomaticMemory {
+          try recordNodeMemoryInbox(
+            workflow: request.workflow,
+            step: step,
+            payload: nil,
+            request: request,
+            session: session,
+            executionIndex: executionIndex,
+            resolvedInput: resolvedInput
+          )
+        }
+        publishResult = try await executeAddonAndPublish(
+          addon: addon,
+          session: session,
+          sessionId: session.sessionId,
+          workflow: request.workflow,
+          step: step,
+          resolvedInputPayload: resolvedInput.payload,
+          transitions: transitions,
+          request: request,
+          executionIndex: executionIndex
+        )
+      } else {
+        throw DeterministicWorkflowRunnerError.missingNodePayload(step.nodeId)
+      }
+    } catch {
+      if recordsAutomaticMemory {
+        try recordNodeMemoryFailureOutbox(
+          workflow: request.workflow,
+          step: step,
+          payload: basePayload,
+          request: request,
+          sessionId: session.sessionId,
+          executionIndex: executionIndex,
+          error: error
+        )
+      }
+      throw error
     }
-    if let addon = registryNode.addon {
-      return try await executeAddonAndPublish(
-        addon: addon,
-        session: session,
-        sessionId: session.sessionId,
+    if recordsAutomaticMemory {
+      try recordNodeMemoryOutbox(
         workflow: request.workflow,
         step: step,
-        resolvedInputPayload: resolvedInput.payload,
-        transitions: transitions,
+        payload: basePayload,
         request: request,
+        publishResult: publishResult,
         executionIndex: executionIndex
       )
     }
-    throw DeterministicWorkflowRunnerError.missingNodePayload(step.nodeId)
+    return publishResult
   }
 
-  private func executePayloadNodeAndPublish(
+  private func executePayloadNodeAndRecordMemory(
     basePayload: AgentNodePayload,
     registryNode: WorkflowNodeRegistryRef,
     request: DeterministicWorkflowRunRequest,
@@ -489,6 +537,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     transitions: [WorkflowStepTransition],
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
+    try recordNodeMemoryInbox(
+      workflow: request.workflow,
+      step: step,
+      payload: basePayload,
+      request: request,
+      session: session,
+      executionIndex: executionIndex,
+      resolvedInput: resolvedInput
+    )
     if let projection = basePayload.output?.projection {
       return try await executeOutputProjectionAndPublish(
         projection: projection,
@@ -678,6 +735,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
+      let availableMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
       let result = try await stdioNodeExecutor.execute(
         WorkflowStdioNodeExecutionInput(
           workflowId: workflow.workflowId,
@@ -689,6 +747,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           node: payload,
           variables: request.variables,
           resolvedInputPayload: resolvedInputPayload,
+          memoryRootDirectory: availableMemories.isEmpty ? nil : resolvedMemoryRootDirectory(request: request),
+          availableMemories: availableMemories,
           policy: stdioPolicyContext(workflow: workflow, step: step, payload: payload, request: request)
         ),
         context: adapterExecutionContext(

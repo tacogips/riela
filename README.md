@@ -226,8 +226,7 @@ Riela consumes kaiba as an addon knowledge/context source. The built-in
   `kaiba/notebook-ingest-pages`, `kaiba/note-conversation-save`
 - Kanban: `kaiba/note-kanban-task-create`, `kaiba/note-kanban-move`,
   `kaiba/note-kanban-board`
-- Memory/persona context: `kaiba/note-memory-save`, `kaiba/note-memory-load`,
-  `kaiba/note-persona-context-read`, `kaiba/note-persona-context-write`
+- Long-term memory: `kaiba/memory-consolidate`, `kaiba/memory-recall`
 - Raw GraphQL: `kaiba/note-graphql-document`
 
 Addons operate on a local note root (config `noteRoot`, env
@@ -235,6 +234,26 @@ Addons operate on a local note root (config `noteRoot`, env
 remotely against a running `kaiba serve` by setting `endpoint` in the addon
 config plus an API key in the env var named by `apiKeyEnv` (default
 `KAIBA_API_KEY`; issue keys with `kaiba client issue`).
+
+## Workflow memory (short-term)
+
+Riela owns short-term workflow memory in its own standalone SQLite store,
+separate from kaiba notes. Workflows declare `memories` at the workflow and
+node level; the `riela memory` commands and the `riela/memory-*` /
+`riela/chat-persona-memory-*` add-ons persist records under `.riela/memory/`
+(or the memory root given by `--memory-root`, addon config `memoryRoot`, or
+`RIELA_MEMORY_ROOT`).
+
+Long-term memory is kaiba's: `kaiba/memory-consolidate` distills a short-term
+window into notes in the canonical `Kaiba Long-Term Memory` notebook and links
+their graph associations, and `kaiba/memory-recall` searches those notes and
+renders prompt-ready `recallText`. Riela short-term record ids are not kaiba
+notes, so `sourceMemoryRecordIds` is stored in the note's `metaJSON` rather
+than becoming note links; only `relatedNoteIds` that resolve to existing kaiba
+notes are linked. Appends are idempotent per step execution, or per an explicit
+`idempotencyKey` for period-keyed consolidation. The reference bundle is
+`examples/memory-consolidation`, which also shows the cron event source that
+drives it on a schedule.
 
 ## Document Conversion Add-On
 

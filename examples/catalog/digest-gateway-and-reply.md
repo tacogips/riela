@@ -213,9 +213,9 @@ the Discord and Telegram examples:
 - routes replies as Yui, Mika, or Rina through `riela/chat-persona-router`
 - can select separate Matrix access tokens with `replyAsTemplate` and
   `team-matrix.replyBots`
-- each persona reads and writes only its own notes in the
-  `notebook-kind:system-memory` notebook before and after replying. Set
-  `workflowInput.noteRoot` or `RIELA_NOTE_ROOT` to choose the storage root
+- each persona reads and writes only its own records in the shared
+  `persona-chat-memory` SQLite database before and after replying. Set
+  `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
 - sends replies through `riela/chat-reply-worker` and the
   `matrix-persona-replies` chat destination
 
@@ -242,8 +242,8 @@ Shared persona node workflow for the provider-neutral trio chat examples:
   `Rina Cursor` node payloads and prompts
 - is referenced by `telegram-agent-trio-chat`, `discord-agent-trio-chat`, and
   `matrix-agent-trio-chat` through `workflow.nodes[].nodeRef`
-- provides shared persona nodes whose Note-backed read/write add-ons resolve the
-  same protected system-memory notebook for every vendor workflow
+- provides shared persona nodes whose SQLite-backed memory read/write add-ons
+  resolve the same `persona-chat-memory` database for every vendor workflow
 
 Validate it:
 

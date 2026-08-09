@@ -9,8 +9,7 @@ private let rejectedTopLevelFieldMessages: [String: String] = [
   "subWorkflowConversations": "is not part of the step-addressed workflow schema",
   "edges": "is not part of the step-addressed workflow schema; local step-to-step routing must be authored on workflow.steps[].transitions",
   "loops": "is not part of the step-addressed workflow schema",
-  "branching": "is not part of the step-addressed workflow schema",
-  "memories": "is no longer supported; use Riela Note"
+  "branching": "is not part of the step-addressed workflow schema"
 ]
 
 func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValidationDiagnostic] {
@@ -45,6 +44,7 @@ func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValidationDia
   } else {
     diagnostics.append(error("workflow.defaults", "must be an object"))
   }
+  validateRawMemoryDeclarations(raw["memories"], path: "workflow.memories", diagnostics: &diagnostics)
 
   guard let nodeEntries = raw["nodes"] as? [Any] else {
     diagnostics.append(error("workflow.nodes", "must be an array"))
@@ -78,7 +78,7 @@ func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValidationDia
 
 private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [WorkflowValidationDiagnostic]) {
   var seenIds: Set<String> = []
-  let allowedKeys: Set<String> = ["id", "nodeFile", "nodeRef", "addon", "execution", "kind", "repeat", "inputFilters"]
+  let allowedKeys: Set<String> = ["id", "nodeFile", "nodeRef", "addon", "execution", "kind", "repeat", "inputFilters", "memories"]
 
   for (index, rawEntry) in entries.enumerated() {
     let path = "workflow.nodes[\(index)]"
@@ -109,6 +109,7 @@ private func validateNodeRegistry(_ entries: [Any], diagnostics: inout [Workflow
     }
     validateRawNodeReference(entry["nodeRef"], path: "\(path).nodeRef", diagnostics: &diagnostics)
     validateRawInputFilters(entry["inputFilters"], path: "\(path).inputFilters", diagnostics: &diagnostics)
+    validateRawMemoryDeclarations(entry["memories"], path: "\(path).memories", diagnostics: &diagnostics)
   }
 }
 

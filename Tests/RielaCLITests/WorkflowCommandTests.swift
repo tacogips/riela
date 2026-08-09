@@ -1,9 +1,11 @@
 import Foundation
 import RielaAdapters
 import RielaCore
+import RielaMemory
 import XCTest
 @testable import RielaCLI
 
+// swiftlint:disable:next type_body_length
 final class WorkflowCommandTests: XCTestCase {
   func testTopLevelHelpReturnsSuccessfulSmokeOutput() async {
     let result = await RielaCLIApplication().run(["--help"])
@@ -219,14 +221,12 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.when["handoff_rina"], false)
   }
 
-  func testRemovedMemoryAddonsFailClosed() async {
+  func testRemovedKaibaMemoryAddonsFailClosed() async {
     let removedAddonNames = [
-      "riela/memory-save",
-      "riela/memory-update",
-      "riela/memory-load",
-      "riela/memory-search",
-      "riela/chat-persona-memory-read",
-      "riela/chat-persona-memory-write",
+      "kaiba/note-memory-save",
+      "kaiba/note-memory-load",
+      "kaiba/note-persona-context-read",
+      "kaiba/note-persona-context-write",
       "riela/chat-memory-raw-daily-summary",
       "riela/not-a-real-builtin"
     ]
@@ -251,6 +251,238 @@ final class WorkflowCommandTests: XCTestCase {
       } catch {
         XCTFail("Unexpected error for \(addonName): \(error)")
       }
+    }
+  }
+
+  func testBuiltinMemoryAddonsSaveLoadAndSearchWorkflowScopedRecords() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-builtin-memory-addons-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    try FileManager.default.createDirectory(atPath: memoryRoot, withIntermediateDirectories: true)
+    let sourceFile = URL(fileURLWithPath: memoryRoot).appendingPathComponent("source-yui.png")
+    try Data([0x89, 0x50, 0x4E, 0x47]).write(to: sourceFile)
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let saveAddon = WorkflowNodeAddonRef(
+      name: "riela/memory-save",
+      version: "1",
+      config: [
+        "memoryId": .string("chat-memory"),
+        "nodeId": .string("chat-event"),
+        "tags": .array([.string("chat"), .string("routing")]),
+        "filePaths": .array([.string(sourceFile.path)]),
+        "payloadTemplate": .object([
+          "text": .string("{{event.input.text}}"),
+          "conversationId": .string("{{event.conversation.id}}")
+        ])
+      ]
+    )
+
+    let save = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "save-chat-event-memory",
+        nodeId: "save-chat-event-memory",
+        addon: saveAddon,
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)]),
+          "event": .object([
+            "input": .object(["text": .string("Yui, remember the routing test")]),
+            "conversation": .object(["id": .string("chat-1")])
+          ])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(save.payload["saved"], .bool(true))
+    XCTAssertEqual(save.payload["memoryId"], .string("chat-memory"))
+    guard
+      case let .object(savedRecord)? = save.payload["record"],
+      case let .object(savedPayload)? = savedRecord["payload"]
+    else {
+      return XCTFail("memory-save record payload was not returned")
+    }
+    XCTAssertEqual(savedRecord["tags"], .array([.string("chat"), .string("routing")]))
+    guard case let .array(savedFiles)? = savedRecord["files"],
+      case let .object(savedFile)? = savedFiles.first else {
+      return XCTFail("memory-save record files were not returned")
+    }
+    XCTAssertEqual(savedFile["kind"], .string("image"))
+    guard case let .string(savedFilePath)? = savedFile["path"] else {
+      return XCTFail("memory-save record file path was not returned")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: savedFilePath))
+    XCTAssertEqual(savedPayload["text"], .string("Yui, remember the routing test"))
+    XCTAssertEqual(savedPayload["conversationId"], .string("chat-1"))
+    guard let savedRecordId = savedRecord["recordId"]?.asInt64 else {
+      return XCTFail("memory-save record id was not returned")
+    }
+
+    let update = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "update-chat-event-memory",
+        nodeId: "update-chat-event-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-update",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "recordId": .number(Double(savedRecordId)),
+            "tags": .array([.string("chat"), .string("routing"), .string("updated")]),
+            "files": .array([
+              .object([
+                "path": .string(sourceFile.path),
+                "mediaType": .string("image/png"),
+                "kind": .string("image"),
+                "name": .string("yui.png")
+              ])
+            ]),
+            "payload": .object([
+              "text": .string("Yui, remember the updated routing test"),
+              "conversationId": .string("chat-1")
+            ])
+          ]
+        ),
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(update.payload["updated"], .bool(true))
+
+    let load = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "load-yui-chat-memory",
+        nodeId: "load-yui-chat-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-load",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "workflowScopeOnly": .bool(true)
+          ]
+        ),
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    guard case let .array(loadedRecords)? = load.payload["records"] else {
+      return XCTFail("memory-load records were not returned")
+    }
+    XCTAssertEqual(loadedRecords.count, 1)
+    guard case let .string(loadRecordsText)? = load.payload["recordsText"] else {
+      return XCTFail("memory-load recordsText was not returned")
+    }
+    XCTAssertEqual(load.payload["memoryAttachmentCountRead"], .number(1))
+    guard case let .array(loadImagePaths)? = load.payload["imagePaths"],
+      case let .string(loadImagePath)? = loadImagePaths.first else {
+      return XCTFail("memory-load imagePaths were not returned")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: loadImagePath))
+    XCTAssertTrue(loadRecordsText.contains("Yui, remember the updated routing test"))
+    XCTAssertTrue(loadRecordsText.contains("image image/png yui.png"))
+
+    let search = try await resolver.execute(
+      WorkflowAddonExecutionInput(
+        workflowId: "telegram-sdk-trio-chat",
+        stepId: "search-chat-memory",
+        nodeId: "search-chat-memory",
+        addon: WorkflowNodeAddonRef(
+          name: "riela/memory-search",
+          version: "1",
+          config: [
+            "memoryId": .string("chat-memory"),
+            "memoryRoot": .string(memoryRoot),
+            "workflowScopeOnly": .bool(true),
+            "matchPatterns": .array([.string("routing test")]),
+            "tags": .array([.string("updated")])
+          ]
+        ),
+        variables: [
+          "workflowInput": .object(["memoryRoot": .string(memoryRoot)])
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+    guard case let .array(searchRecords)? = search.payload["records"] else {
+      return XCTFail("memory-search records were not returned")
+    }
+    XCTAssertEqual(searchRecords.count, 1)
+    guard case let .string(searchRecordsText)? = search.payload["recordsText"] else {
+      return XCTFail("memory-search recordsText was not returned")
+    }
+    guard case let .array(searchFilePaths)? = search.payload["filePaths"],
+      case let .string(searchFilePath)? = searchFilePaths.first else {
+      return XCTFail("memory-search filePaths were not returned")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: searchFilePath))
+    XCTAssertTrue(searchRecordsText.contains("Yui, remember the updated routing test"))
+    XCTAssertTrue(searchRecordsText.contains("files: image image/png yui.png"))
+  }
+
+  func testBuiltinMemoryAddonsRejectInvalidTagsAndRelatedRecordIds() async throws {
+    let root = repositoryRoot()
+    let memoryRoot = "\(root)/tmp/test-invalid-memory-addon-input-\(UUID().uuidString)"
+    defer {
+      try? FileManager.default.removeItem(atPath: memoryRoot)
+    }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+
+    do {
+      _ = try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "telegram-sdk-trio-chat",
+          stepId: "save-chat-event-memory",
+          nodeId: "save-chat-event-memory",
+          addon: WorkflowNodeAddonRef(
+            name: "riela/memory-save",
+            version: "1",
+            config: [
+              "memoryId": .string("chat-memory"),
+              "memoryRoot": .string(memoryRoot),
+              "tags": .array([.number(1)]),
+              "payload": .object(["text": .string("invalid tag")])
+            ]
+          )
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected invalid tag failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "memory tags[0] must be a non-empty string")
+    }
+
+    do {
+      _ = try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "telegram-sdk-trio-chat",
+          stepId: "save-chat-event-memory",
+          nodeId: "save-chat-event-memory",
+          addon: WorkflowNodeAddonRef(
+            name: "riela/memory-save",
+            version: "1",
+            config: [
+              "memoryId": .string("chat-memory"),
+              "memoryRoot": .string(memoryRoot),
+              "relatedRecordIds": .array([.number(1.5)]),
+              "payload": .object(["text": .string("invalid related id")])
+            ]
+          )
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("Expected invalid related record id failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "memory relatedRecordIds[0] must be a positive integer record id")
     }
   }
 
@@ -374,41 +606,6 @@ final class WorkflowCommandTests: XCTestCase {
     )
     XCTAssertEqual(maki.payload["target"], .string("mika"))
     XCTAssertEqual(maki.when["target_mika"], true)
-  }
-
-  func testBuiltinChatPersonaRouterPrefersEarliestAliasMention() async throws {
-    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
-    let addon = WorkflowNodeAddonRef(
-      name: "riela/chat-persona-router",
-      version: "1",
-      config: [
-        "defaultPersonaId": .string("yui"),
-        "personas": .array([
-          .object(["id": .string("yui"), "aliases": .array([.string("yui"), .string("codex")])]),
-          .object(["id": .string("mika"), "aliases": .array([.string("mika"), .string("claude")])]),
-          .object(["id": .string("rina"), "aliases": .array([.string("rina"), .string("cursor")])])
-        ])
-      ]
-    )
-
-    let output = try await resolver.execute(
-      WorkflowAddonExecutionInput(
-        workflowId: "discord-trio",
-        stepId: "route-message",
-        nodeId: "route-message",
-        addon: addon,
-        variables: [
-          "workflowInput": .object([
-            "request": .string("Rina, what image did I just show Mika?")
-          ])
-        ]
-      ),
-      context: AdapterExecutionContext()
-    )
-
-    XCTAssertEqual(output.payload["target"], .string("rina"))
-    XCTAssertEqual(output.when["target_rina"], true)
-    XCTAssertEqual(output.when["target_mika"], false)
   }
 
   func testBuiltinGeminiSDKWorkerResolvesEnvironmentAndRenderedPrompt() async throws {

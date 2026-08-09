@@ -181,6 +181,7 @@ extension DeterministicWorkflowRunner {
         timeoutMs: request.timeoutMs,
         addonAttachments: request.addonAttachments,
         addonAttachmentDescriptors: request.addonAttachmentDescriptors,
+        memoryRootDirectory: request.memoryRootDirectory,
         agentSilenceWarningMs: request.agentSilenceWarningMs,
         agentSilenceMonitorIntervalMs: request.agentSilenceMonitorIntervalMs,
         effectiveInstance: request.effectiveInstance,

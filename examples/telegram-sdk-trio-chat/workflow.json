@@ -9,15 +9,30 @@
     "workerSystemPromptTemplate": "Return only the visible Telegram reply text. Do not include JSON or internal implementation details.",
     "chatFailureMessageTemplate": "ごめん、{{node.id}}はいま少し調子が悪いみたい。少し待ってからもう一度呼んでね。"
   },
+  "memories": [
+    {
+      "id": "chat-memory",
+      "description": "Workflow-scoped Telegram chat event memory.",
+      "purpose": "Persist every accepted chat event and provide recent conversation context to persona nodes.",
+      "scope": "workflow",
+      "defaultLimit": 30
+    }
+  ],
   "entryStepId": "save-chat-event-memory",
   "nodes": [
     {
       "id": "save-chat-event-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "save incoming chat events"
+        }
+      ],
       "addon": {
-        "name": "kaiba/note-memory-save",
+        "name": "riela/memory-save",
         "version": "1",
         "config": {
-          "streamId": "chat-memory",
+          "memoryId": "chat-memory",
           "nodeId": "chat-event",
           "payloadTemplate": {
             "text": "{{event.input.text}}",
@@ -34,11 +49,17 @@
     },
     {
       "id": "load-yui-chat-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load recent chat memory for Yui"
+        }
+      ],
       "addon": {
-        "name": "kaiba/note-memory-load",
+        "name": "riela/memory-load",
         "version": "1",
         "config": {
-          "streamId": "chat-memory",
+          "memoryId": "chat-memory",
           "workflowScopeOnly": true,
           "limit": 30
         }
@@ -46,11 +67,17 @@
     },
     {
       "id": "load-mika-chat-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load recent chat memory for Mika"
+        }
+      ],
       "addon": {
-        "name": "kaiba/note-memory-load",
+        "name": "riela/memory-load",
         "version": "1",
         "config": {
-          "streamId": "chat-memory",
+          "memoryId": "chat-memory",
           "workflowScopeOnly": true,
           "limit": 30
         }
@@ -58,11 +85,17 @@
     },
     {
       "id": "load-rina-chat-memory",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "load recent chat memory for Rina"
+        }
+      ],
       "addon": {
-        "name": "kaiba/note-memory-load",
+        "name": "riela/memory-load",
         "version": "1",
         "config": {
-          "streamId": "chat-memory",
+          "memoryId": "chat-memory",
           "workflowScopeOnly": true,
           "limit": 30
         }
@@ -70,6 +103,12 @@
     },
     {
       "id": "yui-codex-sdk",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "use recent chat memory while replying"
+        }
+      ],
       "inputFilters": [
         {
           "kind": "telegram",
@@ -106,6 +145,12 @@
     },
     {
       "id": "mika-claude-sdk",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "use recent chat memory while replying"
+        }
+      ],
       "inputFilters": [
         {
           "kind": "telegram",
@@ -133,6 +178,12 @@
     },
     {
       "id": "rina-cursor-sdk",
+      "memories": [
+        {
+          "id": "chat-memory",
+          "purpose": "use recent chat memory while replying"
+        }
+      ],
       "inputFilters": [
         {
           "kind": "telegram",

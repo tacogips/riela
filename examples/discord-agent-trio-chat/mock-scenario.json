@@ -25,7 +25,15 @@
     "payload": {
       "replyText": "私の意見では、3人の役割を明確に分けて、通常対応はYui、見せ方はMika、深い技術検討はRinaに任せる形が扱いやすいです。@Mika、この分け方はDiscordの会話として自然に見えると思いますか？",
       "handoff_mika": true,
-      "handoff_rina": false
+      "handoff_rina": false,
+      "memoryEntries": [
+        {
+          "kind": "conversation-note",
+          "importance": "medium",
+          "source": "trio-role-discussion",
+          "content": "役割分担の合意: 進行と整理はYui、場の空気づくりはMika、技術検証はRina。"
+        }
+      ]
     }
   },
   "mika-claude": {

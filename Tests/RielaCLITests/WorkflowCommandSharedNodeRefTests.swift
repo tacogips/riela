@@ -26,7 +26,12 @@ extension WorkflowCommandTests {
       "entryStepId": "mika",
       "nodes": [{
         "id": "mika",
-        "nodeFile": "nodes/mika.json"
+        "nodeFile": "nodes/mika.json",
+        "memories": [{
+          "id": "persona-chat-memory",
+          "purpose": "shared Mika memory across chat vendors",
+          "scope": "cross-workflow"
+        }]
       }],
       "steps": [{ "id": "mika", "nodeId": "mika", "role": "worker" }]
     }
@@ -73,11 +78,14 @@ extension WorkflowCommandTests {
     XCTAssertEqual(registryNode.id, "telegram-mika")
     XCTAssertEqual(registryNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "mika"))
     XCTAssertNil(registryNode.nodeFile)
+    XCTAssertEqual(registryNode.memories?.first?.id, "persona-chat-memory")
+    XCTAssertEqual(registryNode.memories?.first?.scope, .crossWorkflow)
     XCTAssertEqual(registryNode.inputFilters?.first?.builtin, .mentionResponder)
     XCTAssertNil(registryNode.addon)
     let runtimeNode = try XCTUnwrap(bundle.workflow.nodes.first)
     XCTAssertNil(runtimeNode.nodeFile)
     XCTAssertEqual(runtimeNode.nodeRef, WorkflowSharedNodeRef(workflowId: "shared-personas", nodeId: "mika"))
+    XCTAssertEqual(runtimeNode.memories?.first?.id, "persona-chat-memory")
     let payload = try XCTUnwrap(bundle.nodePayloads["telegram-mika"])
     XCTAssertEqual(payload.id, "telegram-mika")
     XCTAssertEqual(payload.systemPromptTemplate, "shared Mika persona")
@@ -536,6 +544,7 @@ extension WorkflowCommandTests {
       "entryStepId": "yui",
       "nodes": [{
         "id": "yui",
+        "memories": [{ "id": "persona-chat-memory", "scope": "cross-workflow" }],
         "addon": {
           "name": "riela/chat-reply-worker",
           "version": "1",
@@ -567,6 +576,7 @@ extension WorkflowCommandTests {
     let registryNode = try XCTUnwrap(bundle.workflow.nodeRegistry.first)
     XCTAssertNil(registryNode.nodeRef)
     XCTAssertEqual(registryNode.addon?.name, "riela/chat-reply-worker")
+    XCTAssertEqual(registryNode.memories?.first?.id, "persona-chat-memory")
     let runtimeNode = try XCTUnwrap(bundle.workflow.nodes.first)
     XCTAssertNil(runtimeNode.nodeRef)
     XCTAssertEqual(runtimeNode.addon?.name, "riela/chat-reply-worker")

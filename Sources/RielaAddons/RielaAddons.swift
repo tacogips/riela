@@ -64,13 +64,11 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "kaiba/note-comment-add", version: "1"),
     .init(name: "kaiba/notebook-ingest-pages", version: "1"),
     .init(name: "kaiba/note-conversation-save", version: "1"),
-    .init(name: "kaiba/note-memory-save", version: "1"),
-    .init(name: "kaiba/note-memory-load", version: "1"),
-    .init(name: "kaiba/note-persona-context-read", version: "1"),
-    .init(name: "kaiba/note-persona-context-write", version: "1"),
     .init(name: "kaiba/note-kanban-task-create", version: "1"),
     .init(name: "kaiba/note-kanban-move", version: "1"),
-    .init(name: "kaiba/note-kanban-board", version: "1")
+    .init(name: "kaiba/note-kanban-board", version: "1"),
+    .init(name: "kaiba/memory-consolidate", version: "1"),
+    .init(name: "kaiba/memory-recall", version: "1")
   ]
 
   public static let workflowAddons: [RielaAddonDescriptor] = [

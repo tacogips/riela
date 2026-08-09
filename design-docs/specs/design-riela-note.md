@@ -49,10 +49,11 @@ Primary capabilities delivered by this design:
   `Sources/RielaCore/SQLiteWorkflowMessageLog.swift` (create-on-open,
   additive `ALTER TABLE` migration, `INSERT ... ON CONFLICT` upserts).
 - **F2 — Built-in add-ons are dispatched by name.** Built-ins such as
-  `riela/chat-reply-worker`, `riela/note-persona-context-read|write`, and
-  `riela/note-memory-save|load` are handled by the production node adapter.
-  The context and save/load successors use `RielaNote`'s system-memory
-  notebook; the former standalone `riela/memory-*` family no longer exists.
+  `riela/chat-reply-worker`, `riela/chat-persona-memory-read|write`, and
+  `riela/memory-save|update|load|search` are handled by the production node
+  adapter. The memory add-ons persist to standalone SQLite databases under
+  the configured memory root; Riela Note no longer hosts a system-memory
+  notebook.
 - **F3 — Event sources already deliver chat attachments.**
   `Sources/RielaEvents/` provides telegram/discord/slack/matrix/webhook
   bindings whose payloads carry `message.attachments`, `imagePaths`,
@@ -491,10 +492,6 @@ default `~/.riela/note/` (D9).
 | `riela/note-comment-add` | Add an agent comment. |
 | `riela/notebook-ingest-pages` | Batch: `pages: [{number, markdown, pageImageRef?}]` + optional `sourceDocumentRef` → notebook with one note per page, `source-page-image` files bound, kind tag `imported-material`. |
 | `riela/note-conversation-save` | Persist an agent conversation turn (or finalize a temp conversation) as notes in a conversation notebook (D12). |
-| `riela/note-persona-context-read` | Read bounded persona-tagged context and materialized attachments from the system-memory notebook; optional `actorPersonaId` and `allowedReadPersonaIds` enforce a workflow-declared read policy. |
-| `riela/note-persona-context-write` | Atomically append persona context through the package-only system-memory write boundary; when `actorPersonaId` is declared, only the actor's own `personaId` may be written. |
-| `riela/note-memory-save` | Append a workflow/stream-scoped record to the system-memory notebook. |
-| `riela/note-memory-load` | Load bounded workflow/stream-scoped records and materialized attachments from the system-memory notebook. |
 
 Add-on inputs reuse the existing attachment projection
 (`attachmentReadInputFields`) so chat-event files flow in without

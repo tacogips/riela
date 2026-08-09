@@ -39,10 +39,11 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
+    .package(path: "Packages/RielaMemory"),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
-    .package(url: "https://github.com/tacogips/kaiba.git", from: "0.1.1")
+    .package(url: "https://github.com/tacogips/kaiba.git", from: "0.1.4")
   ],
   targets: [
     .target(
@@ -62,7 +63,8 @@ let package = Package(
         "RielaSQLite",
         "RielaObservability",
         "RielaJavaScript",
-        .product(name: "Crypto", package: "swift-crypto")
+        .product(name: "Crypto", package: "swift-crypto"),
+        .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
     .target(
@@ -155,6 +157,7 @@ let package = Package(
         "RielaSQLite",
         .product(name: "AppCore", package: "kaiba"),
         .product(name: "AppGraphQL", package: "kaiba"),
+        .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
         "RielaEvents",
@@ -191,7 +194,8 @@ let package = Package(
       name: "RielaCoreTests",
       dependencies: [
         "RielaCore",
-        "RielaObservability"
+        "RielaObservability",
+        .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),

@@ -2,6 +2,7 @@ import Foundation
 import ArgumentParser
 import RielaAddons
 import RielaCore
+import RielaMemory
 import RielaVersion
 
 public let rielaSwiftMigrationVersion = String(cString: rielaEmbeddedVersion)
@@ -40,6 +41,7 @@ public enum RielaCommand: Equatable, Sendable {
   case package(PackageCommand)
   case node(NodeCommand)
   case setup(CLICommandOptions)
+  case memory(MemoryCommand)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
   case gc(CLICommandOptions)
@@ -471,6 +473,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .node(try parseRrun(route.passthroughArguments))
     case let route as SetupRoute:
       return .setup(try parseSetup(route.passthroughArguments))
+    case let route as MemoryRoute:
+      return .memory(try parseMemory(route.passthroughArguments))
     case let route as InstanceRoute:
       return .instance(try parseInstance(route.passthroughArguments))
     case let route as DoctorRoute:
@@ -831,6 +835,44 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       allowTableOutput: family.subcommand == .list,
       defaultOutput: family.subcommand == .list ? .table : .json
     )
+  }
+
+  private func parseMemory(_ arguments: [String]) throws -> MemoryCommand {
+    let family = try ParsedMemoryFamily.parseCLI(arguments)
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    let kind = family.subcommand
+    guard let memoryId = route.target else {
+      throw CLIUsageError("memory \(kind.rawValue) requires a memory id")
+    }
+    let options = try parseMemoryOptions(memoryId: memoryId, tokens: route.options)
+    switch kind {
+    case .save, .update:
+      if options.payloadJSON != nil && options.payloadFile != nil {
+        throw CLIUsageError("memory \(kind.rawValue) accepts only one of --payload-json or --payload-file")
+      }
+      if options.payloadJSON == nil && options.payloadFile == nil {
+        throw CLIUsageError("memory \(kind.rawValue) requires --payload-json or --payload-file")
+      }
+      if options.workflowId == nil {
+        throw CLIUsageError("memory \(kind.rawValue) requires --workflow-id")
+      }
+      if kind == .update && options.recordId == nil {
+        throw CLIUsageError("memory update requires --record-id")
+      }
+      if kind == .save && options.clearFiles {
+        throw CLIUsageError("memory save does not support --clear-files")
+      }
+      if options.clearFiles && !options.filePaths.isEmpty {
+        throw CLIUsageError("memory \(kind.rawValue) cannot combine --clear-files with --file")
+      }
+    case .load, .search:
+      if options.workflowId == nil && !options.allWorkflows {
+        throw CLIUsageError("memory \(kind.rawValue) requires --workflow-id")
+      }
+    case .metadata, .tags, .relatedIds:
+      break
+    }
+    return MemoryCommand(kind: kind, options: options)
   }
 
 }

@@ -24,7 +24,7 @@
       "replyText": "I will own the escalation timeline. @product-engineer, confirm impact and mitigation.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -49,7 +49,7 @@
       "replyText": "The issue affects exports over 50k rows; a feature-flag mitigation is ready. @customer-success, frame the customer update.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -74,7 +74,7 @@
       "replyText": "Send a factual update with the workaround now and commit to the next checkpoint in two hours.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",

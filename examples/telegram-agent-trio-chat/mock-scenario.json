@@ -25,7 +25,15 @@
     "payload": {
       "replyText": "承知しました。私の見立てでは、通常の整理と進行はYui、場の見え方はMika、技術的な見落としはRinaに分けると、会話が落ち着いて回ります。@Mika、この役割分担はTelegram上でも親しみやすく見えるでしょうか？",
       "handoff_mika": true,
-      "handoff_rina": false
+      "handoff_rina": false,
+      "memoryEntries": [
+        {
+          "kind": "conversation-note",
+          "importance": "medium",
+          "source": "trio-role-discussion",
+          "content": "役割分担の合意: 進行と整理はYui、場の空気づくりはMika、技術検証はRina。"
+        }
+      ]
     }
   },
   "mika-claude": {

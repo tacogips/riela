@@ -1,4 +1,5 @@
 import XCTest
+import RielaMemory
 @testable import RielaCore
 
 struct FailingAdapter: NodeAdapter {

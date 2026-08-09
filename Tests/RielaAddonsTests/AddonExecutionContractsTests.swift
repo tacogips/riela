@@ -84,10 +84,12 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/apple-gateway-cache-prune", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-create", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/notebook-ingest-pages", version: nil))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-memory-save", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-memory-load", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-persona-context-read", version: "1"))
-    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-persona-context-write", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/memory-consolidate", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/memory-consolidate", version: nil))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/memory-recall", version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "kaiba/memory-recall", version: nil))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "kaiba/memory-consolidate", version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "kaiba/memory-recall", version: "2"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/file-markdown-convert", version: "1"))
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/file-markdown-convert", version: nil))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/file-markdown-convert", version: "2"))
@@ -96,7 +98,6 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/wrike-gateway-admin", version: "1"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/wrike-gateway-read", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-create", version: "2"))
-    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "kaiba/note-memory-save", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-note-get", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-notification-post", version: "2"))
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/apple-reminder-create", version: "2"))
@@ -173,15 +174,14 @@ final class AddonExecutionContractsTests: XCTestCase {
         "kaiba/note-comment-add",
         "kaiba/notebook-ingest-pages",
         "kaiba/note-conversation-save",
-        "kaiba/note-memory-save",
-        "kaiba/note-memory-load",
-        "kaiba/note-persona-context-read",
-        "kaiba/note-persona-context-write",
         "kaiba/note-kanban-task-create",
         "kaiba/note-kanban-move",
-        "kaiba/note-kanban-board"
+        "kaiba/note-kanban-board",
+        "kaiba/memory-consolidate",
+        "kaiba/memory-recall"
       ]
     )
+    XCTAssertEqual(RielaBuiltinAddonCatalog.noteAddons.count, 16)
   }
 
   func testAllowedBuiltinNamesDoNotAuthorizePackageAddons() async {

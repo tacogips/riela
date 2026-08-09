@@ -5,6 +5,13 @@
     "maxLoopIterations": 24,
     "nodeTimeoutMs": 180000
   },
+  "memories": [
+    {
+      "id": "persona-chat-memory",
+      "purpose": "shared persona chat memory stream for enterprise personas",
+      "scope": "cross-workflow"
+    }
+  ],
   "entryStepId": "route-message",
   "nodes": [
     {
@@ -49,68 +56,56 @@
     {
       "id": "read-incident-lead-own-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "incident-lead",
-          "actorPersonaId": "incident-lead",
-          "allowedReadPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
-          "teamPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent incident-lead memory"
+        }
+      ]
     },
     {
       "id": "read-incident-lead-security-analyst-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "security-analyst",
-          "actorPersonaId": "incident-lead",
-          "allowedReadPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
-          "teamPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent security-analyst memory"
+        }
+      ]
     },
     {
       "id": "read-incident-lead-compliance-counsel-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "compliance-counsel",
-          "actorPersonaId": "incident-lead",
-          "allowedReadPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
-          "teamPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent compliance-counsel memory"
+        }
+      ]
     },
     {
       "id": "incident-lead",
@@ -122,15 +117,12 @@
     {
       "id": "write-incident-lead-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "incident-lead",
           "personaName": "Aoi Incident Lead",
-          "actorPersonaId": "incident-lead",
-          "allowedReadPersonaIds": [
-            "incident-lead"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "incident-lead",
             "security-analyst",
@@ -138,7 +130,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist incident-lead memory entries"
+        }
+      ]
     },
     {
       "id": "generate-incident-lead-workflow",
@@ -170,22 +168,20 @@
     {
       "id": "read-security-analyst-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "security-analyst",
-          "actorPersonaId": "security-analyst",
-          "allowedReadPersonaIds": [
-            "security-analyst"
-          ],
-          "teamPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent security-analyst memory"
+        }
+      ]
     },
     {
       "id": "security-analyst",
@@ -197,15 +193,12 @@
     {
       "id": "write-security-analyst-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "security-analyst",
           "personaName": "Sora Security Analyst",
-          "actorPersonaId": "security-analyst",
-          "allowedReadPersonaIds": [
-            "security-analyst"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "incident-lead",
             "security-analyst",
@@ -213,7 +206,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist security-analyst memory entries"
+        }
+      ]
     },
     {
       "id": "generate-security-analyst-workflow",
@@ -245,22 +244,20 @@
     {
       "id": "read-compliance-counsel-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-read",
+        "name": "riela/chat-persona-memory-read",
         "version": "1",
         "config": {
           "personaId": "compliance-counsel",
-          "actorPersonaId": "compliance-counsel",
-          "allowedReadPersonaIds": [
-            "compliance-counsel"
-          ],
-          "teamPersonaIds": [
-            "incident-lead",
-            "security-analyst",
-            "compliance-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "limit": 5
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "read recent compliance-counsel memory"
+        }
+      ]
     },
     {
       "id": "compliance-counsel",
@@ -272,15 +269,12 @@
     {
       "id": "write-compliance-counsel-memory",
       "addon": {
-        "name": "kaiba/note-persona-context-write",
+        "name": "riela/chat-persona-memory-write",
         "version": "1",
         "config": {
           "personaId": "compliance-counsel",
           "personaName": "Mei Compliance Counsel",
-          "actorPersonaId": "compliance-counsel",
-          "allowedReadPersonaIds": [
-            "compliance-counsel"
-          ],
+          "memoryId": "persona-chat-memory",
           "teamPersonaIds": [
             "incident-lead",
             "security-analyst",
@@ -288,7 +282,13 @@
           ],
           "maxHandoffTurns": 3
         }
-      }
+      },
+      "memories": [
+        {
+          "id": "persona-chat-memory",
+          "purpose": "persist compliance-counsel memory entries"
+        }
+      ]
     },
     {
       "id": "generate-compliance-counsel-workflow",

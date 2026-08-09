@@ -13,17 +13,6 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    if operation == .personaContextRead || operation == .personaContextWrite,
-       let legacyKey = legacyPersonaMemoryConfigKeys.first(where: { input.addon.config?[$0] != nil }) {
-      throw noteAddonInvalidInput("\(input.addon.name) does not accept legacy memory configuration '\(legacyKey)'")
-    }
-    if operation == .memorySave || operation == .memoryLoad {
-      let allowedKeys = operation == .memorySave ? noteMemorySaveConfigKeys : noteMemoryLoadConfigKeys
-      if let unsupportedKey = input.addon.config?.keys.sorted().first(where: { !allowedKeys.contains($0) }) {
-        throw noteAddonInvalidInput("\(input.addon.name) does not support config key '\(unsupportedKey)'")
-      }
-    }
-
     let context = try NoteAddonContext(input: input, environment: environment)
     let candidate: JSONObject
     switch operation {
@@ -55,14 +44,6 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try kanbanMove(context)
     case .kanbanBoard:
       candidate = try kanbanBoard(context)
-    case .memorySave:
-      candidate = try saveNoteMemory(context)
-    case .memoryLoad:
-      candidate = try loadNoteMemory(context)
-    case .personaContextRead:
-      candidate = try readPersonaContext(context)
-    case .personaContextWrite:
-      candidate = try writePersonaContext(context)
     }
 
     var payload: JSONObject = [
@@ -77,14 +58,7 @@ extension BuiltinWorkflowAddonResolver {
     for (key, value) in candidate {
       payload[key] = value
     }
-    var when: [String: Bool] = ["always": true]
-    if operation == .personaContextWrite {
-      for key in candidate.keys where key.hasPrefix("handoff_") {
-        if case let .bool(enabled)? = candidate[key] {
-          when[key] = enabled
-        }
-      }
-    }
+    let when: [String: Bool] = ["always": true]
     return AdapterExecutionOutput(
       provider: "riela-builtin-addon",
       model: input.addon.name,

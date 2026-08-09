@@ -28,7 +28,7 @@
         "title": "Assess incident containment evidence",
         "prompt": "Assess the incident containment evidence described by the originating agent and return a concise Matrix-ready status update."
       },
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -53,7 +53,7 @@
       "replyText": "The suspicious token was revoked; current evidence shows no persistence. @compliance-counsel, assess notification duties.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -78,7 +78,7 @@
       "replyText": "Notification is not yet triggered; preserve the timeline and reassess when scope is confirmed.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -100,7 +100,7 @@
       "replyText": "I will coordinate the incident. @security-analyst, assess containment evidence next.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [],
+      "memoryEntries": [],
       "handoff_security-analyst": true,
       "handoff_compliance-counsel": false
     }

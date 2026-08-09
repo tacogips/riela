@@ -1,4 +1,5 @@
 import XCTest
+import RielaMemory
 @testable import RielaCore
 
 // Name follows the existing runner-suite convention.

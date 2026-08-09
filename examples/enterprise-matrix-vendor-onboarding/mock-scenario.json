@@ -24,7 +24,7 @@
       "replyText": "I will coordinate onboarding and keep the decision log. @finance-analyst, review the commercial exposure.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -49,7 +49,7 @@
       "replyText": "The annual commitment fits budget, but renewal uplift needs a cap. @legal-counsel, review the contract language.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",
@@ -74,7 +74,7 @@
       "replyText": "Add an uplift cap, DPA, and termination assistance before approval.",
       "llm_only": true,
       "run_workflow": false,
-      "noteEntries": [
+      "memoryEntries": [
         {
           "kind": "important-event",
           "importance": "normal",

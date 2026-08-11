@@ -549,7 +549,7 @@ rg --files | rg '\.(ts|tsx|mts|cts|mjs)$'
 Use the flake shell and Xcode's Swift toolchain:
 
 ```bash
-nix develop -c env \
+mise exec -- env \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
@@ -558,7 +558,7 @@ nix develop -c env \
 Run tests:
 
 ```bash
-nix develop -c env \
+mise exec -- env \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test
@@ -567,7 +567,7 @@ nix develop -c env \
 Run the CLI from source:
 
 ```bash
-nix develop -c env \
+mise exec -- env \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run riela --help

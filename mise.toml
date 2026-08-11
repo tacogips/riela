@@ -1,0 +1,134 @@
+min_version = "2026.8.3"
+
+[[hooks.enter]]
+shell = "bash"
+script = '''
+if command -v kinko >/dev/null 2>&1 && kinko hook --help >/dev/null 2>&1; then
+  eval "$(kinko --path "$MISE_PROJECT_ROOT" hook enter bash)"
+fi
+'''
+
+[[hooks.leave]]
+shell = "bash"
+script = '''
+if command -v kinko >/dev/null 2>&1 && kinko hook --help >/dev/null 2>&1; then
+  eval "$(kinko hook leave bash)"
+fi
+'''
+
+[tools]
+swift = "6.3.3"
+swiftlint = "latest"
+gitleaks = "latest"
+bun = "latest"
+biome = "latest"
+node = "22"
+github-cli = "latest"
+podman = "latest"
+uv = "latest"
+"pipx:podman-compose" = "latest"
+pre-commit = "latest"
+
+[tasks."default"]
+description = "Show available tasks"
+run = '''
+mise tasks ls
+'''
+
+[tasks."build:homebrew"]
+description = "Build standalone Homebrew CLI release archives for the current platform, or pass targets after --"
+run = '''
+scripts/build-homebrew-release.sh "$@"
+'''
+
+[tasks."build:homebrew-cask"]
+description = "Build signed and notarized macOS Cask DMGs with RielaApp and riela, or pass targets after --"
+run = '''
+scripts/build-homebrew-cask-release.sh "$@"
+'''
+
+[tasks."app:build"]
+description = "Build RielaApp.app (defaults to release; override with CONFIGURATION=debug)"
+run = '''
+CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
+'''
+
+[tasks."app:run"]
+description = "Run RielaApp.app, building it first when missing (pass app args after --)"
+run = '''
+set -euo pipefail
+app_path="${RIELA_APP_PATH:-.build/${CONFIGURATION:-release}/RielaApp.app}"
+if [ ! -d "$app_path" ]; then
+  CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
+fi
+if [ -n "$*" ]; then
+  open "$app_path" --args --project-root "$PWD" "$@"
+else
+  open "$app_path" --args --project-root "$PWD"
+fi
+
+'''
+
+[tasks."app:rebuild-run"]
+description = "Quit RielaApp, rebuild RielaApp.app, and open it again (pass app args after --)"
+run = '''
+set -euo pipefail
+osascript -e 'tell application id "com.tacogips.riela.menubar" to quit' >/dev/null 2>&1 || true
+for _ in 1 2 3 4 5; do
+  pgrep -x RielaApp >/dev/null 2>&1 || break
+  sleep 0.2
+done
+if pgrep -x RielaApp >/dev/null 2>&1; then
+  pkill -x RielaApp || true
+fi
+CONFIGURATION="${CONFIGURATION:-release}" scripts/build-riela-menu-bar-app.sh
+app_path="${RIELA_APP_PATH:-.build/${CONFIGURATION:-release}/RielaApp.app}"
+if [ -n "$*" ]; then
+  open "$app_path" --args --project-root "$PWD" "$@"
+else
+  open "$app_path" --args --project-root "$PWD"
+fi
+
+'''
+
+[tasks."homebrew:formula"]
+description = "Render Formula/riela.rb from dist/homebrew checksums (pass the version after --)"
+run = '''
+scripts/render-homebrew-formula.sh "$@"
+'''
+
+[tasks."homebrew:cask"]
+description = "Render Casks/riela.rb from dist/homebrew-cask checksums (pass the version after --)"
+run = '''
+scripts/render-homebrew-cask.sh "$@"
+'''
+
+[tasks."homebrew:tap-formula"]
+description = "Render riela into the sibling tacogips/homebrew-tap repository (pass version after --)"
+run = '''
+set -euo pipefail
+if [ -z "$*" ]; then
+  echo "usage: mise run homebrew:tap-formula -- <version>" >&2
+  exit 2
+fi
+scripts/render-homebrew-formula.sh "$*" ../homebrew-tap/Formula/riela.rb
+
+'''
+
+[tasks."homebrew:tap-cask"]
+description = "Render riela cask into the sibling tacogips/homebrew-tap repository (pass version after --)"
+run = '''
+set -euo pipefail
+if [ -z "$*" ]; then
+  echo "usage: mise run homebrew:tap-cask -- <version>" >&2
+  exit 2
+fi
+scripts/render-homebrew-cask.sh "$*" ../homebrew-tap/Casks/riela.rb
+
+'''
+
+[tasks."release:homebrew-cask-local"]
+description = "Build, notarize, upload, and render the sibling tap cask for a v<version> tag"
+run = '''
+scripts/release-homebrew-cask-local.sh "$@"
+'''

@@ -1,3 +1,4 @@
+import AgentGateway
 import Crypto
 import Foundation
 import RielaAdapters
@@ -215,16 +216,7 @@ public struct CodexAgentCommandBuilder: LocalAgentCommandBuilding {
     try validateAgentProviderRoutingForAdapter(input.node)
     let imagePaths = resolveAdapterImagePaths(input)
     var configOverrides = input.node.effort.map { [#"model_reasoning_effort="\#($0.rawValue)""#] } ?? []
-    if let provider = input.node.provider {
-      configOverrides.append(contentsOf: [
-        "model_provider=\(provider.name)",
-        "model_providers.\(provider.name).name=\(provider.name)",
-        "model_providers.\(provider.name).base_url=\(provider.baseUrl)"
-      ])
-      if let apiKeyEnv = provider.apiKeyEnv {
-        configOverrides.append("model_providers.\(provider.name).env_key=\(apiKeyEnv)")
-      }
-    }
+    configOverrides.append(contentsOf: AgentProviderRouting.codexConfigurationOverrides(for: input.node.provider))
     let usesResume = input.sessionPolicy?.mode == .reuse
       && resumeSessionId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     let selectedPromptText = usesResume ? input.resolvedResumedPromptText : input.resolvedFreshPromptText

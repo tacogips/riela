@@ -40,6 +40,7 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "Packages/RielaMemory"),
+    .package(path: "../agent-gateway"),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
@@ -60,6 +61,7 @@ let package = Package(
     .target(
       name: "RielaCore",
       dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
         "RielaSQLite",
         "RielaObservability",
         "RielaJavaScript",
@@ -108,6 +110,7 @@ let package = Package(
     .target(
       name: "CodexAgent",
       dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
         "AgentRuntimeKit",
         "RielaCore",
         "RielaAdapters",
@@ -118,6 +121,7 @@ let package = Package(
     .target(
       name: "ClaudeCodeAgent",
       dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
         "AgentRuntimeKit",
         "RielaCore",
         "RielaAdapters",
@@ -137,7 +141,10 @@ let package = Package(
     .executableTarget(name: "CursorCLIAgentCLI", dependencies: ["CursorCLIAgent"]),
     .target(
       name: "RielaAdapters",
-      dependencies: ["RielaCore"]
+      dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
+        "RielaCore"
+      ]
     ),
     .target(
       name: "RielaWorkflowRegistry",
@@ -204,7 +211,11 @@ let package = Package(
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
     .testTarget(
       name: "RielaAdaptersTests",
-      dependencies: ["RielaCore", "RielaAdapters"],
+      dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
+        "RielaCore",
+        "RielaAdapters"
+      ],
       resources: [.process("Resources")]
     ),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
@@ -219,7 +230,7 @@ let package = Package(
         "RielaAppSupport",
         "RielaServer",
         "RielaApp",
-        "RielaCLI",
+        "RielaCLI"
       ]
     ),
     .testTarget(

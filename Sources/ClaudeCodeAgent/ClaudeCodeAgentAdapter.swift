@@ -1,3 +1,4 @@
+import AgentGateway
 import Foundation
 import RielaAdapters
 import RielaCore
@@ -274,23 +275,17 @@ private func claudeProviderEnvironment(
   input: AdapterExecutionInput,
   baseEnvironment: [String: String]
 ) throws -> [String: String] {
-  guard let provider = input.node.provider else {
-    return [:]
+  let runtimeEnvironment = ProcessInfo.processInfo.environment
+    .merging(baseEnvironment) { _, baseValue in baseValue }
+    .merging(input.agentEnvironment) { _, nodeValue in nodeValue }
+  do {
+    return try AgentProviderRouting.claudeCodeEnvironment(
+      for: input.node.provider,
+      runtimeEnvironment: runtimeEnvironment
+    )
+  } catch let error as AgentProviderRoutingError {
+    throw AdapterExecutionError(.policyBlocked, error.localizedDescription)
   }
-  var environment = ["ANTHROPIC_BASE_URL": provider.baseUrl]
-  if let apiKeyEnv = provider.apiKeyEnv {
-    let runtimeValue = input.agentEnvironment[apiKeyEnv]
-      ?? baseEnvironment[apiKeyEnv]
-      ?? ProcessInfo.processInfo.environment[apiKeyEnv]
-    guard let runtimeValue, !runtimeValue.isEmpty else {
-      throw AdapterExecutionError(
-        .policyBlocked,
-        "provider.apiKeyEnv requires runtime environment '\(apiKeyEnv)'"
-      )
-    }
-    environment["ANTHROPIC_AUTH_TOKEN"] = runtimeValue
-  }
-  return environment
 }
 
 private func providerMetadata(_ configuration: AgentProviderConfiguration?) -> JSONObject {

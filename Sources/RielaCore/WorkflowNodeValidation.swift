@@ -12,16 +12,22 @@ public func validateAgentNodePayload(
   }
 
   var diagnostics: [WorkflowValidationDiagnostic] = []
-  let supportedBackends: Set<NodeExecutionBackend> = [.codexAgent, .claudeCodeAgent]
+  let supportedBackends: Set<NodeExecutionBackend> = [
+    .codexAgent,
+    .claudeCodeAgent,
+    .officialOpenAISDK,
+    .officialAnthropicSDK,
+    .officialGeminiSDK
+  ]
   if let backend = payload.executionBackend, !supportedBackends.contains(backend) {
     diagnostics.append(error(
       "\(path).provider",
-      "is supported only with executionBackend 'codex-agent' or 'claude-code-agent', not '\(backend.rawValue)'"
+      "is not supported with executionBackend '\(backend.rawValue)'"
     ))
   } else if payload.executionBackend == nil {
     diagnostics.append(error(
       "\(path).provider",
-      "requires executionBackend 'codex-agent' or 'claude-code-agent'"
+      "requires an agent-gateway-backed executionBackend"
     ))
   }
 

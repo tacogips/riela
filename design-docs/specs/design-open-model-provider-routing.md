@@ -1,6 +1,10 @@
 # Open Model Provider Routing for CLI-Backed Agents
 
-Status: implemented and adversarially reviewed
+> Implementation ownership: provider validation and backend-specific routing
+> live in the `AgentGateway` product from the sibling `agent-gateway` package.
+> Riela owns workflow schema, validation diagnostics, and adapter integration.
+
+Status: superseded by the agent-gateway JSONL server migration
 Issue: tacogips/riela — "Support alternate OpenAI-compatible providers for codex-agent and claude-code-agent"
 Owner split: Fable authors design and implementation plan; Codex implements and reviews.
 
@@ -51,6 +55,15 @@ names". Decision:
 }
 ```
 
+OpenRouter uses different official Base URLs by backend:
+
+- Codex Agent: `https://openrouter.ai/api/v1`
+- Claude Code / Claude Agent SDK: `https://openrouter.ai/api`
+
+For Claude Code, the gateway maps `OPENROUTER_API_KEY` to
+`ANTHROPIC_AUTH_TOKEN` and explicitly clears `ANTHROPIC_API_KEY` to avoid an
+authentication conflict.
+
 ### `provider` (optional object)
 
 - `name` (required string): provider identity. Must match
@@ -100,10 +113,9 @@ same style as the existing `agentEnvironment` checks:
 3. `provider.apiKeyEnv` invalid env-var name or reserved name → decode error.
 4. `providerProxy` present without `provider` → decode error.
 5. `providerProxy` value other than `codex` → decode error.
-6. `provider` on `executionBackend` values other than `codex-agent` or
-   `claude-code-agent` (`cursor-cli-agent`, all `official/*` SDK backends)
-   → workflow validation error. Official SDK backends already have their own
-   `baseURL`/`apiKeyEnv` configuration path and must not gain a second one.
+6. `provider` is accepted for `codex-agent`, `claude-code-agent`, and the
+   OpenAI, Anthropic, and Gemini API backends. Cursor CLI and the legacy Cursor
+   SDK backend reject it because they do not consume HTTP provider overrides.
 7. `providerProxy: "codex"` with `executionBackend` other than `codex-agent`
    → workflow validation error.
 8. Both fields absent → no new validation runs; existing workflows decode
@@ -154,12 +166,15 @@ overlap so the conflict is visible. The token value participates in the
   decoded JSON), runner errors, and every string-bearing backend-event field
   are sanitized before they can be persisted.
 
-### cursor-cli-agent and official SDK backends
+### Gateway execution boundary
 
-Out of scope and rejected by validation (rule 6). Cursor-specific behavior
-stays isolated in the `CursorCLIAgent` module and is untouched. Official SDK
-adapters keep their existing `OfficialSDKAdapterConfiguration.baseURL` /
-`apiKeyEnv` path as the single provider override mechanism for SDK backends.
+Production dispatch now sends all CLI and official API backends to the sibling
+`agent-gateway server`. Vendor selection is explicit in the versioned request:
+Claude Code, Codex, Cursor, OpenAI, Anthropic, Gemini, or OpenRouter. The server
+owns CLI process construction, direct API SSE decoding, provider overrides,
+and normalized JSONL streaming. Riela retains its legacy adapter modules as
+compatibility libraries but no longer registers them for production workflow
+execution.
 
 ## Data Flow and Runtime Forwarding
 

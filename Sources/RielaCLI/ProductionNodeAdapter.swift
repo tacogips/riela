@@ -1,5 +1,3 @@
-import ClaudeCodeAgent
-import CodexAgent
 import CursorCLIAgent
 import Foundation
 import RielaAdapters
@@ -10,25 +8,25 @@ import RielaMemory
 func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) -> any NodeAdapter {
-  DispatchingNodeAdapter(
+  let gatewayFactory: NodeAdapterFactory = {
+    AgentGatewayNodeAdapter(
+      executableName: environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", environment: environment)
+        ?? "agent-gateway",
+      environment: environment
+    )
+  }
+  return DispatchingNodeAdapter(
     configuration: DispatchingNodeAdapterConfiguration(
       registry: [
-        .codexAgent: {
-          CodexAgentAdapter(
-            executableName: environmentValue("RIELA_CODEX_AGENT_EXECUTABLE", environment: environment) ?? "codex"
-          )
-        },
-        .claudeCodeAgent: {
-          ClaudeCodeAgentAdapter(
-            executableName: environmentValue("RIELA_CLAUDE_CODE_AGENT_EXECUTABLE", environment: environment) ?? "claude"
-          )
-        },
-        .cursorCliAgent: {
-          CursorCLIAgentAdapter(
-            executableName: environmentValue("RIELA_CURSOR_CLI_AGENT_EXECUTABLE", environment: environment) ?? "cursor-agent"
-          )
-        }
-      ]
+        .codexAgent: gatewayFactory,
+        .claudeCodeAgent: gatewayFactory,
+        .cursorCliAgent: gatewayFactory,
+        .officialOpenAISDK: gatewayFactory,
+        .officialAnthropicSDK: gatewayFactory,
+        .officialGeminiSDK: gatewayFactory,
+        .officialCursorSDK: gatewayFactory
+      ],
+      includeDefaultOfficialSDKAdapters: false
     )
   )
 }

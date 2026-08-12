@@ -79,10 +79,11 @@ public func providerCredentialSensitiveValues(
   _ provider: AgentProviderConfiguration?,
   processEnvironment: [String: String]
 ) -> [String] {
-  guard let apiKeyEnv = provider?.apiKeyEnv else {
+  guard let provider, provider.apiKeyEnv != nil else {
     return []
   }
-  let value = processEnvironment[apiKeyEnv] ?? ProcessInfo.processInfo.environment[apiKeyEnv]
+  let value = provider.credentialValue(in: processEnvironment)
+    ?? provider.credentialValue(in: ProcessInfo.processInfo.environment)
   return value.map { [$0] } ?? []
 }
 

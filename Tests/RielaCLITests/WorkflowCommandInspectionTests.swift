@@ -297,22 +297,20 @@ extension WorkflowCommandTests {
     }
     """.write(to: nodesDirectory.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
 
-    let marker = root.appendingPathComponent("fake-codex-called.txt")
-    let fakeCodex = try createExecutable(
+    let marker = root.appendingPathComponent("gateway-request.json")
+    let fakeGateway = try createExecutable(
       directory: root,
-      name: "fake-codex.sh",
+      name: "fake-agent-gateway.sh",
       body: """
-      if [ "$1" = "login" ] && [ "$2" = "status" ]; then
-        exit 0
-      fi
-      printf '%s\\n' "$*" >> '\(marker.path)'
-      printf '{"type":"assistant.snapshot","content":"fake codex reached"}\\n'
+      request=$(cat)
+      printf '%s' "$request" > '\(marker.path)'
+      printf '%s\\n' '{"jsonrpc":"2.0","id":"worker","result":{"protocolVersion":"1.0","vendor":"codex","model":"gpt-5.5","text":"fake codex reached","exitCode":0}}'
       exit 0
       """
     )
-    let previousCodexExecutable = environmentValue("RIELA_CODEX_AGENT_EXECUTABLE")
-    setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", fakeCodex.path)
-    defer { setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", previousCodexExecutable) }
+    let previousGatewayExecutable = environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE")
+    setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", fakeGateway.path)
+    defer { setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", previousGatewayExecutable) }
 
     let result = await RielaCLIApplication().run([
       "workflow", "run", "codex-dispatch",
@@ -324,11 +322,10 @@ extension WorkflowCommandTests {
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
     XCTAssertEqual(run.status, .completed)
-    XCTAssertEqual(run.session.executions.first?.adapterOutput?.provider, "codex-agent")
-    let recordedInvocations = try String(contentsOf: marker, encoding: .utf8)
-      .split(separator: "\n")
-      .map(String.init)
-    XCTAssertTrue(recordedInvocations.contains { $0.hasPrefix("exec --json") })
+    XCTAssertEqual(run.session.executions.first?.adapterOutput?.provider, "codex")
+    let recordedRequest = try String(contentsOf: marker, encoding: .utf8)
+    XCTAssertTrue(recordedRequest.contains(#""method":"agent/execute""#))
+    XCTAssertTrue(recordedRequest.contains(#""vendor":"codex""#))
   }
 
   func testProjectScopeCodexDesignIntakePromptIncludesWorkflowRunVariables() async throws {
@@ -340,54 +337,34 @@ extension WorkflowCommandTests {
     defer { try? FileManager.default.removeItem(at: tempDir) }
 
     let counter = tempDir.appendingPathComponent("prompt-count.txt")
-    let fakeCodex = try createExecutable(
+    let fakeGateway = try createExecutable(
       directory: tempDir,
-      name: "fake-codex.sh",
+      name: "fake-agent-gateway.sh",
       body: """
-      if [ "$1" = "login" ] && [ "$2" = "status" ]; then
-        exit 0
-      fi
+      request=$(cat)
       count=0
       if [ -f '\(counter.path)' ]; then
         count=$(cat '\(counter.path)')
       fi
       count=$((count + 1))
       printf '%s' "$count" > '\(counter.path)'
-      cat > '\(promptDirectory.path)'/prompt-"$count".txt
+      printf '%s' "$request" | /usr/bin/plutil -extract params.systemPrompt raw -o - - > '\(promptDirectory.path)'/prompt-"$count".txt
+      printf '\\n\\n' >> '\(promptDirectory.path)'/prompt-"$count".txt
+      printf '%s' "$request" | /usr/bin/plutil -extract params.prompt raw -o - - >> '\(promptDirectory.path)'/prompt-"$count".txt
       if [ "$count" = "1" ]; then
-        cat <<'JSON'
-      {
-        "completionPassed": true,
-        "when": { "always": true },
-        "payload": { "status": "manager-ready" }
-      }
-      JSON
+        text='{"completionPassed":true,"when":{"always":true},"payload":{"status":"manager-ready"}}'
       else
-        cat <<'JSON'
-      {
-        "completionPassed": true,
-        "when": { "has_feature_fanout": false },
-        "payload": {
-          "workflowMode": "issue-resolution",
-          "problemSummary": "captured intake",
-          "acceptanceSignals": [],
-          "impactedAreas": [],
-          "constraints": [],
-          "unknowns": [],
-          "risks": [],
-          "requiresAdversarialReview": false,
-          "codexAgentReferences": [],
-          "featureFanoutItems": []
-        }
-      }
-      JSON
+        text='{"completionPassed":true,"when":{"has_feature_fanout":false},"payload":{"workflowMode":"issue-resolution","problemSummary":"captured intake","acceptanceSignals":[],"impactedAreas":[],"constraints":[],"unknowns":[],"risks":[],"requiresAdversarialReview":false,"codexAgentReferences":[],"featureFanoutItems":[]}}'
       fi
+      escaped=$(printf '%s' "$text" | sed 's/"/\\\\"/g')
+      request_id=$(printf '%s' "$request" | /usr/bin/plutil -extract id raw -o - -)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"1.0","vendor":"codex","model":"gpt-5.5","text":"%s","exitCode":0}}\\n' "$request_id" "$escaped"
       exit 0
       """
     )
-    let previousCodexExecutable = environmentValue("RIELA_CODEX_AGENT_EXECUTABLE")
-    setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", fakeCodex.path)
-    defer { setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", previousCodexExecutable) }
+    let previousGatewayExecutable = environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE")
+    setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", fakeGateway.path)
+    defer { setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", previousGatewayExecutable) }
 
     let variableObject: JSONObject = [
       "workflowInput": .object([

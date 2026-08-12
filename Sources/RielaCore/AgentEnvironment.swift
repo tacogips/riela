@@ -1,3 +1,4 @@
+import AgentGateway
 import Foundation
 
 public struct AgentEnvironmentBinding: Codable, Equatable, Sendable {
@@ -73,25 +74,10 @@ extension AgentEnvironmentResolutionError: LocalizedError {
   }
 }
 
-public let reservedAgentEnvironmentNames: Set<String> = [
-  "RIELA_AGENT_BACKEND",
-  "RIELA_WORKFLOW_ID",
-  "RIELA_SESSION_ID",
-  "RIELA_STEP_ID",
-  "RIELA_NODE_ID",
-  "RIELA_EXECUTION_INDEX"
-]
+public let reservedAgentEnvironmentNames = AgentProviderConfiguration.reservedEnvironmentNames
 
 public func isValidEnvironmentVariableName(_ name: String) -> Bool {
-  guard let first = name.unicodeScalars.first else {
-    return false
-  }
-  guard first == "_" || CharacterSet.letters.contains(first) else {
-    return false
-  }
-  return name.unicodeScalars.allSatisfy { scalar in
-    scalar == "_" || CharacterSet.alphanumerics.contains(scalar)
-  }
+  AgentProviderConfiguration.isValidEnvironmentVariableName(name)
 }
 
 public func resolveAgentEnvironment(

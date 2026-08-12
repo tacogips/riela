@@ -75,7 +75,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
 
   func testProviderBackendCompatibilityAndOverlapWarning() throws {
     let configuration = try AgentProviderConfiguration(name: "local", baseUrl: "https://provider.example/v1")
-    for backend in [NodeExecutionBackend.cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK] {
+    for backend in [NodeExecutionBackend.cursorCliAgent, .officialCursorSDK] {
       let diagnostics = validateAgentNodePayload(AgentNodePayload(
         id: "worker",
         executionBackend: backend,
@@ -83,6 +83,18 @@ final class OpenModelProviderRoutingTests: XCTestCase {
         provider: configuration
       ))
       XCTAssertTrue(diagnostics.contains { $0.severity == .error && $0.path == "node.provider" })
+    }
+    for backend in [
+      NodeExecutionBackend.officialOpenAISDK,
+      .officialAnthropicSDK,
+      .officialGeminiSDK
+    ] {
+      XCTAssertTrue(validateAgentNodePayload(AgentNodePayload(
+        id: "worker",
+        executionBackend: backend,
+        model: "model",
+        provider: configuration
+      )).isEmpty)
     }
 
     let claudeProxyDiagnostics = validateAgentNodePayload(AgentNodePayload(

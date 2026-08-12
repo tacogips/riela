@@ -49,6 +49,24 @@ final class ClaudeOpenModelProviderRoutingTests: XCTestCase {
     }
   }
 
+  func testOpenRouterClearsConflictingAnthropicAPIKey() throws {
+    let command = try ClaudeCodeAgentCommandBuilder().buildCommand(for: input(
+      provider: try AgentProviderConfiguration(
+        name: "openrouter",
+        baseUrl: "https://openrouter.ai/api",
+        apiKeyEnv: "OPENROUTER_API_KEY"
+      ),
+      agentEnvironment: [
+        "OPENROUTER_API_KEY": "provider-secret-value",
+        "ANTHROPIC_API_KEY": "conflicting-anthropic-key"
+      ]
+    ))
+
+    XCTAssertEqual(command.configuration.environment["ANTHROPIC_BASE_URL"], "https://openrouter.ai/api")
+    XCTAssertEqual(command.configuration.environment["ANTHROPIC_AUTH_TOKEN"], "provider-secret-value")
+    XCTAssertEqual(command.configuration.environment["ANTHROPIC_API_KEY"], "")
+  }
+
   func testProgrammaticProviderProxyWithoutProviderIsRejected() {
     XCTAssertThrowsError(try ClaudeCodeAgentCommandBuilder().buildCommand(for: AdapterExecutionInput(
       node: AgentNodePayload(

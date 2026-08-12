@@ -71,6 +71,21 @@ Local agent backend ids remain explicit compatibility contracts:
 parity is tracked separately; `official/cursor-sdk` is not aliased to
 `cursor-cli-agent`.
 
+Production execution for Claude Code, Codex, Cursor, OpenAI, Anthropic, Gemini,
+and OpenRouter is supplied by the sibling `agent-gateway` package. Riela is a
+client of `agent-gateway server`: it sends versioned JSONL requests on stdin,
+receives streaming `agent/event` notifications and one terminal response on
+stdout, and keeps stderr for diagnostics. Set `RIELA_AGENT_GATEWAY_EXECUTABLE`
+when `agent-gateway` is not available on `PATH`.
+
+Provider validation and Base URL routing for `codex-agent` and
+`claude-code-agent` are also supplied by `agent-gateway`.
+For OpenRouter, use `https://openrouter.ai/api/v1` with Codex Agent and
+`https://openrouter.ai/api` with Claude Code. Set `apiKeyEnv` to
+`OPENROUTER_API_KEY`; Riela resolves the value only at launch and does not put
+it in command arguments or workflow artifacts. Claude Code routing also clears
+`ANTHROPIC_API_KEY` so it cannot override `ANTHROPIC_AUTH_TOKEN`.
+
 Riela-owned environment names use the `RIELA_` prefix. Remote GraphQL workflow
 runs read `RIELA_MANAGER_AUTH_TOKEN` and `RIELA_MANAGER_SESSION_ID`. Remote auto-improve input is opt-in:
 `workflow run --endpoint ...` omits `autoImprove` by default and only sends the

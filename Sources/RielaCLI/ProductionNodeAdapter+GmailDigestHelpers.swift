@@ -9,17 +9,17 @@ func latestStatePayload(_ payloads: [JSONObject]) -> JSONObject {
   } ?? [:]
 }
 
-final class GmailGeminiResponseBox: @unchecked Sendable {
+final class GmailProcessOutputBox: @unchecked Sendable {
   private let lock = NSLock()
-  private var stored: Result<JSONObject, Error>?
+  private var stored = Data()
 
-  var value: Result<JSONObject, Error>? {
+  var value: Data {
     lock.withLock { stored }
   }
 
-  func set(_ value: Result<JSONObject, Error>) {
+  func append(_ chunk: Data) {
     lock.withLock {
-      stored = value
+      stored.append(chunk)
     }
   }
 }
@@ -139,19 +139,6 @@ func classifyTextPreview(_ text: String) -> String {
     return "report"
   }
   return "text_attachment"
-}
-
-func geminiText(from response: JSONObject) -> String {
-  var parts: [String] = []
-  for candidateValue in gmailArray(response["candidates"]) ?? [] {
-    let content = gmailObject(candidateValue)?["content"].flatMap(gmailObject) ?? [:]
-    for part in gmailArray(content["parts"]) ?? [] {
-      if let text = gmailObject(part)?["text"].flatMap(gmailString) {
-        parts.append(text)
-      }
-    }
-  }
-  return gmailCompactText(.string(parts.joined(separator: "\n")))
 }
 
 func digestMessageIds(_ item: JSONObject) -> [String] {

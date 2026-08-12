@@ -4,10 +4,18 @@ import XCTest
 @testable import RielaCLI
 
 final class SessionObservabilityCommandTests: XCTestCase {
-  func testProductionCompositionRegistersBothAcceptedBackendProbes() {
+  func testProductionCompositionRegistersGatewayProbeForEveryAgentBackend() {
     XCTAssertEqual(
       SessionObservabilityComposition.makeProbeRegistry().registeredBackends,
-      Set([.codexAgent, .claudeCodeAgent])
+      Set([
+        .codexAgent,
+        .claudeCodeAgent,
+        .cursorCliAgent,
+        .officialOpenAISDK,
+        .officialAnthropicSDK,
+        .officialGeminiSDK,
+        .officialCursorSDK
+      ])
     )
   }
 

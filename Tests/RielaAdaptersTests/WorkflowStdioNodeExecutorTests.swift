@@ -355,27 +355,27 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
   }
 }
 
-private actor RecordingStdioNodeProcessRunner: LocalAgentProcessRunning {
-  typealias Handler = @Sendable (LocalAgentProcessConfiguration, String) throws -> String
+private actor RecordingStdioNodeProcessRunner: LocalProcessRunning {
+  typealias Handler = @Sendable (LocalProcessConfiguration, String) throws -> String
 
   private let handler: Handler
-  private var capturedConfigurations: [LocalAgentProcessConfiguration] = []
+  private var capturedConfigurations: [LocalProcessConfiguration] = []
 
   init(handler: @escaping Handler) {
     self.handler = handler
   }
 
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?
-  ) async throws -> LocalAgentProcessResult {
+  ) async throws -> LocalProcessResult {
     capturedConfigurations.append(configuration)
     let stdout = try handler(configuration, stdin)
-    return LocalAgentProcessResult(stdout: stdout, stderr: "", terminationStatus: 0)
+    return LocalProcessResult(stdout: stdout, stderr: "", terminationStatus: 0)
   }
 
-  func configurations() -> [LocalAgentProcessConfiguration] {
+  func configurations() -> [LocalProcessConfiguration] {
     capturedConfigurations
   }
 }

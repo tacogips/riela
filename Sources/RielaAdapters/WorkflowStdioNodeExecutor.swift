@@ -2,10 +2,10 @@ import Foundation
 import RielaCore
 
 public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
-  public var runner: any LocalAgentProcessRunning
+  public var runner: any LocalProcessRunning
 
   public init(
-    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner()
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner()
   ) {
     self.runner = runner
   }
@@ -56,7 +56,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
 
   private func processConfiguration(
     for input: WorkflowStdioNodeExecutionInput
-  ) throws -> LocalAgentProcessConfiguration {
+  ) throws -> LocalProcessConfiguration {
     switch input.kind {
     case .command:
       guard let command = input.node.command else {
@@ -67,7 +67,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         executable: renderPromptTemplate(command.executable, variables: templateVariables),
         arguments: command.arguments.map { renderPromptTemplate($0, variables: templateVariables) }
       )
-      return LocalAgentProcessConfiguration(
+      return LocalProcessConfiguration(
         executableURL: invocation.executableURL,
         arguments: invocation.arguments,
         environment: environment(base: renderedEnvironment(command.environment, variables: templateVariables), input: input),
@@ -84,7 +84,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         executable: runnerPath,
         arguments: containerArguments(container, variables: templateVariables)
       )
-      return LocalAgentProcessConfiguration(
+      return LocalProcessConfiguration(
         executableURL: invocation.executableURL,
         arguments: invocation.arguments,
         environment: environment(base: renderedEnvironment(container.environment, variables: templateVariables), input: input),
@@ -228,7 +228,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
 
   private func commandEvidence(
     input: WorkflowStdioNodeExecutionInput,
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     exitCode: Int,
     durationMs: Int
   ) -> LoopCommandEvidence {

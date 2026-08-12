@@ -195,10 +195,10 @@ public func seatbeltProfile(
 }
 
 public func seatbeltInvocation(
-  for configuration: LocalAgentProcessConfiguration,
+  for configuration: LocalProcessConfiguration,
   availability: SeatbeltAvailability = .live,
   temporaryDirectory: URL = FileManager.default.temporaryDirectory
-) throws -> LocalAgentProcessConfiguration? {
+) throws -> LocalProcessConfiguration? {
   guard let policy = configuration.sandboxPolicy else {
     return nil
   }

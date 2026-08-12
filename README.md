@@ -66,13 +66,14 @@ fetch, mutable CRUD, activation, and consolidation; remote registry execution
 is disabled unless an embedding host supplies the complete provider,
 authorizer, and managed-reference configuration.
 
-Local agent backend ids remain explicit compatibility contracts:
-`codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. Official SDK adapter
-parity is tracked separately; `official/cursor-sdk` is not aliased to
-`cursor-cli-agent`.
+Local agent backend ids remain explicit workflow compatibility contracts:
+`codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. They no longer name
+Riela-owned executables or targets. The `official/*` backend ids are also
+compatibility selectors; every one is dispatched through `agent-gateway`.
 
-Production execution for Claude Code, Codex, Cursor, OpenAI, Anthropic, Gemini,
-and OpenRouter is supplied by the sibling `agent-gateway` package. Riela is a
+Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,
+OpenAI, Anthropic, Gemini, and OpenRouter is supplied by the sibling
+`agent-gateway` package. Riela is a
 client of `agent-gateway server`: it sends versioned JSONL requests on stdin,
 receives streaming `agent/event` notifications and one terminal response on
 stdout, and keeps stderr for diagnostics. Set `RIELA_AGENT_GATEWAY_EXECUTABLE`
@@ -540,8 +541,8 @@ Ordinary review (`step7-review`) and adversarial review
 no high or mid findings; all 13 required domains record
 `reviewDecision=accepted` and
 `acceptedReviewNodeId=step7-adversarial-review`.
-`official/cursor-sdk` remains a distinct unavailable backend and is not aliased
-to `cursor-cli-agent`.
+`official/cursor-sdk` remains distinct from `cursor-cli-agent` and selects the
+`cursor-api` vendor in `agent-gateway`.
 The completion plan is archived at
 `impl-plans/completed/typescript-deletion-readiness-completion.md`; the active
 Swift parity follow-through plan is no longer a deletion gate blocker.

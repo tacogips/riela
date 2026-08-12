@@ -41,12 +41,12 @@ public struct SetupContainerCommand: Sendable {
   static let installerPath = "/usr/sbin/installer"
   static let spctlPath = "/usr/sbin/spctl"
 
-  public var runner: any LocalAgentProcessRunning
+  public var runner: any LocalProcessRunning
   public var releaseResolver: any SetupContainerReleaseResolving
   public var downloader: any SetupContainerDownloading
 
   public init(
-    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner(),
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
     releaseResolver: any SetupContainerReleaseResolving = GitHubSetupContainerReleaseResolver(),
     downloader: any SetupContainerDownloading = URLSessionSetupContainerDownloader()
   ) {
@@ -174,7 +174,7 @@ public struct SetupContainerCommand: Sendable {
       }
     }
     let installResult = try await runner.run(
-      configuration: LocalAgentProcessConfiguration(
+      configuration: LocalProcessConfiguration(
         executableURL: URL(fileURLWithPath: Self.installerPath),
         arguments: ["-pkg", downloadedPackage.path, "-target", "/"],
         environment: environment
@@ -207,7 +207,7 @@ public struct SetupContainerCommand: Sendable {
   ) async throws -> SetupContainerResult {
     var updated = result
     let processResult = try await runner.run(
-      configuration: LocalAgentProcessConfiguration(
+      configuration: LocalProcessConfiguration(
         executableURL: URL(fileURLWithPath: runtimePath),
         arguments: ["system", "start"],
         environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
@@ -246,7 +246,7 @@ public struct SetupContainerCommand: Sendable {
     }
     let openPath = resolveExecutable("open", searchPath: searchPath) ?? "/usr/bin/open"
     let processResult = try await runner.run(
-      configuration: LocalAgentProcessConfiguration(
+      configuration: LocalProcessConfiguration(
         executableURL: URL(fileURLWithPath: openPath),
         arguments: [downloadedPackage.path],
         environment: environment
@@ -302,7 +302,7 @@ public struct SetupContainerCommand: Sendable {
   ) async throws -> (result: SetupContainerResult, accepted: Bool) {
     var updated = result
     let verifyResult = try await runner.run(
-      configuration: LocalAgentProcessConfiguration(
+      configuration: LocalProcessConfiguration(
         executableURL: URL(fileURLWithPath: Self.spctlPath),
         arguments: ["--assess", "--type", "install", package.path],
         environment: environment

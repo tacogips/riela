@@ -5,27 +5,12 @@ public typealias NodeAdapterFactory = @Sendable () async throws -> any NodeAdapt
 public typealias NodeAdapterRegistry = [NodeExecutionBackend: NodeAdapterFactory]
 
 public struct DispatchingNodeAdapterConfiguration: Sendable {
-  public var openAISDK: OfficialSDKAdapterConfiguration
-  public var anthropicSDK: AnthropicSDKAdapterConfiguration
-  public var geminiSDK: OfficialSDKAdapterConfiguration
-  public var cursorSDK: OfficialSDKAdapterConfiguration
   public var registry: NodeAdapterRegistry
-  public var includeDefaultOfficialSDKAdapters: Bool
 
   public init(
-    openAISDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
-    anthropicSDK: AnthropicSDKAdapterConfiguration = AnthropicSDKAdapterConfiguration(),
-    geminiSDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
-    cursorSDK: OfficialSDKAdapterConfiguration = OfficialSDKAdapterConfiguration(),
-    registry: NodeAdapterRegistry = [:],
-    includeDefaultOfficialSDKAdapters: Bool = true
+    registry: NodeAdapterRegistry = [:]
   ) {
-    self.openAISDK = openAISDK
-    self.anthropicSDK = anthropicSDK
-    self.geminiSDK = geminiSDK
-    self.cursorSDK = cursorSDK
     self.registry = registry
-    self.includeDefaultOfficialSDKAdapters = includeDefaultOfficialSDKAdapters
   }
 }
 
@@ -38,13 +23,7 @@ public actor DispatchingNodeAdapter: NodeAdapter {
   }
 
   public init(configuration: DispatchingNodeAdapterConfiguration) {
-    var resolvedRegistry: NodeAdapterRegistry = configuration.includeDefaultOfficialSDKAdapters
-      ? Self.createDefaultOfficialSDKRegistry(configuration: configuration)
-      : [:]
-    for (backend, factory) in configuration.registry {
-      resolvedRegistry[backend] = factory
-    }
-    self.registry = resolvedRegistry
+    self.registry = configuration.registry
   }
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -73,22 +52,5 @@ public actor DispatchingNodeAdapter: NodeAdapter {
     let adapter = try await factory()
     adapters[backend] = adapter
     return adapter
-  }
-
-  private static func createDefaultOfficialSDKRegistry(configuration: DispatchingNodeAdapterConfiguration) -> NodeAdapterRegistry {
-    [
-      .officialOpenAISDK: {
-        OpenAiSDKAdapter(configuration: configuration.openAISDK)
-      },
-      .officialAnthropicSDK: {
-        AnthropicSDKAdapter(configuration: configuration.anthropicSDK)
-      },
-      .officialGeminiSDK: {
-        GeminiSDKAdapter(configuration: configuration.geminiSDK)
-      },
-      .officialCursorSDK: {
-        CursorSDKAdapter(configuration: configuration.cursorSDK)
-      }
-    ]
   }
 }

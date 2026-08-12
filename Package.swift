@@ -18,7 +18,6 @@ let package = Package(
   products: [
     .library(name: "RielaCore", targets: ["RielaCore"]),
     .library(name: "RielaSQLite", targets: ["RielaSQLite"]),
-    .library(name: "AgentRuntimeKit", targets: ["AgentRuntimeKit"]),
     .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
     .library(name: "RielaAdapters", targets: ["RielaAdapters"]),
@@ -29,12 +28,6 @@ let package = Package(
     .library(name: "RielaViewer", targets: ["RielaViewer"]),
     .library(name: "RielaHook", targets: ["RielaHook"]),
     .library(name: "RielaAppSupport", targets: ["RielaAppSupport"]),
-    .library(name: "CodexAgent", targets: ["CodexAgent"]),
-    .library(name: "ClaudeCodeAgent", targets: ["ClaudeCodeAgent"]),
-    .library(name: "CursorCLIAgent", targets: ["CursorCLIAgent"]),
-    .executable(name: "codex-agent", targets: ["CodexAgentCLI"]),
-    .executable(name: "claude-code-agent", targets: ["ClaudeCodeAgentCLI"]),
-    .executable(name: "cursor-cli-agent", targets: ["CursorCLIAgentCLI"]),
     .executable(name: "riela", targets: ["RielaCLIExecutable"]),
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
@@ -82,7 +75,6 @@ let package = Package(
         .brew(["sqlite"])
       ]
     ),
-    .target(name: "AgentRuntimeKit", dependencies: ["RielaCore", "RielaSQLite"]),
     .target(name: "RielaObservability"),
     .target(
       name: "RielaAddons",
@@ -107,38 +99,6 @@ let package = Package(
       dependencies: ["RielaAddons", "RielaCore", "RielaEvents", "RielaServer", "RielaObservability"],
       resources: [.process("Resources")]
     ),
-    .target(
-      name: "CodexAgent",
-      dependencies: [
-        .product(name: "AgentGateway", package: "agent-gateway"),
-        "AgentRuntimeKit",
-        "RielaCore",
-        "RielaAdapters",
-        .product(name: "Crypto", package: "swift-crypto")
-      ]
-    ),
-    .executableTarget(name: "CodexAgentCLI", dependencies: ["CodexAgent"]),
-    .target(
-      name: "ClaudeCodeAgent",
-      dependencies: [
-        .product(name: "AgentGateway", package: "agent-gateway"),
-        "AgentRuntimeKit",
-        "RielaCore",
-        "RielaAdapters",
-        .product(name: "Crypto", package: "swift-crypto")
-      ]
-    ),
-    .executableTarget(name: "ClaudeCodeAgentCLI", dependencies: ["ClaudeCodeAgent"]),
-    .target(
-      name: "CursorCLIAgent",
-      dependencies: [
-        "AgentRuntimeKit",
-        "RielaCore",
-        "RielaAdapters",
-        .product(name: "Crypto", package: "swift-crypto")
-      ]
-    ),
-    .executableTarget(name: "CursorCLIAgentCLI", dependencies: ["CursorCLIAgent"]),
     .target(
       name: "RielaAdapters",
       dependencies: [
@@ -174,10 +134,7 @@ let package = Package(
         "RielaHook",
         "RielaWorkflowRegistry",
         .product(name: "Crypto", package: "swift-crypto"),
-        .product(name: "WebHooky", package: "web-hooky"),
-        "CodexAgent",
-        "ClaudeCodeAgent",
-        "CursorCLIAgent"
+        .product(name: "WebHooky", package: "web-hooky")
       ]
     ),
     .executableTarget(name: "RielaCLIExecutable", dependencies: ["RielaCLI"]),
@@ -187,9 +144,6 @@ let package = Package(
         "RielaAppSupport",
         "RielaAdapters",
         "RielaCore",
-        "CodexAgent",
-        "ClaudeCodeAgent",
-        "CursorCLIAgent",
         "RielaGraphQL",
         "RielaServer",
         "RielaViewer",
@@ -206,7 +160,6 @@ let package = Package(
       ]
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
-    .testTarget(name: "AgentRuntimeKitTests", dependencies: ["AgentRuntimeKit", "RielaCore"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
     .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
     .testTarget(
@@ -215,8 +168,7 @@ let package = Package(
         .product(name: "AgentGateway", package: "agent-gateway"),
         "RielaCore",
         "RielaAdapters"
-      ],
-      resources: [.process("Resources")]
+      ]
     ),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
@@ -243,22 +195,6 @@ let package = Package(
         "RielaWorkflowRegistry",
         .product(name: "AppCore", package: "kaiba")
       ]
-    ),
-    .testTarget(
-      name: "AgentAdapterTests",
-      dependencies: ["RielaCore", "RielaAdapters", "CodexAgent", "ClaudeCodeAgent", "CursorCLIAgent"]
-    ),
-    .testTarget(
-      name: "CodexAgentTests",
-      dependencies: ["RielaCore", "RielaAdapters", "CodexAgent"]
-    ),
-    .testTarget(
-      name: "ClaudeCodeAgentTests",
-      dependencies: ["RielaCore", "RielaAdapters", "ClaudeCodeAgent"]
-    ),
-    .testTarget(
-      name: "CursorCLIAgentTests",
-      dependencies: ["RielaCore", "CursorCLIAgent"]
     )
   ],
   swiftLanguageModes: [.v6]

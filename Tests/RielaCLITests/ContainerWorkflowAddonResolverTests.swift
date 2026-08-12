@@ -45,7 +45,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
         XCTAssertEqual(configuration.executableURL.path, "/usr/bin/env")
         XCTAssertEqual(configuration.arguments.prefix(2), ["docker", "build"])
         XCTAssertTrue(configuration.arguments.contains(addonRoot.path))
-        return LocalAgentProcessResult(stdout: "", stderr: "", terminationStatus: 0)
+        return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 0)
       }
 
       XCTAssertEqual(configuration.arguments.prefix(2), ["docker", "run"])
@@ -69,7 +69,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
         "dpi": .integer(160),
         "format": .string("png")
       ]))
-      return LocalAgentProcessResult(stdout: #"{"pageCount":2,"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
+      return LocalProcessResult(stdout: #"{"pageCount":2,"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
     }
 
     let resolver = ContainerWorkflowAddonResolver(
@@ -150,7 +150,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
         "pdfPath": .string("fixtures/report.pdf"),
         "outputDirectory": .string("pages")
       ]))
-      return LocalAgentProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
+      return LocalProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
     }
 
     let resolver = ContainerWorkflowAddonResolver(
@@ -217,7 +217,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
       XCTAssertTrue(configuration.arguments.contains("ghcr.io/tacogips/pdf-to-images@\(digest)"))
       let decoded = try decodeContainerAddonInput(stdin)
       XCTAssertEqual(decoded.addonName, "tacogips/pdf-to-images")
-      return LocalAgentProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
+      return LocalProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
     }
 
     let resolver = ContainerWorkflowAddonResolver(
@@ -274,12 +274,12 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
       if configuration.arguments.contains("build") {
         XCTAssertEqual(configuration.arguments.prefix(2), ["docker", "build"])
         XCTAssertTrue(configuration.arguments.contains(addonRoot.appendingPathComponent("Containerfile").path))
-        return LocalAgentProcessResult(stdout: "", stderr: "", terminationStatus: 0)
+        return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 0)
       }
       XCTAssertEqual(configuration.arguments.prefix(2), ["docker", "run"])
       XCTAssertFalse(configuration.arguments.contains("ghcr.io/tacogips/pdf-to-images"))
       XCTAssertTrue(configuration.arguments.contains { $0.hasPrefix("riela-addon-tacogips-pdf-to-images-addon-tacogips-pdf-to-images:") })
-      return LocalAgentProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
+      return LocalProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
     }
 
     let resolver = ContainerWorkflowAddonResolver(
@@ -340,7 +340,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
       XCTAssertTrue(configuration.arguments.contains { $0 == "PATH=/host/bin" })
       XCTAssertFalse(configuration.arguments.contains { $0.contains("HOME=") })
       _ = try decodeContainerAddonInput(stdin)
-      return LocalAgentProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
+      return LocalProcessResult(stdout: #"{"status":"ok"}"# + "\n", stderr: "", terminationStatus: 0)
     }
 
     let resolver = ContainerWorkflowAddonResolver(
@@ -397,7 +397,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
 
     let runner = RecordingContainerAddonProcessRunner { _, _ in
       XCTFail("container runtime preflight should fail before spawning a process")
-      return LocalAgentProcessResult(stdout: "", stderr: "", terminationStatus: 1)
+      return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 1)
     }
     let resolver = ContainerWorkflowAddonResolver(
       registrations: [
@@ -447,7 +447,7 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
 
     let runner = RecordingContainerAddonProcessRunner { _, _ in
       XCTFail("filesystem capability preflight should fail before spawning a process")
-      return LocalAgentProcessResult(stdout: "", stderr: "", terminationStatus: 1)
+      return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 1)
     }
     let resolver = ContainerWorkflowAddonResolver(
       registrations: [
@@ -616,8 +616,8 @@ private func decodeContainerAddonInput(_ stdin: String) throws -> AddonExecution
   return try JSONDecoder().decode(AddonExecutionInput.self, from: Data(String(line).utf8))
 }
 
-private actor RecordingContainerAddonProcessRunner: LocalAgentProcessRunning {
-  typealias Handler = @Sendable (LocalAgentProcessConfiguration, String) throws -> LocalAgentProcessResult
+private actor RecordingContainerAddonProcessRunner: LocalProcessRunning {
+  typealias Handler = @Sendable (LocalProcessConfiguration, String) throws -> LocalProcessResult
 
   private let handler: Handler
   private var count = 0
@@ -627,10 +627,10 @@ private actor RecordingContainerAddonProcessRunner: LocalAgentProcessRunning {
   }
 
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?
-  ) async throws -> LocalAgentProcessResult {
+  ) async throws -> LocalProcessResult {
     count += 1
     return try handler(configuration, stdin)
   }

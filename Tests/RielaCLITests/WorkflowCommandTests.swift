@@ -5,7 +5,6 @@ import RielaMemory
 import XCTest
 @testable import RielaCLI
 
-// swiftlint:disable:next type_body_length
 final class WorkflowCommandTests: XCTestCase {
   func testTopLevelHelpReturnsSuccessfulSmokeOutput() async {
     let result = await RielaCLIApplication().run(["--help"])
@@ -654,11 +653,11 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.payload["text"], .string("gemini reply"))
     let configurations = await harness.recordedConfigurations()
     let configuration = try XCTUnwrap(configurations.first)
-    XCTAssertEqual(configuration.apiKeyEnv, "GEMINI_API_KEY")
-    XCTAssertEqual(configuration.environment?["GEMINI_API_KEY"], "gemini-secret")
+    XCTAssertEqual(configuration.environment["GEMINI_API_KEY"], "gemini-secret")
     let inputs = await harness.recordedInputs()
     let input = try XCTUnwrap(inputs.first)
     XCTAssertEqual(input.node.executionBackend, .officialGeminiSDK)
+    XCTAssertEqual(input.node.provider?.apiKeyEnv, "GEMINI_API_KEY")
     XCTAssertEqual(input.node.model, "gemini-3.5-flash")
     XCTAssertEqual(input.promptText, "Reply about weather from rain and rain plus addon input.")
     XCTAssertEqual(input.systemPromptText, "System weather")
@@ -697,9 +696,10 @@ final class WorkflowCommandTests: XCTestCase {
 
     let configurations = await harness.recordedConfigurations()
     let configuration = try XCTUnwrap(configurations.first)
-    XCTAssertEqual(configuration.apiKeyEnv, "GOOGLE_API_KEY")
-    XCTAssertEqual(configuration.environment?["GOOGLE_API_KEY"], "google-test-key")
-    XCTAssertEqual(configuration.environment?["GEMINI_API_KEY"], "gemini-test-key")
+    XCTAssertEqual(configuration.environment["GOOGLE_API_KEY"], "google-test-key")
+    XCTAssertEqual(configuration.environment["GEMINI_API_KEY"], "gemini-test-key")
+    let recordedInputs = await harness.recordedInputs()
+    XCTAssertEqual(recordedInputs.first?.node.provider?.apiKeyEnv, "GOOGLE_API_KEY")
   }
 
   func testBuiltinGeminiSDKWorkerReadsTaskLocalCLIEnvironmentOverrides() async throws {
@@ -718,7 +718,7 @@ final class WorkflowCommandTests: XCTestCase {
     XCTAssertEqual(output.payload["text"], .string("gemini reply"))
     let configurations = await harness.recordedConfigurations()
     let configuration = try XCTUnwrap(configurations.first)
-    XCTAssertEqual(configuration.environment?["GEMINI_API_KEY"], "override-gemini-key")
+    XCTAssertEqual(configuration.environment["GEMINI_API_KEY"], "override-gemini-key")
   }
 
   func testBuiltinGeminiSDKWorkerFailsClosedWhenRequiredAPIKeyEnvIsMissing() async throws {

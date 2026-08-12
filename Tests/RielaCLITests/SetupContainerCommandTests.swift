@@ -217,39 +217,39 @@ private struct FakeSetupContainerDownloader: SetupContainerDownloading {
   }
 }
 
-private actor RecordingSetupContainerRunner: LocalAgentProcessRunning {
-  private var recorded: [LocalAgentProcessConfiguration] = []
+private actor RecordingSetupContainerRunner: LocalProcessRunning {
+  private var recorded: [LocalProcessConfiguration] = []
 
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?
-  ) async throws -> LocalAgentProcessResult {
+  ) async throws -> LocalProcessResult {
     recorded.append(configuration)
-    return LocalAgentProcessResult(stdout: "", stderr: "", terminationStatus: 0)
+    return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 0)
   }
 
-  func invocations() -> [LocalAgentProcessConfiguration] {
+  func invocations() -> [LocalProcessConfiguration] {
     recorded
   }
 }
 
-private actor FailingSetupContainerVerifier: LocalAgentProcessRunning {
-  private var recorded: [LocalAgentProcessConfiguration] = []
+private actor FailingSetupContainerVerifier: LocalProcessRunning {
+  private var recorded: [LocalProcessConfiguration] = []
 
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?
-  ) async throws -> LocalAgentProcessResult {
+  ) async throws -> LocalProcessResult {
     recorded.append(configuration)
     if configuration.executableURL.path == "/usr/sbin/spctl" {
-      return LocalAgentProcessResult(stdout: "", stderr: "signature verification failed", terminationStatus: 1)
+      return LocalProcessResult(stdout: "", stderr: "signature verification failed", terminationStatus: 1)
     }
-    return LocalAgentProcessResult(stdout: "", stderr: "", terminationStatus: 0)
+    return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 0)
   }
 
-  func invocations() -> [LocalAgentProcessConfiguration] {
+  func invocations() -> [LocalProcessConfiguration] {
     recorded
   }
 }

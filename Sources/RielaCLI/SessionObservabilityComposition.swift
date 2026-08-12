@@ -1,5 +1,3 @@
-import ClaudeCodeAgent
-import CodexAgent
 import RielaCore
 
 public protocol SessionFollowSleeping: Sendable {
@@ -28,8 +26,27 @@ enum SessionObservabilityComposition {
 
   static func makeProbeRegistry() -> SessionBackendActivityProbeRegistry {
     SessionBackendActivityProbeRegistry([
-      CodexBackendActivityProbe(),
-      ClaudeCodeBackendActivityProbe()
+      GatewayEventActivityProbe(backend: .codexAgent),
+      GatewayEventActivityProbe(backend: .claudeCodeAgent),
+      GatewayEventActivityProbe(backend: .cursorCliAgent),
+      GatewayEventActivityProbe(backend: .officialOpenAISDK),
+      GatewayEventActivityProbe(backend: .officialAnthropicSDK),
+      GatewayEventActivityProbe(backend: .officialGeminiSDK),
+      GatewayEventActivityProbe(backend: .officialCursorSDK)
     ])
+  }
+}
+
+private struct GatewayEventActivityProbe: SessionBackendActivityProbing {
+  var backend: NodeExecutionBackend
+
+  func assess(_ input: SessionBackendActivityProbeInput) throws -> SessionBackendActivity {
+    SessionBackendActivityClassifier.classify(
+      input: input,
+      providerActivityAt: nil,
+      providerEvidence: [],
+      requiresProviderArtifactForStall: false,
+      hasCorrelatedProviderArtifact: false
+    )
   }
 }

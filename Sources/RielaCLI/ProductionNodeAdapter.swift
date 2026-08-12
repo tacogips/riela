@@ -1,4 +1,3 @@
-import CursorCLIAgent
 import Foundation
 import RielaAdapters
 import RielaAddons
@@ -25,8 +24,7 @@ func makeProductionNodeAdapter(
         .officialAnthropicSDK: gatewayFactory,
         .officialGeminiSDK: gatewayFactory,
         .officialCursorSDK: gatewayFactory
-      ],
-      includeDefaultOfficialSDKAdapters: false
+      ]
     )
   )
 }
@@ -285,10 +283,10 @@ actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving, WorkflowAddonFinali
   }
 }
 
-typealias GeminiAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
-typealias OpenAIAddonAdapterFactory = @Sendable (OfficialSDKAdapterConfiguration) async throws -> any NodeAdapter
-typealias AnthropicAddonAdapterFactory = @Sendable (AnthropicSDKAdapterConfiguration) async throws -> any NodeAdapter
-typealias CursorAddonAdapterFactory = @Sendable ([String: String]) async throws -> any NodeAdapter
+typealias GeminiAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
+typealias OpenAIAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
+typealias AnthropicAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
+typealias CursorAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
 
 private enum BuiltinSDKWorker: String {
   case codex = "riela/codex-sdk-worker"
@@ -309,13 +307,19 @@ private enum BuiltinSDKWorker: String {
   var provider: String {
     switch self {
     case .codex:
-      OpenAiSDKAdapter.provider
+      "openai"
     case .claude:
-      AnthropicSDKAdapter.provider
+      "anthropic"
     case .cursor:
-      "official-cursor-sdk"
+      "cursor-api"
     }
   }
+}
+
+private struct SDKWorkerProviderDefaults {
+  var name: String
+  var baseURL: String
+  var apiKeyEnvironment: String
 }
 
 struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
@@ -337,18 +341,10 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
     workingDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
     workflowTaskExecutor: any GeneratedWorkflowTaskExecuting = DefaultGeneratedWorkflowTaskExecutor(),
-    openAIAdapterFactory: @escaping OpenAIAddonAdapterFactory = { configuration in
-      OpenAiSDKAdapter(configuration: configuration)
-    },
-    anthropicAdapterFactory: @escaping AnthropicAddonAdapterFactory = { configuration in
-      AnthropicSDKAdapter(configuration: configuration)
-    },
-    cursorAdapterFactory: @escaping CursorAddonAdapterFactory = { environment in
-      CursorCLIAgentAdapter(environment: environment)
-    },
-    geminiAdapterFactory: @escaping GeminiAddonAdapterFactory = { configuration in
-      GeminiSDKAdapter(configuration: configuration)
-    },
+    openAIAdapterFactory: @escaping OpenAIAddonAdapterFactory = { $0.makeAdapter() },
+    anthropicAdapterFactory: @escaping AnthropicAddonAdapterFactory = { $0.makeAdapter() },
+    cursorAdapterFactory: @escaping CursorAddonAdapterFactory = { $0.makeAdapter() },
+    geminiAdapterFactory: @escaping GeminiAddonAdapterFactory = { $0.makeAdapter() },
     gitCommandRunner: any GitCommandRunning = FoundationGitCommandRunner(),
     gitExecutableURL: URL = GitExecutablePolicy.versionOneURL,
     gitExecutablePolicy: GitExecutablePolicy = GitExecutablePolicy(),
@@ -505,20 +501,25 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       renderPromptTemplate($0, variables: variables)
     }
     let resolvedEnvironment = try resolveAddonEnvironmentOverlay(input.addon.env, runtimeEnvironment: environment)
+    var nodeVariables = objectValue(config["variables"]) ?? [:]
+    if let maxTokens = config["maxTokens"] {
+      nodeVariables["maxTokens"] = maxTokens
+    }
     let adapterInput = AdapterExecutionInput(
       node: AgentNodePayload(
         id: input.nodeId,
         nodeType: .addon,
         executionBackend: sdkWorker.executionBackend,
         model: model,
-        variables: objectValue(config["variables"]) ?? [:]
+        provider: try sdkWorkerProvider(sdkWorker, config: config),
+        variables: nodeVariables
       ),
       promptText: promptText,
       systemPromptText: systemPromptText,
       arguments: input.variables,
       mergedVariables: variables
     )
-    let adapter = try await sdkAdapter(for: sdkWorker, config: config, environment: resolvedEnvironment)
+    let adapter = try await sdkAdapter(for: sdkWorker, environment: resolvedEnvironment)
     let output = try await adapter.execute(adapterInput, context: context)
     let text = (nonEmptyString(output.payload["text"]) ?? nonEmptyString(output.payload["replyText"]) ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -547,27 +548,45 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     )
   }
 
+  private func sdkWorkerProvider(
+    _ worker: BuiltinSDKWorker,
+    config: JSONObject
+  ) throws -> AgentProviderConfiguration {
+    let defaults: SDKWorkerProviderDefaults = switch worker {
+    case .codex: SDKWorkerProviderDefaults(
+      name: "openai",
+      baseURL: "https://api.openai.com/v1",
+      apiKeyEnvironment: "OPENAI_API_KEY"
+    )
+    case .claude: SDKWorkerProviderDefaults(
+      name: "anthropic",
+      baseURL: "https://api.anthropic.com/v1",
+      apiKeyEnvironment: "ANTHROPIC_API_KEY"
+    )
+    case .cursor: SDKWorkerProviderDefaults(
+      name: "cursor-api",
+      baseURL: "https://api.cursor.com/v1",
+      apiKeyEnvironment: "CURSOR_API_KEY"
+    )
+    }
+    return try AgentProviderConfiguration(
+      name: defaults.name,
+      baseUrl: nonEmptyString(config["baseURL"]) ?? defaults.baseURL,
+      apiKeyEnv: nonEmptyString(config["apiKeyEnv"]) ?? defaults.apiKeyEnvironment
+    )
+  }
+
   private func sdkAdapter(
     for sdkWorker: BuiltinSDKWorker,
-    config: JSONObject,
     environment: [String: String]
   ) async throws -> any NodeAdapter {
-    let officialConfiguration = OfficialSDKAdapterConfiguration(
-      apiKeyEnv: nonEmptyString(config["apiKeyEnv"]),
-      baseURL: nonEmptyString(config["baseURL"]).flatMap(URL.init(string:)),
-      environment: environment
-    )
     switch sdkWorker {
     case .codex:
-      return try await openAIAdapterFactory(officialConfiguration)
+      return try await openAIAdapterFactory(.init(processEnvironment: environment))
     case .claude:
-      let maxTokens = intValue(config["maxTokens"]) ?? 1024
-      return try await anthropicAdapterFactory(AnthropicSDKAdapterConfiguration(
-        officialSDK: officialConfiguration,
-        maxTokens: maxTokens
-      ))
+      return try await anthropicAdapterFactory(.init(processEnvironment: environment))
     case .cursor:
-      return try await cursorAdapterFactory(environment)
+      return try await cursorAdapterFactory(.init(processEnvironment: environment))
     }
   }
 
@@ -772,17 +791,17 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       variables["geminiInlineDataParts"] = inlineDataParts
     }
 
-    let adapter = try await geminiAdapterFactory(
-      OfficialSDKAdapterConfiguration(
-        apiKeyEnv: apiKeyEnv,
-        environment: resolvedEnvironment
-      )
-    )
+    let adapter = try await geminiAdapterFactory(.init(processEnvironment: resolvedEnvironment))
     let node = AgentNodePayload(
       id: input.nodeId,
       nodeType: .addon,
       executionBackend: .officialGeminiSDK,
-      model: model
+      model: model,
+      provider: try AgentProviderConfiguration(
+        name: "gemini",
+        baseUrl: nonEmptyString(config["baseURL"]) ?? "https://generativelanguage.googleapis.com/v1beta",
+        apiKeyEnv: apiKeyEnv
+      )
     )
     return try await adapter.execute(
       AdapterExecutionInput(

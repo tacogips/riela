@@ -311,12 +311,12 @@ final class DoctorCommandTests: XCTestCase {
 
 private struct DoctorRuntimeReadinessError: Error {}
 
-private actor ThrowingDoctorRuntimeRunner: LocalAgentProcessRunning {
+private actor ThrowingDoctorRuntimeRunner: LocalProcessRunning {
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?
-  ) async throws -> LocalAgentProcessResult {
+  ) async throws -> LocalProcessResult {
     throw DoctorRuntimeReadinessError()
   }
 }

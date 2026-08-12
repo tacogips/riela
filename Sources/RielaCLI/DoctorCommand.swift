@@ -80,10 +80,10 @@ public struct DoctorSummary: Codable, Equatable, Sendable {
 }
 
 public struct DoctorCommand: Sendable {
-  public var runner: any LocalAgentProcessRunning
+  public var runner: any LocalProcessRunning
 
   public init(
-    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner()
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner()
   ) {
     self.runner = runner
   }
@@ -330,7 +330,7 @@ public struct DoctorCommand: Sendable {
     }
     do {
       let statusResult = try await runner.run(
-        configuration: LocalAgentProcessConfiguration(
+        configuration: LocalProcessConfiguration(
           executableURL: URL(fileURLWithPath: executablePath),
           arguments: arguments,
           environment: environment

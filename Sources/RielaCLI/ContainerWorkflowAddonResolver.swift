@@ -21,13 +21,13 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
   var registrations: [ContainerAddonRegistration]
   var workingDirectory: URL
   var environment: [String: String]
-  var runner: any LocalAgentProcessRunning
+  var runner: any LocalProcessRunning
 
   init(
     registrations: [ContainerAddonRegistration],
     workingDirectory: URL,
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner()
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner()
   ) {
     self.registrations = registrations
     self.workingDirectory = workingDirectory
@@ -183,9 +183,9 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
     driver: any ContainerRuntimeDriver,
     arguments: [String],
     workingDirectory: URL
-  ) -> LocalAgentProcessConfiguration {
+  ) -> LocalProcessConfiguration {
     let invocation = processInvocation(executable: driver.executable, arguments: arguments)
-    return LocalAgentProcessConfiguration(
+    return LocalProcessConfiguration(
       executableURL: invocation.executableURL,
       arguments: invocation.arguments,
       environment: environment,
@@ -542,7 +542,7 @@ struct CompositeWorkflowAddonResolver: WorkflowAddonResolving, WorkflowAddonFina
   }
 }
 
-extension LocalAgentProcessResult {
+extension LocalProcessResult {
   fileprivate var stderrSummary: String {
     let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? "no stderr" : trimmed

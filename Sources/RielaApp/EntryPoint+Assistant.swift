@@ -1,8 +1,5 @@
 #if os(macOS)
 import Foundation
-import CodexAgent
-import ClaudeCodeAgent
-import CursorCLIAgent
 import RielaAdapters
 import RielaAppSupport
 import RielaCore
@@ -126,22 +123,12 @@ extension RielaApp {
   }
 
   private func assistantAdapter(for vendor: RielaAppAssistantVendor) throws -> any NodeAdapter {
-    switch vendor {
-    case .automatic:
-      return try assistantAdapter(for: resolvedAssistantVendor(vendor))
-    case .codexCLI:
-      return CodexAgentAdapter()
-    case .claudeCodeCLI:
-      return ClaudeCodeAgentAdapter()
-    case .cursorCLI:
-      return CursorCLIAgentAdapter()
-    case .openAIAPI:
-      return OpenAiSDKAdapter()
-    case .anthropicAPI:
-      return AnthropicSDKAdapter()
-    case .cursorAPI:
-      return CursorSDKAdapter()
-    }
+    if vendor == .automatic { return try assistantAdapter(for: resolvedAssistantVendor(vendor)) }
+    let environment = ProcessInfo.processInfo.environment
+    return AgentGatewayNodeAdapter(
+      executableName: environment["RIELA_AGENT_GATEWAY_EXECUTABLE"] ?? "agent-gateway",
+      environment: environment
+    )
   }
 
   private func assistantInput(

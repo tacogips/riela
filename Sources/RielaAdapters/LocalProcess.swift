@@ -6,7 +6,7 @@ import Darwin
 import Glibc
 #endif
 
-public struct LocalAgentProcessConfiguration: Equatable, Sendable {
+public struct LocalProcessConfiguration: Equatable, Sendable {
   public var executableURL: URL
   public var arguments: [String]
   public var environment: [String: String]
@@ -31,68 +31,7 @@ public struct LocalAgentProcessConfiguration: Equatable, Sendable {
   }
 }
 
-/// Backend-specific tool-child liveness monitor (codex terminal-child stall
-/// recovery). The adapter drives its lifecycle: `start` before the process
-/// spawns, `processSpawned` once the direct agent child's pid is known, raw
-/// stdout lines during streaming, and `stop` on completion, failure, or
-/// cancellation — after `stop` returns, no monitor task or signal may remain
-/// live.
-public protocol LocalAgentToolChildMonitoring: Sendable {
-  func start(emitBackendEvent: @escaping @Sendable (AdapterBackendEvent) -> Void)
-  func processSpawned(_ processId: Int32)
-  func observeStdoutLine(_ line: String)
-  func stop() async
-}
-
-public struct LocalAgentCommand: Sendable {
-  public var provider: String
-  public var metadata: JSONObject
-  public var additionalSensitiveValues: [String]
-  public var configuration: LocalAgentProcessConfiguration
-  public var stdin: String
-  public var normalizeStdout: @Sendable (String) -> String
-  public var backendEventType: @Sendable (String) -> String?
-  public var classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)?
-  /// Observes raw stdout JSONL without consuming or rewriting normal output.
-  public var observeStdoutLine: (@Sendable (String) -> Void)?
-  /// Called after a zero process exit and before output normalization.
-  public var processDidSucceed: (@Sendable () -> Void)?
-  /// Optional terminal tool-child stall monitor (nil = policy off).
-  public var toolChildMonitor: (any LocalAgentToolChildMonitoring)?
-
-  public init(
-    provider: String,
-    metadata: JSONObject = [:],
-    additionalSensitiveValues: [String] = [],
-    configuration: LocalAgentProcessConfiguration,
-    stdin: String,
-    normalizeStdout: @escaping @Sendable (String) -> String = { $0 },
-    backendEventType: @escaping @Sendable (String) -> String? = { _ in nil },
-    classifyBackendEvent: (@Sendable (String) -> AdapterBackendEvent?)? = nil,
-    observeStdoutLine: (@Sendable (String) -> Void)? = nil,
-    processDidSucceed: (@Sendable () -> Void)? = nil,
-    toolChildMonitor: (any LocalAgentToolChildMonitoring)? = nil
-  ) {
-    self.provider = provider
-    self.metadata = metadata
-    self.additionalSensitiveValues = additionalSensitiveValues
-    self.configuration = configuration
-    self.stdin = stdin
-    self.normalizeStdout = normalizeStdout
-    self.backendEventType = backendEventType
-    self.classifyBackendEvent = classifyBackendEvent
-    self.observeStdoutLine = observeStdoutLine
-    self.processDidSucceed = processDidSucceed
-    self.toolChildMonitor = toolChildMonitor
-  }
-}
-
-public protocol LocalAgentCommandBuilding: Sendable {
-  var provider: String { get }
-  func buildCommand(for input: AdapterExecutionInput) throws -> LocalAgentCommand
-}
-
-public struct LocalAgentProcessResult: Equatable, Sendable {
+public struct LocalProcessResult: Equatable, Sendable {
   public var stdout: String
   public var stderr: String
   public var terminationStatus: Int32
@@ -104,45 +43,32 @@ public struct LocalAgentProcessResult: Equatable, Sendable {
   }
 }
 
-public protocol LocalAgentProcessRunning: Sendable {
-  func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalAgentProcessResult
+public protocol LocalProcessRunning: Sendable {
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult
 }
 
-public enum LocalAgentProcessOutputStream: String, Equatable, Sendable {
+public enum LocalProcessOutputStream: String, Equatable, Sendable {
   case stdout
   case stderr
 }
 
-public struct LocalAgentProcessOutputEvent: Equatable, Sendable {
-  public var stream: LocalAgentProcessOutputStream
+public struct LocalProcessOutputEvent: Equatable, Sendable {
+  public var stream: LocalProcessOutputStream
   public var line: String
 
-  public init(stream: LocalAgentProcessOutputStream, line: String) {
+  public init(stream: LocalProcessOutputStream, line: String) {
     self.stream = stream
     self.line = line
   }
 }
 
-public protocol LocalAgentProcessEventStreaming: LocalAgentProcessRunning {
+public protocol LocalProcessEventStreaming: LocalProcessRunning {
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-  ) async throws -> LocalAgentProcessResult
-}
-
-/// Streaming runners that can additionally report the spawned direct child's
-/// pid, enabling tool-child correlation. Optional capability; runners without
-/// it simply never bind process identities.
-public protocol LocalAgentProcessSpawnObserving: LocalAgentProcessEventStreaming {
-  func run(
-    configuration: LocalAgentProcessConfiguration,
-    stdin: String,
-    deadline: Date?,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?,
-    spawnHandler: (@Sendable (Int32) -> Void)?
-  ) async throws -> LocalAgentProcessResult
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) async throws -> LocalProcessResult
 }
 
 private final class LockedProcessData: @unchecked Sendable {
@@ -164,13 +90,13 @@ private final class LockedProcessData: @unchecked Sendable {
 
 private final class LocalProcessPipeReader: @unchecked Sendable {
   private let fileDescriptor: Int32
-  private let stream: LocalAgentProcessOutputStream
-  private let outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+  private let stream: LocalProcessOutputStream
+  private let outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
 
   init(
     fileHandle: FileHandle,
-    stream: LocalAgentProcessOutputStream,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
+    stream: LocalProcessOutputStream,
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
   ) {
     self.fileDescriptor = fileHandle.fileDescriptor
     self.stream = stream
@@ -229,7 +155,7 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
     guard let line = String(data: lineData, encoding: .utf8), !line.isEmpty else {
       return
     }
-    outputEventHandler(LocalAgentProcessOutputEvent(stream: stream, line: line))
+    outputEventHandler(LocalProcessOutputEvent(stream: stream, line: line))
   }
 }
 
@@ -301,9 +227,9 @@ private final class LocalProcessCompletion: @unchecked Sendable {
   private var didTimeout = false
   private var didCancel = false
   private var deadlineWorkItem: DispatchWorkItem?
-  private let continuation: CheckedContinuation<LocalAgentProcessResult, Error>
+  private let continuation: CheckedContinuation<LocalProcessResult, Error>
 
-  init(continuation: CheckedContinuation<LocalAgentProcessResult, Error>) {
+  init(continuation: CheckedContinuation<LocalProcessResult, Error>) {
     self.continuation = continuation
   }
 
@@ -344,7 +270,7 @@ private final class LocalProcessCompletion: @unchecked Sendable {
     workItem?.cancel()
   }
 
-  func resume(_ result: Result<LocalAgentProcessResult, Error>) {
+  func resume(_ result: Result<LocalProcessResult, Error>) {
     lock.lock()
     guard !didResume else {
       lock.unlock()
@@ -595,7 +521,7 @@ private func disableSigpipeForStdin(_ fileDescriptor: Int32) {
 }
 
 private func spawnProcess(
-  configuration: LocalAgentProcessConfiguration,
+  configuration: LocalProcessConfiguration,
   inputReadDescriptor: Int32,
   inputWriteDescriptor: Int32,
   outputReadDescriptor: Int32,
@@ -673,35 +599,19 @@ private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
   return -(status & 0x7f)
 }
 
-public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, LocalAgentProcessEventStreaming, LocalAgentProcessSpawnObserving {
+public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEventStreaming {
   public init() {}
 
-  public func run(configuration: LocalAgentProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalAgentProcessResult {
+  public func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date? = nil) async throws -> LocalProcessResult {
     try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
   }
 
   public func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date? = nil,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-  ) async throws -> LocalAgentProcessResult {
-    try await run(
-      configuration: configuration,
-      stdin: stdin,
-      deadline: deadline,
-      outputEventHandler: outputEventHandler,
-      spawnHandler: nil
-    )
-  }
-
-  public func run(
-    configuration: LocalAgentProcessConfiguration,
-    stdin: String,
-    deadline: Date? = nil,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?,
-    spawnHandler: (@Sendable (Int32) -> Void)?
-  ) async throws -> LocalAgentProcessResult {
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) async throws -> LocalProcessResult {
     let effectiveConfiguration = try seatbeltInvocation(for: configuration) ?? configuration
     let cancellationState = LocalProcessCancellationState()
     return try await withTaskCancellationHandler {
@@ -751,7 +661,6 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
             errorWriteDescriptor: errorPipe.fileHandleForWriting.fileDescriptor
           )
           processHandle.store(processId: processId)
-          spawnHandler?(Int32(processId))
           cancellationState.configure(processHandle: processHandle, pipes: pipes, completion: completion)
           try? inputPipe.fileHandleForReading.close()
           pipes.closeParentOutputWriters()
@@ -776,7 +685,7 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
               cancellationState.finish()
               completion.resume(
                 .success(
-                  LocalAgentProcessResult(
+                  LocalProcessResult(
                     stdout: output,
                     stderr: error,
                     terminationStatus: terminationStatus(fromWaitStatus: status)
@@ -822,189 +731,5 @@ public struct FoundationLocalAgentProcessRunner: LocalAgentProcessRunning, Local
     } onCancel: {
       cancellationState.cancel()
     }
-  }
-}
-
-public struct LocalAgentCommandAdapter: NodeAdapter {
-  public var commandBuilder: any LocalAgentCommandBuilding
-  public var runner: any LocalAgentProcessRunning
-  public var backendEventCoalescingTimeThreshold: TimeInterval
-
-  public init(
-    commandBuilder: any LocalAgentCommandBuilding,
-    runner: any LocalAgentProcessRunning = FoundationLocalAgentProcessRunner(),
-    backendEventCoalescingTimeThreshold: TimeInterval = 0.25
-  ) {
-    self.commandBuilder = commandBuilder
-    self.runner = runner
-    self.backendEventCoalescingTimeThreshold = backendEventCoalescingTimeThreshold
-  }
-
-  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    let command = try commandBuilder.buildCommand(for: input)
-    let result: LocalAgentProcessResult
-    if let streamingRunner = runner as? any LocalAgentProcessEventStreaming {
-      let eventBridge = makeBackendEventBridge(
-        command: command,
-        context: context,
-        streamContent: backendContentStreamingEnabled(input.node.variables["streamBackendContent"]),
-        coalescingTimeThreshold: backendEventCoalescingTimeThreshold
-      )
-      let monitor = command.toolChildMonitor
-      monitor?.start(emitBackendEvent: eventBridge.emitInjected)
-      let outputHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-      let bridgeHandler = eventBridge.handler
-      if monitor != nil || command.observeStdoutLine != nil || bridgeHandler != nil {
-        outputHandler = { outputEvent in
-          if outputEvent.stream == .stdout {
-            command.observeStdoutLine?(outputEvent.line)
-            monitor?.observeStdoutLine(outputEvent.line)
-          }
-          bridgeHandler?(outputEvent)
-        }
-      } else {
-        outputHandler = nil
-      }
-      do {
-        if let monitor, let spawnObservingRunner = streamingRunner as? any LocalAgentProcessSpawnObserving {
-          result = try await spawnObservingRunner.run(
-            configuration: command.configuration,
-            stdin: command.stdin,
-            deadline: context.deadline,
-            outputEventHandler: outputHandler,
-            spawnHandler: { monitor.processSpawned($0) }
-          )
-        } else {
-          result = try await streamingRunner.run(
-            configuration: command.configuration,
-            stdin: command.stdin,
-            deadline: context.deadline,
-            outputEventHandler: outputHandler
-          )
-        }
-        await monitor?.stop()
-        eventBridge.finish()
-        await eventBridge.waitForCompletion()
-      } catch {
-        await monitor?.stop()
-        eventBridge.finish()
-        await eventBridge.waitForCompletion()
-        throw redactedCommandExecutionError(error, command: command)
-      }
-    } else {
-      do {
-        result = try await runner.run(configuration: command.configuration, stdin: command.stdin, deadline: context.deadline)
-      } catch {
-        throw redactedCommandExecutionError(error, command: command)
-      }
-      for line in result.stdout.split(whereSeparator: \.isNewline) {
-        command.observeStdoutLine?(String(line))
-      }
-    }
-    guard result.terminationStatus == 0 else {
-      let detail = redactAdapterSensitiveText(
-        result.stderr.trimmingCharacters(in: .whitespacesAndNewlines),
-        additionalSensitiveValues: commandSensitiveValues(command)
-      )
-      throw AdapterExecutionError(.providerError, "\(command.provider) failed with exit code \(result.terminationStatus): \(detail)")
-    }
-    command.processDidSucceed?()
-
-    let responseText = redactAdapterSensitiveText(
-      command.normalizeStdout(result.stdout),
-      additionalSensitiveValues: commandSensitiveValues(command)
-    )
-    let normalized = try normalizeAgentOutput(responseText, source: command.provider, requiresOutputContract: input.node.output != nil)
-    let sensitiveValues = commandSensitiveValues(command)
-    var payload = sanitizedJSONObject(normalized.payload, sensitiveValues: sensitiveValues)
-    payload.merge(sanitizedJSONObject(command.metadata, sensitiveValues: sensitiveValues)) { _, metadataValue in metadataValue }
-    return AdapterExecutionOutput(
-      provider: command.provider,
-      model: input.node.model,
-      promptText: input.promptText,
-      completionPassed: normalized.completionPassed,
-      when: sanitizedWhen(normalized.when, sensitiveValues: sensitiveValues),
-      payload: payload
-    )
-  }
-
-  private func makeBackendEventBridge(
-    command: LocalAgentCommand,
-    context: AdapterExecutionContext,
-    streamContent: Bool,
-    coalescingTimeThreshold: TimeInterval
-  ) -> BackendEventBridge {
-    guard let backendEventHandler = context.backendEventHandler else {
-      return BackendEventBridge(handler: nil, emitInjected: { _ in }, finish: {}, waitForCompletion: {})
-    }
-    let sensitiveValues = commandSensitiveValues(command)
-    let (eventStream, continuation) = AsyncStream.makeStream(
-      of: AdapterBackendEvent.self,
-      bufferingPolicy: .bufferingNewest(512)
-    )
-    let consumer = Task {
-      for await event in eventStream {
-        await backendEventHandler(event)
-      }
-    }
-    let coalescer = BackendEventCoalescer(timeThreshold: coalescingTimeThreshold)
-    let handler: @Sendable (LocalAgentProcessOutputEvent) -> Void = { outputEvent in
-      guard outputEvent.stream == .stdout else {
-        return
-      }
-      let classified = command.classifyBackendEvent?(outputEvent.line)
-      let selectedEvent = streamContent || classified?.backendSessionId != nil ? classified : nil
-      guard var event = selectedEvent ?? fallbackBackendEvent(command: command, line: outputEvent.line) else {
-        return
-      }
-      if event.provider.isEmpty {
-        event.provider = command.provider
-      }
-      if !command.metadata.isEmpty {
-        event.metadata = (event.metadata ?? [:]).merging(command.metadata) { _, commandValue in commandValue }
-      }
-      event = sanitizedBackendEvent(event, sensitiveValues: sensitiveValues)
-      coalescer.absorb(event) { continuation.yield($0) }
-    }
-    return BackendEventBridge(
-      handler: handler,
-      emitInjected: { event in
-        var event = event
-        if !command.metadata.isEmpty {
-          event.metadata = (event.metadata ?? [:]).merging(command.metadata) { _, commandValue in commandValue }
-        }
-        event = sanitizedBackendEvent(event, sensitiveValues: sensitiveValues)
-        _ = continuation.yield(event)
-      },
-      finish: {
-        coalescer.finish { continuation.yield($0) }
-        continuation.finish()
-      },
-      waitForCompletion: { await consumer.value }
-    )
-  }
-
-  private func normalizeAgentOutput(
-    _ text: String,
-    source: String,
-    requiresOutputContract: Bool
-  ) throws -> OutputContractEnvelopeNormalization {
-    guard requiresOutputContract else {
-      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-      if trimmed.hasPrefix("{"),
-        let parsed = try? parseJSONObjectCandidate(trimmed, source: source),
-        let normalized = try? normalizeOutputContractEnvelope(parsed, source: source) {
-        return normalized
-      }
-      return OutputContractEnvelopeNormalization(
-        completionPassed: true,
-        when: ["always": true],
-        payload: normalizeTextBusinessPayload(text),
-        usedEnvelope: false
-      )
-    }
-
-    let parsed = try parseJSONObjectCandidate(text, source: source)
-    return try normalizeOutputContractEnvelope(parsed, source: source)
   }
 }

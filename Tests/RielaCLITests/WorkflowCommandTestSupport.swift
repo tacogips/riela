@@ -34,10 +34,10 @@ actor RecordingWorkflowGraphQLRunTransport: WorkflowGraphQLRunTransporting {
 }
 
 actor RecordingGeminiAddonHarness {
-  private var configurations: [OfficialSDKAdapterConfiguration] = []
+  private var configurations: [AgentGatewayAdapterConfiguration] = []
   private var inputs: [AdapterExecutionInput] = []
 
-  func makeAdapter(configuration: OfficialSDKAdapterConfiguration) -> any NodeAdapter {
+  func makeAdapter(configuration: AgentGatewayAdapterConfiguration) -> any NodeAdapter {
     configurations.append(configuration)
     return RecordingGeminiAddonAdapter(harness: self)
   }
@@ -46,7 +46,7 @@ actor RecordingGeminiAddonHarness {
     inputs.append(input)
   }
 
-  func recordedConfigurations() -> [OfficialSDKAdapterConfiguration] {
+  func recordedConfigurations() -> [AgentGatewayAdapterConfiguration] {
     configurations
   }
 

@@ -154,12 +154,8 @@ final class RielaTestSurfaceCoverageTests: XCTestCase {
 
   private static let equivalentSwiftTests: [String: [String]] = [
     "agent-adapters": [
-      "Tests/RielaAdaptersTests/OfficialSDKAdapterTests.swift",
-      "Tests/RielaAdaptersTests/WorkflowStdioNodeExecutorTests.swift",
-      "Tests/AgentAdapterTests/AgentAdapterTests.swift",
-      "Tests/CodexAgentTests/CodexAgentCompatibilityTests.swift",
-      "Tests/ClaudeCodeAgentTests/ClaudeCodeAgentCompatibilityTests.swift",
-      "Tests/CursorCLIAgentTests/CursorCLIAgentCompatibilityTests.swift"
+      "Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift",
+      "Tests/RielaAdaptersTests/WorkflowStdioNodeExecutorTests.swift"
     ],
     "cli": [
       "Tests/RielaCLITests/CommandParsingTests.swift",

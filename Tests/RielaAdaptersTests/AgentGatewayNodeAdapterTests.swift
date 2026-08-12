@@ -69,7 +69,7 @@ import Testing
     (.officialOpenAISDK, .openAI),
     (.officialAnthropicSDK, .anthropic),
     (.officialGeminiSDK, .gemini),
-    (.officialCursorSDK, .cursor)
+    (.officialCursorSDK, .cursorAPI)
   ]
   for (backend, vendor) in mappings {
     let response = GatewayRPCResponse(
@@ -156,7 +156,61 @@ import Testing
   #expect(arguments.contains("--ephemeral"))
 }
 
-private final class GatewayStubRunner: LocalAgentProcessEventStreaming, @unchecked Sendable {
+@Test func gatewayAdapterReusesOnlyTheInheritedWorkflowSession() async throws {
+  let store = AgentGatewaySessionStore()
+  let firstResponse = GatewayRPCResponse(
+    id: "producer",
+    result: GatewayExecuteResult(
+      vendor: .codex,
+      model: "gpt-5",
+      text: "first",
+      sessionId: "backend-session-1"
+    )
+  )
+  let firstRunner = GatewayStubRunner(lines: [try encodeLine(firstResponse)])
+  _ = try await AgentGatewayNodeAdapter(runner: firstRunner, sessionStore: store).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "producer", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "first",
+      executionIdentity: AdapterExecutionIdentity(
+        workflowRunId: "run-1",
+        workflowSessionId: "workflow-session-1",
+        stepId: "producer"
+      )
+    ),
+    context: AdapterExecutionContext()
+  )
+
+  let secondResponse = GatewayRPCResponse(
+    id: "consumer",
+    result: GatewayExecuteResult(vendor: .codex, model: "gpt-5", text: "second")
+  )
+  let secondRunner = GatewayStubRunner(lines: [try encodeLine(secondResponse)])
+  _ = try await AgentGatewayNodeAdapter(runner: secondRunner, sessionStore: store).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "consumer", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "second",
+      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "producer"),
+      executionIdentity: AdapterExecutionIdentity(
+        workflowRunId: "run-1",
+        workflowSessionId: "workflow-session-1",
+        stepId: "consumer"
+      )
+    ),
+    context: AdapterExecutionContext()
+  )
+  #expect(secondRunner.request()?.params.sessionMode == .reuse)
+  #expect(secondRunner.request()?.params.sessionId == "backend-session-1")
+
+  let isolatedKey = AgentGatewaySessionKey(
+    workflowRunId: "run-1",
+    workflowSessionId: "workflow-session-2",
+    stepId: "producer"
+  )
+  #expect(store.sessionId(for: isolatedKey) == nil)
+}
+
+private final class GatewayStubRunner: LocalProcessEventStreaming, @unchecked Sendable {
   private let lock = NSLock()
   private let lines: [String]
   private var capturedRequest: GatewayRPCRequest?
@@ -164,25 +218,25 @@ private final class GatewayStubRunner: LocalAgentProcessEventStreaming, @uncheck
   init(lines: [String]) { self.lines = lines }
 
   func run(
-    configuration: LocalAgentProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline: Date?
-  ) async throws -> LocalAgentProcessResult {
+  ) async throws -> LocalProcessResult {
     try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
   }
 
   func run(
-    configuration _: LocalAgentProcessConfiguration,
+    configuration _: LocalProcessConfiguration,
     stdin: String,
     deadline _: Date?,
-    outputEventHandler: (@Sendable (LocalAgentProcessOutputEvent) -> Void)?
-  ) async throws -> LocalAgentProcessResult {
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) async throws -> LocalProcessResult {
     let request = try JSONDecoder().decode(GatewayRPCRequest.self, from: Data(stdin.utf8))
     lock.withLock { capturedRequest = request }
     for line in lines {
-      outputEventHandler?(LocalAgentProcessOutputEvent(stream: .stdout, line: line))
+      outputEventHandler?(LocalProcessOutputEvent(stream: .stdout, line: line))
     }
-    return LocalAgentProcessResult(stdout: lines.joined(separator: "\n"), stderr: "", terminationStatus: 0)
+    return LocalProcessResult(stdout: lines.joined(separator: "\n"), stderr: "", terminationStatus: 0)
   }
 
   func request() -> GatewayRPCRequest? { lock.withLock { capturedRequest } }

@@ -1,5 +1,5 @@
 {
-  "originHash" : "38dab29074349b1db5a4a96cdecf2d8bedfc77b5ba49c32b56845b58a077aa6a",
+  "originHash" : "380fd1885f141c777ea274ddea00f626fd78b0326a248c9699b8700d2dfba36e",
   "pins" : [
     {
       "identity" : "anydoc-swift",
@@ -14,7 +14,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "4f73195b6ddf1221ae7dc310d158234faeb6a8fc"
+        "revision" : "2ba3ed09693c6986c5c03b3f32b91cad8a1f5f56"
       }
     },
     {

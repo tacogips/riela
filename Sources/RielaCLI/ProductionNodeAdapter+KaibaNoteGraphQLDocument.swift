@@ -17,16 +17,21 @@ func executeNoteGraphQLDocument(_ context: NoteAddonContext) async throws -> Rie
     // Remote mode: execute against a running `kaiba serve` note API using an
     // API key issued by `kaiba client issue` (read from the env var named by
     // `apiKeyEnv`; defaults to KAIBA_API_KEY).
-    let (body, httpStatus) = try await executeRemoteKaibaGraphQL(
-      endpoint: endpoint,
-      apiKey: remoteKaibaAPIKey(context),
-      query: query,
-      variables: variables,
-      operationName: context.string("operationName")
+    guard let baseURL = URL(string: endpoint), baseURL.scheme != nil else {
+      throw noteAddonInvalidInput("kaiba endpoint must be an absolute URL, got: \(endpoint)")
+    }
+    let client = GraphQLHTTPDocumentClient(
+      endpoint: GraphQLHTTPDocumentClient.endpointURL(from: baseURL),
+      bearerToken: try remoteKaibaAPIKey(context)
     )
-    responseBody = body
-    handled = true
-    status = httpStatus
+    let response = await client.execute(GraphQLDocumentRequest(
+      query: query,
+      variables: try bridgedKaibaJSONObject(variables),
+      operationName: context.string("operationName")
+    ))
+    responseBody = try bridgedRielaJSONObject(response.body)
+    handled = response.handled
+    status = response.status
   } else {
     let executor = NoteGraphQLDocumentExecutor(service: GraphQLNoteGraphQLService(service: context.service))
     let response = await executor.execute(GraphQLDocumentRequest(
@@ -43,6 +48,9 @@ func executeNoteGraphQLDocument(_ context: NoteAddonContext) async throws -> Rie
   }
   if let errors = responseBody["errors"] {
     throw noteAddonInvalidInput("\(context.input.addon.name) document failed: \(errors)")
+  }
+  guard (200...299).contains(status) else {
+    throw noteAddonInvalidInput("\(context.input.addon.name) endpoint returned status \(status)")
   }
   var payload: RielaCore.JSONObject = [
     "handled": .bool(handled),
@@ -88,44 +96,4 @@ private func remoteKaibaAPIKey(_ context: NoteAddonContext) throws -> String? {
     )
   }
   return nil
-}
-
-private func executeRemoteKaibaGraphQL(
-  endpoint: String,
-  apiKey: String?,
-  query: String,
-  variables: RielaCore.JSONObject,
-  operationName: String?
-) async throws -> (RielaCore.JSONObject, Int) {
-  guard let base = URL(string: endpoint), base.scheme != nil else {
-    throw noteAddonInvalidInput("kaiba endpoint must be an absolute URL, got: \(endpoint)")
-  }
-  let url = base.appendingPathComponent("graphql")
-  var request = URLRequest(url: url)
-  request.httpMethod = "POST"
-  request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-  if let apiKey {
-    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-  }
-  var envelope: RielaCore.JSONObject = ["query": .string(query), "variables": .object(variables)]
-  if let operationName {
-    envelope["operationName"] = .string(operationName)
-  }
-  request.httpBody = try JSONEncoder().encode(RielaCore.JSONValue.object(envelope))
-  let (data, urlResponse) = try await URLSession.shared.data(for: request)
-  let statusCode = (urlResponse as? HTTPURLResponse)?.statusCode ?? 0
-  guard let value = try? JSONDecoder().decode(RielaCore.JSONValue.self, from: data),
-    case let .object(body) = value else {
-    throw noteAddonInvalidInput("kaiba endpoint returned a non-JSON response (status \(statusCode))")
-  }
-  guard (200...299).contains(statusCode) else {
-    let message: String
-    if case let .string(error)? = body["error"] {
-      message = error
-    } else {
-      message = "status \(statusCode)"
-    }
-    throw noteAddonInvalidInput("kaiba endpoint rejected the document: \(message)")
-  }
-  return (body, statusCode)
 }

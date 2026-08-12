@@ -1,0 +1,11 @@
+{
+  "id": "kaiba-incoming-documents",
+  "kind": "file-change",
+  "directory": "../../incoming",
+  "changeTypes": ["create"],
+  "recursive": true,
+  "stabilityWindowMs": 1500,
+  "filters": {
+    "suffixes": [".pdf", ".epub", ".docx", ".pptx", ".xlsx", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".webp"]
+  }
+}

@@ -2,7 +2,6 @@ import Foundation
 import RielaCore
 import AppCore
 
-
 private let noteAddonDefaultMaxAttachmentBytes = InlineWorkflowAddonAttachmentProjector.maxAttachmentBytes
 private let noteAddonDefaultMaxPageCount = 500
 extension BuiltinWorkflowAddonResolver {
@@ -24,18 +23,28 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try getNote(context)
     case .search:
       candidate = try searchNotes(context)
+    case .tagSearch:
+      candidate = try searchNotesByTag(context)
     case .graphNeighbors:
       candidate = try graphNeighbors(context)
+    case .chain:
+      candidate = try noteChain(context)
     case .tagApply:
       candidate = try applyNoteTags(context)
     case .attachFile:
       candidate = try attachNoteFile(context, input: input)
+    case .attachments:
+      candidate = try noteAttachments(context)
+    case .memos:
+      candidate = try noteMemos(context)
     case .graphQLDocument:
       candidate = try await executeNoteGraphQLDocument(context)
     case .commentAdd:
       candidate = try addNoteComment(context)
     case .notebookIngestPages:
       candidate = try ingestNotebookPages(context)
+    case .documentImport:
+      candidate = try await importKaibaDocument(context)
     case .conversationSave:
       candidate = try saveNoteConversation(context)
     case .kanbanTaskCreate:
@@ -49,8 +58,7 @@ extension BuiltinWorkflowAddonResolver {
     var payload: JSONObject = [
       "status": .string("ok"),
       "addon": .string(input.addon.name),
-      "operation": .string(operation.rawValue.replacingOccurrences(of: "kaiba/note-", with: "")
-        .replacingOccurrences(of: "riela/notebook-", with: "notebook-")),
+      "operation": .string(operation.outputName),
       "stepId": .string(input.stepId),
       "noteRoot": .string(context.noteRoot),
       "databasePath": .string(context.service.driver.databasePath)
@@ -75,6 +83,7 @@ struct NoteAddonContext {
   var variables: JSONObject
   var noteRoot: String
   var service: NoteService
+  var kaibaConfiguration: KaibaConfiguration
   var environment: [String: String]
   var maxAttachmentBytes: Int {
     max(0, int("maxAttachmentBytes", default: noteAddonDefaultMaxAttachmentBytes))
@@ -102,12 +111,25 @@ struct NoteAddonContext {
       ?? environment["RIELA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
       ?? "\(NSHomeDirectory())/.kaiba"
     noteRoot = (noteRoot as NSString).expandingTildeInPath
+    let configuredPath = noteString("configPath", config: config, variables: variables)
+      ?? environment["KAIBA_CONFIG_PATH"].flatMap { $0.isEmpty ? nil : $0 }
+    if let configuredPath {
+      kaibaConfiguration = try KaibaConfigurationLoader.load(
+        at: (configuredPath as NSString).expandingTildeInPath,
+        required: true
+      )
+    } else {
+      kaibaConfiguration = KaibaConfiguration()
+    }
+    let driver = try KaibaConfigurationLoader.makeDriver(
+      configuration: kaibaConfiguration.database,
+      noteRoot: noteRoot,
+      environment: environment
+    )
     // Kaiba owns the note store; riela does not dispatch auto-action
     // workflows here. Pending auto-action rows accumulate only for actions
     // the user explicitly enabled in kaiba.
-    service = try NoteService(
-      driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot)
-    )
+    service = try NoteService(driver: driver)
   }
 
   func string(_ keys: String...) -> String? {
@@ -301,7 +323,6 @@ private func attachNoteFile(
     "file": noteFileAttachmentJSON(stored)
   ]
 }
-
 
 private func addNoteComment(_ context: NoteAddonContext) throws -> JSONObject {
   let comment = try context.service.addComment(
@@ -664,7 +685,7 @@ private func noteSearchResultJSON(_ result: NoteSearchResult) -> JSONValue {
   ])
 }
 
-private func noteGraphNeighborJSON(_ result: NoteGraphNeighbor) -> JSONValue {
+func noteGraphNeighborJSON(_ result: NoteGraphNeighbor) -> JSONValue {
   .object([
     "seedNoteId": .string(result.seedNoteId),
     "note": noteJSON(result.note),
@@ -696,7 +717,7 @@ private func tagJSON(_ tag: Tag) -> JSONValue {
   ])
 }
 
-private func noteCommentJSON(_ comment: NoteComment) -> JSONValue {
+func noteCommentJSON(_ comment: NoteComment) -> JSONValue {
   .object([
     "commentId": .string(comment.commentId),
     "noteId": .string(comment.noteId),
@@ -716,7 +737,7 @@ private func noteLinkJSON(_ link: NoteLink) -> JSONValue {
   ])
 }
 
-private func noteFileAttachmentJSON(_ attachment: NoteFileAttachment) -> JSONValue {
+func noteFileAttachmentJSON(_ attachment: NoteFileAttachment) -> JSONValue {
   .object([
     "noteId": .string(attachment.noteId),
     "role": .string(attachment.role.rawValue),
@@ -725,7 +746,7 @@ private func noteFileAttachmentJSON(_ attachment: NoteFileAttachment) -> JSONVal
   ])
 }
 
-private func notebookFileAttachmentJSON(_ attachment: NotebookFileAttachment) -> JSONValue {
+func notebookFileAttachmentJSON(_ attachment: NotebookFileAttachment) -> JSONValue {
   .object([
     "notebookId": .string(attachment.notebookId),
     "role": .string(attachment.role.rawValue),
@@ -733,7 +754,7 @@ private func notebookFileAttachmentJSON(_ attachment: NotebookFileAttachment) ->
   ])
 }
 
-private func fileRecordJSON(_ file: FileRecord) -> JSONValue {
+func fileRecordJSON(_ file: FileRecord) -> JSONValue {
   .object([
     "fileId": .string(file.fileId),
     "storageKind": .string(file.storageKind.rawValue),
@@ -741,6 +762,7 @@ private func fileRecordJSON(_ file: FileRecord) -> JSONValue {
     "s3Profile": file.s3Profile.map { .string($0) } ?? .null,
     "s3Bucket": file.s3Bucket.map { .string($0) } ?? .null,
     "s3Key": file.s3Key.map { .string($0) } ?? .null,
+    "s3URL": s3Locator(for: file).map { .string($0) } ?? .null,
     "mediaType": .string(file.mediaType),
     "byteSize": .number(Double(file.byteSize)),
     "sha256": .string(file.sha256),

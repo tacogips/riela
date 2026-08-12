@@ -1,0 +1,38 @@
+{
+  "workflowId": "kaiba-document-intake",
+  "description": "Import a PDF, EPUB, office document, CSV, or image observed by a Riela file-change source into Kaiba, with node-controlled OCR and translation.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 900000
+  },
+  "entryStepId": "import-document",
+  "nodes": [
+    {
+      "id": "import-document",
+      "addon": {
+        "name": "kaiba/document-import",
+        "version": "1",
+        "config": {
+          "localFileRoot": "{{workflowInput.watch.resolvedDirectory}}",
+          "configPath": "{{workflowInput.kaibaConfigPath}}",
+          "maxAttachmentBytes": 104857600
+        },
+        "inputs": {
+          "path": "{{workflowInput.path}}",
+          "title": "{{workflowInput.title}}",
+          "ocr": "{{workflowInput.ocr}}",
+          "translate": "{{workflowInput.translate}}",
+          "targetLanguage": "{{workflowInput.targetLanguage}}",
+          "s3ProfileName": "{{workflowInput.s3ProfileName}}"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "import-document",
+      "nodeId": "import-document",
+      "role": "worker"
+    }
+  ]
+}

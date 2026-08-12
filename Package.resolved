@@ -1,13 +1,20 @@
 {
-  "originHash" : "87323cfab562d83a87bfa6fbaae29a010ed8271b5352450b28a89d2964abdcd9",
+  "originHash" : "38dab29074349b1db5a4a96cdecf2d8bedfc77b5ba49c32b56845b58a077aa6a",
   "pins" : [
+    {
+      "identity" : "anydoc-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/anydoc-swift.git",
+      "state" : {
+        "revision" : "9ee68e37c9520558c166fb8832965b480ffe41f7"
+      }
+    },
     {
       "identity" : "kaiba",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "5b64b764b5dacd75a2715aac44b33878926752a2",
-        "version" : "0.1.4"
+        "revision" : "4f73195b6ddf1221ae7dc310d158234faeb6a8fc"
       }
     },
     {

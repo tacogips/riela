@@ -146,7 +146,7 @@ private func fileReferenceURL(_ ref: String, relativeTo root: URL) -> URL {
   return URL(fileURLWithPath: ref, relativeTo: root).standardizedFileURL
 }
 
-private func localFileReferenceURL(_ ref: String, context: NoteAddonContext) throws -> URL {
+func localFileReferenceURL(_ ref: String, context: NoteAddonContext) throws -> URL {
   let resolvedRoot = context.localFileRoot.resolvingSymlinksInPath().standardizedFileURL
   let resolvedURL = fileReferenceURL(ref, relativeTo: context.localFileRoot)
     .resolvingSymlinksInPath()
@@ -167,7 +167,7 @@ private func isDescendant(_ url: URL, of root: URL) -> Bool {
     || path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/")
 }
 
-private func localFileSize(url: URL, context: NoteAddonContext) throws -> Int {
+func localFileSize(url: URL, context: NoteAddonContext) throws -> Int {
   let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
   guard values.isRegularFile == true else {
     throw noteAddonInvalidInput(

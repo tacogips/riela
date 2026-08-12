@@ -263,9 +263,11 @@ Riela consumes kaiba as an addon knowledge/context source. The built-in
 `kaiba/*` addons expose kaiba-client-equivalent operations to workflows:
 
 - `kaiba/note-create`, `kaiba/note-update`, `kaiba/note-get`,
-  `kaiba/note-search`, `kaiba/note-graph-neighbors`, `kaiba/note-tag-apply`,
-  `kaiba/note-attach-file`, `kaiba/note-comment-add`,
-  `kaiba/notebook-ingest-pages`, `kaiba/note-conversation-save`
+  `kaiba/note-search`, `kaiba/note-tag-search`,
+  `kaiba/note-graph-neighbors`, `kaiba/note-chain`, `kaiba/note-tag-apply`,
+  `kaiba/note-attach-file`, `kaiba/note-attachments`, `kaiba/note-memos`,
+  `kaiba/note-comment-add`, `kaiba/notebook-ingest-pages`,
+  `kaiba/document-import`, `kaiba/note-conversation-save`
 - Kanban: `kaiba/note-kanban-task-create`, `kaiba/note-kanban-move`,
   `kaiba/note-kanban-board`
 - Long-term memory: `kaiba/memory-consolidate`, `kaiba/memory-recall`
@@ -276,6 +278,34 @@ Addons operate on a local note root (config `noteRoot`, env
 remotely against a running `kaiba serve` by setting `endpoint` in the addon
 config plus an API key in the env var named by `apiKeyEnv` (default
 `KAIBA_API_KEY`; issue keys with `kaiba client issue`).
+
+`kaiba/document-import` consumes a local `path` (normally
+`event.input.file.absolutePath` from a `file-change` source), converts PDF,
+EPUB, office, CSV, and related formats through Kaiba's in-process AnydocKit,
+and stores the original as a notebook attachment. Set node input `ocr: true`
+for Kaiba's agent-gateway image OCR, and `translate: true` plus
+`targetLanguage` for post-import notebook translation. OCR and translation
+vendor/model fields can be supplied directly (`ocrVendor`/`ocrModel`,
+`translationVendor`/`translationModel`) or loaded from the Kaiba config named
+by addon config `configPath` / `KAIBA_CONFIG_PATH`. Kaiba 0.1.5 OCR applies to
+standalone PNG/JPEG/GIF/WebP inputs; PDF and EPUB use AnydocKit conversion.
+
+`kaiba/note-tag-search` performs tag-only retrieval without requiring an FTS
+query. `kaiba/note-chain` returns bounded graph paths. Attachments include a
+stable `s3URL` locator (`s3://bucket/key`) when stored in S3; it is deliberately
+not a public or signed download URL. `kaiba/note-memos` returns all Kaiba note
+comments plus an `agentMemos` subset based on the stored author.
+
+For operations not covered by a convenience addon, use
+`kaiba/note-graphql-document`. Put the GraphQL document in `config.query` and
+the AI-produced parameters in `addon.inputs.variables`; JSON templates retain
+the variables' JSON types. The reference bundle
+`examples/kaiba-document-intake` shows directory intake and GraphQL retrieval.
+
+Kaiba 0.1.5 pins `anydoc-swift` and requires its native `anydoc_ffi` library
+when linking Riela from source. Build it with Kaiba's
+`scripts/build-anydoc-native.sh`, then export the printed `PKG_CONFIG_PATH`
+for `swift build` / `swift test`.
 
 ## Workflow memory (short-term)
 

@@ -1,29 +1,29 @@
+import ACP
 import AgentGateway
 import Foundation
 import Testing
 @testable import RielaAdapters
 @testable import RielaCore
 
-@Test func gatewayAdapterSelectsVendorAndStreamsJSONLEvents() async throws {
-  let notification = GatewayRPCNotification(event: GatewayStreamEvent(
-    requestId: "worker",
-    sequence: 1,
-    vendor: .openRouter,
-    type: "assistant.delta",
-    channel: .assistant,
-    textDelta: "hello",
-    vendorPayload: #"{"choices":[]}"#
+@Test func gatewayAdapterSelectsVendorAndStreamsACPEvents() async throws {
+  let notification = try acpLine(method: "session/update", params: ACPSessionNotification(
+    sessionId: "sess-1",
+    update: .agentMessageChunk(.text("hello"))
   ))
-  let response = GatewayRPCResponse(
-    id: "worker",
-    result: GatewayExecuteResult(
-      vendor: .openRouter,
-      model: "openai/gpt-5",
-      text: "hello",
-      usage: GatewayUsage(inputTokens: 2, outputTokens: 1, totalTokens: 3)
-    )
-  )
-  let runner = GatewayStubRunner(lines: [try encodeLine(notification), try encodeLine(response)])
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object([
+      "vendor": .string("openrouter"),
+      "model": .string("openai/gpt-5"),
+      "resultText": .string("hello"),
+      "usage": .object([
+        "inputTokens": .integer(2),
+        "outputTokens": .integer(1),
+        "totalTokens": .integer(3)
+      ])
+    ])])
+  ))
+  let runner = GatewayStubRunner(lines: [notification, response])
   let events = GatewayEventStore()
   let adapter = AgentGatewayNodeAdapter(executableName: "agent-gateway", runner: runner)
   let provider = try AgentProviderConfiguration(
@@ -51,14 +51,20 @@ import Testing
 
   #expect(output.provider == "openrouter")
   #expect(output.payload == ["text": .string("hello")])
+  #expect(output.model == "openai/gpt-5")
   #expect(output.usage?.totalTokens == 3)
   let streamed = await events.values
   #expect(streamed.count == 1)
   #expect(streamed.first?.contentDelta == "hello")
-  let request = try #require(runner.request())
-  #expect(request.params.vendor == .openRouter)
-  #expect(request.params.apiKeyEnvironment == "OPENROUTER_API_KEY")
-  #expect(request.params.baseURL == "https://openrouter.ai/api/v1")
+  #expect(streamed.first?.channel == .assistant)
+  let arguments = try #require(runner.arguments())
+  #expect(arguments.contains("client"))
+  #expect(pairedValue(arguments, "--vendor") == "openrouter")
+  #expect(pairedValue(arguments, "--api-key-environment") == "OPENROUTER_API_KEY")
+  #expect(pairedValue(arguments, "--base-url") == "https://openrouter.ai/api/v1")
+  #expect(pairedValue(arguments, "--prompt-blocks") == "-")
+  let blocks = try #require(runner.promptBlocks())
+  #expect(blocks == [.text("hello")])
 }
 
 @Test func gatewayAdapterMapsEveryProductionBackendToAnExplicitVendor() async throws {
@@ -72,11 +78,11 @@ import Testing
     (.officialCursorSDK, .cursorAPI)
   ]
   for (backend, vendor) in mappings {
-    let response = GatewayRPCResponse(
-      id: "worker",
-      result: GatewayExecuteResult(vendor: vendor, model: "model", text: "ok")
-    )
-    let runner = GatewayStubRunner(lines: [try encodeLine(response)])
+    let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+      stopReason: .endTurn,
+      meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
+    ))
+    let runner = GatewayStubRunner(lines: [response])
     _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
       AdapterExecutionInput(
         node: AgentNodePayload(id: "worker", executionBackend: backend, model: "model"),
@@ -89,16 +95,16 @@ import Testing
       ),
       context: AdapterExecutionContext()
     )
-    #expect(runner.request()?.params.vendor == vendor)
+    #expect(pairedValue(runner.arguments() ?? [], "--vendor") == vendor.rawValue)
   }
 }
 
 @Test func cliVendorKeepsOpenRouterAsProviderRoutingInsteadOfChangingHarness() async throws {
-  let response = GatewayRPCResponse(
-    id: "worker",
-    result: GatewayExecuteResult(vendor: .codex, model: "model", text: "ok")
-  )
-  let runner = GatewayStubRunner(lines: [try encodeLine(response)])
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
+  ))
+  let runner = GatewayStubRunner(lines: [response])
   let provider = try OpenRouterProvider.configuration(for: .codexAgent)
   _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
     AdapterExecutionInput(
@@ -117,17 +123,18 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  #expect(runner.request()?.params.vendor == .codex)
-  #expect(runner.request()?.params.providerName == "openrouter")
-  #expect(runner.request()?.params.apiKeyEnvironment == "OPENROUTER_API_KEY")
+  let arguments = try #require(runner.arguments())
+  #expect(pairedValue(arguments, "--vendor") == "codex")
+  #expect(pairedValue(arguments, "--provider-name") == "openrouter")
+  #expect(pairedValue(arguments, "--api-key-environment") == "OPENROUTER_API_KEY")
 }
 
 @Test func gatewayAdapterPreservesCLIExecutionControls() async throws {
-  let response = GatewayRPCResponse(
-    id: "worker",
-    result: GatewayExecuteResult(vendor: .codex, model: "gpt-5", text: "ok")
-  )
-  let runner = GatewayStubRunner(lines: [try encodeLine(response)])
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
+  ))
+  let runner = GatewayStubRunner(lines: [response])
   _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(
@@ -148,26 +155,26 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  let arguments = try #require(runner.request()?.params.arguments)
-  #expect(arguments.contains(#"model_reasoning_effort="high""#))
-  #expect(arguments.contains("--sandbox"))
-  #expect(arguments.contains("workspace-write"))
-  #expect(arguments.contains("--search"))
-  #expect(arguments.contains("--ephemeral"))
+  let arguments = try #require(runner.arguments())
+  let separator = try #require(arguments.firstIndex(of: "--"))
+  let vendorArguments = Array(arguments[arguments.index(after: separator)...])
+  #expect(vendorArguments.contains(#"model_reasoning_effort="high""#))
+  #expect(vendorArguments.contains("--sandbox"))
+  #expect(vendorArguments.contains("workspace-write"))
+  #expect(vendorArguments.contains("--search"))
+  #expect(vendorArguments.contains("--ephemeral"))
 }
 
 @Test func gatewayAdapterReusesOnlyTheInheritedWorkflowSession() async throws {
   let store = AgentGatewaySessionStore()
-  let firstResponse = GatewayRPCResponse(
-    id: "producer",
-    result: GatewayExecuteResult(
-      vendor: .codex,
-      model: "gpt-5",
-      text: "first",
-      sessionId: "backend-session-1"
-    )
-  )
-  let firstRunner = GatewayStubRunner(lines: [try encodeLine(firstResponse)])
+  let firstResponse = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object([
+      "resultText": .string("first"),
+      "vendorSessionId": .string("backend-session-1")
+    ])])
+  ))
+  let firstRunner = GatewayStubRunner(lines: [firstResponse])
   _ = try await AgentGatewayNodeAdapter(runner: firstRunner, sessionStore: store).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "producer", executionBackend: .codexAgent, model: "gpt-5"),
@@ -180,12 +187,13 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
+  #expect(pairedValue(firstRunner.arguments() ?? [], "--session-id") == nil)
 
-  let secondResponse = GatewayRPCResponse(
-    id: "consumer",
-    result: GatewayExecuteResult(vendor: .codex, model: "gpt-5", text: "second")
-  )
-  let secondRunner = GatewayStubRunner(lines: [try encodeLine(secondResponse)])
+  let secondResponse = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object(["resultText": .string("second")])])
+  ))
+  let secondRunner = GatewayStubRunner(lines: [secondResponse])
   _ = try await AgentGatewayNodeAdapter(runner: secondRunner, sessionStore: store).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "consumer", executionBackend: .codexAgent, model: "gpt-5"),
@@ -199,8 +207,7 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  #expect(secondRunner.request()?.params.sessionMode == .reuse)
-  #expect(secondRunner.request()?.params.sessionId == "backend-session-1")
+  #expect(pairedValue(secondRunner.arguments() ?? [], "--session-id") == "backend-session-1")
 
   let isolatedKey = AgentGatewaySessionKey(
     workflowRunId: "run-1",
@@ -210,12 +217,66 @@ import Testing
   #expect(store.sessionId(for: isolatedKey) == nil)
 }
 
+@Test func gatewayAdapterSurfacesACPErrorResponses() async throws {
+  let errorLine = #"{"jsonrpc":"2.0","id":3,"error":{"code":-32011,"message":"missing credential environment 'OPENAI_API_KEY'"}}"#
+  let runner = GatewayStubRunner(lines: [errorLine], terminationStatus: 1)
+  do {
+    _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(id: "worker", executionBackend: .officialOpenAISDK, model: "gpt-5"),
+        promptText: "prompt",
+        executionIdentity: AdapterExecutionIdentity(
+          workflowRunId: "run",
+          workflowSessionId: "session",
+          stepId: "worker"
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+    Issue.record("expected a provider error")
+  } catch let error as AdapterExecutionError {
+    #expect(error.message.contains("-32011"))
+    #expect(error.message.contains("missing credential"))
+  }
+}
+
+@Test func gatewayAdapterFallsBackToAccumulatedChunksWithoutResultText() async throws {
+  let chunks = [
+    try acpLine(method: "session/update", params: ACPSessionNotification(
+      sessionId: "sess-1", update: .agentMessageChunk(.text("hel"))
+    )),
+    try acpLine(method: "session/update", params: ACPSessionNotification(
+      sessionId: "sess-1", update: .agentMessageChunk(.text("lo"))
+    ))
+  ]
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(stopReason: .endTurn))
+  let runner = GatewayStubRunner(lines: [chunks[0], chunks[1], response])
+  let output = try await AgentGatewayNodeAdapter(runner: runner).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "prompt",
+      executionIdentity: AdapterExecutionIdentity(
+        workflowRunId: "run",
+        workflowSessionId: "session",
+        stepId: "worker"
+      )
+    ),
+    context: AdapterExecutionContext()
+  )
+  #expect(output.payload == ["text": .string("hello")])
+}
+
 private final class GatewayStubRunner: LocalProcessEventStreaming, @unchecked Sendable {
   private let lock = NSLock()
   private let lines: [String]
-  private var capturedRequest: GatewayRPCRequest?
+  private let terminationStatus: Int32
+  private var capturedArguments: [String]?
+  private var capturedStdin: String?
 
-  init(lines: [String]) { self.lines = lines }
+  init(lines: [String], terminationStatus: Int32 = 0) {
+    self.lines = lines
+    self.terminationStatus = terminationStatus
+  }
 
   func run(
     configuration: LocalProcessConfiguration,
@@ -226,20 +287,32 @@ private final class GatewayStubRunner: LocalProcessEventStreaming, @unchecked Se
   }
 
   func run(
-    configuration _: LocalProcessConfiguration,
+    configuration: LocalProcessConfiguration,
     stdin: String,
     deadline _: Date?,
     outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
   ) async throws -> LocalProcessResult {
-    let request = try JSONDecoder().decode(GatewayRPCRequest.self, from: Data(stdin.utf8))
-    lock.withLock { capturedRequest = request }
+    lock.withLock {
+      capturedArguments = configuration.arguments
+      capturedStdin = stdin
+    }
     for line in lines {
       outputEventHandler?(LocalProcessOutputEvent(stream: .stdout, line: line))
     }
-    return LocalProcessResult(stdout: lines.joined(separator: "\n"), stderr: "", terminationStatus: 0)
+    return LocalProcessResult(
+      stdout: lines.joined(separator: "\n"),
+      stderr: "",
+      terminationStatus: terminationStatus
+    )
   }
 
-  func request() -> GatewayRPCRequest? { lock.withLock { capturedRequest } }
+  func arguments() -> [String]? { lock.withLock { capturedArguments } }
+
+  func promptBlocks() -> [ACPContentBlock]? {
+    let stdin = lock.withLock { capturedStdin }
+    guard let stdin else { return nil }
+    return try? JSONDecoder().decode([ACPContentBlock].self, from: Data(stdin.utf8))
+  }
 }
 
 private actor GatewayEventStore {
@@ -247,6 +320,35 @@ private actor GatewayEventStore {
   func append(_ event: AdapterBackendEvent) { values.append(event) }
 }
 
-private func encodeLine<T: Encodable>(_ value: T) throws -> String {
-  try #require(String(bytes: JSONEncoder().encode(value), encoding: .utf8))
+private func pairedValue(_ arguments: [String], _ key: String) -> String? {
+  guard let index = arguments.firstIndex(of: key), index + 1 < arguments.count else { return nil }
+  return arguments[index + 1]
+}
+
+private struct ACPNotificationLine<T: Encodable>: Encodable {
+  var jsonrpc = "2.0"
+  var method: String
+  var params: T
+}
+
+private struct ACPResponseEnvelopeLine<Value: Encodable>: Encodable {
+  var jsonrpc = "2.0"
+  var id: Int
+  var result: Value
+}
+
+private func acpLine<Params: Encodable>(method: String, params: Params) throws -> String {
+  let data = try JSONEncoder().encode(ACPNotificationLine(method: method, params: params))
+  guard let line = String(bytes: data, encoding: .utf8) else {
+    throw AdapterExecutionError(.invalidOutput, "not UTF-8")
+  }
+  return line
+}
+
+private func acpResponseLine<T: Encodable>(id: Int, result: T) throws -> String {
+  let data = try JSONEncoder().encode(ACPResponseEnvelopeLine(id: id, result: result))
+  guard let line = String(bytes: data, encoding: .utf8) else {
+    throw AdapterExecutionError(.invalidOutput, "not UTF-8")
+  }
+  return line
 }

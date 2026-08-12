@@ -73,11 +73,15 @@ compatibility selectors; every one is dispatched through `agent-gateway`.
 
 Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,
 OpenAI, Anthropic, Gemini, and OpenRouter is supplied by the sibling
-`agent-gateway` package. Riela is a
-client of `agent-gateway server`: it sends versioned JSONL requests on stdin,
-receives streaming `agent/event` notifications and one terminal response on
-stdout, and keeps stderr for diagnostics. Set `RIELA_AGENT_GATEWAY_EXECUTABLE`
-when `agent-gateway` is not available on `PATH`.
+`agent-gateway` package, which speaks the Agent Client Protocol (ACP,
+https://agentclientprotocol.com). Riela drives one `agent-gateway client`
+turn per step: the prompt travels as ACP content blocks on stdin, streaming
+output arrives as `session/update` notifications (`agent_message_chunk`,
+`agent_thought_chunk`, tool call updates) on stdout, and the `session/prompt`
+response carries the final text, usage, and resumable vendor session id in
+`_meta.agentGateway`. stderr stays reserved for diagnostics. Set
+`RIELA_AGENT_GATEWAY_EXECUTABLE` when `agent-gateway` is not available on
+`PATH`.
 
 Provider validation and Base URL routing for `codex-agent` and
 `claude-code-agent` are also supplied by `agent-gateway`.

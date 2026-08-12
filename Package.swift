@@ -102,6 +102,7 @@ let package = Package(
     .target(
       name: "RielaAdapters",
       dependencies: [
+        .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         "RielaCore"
       ]
@@ -165,6 +166,7 @@ let package = Package(
     .testTarget(
       name: "RielaAdaptersTests",
       dependencies: [
+        .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         "RielaCore",
         "RielaAdapters"

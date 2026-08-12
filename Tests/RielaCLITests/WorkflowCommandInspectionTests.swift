@@ -302,9 +302,9 @@ extension WorkflowCommandTests {
       directory: root,
       name: "fake-agent-gateway.sh",
       body: """
-      request=$(cat)
-      printf '%s' "$request" > '\(marker.path)'
-      printf '%s\\n' '{"jsonrpc":"2.0","id":"worker","result":{"protocolVersion":"1.0","vendor":"codex","model":"gpt-5.5","text":"fake codex reached","exitCode":0}}'
+      printf '%s\\n' "$@" > '\(marker.path)'
+      cat >> '\(marker.path)'
+      printf '%s\\n' '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","_meta":{"agentGateway":{"vendor":"codex","model":"gpt-5.5","resultText":"fake codex reached"}}}}'
       exit 0
       """
     )
@@ -324,8 +324,10 @@ extension WorkflowCommandTests {
     XCTAssertEqual(run.status, .completed)
     XCTAssertEqual(run.session.executions.first?.adapterOutput?.provider, "codex")
     let recordedRequest = try String(contentsOf: marker, encoding: .utf8)
-    XCTAssertTrue(recordedRequest.contains(#""method":"agent/execute""#))
-    XCTAssertTrue(recordedRequest.contains(#""vendor":"codex""#))
+    XCTAssertTrue(recordedRequest.contains("client"))
+    XCTAssertTrue(recordedRequest.contains("--vendor"))
+    XCTAssertTrue(recordedRequest.contains("codex"))
+    XCTAssertTrue(recordedRequest.contains(#""type":"text""#))
   }
 
   func testProjectScopeCodexDesignIntakePromptIncludesWorkflowRunVariables() async throws {
@@ -341,6 +343,14 @@ extension WorkflowCommandTests {
       directory: tempDir,
       name: "fake-agent-gateway.sh",
       body: """
+      system=''
+      previous=''
+      for argument in "$@"; do
+        if [ "$previous" = "--system" ]; then
+          system="$argument"
+        fi
+        previous="$argument"
+      done
       request=$(cat)
       count=0
       if [ -f '\(counter.path)' ]; then
@@ -348,17 +358,16 @@ extension WorkflowCommandTests {
       fi
       count=$((count + 1))
       printf '%s' "$count" > '\(counter.path)'
-      printf '%s' "$request" | /usr/bin/plutil -extract params.systemPrompt raw -o - - > '\(promptDirectory.path)'/prompt-"$count".txt
+      printf '%s' "$system" > '\(promptDirectory.path)'/prompt-"$count".txt
       printf '\\n\\n' >> '\(promptDirectory.path)'/prompt-"$count".txt
-      printf '%s' "$request" | /usr/bin/plutil -extract params.prompt raw -o - - >> '\(promptDirectory.path)'/prompt-"$count".txt
+      printf '%s' "$request" | /usr/bin/plutil -extract 0.text raw -o - - >> '\(promptDirectory.path)'/prompt-"$count".txt
       if [ "$count" = "1" ]; then
         text='{"completionPassed":true,"when":{"always":true},"payload":{"status":"manager-ready"}}'
       else
         text='{"completionPassed":true,"when":{"has_feature_fanout":false},"payload":{"workflowMode":"issue-resolution","problemSummary":"captured intake","acceptanceSignals":[],"impactedAreas":[],"constraints":[],"unknowns":[],"risks":[],"requiresAdversarialReview":false,"codexAgentReferences":[],"featureFanoutItems":[]}}'
       fi
       escaped=$(printf '%s' "$text" | sed 's/"/\\\\"/g')
-      request_id=$(printf '%s' "$request" | /usr/bin/plutil -extract id raw -o - -)
-      printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"1.0","vendor":"codex","model":"gpt-5.5","text":"%s","exitCode":0}}\\n' "$request_id" "$escaped"
+      printf '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","_meta":{"agentGateway":{"vendor":"codex","model":"gpt-5.5","resultText":"%s"}}}}\\n' "$escaped"
       exit 0
       """
     )

@@ -37,7 +37,7 @@ Deferred:
 - `swift test --filter RielaViewerTests`
 - `swift build --product RielaApp`
 - `swift test --filter RielaServerTests`
-- `nix flake check`
+- `mise exec -- swift test`
 
 ## Review Notes
 

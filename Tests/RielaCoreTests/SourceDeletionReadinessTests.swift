@@ -11,7 +11,6 @@ final class SourceDeletionReadinessTests: XCTestCase {
     ".git/",
     ".build/",
     ".claude/",
-    ".direnv/",
     ".riela/",
     "dist/",
     "tmp/",

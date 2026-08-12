@@ -26,10 +26,6 @@ bun.lockb
 .DS_Store
 Thumbs.db
 
-# Nix
-.direnv/
-result
-/result-*
 /.pre-commit-config.yaml
 
 # Logs
@@ -53,7 +49,6 @@ tmp-*
 impl-plans/.progress.lock
 
 # Private files
-**/.envrc.private*
 .private*/
 
 # riela event-source runtime artifacts inside checked-in example event roots

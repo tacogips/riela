@@ -439,7 +439,7 @@ Each implementation session must append a dated entry containing:
 - Verification: Xcode arm64 `swift build --product RielaApp` passed;
   focused RielaApp filter/navigation/layout/behavior suites passed 54 tests
   with 0 failures; `swift test --filter RielaAppSupportTests` passed 209 tests
-  with 0 failures; Nix SwiftLint exited 0 with unrelated pre-existing warnings.
+  with 0 failures; SwiftLint exited 0 with unrelated pre-existing warnings.
   `/usr/bin/xcrun swiftlint` was attempted first and crashed with signal 4 in
   the Rosetta-hosted shell. The current executable
   `.build/arm64-apple-macosx/debug/RielaApp` was launched directly with isolated

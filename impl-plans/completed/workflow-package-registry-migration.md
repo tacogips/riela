@@ -481,7 +481,7 @@ commands.
 
 **Tasks Completed**: Inspected the default registry path and confirmed existing uncommitted registry package content is present under `<repo-root>-packages/packages/`.
 **Tasks In Progress**: No migration files were written in this step; migrated package docs, registry metadata refresh, and verification remain pending.
-**Blockers**: The default registry worktree is dirty (`A flake.lock`, `M flake.nix`, and untracked `packages/`), so migration writes should wait for an explicit registry-state decision or a clean follow-up pass.
+**Blockers**: The default registry worktree contains obsolete environment-manager changes and untracked `packages/`, so migration writes should wait for an explicit registry-state decision or a clean follow-up pass.
 **Notes**: Code-level package search/checkout support now returns the metadata required to verify migrated packages once the registry content is finalized.
 
 ### Session: 2026-05-27 14:32 JST Step 6 Revision

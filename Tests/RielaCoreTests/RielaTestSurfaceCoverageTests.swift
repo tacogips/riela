@@ -244,17 +244,14 @@ final class RielaTestSurfaceCoverageTests: XCTestCase {
     }
   }
 
-  func testEnvrcKeepsRielaKinkoDirenvExportValue() throws {
+  func testMiseKeepsRielaKinkoLifecycleHooks() throws {
     let root = try repositoryRoot()
-    let envrc = try String(contentsOf: root.appendingPathComponent(".envrc"), encoding: .utf8)
+    let mise = try String(contentsOf: root.appendingPathComponent("mise.toml"), encoding: .utf8)
 
-    XCTAssertTrue(envrc.contains("# Load secrets from kinko vault."))
-    XCTAssertTrue(envrc.contains("# Use direnv-aware export from kinko."))
-    XCTAssertTrue(envrc.contains("if command -v kinko >/dev/null 2>&1; then"))
-    XCTAssertTrue(envrc.contains(#"eval "$(kinko direnv export)""#))
-    XCTAssertTrue(envrc.contains("# Expected kinko-provided environment variables for live examples:"))
-    XCTAssertTrue(envrc.contains("# - GEMINI_API_KEY"))
-    XCTAssertTrue(envrc.contains("# - RIELA_TELEGRAM_CHAT_ID"))
+    XCTAssertTrue(mise.contains("[[hooks.enter]]"))
+    XCTAssertTrue(mise.contains(#"kinko --path "$MISE_PROJECT_ROOT" hook enter bash"#))
+    XCTAssertTrue(mise.contains("[[hooks.leave]]"))
+    XCTAssertTrue(mise.contains("kinko hook leave bash"))
   }
 
   private func sourceTestCategory(_ path: String) -> String {

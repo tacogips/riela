@@ -236,8 +236,8 @@ swift test --filter WorkflowCommandAutoImproveTests
 
 ```bash
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow validate codex-design-and-implement-review-loop
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow run --help
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow validate codex-design-and-implement-review-loop
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow run --help
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet
 ```
 

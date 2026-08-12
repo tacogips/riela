@@ -9,7 +9,7 @@ description: "Use when Codex is asked to implement, refactor, review, or maintai
 
 1. Inspect the project before editing:
    - Locate `Package.swift`, `*.xcodeproj`, `*.xcworkspace`, `.swiftlint.yml`, `.swiftformat`, `Makefile`, CI workflows, and existing test targets.
-   - In this repository, use Xcode's Swift toolchain explicitly. Do not rely on `/usr/bin/swift` or a Nix-provided `xcrun` shim for build/test/lint commands.
+   - In this repository, use Xcode's Swift toolchain explicitly. Do not rely on `/usr/bin/swift` or an ambient toolchain shim for build/test/lint commands.
    - Read nearby source and tests to match naming, access control, dependency injection, error handling, concurrency style, and formatting.
    - Use `rg --files -g '*.swift'` and `wc -l` to identify Swift files over 1000 lines.
 
@@ -41,11 +41,11 @@ PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolch
 /usr/bin/xcrun swiftlint
 ```
 
-If the tool is available only through the Nix development shell, keep the same
-Xcode toolchain variables and `xcrun` path:
+When running through mise, keep the same Xcode toolchain variables and `xcrun`
+path:
 
 ```bash
-nix develop -c env \
+mise exec -- env \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
   TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault \
@@ -135,11 +135,11 @@ xcodebuild test -scheme <Scheme> -destination '<Destination>'
 xcodebuild build -scheme <Scheme> -destination '<Destination>'
 ```
 
-When the repository's Nix shell is needed for package dependencies, wrap the
-same Xcode paths with `nix develop -c env`:
+When running build validation through mise, wrap the same Xcode paths with
+`mise exec -- env`:
 
 ```bash
-nix develop -c env \
+mise exec -- env \
   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
   TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault \

@@ -299,7 +299,7 @@ Verification:
   final rerun reported no discrete correctness issues after the review fixes.
 - `swift test > tmp/node-input-filters/swift-test-final.log 2>&1` executed 488
   tests with 6 failures in unrelated readiness-gate checks:
-  `RielaTestSurfaceCoverageTests.testEnvrcKeepsRielaKinkoDirenvExportValue`
+  `RielaTestSurfaceCoverageTests.testMiseKeepsRielaKinkoLifecycleHooks`
   and
   `SwiftDeletionReadinessTests.testTrackedGateAllowsDeletionWithAcceptedReviewedTreeEvidence`.
   The focused input-filter, example parity, and JavaScriptCore tests passed.

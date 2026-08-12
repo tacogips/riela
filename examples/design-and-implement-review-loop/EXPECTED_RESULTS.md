@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-nix run ./riela -- workflow validate design-and-implement-review-loop
+mise exec -- swift run riela workflow validate design-and-implement-review-loop
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Issue-resolution command:
 
 ```bash
-nix run ./riela -- workflow run design-and-implement-review-loop \
+mise exec -- swift run riela workflow run design-and-implement-review-loop \
   --mock-scenario .riela/workflows/design-and-implement-review-loop/mock-scenario.json \
   --output json
 ```
@@ -79,7 +79,7 @@ Expected final output payload:
 Planning-only command:
 
 ```bash
-nix run ./riela -- workflow run design-and-implement-review-loop \
+mise exec -- swift run riela workflow run design-and-implement-review-loop \
   --mock-scenario .riela/workflows/design-and-implement-review-loop/mock-scenario-planning-only.json \
   --output json
 ```

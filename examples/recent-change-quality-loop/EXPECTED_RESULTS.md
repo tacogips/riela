@@ -8,7 +8,7 @@ Ignore `sessionId`, timestamps, and artifact paths.
 Command:
 
 ```bash
-nix run ./riela -- workflow validate recent-change-quality-loop
+mise exec -- swift run riela workflow validate recent-change-quality-loop
 ```
 
 Expected result: the workflow is valid.
@@ -18,7 +18,7 @@ Expected result: the workflow is valid.
 Command:
 
 ```bash
-nix run ./riela -- workflow run recent-change-quality-loop \
+mise exec -- swift run riela workflow run recent-change-quality-loop \
   --mock-scenario .riela/workflows/recent-change-quality-loop/mock-scenario.json \
   --output json
 ```

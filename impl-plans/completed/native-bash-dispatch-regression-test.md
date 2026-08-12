@@ -211,4 +211,4 @@ gateway test path unless verification proves another path is directly required.
 array, `[[ ... ]]`, and `BASH` interpreter-name checks, asserted the fixture has
 no execute bits, and kept the native command working-directory payload assertion
 intact. Verification passed for the focused native executor gateway test,
-typecheck, and Biome lint through `nix develop`.
+typecheck, and Biome lint through `mise exec`.

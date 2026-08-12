@@ -36,7 +36,7 @@ The macOS Cask is the `RielaApp.app` + `riela` CLI install path.
   checksums.
 - `scripts/release-homebrew-cask-local.sh` builds, notarizes, uploads, and
   renders the sibling tap cask for a pushed `v<version>` tag.
-- `Taskfile.yml` exposes `build:homebrew-cask`, `homebrew:cask`,
+- `mise.toml` exposes `build:homebrew-cask`, `homebrew:cask`,
   `homebrew:tap-cask`, and `release:homebrew-cask-local`.
 
 ## Apple Signing And Notarization Inputs
@@ -66,7 +66,7 @@ the package metadata and built CLI:
 
 ```bash
 version="$(tr -d '[:space:]' < VERSION)"
-cli_version="$(nix develop -c bash -lc 'swift run riela --version' | tail -n 1 | tr -d '[:space:]')"
+cli_version="$(mise exec -- swift run riela --version | tail -n 1 | tr -d '[:space:]')"
 test "$cli_version" = "$version"
 ```
 
@@ -77,7 +77,7 @@ preparing a new release.
 ### 2. Check release plan
 
 ```bash
-task build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
+mise run build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
 ```
 
 The dry-run plan must show both a staged signed app and a staged signed binary:
@@ -91,7 +91,7 @@ staged signed binary: .../riela
 
 ```bash
 kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-  task build:homebrew-cask -- darwin-arm64 darwin-x64
+  mise run build:homebrew-cask -- darwin-arm64 darwin-x64
 ```
 
 ### 4. Verify DMG outputs
@@ -121,7 +121,7 @@ For a tagged release:
 
 ```bash
 kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-  task release:homebrew-cask-local -- v<version>
+  mise run release:homebrew-cask-local -- v<version>
 ```
 
 The wrapper checks the local and remote tag, verifies `VERSION`, uploads the

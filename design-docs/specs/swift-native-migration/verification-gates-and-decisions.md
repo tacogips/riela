@@ -24,7 +24,7 @@ Each migrated package needs:
   `productionRuntime`, `homebrewFormulaSource`, and `allowsProductionCutover`
   only after evidence is recorded.
 
-The current branch has been verified with Xcode Swift 6.3.2 by setting `DEVELOPER_DIR` and `SDKROOT` to `/Applications/Xcode.app`; `swift test` passed 197 tests for the current Swift scaffold, model validation, adapter, runtime publication, deterministic CLI, package/event/GraphQL/server contracts, and packaging-readiness coverage. Default `swift` lookup can still point at a Nix Apple SDK path, so use the Xcode toolchain command recorded in the implementation plan until local toolchain selection is fixed.
+The current branch has been verified with Xcode Swift 6.3.2 by setting `DEVELOPER_DIR` and `SDKROOT` to `/Applications/Xcode.app`; `swift test` passed 197 tests for the current Swift scaffold, model validation, adapter, runtime publication, deterministic CLI, package/event/GraphQL/server contracts, and packaging-readiness coverage. Default `swift` lookup can still point at a stale Apple SDK path, so use the Xcode toolchain command recorded in the implementation plan until local toolchain selection is fixed.
 
 Additional required verification:
 

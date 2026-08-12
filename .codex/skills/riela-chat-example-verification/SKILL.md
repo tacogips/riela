@@ -31,11 +31,11 @@ Check environment readiness by listing variable names only, never values:
 
 ```bash
 kinko status || true
-direnv exec . sh -lc 'env | cut -d= -f1 | rg "^(RIELA_TELEGRAM|RIELA_DISCORD|DISCORD_BOT|RIELA_MATRIX|GEMINI|OPENAI)"' || true
+mise exec -- sh -lc 'env | cut -d= -f1 | rg "^(RIELA_TELEGRAM|RIELA_DISCORD|DISCORD_BOT|RIELA_MATRIX|GEMINI|OPENAI)"' || true
 find "$HOME/.riela" -maxdepth 2 -type f \( -name 'rielaapp.env' -o -name 'env' \) -print 2>/dev/null
 ```
 
-RielaApp-launched daemon children read `~/.riela/rielaapp.env`, `~/.riela/env`, and the app process environment. Shell-only `direnv` state is not enough for GUI-launched RielaApp.
+RielaApp-launched daemon children read `~/.riela/rielaapp.env`, `~/.riela/env`, and the app process environment. Shell-only mise hook state is not enough for GUI-launched RielaApp.
 
 ## RielaApp Launch Check
 
@@ -97,13 +97,13 @@ prevents prompt-only handoff flags from creating Yui/Mika/Rina loops.
 First validate the shared workflow and each vendor workflow:
 
 ```bash
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow validate \
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow validate \
   shared-agent-trio-personas --workflow-definition-dir ./examples
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow validate \
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow validate \
   telegram-agent-trio-chat --workflow-definition-dir ./examples
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow validate \
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow validate \
   discord-agent-trio-chat --workflow-definition-dir ./examples
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow validate \
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow validate \
   matrix-agent-trio-chat --workflow-definition-dir ./examples
 ```
 
@@ -112,7 +112,7 @@ Run deterministic mock checks for all three chat vendors:
 ```bash
 mkdir -p tmp/skill-chat-verification/logs tmp/skill-chat-verification/sessions
 for workflow in telegram-agent-trio-chat discord-agent-trio-chat matrix-agent-trio-chat; do
-  direnv exec . .build/arm64-apple-macosx/debug/riela workflow run "$workflow" \
+  mise exec -- .build/arm64-apple-macosx/debug/riela workflow run "$workflow" \
     --workflow-definition-dir ./examples \
     --mock-scenario "./examples/$workflow/mock-scenario.json" \
     --session-store tmp/skill-chat-verification/sessions \
@@ -135,7 +135,7 @@ must try to set `handoff_yui: true`; the `riela/note-persona-context-write`
 add-on must block it:
 
 ```bash
-direnv exec . .build/arm64-apple-macosx/debug/riela workflow run \
+mise exec -- .build/arm64-apple-macosx/debug/riela workflow run \
   telegram-agent-trio-chat \
   --workflow-definition-dir ./examples \
   --mock-scenario tmp/skill-chat-verification/adversarial/telegram-agent-trio-loop-mock.json \
@@ -170,10 +170,10 @@ cp examples/event-sources/.riela-events/bindings/telegram-gateway-personas-to-wo
   tmp/live-agent-trio-node-ref/events/bindings/
 cp examples/event-sources/.riela-events/destinations/telegram-gateway-persona-replies.json \
   tmp/live-agent-trio-node-ref/events/destinations/
-direnv exec . .build/arm64-apple-macosx/debug/riela events validate \
+mise exec -- .build/arm64-apple-macosx/debug/riela events validate \
   --workflow-definition-dir ./examples \
   --event-root tmp/live-agent-trio-node-ref/events
-direnv exec . .build/arm64-apple-macosx/debug/riela events serve \
+mise exec -- .build/arm64-apple-macosx/debug/riela events serve \
   --workflow-definition-dir ./examples \
   --event-root tmp/live-agent-trio-node-ref/events \
   --session-store tmp/live-agent-trio-node-ref/sessions \
@@ -223,7 +223,7 @@ mkdir -p \
   tmp/live-discord-node-ref/events/destinations \
   tmp/live-discord-node-ref/sessions \
   tmp/live-discord-node-ref/logs
-direnv exec . sh -lc '
+mise exec -- sh -lc '
 set -eu
 jq --arg guild "$RIELA_DISCORD_SERVER_ID" --arg channel "$RIELA_DISCORD_CHANNEL_ID" \
   ".guildIds = [\$guild] | .channels = [(.channels[0] | .id = \$channel)]" \
@@ -234,11 +234,11 @@ cp examples/event-sources/.riela-events/bindings/discord-gateway-personas-to-wor
   tmp/live-discord-node-ref/events/bindings/
 cp examples/event-sources/.riela-events/destinations/discord-gateway-persona-replies.json \
   tmp/live-discord-node-ref/events/destinations/
-direnv exec . .build/arm64-apple-macosx/debug/riela events validate \
+mise exec -- .build/arm64-apple-macosx/debug/riela events validate \
   --workflow-definition-dir ./examples \
   --event-root tmp/live-discord-node-ref/events \
   --output json | tee tmp/live-discord-node-ref/logs/events-validate.json
-direnv exec . .build/arm64-apple-macosx/debug/riela events serve \
+mise exec -- .build/arm64-apple-macosx/debug/riela events serve \
   --workflow-definition-dir ./examples \
   --event-root tmp/live-discord-node-ref/events \
   --session-store tmp/live-discord-node-ref/sessions \
@@ -334,7 +334,7 @@ system-memory notebook and can be reused by a later persona turn.
 Start the listener for the installed Telegram SDK trio workflow:
 
 ```bash
-direnv exec . .build/arm64-apple-macosx/debug/riela events serve \
+mise exec -- .build/arm64-apple-macosx/debug/riela events serve \
   --workflow-definition-dir "$HOME/.riela/workflows" \
   --event-root "$HOME/.riela/workflows/telegram-sdk-trio-chat/.riela-events" \
   --session-store "$HOME/.riela/sessions"

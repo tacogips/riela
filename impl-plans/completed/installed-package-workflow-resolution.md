@@ -90,8 +90,8 @@ discouraging direct edits to package-owned contents.
 
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test --filter WorkflowCommandTests/testScopedWorkflowNamesRejectTraversalAndSlashTargets`
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk swift test --filter RielaCLITests`
-- `nix develop -c zsh -lc 'export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer; export SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk; export PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH; swiftlint lint --strict'`
-- `nix flake check`
+- `mise exec -- env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH swiftlint lint --strict`
+- `mise exec -- swift test`
 - `.build/debug/riela workflow list --scope user --output json`
 - `.build/debug/riela workflow validate codex-goal --scope user --output json`
 - `.build/debug/riela workflow inspect codex-goal --scope user --output json`

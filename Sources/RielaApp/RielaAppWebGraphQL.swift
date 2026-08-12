@@ -8,7 +8,7 @@ import RielaWorkflowRegistry
 // Workflow-registry GraphQL for the web dashboard. The note GraphQL surface
 // that used to share this route moved to the kaiba package.
 private struct RielaAppGraphQLExecutor: GraphQLDocumentExecuting {
-  let executor: WorkflowRegistryGraphQLDocumentExecutor
+  let executor: CompositeGraphQLDocumentExecutor
   let registryWorkingDirectory: String
 
   func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
@@ -16,6 +16,7 @@ private struct RielaAppGraphQLExecutor: GraphQLDocumentExecuting {
     trustedRequest.transportCredential = GraphQLTransportCredential(
       RielaAppWebRegistryAuthorizer.internalCredential
     )
+    trustedRequest.isLocallyTrusted = true
     trustedRequest.localWorkingDirectory = registryWorkingDirectory
     return await executor.execute(trustedRequest)
   }
@@ -27,17 +28,19 @@ extension RielaApp {
       return webGraphQLProfileConflictResponse()
     }
     let executor = RielaAppGraphQLExecutor(
-      executor: WorkflowRegistryGraphQLDocumentExecutor(
-        configuration: WorkflowRegistryGraphQLServerConfig(
-          provider: FileWorkflowRegistryGraphQLProvider(
-            workingDirectory: NSHomeDirectory(),
+      executor: CompositeGraphQLDocumentExecutor(
+        workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
+          localProvider: FileWorkflowRegistryGraphQLProvider(
+            workingDirectory: appHomeDirectory.path,
             webPrincipalId: RielaAppWebRegistryAuthorizer.principalId
           ),
-          authorizer: RielaAppWebRegistryAuthorizer(),
-          managedReferenceResolver: RielaAppWebManagedReferenceResolver()
+          localManagedReferenceResolver: RielaAppWebManagedReferenceResolver()
+        ),
+        fallback: RielaConfigGraphQLDocumentExecutor(
+          provider: RielaAppConfigurationGraphQLProvider(app: self)
         )
       ),
-      registryWorkingDirectory: NSHomeDirectory()
+      registryWorkingDirectory: appHomeDirectory.path
     )
     return await DeterministicServerHTTPAdapter(
       routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),

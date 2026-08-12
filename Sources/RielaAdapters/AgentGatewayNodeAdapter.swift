@@ -74,6 +74,11 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
       if let apiKeyEnv = provider.apiKeyEnv {
         arguments += ["--api-key-environment", apiKeyEnv]
       }
+    } else if let baseURL = input.node.baseURL {
+      arguments += ["--base-url", baseURL]
+      if let apiKeyEnvironment = input.node.apiKeyEnvironment {
+        arguments += ["--api-key-environment", apiKeyEnvironment]
+      }
     }
     if let maxTokens = gatewayMaxTokens(input.node.variables) {
       arguments += ["--max-tokens", String(maxTokens)]
@@ -320,7 +325,7 @@ private final class GatewayACPMessageCollector: @unchecked Sendable {
           status: update.status
         )
       )
-    case .userMessageChunk, .plan:
+    case .userMessageChunk, .plan, .other:
       return nil
     }
   }

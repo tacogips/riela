@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { APIError, api, requireExpectedProfile } from '../api'
+import { configurationClient } from '../config/client'
 import type { Instance, InstanceResponse, InstancesResponse } from '../contracts'
 import { EmptyState, ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 import { createPollingResource, pollingStatusLabel } from '../polling'
@@ -121,6 +122,14 @@ function InstanceEditor(props: {
   const [message, setMessage] = createSignal('')
   const [saveError, setSaveError] = createSignal(false)
   const [conflict, setConflict] = createSignal(false)
+  const defaultSource = JSON.stringify({ id: 'telegram-main', kind: 'telegram-gateway', config: {} }, null, 2)
+  const defaultBinding = JSON.stringify({
+    id: 'telegram-main-binding',
+    sourceId: 'telegram-main',
+    workflowName: initialInstance.workflowId,
+  }, null, 2)
+  const [eventSource, setEventSource] = createSignal(defaultSource)
+  const [eventBinding, setEventBinding] = createSignal(defaultBinding)
   const variablesValidation = createMemo(() => validateJSONObject(variables()))
 
   const resetEditor = (instance: Instance, revision: number) => {
@@ -163,19 +172,48 @@ function InstanceEditor(props: {
     try {
       const updates = { ...environmentUpdates() }
       if (newEnvironmentName().trim() && newEnvironmentValue()) updates[newEnvironmentName().trim()] = newEnvironmentValue()
-      const response = await api.mutate<InstanceResponse>(`/api/v1/instances/${encodeURIComponent(props.instance().id)}/configuration`, 'PUT', {
-        expectedProfile: props.profileName,
+      const response = await configurationClient.updateWorkflowInstance({
+        profile: props.profileName,
+        revision: expectedRevision(),
+      }, {
+        identity: props.instance().id,
         workingDirectory: workingDirectory(),
         environmentFilePath: environmentFilePath(),
         environmentVariableUpdates: updates,
         environmentVariablesToClear: environmentToClear(),
         workflowVariables: validation.value,
-      }, expectedRevision())
-      resetEditor(response.item, response.revision)
+      })
+      setExpectedRevision(response.revision)
       setMessage('Saved. Active instances restart with the new configuration.')
       await props.onRefresh()
     } catch (error) {
-      const isConflict = error instanceof APIError && error.status === 409
+      const isConflict = error instanceof APIError
+        && (error.status === 409 || ['profile_conflict', 'revision_conflict'].includes(error.code))
+      setConflict(isConflict); setSaveError(true)
+      setMessage(isConflict ? 'Changed elsewhere — refresh before saving again.' : errorMessage(error))
+    } finally { setSaving(false) }
+  }
+
+  const registerEventSource = async () => {
+    const source = validateJSONObject(eventSource())
+    const binding = validateJSONObject(eventBinding())
+    if (!source.value || !binding.value) {
+      setSaveError(true)
+      setMessage(source.error ?? binding.error ?? 'Invalid event source configuration.')
+      return
+    }
+    setSaving(true); setMessage(''); setSaveError(false); setConflict(false)
+    try {
+      const response = await configurationClient.registerEventSource({
+        profile: props.profileName,
+        revision: expectedRevision(),
+      }, { identity: props.instance().id, source: source.value, binding: binding.value })
+      setExpectedRevision(response.revision)
+      setMessage('Event source registered. Active instances restart automatically.')
+      await props.onRefresh()
+    } catch (error) {
+      const isConflict = error instanceof APIError
+        && (error.status === 409 || ['profile_conflict', 'revision_conflict'].includes(error.code))
       setConflict(isConflict); setSaveError(true)
       setMessage(isConflict ? 'Changed elsewhere — refresh before saving again.' : errorMessage(error))
     } finally { setSaving(false) }
@@ -198,5 +236,6 @@ function InstanceEditor(props: {
     <Show when={variablesValidation().error}><p id="workflow-variables-error" class="field-error" role="alert">{variablesValidation().error}</p></Show>
     <div class="node-patches"><h3>Node patches</h3><Show when={Object.keys(props.instance().nodePatches).length === 0}><p>No node patches.</p></Show><For each={Object.entries(props.instance().nodePatches).sort(([left], [right]) => left.localeCompare(right))}>{([nodeId, patch]) => <div class="patch-row"><strong>{nodeId}</strong><span>Backend: {patch.executionBackend ?? 'default'}</span><span>Model: {patch.model ?? 'default'}</span><span>Effort: {patch.effort ?? 'default'}</span></div>}</For></div>
     <div class="save-row"><Show when={message()}><MutationMessage message={message()} isError={saveError()} onRefresh={conflict() ? () => void refreshAndRebase() : undefined} /></Show><button disabled={saving() || Boolean(variablesValidation().error)} onClick={() => void save()}>{saving() ? 'Saving…' : 'Save changes'}</button></div>
+    <div class="secret-editor"><h3>Register event source</h3><p>Source and binding JSON are validated and written under this workflow's .riela-events directory.</p><label><span>Source JSON</span><textarea rows="8" value={eventSource()} onInput={(event) => setEventSource(event.currentTarget.value)} /></label><label><span>Binding JSON</span><textarea rows="8" value={eventBinding()} onInput={(event) => setEventBinding(event.currentTarget.value)} /></label><div class="save-row"><button disabled={saving()} onClick={() => void registerEventSource()}>Register event source</button></div></div>
   </div>
 }

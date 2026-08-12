@@ -1,3 +1,5 @@
+import AgentGateway
+import AgentGatewayAppCore
 import RielaCore
 @testable import RielaAppSupport
 import XCTest
@@ -47,5 +49,67 @@ final class RielaAppAssistantModelCatalogTests: XCTestCase {
     ]
 
     XCTAssertTrue(Set(models).isDisjoint(with: obsoleteModels))
+  }
+
+  func testSettingsPreserveLiveCatalogModelOutsideBundledSuggestions() {
+    var settings = RielaAppAssistantSettings(vendor: .openAIAPI)
+
+    settings.setSelectedModel(" future-model ", for: .openAIAPI)
+
+    XCTAssertEqual(settings.selectedModel(for: .openAIAPI), "future-model")
+    XCTAssertEqual(settings.normalizedModel, "future-model")
+  }
+
+  func testAPIVendorsSupportLiveListingWhileCLIVendorsUseBundledCatalog() {
+    XCTAssertTrue(RielaAppAssistantVendor.openAIAPI.supportsLiveModelListing)
+    XCTAssertTrue(RielaAppAssistantVendor.anthropicAPI.supportsLiveModelListing)
+    XCTAssertTrue(RielaAppAssistantVendor.cursorAPI.supportsLiveModelListing)
+    XCTAssertFalse(RielaAppAssistantVendor.codexCLI.supportsLiveModelListing)
+    XCTAssertFalse(RielaAppAssistantVendor.claudeCodeCLI.supportsLiveModelListing)
+    XCTAssertFalse(RielaAppAssistantVendor.cursorCLI.supportsLiveModelListing)
+  }
+
+  func testLoaderUsesAgentGatewayCatalogAndConfiguredCredentialAlias() async throws {
+    let listing = AssistantModelListingStub(models: [
+      GatewayModelInfo(modelId: " live-model "),
+      GatewayModelInfo(modelId: "live-model"),
+      GatewayModelInfo(modelId: "second-model")
+    ])
+    let loader = RielaAppAssistantModelLoader(
+      listing: listing,
+      environment: ["CLAUDE_API_KEY": "secret"]
+    )
+
+    let models = try await loader.models(for: .anthropicAPI)
+
+    XCTAssertEqual(models, ["live-model", "second-model"])
+    let params = await listing.capturedParams
+    XCTAssertEqual(params?.vendor, .anthropic)
+    XCTAssertEqual(params?.apiKeyEnvironment, "CLAUDE_API_KEY")
+  }
+
+  func testLoaderDoesNotAskAgentGatewayToEnumerateCLIVendor() async throws {
+    let listing = AssistantModelListingStub(models: [])
+    let loader = RielaAppAssistantModelLoader(listing: listing, environment: [:])
+
+    let models = try await loader.models(for: .codexCLI)
+
+    XCTAssertEqual(models, RielaAppAssistantVendor.codexCLI.modelSuggestions)
+    let params = await listing.capturedParams
+    XCTAssertNil(params)
+  }
+}
+
+private actor AssistantModelListingStub: GatewayModelListing {
+  private let resultModels: [GatewayModelInfo]
+  private(set) var capturedParams: GatewayModelCatalogParams?
+
+  init(models: [GatewayModelInfo]) {
+    resultModels = models
+  }
+
+  func models(_ params: GatewayModelCatalogParams) async throws -> GatewayModelCatalogResult {
+    capturedParams = params
+    return GatewayModelCatalogResult(vendor: params.vendor, models: resultModels)
   }
 }

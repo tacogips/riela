@@ -36,7 +36,7 @@ public struct RielaAppAssistantModelCatalog: Equatable, Sendable {
     return RielaAppAssistantModelCatalog(modelsByVendor: decoded)
   }
 
-  private static func uniqueNormalizedModels(_ models: [String]) -> [String] {
+  static func uniqueNormalizedModels(_ models: [String]) -> [String] {
     var seen: Set<String> = []
     return models.compactMap { model in
       let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines)

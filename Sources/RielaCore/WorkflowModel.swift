@@ -812,6 +812,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var agentSandbox: AgentSandboxMode?
   public var agentToolPolicy: AgentToolPolicy?
   public var agentEnvironment: [String: AgentEnvironmentBinding]
+  public var baseURL: String?
+  public var apiKeyEnvironment: String?
   public var provider: AgentProviderConfiguration?
   public var providerProxy: AgentProviderProxy?
   public var systemPromptTemplate: String?
@@ -842,6 +844,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     agentSandbox: AgentSandboxMode? = nil,
     agentToolPolicy: AgentToolPolicy? = nil,
     agentEnvironment: [String: AgentEnvironmentBinding] = [:],
+    baseURL: String? = nil,
+    apiKeyEnvironment: String? = nil,
     provider: AgentProviderConfiguration? = nil,
     providerProxy: AgentProviderProxy? = nil,
     systemPromptTemplate: String? = nil,
@@ -861,7 +865,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.description = description
     self.nodeType = nodeType
     self.executionBackend = executionBackend
-    self.model = model
+    self.model = model.isEmpty && baseURL != nil ? "custom" : model
     self.modelFreeze = modelFreeze
     self.effort = effort
     self.workingDirectory = workingDirectory
@@ -871,6 +875,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.agentSandbox = agentSandbox
     self.agentToolPolicy = agentToolPolicy
     self.agentEnvironment = agentEnvironment
+    self.baseURL = baseURL
+    self.apiKeyEnvironment = apiKeyEnvironment
     self.provider = provider
     self.providerProxy = providerProxy
     self.systemPromptTemplate = systemPromptTemplate
@@ -902,6 +908,8 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case agentSandbox
     case agentToolPolicy
     case agentEnvironment
+    case baseURL
+    case apiKeyEnvironment
     case provider
     case providerProxy
     case systemPromptTemplate
@@ -924,7 +932,10 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.description = try container.decodeIfPresent(String.self, forKey: .description)
     self.nodeType = try container.decodeIfPresent(NodeType.self, forKey: .nodeType)
     self.executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
-    self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+    self.baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL)
+    self.apiKeyEnvironment = try container.decodeIfPresent(String.self, forKey: .apiKeyEnvironment)
+    self.model = try container.decodeIfPresent(String.self, forKey: .model)
+      ?? (baseURL == nil ? "" : "custom")
     self.modelFreeze = try container.decodeIfPresent(Bool.self, forKey: .modelFreeze) ?? false
     self.effort = try container.decodeIfPresent(NodeReasoningEffort.self, forKey: .effort)
     self.workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)

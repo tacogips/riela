@@ -278,7 +278,6 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .sources
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = true
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(detail)

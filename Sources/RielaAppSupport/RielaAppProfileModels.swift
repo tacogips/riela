@@ -101,18 +101,19 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
 
   public func selectedModel(for vendor: RielaAppAssistantVendor) -> String {
     let configured = modelsByVendor[vendor.rawValue]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let configured, vendor.modelSuggestions.contains(configured) {
+    if let configured, !configured.isEmpty {
       return configured
     }
     let legacyModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-    if vendor == self.vendor, vendor.modelSuggestions.contains(legacyModel) {
+    if vendor == self.vendor, !legacyModel.isEmpty {
       return legacyModel
     }
     return vendor.defaultModel
   }
 
   public mutating func setSelectedModel(_ model: String, for vendor: RielaAppAssistantVendor) {
-    let normalized = vendor.modelSuggestions.contains(model) ? model : vendor.defaultModel
+    let candidate = model.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalized = candidate.isEmpty ? vendor.defaultModel : candidate
     modelsByVendor[vendor.rawValue] = normalized
     if vendor == self.vendor {
       self.model = normalized
@@ -166,7 +167,7 @@ public struct RielaAppAssistantMessage: Codable, Equatable, Sendable {
   }
 }
 
-public enum RielaAppAssistantVendor: String, Codable, CaseIterable, Equatable, Sendable {
+public enum RielaAppAssistantVendor: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
   case automatic
   case codexCLI = "codex-cli"
   case claudeCodeCLI = "claude-code-cli"

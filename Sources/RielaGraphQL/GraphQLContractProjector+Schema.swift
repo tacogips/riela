@@ -297,6 +297,7 @@ extension GraphQLContractProjector {
     diagnostics: [String!]!
   }
   \(workflowRegistryGraphQLSchemaTypes)
+  \(configurationGraphQLSchemaTypes)
   type Query {
     workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!
     workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!
@@ -311,6 +312,7 @@ extension GraphQLContractProjector {
     managerSession(managerSessionId: String): ManagerSessionView
     workflows(filter: WorkflowFilter): WorkflowListPayload!
     workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
+    configuration: RielaConfiguration!
   }
   type Mutation {
     createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
@@ -326,6 +328,15 @@ extension GraphQLContractProjector {
     activateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
     deactivateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
     consolidateWorkflows(input: ConsolidateWorkflowsInput!): WorkflowMutationPayload!
+    updateAssistantConfiguration(input: UpdateAssistantConfigurationInput!): RielaConfiguration!
+    updateAppearanceConfiguration(input: UpdateAppearanceConfigurationInput!): RielaConfiguration!
+    updateHTTPServerConfiguration(input: UpdateHTTPServerConfigurationInput!): RielaConfiguration!
+    createProfileConfiguration(input: ProfileConfigurationInput!): RielaConfiguration!
+    removeProfileConfiguration(input: ProfileConfigurationInput!): RielaConfiguration!
+    switchProfileConfiguration(input: ProfileConfigurationInput!): RielaConfiguration!
+    addWorkflowDirectoryConfiguration(input: WorkflowDirectoryConfigurationInput!): ConfigurationRevision!
+    updateWorkflowInstanceConfiguration(input: WorkflowInstanceConfigurationInput!): ConfigurationRevision!
+    registerEventSourceConfiguration(input: EventSourceConfigurationInput!): ConfigurationRevision!
   }
   """
 }

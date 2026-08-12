@@ -287,7 +287,11 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
     sections = visibleSubviews(of: RielaAppSettingsSectionView.self, in: root)
     XCTAssertEqual(sections.count, 1)
-    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 2)
+    XCTAssertEqual(allSubviews(of: RielaAppSettingsRow.self, in: sections[0]).count, 1)
+    XCTAssertEqual(
+      allSubviews(of: RielaAppSelectableSettingsRow.self, in: sections[0]).first?.accessibilityLabel(),
+      "Open Web Config"
+    )
   }
 
   func testSourcesPaneUsesButtonsForImportActionsAtRuntime() throws {
@@ -419,13 +423,13 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertEqual(sections.count, 1)
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[0]).contains { $0.stringValue == "default" })
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: sections[0]).contains { $0.stringValue == "work" })
-    XCTAssertTrue(visibleSubviews(of: NSButton.self, in: root).contains { $0.accessibilityLabel() == "Add Profile" })
+    XCTAssertTrue(visibleSubviews(of: NSButton.self, in: root).contains { $0.title == "Manage in Web Config" })
     XCTAssertFalse(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Edit Profiles" })
   }
 
-  func testProfileRowsOpenInlineDetailAndBackReturnsToProfilesAtRuntime() throws {
-    var selectedProfile: String?
-    let controller = makeController(onSelectProfile: { selectedProfile = $0 })
+  func testProfileRowsAreReadOnlyAndManagementRoutesToWebConfig() throws {
+    var openedContext: String?
+    let controller = makeController(onOpenWebUI: { openedContext = $0 })
     controller.update(
       profileName: .default,
       profileNames: [.default, RielaAppProfileName("work")],
@@ -440,63 +444,16 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
 
     controller.showProfilesPane()
     controller.window?.layoutIfNeeded()
-    let workRow = try XCTUnwrap(selectableRow(accessibilityLabel: "work", in: root))
-    XCTAssertTrue(workRow.accessibilityPerformPress())
-    controller.window?.layoutIfNeeded()
-
-    XCTAssertTrue(controller.isShowingProfileDetail)
-    XCTAssertTrue(controller.profileDetailView?.isHidden == false)
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Use Profile" })
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Remove Profile" })
-
-    let useRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Use Profile", in: root))
-    XCTAssertTrue(useRow.accessibilityPerformPress())
-    XCTAssertEqual(selectedProfile, "work")
-
-    controller.goBack()
-    controller.window?.layoutIfNeeded()
-    XCTAssertFalse(controller.isShowingProfileDetail)
-    XCTAssertTrue(controller.profilesOverviewView?.isHidden == false)
-  }
-
-  func testProfileRemovalUsesInlineConfirmationPaneAtRuntime() throws {
-    var removedProfile: RielaAppProfileName?
-    let controller = makeController(onRemoveProfile: {
-      removedProfile = $0
-      return true
-    })
-    let workProfile = RielaAppProfileName("work")
-    controller.update(
-      profileName: .default,
-      profileNames: [.default, workProfile],
-      candidates: [],
-      workflowSources: [],
-      state: RielaAppDaemonWorkflowState(),
-      snapshots: [:],
-      assistantAssistance: "",
-      statusMessage: ""
-    )
-    let root = try XCTUnwrap(controller.window?.contentView)
-
-    controller.showProfileDetail(workProfile)
-    controller.window?.layoutIfNeeded()
-    let removeReviewRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Remove Profile", in: root))
-    XCTAssertTrue(removeReviewRow.accessibilityPerformPress())
-    controller.window?.layoutIfNeeded()
-
-    XCTAssertEqual(controller.profileDetailMode, .removalConfirmation)
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Confirm Removal" })
-    let confirmedRemoveRow = try XCTUnwrap(
-      visibleSubviews(of: RielaAppSelectableSettingsRow.self, in: root)
-        .first { $0.accessibilityLabel() == "Remove Profile" && $0.accessibilityHelp() == "Remove this profile. Other profiles are unchanged." }
-    )
-    XCTAssertTrue(confirmedRemoveRow.accessibilityPerformPress())
-    XCTAssertEqual(removedProfile, workProfile)
+    XCTAssertNil(selectableRow(accessibilityLabel: "work", in: root))
+    let button = try XCTUnwrap(visibleSubviews(of: NSButton.self, in: root).first { $0.title == "Manage in Web Config" })
+    button.performClick(nil)
+    XCTAssertEqual(openedContext, "Web Config")
   }
 
   private func makeController(
     onSelectProfile: @escaping (String) -> Void = { _ in },
-    onRemoveProfile: @escaping (RielaAppProfileName) -> Bool = { _ in true }
+    onRemoveProfile: @escaping (RielaAppProfileName) -> Bool = { _ in true },
+    onOpenWebUI: @escaping (String) -> Void = { _ in }
   ) -> DaemonWorkflowWindowController {
     DaemonWorkflowWindowController(
       onRefresh: {},
@@ -510,6 +467,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
       onRelinkInstance: { _, _ in },
       onRenameWorkflow: { _ in },
       onRemoveInstance: { _ in },
+      onOpenWebUI: onOpenWebUI,
       onStartInstance: { _ in },
       onStopInstance: { _ in },
       onRestartInstance: { _ in },

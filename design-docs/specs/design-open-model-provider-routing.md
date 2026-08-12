@@ -37,7 +37,26 @@ names". Decision:
 
 ## Schema
 
-`AgentNodePayload` (authored `node-{id}.json`) gains two optional fields:
+Codex and Claude Code nodes may select an unnamed custom provider directly.
+`model` defaults to `custom` when omitted:
+
+```json
+{
+  "id": "kimi-worker",
+  "executionBackend": "codex-agent",
+  "baseURL": "https://api.kimi.example/v1",
+  "apiKeyEnvironment": "KIMI_API_KEY"
+}
+```
+
+`baseURL` accepts HTTPS endpoints and loopback HTTP endpoints using the same
+validation as agent-gateway. `apiKeyEnvironment` is optional, requires
+`baseURL`, and names an environment variable rather than containing a secret.
+Direct custom routing is limited to `codex-agent` and `claude-code-agent` and
+cannot be combined with the named `provider` object.
+
+For named routing, `AgentNodePayload` (authored `node-{id}.json`) supports two
+additional optional fields:
 
 ```json
 {

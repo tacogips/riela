@@ -3,6 +3,65 @@ import XCTest
 @testable import RielaCore
 
 final class OpenModelProviderRoutingTests: XCTestCase {
+  func testCustomBaseURLDecodesWithCustomModelAndRoundTrips() throws {
+    let payload = try JSONDecoder().decode(AgentNodePayload.self, from: Data(#"""
+      {
+        "id": "worker",
+        "executionBackend": "codex-agent",
+        "baseURL": "https://api.kimi.example/v1",
+        "apiKeyEnvironment": "KIMI_API_KEY"
+      }
+      """#.utf8))
+
+    XCTAssertEqual(payload.baseURL, "https://api.kimi.example/v1")
+    XCTAssertEqual(payload.apiKeyEnvironment, "KIMI_API_KEY")
+    XCTAssertEqual(payload.model, "custom")
+    XCTAssertTrue(validateAgentNodePayload(payload).isEmpty)
+
+    let roundTrip = try JSONDecoder().decode(
+      AgentNodePayload.self,
+      from: JSONEncoder().encode(payload)
+    )
+    XCTAssertEqual(roundTrip, payload)
+  }
+
+  func testCustomBaseURLValidationRejectsInvalidCombinations() throws {
+    let provider = try AgentProviderConfiguration(
+      name: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1"
+    )
+    let withNamedProvider = AgentNodePayload(
+      id: "worker",
+      executionBackend: .codexAgent,
+      model: "custom",
+      baseURL: "https://api.kimi.example/v1",
+      provider: provider
+    )
+    XCTAssertTrue(validateAgentNodePayload(withNamedProvider).contains {
+      $0.path == "node.baseURL" && $0.message.contains("cannot be combined")
+    })
+
+    let unsupportedBackend = AgentNodePayload(
+      id: "worker",
+      executionBackend: .cursorCliAgent,
+      model: "custom",
+      baseURL: "https://api.kimi.example/v1"
+    )
+    XCTAssertTrue(validateAgentNodePayload(unsupportedBackend).contains {
+      $0.path == "node.baseURL" && $0.message.contains("codex-agent")
+    })
+
+    let missingBaseURL = AgentNodePayload(
+      id: "worker",
+      executionBackend: .claudeCodeAgent,
+      model: "custom",
+      apiKeyEnvironment: "KIMI_API_KEY"
+    )
+    XCTAssertTrue(validateAgentNodePayload(missingBaseURL).contains {
+      $0.path == "node.apiKeyEnvironment" && $0.message.contains("requires baseURL")
+    })
+  }
+
   func testProviderConfigurationDecodesEncodesAndForwards() throws {
     let payload = try decodePayload(providerFields: """
       "provider": {

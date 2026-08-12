@@ -185,8 +185,8 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
 
     XCTAssertEqual(controller.instanceRows.first?.stateDetail, "event source failed")
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Failed - event source failed" })
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Open in Web UI", in: root)).accessibilityPerformPress())
-    XCTAssertEqual(openedContext, "Run logs")
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Configure in Web Config", in: root)).accessibilityPerformPress())
+    XCTAssertEqual(openedContext, "Web Config")
   }
 
   func testInstanceRemovalRequiresConfirmationAndKeepsSourceScopeVisible() throws {
@@ -223,16 +223,9 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     XCTAssertEqual(removedIdentity, "daily-instance")
   }
 
-  func testEventSourceFormRegistersGeneratedSourceAndBindingJSON() throws {
-    var capturedIdentity: String?
-    var capturedSourceJSON: String?
-    var capturedBindingJSON: String?
-    let controller = makeController(onRegisterEventSource: {
-      capturedIdentity = $0
-      capturedSourceJSON = $1
-      capturedBindingJSON = $2
-      return nil
-    })
+  func testEventSourceConfigurationRoutesToWebConfig() throws {
+    var openedContext: String?
+    let controller = makeController(onOpenWebUI: { openedContext = $0 })
     let source = workflowSource(eventRoot: "/workflows/chat/.riela-events")
     var state = RielaAppDaemonWorkflowState()
     state.preferences["chat-instance"] = RielaAppDaemonWorkflowPreference(
@@ -252,14 +245,8 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     )
     controller.selectCandidate(identity: "chat-instance")
     controller.tableClicked(controller.instanceTable)
-    controller.setSelectedEventSources()
-    controller.eventSourceIdField?.stringValue = "telegram-custom"
-    controller.saveEventSourceEditor()
-
-    XCTAssertEqual(capturedIdentity, "chat-instance")
-    XCTAssertTrue(try XCTUnwrap(capturedSourceJSON).contains("\"id\" : \"telegram-custom\""))
-    XCTAssertTrue(try XCTUnwrap(capturedSourceJSON).contains("\"kind\" : \"telegram-gateway\""))
-    XCTAssertTrue(try XCTUnwrap(capturedBindingJSON).contains("\"sourceId\" : \"telegram-custom\""))
+    controller.openSelectedInstanceInWebUI()
+    XCTAssertEqual(openedContext, "Web Config")
   }
 
   private func makeController(

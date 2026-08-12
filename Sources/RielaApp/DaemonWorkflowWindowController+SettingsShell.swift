@@ -202,12 +202,6 @@ extension DaemonWorkflowWindowController {
     addListButton.bezelStyle = .toolbar
     addListButton.toolTip = "Add instance"
     addListButton.setAccessibilityLabel("Add Instance")
-    addProfileButton.target = self
-    addProfileButton.action = #selector(addProfileFromOverview)
-    addProfileButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
-    addProfileButton.bezelStyle = .toolbar
-    addProfileButton.toolTip = "Add profile"
-    addProfileButton.setAccessibilityLabel("Add Profile")
     emptyInstancesLabel.textColor = .secondaryLabelColor
     emptyInstancesLabel.alignment = .center
     emptyInstancesLabel.lineBreakMode = .byWordWrapping
@@ -387,7 +381,9 @@ extension DaemonWorkflowWindowController {
     header.autoresizingMask = []
     let footerSpacer = NSView()
     footerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let footer = NSStackView(views: [footerSpacer, addProfileButton])
+    let openWebButton = NSButton(title: "Manage in Web Config", target: self, action: #selector(openProfilesConfigInWebUI))
+    openWebButton.bezelStyle = .rounded
+    let footer = NSStackView(views: [footerSpacer, openWebButton])
     footer.orientation = .horizontal
     footer.spacing = 8
     footer.alignment = .centerY
@@ -434,170 +430,23 @@ extension DaemonWorkflowWindowController {
     } else {
       detail = "Profile"
     }
-    let row = actionRow(
-      title: profileName.rawValue,
-      detail: detail,
-      action: #selector(openProfileDetailFromRow(_:))
-    )
+    let detailLabel = NSTextField(labelWithString: detail)
+    let row = settingRow(title: profileName.rawValue, valueLabel: detailLabel, action: nil)
     row.identifier = NSUserInterfaceItemIdentifier(profileName.rawValue)
     return row
-  }
-
-  @objc func openProfileDetailFromRow(_ sender: Any) {
-    guard
-      let row = sender as? NSView,
-      let rawValue = row.identifier?.rawValue
-    else {
-      return
-    }
-    showProfileDetail(RielaAppProfileName(rawValue))
-  }
-
-  func showProfileDetail(
-    _ profileName: RielaAppProfileName,
-    mode: ProfileDetailMode = .overview
-  ) {
-    activeSidebarPane = .profiles
-    isShowingInstanceDetail = false
-    isShowingAddInstanceSelection = false
-    isShowingProfileDetail = true
-    isShowingWorkflowSourceDetail = false
-    isShowingMarketplaceWorkflowDetail = false
-    selectedProfileDetailName = profileName
-    profileDetailMode = mode
-    profileDetailView?.removeFromSuperview()
-    let detail = mode == .removalConfirmation
-      ? buildProfileRemovalConfirmationView(profileName)
-      : buildProfileDetailView(profileName)
-    detail.translatesAutoresizingMaskIntoConstraints = true
-    detail.isHidden = false
-    profileDetailView = detail
-    showContentPane(detail)
-    navigationTitleLabel.stringValue = profileName.rawValue
-    updateNavigationState()
-    updateSidebarSelection()
-  }
-
-  private func buildProfileDetailView(_ profileName: RielaAppProfileName) -> NSView {
-    let summaryLabel = NSTextField(labelWithString: profileName == self.profileName ? "Current" : "Available")
-    summaryLabel.textColor = .secondaryLabelColor
-    summaryLabel.lineBreakMode = .byTruncatingTail
-    let statusValue = NSTextField(labelWithString: profileName == self.profileName ? "Current profile" : "Available profile")
-    let statusSection = rielaAppSettingsSection(rows: [
-      settingRow(title: "Status", valueLabel: statusValue, action: nil)
-    ])
-    let useRow = actionRow(
-      title: "Use Profile",
-      detail: "Switch to this profile's workflow instances.",
-      action: #selector(useSelectedProfileDetail)
-    )
-    setActionRow(useRow, enabled: profileName != self.profileName, disabledHelp: "This profile is already current.")
-    let removeRow = actionRow(
-      title: "Remove Profile",
-      detail: "Review removal for this profile's sources, packages, and instance state.",
-      style: .destructive,
-      action: #selector(confirmRemoveSelectedProfileDetail)
-    )
-    setActionRow(removeRow, enabled: canRemoveProfile(profileName), disabledHelp: removeProfileUnavailableHelp(for: profileName))
-    let actionsSection = rielaAppSettingsSection(rows: [useRow, removeRow])
-    let stack = settingsDocumentStack(views: [statusSection, actionsSection])
-    return overviewPane(title: profileName.rawValue, summaryLabel: summaryLabel, documentStack: stack)
-  }
-
-  private func buildProfileRemovalConfirmationView(_ profileName: RielaAppProfileName) -> NSView {
-    let summaryLabel = NSTextField(labelWithString: "Confirm Removal")
-    summaryLabel.textColor = .secondaryLabelColor
-    summaryLabel.lineBreakMode = .byTruncatingTail
-    let messageValue = NSTextField(
-      labelWithString: "Removes only this profile's workflow sources, packages, and instance state."
-    )
-    messageValue.lineBreakMode = .byWordWrapping
-    messageValue.maximumNumberOfLines = 2
-    let messageSection = rielaAppSettingsSection(rows: [
-      settingRow(title: "Scope", valueLabel: messageValue, action: nil)
-    ])
-    let cancelRow = actionRow(
-      title: "Cancel",
-      detail: "Return to this profile without removing it.",
-      action: #selector(cancelRemoveSelectedProfileDetail)
-    )
-    let removeRow = actionRow(
-      title: "Remove Profile",
-      detail: "Remove this profile. Other profiles are unchanged.",
-      style: .destructive,
-      action: #selector(removeSelectedProfileDetail)
-    )
-    let actionsSection = rielaAppSettingsSection(rows: [cancelRow, removeRow])
-    let stack = settingsDocumentStack(views: [messageSection, actionsSection])
-    return overviewPane(title: profileName.rawValue, summaryLabel: summaryLabel, documentStack: stack)
-  }
-
-  private func setActionRow(_ row: NSStackView, enabled: Bool, disabledHelp: String) {
-    guard let selectableRow = row as? RielaAppSelectableSettingsRow else {
-      return
-    }
-    selectableRow.setRielaAccessibilityEnabled(enabled)
-    if !enabled {
-      selectableRow.toolTip = disabledHelp
-      selectableRow.setAccessibilityHelp(disabledHelp)
-    }
-  }
-
-  @objc func useSelectedProfileDetail() {
-    guard let selectedProfileDetailName, selectedProfileDetailName != profileName else {
-      return
-    }
-    onSelectProfile(selectedProfileDetailName.rawValue)
-  }
-
-  @objc func confirmRemoveSelectedProfileDetail() {
-    guard let selectedProfileDetailName, canRemoveProfile(selectedProfileDetailName) else {
-      return
-    }
-    showProfileDetail(selectedProfileDetailName, mode: .removalConfirmation)
-  }
-
-  @objc func cancelRemoveSelectedProfileDetail() {
-    guard let selectedProfileDetailName else {
-      showProfilesPane()
-      return
-    }
-    showProfileDetail(selectedProfileDetailName)
-  }
-
-  @objc func removeSelectedProfileDetail() {
-    guard let selectedProfileDetailName, canRemoveProfile(selectedProfileDetailName) else {
-      return
-    }
-    guard onRemoveProfile(selectedProfileDetailName) else {
-      showProfileDetail(selectedProfileDetailName)
-      return
-    }
-    showProfilesPane()
-  }
-
-  private func canRemoveProfile(_ profileName: RielaAppProfileName) -> Bool {
-    profileName != .default && profileName != self.profileName
-  }
-
-  private func removeProfileUnavailableHelp(for profileName: RielaAppProfileName) -> String {
-    if profileName == .default {
-      return "Default profile cannot be removed."
-    }
-    if profileName == self.profileName {
-      return "Current profile cannot be removed."
-    }
-    return "Choose a removable profile first."
   }
 
   private func buildAssistantOverviewView() -> NSView {
     assistantSummaryLabel.textColor = .secondaryLabelColor
     assistantSummaryLabel.lineBreakMode = .byTruncatingTail
     assistantAssistanceTextView = nil
-    configureAssistantSettingsControls()
-    let vendorRow = controlSettingRow(title: "Vendor", control: assistantSettingsVendorPopup)
-    let modelRow = controlSettingRow(title: "Model", control: assistantSettingsModelPopup)
-    let actionSection = rielaAppSettingsSection(rows: [vendorRow, modelRow])
+    let actionSection = rielaAppSettingsSection(rows: [
+      actionRow(
+        title: "Open Web Config",
+        detail: "Edit assistant vendor, model, and guidance in the browser.",
+        action: #selector(openAssistantConfigInWebUI)
+      )
+    ])
     let stack = settingsDocumentStack(views: [
       actionSection
     ])
@@ -703,21 +552,6 @@ extension DaemonWorkflowWindowController {
     assistantSendButton.target = self
     assistantSendButton.action = #selector(sendAssistantMessage)
     RielaAssistantMiniChatStyle.configureSendButton(assistantSendButton)
-  }
-
-  private func configureAssistantSettingsControls() {
-    assistantSettingsVendorPopup.target = self
-    assistantSettingsVendorPopup.action = #selector(assistantVendorChanged)
-    assistantSettingsVendorPopup.setAccessibilityLabel("Assistant Vendor")
-    assistantSettingsVendorPopup.toolTip = "Assistant vendor"
-    assistantSettingsModelPopup.target = self
-    assistantSettingsModelPopup.action = #selector(assistantModelChanged)
-    assistantSettingsModelPopup.setAccessibilityLabel("Assistant Model")
-    assistantSettingsModelPopup.toolTip = "Assistant model"
-    RielaAssistantMiniChatStyle.configurePickerControls(
-      vendorPopup: assistantSettingsVendorPopup,
-      modelField: assistantSettingsModelPopup
-    )
   }
 
   private func buildAssistantPanel() -> NSView {

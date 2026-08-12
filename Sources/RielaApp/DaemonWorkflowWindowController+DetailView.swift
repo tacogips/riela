@@ -9,8 +9,8 @@ extension DaemonWorkflowWindowController {
       action: #selector(relinkSelectedSource)
     )
     let openWebUIRow = actionRow(
-      title: "Open in Web UI",
-      detail: "Inspect sessions, step executions, logs, and routing evidence in the browser.",
+      title: "Configure in Web Config",
+      detail: "Edit this instance's working directory, environment, and workflow variables in the browser.",
       action: #selector(openSelectedInstanceInWebUI)
     )
     let startRow = actionRow(
@@ -38,30 +38,26 @@ extension DaemonWorkflowWindowController {
     let missingSourceRow = settingRow(title: "Workflow", valueLabel: detailMissingSourceValueLabel, action: nil)
     let statusRow = makeStatusSettingRow()
     let nameRow = settingRow(title: "Name", valueLabel: detailNameValueLabel, action: #selector(renameSelectedWorkflow))
-    let environmentRow = settingRow(
-      title: ".env File",
-      valueLabel: detailEnvironmentValueLabel,
-      action: #selector(setSelectedEnvironment)
-    )
+    let environmentRow = settingRow(title: ".env File", valueLabel: detailEnvironmentValueLabel, action: nil)
     let inlineEnvironmentRow = settingRow(
       title: "Environment Variables",
       valueLabel: detailInlineEnvironmentValueLabel,
-      action: #selector(setSelectedEnvironmentVariables)
+      action: nil
     )
     let workingDirectoryRow = settingRow(
       title: "Working Directory",
       valueLabel: detailWorkingDirectoryValueLabel,
-      action: #selector(setSelectedWorkingDirectory)
+      action: nil
     )
     let variablesRow = settingRow(
       title: "Workflow Variables",
       valueLabel: detailVariablesValueLabel,
-      action: #selector(setSelectedVariables)
+      action: nil
     )
     let eventSourcesRow = settingRow(
       title: "Event Sources",
       valueLabel: detailEventSourcesValueLabel,
-      action: #selector(setSelectedEventSources)
+      action: nil
     )
     workflowSettingRow = workflowRow
     missingSourceSettingRow = missingSourceRow

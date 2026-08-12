@@ -129,6 +129,38 @@ import Testing
   #expect(pairedValue(arguments, "--api-key-environment") == "OPENROUTER_API_KEY")
 }
 
+@Test func cliVendorForwardsCustomBaseURLAndCredentialEnvironment() async throws {
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
+  ))
+  let runner = GatewayStubRunner(lines: [response])
+  _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(
+        id: "worker",
+        executionBackend: .claudeCodeAgent,
+        model: "",
+        baseURL: "https://api.kimi.example",
+        apiKeyEnvironment: "KIMI_API_KEY"
+      ),
+      promptText: "prompt",
+      executionIdentity: AdapterExecutionIdentity(
+        workflowRunId: "run",
+        workflowSessionId: "session",
+        stepId: "worker"
+      )
+    ),
+    context: AdapterExecutionContext()
+  )
+  let arguments = try #require(runner.arguments())
+  #expect(pairedValue(arguments, "--vendor") == "claude-code")
+  #expect(pairedValue(arguments, "--model") == "custom")
+  #expect(pairedValue(arguments, "--base-url") == "https://api.kimi.example")
+  #expect(pairedValue(arguments, "--api-key-environment") == "KIMI_API_KEY")
+  #expect(pairedValue(arguments, "--provider-name") == nil)
+}
+
 @Test func gatewayAdapterPreservesCLIExecutionControls() async throws {
   let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
     stopReason: .endTurn,
@@ -264,6 +296,32 @@ import Testing
     context: AdapterExecutionContext()
   )
   #expect(output.payload == ["text": .string("hello")])
+}
+
+@Test func gatewayAdapterIgnoresForwardCompatibleUnknownACPUpdates() async throws {
+  let unknownUpdate = #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"available_commands_update","commands":[]}}}"#
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
+  ))
+  let runner = GatewayStubRunner(lines: [unknownUpdate, response])
+  let events = GatewayEventStore()
+
+  let output = try await AgentGatewayNodeAdapter(runner: runner).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "prompt",
+      executionIdentity: AdapterExecutionIdentity(
+        workflowRunId: "run",
+        workflowSessionId: "session",
+        stepId: "worker"
+      )
+    ),
+    context: AdapterExecutionContext { event in await events.append(event) }
+  )
+
+  #expect(output.payload == ["text": .string("ok")])
+  #expect(await events.values.isEmpty)
 }
 
 private final class GatewayStubRunner: LocalProcessEventStreaming, @unchecked Sendable {

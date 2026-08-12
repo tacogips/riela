@@ -13,8 +13,8 @@ private struct CapturedEventSourceRegistration {
 
 @MainActor
 final class RielaAppSettingsEditorNavigationTests: XCTestCase {
-  func testInstanceDetailRowsNavigateToInlineConfigurationEditorsAtRuntime() throws {
-    var capturedEventSourceRegistration: CapturedEventSourceRegistration?
+  func testInstanceDetailRoutesConfigurationToWebConfigAtRuntime() throws {
+    var openedContext: String?
     let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
@@ -27,6 +27,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
       onRelinkInstance: { _, _ in },
       onRenameWorkflow: { _ in },
       onRemoveInstance: { _ in },
+      onOpenWebUI: { openedContext = $0 },
       onStartInstance: { _ in },
       onStopInstance: { _ in },
       onRestartInstance: { _ in },
@@ -34,14 +35,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
       onSetWorkingDirectory: { _ in },
       onSaveEnvironmentVariables: { _, _ in nil },
       onSaveWorkflowVariables: { _, _ in nil },
-      onRegisterEventSource: { identity, sourceJSON, bindingJSON in
-        capturedEventSourceRegistration = CapturedEventSourceRegistration(
-          identity: identity,
-          sourceJSON: sourceJSON,
-          bindingJSON: bindingJSON
-        )
-        return nil
-      },
+      onRegisterEventSource: { _, _, _ in XCTFail("Event sources are configured in Web Config"); return nil },
       configuredEnvironmentValues: { _ in [
         RielaAppConfiguredEnvironmentValue(
           name: "DUPLICATE_TOKEN",
@@ -93,72 +87,16 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     controller.tableClicked(table)
     controller.window?.layoutIfNeeded()
 
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Environment Variables", in: root)).accessibilityPerformPress())
-    controller.window?.layoutIfNeeded()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Variable Settings" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Current Lines" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Configured Environment" })
-    XCTAssertTrue(visibleTextFields(in: root).contains {
-      $0.stringValue.contains("Saving while this instance is active restarts its workflow process.")
-    })
-    XCTAssertTrue(visibleButtons(in: root).contains { $0.title == "Save & Restart Instance" })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=•••••••• (inline override)") })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("FILE_ONLY=•••••••• (.env)") })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("DUPLICATE_TOKEN=inline-value") })
-
-    controller.inlineEnvironmentTextView?.string.append("\nNEW_TOKEN=value")
-    controller.cancelConfigurationEditor()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Environment Variables" })
-
-    controller.cancelConfigurationEditor()
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Workflow Variables", in: root)).accessibilityPerformPress())
-    controller.window?.layoutIfNeeded()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Variable Settings" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Current Lines" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Effective Workflow Variables" })
-    XCTAssertTrue(visibleButtons(in: root).contains { $0.title == "Save & Restart Instance" })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains("persona=yuki") })
-
-    controller.workflowVariablesTextView?.string.append("\nmode=test")
-    controller.goBack()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Workflow Variables" })
-    controller.goBack()
-
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Event Sources", in: root)).accessibilityPerformPress())
-    controller.window?.layoutIfNeeded()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Source ID" })
-    XCTAssertTrue(visibleButtons(in: root).contains { $0.title == "Register & Restart Instance" })
-    XCTAssertTrue(visibleTextFields(in: root).contains {
-      $0.stringValue.contains("event input")
-    })
-
-    controller.eventSourceIdField?.stringValue = "telegram-main"
-    controller.cancelConfigurationEditor()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Event Sources" })
-    controller.eventSourceIdField?.stringValue = "telegram-main-updated"
-    controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.eventSourceIdField))
-    controller.cancelConfigurationEditor()
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("Unsaved changes") })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Event Sources" })
-    controller.eventSourceIdField?.stringValue = "telegram-main"
-    controller.eventSourceModeControl?.selectedSegment = 1
-    controller.eventSourceModeChanged()
-    controller.window?.layoutIfNeeded()
-    XCTAssertEqual(controller.eventSourceFormView?.isHidden, true)
-    XCTAssertEqual(controller.eventSourceJSONView?.isHidden, false)
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""id" : "telegram-main""#) })
-    XCTAssertTrue(textViews(in: root).contains { $0.string.contains(#""sourceId" : "telegram-main""#) })
-
-    controller.saveEventSourceEditor()
-    XCTAssertEqual(capturedEventSourceRegistration?.identity, "chat-instance")
-    XCTAssertTrue(capturedEventSourceRegistration?.sourceJSON.contains(#""kind" : "telegram-gateway""#) == true)
-    XCTAssertTrue(capturedEventSourceRegistration?.bindingJSON.contains(#""workflowName" : "chat""#) == true)
+    for label in [".env File", "Environment Variables", "Working Directory", "Workflow Variables", "Event Sources"] {
+      XCTAssertNil(selectableRow(accessibilityLabel: label, in: root), "\(label) must not open a native editor")
+    }
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Configure in Web Config", in: root))
+      .accessibilityPerformPress())
+    XCTAssertEqual(openedContext, "Web Config")
   }
 
-  func testAssistantSidebarPaneShowsOnlyVendorAndModelSettingsAtRuntime() throws {
+  func testAssistantSidebarRoutesConfigurationToWebConfig() throws {
+    var openedContext: String?
     let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
@@ -171,6 +109,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
       onRelinkInstance: { _, _ in },
       onRenameWorkflow: { _ in },
       onRemoveInstance: { _ in },
+      onOpenWebUI: { openedContext = $0 },
       onStartInstance: { _ in },
       onStopInstance: { _ in },
       onRestartInstance: { _ in },
@@ -212,67 +151,9 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Custom guidance configured" })
     XCTAssertFalse(textViews(in: root).contains { $0.string.contains("Use short direct answers.") })
     XCTAssertNil(selectableRow(accessibilityLabel: "Save Assistance", in: root))
-    XCTAssertFalse(controller.assistantSettingsVendorPopup.itemTitles.contains("Automatic"))
-    XCTAssertEqual(controller.assistantSettingsVendorPopup.selectedItem?.title, RielaAppAssistantVendor.openAIAPI.displayName)
-    XCTAssertEqual(controller.assistantSettingsModelPopup.itemTitles, RielaAppAssistantVendor.openAIAPI.modelSuggestions)
-    XCTAssertEqual(controller.assistantSettingsModelPopup.selectedItem?.title, RielaAppAssistantVendor.openAIAPI.defaultModel)
-  }
-
-  func testAssistantSidebarPaneDefaultsToFirstModelAndSavesSelectedModelPerVendor() throws {
-    var savedSettings: RielaAppAssistantSettings?
-    let controller = DaemonWorkflowWindowController(
-      onRefresh: {},
-      onSelectProfile: { _ in },
-      onCreateProfile: { RielaAppProfileName($0) },
-      onRemoveProfile: { _ in true },
-      onAddDirectory: {},
-      onAddURL: { _ in },
-      onAddInstance: { _ in },
-      onRevealSelectedSource: { _ in },
-      onRelinkInstance: { _, _ in },
-      onRenameWorkflow: { _ in },
-      onRemoveInstance: { _ in },
-      onStartInstance: { _ in },
-      onStopInstance: { _ in },
-      onRestartInstance: { _ in },
-      onSetEnvironment: { _ in },
-      onSetWorkingDirectory: { _ in },
-      onSaveEnvironmentVariables: { _, _ in nil },
-      onSaveWorkflowVariables: { _, _ in nil },
-      onRegisterEventSource: { _, _, _ in nil },
-      configuredEnvironmentValues: { _ in [] },
-      onSaveAssistantAssistance: { _ in nil },
-      onSaveAssistantSettings: { settings in
-        savedSettings = settings
-        return nil
-      },
-      environmentSummary: { _ in "Ready" },
-      environmentColumnStatus: { _ in "Ready" },
-      onWindowWillClose: {}
-    )
-    controller.update(
-      profileName: .default,
-      profileNames: [.default],
-      candidates: [],
-      workflowSources: [],
-      state: RielaAppDaemonWorkflowState(),
-      snapshots: [:],
-      assistantAssistance: "",
-      statusMessage: ""
-    )
-    controller.showAssistantPane()
-    controller.window?.layoutIfNeeded()
-
-    controller.assistantSettingsVendorPopup.selectItem(withTitle: RielaAppAssistantVendor.anthropicAPI.displayName)
-    controller.assistantVendorChanged()
-    XCTAssertEqual(controller.assistantSettingsModelPopup.itemTitles, RielaAppAssistantVendor.anthropicAPI.modelSuggestions)
-    XCTAssertEqual(savedSettings?.vendor, .anthropicAPI)
-    XCTAssertEqual(savedSettings?.normalizedModel, RielaAppAssistantVendor.anthropicAPI.defaultModel)
-
-    controller.assistantSettingsModelPopup.selectItem(withTitle: "claude-sonnet-5")
-    controller.assistantModelChanged()
-    XCTAssertEqual(savedSettings?.modelsByVendor[RielaAppAssistantVendor.anthropicAPI.rawValue], "claude-sonnet-5")
-    XCTAssertEqual(savedSettings?.normalizedModel, "claude-sonnet-5")
+    let webConfigRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Open Web Config", in: root))
+    XCTAssertTrue(webConfigRow.accessibilityPerformPress())
+    XCTAssertEqual(openedContext, "Web Config")
   }
 
   func testAssistantPanelPersistsAcrossPaneNavigationAndSubmitsSelectedWorkingDirectory() throws {

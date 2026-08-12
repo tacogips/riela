@@ -360,7 +360,6 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .marketplace
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = true
     marketplaceWorkflowDetailView?.removeFromSuperview()

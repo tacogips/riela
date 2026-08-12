@@ -43,7 +43,9 @@ export function App() {
   const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
   const host = createPollingResource(() => 'active-host', discoverHost)
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
-  const visibleNavigation = createMemo(() => navigation)
+  const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve'
+    ? navigation.filter((item) => item.id !== 'settings')
+    : navigation)
   let previousProfileKey: string | undefined
   const restoreRunHash = () => {
     const match = window.location.hash.match(/^#\/runs\/([^/]+)$/)
@@ -115,7 +117,7 @@ export function App() {
                 <SettingsView
                   profileKey={profileKey()}
                   profileName={host.data()?.bootstrap?.profile ?? ''}
-                  onServerChange={() => void host.refresh()}
+                  onHostChange={() => void host.refresh()}
                 />
               }</Show>
             </Match>

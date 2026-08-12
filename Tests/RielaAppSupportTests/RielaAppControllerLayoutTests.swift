@@ -124,7 +124,10 @@ final class RielaAppControllerLayoutTests: XCTestCase {
       !$0.hasHiddenAncestor && $0.documentView is FlippedDocumentView
     })
     let nameRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Name", in: root))
-    let workflowVariablesRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Workflow Variables", in: root))
+    let workflowVariablesRow = try XCTUnwrap(allSubviews(of: RielaAppSettingsRow.self, in: root).first {
+      $0.accessibilityLabel() == "Workflow Variables"
+    })
+    XCTAssertNil(selectableRow(accessibilityLabel: "Workflow Variables", in: root))
     let startRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Start", in: root))
     XCTAssertEqual(nameRow.frame.width, detailScroll.contentView.bounds.width, accuracy: 1)
     XCTAssertEqual(startRow.frame.width, detailScroll.contentView.bounds.width, accuracy: 1)
@@ -290,7 +293,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     XCTAssertEqual(table.selectedRow, 1)
   }
 
-  func testProfileRemoveRowAccessibilityTracksRemovableSelectionAtRuntime() throws {
+  func testProfileSelectorDoesNotExposeProfileConfigurationActions() throws {
     let controller = ProfileSelectWindowController(
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
@@ -303,24 +306,9 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    let table = try XCTUnwrap(firstSubview(of: NSTableView.self, in: root))
-    let removeRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Remove Profile", in: root))
-    XCTAssertFalse(removeRow.rielaAccessibilityEnabled)
-    XCTAssertEqual(removeRow.alphaValue, 0.55, accuracy: 0.01)
-    XCTAssertFalse(removeRow.acceptsFirstResponder)
-    XCTAssertEqual(removeRow.accessibilityHelp(), "Default profile cannot be removed here.")
-
-    let workCell = try XCTUnwrap(table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? RielaAppTableSelectionCellView)
-    XCTAssertTrue(workCell.accessibilityPerformPress())
-
-    XCTAssertTrue(removeRow.rielaAccessibilityEnabled)
-    XCTAssertEqual(removeRow.alphaValue, 1, accuracy: 0.01)
-    XCTAssertTrue(removeRow.acceptsFirstResponder)
-    XCTAssertEqual(removeRow.toolTip, "Remove this profile's sources, packages, and instance state. Other profiles are unchanged.")
-    XCTAssertEqual(
-      removeRow.accessibilityHelp(),
-      "Remove this profile's sources, packages, and instance state. Other profiles are unchanged."
-    )
+    XCTAssertNil(selectableRow(accessibilityLabel: "Add Profile", in: root))
+    XCTAssertNil(selectableRow(accessibilityLabel: "Remove Profile", in: root))
+    XCTAssertNotNil(selectableRow(accessibilityLabel: "Use Profile", in: root))
   }
 
   func testDaemonInstancePromptFactoryUsesCompressibleSettingsRowsAtRuntime() {

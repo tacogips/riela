@@ -331,141 +331,104 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertFalse(body.contains("COMMAND_SECRET_CANARY"))
   }
 
-  func testEncodedConfigurationUpdatePreservesBlankSecretsAndSupportsExplicitClear() async throws {
+  func testGraphQLConfigurationUpdatePreservesBlankSecretsAndSupportsExplicitClear() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let path = "/api/v1/instances/\(encodePathSegment(identity))/configuration"
-
-    let update = await fixture.app.webAPIResponse(
-      for: try request(path: path, body: [
-        "expectedRevision": 1,
-        "expectedProfile": fixture.app.daemonProfileName.rawValue,
-        "workingDirectory": "/tmp/updated",
-        "environmentVariableUpdates": ["API_KEY": "", "OTHER_KEY": "replacement"],
-        "environmentVariablesToClear": ["CLEAR_KEY"]
-      ]),
-      csrfToken: "csrf"
-    )
+    let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
+    let mutation = """
+      mutation Update($input: WorkflowInstanceConfigurationInput!) {
+        updateWorkflowInstanceConfiguration(input: $input) { profile revision }
+      }
+      """
+    let input: [String: Any] = [
+      "expectedRevision": 1,
+      "expectedProfile": fixture.app.daemonProfileName.rawValue,
+      "identity": identity,
+      "workingDirectory": "/tmp/updated",
+      "environmentVariableUpdates": ["API_KEY": "", "OTHER_KEY": "replacement"],
+      "environmentVariablesToClear": ["CLEAR_KEY"]
+    ]
+    let update = await router.response(for: graphQLRequest(
+      csrfToken: router.csrfToken,
+      query: mutation,
+      operationName: "Update",
+      variables: ["input": input]
+    ))
     XCTAssertEqual(update.status, 200)
     XCTAssertFalse(String(data: update.body, encoding: .utf8)?.contains(secret) ?? true)
     XCTAssertEqual(fixture.app.daemonState.preferences[identity]?.environmentVariables["API_KEY"], secret)
     XCTAssertEqual(fixture.app.daemonState.preferences[identity]?.environmentVariables["OTHER_KEY"], "replacement")
     XCTAssertNil(fixture.app.daemonState.preferences[identity]?.environmentVariables["CLEAR_KEY"])
 
-    let conflict = await fixture.app.webAPIResponse(
-      for: try request(path: path, body: [
-        "expectedRevision": 1,
-        "expectedProfile": fixture.app.daemonProfileName.rawValue
-      ]),
-      csrfToken: "csrf"
-    )
-    XCTAssertEqual(conflict.status, 409)
-    let conflictError = try XCTUnwrap(try jsonObject(conflict)["error"] as? [String: Any])
-    XCTAssertEqual(conflictError["code"] as? String, "revision_conflict")
+    let conflict = await router.response(for: graphQLRequest(
+      csrfToken: router.csrfToken,
+      query: mutation,
+      operationName: "Update",
+      variables: ["input": input]
+    ))
+    let errors = try XCTUnwrap(try jsonObject(conflict)["errors"] as? [[String: Any]])
+    XCTAssertEqual((errors.first?["extensions"] as? [String: Any])?["code"] as? String, "REVISION_CONFLICT")
   }
 
   func testConfigurationUpdateRejectsStaleProfileBeforeMutatingSameIdentity() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let path = "/api/v1/instances/\(encodePathSegment(identity))/configuration"
     let original = fixture.app.daemonState.preferences[identity]
-
-    let conflict = await fixture.app.webAPIResponse(
-      for: try request(path: path, body: [
+    let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
+    let conflict = await router.response(for: graphQLRequest(
+      csrfToken: router.csrfToken,
+      profile: "previous-profile",
+      query: "mutation Update($input: WorkflowInstanceConfigurationInput!) { updateWorkflowInstanceConfiguration(input: $input) { revision } }",
+      operationName: "Update",
+      variables: ["input": [
         "expectedRevision": fixture.app.webRevision,
         "expectedProfile": "previous-profile",
-        "workingDirectory": "/tmp/wrong-profile",
-        "environmentVariableUpdates": ["API_KEY": "wrong-profile-secret"],
-        "workflowVariables": ["owner": "previous-profile"]
-      ]),
-      csrfToken: "csrf"
-    )
+        "identity": identity,
+        "workingDirectory": "/tmp/wrong-profile"
+      ]]
+    ))
 
     XCTAssertEqual(conflict.status, 409)
-    let conflictError = try XCTUnwrap(try jsonObject(conflict)["error"] as? [String: Any])
-    XCTAssertEqual(conflictError["code"] as? String, "profile_conflict")
+    XCTAssertEqual(try jsonObject(conflict)["error"] as? String, "profile_conflict")
     XCTAssertEqual(fixture.app.webRevision, 1)
     XCTAssertEqual(fixture.app.daemonState.preferences[identity], original)
   }
 
-  func testProfileOwnedSettingsAndSourcesRejectStaleProfileBeforeMutation() async throws {
+  func testConfigurationQueryIsGraphQLOnly() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let currentProfile = fixture.app.daemonProfileName.rawValue
-    let originalDirectories = fixture.app.daemonState.workflowDirectories
-    let originalAssistant = fixture.app.daemonState.assistant
-
-    for path in [
-      "/api/v1/workflows/sources",
-      "/api/v1/settings/assistant"
-    ] {
-      let response = await fixture.app.webAPIResponse(
-        for: RielaHTTPRequest(method: "GET", path: path),
-        csrfToken: "csrf"
-      )
-      XCTAssertEqual(response.status, 200)
-      XCTAssertEqual(try jsonObject(response)["profile"] as? String, currentProfile)
+    let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
+    let response = await router.response(for: graphQLRequest(
+      csrfToken: router.csrfToken,
+      query: "query Config { configuration { profile revision profiles workflowDirectories assistant { vendor model } } }",
+      operationName: "Config"
+    ))
+    XCTAssertEqual(response.status, 200)
+    let data = try XCTUnwrap(try jsonObject(response)["data"] as? [String: Any])
+    let configuration = try XCTUnwrap(data["configuration"] as? [String: Any])
+    XCTAssertEqual(configuration["profile"] as? String, fixture.app.daemonProfileName.rawValue)
+    for path in ["/api/v1/settings/assistant", "/api/v1/settings/appearance", "/api/v1/settings/web-server"] {
+      let legacy = await fixture.app.webAPIResponse(for: RielaHTTPRequest(method: "GET", path: path), csrfToken: "csrf")
+      XCTAssertEqual(legacy.status, 404)
     }
-
-    let staleSource = await fixture.app.webAPIResponse(
-      for: RielaHTTPRequest(
-        method: "POST",
-        path: "/api/v1/workflows/sources/directories",
-        headers: ["Content-Type": "application/json"],
-        body: try JSONSerialization.data(withJSONObject: [
-          "expectedRevision": fixture.app.webRevision,
-          "expectedProfile": "previous-profile",
-          "path": fixture.root.appendingPathComponent("wrong-profile-workflows").path
-        ])
-      ),
-      csrfToken: "csrf"
-    )
-    XCTAssertEqual(staleSource.status, 409)
-    XCTAssertEqual(
-      (try jsonObject(staleSource)["error"] as? [String: Any])?["code"] as? String,
-      "profile_conflict"
-    )
-    XCTAssertEqual(fixture.app.daemonState.workflowDirectories, originalDirectories)
-
-    let staleAssistant = await fixture.app.webAPIResponse(
-      for: try request(path: "/api/v1/settings/assistant", body: [
-        "expectedRevision": fixture.app.webRevision,
-        "expectedProfile": "previous-profile",
-        "assistance": "wrong-profile-assistance",
-        "model": "wrong-profile-model"
-      ]),
-      csrfToken: "csrf"
-    )
-    XCTAssertEqual(staleAssistant.status, 409)
-    XCTAssertEqual(
-      (try jsonObject(staleAssistant)["error"] as? [String: Any])?["code"] as? String,
-      "profile_conflict"
-    )
-    XCTAssertEqual(fixture.app.daemonState.assistant.assistance, originalAssistant.assistance)
-    XCTAssertEqual(fixture.app.daemonState.assistant.vendor, originalAssistant.vendor)
-    XCTAssertEqual(fixture.app.daemonState.assistant.normalizedModel, originalAssistant.normalizedModel)
-
-    XCTAssertEqual(fixture.app.webRevision, 1)
   }
 
   func testRouterRejectsMutationWithoutCSRFHeaders() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
-    let response = await router.response(for: RielaHTTPRequest(
-      method: "PUT",
-      path: "/api/v1/instances/\(encodePathSegment(identity))/configuration",
-      headers: [
-        "Host": "127.0.0.1:19091",
-        "Origin": "http://127.0.0.1:19091",
-        "Content-Type": "application/json"
-      ],
-      body: try JSONSerialization.data(withJSONObject: ["expectedRevision": 1])
+    let response = await router.response(for: graphQLRequest(
+      csrfToken: nil,
+      query: "mutation Update($input: WorkflowInstanceConfigurationInput!) { updateWorkflowInstanceConfiguration(input: $input) { revision } }",
+      operationName: "Update",
+      variables: ["input": [
+        "expectedRevision": 1,
+        "expectedProfile": fixture.app.daemonProfileName.rawValue,
+        "identity": identity
+      ]]
     ))
     XCTAssertEqual(response.status, 403)
   }
-
-
 
   func testGraphQLRegistryBridgeAuthorizesOnlyAfterTheWebSecurityGate() async throws {
     let fixture = try makeFixture()
@@ -547,7 +510,6 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     )
   }
 
-
   private func makeFixture() throws -> (app: RielaApp, root: URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let app = RielaApp()
@@ -578,7 +540,6 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     app.daemonInstances = [.configured(identity: identity, source: candidate, preference: preference)]
     return (app, root)
   }
-
 
   private func assertGraphQLSecurityRejection(
     _ router: RielaAppWebRouter,

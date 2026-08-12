@@ -30,7 +30,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let profilePopup = NSPopUpButton()
   let instanceSearchField = NSSearchField()
   let addListButton = NSButton(title: "", target: nil, action: nil)
-  let addProfileButton = NSButton(title: "", target: nil, action: nil)
   let refreshButton = NSButton(title: "", target: nil, action: nil)
   let navigationBackButton = NSButton(title: "", target: nil, action: nil)
   let navigationTitleLabel = NSTextField(labelWithString: "Instances")
@@ -50,8 +49,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let assistantSelectionSummaryLabel = NSTextField(labelWithString: "")
   let assistantContextLabel = NSTextField(labelWithString: "")
   let assistantFoldButton = NSButton(title: "", target: nil, action: nil)
-  let assistantSettingsVendorPopup = NSPopUpButton()
-  let assistantSettingsModelPopup = NSPopUpButton()
   let assistantPromptField = NSTextField(string: "")
   let assistantSendButton = NSButton(title: "", target: nil, action: nil)
   let profilesSummaryLabel = NSTextField(labelWithString: "")
@@ -96,11 +93,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let onStartInstance: (String) -> Void
   private let onStopInstance: (String) -> Void
   private let onRestartInstance: (String) -> Void
-  private let onSetEnvironment: (String) -> Void
-  private let onSetWorkingDirectory: (String) -> Void
-  let onSaveEnvironmentVariables: (String, String) -> String?
-  let onSaveWorkflowVariables: (String, String) -> String?
-  let onRegisterEventSource: (String, String, String) -> String?
   let configuredEnvironmentValues: (RielaAppDaemonWorkflowCandidate) -> [RielaAppConfiguredEnvironmentValue]
   let onSaveAssistantAssistance: (String) -> String?
   let onSaveAssistantSettings: (RielaAppAssistantSettings) -> String?
@@ -130,7 +122,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var activeAddInstanceWindow: NSWindow?
   var pendingAddInstanceSheetAction: AddInstanceSheetAction?
   var activeAddInstancePathTargets: [AnyObject] = []
-  var activeConfigurationEditorTargets: [AnyObject] = []
   private var isUpdatingTableSelection = false
   var cachedInstanceRows: [ConfiguredWorkflowInstanceRow] = []
   var instanceRowsFingerprint = ""
@@ -139,14 +130,12 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var contentHost: DaemonWorkflowWindowContentHostView?
   var instanceDetailView: NSView?
   var addInstanceSelectionView: NSView?
-  var configurationEditorView: NSView?
   var sourcesOverviewView: NSView?
   var workflowSourceDetailView: NSView?
   var marketplaceOverviewView: NSView?
   var marketplaceWorkflowDetailView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
-  var profileDetailView: NSView?
   var profilesOverviewFingerprint: String?
   var sourcesOverviewFingerprint: String?
   var marketplaceOverviewFingerprint: String?
@@ -164,18 +153,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var startInstanceActionRow: NSView?
   weak var stopInstanceActionRow: NSView?
   weak var restartInstanceActionRow: NSView?
-  weak var configurationEditorStatusLabel: NSTextField?
-  var inlineEnvironmentTextView: NSTextView?
-  var workflowVariablesTextView: NSTextView?
-  var eventSourceTextView: NSTextView?
-  var eventBindingTextView: NSTextView?
-  var eventSourceModeControl: NSSegmentedControl?
-  var eventSourceKindPopup: NSPopUpButton?
-  var eventSourceIdField: NSTextField?
-  weak var eventSourceFormView: NSView?
-  weak var eventSourceJSONView: NSView?
-  var configurationEditorInitialSignature: String?
-  var configurationEditorDiscardArmed = false
   var assistantAssistanceTextView: NSTextView?
   var assistantTranscriptTextView: NSTextView?
   weak var assistantTranscriptScrollView: NSScrollView?
@@ -188,11 +165,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var instanceDetailPane: InstanceDetailPane = .overview
   var isShowingInstanceDetail = false
   var isShowingAddInstanceSelection = false
-  var isShowingProfileDetail = false
   var isShowingWorkflowSourceDetail = false
   var isShowingMarketplaceWorkflowDetail = false
-  var selectedProfileDetailName: RielaAppProfileName?
-  var profileDetailMode: ProfileDetailMode = .overview
   var activeSidebarPane: SidebarPane = .instances
   var selectedWorkflowSourceId: String?
   var selectedMarketplaceWorkflowIdentifier: String?
@@ -267,11 +241,11 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onStartInstance = onStartInstance
     self.onStopInstance = onStopInstance
     self.onRestartInstance = onRestartInstance
-    self.onSetEnvironment = onSetEnvironment
-    self.onSetWorkingDirectory = onSetWorkingDirectory
-    self.onSaveEnvironmentVariables = onSaveEnvironmentVariables
-    self.onSaveWorkflowVariables = onSaveWorkflowVariables
-    self.onRegisterEventSource = onRegisterEventSource
+    _ = onSetEnvironment
+    _ = onSetWorkingDirectory
+    _ = onSaveEnvironmentVariables
+    _ = onSaveWorkflowVariables
+    _ = onRegisterEventSource
     self.configuredEnvironmentValues = configuredEnvironmentValues
     self.onSaveAssistantAssistance = onSaveAssistantAssistance
     self.onSaveAssistantSettings = onSaveAssistantSettings
@@ -378,13 +352,6 @@ final class DaemonWorkflowWindowController: NSWindowController,
     rebuildProfilesOverviewView()
     updateOverviewSummaries()
     updateAssistantPanel()
-    if isShowingProfileDetail, let selectedProfileDetailName {
-      if profileNames.contains(selectedProfileDetailName) {
-        showProfileDetail(selectedProfileDetailName, mode: profileDetailMode)
-      } else {
-        showProfilesPane()
-      }
-    }
     if rowsChanged || didChangeProfile {
       instanceTable.reloadData()
     }
@@ -555,11 +522,19 @@ extension DaemonWorkflowWindowController {
     guard let row = selectedRow(), row.state != .needsSource else {
       return
     }
-    onOpenWebUI("Run logs")
+    onOpenWebUI("Web Config")
   }
 
   @objc func openWorkflowSourcesInWebUI() {
     onOpenWebUI("Workflow sources")
+  }
+
+  @objc func openAssistantConfigInWebUI() {
+    onOpenWebUI("Web Config")
+  }
+
+  @objc func openProfilesConfigInWebUI() {
+    onOpenWebUI("Web Config")
   }
 
   @objc func startSelectedInstance() {
@@ -583,41 +558,6 @@ extension DaemonWorkflowWindowController {
     onRestartInstance(identity)
   }
 
-  @objc func setSelectedEnvironment() {
-    guard let identity = selectedRow()?.id else {
-      return
-    }
-    onSetEnvironment(identity)
-  }
-
-  @objc func setSelectedEnvironmentVariables() {
-    guard selectedRow()?.id != nil else {
-      return
-    }
-    showInlineEnvironmentEditor()
-  }
-
-  @objc func setSelectedWorkingDirectory() {
-    guard let identity = selectedRow()?.id else {
-      return
-    }
-    onSetWorkingDirectory(identity)
-  }
-
-  @objc func setSelectedVariables() {
-    guard selectedRow()?.id != nil else {
-      return
-    }
-    showWorkflowVariablesEditor()
-  }
-
-  @objc func setSelectedEventSources() {
-    guard selectedRow()?.id != nil else {
-      return
-    }
-    showEventSourceEditor()
-  }
-
   @objc func tableClicked(_ sender: NSTableView) {
     guard sender == instanceTable, selectedRow() != nil else {
       return
@@ -636,7 +576,6 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .instances
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
@@ -653,7 +592,6 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .instances
     isShowingInstanceDetail = true
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
@@ -797,7 +735,6 @@ extension DaemonWorkflowWindowController {
 
   func showInstanceDetailOverview() {
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
@@ -812,7 +749,6 @@ extension DaemonWorkflowWindowController {
       return
     }
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .removalConfirmation

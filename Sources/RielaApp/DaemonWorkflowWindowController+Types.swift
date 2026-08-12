@@ -55,11 +55,6 @@ extension DaemonWorkflowWindowController {
     case importWorkflowOrPackageFromURL
   }
 
-  enum ProfileDetailMode: Equatable {
-    case overview
-    case removalConfirmation
-  }
-
   enum ImportSourceCopy {
     static let fileOrDirectoryTitle = "Import Package File or Directory"
     static let fileOrDirectoryDetail = "Add a workflow directory, package directory, .rielapkg, or .zip archive."

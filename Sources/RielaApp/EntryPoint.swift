@@ -448,7 +448,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     rebuildMenu()
   }
 
-  private func switchDaemonProfile(to rawProfileName: String) {
+  func switchDaemonProfile(to rawProfileName: String) {
+    Task { @MainActor [weak self] in
+      await self?.switchDaemonProfileAndWait(to: rawProfileName)
+    }
+  }
+
+  func switchDaemonProfileAndWait(to rawProfileName: String) async {
     let profileName = RielaAppProfileName(rawProfileName)
     guard profileName != daemonProfileName else {
       status = daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
@@ -462,22 +468,20 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       refreshDaemonWorkflowWindow()
       return
     }
-    Task { @MainActor in
-      daemonProfileName = profileName
-      webRevision += 1
-      daemonStore = makeDaemonStore(profileName: profileName)
-      daemonState = loadDaemonStateReportingCorruption(
-        profileName: profileName,
-        fallbackStatus: daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
-      )
-      refreshDaemonWorkflowWindow()
-      if shouldAutostartDaemonWorkflows() {
-        await startEnabledDaemonWorkflows()
-      } else {
-        logDaemon("profile switch autostart disabled by command-line option")
-      }
-      refreshDaemonWorkflowWindow()
+    daemonProfileName = profileName
+    webRevision += 1
+    daemonStore = makeDaemonStore(profileName: profileName)
+    daemonState = loadDaemonStateReportingCorruption(
+      profileName: profileName,
+      fallbackStatus: daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
+    )
+    refreshDaemonWorkflowWindow()
+    if shouldAutostartDaemonWorkflows() {
+      await startEnabledDaemonWorkflows()
+    } else {
+      logDaemon("profile switch autostart disabled by command-line option")
     }
+    refreshDaemonWorkflowWindow()
   }
 
   private func daemonProfileStatus(rawProfileName: String, profileName: RielaAppProfileName) -> String {
@@ -488,11 +492,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     ).statusMessage
   }
 
-  private func availableDaemonProfileNames() -> [RielaAppProfileName] {
+  func availableDaemonProfileNames() -> [RielaAppProfileName] {
     profileStore.listProfileNames(including: daemonProfileName)
   }
 
-  private func createDaemonProfile(rawProfileName: String) -> RielaAppProfileName? {
+  func createDaemonProfile(rawProfileName: String) -> RielaAppProfileName? {
     let profileName = RielaAppProfileName(rawProfileName)
     do {
       try profileStore.createProfileDirectories(profileName)
@@ -508,7 +512,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     }
   }
 
-  private func removeDaemonProfile(_ profileName: RielaAppProfileName) -> Bool {
+  func removeDaemonProfile(_ profileName: RielaAppProfileName) -> Bool {
     guard profileName != .default else {
       status = "Default profile cannot be removed"
       refreshDaemonWorkflowWindow()

@@ -18,18 +18,10 @@ extension DaemonWorkflowWindowController {
     showAddInstanceSelectionPane()
   }
 
-  @objc func addProfileFromOverview() {
-    guard let rawName = promptForProfileName(message: "Create a saved profile for another instance set.") else {
-      return
-    }
-    _ = onCreateProfile(rawName)
-  }
-
   func showAddInstanceSelectionPane() {
     activeSidebarPane = .instances
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = true
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
@@ -56,9 +48,7 @@ extension DaemonWorkflowWindowController {
   }
 
   func controlTextDidChange(_ notification: Notification) {
-    if notification.object as? NSTextField === eventSourceIdField {
-      eventSourceFormValueChanged()
-    }
+    _ = notification
   }
 
   private func buildInlineAddInstanceSelectionView(options: [WorkflowSourceOption]) -> NSView {

@@ -83,6 +83,28 @@ response carries the final text, usage, and resumable vendor session id in
 `RIELA_AGENT_GATEWAY_EXECUTABLE` when `agent-gateway` is not available on
 `PATH`.
 
+RielaApp also uses agent-gateway's model catalog when the Assistant settings
+select OpenAI API, Claude API, or Cursor API. The live vendor response replaces
+the bundled suggestions for that settings session. Missing credentials,
+listing failures, empty responses, and CLI-backed vendors fall back to the
+bundled catalog, and an already selected live model remains usable after it is
+saved.
+
+RielaApp is a resident workflow process; its HTTP listener is optional and is
+disabled by default. Opening Web Config starts the loopback listener on demand,
+and stopping that listener does not stop RielaApp or its workflow instances.
+This is intentionally different from bare `riela serve`, whose process exists
+to host an HTTP server and stays alive until SIGINT or SIGTERM. All other
+`riela` commands remain one-shot and read or update their configuration files
+directly without depending on either HTTP process.
+
+Persisted RielaApp configuration is edited only in Web Config. The local
+GraphQL `configuration` query and typed configuration mutations cover assistant
+models, appearance, the optional RielaApp-hosted server, profiles, workflow
+directories, instance environment/default variables, and event sources. The
+configuration result includes the RielaApp state plus its server section. The
+legacy REST settings and configuration-write routes are not exposed.
+
 Provider validation and Base URL routing for `codex-agent` and
 `claude-code-agent` are also supplied by `agent-gateway`.
 For OpenRouter, use `https://openrouter.ai/api/v1` with Codex Agent and
@@ -420,8 +442,8 @@ or project-level workflow sources that are visible in every profile.
 On a fresh install, the default profile is seeded with inactive starter
 packages for a Discord Yuki chat bot, a Telegram Yuki chat bot, a Slack chat
 bot, and a mail-gateway latest-mail digest. They appear in the Instances window
-with auto-start off, so new users can inspect required credentials, attach an
-env file, and activate only the instance they want to try.
+with auto-start off, so new users can inspect required credentials in Web
+Config and activate only the instance they want to try.
 The Instances table uses `Active` for the saved profile preference that starts
 an instance when RielaApp launches or when the profile is started; `Status`
 shows the current runtime state. Toggling `Active` starts or stops that instance
@@ -433,7 +455,8 @@ filter their already-loaded lists as you type; matching is case- and
 diacritic-insensitive, and clearing a search restores the full list. The Back
 control appears only when the current pane has a real back destination, so it is
 hidden at the Instances overview root and available throughout supported detail
-and configuration panes.
+panes. Configuration rows are read-only and route to Web Config; native
+instance, Assistant, and Profile panes do not expose configuration editors.
 Use `Add Project...` to attach one or more project folders containing
 `.riela/workflows` or `.riela/packages` without copying them into the profile.
 Use `Open Profile Folder` from the menu bar item or Instances window to inspect

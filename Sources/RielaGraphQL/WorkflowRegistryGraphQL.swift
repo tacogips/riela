@@ -484,10 +484,10 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
     for root in registryRoots {
       do {
         let value = try await execute(root: root, request: request, provider: provider, managedResolver: managedResolver)
-        data[root.responseKey] = projectRegistryValue(value, selections: root.selections)
+        data[root.responseKey] = projectGraphQLValue(value, selections: root.selections)
       } catch let error as WorkflowRegistryError {
         let value = registryFailureValue(for: root, error: error)
-        data[root.responseKey] = projectRegistryValue(value, selections: root.selections)
+        data[root.responseKey] = projectGraphQLValue(value, selections: root.selections)
       } catch is CancellationError {
         return graphQLError(
           code: WorkflowRegistryErrorCode.registryIOFailure.rawValue,
@@ -945,16 +945,16 @@ private func registryFailureValue(
   return value ?? .null
 }
 
-private func projectRegistryValue(_ value: JSONValue, selections: [ParsedNoteGraphQLSelectionField]) -> JSONValue {
+func projectGraphQLValue(_ value: JSONValue, selections: [ParsedNoteGraphQLSelectionField]) -> JSONValue {
   guard !selections.isEmpty else { return value }
   switch value {
   case let .array(values):
-    return .array(values.map { projectRegistryValue($0, selections: selections) })
+    return .array(values.map { projectGraphQLValue($0, selections: selections) })
   case let .object(object):
     var projected: JSONObject = [:]
     for selection in selections {
       if let child = object[selection.fieldName] {
-        projected[selection.responseKey] = projectRegistryValue(child, selections: selection.selections)
+        projected[selection.responseKey] = projectGraphQLValue(child, selections: selection.selections)
       }
     }
     return .object(projected)

@@ -71,26 +71,11 @@ export interface WorkflowSources {
   discovered: Array<{ id: string; name: string; workflowId: string; scope: string; sourceKind: 'directory' | 'package' }>
 }
 
-export interface AssistantSettings {
-  profile: string
-  revision: number
-  assistance: string
-  vendor: string
-  model: string
-}
-
 export interface NoteAPIClientInfo {
   clientId: string
   displayName: string
   createdAt: string
   lastSeenAt: string | null
-}
-
-export interface AppearanceSettings {
-  profile: string
-  revision: number
-  colorScheme: string
-  options: string[]
 }
 
 export interface WebServerSettings {
@@ -100,6 +85,35 @@ export interface WebServerSettings {
   boundPort: number | null
   restartRequired: boolean
   state: string
+}
+
+export interface RielaConfiguration {
+  profile: string
+  revision: number
+  profiles: string[]
+  workflowDirectories: string[]
+  assistant: {
+    assistance: string
+    vendor: string
+    model: string
+    modelCatalogs: Array<{ vendor: string; models: string[] }>
+  }
+  appearance: {
+    colorScheme: string
+    options: string[]
+  }
+  server: {
+    isEnabled: boolean
+    configuredPort: number
+    boundPort: number | null
+    restartRequired: boolean
+    state: string
+  }
+}
+
+export interface ConfigurationRevision {
+  profile: string
+  revision: number
 }
 
 export interface ExecutionsResponse {

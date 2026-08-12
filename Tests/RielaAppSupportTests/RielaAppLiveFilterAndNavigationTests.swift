@@ -53,26 +53,8 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
         $0.isShowingInstanceDetail = true
         $0.instanceDetailPane = .removalConfirmation
       },
-      BackStateCase("inline environment", .instanceOverview) {
-        $0.isShowingInstanceDetail = true
-        $0.instanceDetailPane = .inlineEnvironment
-      },
-      BackStateCase("workflow variables", .instanceOverview) {
-        $0.isShowingInstanceDetail = true
-        $0.instanceDetailPane = .workflowVariables
-      },
-      BackStateCase("event sources", .instanceOverview) {
-        $0.isShowingInstanceDetail = true
-        $0.instanceDetailPane = .eventSources
-      },
       BackStateCase("workflow source detail", .sourcesRoot) { $0.isShowingWorkflowSourceDetail = true },
       BackStateCase("marketplace detail", .marketplaceRoot) { $0.isShowingMarketplaceWorkflowDetail = true },
-      BackStateCase("profile overview", .profilesRoot) { $0.isShowingProfileDetail = true },
-      BackStateCase("profile removal", .profileOverview) {
-        $0.isShowingProfileDetail = true
-        $0.profileDetailMode = .removalConfirmation
-        $0.selectedProfileDetailName = .default
-      },
       BackStateCase("sources root", .instancesRoot) { $0.activeSidebarPane = .sources },
       BackStateCase("marketplace root", .instancesRoot) { $0.activeSidebarPane = .marketplace },
       BackStateCase("profiles root", .instancesRoot) { $0.activeSidebarPane = .profiles },
@@ -146,10 +128,6 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
       XCTAssertFalse(controller.isShowingMarketplaceWorkflowDetail, state)
     case .profilesRoot:
       XCTAssertEqual(controller.activeSidebarPane, .profiles, state)
-      XCTAssertFalse(controller.isShowingProfileDetail, state)
-    case .profileOverview:
-      XCTAssertTrue(controller.isShowingProfileDetail, state)
-      XCTAssertEqual(controller.profileDetailMode, .overview, state)
     }
   }
 
@@ -243,7 +221,6 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
     case sourcesRoot
     case marketplaceRoot
     case profilesRoot
-    case profileOverview
   }
 
   private struct BackStateCase {

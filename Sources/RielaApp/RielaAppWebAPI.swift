@@ -5,45 +5,6 @@ import RielaCore
 import RielaServer
 import RielaViewer
 
-private struct RielaAppWebRevisionRequest: Decodable {
-  var expectedRevision: Int
-}
-
-private struct RielaAppWebInstancePatch: Decodable {
-  var expectedRevision: Int
-  var expectedProfile: String?
-  var workingDirectory: String?
-  var environmentFilePath: String?
-  var environmentVariableUpdates: [String: String]?
-  var environmentVariablesToClear: [String]?
-  var workflowVariables: JSONObject?
-}
-
-private struct RielaAppWebAssistantPatch: Decodable {
-  var expectedRevision: Int
-  var expectedProfile: String?
-  var assistance: String?
-  var vendor: RielaAppAssistantVendor?
-  var model: String?
-}
-
-private struct RielaAppWebAppearancePatch: Decodable {
-  var expectedRevision: Int
-  var colorScheme: String
-}
-
-private struct RielaAppWebServerSettingsPatch: Decodable {
-  var expectedRevision: Int
-  var isEnabled: Bool?
-  var port: Int?
-}
-
-private struct RielaAppWebDirectoryRequest: Decodable {
-  var expectedRevision: Int
-  var expectedProfile: String?
-  var path: String
-}
-
 extension RielaApp {
   func webAPIResponse(for request: RielaHTTPRequest, csrfToken: String) async -> RielaHTTPResponse {
     let components = request.percentEncodedPath.split(separator: "/").map(String.init)
@@ -83,97 +44,9 @@ extension RielaApp {
           ])
         })
       ])
-    case ("POST", "/api/v1/workflows/sources/directories"):
-      return await webAddWorkflowDirectory(request: request, csrfToken: csrfToken)
-    case ("GET", "/api/v1/settings/assistant"):
-      return webJSON([
-        "profile": .string(daemonProfileName.rawValue),
-        "revision": .number(Double(webRevision)),
-        "assistance": .string(daemonState.assistant.assistance),
-        "vendor": .string(daemonState.assistant.vendor.rawValue),
-        "model": .string(daemonState.assistant.normalizedModel)
-      ])
-    case ("PUT", "/api/v1/settings/assistant"):
-      return await webUpdateAssistantSettings(request: request, csrfToken: csrfToken)
-    case ("GET", "/api/v1/settings/appearance"):
-      return webJSON(webAppearanceSettingsJSON())
-    case ("PUT", "/api/v1/settings/appearance"):
-      guard let patch = decodeWebBody(request, as: RielaAppWebAppearancePatch.self),
-            patch.expectedRevision == webRevision else {
-        return webConflictOrBadRequest(request)
-      }
-      return webUpdateAppearanceSettings(colorScheme: patch.colorScheme)
-    case ("GET", "/api/v1/settings/web-server"):
-      return webJSON(webServerSettingsJSON())
-    case ("PUT", "/api/v1/settings/web-server"):
-      guard let patch = decodeWebBody(request, as: RielaAppWebServerSettingsPatch.self),
-            patch.expectedRevision == webRevision else {
-        return webConflictOrBadRequest(request)
-      }
-      do {
-        if let port = patch.port {
-          try webServerController?.updateConfiguredPort(port)
-        }
-        if let isEnabled = patch.isEnabled {
-          if isEnabled {
-            await webServerController?.start()
-          } else {
-            await webServerController?.stop(explicit: true)
-          }
-        }
-      } catch {
-        return webError(status: 400, code: "invalid_settings", message: error.localizedDescription)
-      }
-      webRevision += 1
-      return webJSON(webServerSettingsJSON())
     default:
       return await webParameterizedResponse(components: components, request: request)
     }
-  }
-
-  private func webAddWorkflowDirectory(
-    request: RielaHTTPRequest,
-    csrfToken: String
-  ) async -> RielaHTTPResponse {
-    guard let body = decodeWebBody(request, as: RielaAppWebDirectoryRequest.self) else {
-      return webConflictOrBadRequest(request)
-    }
-    if let conflict = webProfileConflict(expectedProfile: body.expectedProfile) { return conflict }
-    guard body.expectedRevision == webRevision else { return webConflictOrBadRequest(request) }
-    var state = daemonState
-    state.addWorkflowDirectory(body.path)
-    guard saveDaemonState(state, profileName: daemonProfileName) else {
-      return webError(status: 500, code: "persistence_failed", message: status)
-    }
-    webRevision += 1
-    refreshDaemonWorkflowWindow()
-    return await webAPIResponse(
-      for: RielaHTTPRequest(method: "GET", path: "/api/v1/workflows/sources"),
-      csrfToken: csrfToken
-    )
-  }
-
-  private func webUpdateAssistantSettings(
-    request: RielaHTTPRequest,
-    csrfToken: String
-  ) async -> RielaHTTPResponse {
-    guard let patch = decodeWebBody(request, as: RielaAppWebAssistantPatch.self) else {
-      return webConflictOrBadRequest(request)
-    }
-    if let conflict = webProfileConflict(expectedProfile: patch.expectedProfile) { return conflict }
-    guard patch.expectedRevision == webRevision else { return webConflictOrBadRequest(request) }
-    var settings = daemonState.assistant
-    if let assistance = patch.assistance { settings.assistance = assistance }
-    if let vendor = patch.vendor { settings.vendor = vendor }
-    if let model = patch.model { settings.setSelectedModel(model, for: settings.vendor) }
-    if let error = saveAssistantSettings(settings) {
-      return webError(status: 500, code: "persistence_failed", message: error)
-    }
-    webRevision += 1
-    return await webAPIResponse(
-      for: RielaHTTPRequest(method: "GET", path: "/api/v1/settings/assistant"),
-      csrfToken: csrfToken
-    )
   }
 
   private func webParameterizedResponse(
@@ -200,9 +73,6 @@ extension RielaApp {
     }
     if components.count == 4, request.method == "GET" {
       return webInstanceDetail(identity: identity)
-    }
-    if components.count == 5, components[4] == "configuration", request.method == "PUT" {
-      return await webUpdateInstance(identity: identity, request: request)
     }
     if components.count == 5, components[4] == "executions", request.method == "GET" {
       return webExecutions(identity: identity)
@@ -625,62 +495,6 @@ extension RielaApp {
     }
   }
 
-  private func webUpdateInstance(
-    identity: String,
-    request: RielaHTTPRequest
-  ) async -> RielaHTTPResponse {
-    guard let patch = decodeWebBody(request, as: RielaAppWebInstancePatch.self) else {
-      return webConflictOrBadRequest(request)
-    }
-    if let conflict = webProfileConflict(expectedProfile: patch.expectedProfile) { return conflict }
-    guard patch.expectedRevision == webRevision else {
-      return webConflictOrBadRequest(request)
-    }
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      return webError(status: 404, code: "instance_not_found", message: "Workflow instance was not found")
-    }
-    let saved = updateDaemonPreference(identity: identity) { preference in
-      if let workingDirectory = patch.workingDirectory {
-        preference.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-      }
-      if let environmentFilePath = patch.environmentFilePath {
-        preference.environmentFilePath = environmentFilePath.trimmingCharacters(in: .whitespacesAndNewlines)
-      }
-      if let environmentVariableUpdates = patch.environmentVariableUpdates {
-        for (name, value) in environmentVariableUpdates where !value.isEmpty {
-          preference.environmentVariables[name] = value
-        }
-      }
-      if let environmentVariablesToClear = patch.environmentVariablesToClear {
-        for name in environmentVariablesToClear {
-          preference.environmentVariables.removeValue(forKey: name)
-        }
-      }
-      if let workflowVariables = patch.workflowVariables {
-        preference.defaultVariables = workflowVariables
-      }
-    }
-    guard saved else {
-      return webError(status: 500, code: "persistence_failed", message: status)
-    }
-    webRevision += 1
-    restartActiveDaemonWorkflowAfterConfigurationChange(
-      identity: identity,
-      changeDescription: "web configuration"
-    )
-    let updatedPreference = daemonState(profileName: resolved.profileName).preference(for: resolved.localIdentity)
-    let updatedInstance = WorkflowInstance.configured(
-      identity: identity,
-      source: resolved.instance.instance.source,
-      preference: updatedPreference
-    )
-    return webJSON([
-      "profile": .string(daemonProfileName.rawValue),
-      "revision": .number(Double(webRevision)),
-      "item": webInstanceJSON(updatedInstance)
-    ])
-  }
-
   private func webInstanceJSON(_ instance: WorkflowInstance) -> JSONValue {
     let snapshot = daemonRuntime.snapshot(for: profileRuntimeIdentity(
       profileName: daemonProfileName,
@@ -782,32 +596,6 @@ extension RielaApp {
       "restartRequired": .bool(webServerController?.restartRequired ?? false),
       "state": .string(webServerController?.state.label ?? "stopped")
     ]
-  }
-
-  private func decodeWebBody<Value: Decodable>(_ request: RielaHTTPRequest, as type: Value.Type) -> Value? {
-    try? JSONDecoder().decode(type, from: request.body)
-  }
-
-  private func webConflictOrBadRequest(_ request: RielaHTTPRequest) -> RielaHTTPResponse {
-    guard let revision = decodeWebBody(request, as: RielaAppWebRevisionRequest.self)?.expectedRevision else {
-      return webError(status: 400, code: "invalid_request", message: "expectedRevision and a valid JSON body are required")
-    }
-    return webError(
-      status: 409,
-      code: "revision_conflict",
-      message: "Expected revision \(revision), current revision is \(webRevision)"
-    )
-  }
-
-  private func webProfileConflict(expectedProfile: String?) -> RielaHTTPResponse? {
-    guard expectedProfile == daemonProfileName.rawValue else {
-      return webError(
-        status: 409,
-        code: "profile_conflict",
-        message: "The active profile changed after this editor was loaded"
-      )
-    }
-    return nil
   }
 
   private func webJSON(_ object: JSONObject, status: Int = 200) -> RielaHTTPResponse {

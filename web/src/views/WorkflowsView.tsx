@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createResource, createSignal, on } from 'solid-js'
 import { APIError, api, requireExpectedProfile } from '../api'
+import { configurationClient } from '../config/client'
 import type { WorkflowDefinitionResponse, WorkflowSources } from '../contracts'
 import { EmptyState, ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 import {
@@ -156,12 +157,11 @@ export function WorkflowsView(props: { profileKey: string; profileName: string }
   const add = async () => {
     setMessage(''); setMutationError(false); setConflictTarget(undefined); setSaving(true)
     try {
-      requireExpectedProfile(
-        await api.mutate<WorkflowSources>('/api/v1/workflows/sources/directories', 'POST', {
-          path: path(),
-          expectedProfile: props.profileName,
-        }),
-        props.profileName,
+      const current = sources()
+      if (!current) throw new Error('Workflow sources are still loading.')
+      await configurationClient.addWorkflowDirectory(
+        { profile: props.profileName, revision: current.revision },
+        path(),
       )
       setPath('')
       setMessage('Workflow directory added.')

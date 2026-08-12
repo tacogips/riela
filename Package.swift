@@ -96,7 +96,15 @@ let package = Package(
     ),
     .target(
       name: "RielaAppSupport",
-      dependencies: ["RielaAddons", "RielaCore", "RielaEvents", "RielaServer", "RielaObservability"],
+      dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
+        .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
+        "RielaAddons",
+        "RielaCore",
+        "RielaEvents",
+        "RielaServer",
+        "RielaObservability"
+      ],
       resources: [.process("Resources")]
     ),
     .target(
@@ -180,6 +188,8 @@ let package = Package(
     .testTarget(
       name: "RielaAppSupportTests",
       dependencies: [
+        .product(name: "AgentGateway", package: "agent-gateway"),
+        .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         "RielaAddons",
         "RielaAppSupport",
         "RielaServer",

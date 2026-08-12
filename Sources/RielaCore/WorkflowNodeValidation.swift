@@ -4,14 +4,34 @@ public func validateAgentNodePayload(
   _ payload: AgentNodePayload,
   path: String = "node"
 ) -> [WorkflowValidationDiagnostic] {
+  var diagnostics: [WorkflowValidationDiagnostic] = []
+  if payload.provider != nil, payload.baseURL != nil {
+    diagnostics.append(error("\(path).baseURL", "cannot be combined with provider"))
+  }
+  if payload.baseURL == nil, payload.apiKeyEnvironment != nil {
+    diagnostics.append(error("\(path).apiKeyEnvironment", "requires baseURL"))
+  }
+  if let baseURL = payload.baseURL {
+    if ![.codexAgent, .claudeCodeAgent].contains(payload.executionBackend) {
+      diagnostics.append(error(
+        "\(path).baseURL",
+        "requires executionBackend 'codex-agent' or 'claude-code-agent'"
+      ))
+    } else if (try? AgentProviderConfiguration(
+      name: "custom",
+      baseUrl: baseURL,
+      apiKeyEnv: payload.apiKeyEnvironment
+    )) == nil {
+      diagnostics.append(error("\(path).baseURL", "is not a valid custom provider configuration"))
+    }
+  }
   if payload.provider == nil, payload.providerProxy != nil {
-    return [error("\(path).providerProxy", "requires provider")]
+    diagnostics.append(error("\(path).providerProxy", "requires provider"))
   }
   guard payload.provider != nil else {
-    return []
+    return diagnostics
   }
 
-  var diagnostics: [WorkflowValidationDiagnostic] = []
   let supportedBackends: Set<NodeExecutionBackend> = [
     .codexAgent,
     .claudeCodeAgent,

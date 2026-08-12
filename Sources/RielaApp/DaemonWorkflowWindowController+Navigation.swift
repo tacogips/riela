@@ -8,14 +8,12 @@ extension DaemonWorkflowWindowController {
       instancesListView,
       instanceDetailView,
       addInstanceSelectionView,
-      configurationEditorView,
       sourcesOverviewView,
       workflowSourceDetailView,
       marketplaceOverviewView,
       marketplaceWorkflowDetailView,
       assistantOverviewView,
-      profilesOverviewView,
-      profileDetailView
+      profilesOverviewView
     ].compactMap { $0 }
     for pane in panes where pane !== visiblePane {
       pane.isHidden = true
@@ -43,13 +41,6 @@ extension DaemonWorkflowWindowController {
       showInstanceDetailOverview()
       return
     }
-    if isShowingInstanceDetail, instanceDetailPane != .overview {
-      guard dismissConfigurationEditorOrWarn() else {
-        return
-      }
-      showInstanceDetailOverview()
-      return
-    }
     if isShowingInstanceDetail {
       showInstancesList()
       return
@@ -60,14 +51,6 @@ extension DaemonWorkflowWindowController {
     }
     if isShowingMarketplaceWorkflowDetail {
       showMarketplacePane()
-      return
-    }
-    if isShowingProfileDetail, profileDetailMode == .removalConfirmation, let selectedProfileDetailName {
-      showProfileDetail(selectedProfileDetailName)
-      return
-    }
-    if isShowingProfileDetail {
-      showProfilesPane()
       return
     }
     showInstancesPane()
@@ -83,7 +66,6 @@ extension DaemonWorkflowWindowController {
     rebuildSourcesOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(sourcesOverviewView)
@@ -97,7 +79,6 @@ extension DaemonWorkflowWindowController {
     rebuildMarketplaceOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(marketplaceOverviewView)
@@ -112,7 +93,6 @@ extension DaemonWorkflowWindowController {
     rebuildProfilesOverviewView()
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(profilesOverviewView)
@@ -125,7 +105,6 @@ extension DaemonWorkflowWindowController {
     activeSidebarPane = .assistant
     isShowingInstanceDetail = false
     isShowingAddInstanceSelection = false
-    isShowingProfileDetail = false
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(assistantOverviewView)
@@ -146,7 +125,6 @@ extension DaemonWorkflowWindowController {
       || isShowingInstanceDetail
       || isShowingWorkflowSourceDetail
       || isShowingMarketplaceWorkflowDetail
-      || isShowingProfileDetail
       || activeSidebarPane != .instances
   }
 

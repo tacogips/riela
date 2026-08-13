@@ -21,7 +21,89 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
     try installExecutable(named: "container", in: bin)
     driver = ContainerRuntimeDiscovery(environment: ["PATH": bin.path]).selectedDriver()
     XCTAssertEqual(driver.kind, .appleContainer)
-    XCTAssertEqual(driver.executable, "container")
+    XCTAssertEqual(driver.executable, bin.appendingPathComponent("container").path)
+  }
+
+  func testContainerRuntimeDiscoveryExcludesAppleContainerOutsideDarwin() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("riela-container-runtime-non-darwin")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bin = root.appendingPathComponent("bin", isDirectory: true)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    try installExecutable(named: "container", in: bin)
+    try installExecutable(named: "docker", in: bin)
+
+    let discovery = ContainerRuntimeDiscovery(
+      environment: ["PATH": bin.path],
+      hostPlatform: .other
+    )
+
+    XCTAssertNil(discovery.configuredDriver())
+    let driver = try XCTUnwrap(discovery.selectedAvailableDriver())
+    XCTAssertEqual(driver.kind, .docker)
+    XCTAssertEqual(driver.executable, "docker")
+  }
+
+  func testConfiguredAppleContainerIsUnavailableOutsideDarwin() {
+    let discovery = ContainerRuntimeDiscovery(
+      environment: ["RIELA_CONTAINER_RUNTIME": "/usr/local/bin/container"],
+      hostPlatform: .other
+    )
+
+    XCTAssertNil(discovery.configuredDriver())
+    XCTAssertTrue(discovery.configuredAppleContainerIsUnsupported)
+  }
+
+  func testContainerAddonRejectsConfiguredAppleContainerOutsideDarwinBeforeLaunch() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("riela-container-addon-non-darwin")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let addonRoot = root.appendingPathComponent("addons/example/worker/1", isDirectory: true)
+    try FileManager.default.createDirectory(at: addonRoot, withIntermediateDirectories: true)
+    let runner = RecordingContainerAddonProcessRunner { _, _ in
+      XCTFail("Apple Container must not launch outside Darwin")
+      return LocalProcessResult(stdout: "", stderr: "", terminationStatus: 1)
+    }
+    let resolver = ContainerWorkflowAddonResolver(
+      registrations: [
+        ContainerAddonRegistration(
+          packageName: "@example/worker",
+          addonName: "example/worker",
+          version: "1",
+          packageRoot: root,
+          addonRoot: addonRoot,
+          entrypoint: nil,
+          containerfilePath: nil,
+          image: "ghcr.io/example/worker",
+          imageDigest: "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          contentDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          capabilities: [.init(name: "container.run", reason: "test")]
+        )
+      ],
+      workingDirectory: root,
+      environment: ["RIELA_CONTAINER_RUNTIME": "/usr/local/bin/container"],
+      runner: runner,
+      hostPlatform: .other
+    )
+
+    do {
+      _ = try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "workflow",
+          stepId: "step",
+          nodeId: "node",
+          addon: WorkflowNodeAddonRef(name: "example/worker", version: "1"),
+          resolvedInputPayload: [:]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected Darwin availability failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertTrue(error.message.contains("only available"))
+      XCTAssertTrue(error.message.contains("Darwin"))
+    }
+
+    let callCount = await runner.callCount()
+    XCTAssertEqual(callCount, 0)
   }
 
   func testContainerRuntimeDiscoveryUsesConfiguredRuntimePath() throws {

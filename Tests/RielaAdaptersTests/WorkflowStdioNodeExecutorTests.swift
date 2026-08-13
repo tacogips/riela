@@ -232,10 +232,21 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
   }
 
   func testContainerRunnerKindUsesContainerCLI() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      .appendingPathComponent("riela-apple-container-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let executable = root.appendingPathComponent("container")
+    XCTAssertTrue(FileManager.default.createFile(atPath: executable.path, contents: Data()))
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    defer { try? FileManager.default.removeItem(at: root) }
     let runner = RecordingStdioNodeProcessRunner { _, _ in
       #"{"container":true}"# + "\n"
     }
-    let executor = LocalWorkflowStdioNodeExecutor(runner: runner)
+    let executor = LocalWorkflowStdioNodeExecutor(
+      runner: runner,
+      hostPlatform: .darwin,
+      hostEnvironment: ["PATH": root.path]
+    )
 
     _ = try await executor.execute(
       input(
@@ -258,11 +269,42 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
 
     let configurations = await runner.configurations()
     let configuration = try XCTUnwrap(configurations.first)
-    XCTAssertEqual(configuration.executableURL.path, "/usr/bin/env")
-    XCTAssertEqual(Array(configuration.arguments.prefix(4)), ["container", "run", "--rm", "-i"])
+    XCTAssertEqual(configuration.executableURL.path, executable.path)
+    XCTAssertEqual(Array(configuration.arguments.prefix(3)), ["run", "--rm", "-i"])
     XCTAssertTrue(configuration.arguments.contains("APP_ENV"))
     XCTAssertTrue(configuration.arguments.contains("ghcr.io/example/worker:latest"))
     XCTAssertTrue(configuration.arguments.contains("./run.sh"))
+  }
+
+  func testAppleContainerNodeFailsBeforeLaunchOutsideDarwin() async throws {
+    let runner = RecordingStdioNodeProcessRunner { _, _ in
+      XCTFail("Apple Container must not launch outside Darwin")
+      return ""
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(runner: runner, hostPlatform: .other)
+
+    do {
+      _ = try await executor.execute(
+        input(kind: .container, node: AgentNodePayload(
+          id: "node",
+          nodeType: .container,
+          model: "",
+          container: WorkflowContainerExecution(
+            image: "ghcr.io/example/worker:latest",
+            runnerKind: "container"
+          )
+        )),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected Darwin availability failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertTrue(error.message.contains("only available"))
+      XCTAssertTrue(error.message.contains("Darwin"))
+    }
+
+    let configurations = await runner.configurations()
+    XCTAssertTrue(configurations.isEmpty)
   }
 
   func testContainerNodeReceivesWritableMemoryBindAndContainerMemoryRoot() async throws {

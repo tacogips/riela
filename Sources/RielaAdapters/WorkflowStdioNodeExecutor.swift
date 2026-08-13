@@ -3,11 +3,17 @@ import RielaCore
 
 public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   public var runner: any LocalProcessRunning
+  public var hostPlatform: RielaHostPlatform
+  public var hostEnvironment: [String: String]
 
   public init(
-    runner: any LocalProcessRunning = FoundationLocalProcessRunner()
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
+    hostPlatform: RielaHostPlatform = .current,
+    hostEnvironment: [String: String] = ProcessInfo.processInfo.environment
   ) {
     self.runner = runner
+    self.hostPlatform = hostPlatform
+    self.hostEnvironment = hostEnvironment
   }
 
   public func execute(
@@ -79,7 +85,11 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         throw AdapterExecutionError(.providerError, "container node '\(input.nodeId)' is missing container execution metadata")
       }
       let templateVariables = templateVariables(for: input)
-      let runnerPath = try containerRunnerExecutable(for: container, variables: templateVariables)
+      let runnerPath = try containerRunnerExecutable(
+        for: container,
+        variables: templateVariables,
+        workingDirectory: container.workingDirectory ?? input.node.workingDirectory
+      )
       let invocation = processInvocation(
         executable: runnerPath,
         arguments: containerArguments(container, variables: templateVariables)
@@ -204,14 +214,50 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     return (URL(fileURLWithPath: "/usr/bin/env"), [executable] + arguments)
   }
 
-  private func containerRunnerExecutable(for container: WorkflowContainerExecution, variables: JSONObject) throws -> String {
+  private func containerRunnerExecutable(
+    for container: WorkflowContainerExecution,
+    variables: JSONObject,
+    workingDirectory: String?
+  ) throws -> String {
+    let field: String
+    let rendered: String
     if let runnerPath = container.runnerPath {
-      return try nonEmptyContainerRunner(renderPromptTemplate(runnerPath, variables: variables), field: "runnerPath")
+      field = "runnerPath"
+      rendered = renderPromptTemplate(runnerPath, variables: variables)
+    } else {
+      field = "runnerKind"
+      rendered = renderPromptTemplate(container.runnerKind ?? "docker", variables: variables)
     }
-    return try nonEmptyContainerRunner(
-      renderPromptTemplate(container.runnerKind ?? "docker", variables: variables),
-      field: "runnerKind"
-    )
+    let executable = try nonEmptyContainerRunner(rendered, field: field)
+    guard URL(fileURLWithPath: executable).lastPathComponent == appleContainerExecutableName else {
+      return executable
+    }
+    guard hostPlatform == .darwin else {
+      throw AdapterExecutionError(
+        .providerError,
+        "Apple Container node '\(container.image)' is only available when the Riela host is Darwin"
+      )
+    }
+    if executable.hasPrefix("/") {
+      return executable
+    }
+    if executable.contains("/") {
+      let baseURL = workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      return URL(fileURLWithPath: executable, relativeTo: baseURL).standardizedFileURL.path
+    }
+    return resolveHostExecutable(executable) ?? appleContainerDefaultExecutablePath
+  }
+
+  private func resolveHostExecutable(_ executable: String) -> String? {
+    let searchPath = hostEnvironment["PATH"] ?? defaultExecutableSearchPath
+    for directory in searchPath.split(separator: ":").map(String.init) {
+      let candidate = URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent(executable).path
+      if FileManager.default.isExecutableFile(atPath: candidate) {
+        return candidate
+      }
+    }
+    return nil
   }
 
   private func nonEmptyContainerRunner(_ value: String, field: String) throws -> String {
@@ -246,6 +292,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
 }
 
 private let containerMemoryRootPath = "/riela/memory"
+private let appleContainerExecutableName = "container"
+private let appleContainerDefaultExecutablePath = "/usr/local/bin/container"
+private let defaultExecutableSearchPath = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 private func stringValue(_ key: String, in object: JSONObject) -> String? {
   guard case let .string(value)? = object[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

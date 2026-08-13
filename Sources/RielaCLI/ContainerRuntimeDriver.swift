@@ -1,4 +1,5 @@
 import Foundation
+import RielaCore
 
 enum ContainerRuntimeKind: String, Equatable, Sendable {
   case appleContainer = "apple-container"
@@ -131,13 +132,16 @@ struct ContainerRuntimeDiscovery {
 
   var environment: [String: String]
   var fileManager: FileManager
+  var hostPlatform: RielaHostPlatform
 
   init(
     environment: [String: String],
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    hostPlatform: RielaHostPlatform = .current
   ) {
     self.environment = environment
     self.fileManager = fileManager
+    self.hostPlatform = hostPlatform
   }
 
   func selectedDriver() -> any ContainerRuntimeDriver {
@@ -155,17 +159,36 @@ struct ContainerRuntimeDiscovery {
     return driver(for: configured)
   }
 
+  var configuredAppleContainerIsUnsupported: Bool {
+    guard hostPlatform != .darwin,
+          let configured = environment[Self.runtimeEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !configured.isEmpty else {
+      return false
+    }
+    return runtimeCommandName(for: configured) == "container"
+  }
+
   func selectedAvailableDriver() -> (any ContainerRuntimeDriver)? {
-    for command in Self.preferredRuntimeCommands where executableExists(command) {
-      return driver(for: command)
+    for command in Self.preferredRuntimeCommands {
+      guard let resolvedExecutable = resolvedExecutable(command) else {
+        continue
+      }
+      let executable = command == "container" ? resolvedExecutable : command
+      guard let driver = driver(for: executable) else {
+        continue
+      }
+      return driver
     }
     return nil
   }
 
-  private func driver(for executable: String) -> any ContainerRuntimeDriver {
+  private func driver(for executable: String) -> (any ContainerRuntimeDriver)? {
     switch runtimeCommandName(for: executable) {
     case "container":
-      return AppleContainerDriver(executable: executable)
+      guard hostPlatform == .darwin else {
+        return nil
+      }
+      return AppleContainerDriver(executable: nativeAppleContainerExecutable(executable))
     case "docker":
       return DockerContainerDriver(executable: executable)
     case "podman":
@@ -179,14 +202,21 @@ struct ContainerRuntimeDiscovery {
     URL(fileURLWithPath: executable).lastPathComponent
   }
 
-  private func executableExists(_ command: String) -> Bool {
+  private func nativeAppleContainerExecutable(_ executable: String) -> String {
+    if executable.hasPrefix("/") {
+      return executable
+    }
+    return resolvedExecutable(executable) ?? "/usr/local/bin/container"
+  }
+
+  private func resolvedExecutable(_ command: String) -> String? {
     let path = environment["PATH"] ?? Self.defaultSearchPath
     for directory in path.split(separator: ":").map(String.init) {
       let candidate = URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent(command).path
       if fileManager.isExecutableFile(atPath: candidate) {
-        return true
+        return candidate
       }
     }
-    return false
+    return nil
   }
 }

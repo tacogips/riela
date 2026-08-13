@@ -352,6 +352,23 @@ riela workflow run file-markdown-convert --workflow-definition-dir examples \
 
 The reference bundle is `examples/file-markdown-convert`.
 
+## Apple Container Nodes
+
+Workflow container nodes may select Apple Container with
+`container.runnerKind: "container"`. This runtime is available only when
+Riela itself is running on a Darwin host; other hosts reject the node before
+starting a process. Docker, Podman, and explicitly configured custom container
+runtimes retain their existing cross-platform behavior.
+
+On Darwin, Riela resolves the Apple Container executable to an absolute path
+and launches it directly from Swift through the local `posix_spawn` process
+boundary. It does not invoke Apple Container through a shell or
+`/usr/bin/env`. Install and start the runtime with:
+
+```bash
+riela setup container --yes
+```
+
 ## Apple Gateway Add-Ons
 
 Riela includes built-in worker add-ons for local Apple integrations through an

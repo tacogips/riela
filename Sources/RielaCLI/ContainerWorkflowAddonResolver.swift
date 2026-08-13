@@ -22,17 +22,20 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
   var workingDirectory: URL
   var environment: [String: String]
   var runner: any LocalProcessRunning
+  var hostPlatform: RielaHostPlatform
 
   init(
     registrations: [ContainerAddonRegistration],
     workingDirectory: URL,
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-    runner: any LocalProcessRunning = FoundationLocalProcessRunner()
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
+    hostPlatform: RielaHostPlatform = .current
   ) {
     self.registrations = registrations
     self.workingDirectory = workingDirectory
     self.environment = environment
     self.runner = runner
+    self.hostPlatform = hostPlatform
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -90,7 +93,13 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
   }
 
   private func selectedRuntimeDriver() throws -> any ContainerRuntimeDriver {
-    let discovery = ContainerRuntimeDiscovery(environment: environment)
+    let discovery = ContainerRuntimeDiscovery(environment: environment, hostPlatform: hostPlatform)
+    if discovery.configuredAppleContainerIsUnsupported {
+      throw AdapterExecutionError(
+        .providerError,
+        "Apple Container runtime is only available when the Riela host is Darwin"
+      )
+    }
     if let configured = discovery.configuredDriver() {
       return configured
     }

@@ -359,6 +359,11 @@ private extension NodeCommandRunner {
       return
     }
     let discovery = ContainerRuntimeDiscovery(environment: environment)
+    if discovery.configuredAppleContainerIsUnsupported {
+      throw CLIUsageError(
+        "node run preflight failed for '\(target)': Apple Container is only available on Darwin hosts."
+      )
+    }
     guard discovery.configuredDriver() == nil, discovery.selectedAvailableDriver() == nil else {
       return
     }

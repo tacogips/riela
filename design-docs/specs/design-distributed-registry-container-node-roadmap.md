@@ -84,6 +84,13 @@ runtime.
   Container, Docker, and Podman. Driver selection is deterministic:
   configured driver, Apple Container on supported macOS when available, then
   Docker, then Podman.
+- Apple Container is a Darwin-only runtime. Riela must reject a raw container
+  node that explicitly selects `runnerKind: "container"` before process launch
+  on other hosts, and runtime discovery must exclude Apple Container outside
+  Darwin even when an executable with that name is present.
+- On Darwin, Riela resolves the Apple Container executable to an absolute path
+  and launches it directly through the Swift local-process boundary. It does
+  not use a shell or `/usr/bin/env` for Apple Container execution.
 - Capability declarations are mapped to runtime enforcement where practical:
   filesystem grants become mounted paths, network-denied add-ons run without
   egress when supported by the driver, and undeclared writes are blocked.

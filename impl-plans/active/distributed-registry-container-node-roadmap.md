@@ -66,6 +66,10 @@ credential storage, and broad RielaApp UI flows beyond readiness prompts.
 - [x] Keep local `containerfilePath` builds as a development fallback.
 - [x] Map add-on capabilities to mounts, environment, and network policy.
 - [x] Add one manual local runtime smoke path.
+- [x] Restrict Apple Container node/runtime selection to Darwin hosts.
+- [x] Resolve and launch Apple Container by absolute path through Swift's
+      native local-process runner rather than through a shell or
+      `/usr/bin/env`.
 
 ### 4. Doctor Container Readiness
 
@@ -110,6 +114,15 @@ credential storage, and broad RielaApp UI flows beyond readiness prompts.
       for every non-mock single-node execution path.
 
 ## Progress Log
+
+### Session: 2026-08-12
+
+Restricted raw `runnerKind: "container"` workflow nodes and the packaged Apple
+Container runtime driver to Darwin hosts. Apple Container discovery now
+resolves the executable to an absolute path, allowing Riela's Swift
+`posix_spawn` runner to launch it directly; Docker, Podman, and custom runtime
+compatibility remains unchanged. Added deterministic injected-platform tests
+for Darwin-native launch and non-Darwin rejection/exclusion.
 
 ### Session: 2026-07-07
 

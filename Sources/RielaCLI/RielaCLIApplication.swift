@@ -315,7 +315,7 @@ Usage:
   riela workflow version diff <workflow> <from> <to> [--output json|text]
   riela workflow restore <workflow> <snapshot-id> [--yes] [--output json|text]
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
-  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--auto-improve] [--output jsonl|json|text]
+  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--auto-improve] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
   riela gc [--retention-days <days>] [--scope user|project|all] [--working-dir <dir>] [--dry-run] [--output json|text]
@@ -483,6 +483,7 @@ func workflowRunHelpText(target: String?) -> String {
     --max-loop-iterations <n>
     --default-timeout-ms <n>
     --timeout-ms <n>
+    --supervisor-mode              Allow Codex nodes to spawn subagents for this run. Defaults to off.
     --auto-improve                 Retry failed supervised runs and record supervision state.
     --max-supervised-attempts <n>  Maximum auto-improve attempts.
     --monitor-interval-ms <n>      Polling interval for explicit stall detection.

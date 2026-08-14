@@ -130,6 +130,8 @@ let package = Package(
     .target(
       name: "RielaCLI",
       dependencies: [
+        .product(name: "ACP", package: "agent-gateway"),
+        .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
         "RielaVersion",

@@ -6,13 +6,16 @@ import RielaCore
 public struct AgentGatewayAdapterConfiguration: Equatable, Sendable {
   public var executableName: String
   public var environment: [String: String]
+  public var codexSupervisorModeEnabled: Bool
 
   public init(
     executableName: String = "agent-gateway",
-    environment: [String: String] = [:]
+    environment: [String: String] = [:],
+    codexSupervisorModeEnabled: Bool = false
   ) {
     self.executableName = executableName
     self.environment = environment
+    self.codexSupervisorModeEnabled = codexSupervisorModeEnabled
   }
 
   public init(processEnvironment environment: [String: String]) {
@@ -23,7 +26,11 @@ public struct AgentGatewayAdapterConfiguration: Equatable, Sendable {
   }
 
   public func makeAdapter() -> AgentGatewayNodeAdapter {
-    AgentGatewayNodeAdapter(executableName: executableName, environment: environment)
+    AgentGatewayNodeAdapter(
+      executableName: executableName,
+      environment: environment,
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+    )
   }
 }
 
@@ -31,17 +38,20 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
   public var executableName: String
   public var runner: any LocalProcessRunning
   public var environment: [String: String]
+  public var codexSupervisorModeEnabled: Bool
   private let sessionStore: AgentGatewaySessionStore
 
   public init(
     executableName: String = "agent-gateway",
     runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
     environment: [String: String] = [:],
+    codexSupervisorModeEnabled: Bool = false,
     sessionStore: AgentGatewaySessionStore = AgentGatewaySessionStore()
   ) {
     self.executableName = executableName
     self.runner = runner
     self.environment = environment
+    self.codexSupervisorModeEnabled = codexSupervisorModeEnabled
     self.sessionStore = sessionStore
   }
 
@@ -102,7 +112,11 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
       }
     }
     arguments += resolveAdapterImagePaths(input).flatMap { ["--image", $0] }
-    let vendorArguments = gatewayVendorArguments(vendor, input: input)
+    let vendorArguments = gatewayVendorArguments(
+      vendor,
+      input: input,
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+    )
     if !vendorArguments.isEmpty {
       arguments += ["--"] + vendorArguments
     }
@@ -156,16 +170,7 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
     }
     continuation.finish()
     await consumer.value
-    if let error = collector.protocolError() {
-      throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
-    }
-    guard result.terminationStatus == 0 else {
-      throw AdapterExecutionError(
-        .providerError,
-        "agent-gateway failed with exit code \(result.terminationStatus): \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
-      )
-    }
-    let turn = try collector.terminalTurn()
+    let turn = try gatewayTerminalTurn(collector, processResult: result)
     guard turn.stopReason == .endTurn else {
       throw AdapterExecutionError(.providerError, "agent-gateway turn ended with stop reason '\(turn.stopReason.rawValue)'")
     }
@@ -191,6 +196,118 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
   public func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {
     sessionStore.removeSessions(forWorkflowRunId: context.workflowRunId)
   }
+}
+
+/// One `agent-gateway client` ACP prompt turn outside the workflow node path,
+/// for callers (e.g. builtin add-ons) that need a single vendor completion.
+/// Shares the adapter's typed ACP stream parsing, so protocol error lines and
+/// the authoritative `_meta.agentGateway` result are surfaced instead of each
+/// caller hand-rolling JSONL scanning.
+public struct AgentGatewayClientTurn: Sendable {
+  public struct Request: Sendable {
+    public var vendor: GatewayVendor
+    public var model: String
+    public var systemPrompt: String?
+    public var apiKeyEnvironment: String?
+    public var workingDirectory: String?
+    public var promptBlocks: [ACPContentBlock]
+
+    public init(
+      vendor: GatewayVendor,
+      model: String,
+      systemPrompt: String? = nil,
+      apiKeyEnvironment: String? = nil,
+      workingDirectory: String? = nil,
+      promptBlocks: [ACPContentBlock]
+    ) {
+      self.vendor = vendor
+      self.model = model
+      self.systemPrompt = systemPrompt
+      self.apiKeyEnvironment = apiKeyEnvironment
+      self.workingDirectory = workingDirectory
+      self.promptBlocks = promptBlocks
+    }
+  }
+
+  public struct Result: Sendable {
+    public var stopReason: ACPStopReason
+    public var text: String
+    public var model: String?
+    public var usage: AdapterUsage?
+  }
+
+  public var executableName: String
+  public var runner: any LocalProcessRunning
+  public var environment: [String: String]
+
+  public init(
+    executableName: String = "agent-gateway",
+    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
+    environment: [String: String] = [:]
+  ) {
+    self.executableName = executableName
+    self.runner = runner
+    self.environment = environment
+  }
+
+  public func run(_ request: Request, deadline: Date? = nil) async throws -> Result {
+    var arguments = [
+      executableName, "client",
+      "--vendor", request.vendor.rawValue,
+      "--model", request.model,
+      "--prompt-blocks", "-"
+    ]
+    if let systemPrompt = request.systemPrompt {
+      arguments += ["--system", systemPrompt]
+    }
+    if let workingDirectory = request.workingDirectory {
+      arguments += ["--cwd", workingDirectory]
+    }
+    if let apiKeyEnvironment = request.apiKeyEnvironment {
+      arguments += ["--api-key-environment", apiKeyEnvironment]
+    }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    guard let promptBlocksLine = String(
+      bytes: try encoder.encode(request.promptBlocks),
+      encoding: .utf8
+    ) else {
+      throw AdapterExecutionError(.invalidInput, "agent-gateway prompt is not valid UTF-8")
+    }
+    let configuration = LocalProcessConfiguration(
+      executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+      arguments: arguments,
+      environment: environment,
+      workingDirectoryURL: request.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    )
+    let result = try await runner.run(
+      configuration: configuration,
+      stdin: promptBlocksLine + "\n",
+      deadline: deadline
+    )
+    let collector = GatewayACPMessageCollector(vendor: request.vendor.rawValue)
+    for line in result.stdout.split(whereSeparator: \.isNewline) {
+      _ = collector.consume(String(line))
+    }
+    let turn = try gatewayTerminalTurn(collector, processResult: result)
+    return Result(stopReason: turn.stopReason, text: turn.text, model: turn.model, usage: turn.usage)
+  }
+}
+
+private func gatewayTerminalTurn(
+  _ collector: GatewayACPMessageCollector,
+  processResult result: LocalProcessResult
+) throws -> GatewayACPTurn {
+  if let error = collector.protocolError() {
+    throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
+  }
+  guard result.terminationStatus == 0 else {
+    throw AdapterExecutionError(
+      .providerError,
+      "agent-gateway failed with exit code \(result.terminationStatus): \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+    )
+  }
+  return try collector.terminalTurn()
 }
 
 /// Backend event types the gateway adapter emits, mirroring the ACP
@@ -461,7 +578,11 @@ private func gatewayVendorExecutable(
   return environment[keys.environment]
 }
 
-private func gatewayVendorArguments(_ vendor: GatewayVendor, input: AdapterExecutionInput) -> [String] {
+private func gatewayVendorArguments(
+  _ vendor: GatewayVendor,
+  input: AdapterExecutionInput,
+  codexSupervisorModeEnabled: Bool
+) -> [String] {
   guard vendor.isCLI else { return [] }
   let images = resolveAdapterImagePaths(input)
   let (key, backend): (String, CliAgentBackend) = switch vendor {
@@ -496,6 +617,9 @@ private func gatewayVendorArguments(_ vendor: GatewayVendor, input: AdapterExecu
   }
   arguments.append(contentsOf: agentToolPolicyArguments(input.node.agentToolPolicy, backend: backend))
   arguments.append(contentsOf: configured)
+  if vendor == .codex {
+    arguments += [codexSupervisorModeEnabled ? "--enable" : "--disable", "multi_agent"]
+  }
   return arguments
 }
 

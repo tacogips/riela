@@ -314,6 +314,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var authToken: String?
   public var authTokenEnv: String?
   public var fromRegistry: Bool
+  public var supervisorMode: Bool
   public var autoImprove: Bool
   public var autoImprovePolicy: WorkflowAutoImprovePolicy
 
@@ -343,6 +344,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     authToken: String? = nil,
     authTokenEnv: String? = nil,
     fromRegistry: Bool = false,
+    supervisorMode: Bool = false,
     autoImprove: Bool = false,
     autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy()
   ) {
@@ -371,6 +373,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.authToken = authToken
     self.authTokenEnv = authTokenEnv
     self.fromRegistry = fromRegistry
+    self.supervisorMode = supervisorMode
     self.autoImprove = autoImprove
     self.autoImprovePolicy = autoImprovePolicy
   }

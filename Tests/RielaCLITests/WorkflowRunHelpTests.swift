@@ -29,6 +29,8 @@ final class WorkflowRunHelpTests: XCTestCase {
     XCTAssertTrue(result.stdout.contains("--stall-timeout-ms <n>"))
     XCTAssertTrue(result.stdout.contains("--max-steps <n>"))
     XCTAssertTrue(result.stdout.contains("--disable-default-loop-guard"))
+    XCTAssertTrue(result.stdout.contains("--supervisor-mode"))
+    XCTAssertTrue(result.stdout.contains("Defaults to off"))
     XCTAssertTrue(result.stdout.contains("Disable the synthesized loop convergence guard"))
     XCTAssertTrue(result.stdout.contains("CLI agent and official SDK backends are not"))
     XCTAssertTrue(result.stdout.contains("Prefer jsonl for agents/LLMs"))

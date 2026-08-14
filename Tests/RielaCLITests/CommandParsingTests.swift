@@ -217,9 +217,20 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.agentSilenceWarningMs, 5000)
       XCTAssertEqual(options.agentSilenceMonitorIntervalMs, 250)
       XCTAssertEqual(options.output, .json)
+      XCTAssertFalse(options.supervisorMode)
       XCTAssertFalse(options.autoImprove)
     } else {
       XCTFail("expected run command")
+    }
+
+    let supervisorRun = try parser.parse([
+      "workflow", "run", "demo",
+      "--supervisor-mode"
+    ])
+    if case let .workflow(.run(options)) = supervisorRun {
+      XCTAssertTrue(options.supervisorMode)
+    } else {
+      XCTFail("expected supervisor run command")
     }
 
     let runWithSilenceWarningsDisabled = try parser.parse([

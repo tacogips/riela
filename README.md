@@ -118,6 +118,11 @@ runs read `RIELA_MANAGER_AUTH_TOKEN` and `RIELA_MANAGER_SESSION_ID`. Remote auto
 `workflow run --endpoint ...` omits `autoImprove` by default and only sends the
 supervision policy when `--auto-improve` is set.
 
+Codex multi-agent supervisor mode is also opt-in. Riela explicitly disables the
+Codex `multi_agent` feature for ordinary local workflow runs, regardless of the
+user's global Codex configuration. Pass `--supervisor-mode` to
+`riela workflow run` to enable it for that run. This option is currently local-only.
+
 CLI commands default to JSONL so automation can read one complete JSON record
 per line. Most commands emit a single JSONL record. `riela workflow run` emits
 progress records such as `session_started`, `step_started`, and

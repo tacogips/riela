@@ -9,21 +9,6 @@ func latestStatePayload(_ payloads: [JSONObject]) -> JSONObject {
   } ?? [:]
 }
 
-final class GmailProcessOutputBox: @unchecked Sendable {
-  private let lock = NSLock()
-  private var stored = Data()
-
-  var value: Data {
-    lock.withLock { stored }
-  }
-
-  func append(_ chunk: Data) {
-    lock.withLock {
-      stored.append(chunk)
-    }
-  }
-}
-
 func latestNormalizePayload(_ payloads: [JSONObject]) -> JSONObject {
   payloads.first { payload in
     gmailArray(payload["selectedMessages"]) != nil && gmailArray(payload["fetchedMessageIds"]) != nil

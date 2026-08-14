@@ -195,6 +195,31 @@ import Testing
   #expect(vendorArguments.contains("workspace-write"))
   #expect(vendorArguments.contains("--search"))
   #expect(vendorArguments.contains("--ephemeral"))
+  #expect(pairedValue(vendorArguments, "--disable") == "multi_agent")
+}
+
+@Test func gatewayAdapterEnablesCodexSupervisorModeOnlyWhenRequested() async throws {
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
+  ))
+  let runner = GatewayStubRunner(lines: [response])
+  _ = try await AgentGatewayNodeAdapter(
+    runner: runner,
+    codexSupervisorModeEnabled: true
+  ).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "prompt"
+    ),
+    context: AdapterExecutionContext()
+  )
+
+  let arguments = try #require(runner.arguments())
+  let separator = try #require(arguments.firstIndex(of: "--"))
+  let vendorArguments = Array(arguments[arguments.index(after: separator)...])
+  #expect(pairedValue(vendorArguments, "--enable") == "multi_agent")
+  #expect(!vendorArguments.contains("--disable"))
 }
 
 @Test func gatewayAdapterReusesOnlyTheInheritedWorkflowSession() async throws {
@@ -322,6 +347,67 @@ import Testing
 
   #expect(output.payload == ["text": .string("ok")])
   #expect(await events.values.isEmpty)
+}
+
+@Test func clientTurnRunsOneShotACPPromptAndParsesTypedResult() async throws {
+  let chunk = try acpLine(method: "session/update", params: ACPSessionNotification(
+    sessionId: "sess-1",
+    update: .agentMessageChunk(.text("partial"))
+  ))
+  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
+    stopReason: .endTurn,
+    meta: .object(["agentGateway": .object([
+      "model": .string("gemini-3.5-flash"),
+      "resultText": .string("ocr text"),
+      "usage": .object(["inputTokens": .integer(10), "outputTokens": .integer(4), "totalTokens": .integer(14)])
+    ])])
+  ))
+  let runner = GatewayStubRunner(lines: [chunk, response])
+  let turn = AgentGatewayClientTurn(runner: runner)
+
+  let result = try await turn.run(AgentGatewayClientTurn.Request(
+    vendor: .gemini,
+    model: "gemini-3.5-flash",
+    systemPrompt: "system",
+    apiKeyEnvironment: "GOOGLE_API_KEY",
+    workingDirectory: "/work",
+    promptBlocks: [
+      .text("read this"),
+      .image(ACPImageContent(data: "cGRm", mimeType: "application/pdf"))
+    ]
+  ))
+
+  #expect(result.stopReason == .endTurn)
+  #expect(result.text == "ocr text")
+  #expect(result.model == "gemini-3.5-flash")
+  #expect(result.usage?.totalTokens == 14)
+  let arguments = try #require(runner.arguments())
+  #expect(arguments.contains("client"))
+  #expect(pairedValue(arguments, "--vendor") == "gemini")
+  #expect(pairedValue(arguments, "--model") == "gemini-3.5-flash")
+  #expect(pairedValue(arguments, "--system") == "system")
+  #expect(pairedValue(arguments, "--api-key-environment") == "GOOGLE_API_KEY")
+  #expect(pairedValue(arguments, "--cwd") == "/work")
+  #expect(pairedValue(arguments, "--prompt-blocks") == "-")
+  let blocks = try #require(runner.promptBlocks())
+  #expect(blocks == [
+    .text("read this"),
+    .image(ACPImageContent(data: "cGRm", mimeType: "application/pdf"))
+  ])
+}
+
+@Test func clientTurnSurfacesACPProtocolErrors() async throws {
+  let errorLine = #"{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"vendor exploded"}}"#
+  let runner = GatewayStubRunner(lines: [errorLine])
+  let turn = AgentGatewayClientTurn(runner: runner)
+
+  await #expect(throws: AdapterExecutionError.self) {
+    _ = try await turn.run(AgentGatewayClientTurn.Request(
+      vendor: .gemini,
+      model: "gemini-3.5-flash",
+      promptBlocks: [.text("read this")]
+    ))
+  }
 }
 
 private final class GatewayStubRunner: LocalProcessEventStreaming, @unchecked Sendable {

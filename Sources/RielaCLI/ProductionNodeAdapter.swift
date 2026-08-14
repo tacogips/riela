@@ -5,13 +5,15 @@ import RielaCore
 import RielaMemory
 
 func makeProductionNodeAdapter(
-  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+  codexSupervisorModeEnabled: Bool = false
 ) -> any NodeAdapter {
   let gatewayFactory: NodeAdapterFactory = {
     AgentGatewayNodeAdapter(
       executableName: environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", environment: environment)
         ?? "agent-gateway",
-      environment: environment
+      environment: environment,
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled
     )
   }
   return DispatchingNodeAdapter(
@@ -33,10 +35,14 @@ func makeScenarioBackedNodeAdapter(
   scenarioPath: String?,
   workingDirectory: String,
   autoImprove: Bool = false,
+  codexSupervisorModeEnabled: Bool = false,
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) throws -> any NodeAdapter {
   guard let scenarioPath else {
-    return makeProductionNodeAdapter(environment: environment)
+    return makeProductionNodeAdapter(
+      environment: environment,
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+    )
   }
   let fallback = DeterministicLocalNodeAdapter()
   let scenario = try WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
@@ -402,7 +408,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try executeWrikeGatewayAddon(input, operation: wrikeGatewayAddon, context: context)
     }
     if input.addon.name == "riela/gmail-digest" {
-      return try executeGmailDigest(input)
+      return try await executeGmailDigest(input)
     }
     if input.addon.name == "riela/time-signal" {
       return try executeTimeSignal(input)

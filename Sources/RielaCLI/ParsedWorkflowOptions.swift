@@ -34,6 +34,8 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Flag var fromRegistry = false
   @Flag(name: [.customLong("nested-superviser"), .customLong("nested-supervisor")])
   var nestedSuperviser = false
+  @Flag(inversion: .prefixedNo, help: "Allow Codex nodes to use multi-agent supervisor mode for this run.")
+  var supervisorMode = false
   @Flag(inversion: .prefixedNo) var autoImprove = false
   @Option var maxSupervisedAttempts = 3
   @Option var maxWorkflowPatches = 2
@@ -61,6 +63,8 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--timeout-ms",
     "--agent-silence-warning-ms",
     "--agent-silence-monitor-interval-ms",
+    "--supervisor-mode",
+    "--no-supervisor-mode",
     "--auto-improve",
     "--no-auto-improve",
     "--max-supervised-attempts",

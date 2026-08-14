@@ -74,6 +74,7 @@ public struct WorkflowRunCommand: Sendable {
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
         autoImprove: options.autoImprove,
+        codexSupervisorModeEnabled: options.supervisorMode,
         environment: runEnvironment
       )
       let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
@@ -281,6 +282,9 @@ public struct WorkflowRunCommand: Sendable {
     }
     if options.mockScenarioPath != nil {
       throw CLIUsageError("--mock-scenario cannot be combined with --endpoint")
+    }
+    if options.supervisorMode {
+      throw CLIUsageError("--supervisor-mode is currently supported only for local workflow runs")
     }
     let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
     let nodePatch = try options.nodePatch.map { try jsonLoader.object(from: $0, workingDirectory: options.workingDirectory) }

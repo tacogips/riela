@@ -241,7 +241,6 @@ private func kaibaNotebookJSON(_ notebook: Notebook) -> JSONValue {
   .object([
     "notebookId": .string(notebook.notebookId),
     "title": .string(notebook.title),
-    "progress": .string(notebook.progress),
     "readOnly": .bool(notebook.readOnly),
     "createdAt": .string(notebook.createdAt),
     "updatedAt": .string(notebook.updatedAt),

@@ -14,8 +14,6 @@ enum BuiltinNoteAddon: String {
   case commentAdd = "kaiba/note-comment-add", notebookIngestPages = "kaiba/notebook-ingest-pages"
   case documentImport = "kaiba/document-import"
   case conversationSave = "kaiba/note-conversation-save"
-  case kanbanTaskCreate = "kaiba/note-kanban-task-create"
-  case kanbanMove = "kaiba/note-kanban-move", kanbanBoard = "kaiba/note-kanban-board"
 
   var outputName: String {
     rawValue.hasPrefix("kaiba/note-")

@@ -259,10 +259,10 @@ RielaApp automatically collects only its configured user home.
 
 The note subsystem formerly embedded here ("Riela Note") now lives in the
 standalone [kaiba](https://github.com/tacogips/kaiba) package: a local-first
-note store with notebooks, provenance-aware hierarchical tags, kanban status
-sets, typed notebook progress, comments, links, file attachments (local/S3),
-FTS5 search, a note GraphQL API, a `kaiba serve` web viewer, and API-key
-authentication (`kaiba client issue`).
+note store with notebooks, provenance-aware hierarchical tags, comments,
+agent chat and note editing, links, file attachments (local/S3), FTS5 search,
+a note GraphQL API, a `kaiba serve` web viewer, and API-key authentication
+(`kaiba client issue`).
 
 Riela consumes kaiba as an addon knowledge/context source. The built-in
 `kaiba/*` addons expose kaiba-client-equivalent operations to workflows:
@@ -273,8 +273,6 @@ Riela consumes kaiba as an addon knowledge/context source. The built-in
   `kaiba/note-attach-file`, `kaiba/note-attachments`, `kaiba/note-memos`,
   `kaiba/note-comment-add`, `kaiba/notebook-ingest-pages`,
   `kaiba/document-import`, `kaiba/note-conversation-save`
-- Kanban: `kaiba/note-kanban-task-create`, `kaiba/note-kanban-move`,
-  `kaiba/note-kanban-board`
 - Long-term memory: `kaiba/memory-consolidate`, `kaiba/memory-recall`
 - Raw GraphQL: `kaiba/note-graphql-document`
 
@@ -292,7 +290,7 @@ for Kaiba's agent-gateway image OCR, and `translate: true` plus
 `targetLanguage` for post-import notebook translation. OCR and translation
 vendor/model fields can be supplied directly (`ocrVendor`/`ocrModel`,
 `translationVendor`/`translationModel`) or loaded from the Kaiba config named
-by addon config `configPath` / `KAIBA_CONFIG_PATH`. Kaiba 0.1.5 OCR applies to
+by addon config `configPath` / `KAIBA_CONFIG_PATH`. Kaiba 0.1.6 OCR applies to
 standalone PNG/JPEG/GIF/WebP inputs; PDF and EPUB use AnydocKit conversion.
 
 `kaiba/note-tag-search` performs tag-only retrieval without requiring an FTS
@@ -307,10 +305,11 @@ the AI-produced parameters in `addon.inputs.variables`; JSON templates retain
 the variables' JSON types. The reference bundle
 `examples/kaiba-document-intake` shows directory intake and GraphQL retrieval.
 
-Kaiba 0.1.5 pins `anydoc-swift` and requires its native `anydoc_ffi` library
-when linking Riela from source. Build it with Kaiba's
-`scripts/build-anydoc-native.sh`, then export the printed `PKG_CONFIG_PATH`
-for `swift build` / `swift test`.
+Riela always accesses in-process document conversion through Kaiba's
+`AnydocKit` product from `anydoc-swift`; it does not build or invoke the native
+converter directly. On macOS, `anydoc-swift` automatically uses its published
+XCFramework, so building Riela does not require Cargo or `PKG_CONFIG_PATH`.
+Platform-specific native integration remains encapsulated by `anydoc-swift`.
 
 ## Workflow memory (short-term)
 

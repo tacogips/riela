@@ -69,9 +69,6 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "kaiba/notebook-ingest-pages", version: "1"),
     .init(name: "kaiba/document-import", version: "1"),
     .init(name: "kaiba/note-conversation-save", version: "1"),
-    .init(name: "kaiba/note-kanban-task-create", version: "1"),
-    .init(name: "kaiba/note-kanban-move", version: "1"),
-    .init(name: "kaiba/note-kanban-board", version: "1"),
     .init(name: "kaiba/memory-consolidate", version: "1"),
     .init(name: "kaiba/memory-recall", version: "1")
   ]

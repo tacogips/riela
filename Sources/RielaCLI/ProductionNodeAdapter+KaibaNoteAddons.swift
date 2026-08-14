@@ -47,12 +47,6 @@ extension BuiltinWorkflowAddonResolver {
       candidate = try await importKaibaDocument(context)
     case .conversationSave:
       candidate = try saveNoteConversation(context)
-    case .kanbanTaskCreate:
-      candidate = try kanbanTaskCreate(context)
-    case .kanbanMove:
-      candidate = try kanbanMove(context)
-    case .kanbanBoard:
-      candidate = try kanbanBoard(context)
     }
 
     var payload: JSONObject = [
@@ -325,13 +319,14 @@ private func attachNoteFile(
 }
 
 private func addNoteComment(_ context: NoteAddonContext) throws -> JSONObject {
+  let noteId = try context.requiredString("noteId", fieldName: "noteId")
   let comment = try context.service.addComment(
-    noteId: try context.requiredString("noteId", fieldName: "noteId"),
+    noteId: noteId,
     bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "comment", "text", fieldName: "bodyMarkdown"),
     author: context.string("author", "assignedBy") ?? "user"
   )
   return [
-    "noteId": .string(comment.noteId),
+    "noteId": .string(comment.noteId ?? noteId),
     "commentId": .string(comment.commentId),
     "comment": noteCommentJSON(comment)
   ]
@@ -648,7 +643,6 @@ private func notebookJSON(_ notebook: Notebook) -> JSONValue {
   .object([
     "notebookId": .string(notebook.notebookId),
     "title": .string(notebook.title),
-    "progress": .string(notebook.progress),
     "createdAt": .string(notebook.createdAt),
     "updatedAt": .string(notebook.updatedAt),
     "metaJSON": notebook.metaJSON.map { .string($0) } ?? .null,
@@ -720,7 +714,7 @@ private func tagJSON(_ tag: Tag) -> JSONValue {
 func noteCommentJSON(_ comment: NoteComment) -> JSONValue {
   .object([
     "commentId": .string(comment.commentId),
-    "noteId": .string(comment.noteId),
+    "noteId": comment.noteId.map { .string($0) } ?? .null,
     "bodyMarkdown": .string(comment.bodyMarkdown),
     "author": .string(comment.author),
     "createdAt": .string(comment.createdAt)
@@ -770,168 +764,4 @@ func fileRecordJSON(_ file: FileRecord) -> JSONValue {
     "createdAt": .string(file.createdAt),
     "migratedAt": file.migratedAt.map { .string($0) } ?? .null
   ])
-}
-
-// MARK: - Kanban orchestration add-ons
-
-private func kanbanTaskCreate(_ context: NoteAddonContext) throws -> JSONObject {
-  let folderTagPath = try context.requiredString("folderTagName", "folderTag", fieldName: "folderTagName")
-  let initialProgress = context.string("initialProgress") ?? "pending"
-  let runLabel = context.string("runLabel", "orchestration")
-  guard case let .array(rawTasks)? = context.value("tasks"), !rawTasks.isEmpty else {
-    throw noteAddonInvalidInput("\(context.input.addon.name) tasks must be a non-empty array")
-  }
-
-  // Folder path segments are plain tag names chained through parent_tag_id;
-  // the leaf segment scopes the board.
-  var parentTagId: String?
-  var leafTagId: String?
-  var leafTagName = folderTagPath
-  for segment in folderTagPath.split(separator: "/").map(String.init) {
-    let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { continue }
-    let tag = try context.service.defineTag(name: trimmed, classId: "folder", parentTagId: parentTagId)
-    parentTagId = tag.tagId
-    leafTagId = tag.tagId
-    leafTagName = tag.name
-  }
-  guard let leafTagId else {
-    throw noteAddonInvalidInput("\(context.input.addon.name) folderTagName must contain a folder name")
-  }
-
-  var existingByTaskKey: [String: Notebook] = [:]
-  for notebook in try context.service.listNotebooks(
-    limit: 200,
-    offset: 0,
-    tagFilterIdGroups: [[leafTagId]]
-  ) {
-    guard notebook.progress != "done",
-          let taskKey = kanbanTaskKey(fromMetaJSON: notebook.metaJSON) else {
-      continue
-    }
-    if existingByTaskKey[taskKey] == nil {
-      existingByTaskKey[taskKey] = notebook
-    }
-  }
-
-  var taskRecords: [JSONValue] = []
-  for (index, rawTask) in rawTasks.enumerated() {
-    guard case let .object(task) = rawTask else {
-      throw noteAddonInvalidInput("\(context.input.addon.name) tasks[\(index)] must be an object")
-    }
-    guard let taskKey = nonEmptyString(task["taskKey"]) else {
-      throw noteAddonInvalidInput("\(context.input.addon.name) tasks[\(index)].taskKey is required")
-    }
-    guard let title = nonEmptyString(task["title"]) else {
-      throw noteAddonInvalidInput("\(context.input.addon.name) tasks[\(index)].title is required")
-    }
-    guard let briefMarkdown = nonEmptyString(task["briefMarkdown"]) else {
-      throw noteAddonInvalidInput("\(context.input.addon.name) tasks[\(index)].briefMarkdown is required")
-    }
-    let acceptanceMarkdown = nonEmptyString(task["acceptanceMarkdown"])
-
-    let notebook: Notebook
-    let reused: Bool
-    if let existing = existingByTaskKey[taskKey] {
-      notebook = existing
-      reused = true
-    } else {
-      var meta: JSONObject = ["kanbanTaskKey": .string(taskKey)]
-      if let runLabel {
-        meta["orchestration"] = .string(runLabel)
-      }
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.sortedKeys]
-      let metaData = try encoder.encode(JSONValue.object(meta))
-      let created = try context.service.createNotebook(
-        title: title,
-        kindTagName: nil,
-        metaJSON: String(data: metaData, encoding: .utf8),
-        originatingActionId: nil
-      )
-      _ = try context.service.applyNotebookTagIds(
-        notebookId: created.notebookId,
-        tagIds: [leafTagId],
-        provenance: .ai,
-        assignedBy: context.input.addon.name
-      )
-      var body = briefMarkdown
-      if let acceptanceMarkdown {
-        body += "\n\n## Acceptance\n\n" + acceptanceMarkdown
-      }
-      _ = try context.service.createNote(
-        notebookId: created.notebookId,
-        bodyMarkdown: body,
-        provenance: .ai,
-        assignedBy: context.input.addon.name
-      )
-      notebook = try context.service.setNotebookProgress(
-        notebookId: created.notebookId,
-        progress: initialProgress
-      )
-      reused = false
-    }
-    var record: JSONObject = [
-      "taskKey": .string(taskKey),
-      "notebookId": .string(notebook.notebookId),
-      "title": .string(title),
-      "briefMarkdown": .string(briefMarkdown),
-      "progress": .string(notebook.progress),
-      "reused": .bool(reused)
-    ]
-    if let acceptanceMarkdown {
-      record["acceptanceMarkdown"] = .string(acceptanceMarkdown)
-    }
-    if case let .object(taskObject) = rawTask {
-      for (key, value) in taskObject where record[key] == nil {
-        record[key] = value
-      }
-    }
-    taskRecords.append(.object(record))
-  }
-  return [
-    "folderTagId": .string(leafTagId),
-    "folderTagName": .string(leafTagName),
-    "initialProgress": .string(initialProgress),
-    "tasks": .array(taskRecords)
-  ]
-}
-
-private func kanbanMove(_ context: NoteAddonContext) throws -> JSONObject {
-  let notebookId = try context.requiredString("notebookId", fieldName: "notebookId")
-  let target = try context.requiredString("to", "progress", fieldName: "to")
-  let expectedFrom = context.string("expectedFrom", "expectedProgress")
-  let previousProgress = try context.service.getNotebook(notebookId).progress
-  do {
-    let notebook = try context.service.setNotebookProgress(
-      notebookId: notebookId,
-      progress: target,
-      expectedProgress: expectedFrom
-    )
-    return [
-      "conflict": .bool(false),
-      "notebookId": .string(notebookId),
-      "progress": .string(notebook.progress),
-      "previousProgress": .string(previousProgress),
-      "notebook": notebookJSON(notebook)
-    ]
-  } catch let NoteServiceError.progressConflict(expected, actual) {
-    return [
-      "conflict": .bool(true),
-      "notebookId": .string(notebookId),
-      "progress": .string(actual),
-      "expectedProgress": .string(expected)
-    ]
-  }
-}
-
-private func kanbanTaskKey(fromMetaJSON metaJSON: String?) -> String? {
-  guard let metaJSON,
-        let data = metaJSON.data(using: .utf8),
-        let value = try? JSONDecoder().decode(JSONValue.self, from: data),
-        case let .object(object) = value,
-        case let .string(taskKey)? = object["kanbanTaskKey"] else {
-    return nil
-  }
-  return taskKey
 }

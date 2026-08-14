@@ -39,6 +39,7 @@ private func rielaExampleWorkflowNames() -> [String] {
     "gemini-ocr-worker",
     "gemini-sdk-worker",
     "gmail-latest-mail-digest-telegram",
+    "kaiba-document-intake",
     "loop-baseline-regression-ops",
     "loop-budget-guard",
     "loop-ci-gate-check",

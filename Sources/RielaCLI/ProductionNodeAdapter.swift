@@ -1,4 +1,5 @@
 import Foundation
+import GoogleServiceGatewayCore
 import RielaAdapters
 import RielaAddons
 import RielaCore
@@ -293,6 +294,7 @@ typealias GeminiAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguratio
 typealias OpenAIAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
 typealias AnthropicAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
 typealias CursorAddonAdapterFactory = @Sendable (AgentGatewayAdapterConfiguration) async throws -> any NodeAdapter
+typealias GoogleServiceGatewayAddonClientFactory = @Sendable (String) -> any GoogleServiceGatewayAddonClient
 
 private enum BuiltinSDKWorker: String {
   case codex = "riela/codex-sdk-worker"
@@ -342,6 +344,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var gitFinalizationStore: GitFinalizationStore
   var gitFailureInjector: any GitFinalizationFailureInjecting
   var gitPushTransportPolicy: any GitPushTransportValidating
+  var googleServiceGatewayClientFactory: GoogleServiceGatewayAddonClientFactory
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -356,7 +359,10 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     gitExecutablePolicy: GitExecutablePolicy = GitExecutablePolicy(),
     gitFinalizationStore: GitFinalizationStore = GitFinalizationStore(),
     gitFailureInjector: any GitFinalizationFailureInjecting = NoGitFinalizationFailureInjector(),
-    gitPushTransportPolicy: any GitPushTransportValidating = VersionOneGitPushTransportPolicy()
+    gitPushTransportPolicy: any GitPushTransportValidating = VersionOneGitPushTransportPolicy(),
+    googleServiceGatewayClientFactory: @escaping GoogleServiceGatewayAddonClientFactory = {
+      LiveGoogleServiceGatewayAddonClient(accessToken: $0)
+    }
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -371,6 +377,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.gitFinalizationStore = gitFinalizationStore
     self.gitFailureInjector = gitFailureInjector
     self.gitPushTransportPolicy = gitPushTransportPolicy
+    self.googleServiceGatewayClientFactory = googleServiceGatewayClientFactory
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -406,6 +413,13 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
     if let wrikeGatewayAddon = BuiltinWrikeGatewayAddon(rawValue: input.addon.name) {
       return try executeWrikeGatewayAddon(input, operation: wrikeGatewayAddon, context: context)
+    }
+    if let googleServiceGatewayAddon = BuiltinGoogleServiceGatewayAddon(rawValue: input.addon.name) {
+      return try await executeGoogleServiceGatewayAddon(
+        input,
+        capability: googleServiceGatewayAddon,
+        context: context
+      )
     }
     if input.addon.name == "riela/gmail-digest" {
       return try await executeGmailDigest(input)

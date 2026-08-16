@@ -1,5 +1,5 @@
 {
-  "originHash" : "3c09f905d62c9c025484941eae62be3c5581e2d93909c4b55509f81a02e304c1",
+  "originHash" : "71a421bd1abb15438640d017457526ea67d4c9214085632c4982adec5ece659b",
   "pins" : [
     {
       "identity" : "anydoc-swift",
@@ -7,6 +7,14 @@
       "location" : "https://github.com/tacogips/anydoc-swift.git",
       "state" : {
         "revision" : "d957c08372786b7062553e83fe9c29880fdee7a4"
+      }
+    },
+    {
+      "identity" : "google-service-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-service-gateway.git",
+      "state" : {
+        "revision" : "0c4ffa2a2f7fad777bf28540517bf0938699b943"
       }
     },
     {

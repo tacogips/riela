@@ -40,6 +40,10 @@ let package = Package(
     .package(
       url: "https://github.com/tacogips/kaiba.git",
       revision: "ec19bb7b0acf4e90c379c75af416ec29846a662b"
+    ),
+    .package(
+      url: "https://github.com/tacogips/google-service-gateway.git",
+      revision: "0c4ffa2a2f7fad777bf28540517bf0938699b943"
     )
   ],
   targets: [
@@ -132,6 +136,7 @@ let package = Package(
       dependencies: [
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
+        .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
         "RielaVersion",
@@ -210,6 +215,7 @@ let package = Package(
         "RielaAppSupport",
         "RielaCLI",
         "RielaWorkflowRegistry",
+        .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
         .product(name: "AppCore", package: "kaiba")
       ]
     )

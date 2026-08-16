@@ -167,6 +167,20 @@ external-helper transports. Additional Git installations, credential-helper
 locations, or transport policies require a new explicitly tested runtime
 policy version.
 
+## Google Service Usage Add-ons
+
+`riela/google-service-gateway-read@1` and
+`riela/google-service-gateway-write@1` import the sibling
+`GoogleServiceGatewayCore` Swift library directly. The read add-on supports
+`services.list`, `services.get`, and `operations.get`; the write add-on supports
+`services.enable`, `services.disable`, and `services.batchEnable`. Set the
+operation in `addon.config.operation` and pass request fields through
+`addon.inputs`.
+
+Credentials require an explicit `addon.env.GOOGLE_SERVICE_GATEWAY_ACCESS_TOKEN`
+binding. Ambient process credentials are not forwarded implicitly, and the
+read add-on cannot invoke a mutation.
+
 ## Session Observability
 
 Session observers open the runtime store read-only and never create, migrate,

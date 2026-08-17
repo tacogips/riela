@@ -75,14 +75,16 @@ func executeNoteGraphQLDocument(_ context: NoteAddonContext) async throws -> Rie
   return payload
 }
 
-// The RielaCore and AppGraphQL JSON models are structurally identical; bridge
-// via their Codable representations at the note GraphQL document boundary.
-private func bridgedKaibaJSONObject(_ object: RielaCore.JSONObject) throws -> AppGraphQL.JSONObject {
-  try JSONDecoder().decode(AppGraphQL.JSONObject.self, from: JSONEncoder().encode(object))
+// The RielaCore and kaiba JSON models are structurally identical; bridge via
+// their Codable representations at the note GraphQL document boundary. Kaiba
+// 0.1.7 moved its model from AppGraphQL into AppCore, so both spellings now
+// resolve through `KaibaJSONBridge`.
+private func bridgedKaibaJSONObject(_ object: RielaCore.JSONObject) throws -> AppCore.JSONObject {
+  try kaibaJSONObject(object)
 }
 
-private func bridgedRielaJSONObject(_ object: AppGraphQL.JSONObject) throws -> RielaCore.JSONObject {
-  try JSONDecoder().decode(RielaCore.JSONObject.self, from: JSONEncoder().encode(object))
+private func bridgedRielaJSONObject(_ object: AppCore.JSONObject) throws -> RielaCore.JSONObject {
+  try rielaJSONObject(object)
 }
 
 private func remoteKaibaAPIKey(_ context: NoteAddonContext) throws -> String? {

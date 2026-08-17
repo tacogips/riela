@@ -163,17 +163,17 @@ private func createNote(_ context: NoteAddonContext) throws -> JSONObject {
   let bodyMarkdown = try context.requiredString("bodyMarkdown", "body", "markdown", "text", fieldName: "bodyMarkdown")
   let notebookId = context.string("notebookId")
   let notebookKindTag = context.string("notebookKindTag", "kindTagName")
-  let effectiveNotebookId: String?
+  let effectiveNotebookId: NotebookID?
   if notebookId == nil, let notebookKindTag {
     let notebook = try context.service.createNotebook(
       title: context.string("notebookTitle", "title") ?? noteTitleFallback(from: bodyMarkdown),
       kindTagName: notebookKindTag,
       metaJSON: noteMetaJSONString(context.value("notebookMeta"), context.value("notebookMetaJSON")),
-      originatingActionId: context.string("originatingActionId", "actionId")
+      originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
     )
     effectiveNotebookId = notebook.notebookId
   } else {
-    effectiveNotebookId = notebookId
+    effectiveNotebookId = notebookId.map(NotebookID.init)
   }
   let note = try context.service.createNote(
     notebookId: effectiveNotebookId,
@@ -184,11 +184,11 @@ private func createNote(_ context: NoteAddonContext) throws -> JSONObject {
     provenance: noteProvenance(context.string("provenance")) ?? .human,
     assignedBy: context.string("assignedBy"),
     metaJSON: noteMetaJSONString(context.value("meta"), context.value("metaJSON")),
-    originatingActionId: context.string("originatingActionId", "actionId")
+    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
   )
   return [
-    "noteId": .string(note.noteId),
-    "notebookId": .string(note.notebookId),
+    "noteId": .string(note.noteId.rawValue),
+    "notebookId": .string(note.notebookId.rawValue),
     "note": noteJSON(note)
   ]
 }
@@ -196,13 +196,13 @@ private func createNote(_ context: NoteAddonContext) throws -> JSONObject {
 private func updateNote(_ context: NoteAddonContext) throws -> JSONObject {
   // kaiba/note-update re-derives the stored title from the new body.
   let note = try context.service.updateNoteBody(
-    noteId: try context.requiredString("noteId", fieldName: "noteId"),
+    noteId: NoteID(try context.requiredString("noteId", fieldName: "noteId")),
     bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "markdown", "text", fieldName: "bodyMarkdown"),
-    originatingActionId: context.string("originatingActionId", "actionId")
+    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
   )
   return [
-    "noteId": .string(note.noteId),
-    "notebookId": .string(note.notebookId),
+    "noteId": .string(note.noteId.rawValue),
+    "notebookId": .string(note.notebookId.rawValue),
     "note": noteJSON(note)
   ]
 }
@@ -215,21 +215,23 @@ private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
   // workflow cannot drive unbounded sequential getNote round-trips.
   if context.string("noteId") == nil, let rawNoteIds = context.value("noteIds") {
     let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
-    let noteIds = Array(orderedUniqueNoteIds(requestedNoteIds).prefix(NoteGraphPolicy.maximumSeedCount))
+    let noteIds = orderedUniqueNoteIds(requestedNoteIds)
+      .prefix(NoteGraphPolicy.maximumSeedCount)
+      .map(NoteID.init)
     let notes = try noteIds.map(context.service.getNote)
     var payload: JSONObject = [
       "notes": .array(notes.map(noteJSON)),
-      "noteIds": .array(notes.map { .string($0.noteId) })
+      "noteIds": .array(notes.map { .string($0.noteId.rawValue) })
     ]
     if let graphEvidence = context.value("graphEvidence") {
       payload["graphEvidence"] = graphEvidence
     }
     return payload
   }
-  let note = try context.service.getNote(try context.requiredString("noteId", fieldName: "noteId"))
+  let note = try context.service.getNote(NoteID(try context.requiredString("noteId", fieldName: "noteId")))
   return [
-    "noteId": .string(note.noteId),
-    "notebookId": .string(note.notebookId),
+    "noteId": .string(note.noteId.rawValue),
+    "notebookId": .string(note.notebookId.rawValue),
     "note": noteJSON(note),
     "comments": .array(try context.service.listComments(noteId: note.noteId).map(noteCommentJSON)),
     "links": .array(try context.service.listLinks(noteId: note.noteId).map(noteLinkJSON)),
@@ -250,7 +252,7 @@ private func searchNotes(_ context: NoteAddonContext) throws -> JSONObject {
   return [
     "results": .array(results.map(noteSearchResultJSON)),
     "resultCount": .number(Double(results.count)),
-    "noteIds": .array(results.map { .string($0.note.noteId) })
+    "noteIds": .array(results.map { .string($0.note.noteId.rawValue) })
   ]
 }
 
@@ -263,7 +265,9 @@ private func graphNeighbors(_ context: NoteAddonContext) throws -> JSONObject {
   // upstream nodes (e.g. kaiba/note-search with a caller-controlled limit) may
   // legitimately hand over more ids, and the search-side expansion path clamps
   // the same way (appendLinkedNeighborResults / prefix(maximumSeedCount)).
-  let noteIds = Array(orderedUniqueNoteIds(requestedNoteIds).prefix(NoteGraphPolicy.maximumSeedCount))
+  let noteIds = orderedUniqueNoteIds(requestedNoteIds)
+    .prefix(NoteGraphPolicy.maximumSeedCount)
+    .map(NoteID.init)
   let results = try context.service.graphNeighbors(
     noteIds: noteIds,
     maxDepth: context.int("depth", default: NoteGraphPolicy.defaultMaxDepth),
@@ -272,27 +276,32 @@ private func graphNeighbors(_ context: NoteAddonContext) throws -> JSONObject {
   return [
     "results": .array(results.map(noteGraphNeighborJSON)),
     "resultCount": .number(Double(results.count)),
-    "noteIds": .array(results.map { .string($0.note.noteId) }),
-    "seedNoteIds": .array(noteIds.map(JSONValue.string)),
-    "retrievalNoteIds": .array(orderedUniqueNoteIds(noteIds + results.map(\.note.noteId)).map(JSONValue.string))
+    "noteIds": .array(results.map { .string($0.note.noteId.rawValue) }),
+    "seedNoteIds": .array(noteIds.map { .string($0.rawValue) }),
+    "retrievalNoteIds": .array(
+      orderedUniqueNoteIds(noteIds + results.map(\.note.noteId)).map { .string($0.rawValue) }
+    )
   ]
 }
 
-private func orderedUniqueNoteIds(_ noteIds: [String]) -> [String] {
-  var seen = Set<String>()
+// Generic over the id type: the payload side still carries raw strings while
+// the kaiba side is typed, and both spellings need the same order-preserving
+// deduplication.
+private func orderedUniqueNoteIds<ID: Hashable>(_ noteIds: [ID]) -> [ID] {
+  var seen = Set<ID>()
   return noteIds.filter { seen.insert($0).inserted }
 }
 
 private func applyNoteTags(_ context: NoteAddonContext) throws -> JSONObject {
   let note = try context.service.applyTags(
-    noteId: try context.requiredString("noteId", fieldName: "noteId"),
+    noteId: NoteID(try context.requiredString("noteId", fieldName: "noteId")),
     tags: try noteTagsRequired(context.value("tags") ?? context.value("tag")),
     provenance: .ai,
     assignedBy: noteAddonWorkflowActor(context)
   )
   return [
-    "noteId": .string(note.noteId),
-    "notebookId": .string(note.notebookId),
+    "noteId": .string(note.noteId.rawValue),
+    "notebookId": .string(note.notebookId.rawValue),
     "note": noteJSON(note),
     "tags": .array(note.tags.map(tagAssignmentJSON))
   ]
@@ -304,7 +313,7 @@ private func attachNoteFile(
 ) throws -> JSONObject {
   let attachment = try noteAttachmentData(context: context, input: input)
   let stored = try context.service.attachFile(
-    noteId: try context.requiredString("noteId", fieldName: "noteId"),
+    noteId: NoteID(try context.requiredString("noteId", fieldName: "noteId")),
     data: attachment.data,
     role: noteFileRole(context.string("role")) ?? .related,
     mediaType: attachment.mediaType,
@@ -312,22 +321,22 @@ private func attachNoteFile(
     position: context.int("position", default: 0)
   )
   return [
-    "noteId": .string(stored.noteId),
-    "fileId": .string(stored.file.fileId),
+    "noteId": .string(stored.noteId.rawValue),
+    "fileId": .string(stored.file.fileId.rawValue),
     "file": noteFileAttachmentJSON(stored)
   ]
 }
 
 private func addNoteComment(_ context: NoteAddonContext) throws -> JSONObject {
-  let noteId = try context.requiredString("noteId", fieldName: "noteId")
+  let noteId = NoteID(try context.requiredString("noteId", fieldName: "noteId"))
   let comment = try context.service.addComment(
     noteId: noteId,
     bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "comment", "text", fieldName: "bodyMarkdown"),
     author: context.string("author", "assignedBy") ?? "user"
   )
   return [
-    "noteId": .string(comment.noteId ?? noteId),
-    "commentId": .string(comment.commentId),
+    "noteId": .string((comment.noteId ?? noteId).rawValue),
+    "commentId": .string(comment.commentId.rawValue),
     "comment": noteCommentJSON(comment)
   ]
 }
@@ -350,7 +359,7 @@ private func ingestNotebookPages(_ context: NoteAddonContext) throws -> JSONObje
     },
     provenance: noteProvenance(context.string("provenance")) ?? .system,
     assignedBy: context.string("assignedBy") ?? "riela-note-ingest",
-    originatingActionId: context.string("originatingActionId", "actionId")
+    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
   )
   do {
     let sourceDocument = try attachSourceDocument(context: context, notebookId: result.notebook.notebookId)
@@ -361,10 +370,10 @@ private func ingestNotebookPages(_ context: NoteAddonContext) throws -> JSONObje
       service: context.service
     )
     return [
-      "notebookId": .string(result.notebook.notebookId),
+      "notebookId": .string(result.notebook.notebookId.rawValue),
       "notebook": notebookJSON(result.notebook),
       "notes": .array(notes.map(noteJSON)),
-      "noteIds": .array(notes.map { JSONValue.string($0.noteId) }),
+      "noteIds": .array(notes.map { JSONValue.string($0.noteId.rawValue) }),
       "pageCount": .number(Double(notes.count)),
       "sourceDocument": sourceDocument.map(notebookFileAttachmentJSON) ?? .null,
       "pageImages": .array(pageImages.map(noteFileAttachmentJSON))
@@ -386,19 +395,19 @@ private func saveNoteConversation(_ context: NoteAddonContext) throws -> JSONObj
     title: try context.requiredString("title", "conversationTitle", fieldName: "title"),
     transcript: try noteConversationTurns(context),
     assignedBy: context.string("assignedBy"),
-    originatingActionId: context.string("originatingActionId", "actionId")
+    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
   )
   return [
-    "notebookId": .string(saved.notebook.notebookId),
+    "notebookId": .string(saved.notebook.notebookId.rawValue),
     "notebook": notebookJSON(saved.notebook),
     "notes": .array(saved.notes.map(noteJSON)),
-    "noteIds": .array(saved.notes.map { .string($0.noteId) })
+    "noteIds": .array(saved.notes.map { .string($0.noteId.rawValue) })
   ]
 }
 
 private func attachSourceDocument(
   context: NoteAddonContext,
-  notebookId: String
+  notebookId: NotebookID
 ) throws -> NotebookFileAttachment? {
   guard let sourceDocumentRef = context.string("sourceDocumentRef") else {
     return nil
@@ -477,7 +486,8 @@ private func noteConversationTurns(_ context: NoteAddonContext) throws -> [NoteC
     NoteConversationTurn(
       userMarkdown: try context.requiredString("userMarkdown", "user", "request", fieldName: "userMarkdown"),
       assistantMarkdown: try context.requiredString("assistantMarkdown", "assistant", "replyText", "text", fieldName: "assistantMarkdown"),
-      sourceNoteIds: try noteStringArray(context.value("sourceNoteIds"), fieldName: "sourceNoteIds") ?? []
+      sourceNoteIds: (try noteStringArray(context.value("sourceNoteIds"), fieldName: "sourceNoteIds") ?? [])
+        .map(NoteID.init)
     )
   ]
 }
@@ -494,7 +504,8 @@ private func noteConversationTurn(_ object: JSONObject, path: String) throws -> 
   return NoteConversationTurn(
     userMarkdown: userMarkdown,
     assistantMarkdown: assistantMarkdown,
-    sourceNoteIds: try noteStringArray(object["sourceNoteIds"], fieldName: "\(path).sourceNoteIds") ?? []
+    sourceNoteIds: (try noteStringArray(object["sourceNoteIds"], fieldName: "\(path).sourceNoteIds") ?? [])
+      .map(NoteID.init)
   )
 }
 
@@ -532,7 +543,11 @@ func noteTags(_ value: JSONValue?) throws -> [NoteTagInput] {
         guard let name = nonEmptyString(object["name"]) ?? nonEmptyString(object["tag"]) else {
           throw noteAddonInvalidInput("note tags[\(index)].name is required")
         }
-        return NoteTagInput(name: name, classId: nonEmptyString(object["classId"]) ?? nonEmptyString(object["class"]))
+        return NoteTagInput(
+          name: name,
+          classId: (nonEmptyString(object["classId"]) ?? nonEmptyString(object["class"]))
+            .map(TagClassID.init)
+        )
       case .null:
         return nil
       case .bool, .integer, .number, .array:
@@ -641,7 +656,7 @@ private func noteTitleFallback(from bodyMarkdown: String) -> String {
 
 private func notebookJSON(_ notebook: Notebook) -> JSONValue {
   .object([
-    "notebookId": .string(notebook.notebookId),
+    "notebookId": .string(notebook.notebookId.rawValue),
     "title": .string(notebook.title),
     "createdAt": .string(notebook.createdAt),
     "updatedAt": .string(notebook.updatedAt),
@@ -654,8 +669,8 @@ private func notebookJSON(_ notebook: Notebook) -> JSONValue {
 
 func noteJSON(_ note: Note) -> JSONValue {
   .object([
-    "noteId": .string(note.noteId),
-    "notebookId": .string(note.notebookId),
+    "noteId": .string(note.noteId.rawValue),
+    "notebookId": .string(note.notebookId.rawValue),
     "noteNumber": .number(Double(note.noteNumber)),
     "title": note.title.map { .string($0) } ?? .null,
     "bodyMarkdown": .string(note.bodyMarkdown),
@@ -670,8 +685,8 @@ func noteJSON(_ note: Note) -> JSONValue {
 private func noteSearchResultJSON(_ result: NoteSearchResult) -> JSONValue {
   .object([
     "note": noteJSON(result.note),
-    "noteId": .string(result.note.noteId),
-    "notebookId": .string(result.note.notebookId),
+    "noteId": .string(result.note.noteId.rawValue),
+    "notebookId": .string(result.note.notebookId.rawValue),
     "snippet": .string(result.snippet),
     "rank": .number(result.rank),
     "matchedTags": .array(result.matchedTags.map(tagJSON)),
@@ -681,13 +696,13 @@ private func noteSearchResultJSON(_ result: NoteSearchResult) -> JSONValue {
 
 func noteGraphNeighborJSON(_ result: NoteGraphNeighbor) -> JSONValue {
   .object([
-    "seedNoteId": .string(result.seedNoteId),
+    "seedNoteId": .string(result.seedNoteId.rawValue),
     "note": noteJSON(result.note),
-    "noteId": .string(result.note.noteId),
+    "noteId": .string(result.note.noteId.rawValue),
     "edgeKind": .string(result.edgeKind.rawValue),
     "weight": .number(result.weight),
     "hopCount": .number(Double(result.hopCount)),
-    "pathNoteIds": .array(result.pathNoteIds.map(JSONValue.string))
+    "pathNoteIds": .array(result.pathNoteIds.map { .string($0.rawValue) })
   ])
 }
 
@@ -703,9 +718,9 @@ private func tagAssignmentJSON(_ assignment: TagAssignment) -> JSONValue {
 
 private func tagJSON(_ tag: Tag) -> JSONValue {
   .object([
-    "tagId": .string(tag.tagId),
+    "tagId": .string(tag.tagId.rawValue),
     "name": .string(tag.name),
-    "classId": tag.classId.map { .string($0) } ?? .null,
+    "classId": tag.classId.map { .string($0.rawValue) } ?? .null,
     "isSystem": .bool(tag.isSystem),
     "createdAt": .string(tag.createdAt)
   ])
@@ -713,8 +728,8 @@ private func tagJSON(_ tag: Tag) -> JSONValue {
 
 func noteCommentJSON(_ comment: NoteComment) -> JSONValue {
   .object([
-    "commentId": .string(comment.commentId),
-    "noteId": comment.noteId.map { .string($0) } ?? .null,
+    "commentId": .string(comment.commentId.rawValue),
+    "noteId": comment.noteId.map { .string($0.rawValue) } ?? .null,
     "bodyMarkdown": .string(comment.bodyMarkdown),
     "author": .string(comment.author),
     "createdAt": .string(comment.createdAt)
@@ -723,8 +738,8 @@ func noteCommentJSON(_ comment: NoteComment) -> JSONValue {
 
 private func noteLinkJSON(_ link: NoteLink) -> JSONValue {
   .object([
-    "fromNoteId": .string(link.fromNoteId),
-    "toNoteId": .string(link.toNoteId),
+    "fromNoteId": .string(link.fromNoteId.rawValue),
+    "toNoteId": .string(link.toNoteId.rawValue),
     "linkKind": .string(link.linkKind),
     "provenance": .string(link.provenance.rawValue),
     "createdAt": .string(link.createdAt)
@@ -733,7 +748,7 @@ private func noteLinkJSON(_ link: NoteLink) -> JSONValue {
 
 func noteFileAttachmentJSON(_ attachment: NoteFileAttachment) -> JSONValue {
   .object([
-    "noteId": .string(attachment.noteId),
+    "noteId": .string(attachment.noteId.rawValue),
     "role": .string(attachment.role.rawValue),
     "position": .number(Double(attachment.position)),
     "file": fileRecordJSON(attachment.file)
@@ -742,7 +757,7 @@ func noteFileAttachmentJSON(_ attachment: NoteFileAttachment) -> JSONValue {
 
 func notebookFileAttachmentJSON(_ attachment: NotebookFileAttachment) -> JSONValue {
   .object([
-    "notebookId": .string(attachment.notebookId),
+    "notebookId": .string(attachment.notebookId.rawValue),
     "role": .string(attachment.role.rawValue),
     "file": fileRecordJSON(attachment.file)
   ])
@@ -750,7 +765,7 @@ func notebookFileAttachmentJSON(_ attachment: NotebookFileAttachment) -> JSONVal
 
 func fileRecordJSON(_ file: FileRecord) -> JSONValue {
   .object([
-    "fileId": .string(file.fileId),
+    "fileId": .string(file.fileId.rawValue),
     "storageKind": .string(file.storageKind.rawValue),
     "localPath": file.localPath.map { .string($0) } ?? .null,
     "s3Profile": file.s3Profile.map { .string($0) } ?? .null,

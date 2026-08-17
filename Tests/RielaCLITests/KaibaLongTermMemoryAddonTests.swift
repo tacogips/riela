@@ -60,7 +60,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
     }
 
     let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
-    let noteId = try XCTUnwrap(nonEmptyString(noteIds[0]))
+    let noteId = NoteID(try XCTUnwrap(nonEmptyString(noteIds[0])))
     let note = try service.getNote(noteId)
     let metaJSON = try XCTUnwrap(note.metaJSON)
     XCTAssertTrue(metaJSON.contains("\"sourceMemoryRecordIds\":[1,2]"), metaJSON)

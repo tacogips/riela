@@ -39,7 +39,7 @@ let package = Package(
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "ec19bb7b0acf4e90c379c75af416ec29846a662b"
+      revision: "5614bf27cabf0584ff5101256da3b5c81d82533e"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",

@@ -100,7 +100,7 @@ private func consolidateLongTermMemory(_ context: NoteAddonContext) throws -> JS
         // Riela short-term record ids never resolve to kaiba notes, so the
         // provenance they carry belongs in metadata, not in `sourceNoteIds`.
         sourceNoteIds: [],
-        relatedNoteIds: entry.relatedNoteIds,
+        relatedNoteIds: entry.relatedNoteIds.map(NoteID.init),
         periodStart: entry.periodStart,
         periodEnd: entry.periodEnd,
         metaJSON: longTermMemoryEntryMetaJSON(entry)
@@ -124,8 +124,8 @@ private func consolidateLongTermMemory(_ context: NoteAddonContext) throws -> JS
         limit: associationLimit
       )
       associations.append(.object([
-        "noteId": .string(note.noteId),
-        "linkedNoteIds": .array(links.map { .string($0.toNoteId) })
+        "noteId": .string(note.noteId.rawValue),
+        "linkedNoteIds": .array(links.map { .string($0.toNoteId.rawValue) })
       ]))
     }
   }
@@ -133,8 +133,8 @@ private func consolidateLongTermMemory(_ context: NoteAddonContext) throws -> JS
   let notebookId = try result.notes.first?.notebookId
     ?? context.service.longTermMemoryNotebook().notebookId
   return [
-    "notebookId": .string(notebookId),
-    "noteIds": .array(result.notes.map { .string($0.noteId) }),
+    "notebookId": .string(notebookId.rawValue),
+    "noteIds": .array(result.notes.map { .string($0.noteId.rawValue) }),
     "notes": .array(result.notes.map(noteJSON)),
     "entriesWritten": .number(Double(result.notes.count)),
     "idempotentReplay": .bool(result.idempotentReplay),
@@ -170,7 +170,7 @@ private func recallLongTermMemory(_ context: NoteAddonContext) throws -> JSONObj
     "associationDepth": .number(Double(associationDepth)),
     "results": .array(results.map(longTermMemoryRecallResultJSON)),
     "resultCount": .number(Double(results.count)),
-    "noteIds": .array(results.map { .string($0.note.noteId) }),
+    "noteIds": .array(results.map { .string($0.note.noteId.rawValue) }),
     "recallText": .string(longTermMemoryRecallText(results))
   ]
 }
@@ -330,8 +330,8 @@ private func longTermMemoryIdempotencyKey(_ context: NoteAddonContext) -> String
 
 private func longTermMemoryRecallResultJSON(_ result: LongTermMemoryRecallResult) -> JSONValue {
   .object([
-    "noteId": .string(result.note.noteId),
-    "notebookId": .string(result.note.notebookId),
+    "noteId": .string(result.note.noteId.rawValue),
+    "notebookId": .string(result.note.notebookId.rawValue),
     "title": result.note.title.map { .string($0) } ?? .null,
     "bodyMarkdown": .string(result.note.bodyMarkdown),
     "snippet": .string(result.snippet),
@@ -340,7 +340,7 @@ private func longTermMemoryRecallResultJSON(_ result: LongTermMemoryRecallResult
     "edgeKind": result.edgeKind.map { .string($0.rawValue) } ?? .null,
     "weight": result.weight.map { .number($0) } ?? .null,
     "hopCount": result.hopCount.map { .number(Double($0)) } ?? .null,
-    "pathNoteIds": .array(result.pathNoteIds.map(JSONValue.string)),
+    "pathNoteIds": .array(result.pathNoteIds.map { .string($0.rawValue) }),
     "createdAt": .string(result.note.createdAt),
     "metaJSON": result.note.metaJSON.map { .string($0) } ?? .null
   ])

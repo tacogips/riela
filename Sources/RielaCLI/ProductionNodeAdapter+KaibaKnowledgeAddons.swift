@@ -13,12 +13,12 @@ func searchNotesByTag(_ context: NoteAddonContext) throws -> JSONObject {
   let notes = try context.service.listNotes(
     limit: limit,
     offset: offset,
-    notebookId: context.string("notebookId"),
+    notebookId: context.string("notebookId").map(NotebookID.init),
     tagFilter: tags
   )
   return [
     "notes": .array(notes.map(noteJSON)),
-    "noteIds": .array(notes.map { .string($0.noteId) }),
+    "noteIds": .array(notes.map { .string($0.noteId.rawValue) }),
     "resultCount": .number(Double(notes.count)),
     "tagFilter": .array(tags.map(JSONValue.string))
   ]
@@ -33,15 +33,15 @@ func noteChain(_ context: NoteAddonContext) throws -> JSONObject {
     throw noteAddonInvalidInput("\(context.input.addon.name) noteIds must not be empty")
   }
   let results = try context.service.graphNeighbors(
-    noteIds: Array(seedNoteIds.prefix(NoteGraphPolicy.maximumSeedCount)),
+    noteIds: seedNoteIds.prefix(NoteGraphPolicy.maximumSeedCount).map(NoteID.init),
     maxDepth: context.int("depth", default: NoteGraphPolicy.defaultMaxDepth),
     limit: context.int("limit", default: NoteGraphPolicy.defaultLimit)
   )
   let chains = results.map { result in
     JSONValue.object([
-      "seedNoteId": .string(result.seedNoteId),
-      "targetNoteId": .string(result.note.noteId),
-      "pathNoteIds": .array(result.pathNoteIds.map(JSONValue.string)),
+      "seedNoteId": .string(result.seedNoteId.rawValue),
+      "targetNoteId": .string(result.note.noteId.rawValue),
+      "pathNoteIds": .array(result.pathNoteIds.map { .string($0.rawValue) }),
       "hopCount": .number(Double(result.hopCount)),
       "edgeKind": .string(result.edgeKind.rawValue),
       "weight": .number(result.weight)
@@ -57,7 +57,7 @@ func noteChain(_ context: NoteAddonContext) throws -> JSONObject {
 
 func noteAttachments(_ context: NoteAddonContext) throws -> JSONObject {
   if let noteId = context.string("noteId") {
-    let attachments = try context.service.listFiles(noteId: noteId)
+    let attachments = try context.service.listFiles(noteId: NoteID(noteId))
     return [
       "noteId": .string(noteId),
       "attachments": .array(attachments.map(noteFileAttachmentJSON)),
@@ -66,7 +66,7 @@ func noteAttachments(_ context: NoteAddonContext) throws -> JSONObject {
     ]
   }
   if let notebookId = context.string("notebookId") {
-    let attachments = try context.service.listFiles(notebookId: notebookId)
+    let attachments = try context.service.listFiles(notebookId: NotebookID(notebookId))
     return [
       "notebookId": .string(notebookId),
       "attachments": .array(attachments.map(notebookFileAttachmentJSON)),
@@ -80,7 +80,7 @@ func noteAttachments(_ context: NoteAddonContext) throws -> JSONObject {
 func noteMemos(_ context: NoteAddonContext) throws -> JSONObject {
   let noteId = try context.requiredString("noteId", fieldName: "noteId")
   let author = context.string("author")
-  let comments = try context.service.listComments(noteId: noteId).filter { comment in
+  let comments = try context.service.listComments(noteId: NoteID(noteId)).filter { comment in
     author == nil || comment.author == author
   }
   let agentMemos = comments.filter { comment in
@@ -141,10 +141,10 @@ func importKaibaDocument(_ context: NoteAddonContext) async throws -> JSONObject
   }
 
   var payload: JSONObject = [
-    "notebookId": .string(imported.notebook.notebookId),
+    "notebookId": .string(imported.notebook.notebookId.rawValue),
     "notebook": kaibaNotebookJSON(imported.notebook),
     "notes": .array(imported.notes.map(noteJSON)),
-    "noteIds": .array(imported.notes.map { .string($0.noteId) }),
+    "noteIds": .array(imported.notes.map { .string($0.noteId.rawValue) }),
     "noteCount": .number(Double(imported.notes.count)),
     "sourceFile": fileRecordJSON(sourceFile),
     "ocrRequested": .bool(context.bool("ocr", default: false)),
@@ -152,7 +152,7 @@ func importKaibaDocument(_ context: NoteAddonContext) async throws -> JSONObject
   ]
   if context.bool("translate", default: false) {
     let translated = try await translateImportedNotebook(context, imported: imported)
-    payload["translationNotebookId"] = .string(translated.notebookId)
+    payload["translationNotebookId"] = .string(translated.notebookId.rawValue)
     payload["translationNotebook"] = kaibaNotebookJSON(translated)
   }
   return payload
@@ -239,7 +239,7 @@ private func kaibaStringArray(_ value: JSONValue, fieldName: String) throws -> [
 
 private func kaibaNotebookJSON(_ notebook: Notebook) -> JSONValue {
   .object([
-    "notebookId": .string(notebook.notebookId),
+    "notebookId": .string(notebook.notebookId.rawValue),
     "title": .string(notebook.title),
     "readOnly": .bool(notebook.readOnly),
     "createdAt": .string(notebook.createdAt),

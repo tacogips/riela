@@ -37,24 +37,24 @@ final class KaibaKnowledgeAddonTests: XCTestCase {
       root: root,
       inputs: ["tags": .array([.string("project-atlas")])]
     )
-    XCTAssertEqual(tagSearch.payload["noteIds"], .array([.string(first.noteId)]))
+    XCTAssertEqual(tagSearch.payload["noteIds"], .array([.string(first.noteId.rawValue)]))
 
     let chain = try await execute(
       "kaiba/note-chain",
       root: root,
-      inputs: ["noteId": .string(first.noteId), "depth": .number(1)]
+      inputs: ["noteId": .string(first.noteId.rawValue), "depth": .number(1)]
     )
     XCTAssertEqual(chain.payload["resultCount"], .number(1))
     guard case let .array(chains)? = chain.payload["chains"],
           case let .object(firstChain)? = chains.first else {
       return XCTFail("expected one graph chain")
     }
-    XCTAssertEqual(firstChain["pathNoteIds"], .array([.string(first.noteId), .string(second.noteId)]))
+    XCTAssertEqual(firstChain["pathNoteIds"], .array([.string(first.noteId.rawValue), .string(second.noteId.rawValue)]))
 
     let attachments = try await execute(
       "kaiba/note-attachments",
       root: root,
-      inputs: ["noteId": .string(first.noteId)]
+      inputs: ["noteId": .string(first.noteId.rawValue)]
     )
     XCTAssertEqual(attachments.payload["fileCount"], .number(1))
     guard case let .array(files)? = attachments.payload["files"],
@@ -67,7 +67,7 @@ final class KaibaKnowledgeAddonTests: XCTestCase {
     let memos = try await execute(
       "kaiba/note-memos",
       root: root,
-      inputs: ["noteId": .string(first.noteId)]
+      inputs: ["noteId": .string(first.noteId.rawValue)]
     )
     XCTAssertEqual(memos.payload["memoCount"], .number(1))
     XCTAssertEqual(memos.payload["agentMemoCount"], .number(1))
@@ -125,7 +125,7 @@ final class KaibaKnowledgeAddonTests: XCTestCase {
 
   func testS3LocatorIsStableAndDoesNotExposeAnEndpoint() {
     let record = FileRecord(
-      fileId: "file-1",
+      fileId: FileID("file-1"),
       storageKind: .s3,
       localPath: nil,
       s3Profile: "private",

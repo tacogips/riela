@@ -800,13 +800,12 @@ payload.
 
 **Deliverables**:
 
-- Confirm the repository root, current branch, and pre-commit HEAD.
+- Confirm the repository root, current branch, and base HEAD.
 - Resolve the authoritative unique path set from runtime `changedFiles`, compare
   it with `git status --porcelain`, and stop if any authorized change is
   missing or an unexpected path would need staging.
-- Run the repository `git-precommit-safety-check` workflow over the complete
-  unstaged diff, checking credential material, private URLs, and machine-local
-  absolute paths. Resolve findings before staging.
+- Review the complete unstaged diff for credential material, private URLs, and
+  machine-local absolute paths. Resolve findings before staging.
 - Confirm `git diff --check` is clean.
 
 **Verification**:
@@ -863,10 +862,9 @@ Step 6 adapter payload because a commit cannot contain its own hash.
 
 **Deliverables**:
 
-- After all selected edits are complete, rerun the full-diff
-  `git-precommit-safety-check` so its evidence covers the exact content that
-  will be staged; the earlier TASK-021 result is not sufficient if TASK-022
-  changed either test file.
+- After all selected edits are complete, rerun the full-diff security review so
+  its evidence covers the exact content that will be staged; the earlier
+  TASK-021 result is not sufficient if TASK-022 changed either test file.
 - Reconfirm `git diff --check` immediately before staging.
 - Stage each authoritative path explicitly; do not use broad staging.
 - Compare the staged path set with the resolved authoritative unique path set

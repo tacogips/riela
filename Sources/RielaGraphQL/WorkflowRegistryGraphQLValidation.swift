@@ -8,7 +8,7 @@ private indirect enum WorkflowRegistrySelectionShape {
 }
 
 func validateWorkflowRegistryRootFields(
-  _ roots: [ParsedNoteGraphQLRootField]
+  _ roots: [ParsedGraphQLRootField]
 ) throws {
   guard !roots.isEmpty else {
     throw WorkflowRegistryError(code: .invalidWorkflow, message: "registry operation has no root fields")
@@ -25,12 +25,12 @@ func validateWorkflowRegistryRootFields(
 }
 
 func validateUniqueGraphQLRootResponseKeys(
-  _ roots: [ParsedNoteGraphQLRootField]
+  _ roots: [ParsedGraphQLRootField]
 ) throws {
   try requireUniqueResponseKeys(roots.map(\.responseKey), context: "GraphQL root")
 }
 
-private func validateArguments(for root: ParsedNoteGraphQLRootField) throws {
+private func validateArguments(for root: ParsedGraphQLRootField) throws {
   switch root.fieldName {
   case "workflows":
     try requireKeys(root.arguments, allowed: ["filter"], required: [], context: "workflows")
@@ -111,7 +111,7 @@ private func validateArguments(for root: ParsedNoteGraphQLRootField) throws {
 }
 
 private func validateTargetMutation(
-  _ root: ParsedNoteGraphQLRootField,
+  _ root: ParsedGraphQLRootField,
   context: String
 ) throws {
   let input = try requiredInputObject(root, context: context)
@@ -120,7 +120,7 @@ private func validateTargetMutation(
 }
 
 private func requiredInputObject(
-  _ root: ParsedNoteGraphQLRootField,
+  _ root: ParsedGraphQLRootField,
   context: String
 ) throws -> JSONObject {
   try requireKeys(root.arguments, allowed: ["input"], required: ["input"], context: root.fieldName)
@@ -179,7 +179,7 @@ private func decodeRegistryValue<T: Decodable>(
 }
 
 private func validateSelections(
-  _ selections: [ParsedNoteGraphQLSelectionField],
+  _ selections: [ParsedGraphQLSelectionField],
   shape: WorkflowRegistrySelectionShape,
   context: String
 ) throws {

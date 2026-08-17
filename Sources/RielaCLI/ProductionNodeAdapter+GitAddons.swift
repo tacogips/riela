@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddonSupport
 import RielaCore
 
 enum BuiltinGitAddon: String {

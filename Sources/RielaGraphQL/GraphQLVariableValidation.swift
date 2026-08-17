@@ -123,20 +123,20 @@ private func parseGraphQLConstantValue(
   index: inout String.Index,
   depth: Int
 ) throws -> ParsedGraphQLConstantValue {
-  guard depth <= NoteGraphQLDocumentLimits.maximumValueDepth else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+  guard depth <= GraphQLDocumentLimits.maximumValueDepth else {
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL default value depth limit exceeded"
     )
   }
   skipGraphQLIgnored(in: query, index: &index)
   guard index < query.endIndex else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL variable default value is missing"
     )
   }
   switch query[index] {
   case "$":
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL variable defaults must be constant values"
     )
   case "\"":
@@ -157,7 +157,7 @@ private func parseGraphQLConstantValue(
         depth: depth + 1
       ))
     }
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL default list was not closed"
     )
   case "{":
@@ -171,19 +171,19 @@ private func parseGraphQLConstantValue(
         return .object(object)
       }
       guard let key = readGraphQLIdentifier(in: query, index: &index) else {
-        throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        throw GraphQLDocumentExecutorError.invalidVariable(
           "GraphQL default object key is missing"
         )
       }
       skipGraphQLIgnored(in: query, index: &index)
       guard index < query.endIndex, query[index] == ":" else {
-        throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        throw GraphQLDocumentExecutorError.invalidVariable(
           "GraphQL default object key '\(key)' is missing ':'"
         )
       }
       index = query.index(after: index)
       guard object[key] == nil else {
-        throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        throw GraphQLDocumentExecutorError.invalidVariable(
           "duplicate GraphQL default input field '\(key)'"
         )
       }
@@ -193,7 +193,7 @@ private func parseGraphQLConstantValue(
         depth: depth + 1
       )
     }
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL default object was not closed"
     )
   default:
@@ -204,13 +204,13 @@ private func parseGraphQLConstantValue(
       case let .number(value):
         return .number(value)
       default:
-        throw NoteGraphQLDocumentExecutorError.invalidVariable(
+        throw GraphQLDocumentExecutorError.invalidVariable(
           "GraphQL variable default number is invalid"
         )
       }
     }
     guard let identifier = readGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "unsupported GraphQL variable default value"
       )
     }
@@ -244,24 +244,24 @@ func parseGraphQLVariableDefinitions(
       return result
     }
     guard index < query.endIndex, query[index] == "$" else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable definition is missing '$'"
       )
     }
     index = query.index(after: index)
     guard let variableName = readGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable definition is missing a name"
       )
     }
     guard result.values[variableName] == nil else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "duplicate GraphQL variable definition '$\(variableName)'"
       )
     }
     skipGraphQLIgnored(in: query, index: &index)
     guard index < query.endIndex, query[index] == ":" else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable '\(variableName)' is missing a type"
       )
     }
@@ -280,7 +280,7 @@ func parseGraphQLVariableDefinitions(
       defaultValue: defaultValue
     )
   }
-  throw NoteGraphQLDocumentExecutorError.invalidVariable(
+  throw GraphQLDocumentExecutorError.invalidVariable(
     "GraphQL variable definitions were not closed"
   )
 }
@@ -290,14 +290,14 @@ func parseGraphQLTypeReference(
   index: inout String.Index,
   depth: Int = 1
 ) throws -> ParsedGraphQLTypeReference {
-  guard depth <= NoteGraphQLDocumentLimits.maximumValueDepth else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+  guard depth <= GraphQLDocumentLimits.maximumValueDepth else {
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL variable type depth limit exceeded"
     )
   }
   skipGraphQLIgnored(in: query, index: &index)
   guard index < query.endIndex else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL variable type is missing"
     )
   }
@@ -307,7 +307,7 @@ func parseGraphQLTypeReference(
     let element = try parseGraphQLTypeReference(in: query, index: &index, depth: depth + 1)
     skipGraphQLIgnored(in: query, index: &index)
     guard index < query.endIndex, query[index] == "]" else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL list variable type is missing ']'"
       )
     }
@@ -315,7 +315,7 @@ func parseGraphQLTypeReference(
     value = .list(element)
   } else {
     guard let name = readGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable type is invalid"
       )
     }
@@ -335,7 +335,7 @@ private func validateGraphQLConstantValue(
   variableName: String
 ) throws {
   guard graphQLConstantValue(value, isValidFor: type) else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "GraphQL variable '$\(variableName)' default is incompatible with its declared type"
     )
   }
@@ -417,7 +417,7 @@ private func validateGraphQLVariableDefinitionTypes(
 ) throws {
   for (name, definition) in definitions.values {
     guard graphQLInputTypeNames.contains(definition.type.namedType) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable '$\(name)' uses unknown or non-input type '\(definition.type.namedType)'"
       )
     }
@@ -439,11 +439,11 @@ private let graphQLInputTypeNames: Set<String> = {
 }()
 
 func validateGraphQLVariableUsages(
-  in root: ParsedNoteGraphQLRootField
+  in root: ParsedGraphQLRootField
 ) throws {
   for usage in root.variableUsages {
     guard let definition = root.variableDefinitions[usage.name] else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable '$\(usage.name)' is not defined by the operation"
       )
     }
@@ -458,7 +458,7 @@ func validateGraphQLVariableUsages(
       at: expectedType,
       hasNonNullDefault: definition.hasNonNullDefault
     ) else {
-      throw NoteGraphQLDocumentExecutorError.invalidVariable(
+      throw GraphQLDocumentExecutorError.invalidVariable(
         "GraphQL variable '$\(usage.name)' type is incompatible with its input position"
       )
     }
@@ -467,12 +467,12 @@ func validateGraphQLVariableUsages(
 
 func validateGraphQLVariableDeclarations(
   _ definitions: [String: ParsedGraphQLVariableDefinition],
-  usedBy roots: [ParsedNoteGraphQLRootField]
+  usedBy roots: [ParsedGraphQLRootField]
 ) throws {
   let usedNames = Set(roots.flatMap(\.variableUsages).map(\.name))
   let unusedNames = Set(definitions.keys).subtracting(usedNames)
   guard unusedNames.isEmpty else {
-    throw NoteGraphQLDocumentExecutorError.invalidVariable(
+    throw GraphQLDocumentExecutorError.invalidVariable(
       "unused GraphQL variable definition(s): \(unusedNames.sorted().map { "$\($0)" }.joined(separator: ", "))"
     )
   }

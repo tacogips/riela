@@ -4,6 +4,7 @@ import Darwin
 #else
 import Glibc
 #endif
+import RielaAddonSupport
 import RielaCore
 
 extension BuiltinWorkflowAddonResolver {

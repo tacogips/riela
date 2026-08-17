@@ -1,5 +1,6 @@
 import Foundation
 import GoogleServiceGatewayCore
+import RielaAddonSupport
 import RielaCore
 
 enum BuiltinGoogleServiceGatewayAddon: String {

@@ -166,7 +166,7 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
     guard !query.isEmpty else {
       return .failure("graphql request body must include a non-empty query string")
     }
-    guard query.utf8.count <= NoteGraphQLDocumentLimits.maximumDocumentUTF8Bytes else {
+    guard query.utf8.count <= GraphQLDocumentLimits.maximumDocumentUTF8Bytes else {
       return .failure("graphql query exceeds the maximum supported size")
     }
     let variables: JSONObject
@@ -195,7 +195,7 @@ public struct DeterministicServerRouteHandler: ServerRouteHandling {
     } else {
       operationName = nil
     }
-    if let operationName, !noteGraphQLNamedOperationNames(in: query).contains(operationName) {
+    if let operationName, !graphQLNamedOperationNames(in: query).contains(operationName) {
       return .failure("graphql operationName '\(operationName)' was not found in query")
     }
     return .success(.init(query: query, variables: variables, operationName: operationName))
@@ -295,7 +295,7 @@ private extension DeterministicServerRouteHandler {
     guard case let .success(envelope) = parseGraphQLEnvelope(request) else {
       return "unknown"
     }
-    return noteGraphQLOperationTypeName(in: envelope.query, operationName: envelope.operationName)
+    return graphQLOperationTypeName(in: envelope.query, operationName: envelope.operationName)
   }
 }
 

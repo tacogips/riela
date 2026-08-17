@@ -3,6 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 import RielaAdapters
+import RielaAddonSupport
 import RielaAddons
 import RielaCore
 import RielaGraphQL

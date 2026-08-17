@@ -170,7 +170,7 @@ final class ServerContractsTests: XCTestCase {
   func testGraphQLRouteRejectsOversizedQueryBeforeParsingOperations() async throws {
     let handler = DeterministicServerRouteHandler()
     let oversizedQuery = "query Oversized { " +
-      String(repeating: "field ", count: NoteGraphQLDocumentLimits.maximumDocumentUTF8Bytes / 6 + 1) +
+      String(repeating: "field ", count: GraphQLDocumentLimits.maximumDocumentUTF8Bytes / 6 + 1) +
       "}"
     let body = try JSONEncoder().encode(JSONValue.object(["query": .string(oversizedQuery)]))
 

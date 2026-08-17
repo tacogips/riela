@@ -2,16 +2,14 @@ import AppCore
 import Foundation
 import RielaCore
 
-// Kaiba 0.1.7 moved JSONValue/JSONObject out of AppGraphQL and into AppCore, so
-// every kaiba addon file that imports AppCore next to RielaCore now sees two
-// equally visible JSON models and an unqualified `JSONValue` is ambiguous.
-// Declaring the alias in this module pins every unqualified spelling in
-// RielaCLI to riela's own model, and the kaiba side is spelled `AppCore.JSON*`
-// at the few boundaries that genuinely hand one over.
-// Public because RielaCLI's own public API (session stores, findings export)
-// already spells these types unqualified.
-public typealias JSONValue = RielaCore.JSONValue
-public typealias JSONObject = RielaCore.JSONObject
+// Kaiba exports its own JSONValue/JSONObject from AppCore, so inside this
+// target — the only one importing both models — an unqualified `JSONValue`
+// would be ambiguous. The alias pins every unqualified spelling to riela's own
+// model, and the kaiba side is spelled `AppCore.JSON*` at the few boundaries
+// that genuinely hand one over. The aliases stay internal: the catalog's public
+// API speaks RielaCore types by their own names.
+typealias JSONValue = RielaCore.JSONValue
+typealias JSONObject = RielaCore.JSONObject
 
 /// Re-encodes a riela JSON payload as kaiba's structurally identical model.
 func kaibaJSONValue(_ value: RielaCore.JSONValue) throws -> AppCore.JSONValue {

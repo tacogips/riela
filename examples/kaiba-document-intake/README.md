@@ -54,3 +54,10 @@ provide only variables:
 For common reads, prefer `kaiba/note-search`, `kaiba/note-tag-search`,
 `kaiba/note-chain`, `kaiba/note-attachments`, and `kaiba/note-memos` so the
 workflow does not need to author a GraphQL document.
+
+`kaiba/note-graphql-document` runs against the local note root. When Kaiba runs
+as an external GraphQL server, use `kaiba/note-graphql-remote` instead: the same
+`query`/`variables` shape plus `endpoint`, with the bearer key read from the env
+var named by `apiKeyEnv` (default `KAIBA_API_KEY`). That node opens no local
+store, and Kaiba's own authentication and library access control decide what the
+call reaches.

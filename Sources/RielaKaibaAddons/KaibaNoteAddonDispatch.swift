@@ -1,6 +1,6 @@
 import RielaCore
 
-enum BuiltinNoteAddon: String {
+enum BuiltinNoteAddon: String, CaseIterable {
   case create = "kaiba/note-create", update = "kaiba/note-update"
   case get = "kaiba/note-get", search = "kaiba/note-search"
   case tagSearch = "kaiba/note-tag-search"
@@ -24,7 +24,7 @@ enum BuiltinNoteAddon: String {
 
 /// Long-term memory bridge: riela consolidates its short-term records into
 /// kaiba's canonical memory notebook and recalls them back for prompts.
-enum BuiltinKaibaLongTermMemoryAddon: String {
+enum BuiltinKaibaLongTermMemoryAddon: String, CaseIterable {
   case consolidate = "kaiba/memory-consolidate"
   case recall = "kaiba/memory-recall"
 }

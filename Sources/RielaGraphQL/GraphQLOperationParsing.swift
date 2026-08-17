@@ -1,23 +1,23 @@
 import Foundation
 import RielaCore
 
-struct ParsedNoteGraphQLOperation: Equatable, Sendable {
+struct ParsedGraphQLOperation: Equatable, Sendable {
   var name: String?
-  var rootFields: [ParsedNoteGraphQLRootField]
+  var rootFields: [ParsedGraphQLRootField]
 }
 
-func parseNoteGraphQLOperations(
+func parseGraphQLOperations(
   in query: String,
   operationName requestedOperationName: String?,
   variables: JSONObject,
   parseArguments: Bool
-) throws -> [ParsedNoteGraphQLOperation] {
-  try validateNoteGraphQLDocumentLength(query)
+) throws -> [ParsedGraphQLOperation] {
+  try validateGraphQLDocumentLength(query)
   let fragments = try parseGraphQLFragmentDefinitions(in: query)
   let operationCount = try graphQLExecutableOperationCount(in: query)
   let fragmentBudget = GraphQLFragmentExpansionBudget()
   var index = query.startIndex
-  var operations: [ParsedNoteGraphQLOperation] = []
+  var operations: [ParsedGraphQLOperation] = []
   while index < query.endIndex {
     skipGraphQLIgnored(in: query, index: &index)
     guard index < query.endIndex else { break }
@@ -39,14 +39,14 @@ func parseNoteGraphQLOperations(
       if parseArguments {
         try validateGraphQLVariableDeclarations([:], usedBy: rootFields)
       }
-      operations.append(ParsedNoteGraphQLOperation(
+      operations.append(ParsedGraphQLOperation(
         name: nil,
         rootFields: rootFields
       ))
       continue
     }
     guard let operation = readGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL document contains an invalid top-level definition"
       )
     }
@@ -61,7 +61,7 @@ func parseNoteGraphQLOperations(
     case "mutation":
       operationType = .mutation
     default:
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "unsupported GraphQL operation '\(operation)'"
       )
     }
@@ -79,7 +79,7 @@ func parseNoteGraphQLOperations(
     try rejectGraphQLDirectives(in: query, index: &index, reject: parseArguments)
     skipGraphQLIgnored(in: query, index: &index)
     guard index < query.endIndex, query[index] == "{" else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL operation is missing a selection set"
       )
     }
@@ -99,29 +99,29 @@ func parseNoteGraphQLOperations(
     if parseArguments {
       try validateGraphQLVariableDeclarations(variableDefinitions, usedBy: rootFields)
     }
-    operations.append(ParsedNoteGraphQLOperation(
+    operations.append(ParsedGraphQLOperation(
       name: operationName,
       rootFields: rootFields
     ))
   }
   let unusedFragments = Set(fragments.keys).subtracting(fragmentBudget.expandedFragmentNames)
   guard unusedFragments.isEmpty else {
-    throw NoteGraphQLDocumentExecutorError.invalidSelection(
+    throw GraphQLDocumentExecutorError.invalidSelection(
       "unused GraphQL fragment(s): \(unusedFragments.sorted().joined(separator: ", "))"
     )
   }
   return operations
 }
 
-func selectNoteGraphQLOperation(
-  _ operations: [ParsedNoteGraphQLOperation],
+func selectGraphQLOperation(
+  _ operations: [ParsedGraphQLOperation],
   operationName: String?
-) throws -> ParsedNoteGraphQLOperation? {
+) throws -> ParsedGraphQLOperation? {
   if let operationName {
     return operations.first { $0.name == operationName }
   }
   guard operations.count <= 1 else {
-    throw NoteGraphQLDocumentExecutorError.invalidSelection(
+    throw GraphQLDocumentExecutorError.invalidSelection(
       "GraphQL operationName is required when a document contains multiple operations"
     )
   }
@@ -143,7 +143,7 @@ func graphQLExecutableOperationCount(in query: String) throws -> Int {
       continue
     }
     guard let operation = readGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL document contains an invalid top-level definition"
       )
     }
@@ -152,14 +152,14 @@ func graphQLExecutableOperationCount(in query: String) throws -> Int {
       continue
     }
     guard ["query", "mutation", "subscription"].contains(operation) else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "unsupported GraphQL top-level definition '\(operation)'"
       )
     }
     count += 1
     if let operationName = readOptionalGraphQLIdentifier(in: query, index: &index) {
       guard operationNames.insert(operationName).inserted else {
-        throw NoteGraphQLDocumentExecutorError.invalidSelection(
+        throw GraphQLDocumentExecutorError.invalidSelection(
           "duplicate GraphQL operation name '\(operationName)'"
         )
       }
@@ -173,14 +173,14 @@ func graphQLExecutableOperationCount(in query: String) throws -> Int {
     try rejectGraphQLDirectives(in: query, index: &index, reject: false)
     skipGraphQLIgnored(in: query, index: &index)
     guard index < query.endIndex, query[index] == "{" else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL operation is missing a selection set"
       )
     }
     try skipGraphQLBalanced(in: query, index: &index, open: "{", close: "}")
   }
   guard anonymousOperationCount == 0 || count == 1 else {
-    throw NoteGraphQLDocumentExecutorError.invalidSelection(
+    throw GraphQLDocumentExecutorError.invalidSelection(
       "an anonymous GraphQL operation must be the document's only operation"
     )
   }

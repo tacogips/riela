@@ -1,8 +1,9 @@
 import AppCore
 import Foundation
+import RielaAddonSupport
 import RielaCore
 import XCTest
-@testable import RielaCLI
+@testable import RielaKaibaAddons
 
 final class KaibaLongTermMemoryAddonTests: XCTestCase {
   private func scratchNoteRoot() -> URL {
@@ -19,7 +20,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
     for (key, value) in extraConfig {
       config[key] = value
     }
-    return try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+    return try await KaibaAddonCatalog.execute(
       WorkflowAddonExecutionInput(
         workflowId: "memory-consolidation",
         stepId: "consolidate-long-term",
@@ -27,7 +28,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(name: "kaiba/memory-consolidate", version: "1", config: config),
         resolvedInputPayload: resolvedInputPayload
       ),
-      context: AdapterExecutionContext()
+      environment: [:]
     )
   }
 
@@ -119,7 +120,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
       ]
     )
 
-    let output = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+    let output = try await KaibaAddonCatalog.execute(
       WorkflowAddonExecutionInput(
         workflowId: "memory-consolidation",
         stepId: "recall-long-term",
@@ -135,7 +136,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
         ),
         resolvedInputPayload: ["entriesWritten": .number(1)]
       ),
-      context: AdapterExecutionContext()
+      environment: [:]
     )
 
     XCTAssertEqual(output.payload["resultCount"], .number(1))
@@ -152,7 +153,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
       try? FileManager.default.removeItem(at: noteRoot)
     }
     do {
-      _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+      _ = try await KaibaAddonCatalog.execute(
         WorkflowAddonExecutionInput(
           workflowId: "memory-consolidation",
           stepId: "recall-long-term",
@@ -164,7 +165,7 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
           ),
           resolvedInputPayload: [:]
         ),
-        context: AdapterExecutionContext()
+        environment: [:]
       )
     } catch let error as AdapterExecutionError {
       XCTAssertEqual(error.code, .policyBlocked)

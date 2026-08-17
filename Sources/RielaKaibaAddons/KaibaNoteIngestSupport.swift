@@ -1,6 +1,7 @@
-import Foundation
-import RielaCore
 import AppCore
+import Foundation
+import RielaAddonSupport
+import RielaCore
 
 struct NotePageInput {
   var bodyMarkdown: String

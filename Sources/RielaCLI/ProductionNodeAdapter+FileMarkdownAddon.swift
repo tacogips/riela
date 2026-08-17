@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddonSupport
 import RielaCore
 
 /// Built-in worker add-on that converts local documents (pdf, docx, pptx,

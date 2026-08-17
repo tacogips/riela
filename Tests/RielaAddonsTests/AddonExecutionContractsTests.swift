@@ -178,6 +178,7 @@ final class AddonExecutionContractsTests: XCTestCase {
         "kaiba/note-attachments",
         "kaiba/note-memos",
         "kaiba/note-graphql-document",
+        "kaiba/note-graphql-remote",
         "kaiba/note-comment-add",
         "kaiba/notebook-ingest-pages",
         "kaiba/document-import",
@@ -186,7 +187,7 @@ final class AddonExecutionContractsTests: XCTestCase {
         "kaiba/memory-recall"
       ]
     )
-    XCTAssertEqual(RielaBuiltinAddonCatalog.noteAddons.count, 18)
+    XCTAssertEqual(RielaBuiltinAddonCatalog.noteAddons.count, 19)
   }
 
   func testAllowedBuiltinNamesDoNotAuthorizePackageAddons() async {

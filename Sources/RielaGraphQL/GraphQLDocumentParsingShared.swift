@@ -3,16 +3,16 @@ import Foundation
 /// Error surface shared by the GraphQL document parsing layer. The parsing
 /// files retain their historical Note-prefixed names because the parser was
 /// born in the note domain; the note executor itself now lives in kaiba.
-enum NoteGraphQLDocumentExecutorError: Error, Equatable {
+enum GraphQLDocumentExecutorError: Error, Equatable {
   case missingVariable(String)
   case invalidVariable(String)
   case invalidSelection(String)
   case operationFieldMismatch(operation: String, fieldName: String)
 }
 
-public func noteGraphQLOperationTypeName(in query: String, operationName: String? = nil) -> String {
+public func graphQLOperationTypeName(in query: String, operationName: String? = nil) -> String {
   guard
-    let operationType = try? parseNoteGraphQLRootFields(
+    let operationType = try? parseGraphQLRootFields(
       in: query,
       operationName: operationName,
       variables: [:],

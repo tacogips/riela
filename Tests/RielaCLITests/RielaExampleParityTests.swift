@@ -1,4 +1,3 @@
-import AppCore
 import Foundation
 import RielaCore
 import RielaMemory
@@ -219,23 +218,67 @@ final class RielaExampleParityTests: XCTestCase {
   private enum GraphRAGExampleFixture {
     static let workflowNames: Set<String> = ["note-agent", "note-link-extract"]
 
-    static func variables(noteRoot: String, workflowName: String) throws -> String {
+    /// Seeded through the `kaiba/*` add-ons rather than kaiba's own API: the
+    /// CLI test target does not link kaiba, and going through the same nodes
+    /// the examples use keeps the fixture honest.
+    static func variables(noteRoot: String, workflowName: String) async throws -> String {
       try FileManager.default.createDirectory(
         atPath: noteRoot,
         withIntermediateDirectories: true
       )
-      let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot))
-      let subject = try service.createNote(bodyMarkdown: "# Subject\n\nprojectalpha kickoff planning")
-      let hopOne = try service.createNote(bodyMarkdown: "# Hop One\n\nprojectalpha design decisions")
-      let hopTwo = try service.createNote(bodyMarkdown: "# Hop Two\n\nrollout notes")
-      try service.linkNotes(from: subject.noteId, to: hopOne.noteId)
-      try service.linkNotes(from: hopOne.noteId, to: hopTwo.noteId)
+      let subject = try await createNote(noteRoot: noteRoot, body: "# Subject\n\nprojectalpha kickoff planning")
+      let hopOne = try await createNote(noteRoot: noteRoot, body: "# Hop One\n\nprojectalpha design decisions")
+      let hopTwo = try await createNote(noteRoot: noteRoot, body: "# Hop Two\n\nrollout notes")
+      try await linkNotes(noteRoot: noteRoot, from: subject, to: hopOne)
+      try await linkNotes(noteRoot: noteRoot, from: hopOne, to: hopTwo)
       let input: [String: Any] = workflowName == "note-link-extract"
-        ? ["noteId": subject.noteId, "limit": 8]
+        ? ["noteId": subject, "limit": 8]
         : ["query": "projectalpha", "limit": 5]
       let payload: [String: Any] = ["noteRoot": noteRoot, "workflowInput": input]
       let data = try JSONSerialization.data(withJSONObject: payload)
       return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func createNote(noteRoot: String, body: String) async throws -> String {
+      let output = try await execute(
+        addon: "kaiba/note-create",
+        config: ["noteRoot": .string(noteRoot), "bodyMarkdown": .string(body)]
+      )
+      guard case let .string(noteId)? = output.payload["noteId"] else {
+        throw CLIUsageError("kaiba/note-create returned no noteId")
+      }
+      return noteId
+    }
+
+    private static func linkNotes(noteRoot: String, from: String, to: String) async throws {
+      _ = try await execute(
+        addon: "kaiba/note-graphql-document",
+        config: [
+          "noteRoot": .string(noteRoot),
+          "query": .string(
+            "mutation Link($input: LinkNotesInput!) { linkNotes(input: $input) { result { accepted } link { fromNoteId toNoteId } } }"
+          ),
+          "variables": .object([
+            "input": .object(["fromNoteId": .string(from), "toNoteId": .string(to)])
+          ])
+        ]
+      )
+    }
+
+    private static func execute(
+      addon: String,
+      config: RielaCore.JSONObject
+    ) async throws -> AdapterExecutionOutput {
+      try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "graph-rag-fixture",
+          stepId: "seed",
+          nodeId: "seed",
+          addon: WorkflowNodeAddonRef(name: addon, version: "1", config: config),
+          resolvedInputPayload: [:]
+        ),
+        context: AdapterExecutionContext()
+      )
     }
   }
 
@@ -347,7 +390,7 @@ final class RielaExampleParityTests: XCTestCase {
         let noteRoot = sessionStore.appendingPathComponent("notes", isDirectory: true)
         arguments.append(contentsOf: [
           "--variables",
-          try GraphRAGExampleFixture.variables(noteRoot: noteRoot.path, workflowName: workflowName)
+          try await GraphRAGExampleFixture.variables(noteRoot: noteRoot.path, workflowName: workflowName)
         ])
       }
       let generatedWorkflowHome = sessionStore.appendingPathComponent("home", isDirectory: true)
@@ -875,7 +918,7 @@ final class RielaExampleParityTests: XCTestCase {
     return outputPath
   }
 
-  private func jsonString(_ value: JSONValue?) -> String? {
+  private func jsonString(_ value: RielaCore.JSONValue?) -> String? {
     guard case let .string(string)? = value else {
       return nil
     }

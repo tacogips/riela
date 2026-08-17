@@ -1,5 +1,6 @@
 import Foundation
 import RielaAdapters
+import RielaAddonSupport
 import RielaAddons
 import RielaCore
 

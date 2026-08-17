@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddonSupport
 import RielaCore
 
 /// Built-in add-ons that run the locally installed wrike-gateway CLI tier

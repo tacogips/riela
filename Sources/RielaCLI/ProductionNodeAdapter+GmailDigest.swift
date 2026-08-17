@@ -5,6 +5,7 @@ import Foundation
 import FoundationNetworking
 #endif
 import RielaAdapters
+import RielaAddonSupport
 import RielaCore
 
 extension BuiltinWorkflowAddonResolver {

@@ -10,15 +10,15 @@ final class GraphQLFragmentExpansionBudget {
   private(set) var expandedFragmentNames = Set<String>()
 
   func consume(name: String, depth: Int) throws {
-    guard depth < NoteGraphQLDocumentLimits.maximumFragmentExpansionDepth else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+    guard depth < GraphQLDocumentLimits.maximumFragmentExpansionDepth else {
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL fragment expansion depth limit exceeded"
       )
     }
     expansionCount += 1
     expandedFragmentNames.insert(name)
-    guard expansionCount <= NoteGraphQLDocumentLimits.maximumFragmentExpansionCount else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+    guard expansionCount <= GraphQLDocumentLimits.maximumFragmentExpansionCount else {
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL fragment expansion count limit exceeded"
       )
     }
@@ -51,21 +51,21 @@ func parseGraphQLFragmentDefinitions(
           name != "on",
           readOptionalGraphQLIdentifier(in: query, index: &index) == "on",
           let typeCondition = readOptionalGraphQLIdentifier(in: query, index: &index) else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection("GraphQL fragment definition is malformed")
+      throw GraphQLDocumentExecutorError.invalidSelection("GraphQL fragment definition is malformed")
     }
     guard fragments[name] == nil else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "duplicate GraphQL fragment definition '\(name)'"
       )
     }
     skipGraphQLIgnored(in: query, index: &index)
     if index < query.endIndex, query[index] == "@" {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL directives are not supported on fragment definitions"
       )
     }
     guard index < query.endIndex, query[index] == "{" else {
-      throw NoteGraphQLDocumentExecutorError.invalidSelection(
+      throw GraphQLDocumentExecutorError.invalidSelection(
         "GraphQL fragment '\(name)' has an invalid definition"
       )
     }

@@ -1,5 +1,6 @@
 import AppCore
 import Foundation
+import RielaAddonSupport
 import RielaCore
 
 func searchNotesByTag(_ context: NoteAddonContext) throws -> JSONObject {

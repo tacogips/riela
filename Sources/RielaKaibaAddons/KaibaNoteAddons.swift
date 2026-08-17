@@ -1,12 +1,14 @@
-import Foundation
-import RielaCore
 import AppCore
+import Foundation
+import RielaAddonSupport
+import RielaCore
 
 private let noteAddonDefaultMaxAttachmentBytes = InlineWorkflowAddonAttachmentProjector.maxAttachmentBytes
 private let noteAddonDefaultMaxPageCount = 500
-extension BuiltinWorkflowAddonResolver {
-  func executeNoteAddon(
+extension KaibaAddonCatalog {
+  static func executeNoteAddon(
     _ input: WorkflowAddonExecutionInput,
+    environment: [String: String],
     operation: BuiltinNoteAddon
   ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
@@ -73,12 +75,13 @@ extension BuiltinWorkflowAddonResolver {
 }
 struct NoteAddonContext {
   var input: WorkflowAddonExecutionInput
-  var config: JSONObject
-  var variables: JSONObject
+  var inputs: KaibaAddonInputs
   var noteRoot: String
   var service: NoteService
   var kaibaConfiguration: KaibaConfiguration
-  var environment: [String: String]
+  var config: JSONObject { inputs.config }
+  var variables: JSONObject { inputs.variables }
+  var environment: [String: String] { inputs.environment }
   var maxAttachmentBytes: Int {
     max(0, int("maxAttachmentBytes", default: noteAddonDefaultMaxAttachmentBytes))
   }
@@ -95,9 +98,9 @@ struct NoteAddonContext {
 
   init(input: WorkflowAddonExecutionInput, environment: [String: String]) throws {
     self.input = input
-    self.environment = environment
-    config = input.addon.config ?? [:]
-    variables = addonVariables(for: input)
+    inputs = KaibaAddonInputs(input: input, environment: environment)
+    let config = inputs.config
+    let variables = inputs.variables
     let workflowInput = noteObject(variables["workflowInput"])
     noteRoot = noteString("noteRoot", config: config, variables: variables)
       ?? nonEmptyString(workflowInput["noteRoot"])
@@ -127,35 +130,23 @@ struct NoteAddonContext {
   }
 
   func string(_ keys: String...) -> String? {
-    for key in keys {
-      if let value = noteString(key, config: config, variables: variables) {
-        return value
-      }
-    }
-    return nil
+    inputs.string(keys)
   }
 
   func requiredString(_ keys: String..., fieldName: String) throws -> String {
-    for key in keys {
-      if let value = string(key) {
-        return value
-      }
-    }
-    throw noteAddonInvalidInput("\(input.addon.name) \(fieldName) is required")
+    try inputs.requiredString(keys, fieldName: fieldName)
   }
 
   func bool(_ key: String, default defaultValue: Bool) -> Bool {
-    boolValue(config[key]) ?? boolValue(variables[key]) ?? defaultValue
+    inputs.bool(key, default: defaultValue)
   }
 
   func int(_ key: String, default defaultValue: Int) -> Int {
-    noteIntValue(config[key], variables: variables)
-      ?? noteIntValue(variables[key], variables: variables)
-      ?? defaultValue
+    inputs.int(key, default: defaultValue)
   }
 
   func value(_ key: String) -> JSONValue? {
-    config[key] ?? variables[key]
+    inputs.value(key)
   }
 }
 
@@ -596,7 +587,7 @@ func noteGraphQLVariables(_ context: NoteAddonContext) throws -> JSONObject {
 func noteAddonInvalidInput(_ message: String) -> AdapterExecutionError {
   AdapterExecutionError(.invalidInput, message)
 }
-private func noteIntValue(_ value: JSONValue?, variables: JSONObject) -> Int? {
+func noteIntValue(_ value: JSONValue?, variables: JSONObject) -> Int? {
   if let int = intValue(value) {
     return int
   }
@@ -607,7 +598,7 @@ private func noteIntValue(_ value: JSONValue?, variables: JSONObject) -> Int? {
   return Int(rendered)
 }
 
-private func noteString(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
+func noteString(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
   if let template = nonEmptyString(config[key]) {
     let rendered = renderPromptTemplate(template, variables: variables).trimmingCharacters(in: .whitespacesAndNewlines)
     return rendered.isEmpty ? nil : rendered

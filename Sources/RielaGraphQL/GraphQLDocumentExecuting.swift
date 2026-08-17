@@ -10,7 +10,7 @@ public struct GraphQLDocumentRequest: Equatable, Sendable {
   public var transportCredential: GraphQLTransportCredential?
   public var isLocallyTrusted: Bool
   public var localWorkingDirectory: String?
-  var parsedRootFields: [ParsedNoteGraphQLRootField]?
+  var parsedRootFields: [ParsedGraphQLRootField]?
   var domainPreflightComplete: Bool
   var verifiedRegistryPrincipal: WorkflowRegistryVerifiedPrincipal?
 
@@ -59,7 +59,7 @@ public protocol GraphQLDocumentExecuting: Sendable {
 protocol GraphQLDocumentDomainPreflighting: Sendable {
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse?
 }
 

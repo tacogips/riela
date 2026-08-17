@@ -1,8 +1,10 @@
 import Foundation
 import GoogleServiceGatewayCore
 import RielaAdapters
+import RielaAddonSupport
 import RielaAddons
 import RielaCore
+import RielaKaibaAddons
 import RielaMemory
 
 func makeProductionNodeAdapter(
@@ -466,11 +468,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if let appleGatewayAdminAddon = BuiltinAppleGatewayAdminAddon(rawValue: input.addon.name) {
       return try executeAppleGatewayAdmin(input, operation: appleGatewayAdminAddon, context: context)
     }
-    if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
-      return try await executeNoteAddon(input, operation: noteAddon)
-    }
-    if let longTermMemoryAddon = BuiltinKaibaLongTermMemoryAddon(rawValue: input.addon.name) {
-      return try executeKaibaLongTermMemoryAddon(input, operation: longTermMemoryAddon)
+    // Kaiba add-ons live in their own target; nothing kaiba-typed crosses back.
+    if KaibaAddonCatalog.handles(input.addon.name) {
+      return try await KaibaAddonCatalog.execute(input, environment: environment)
     }
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)

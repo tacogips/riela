@@ -90,6 +90,23 @@ let package = Package(
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
+    // Template rendering and JSON coercion shared by every add-on family, kept
+    // out of RielaCLI so add-on targets can depend on it without depending on
+    // the CLI.
+    .target(name: "RielaAddonSupport", dependencies: ["RielaCore"]),
+    // The only target that links kaiba. Everything kaiba-typed — its note
+    // service, its identifiers, its JSON model — stops here; RielaCLI sees a
+    // RielaCore-only façade (`KaibaAddonCatalog`).
+    .target(
+      name: "RielaKaibaAddons",
+      dependencies: [
+        "RielaAddonSupport",
+        "RielaCore",
+        .product(name: "AppCore", package: "kaiba"),
+        .product(name: "AppGraphQL", package: "kaiba"),
+        .product(name: "Crypto", package: "swift-crypto")
+      ]
+    ),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
     .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL", "RielaObservability"]),
@@ -141,11 +158,11 @@ let package = Package(
         "RielaCore",
         "RielaVersion",
         "RielaSQLite",
-        .product(name: "AppCore", package: "kaiba"),
-        .product(name: "AppGraphQL", package: "kaiba"),
         .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
+        "RielaAddonSupport",
+        "RielaKaibaAddons",
         "RielaEvents",
         "RielaObservability",
         "RielaGraphQL",
@@ -208,6 +225,18 @@ let package = Package(
       ]
     ),
     .testTarget(
+      name: "RielaKaibaAddonsTests",
+      dependencies: [
+        "RielaCore",
+        // RielaAddons never links kaiba; it is here so the parity test can
+        // pin its hand-maintained descriptor list to the catalog.
+        "RielaAddons",
+        "RielaKaibaAddons",
+        .product(name: "AppCore", package: "kaiba"),
+        .product(name: "AppGraphQL", package: "kaiba")
+      ]
+    ),
+    .testTarget(
       name: "RielaCLITests",
       dependencies: [
         "RielaCore",
@@ -215,8 +244,7 @@ let package = Package(
         "RielaAppSupport",
         "RielaCLI",
         "RielaWorkflowRegistry",
-        .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
-        .product(name: "AppCore", package: "kaiba")
+        .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway")
       ]
     )
   ],

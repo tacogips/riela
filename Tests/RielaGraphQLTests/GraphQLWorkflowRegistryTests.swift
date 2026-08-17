@@ -501,7 +501,7 @@ final class GraphQLWorkflowRegistryTests: XCTestCase {
   func testFragmentExpansionLimitsCannotDispatch() async {
     let provider = RecordingWorkflowRegistryProvider()
     let executor = WorkflowRegistryGraphQLDocumentExecutor(localProvider: provider)
-    let maximumDepth = NoteGraphQLDocumentLimits.maximumFragmentExpansionDepth
+    let maximumDepth = GraphQLDocumentLimits.maximumFragmentExpansionDepth
     let chain = (0..<maximumDepth)
       .map { "fragment F\($0) on Query { ...F\($0 + 1) }" }
       .joined(separator: "\n")
@@ -813,7 +813,7 @@ private actor CredentialRecordingNoteExecutor: GraphQLDocumentExecuting, GraphQL
 
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse? {
     preflightCredential = request.transportCredential
     return rootFields.allSatisfy { $0.fieldName == "note" }
@@ -833,7 +833,7 @@ private actor CredentialRecordingNoteExecutor: GraphQLDocumentExecuting, GraphQL
 private struct RejectingNoteDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocumentDomainPreflighting {
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse? {
     GraphQLDocumentExecutionResponse(handled: true, body: [
       "errors": .array([.object([
@@ -924,7 +924,7 @@ private struct OrderedNoteDocumentExecutor: GraphQLDocumentExecuting, GraphQLDoc
 
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse? {
     rootFields.allSatisfy { $0.fieldName == "noteDelete" }
       ? nil
@@ -1054,7 +1054,7 @@ private actor FailingWorkflowRegistryProvider: WorkflowRegistryGraphQLProviding 
 private struct StubNoteDocumentExecutor: GraphQLDocumentExecuting, GraphQLDocumentDomainPreflighting {
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse? {
     rootFields.allSatisfy { $0.fieldName == "note" }
       ? nil

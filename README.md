@@ -278,8 +278,20 @@ agent chat and note editing, links, file attachments (local/S3), FTS5 search,
 a note GraphQL API, a `kaiba serve` web viewer, and API-key authentication
 (`kaiba client issue`).
 
-Riela consumes kaiba as an addon knowledge/context source. The built-in
-`kaiba/*` addons expose kaiba-client-equivalent operations to workflows:
+Riela consumes kaiba as an add-on knowledge/context source, and the coupling
+stops at the add-on layer: kaiba is linked by exactly one target
+(`RielaKaibaAddons`), which exposes a RielaCore-only façade, so no kaiba type —
+its note service, its identifiers, its JSON model — reaches the rest of riela.
+Riela keeps its own short-term memory in its own store; long-term notes and
+knowledge live only in kaiba.
+
+Two node families sit behind that boundary, and they are separate nodes rather
+than one node with a mode flag.
+
+**Local nodes** reach the store through kaiba's library API. They need no
+credential: holding the store file is kaiba's operator view, which spans every
+account and every library. The note root comes from config `noteRoot`, env
+`KAIBA_NOTE_ROOT`, or `~/.kaiba`.
 
 - `kaiba/note-create`, `kaiba/note-update`, `kaiba/note-get`,
   `kaiba/note-search`, `kaiba/note-tag-search`,
@@ -288,13 +300,32 @@ Riela consumes kaiba as an addon knowledge/context source. The built-in
   `kaiba/note-comment-add`, `kaiba/notebook-ingest-pages`,
   `kaiba/document-import`, `kaiba/note-conversation-save`
 - Long-term memory: `kaiba/memory-consolidate`, `kaiba/memory-recall`
-- Raw GraphQL: `kaiba/note-graphql-document`
+- Raw GraphQL against the local store: `kaiba/note-graphql-document`
 
-Addons operate on a local note root (config `noteRoot`, env
-`KAIBA_NOTE_ROOT`, default `~/.kaiba`) through the imported kaiba library, or
-remotely against a running `kaiba serve` by setting `endpoint` in the addon
-config plus an API key in the env var named by `apiKeyEnv` (default
-`KAIBA_API_KEY`; issue keys with `kaiba client issue`).
+**The remote node** — `kaiba/note-graphql-remote` — is for kaiba running as an
+external GraphQL server. It opens no local store at all; it forwards the
+document in `config.query` (with `addon.inputs.variables`) to the `endpoint`
+and lets kaiba's own authentication and library access control decide what the
+call reaches:
+
+- `kaiba serve` (no flag) requires a bearer key. The node reads it from the
+  env var named by `apiKeyEnv` (default `KAIBA_API_KEY`; issue one with
+  `kaiba client issue`). With no key it refuses before the request unless the
+  node sets `allowUnauthenticated: true`, and a keyless request against an
+  authenticating server surfaces as `endpoint returned status 401`.
+- `kaiba serve --allow-unauthenticated` accepts keyless requests but answers
+  only from libraries created with `--auth none` (the seeded `default` library
+  is one). A notebook moved into an `--auth required` library disappears from
+  keyless responses and comes back once a key is presented; add `--as-admin`
+  to give an open port the seeded admin's full reach.
+- An API key belongs to an account (`kaiba client issue --user <id>`, the
+  default account otherwise), so a non-admin key reaches the open libraries
+  plus the ones its account was granted.
+
+Kaiba carries no store migrations: 0.1.7 stores are schema 15 and an older
+`~/.kaiba` is rejected with `unsupportedLegacyVersion`. Recreate the note root
+(or point `noteRoot`/`KAIBA_NOTE_ROOT` at a fresh one) when upgrading. Only the
+local nodes are affected — the remote node never touches a store file.
 
 `kaiba/document-import` consumes a local `path` (normally
 `event.input.file.absolutePath` from a `file-change` source), converts PDF,

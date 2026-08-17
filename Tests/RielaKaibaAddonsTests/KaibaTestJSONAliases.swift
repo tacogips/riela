@@ -1,3 +1,4 @@
+import RielaAddonSupport
 import RielaCore
 
 // Kaiba 0.1.7 exports its own JSONValue/JSONObject from AppCore, so the kaiba

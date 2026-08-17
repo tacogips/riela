@@ -272,13 +272,13 @@ public struct RielaConfigGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 
   public func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    let roots: [ParsedNoteGraphQLRootField]
+    let roots: [ParsedGraphQLRootField]
     do {
       if let parsed = request.parsedRootFields {
         roots = parsed
       } else {
-        guard let selected = try selectNoteGraphQLOperation(
-          parseNoteGraphQLOperations(
+        guard let selected = try selectGraphQLOperation(
+          parseGraphQLOperations(
             in: request.query,
             operationName: request.operationName,
             variables: request.variables,
@@ -331,7 +331,7 @@ public struct RielaConfigGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 
   private func execute(
-    root: ParsedNoteGraphQLRootField,
+    root: ParsedGraphQLRootField,
     provider: any RielaConfigurationGraphQLProviding
   ) async throws -> JSONValue {
     switch root.fieldName {
@@ -385,7 +385,7 @@ public struct RielaConfigGraphQLDocumentExecutor: GraphQLDocumentExecuting {
 extension RielaConfigGraphQLDocumentExecutor: GraphQLDocumentDomainPreflighting {
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse? {
     guard request.isLocallyTrusted, provider != nil else {
       return configurationGraphQLError(

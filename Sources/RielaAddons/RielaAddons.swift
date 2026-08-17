@@ -65,6 +65,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "kaiba/note-attachments", version: "1"),
     .init(name: "kaiba/note-memos", version: "1"),
     .init(name: "kaiba/note-graphql-document", version: "1"),
+    .init(name: "kaiba/note-graphql-remote", version: "1"),
     .init(name: "kaiba/note-comment-add", version: "1"),
     .init(name: "kaiba/notebook-ingest-pages", version: "1"),
     .init(name: "kaiba/document-import", version: "1"),

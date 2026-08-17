@@ -1,7 +1,11 @@
 import Foundation
 import RielaCore
 
-func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
+// Template rendering and JSON coercion every add-on family needs. It lives in
+// its own target so add-on targets (RielaKaibaAddons and any future one) can
+// reuse it without importing RielaCLI.
+
+public func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   var variables = input.variables
   for (key, value) in input.resolvedInputPayload {
     variables[key] = value
@@ -28,77 +32,12 @@ func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   return variables
 }
 
-func environmentValue(
-  _ key: String,
-  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
-) -> String? {
-  guard let value = environment[key], !value.isEmpty else { return nil }
-  return value
-}
-
-func resolveAddonEnvironment(
-  _ env: JSONObject?,
-  runtimeEnvironment: [String: String]
-) throws -> [String: String] {
-  guard let env else { return [:] }
-  var resolved: [String: String] = [:]
-  for (targetName, bindingValue) in env {
-    guard case let .object(binding) = bindingValue else {
-      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName) must be an object")
-    }
-    guard let sourceName = nonEmptyString(binding["fromEnv"]) else {
-      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName).fromEnv is required")
-    }
-    let required = boolValue(binding["required"]) ?? true
-    guard let value = runtimeEnvironment[sourceName], !value.isEmpty else {
-      if required {
-        throw AdapterExecutionError(
-          .policyBlocked,
-          "required environment variable '\(sourceName)' is unavailable for addon.env.\(targetName)"
-        )
-      }
-      continue
-    }
-    resolved[targetName] = value
-  }
-  return resolved
-}
-
-func resolveAddonEnvironmentOverlay(
-  _ env: JSONObject?,
-  runtimeEnvironment: [String: String]
-) throws -> [String: String] {
-  var resolved = runtimeEnvironment
-  guard let env else { return resolved }
-  for (targetName, bindingValue) in env {
-    guard case let .object(binding) = bindingValue else {
-      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName) must be an object")
-    }
-    guard let sourceName = nonEmptyString(binding["fromEnv"]) else {
-      throw AdapterExecutionError(.policyBlocked, "addon.env.\(targetName).fromEnv is required")
-    }
-    let required = boolValue(binding["required"]) ?? true
-    guard let value = runtimeEnvironment[sourceName], !value.isEmpty else {
-      if required {
-        throw AdapterExecutionError(
-          .policyBlocked,
-          "required environment variable '\(sourceName)' is unavailable for addon.env.\(targetName)"
-        )
-      }
-      resolved.removeValue(forKey: targetName)
-      continue
-    }
-    resolved[targetName] = value
-  }
-  return resolved
-}
-
-func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObject {
+public func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObject {
   guard let inputs else { return [:] }
   return inputs.mapValues { renderJSONTemplates($0, variables: variables) }
 }
 
-func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue {
+public func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue {
   switch value {
   case let .string(template):
     if let exactValue = exactTemplateValue(template, variables: variables) { return exactValue }
@@ -136,28 +75,28 @@ private func lookupTemplatePath(_ path: String, in variables: JSONObject) -> JSO
   return current
 }
 
-func nonEmptyString(_ value: JSONValue?) -> String? {
+public func nonEmptyString(_ value: JSONValue?) -> String? {
   guard case let .string(text) = value, !text.isEmpty else { return nil }
   return text
 }
 
-func boolValue(_ value: JSONValue?) -> Bool? {
+public func boolValue(_ value: JSONValue?) -> Bool? {
   guard case let .bool(value) = value else { return nil }
   return value
 }
 
-func intValue(_ value: JSONValue?) -> Int? {
+public func intValue(_ value: JSONValue?) -> Int? {
   guard let int64 = value?.asInt64 else { return nil }
   return Int(exactly: int64)
 }
 
-func objectValue(_ value: JSONValue?) -> JSONObject? {
+public func objectValue(_ value: JSONValue?) -> JSONObject? {
   guard case let .object(object) = value else { return nil }
   return object
 }
 
 extension JSONValue {
-  func compactJSONStringOrEmpty() -> String {
+  public func compactJSONStringOrEmpty() -> String {
     (try? compactJSONString()) ?? ""
   }
 }

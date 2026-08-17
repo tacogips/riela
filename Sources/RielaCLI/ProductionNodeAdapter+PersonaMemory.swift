@@ -1,5 +1,6 @@
 import Crypto
 import Foundation
+import RielaAddonSupport
 import RielaCore
 import RielaMemory
 

@@ -393,12 +393,12 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
   }
 
   public func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    let roots: [ParsedNoteGraphQLRootField]
+    let roots: [ParsedGraphQLRootField]
     do {
       if let parsed = request.parsedRootFields {
         roots = parsed
       } else {
-        let operations = try parseNoteGraphQLOperations(
+        let operations = try parseGraphQLOperations(
           in: request.query,
           operationName: request.operationName,
           variables: request.variables,
@@ -412,7 +412,7 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
             try Self.validateDocumentRootFields(registryRoots)
           }
         }
-        guard let selected = try selectNoteGraphQLOperation(
+        guard let selected = try selectGraphQLOperation(
           operations,
           operationName: request.operationName
         ) else { return .notHandled }
@@ -507,7 +507,7 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
 
   func preflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse? {
     switch await authorizeForPreflight(request, rootFields: rootFields) {
     case .authorized:
@@ -519,7 +519,7 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
 
   func authorizeForPreflight(
     _ request: GraphQLDocumentRequest,
-    rootFields: [ParsedNoteGraphQLRootField]
+    rootFields: [ParsedGraphQLRootField]
   ) async -> WorkflowRegistryPreflightOutcome {
     guard !rootFields.isEmpty,
           rootFields.allSatisfy({ Self.queryFields.contains($0.fieldName) || Self.mutationFields.contains($0.fieldName) }) else {
@@ -580,7 +580,7 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
   }
 
   private static func requiredCapabilities(
-    for rootFields: [ParsedNoteGraphQLRootField]
+    for rootFields: [ParsedGraphQLRootField]
   ) throws -> Set<WorkflowRegistryCapability> {
     var required: Set<WorkflowRegistryCapability> = []
     for root in rootFields {
@@ -608,14 +608,14 @@ public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting 
   }
 
   static func validateDocumentRootFields(
-    _ rootFields: [ParsedNoteGraphQLRootField]
+    _ rootFields: [ParsedGraphQLRootField]
   ) throws {
     try validateWorkflowRegistryRootFields(rootFields)
     _ = try requiredCapabilities(for: rootFields)
   }
 
   private func execute(
-    root: ParsedNoteGraphQLRootField,
+    root: ParsedGraphQLRootField,
     request: GraphQLDocumentRequest,
     provider: any WorkflowRegistryGraphQLProviding,
     managedResolver: (any WorkflowRegistryManagedReferenceResolver)?
@@ -757,17 +757,17 @@ public struct CompositeGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 
   public func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    let operations: [ParsedNoteGraphQLOperation]
-    let selectedOperation: ParsedNoteGraphQLOperation
-    let roots: [ParsedNoteGraphQLRootField]
+    let operations: [ParsedGraphQLOperation]
+    let selectedOperation: ParsedGraphQLOperation
+    let roots: [ParsedGraphQLRootField]
     do {
-      operations = try parseNoteGraphQLOperations(
+      operations = try parseGraphQLOperations(
         in: request.query,
         operationName: request.operationName,
         variables: request.variables,
         parseArguments: true
       )
-      guard let selected = try selectNoteGraphQLOperation(
+      guard let selected = try selectGraphQLOperation(
         operations,
         operationName: request.operationName
       ), !selected.rootFields.isEmpty else {
@@ -858,7 +858,7 @@ public struct CompositeGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   }
 
   private func preflightUnselectedOperations(
-    _ operations: [ParsedNoteGraphQLOperation],
+    _ operations: [ParsedGraphQLOperation],
     request: GraphQLDocumentRequest
   ) async -> GraphQLDocumentExecutionResponse? {
     for operation in operations {
@@ -927,7 +927,7 @@ func optionalRegistryInput<T: Decodable>(_ key: String, arguments: JSONObject) t
 }
 
 private func registryFailureValue(
-  for root: ParsedNoteGraphQLRootField,
+  for root: ParsedGraphQLRootField,
   error: Error
 ) -> JSONValue {
   let registryError = (error as? WorkflowRegistryError) ?? WorkflowRegistryError(
@@ -945,7 +945,7 @@ private func registryFailureValue(
   return value ?? .null
 }
 
-func projectGraphQLValue(_ value: JSONValue, selections: [ParsedNoteGraphQLSelectionField]) -> JSONValue {
+func projectGraphQLValue(_ value: JSONValue, selections: [ParsedGraphQLSelectionField]) -> JSONValue {
   guard !selections.isEmpty else { return value }
   switch value {
   case let .array(values):

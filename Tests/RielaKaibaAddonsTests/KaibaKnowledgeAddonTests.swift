@@ -1,8 +1,9 @@
 import AppCore
 import Foundation
+import RielaAddonSupport
 import RielaCore
 import XCTest
-@testable import RielaCLI
+@testable import RielaKaibaAddons
 
 final class KaibaKnowledgeAddonTests: XCTestCase {
   func testTagSearchChainAttachmentsAndMemosExposeKnowledgeContext() async throws {
@@ -150,7 +151,7 @@ final class KaibaKnowledgeAddonTests: XCTestCase {
   ) async throws -> AdapterExecutionOutput {
     var config = extraConfig
     config["noteRoot"] = .string(root.path)
-    return try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+    return try await KaibaAddonCatalog.execute(
       WorkflowAddonExecutionInput(
         workflowId: "kaiba-knowledge-test",
         stepId: "knowledge",
@@ -158,7 +159,7 @@ final class KaibaKnowledgeAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(name: name, version: "1", config: config),
         resolvedInputPayload: inputs
       ),
-      context: AdapterExecutionContext()
+      environment: [:]
     )
   }
 

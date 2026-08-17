@@ -1,15 +1,17 @@
 import AppCore
 import Crypto
 import Foundation
+import RielaAddonSupport
 import RielaCore
 
 /// Bridge add-ons between riela's short-term memory (SQLite records under the
 /// memory root) and kaiba's long-term memory (the canonical notebook plus its
 /// note graph). Short-term record ids are not kaiba notes, so they are carried
 /// as metadata rather than as note links.
-extension BuiltinWorkflowAddonResolver {
-  func executeKaibaLongTermMemoryAddon(
+extension KaibaAddonCatalog {
+  static func executeLongTermMemoryAddon(
     _ input: WorkflowAddonExecutionInput,
+    environment: [String: String],
     operation: BuiltinKaibaLongTermMemoryAddon
   ) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {

@@ -19,7 +19,6 @@ fi
 [tools]
 swift = "6.3.3"
 swiftlint = "latest"
-gitleaks = "latest"
 bun = "latest"
 biome = "latest"
 node = "22"
@@ -27,7 +26,6 @@ github-cli = "latest"
 podman = "latest"
 uv = "latest"
 "pipx:podman-compose" = "latest"
-pre-commit = "latest"
 
 [tasks."default"]
 description = "Show available tasks"

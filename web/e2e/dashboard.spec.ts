@@ -311,6 +311,9 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}/executions/${opsSessionId}`) {
       return json(opsRunDetail)
     }
+    if (url.pathname === `/api/v1/executions/${opsSessionId}`) {
+      return json(opsRunDetail)
+    }
     if (url.pathname === '/api/v1/workflows/sources') {
       if (options.workflowMode === 'malformed') return route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
       return json({ profile: 'e2e', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [] })
@@ -341,7 +344,9 @@ async function captureEvidence(page: Page, name: string, target?: Locator) {
 test('suppresses empty ids, resolves encoded ids, and saves instance configuration', async ({ page }) => {
   const fixture = await installAPI(page)
   await page.goto('/')
+  await expect.poll(() => page.url()).toContain('#/instances')
   await page.getByRole('button', { name: 'Run logs' }).click()
+  await expect.poll(() => page.url()).toContain('#/logs')
   await expect(page.locator('.empty-state').getByText('Choose an instance', { exact: true })).toBeVisible()
   expect(fixture.requests.some((request) => request.includes('/instances//executions'))).toBe(false)
   await page.getByLabel('Instance').selectOption(compositeId)
@@ -445,9 +450,23 @@ test('command deck focuses workflows and opens run telemetry', async ({ page }) 
   await expect(page.getByRole('dialog', { name: 'Step review detail' })).toContainText('Reviewer found blocking findings')
   await captureEvidence(page, 'command-deck-run')
 
+  // The run view is deep-linkable: the hash names the run and survives reload.
+  await expect.poll(() => page.url()).toContain(`#/ops/runs/${encodeURIComponent(compositeId)}/${opsSessionId}`)
+  await page.reload()
+  await expect(page.getByText('traveled route', { exact: true })).toBeVisible()
+
   // Return to the deck.
   await page.getByRole('button', { name: '← Command deck' }).click()
   await expect(page.getByRole('button', { name: 'Focus workflow Review loop' })).toBeVisible()
+  fixture.assertClean()
+})
+
+test('published run links deep-link straight into run detail', async ({ page }) => {
+  const fixture = await installAPI(page)
+  // RIELA_WEB_RUN_LINK_TEMPLATE contract: #/runs/{sessionId}.
+  await page.goto(`/#/runs/${opsSessionId}`)
+  await expect(page.getByRole('heading', { name: opsSessionId })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Step executions' })).toBeVisible()
   fixture.assertClean()
 })
 

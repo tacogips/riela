@@ -444,6 +444,63 @@ swift test --filter RielaCoreTests
 git diff --cached --check
 ```
 
+## Built-in Workflow Key-Value Store Add-ons
+
+### Purpose
+
+`riela/kv-set`, `riela/kv-get`, `riela/kv-delete`, and `riela/kv-list` (version
+`1`) give workflows a durable-object-style persistent key-value store. JSON
+values are upserted by `(scope, key)` into a per-store-id SQLite database that
+survives across workflow runs, so a workflow can persist a fetch cursor (page
+token, newest post id, last-run timestamp) at the end of one execution and read
+it back at the start of the next.
+
+### Storage and scoping
+
+- Databases live at `<kvRoot>/<storeId>.sqlite`. `kvRoot` resolves from addon
+  `config.kvRoot`, rendered variables `kvRoot`, workflow input `kvRoot`, then
+  the default `.riela/kv` under the working directory. `storeId` defaults to
+  `workflow-kv` and follows the memory-id grammar
+  (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).
+- `scope` defaults to the executing workflow id, giving each workflow its own
+  namespace inside a shared store file. An explicit `config.scope` opts into a
+  shared namespace across workflows.
+- Values are stored as SQLite JSONB with `json_valid(..., 8)` checks; the
+  upsert preserves `createdAt` and advances `updatedAt`.
+
+### Config and inputs
+
+- `key` (set/get/delete): required, from `config.key` (template-rendered) or
+  rendered inputs `key`.
+- `kv-set` value precedence: `config.valueTemplate` (template-rendered JSON,
+  exact `{{...}}` references preserve JSON types), then `config.value`
+  (literal), then rendered inputs `value`. Missing value fails with
+  `policyBlocked`.
+- `kv-get` accepts an optional `default` returned as `value` when the key is
+  absent (`found: false`).
+- `kv-list` accepts `keyPrefix`, `limit` (default 100), and `offset`.
+
+### Output payloads
+
+All operations return `status: "ok"`, `addon`, `operation`, `stepId`,
+`storeId`, `scope`, and `databasePath`. `kv-set` adds `saved`, `key`, `value`,
+and the full `entry`; `kv-get` adds `found`, `key`, `value`, and `entry` when
+found; `kv-delete` adds `deleted`; `kv-list` adds `entries`, `keys`, `count`,
+`limit`, and `offset`. Downstream nodes reference results as
+`{{inbox.latest.output.payload.value...}}`.
+
+The digest add-ons integrate with the same store: `riela/x-digest` and
+`riela/gmail-digest` accept `stateBackend: "kv"` (addon config or workflow
+input) on their `read-state`/`persist-state` operations, storing the fetch
+cursor as a key-value entry (default store `x-digest`/`gmail-digest`, key
+`digest-state`, scope = workflow id; `kvRoot`/`stateStoreId`/`stateKey`/
+`stateScope` overrides) instead of the legacy ad-hoc JSON state file, which
+remains the default backend.
+
+The reference bundle is `examples/x-incremental-posts-kv`; unit coverage lives
+in `Tests/RielaCLITests/KeyValueStoreAddonTests.swift` and
+`Packages/RielaMemory/Tests/RielaMemoryTests/RielaKeyValueStoreTests.swift`.
+
 ## Built-in `riela/chat-reply-worker`
 
 ### Purpose

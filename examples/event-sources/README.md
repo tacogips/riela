@@ -426,8 +426,8 @@ riela events emit telegram-time-signal-cron \
 The `x-follower-ai-business-hourly-cron` source demonstrates a scheduled
 Telegram digest backed by Dockerized x-gateway. It fires hourly with
 `0 0 * * * *`, dispatches `x-follower-ai-business-digest`, and uses the
-built-in `riela/x-digest` add-on with
-`.riela-data/x-follower-ai-business-digest/state.json` to avoid duplicate post
+built-in `riela/x-digest` add-on with `stateBackend: "kv"` (workflow key-value
+store under `.riela/kv/x-digest.sqlite`) to avoid duplicate post
 processing. The digest is topic-centric: related reposts, quote posts, and
 multiple posts about the same event/article are merged into one item with
 aggregate views, posting-user count, and up to three linked posting users.
@@ -452,7 +452,8 @@ riela events emit x-follower-ai-business-hourly-cron \
 The `gmail-latest-mail-hourly-cron` source demonstrates a scheduled Telegram
 digest backed by Dockerized mail-gateway-reader. It fires every 30 minutes with
 `0 */30 * * * *`, dispatches `gmail-latest-mail-digest-telegram`, and uses
-`.riela-data/gmail-latest-mail-digest-telegram/state.json` to avoid duplicate
+`stateBackend: "kv"` (workflow key-value store under
+`.riela/kv/gmail-digest.sqlite`) to avoid duplicate
 message processing. The workflow fetches metadata for the latest 10 Gmail
 messages through mail-gateway's stable `threads(input:)` GraphQL field. Live
 Gmail reads can return `textBody`/`htmlBody`; the built-in `riela/gmail-digest`

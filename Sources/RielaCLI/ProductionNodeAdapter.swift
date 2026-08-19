@@ -475,6 +475,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)
     }
+    if let keyValueAddon = BuiltinKeyValueAddon(rawValue: input.addon.name) {
+      return try executeKeyValueAddon(input, operation: keyValueAddon)
+    }
     if Self.deferredContainerAddons.contains(input.addon.name) {
       return AdapterExecutionOutput(
         provider: "riela-builtin-addon",

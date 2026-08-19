@@ -87,8 +87,18 @@ private struct XDigestEngine {
 
   private func readState(_ input: WorkflowAddonExecutionInput) throws -> XDigestResult {
     let workflowInput = workflowInput(input)
-    let stateFile = try stateFile(from: input)
-    let previousState = readStateFile(stateFile)
+    let storage = try stateStorage(from: input, workflowInput: workflowInput)
+    let previousState: JSONObject
+    let stateFields: JSONObject
+    switch storage {
+    case .file:
+      let stateFile = try stateFile(from: input)
+      previousState = readStateFile(stateFile)
+      stateFields = ["stateFile": .string(stateFile), "stateBackend": .string("file")]
+    case let .keyValue(kvStore):
+      previousState = try kvStore.readState()
+      stateFields = kvStore.payloadFields()
+    }
     let accountUsername = nonEmptyString(workflowInput["accountUsername"])
       ?? nonEmptyEnvironment("RIELA_X_DIGEST_ACCOUNT_USERNAME")
       ?? nonEmptyEnvironment("X_GW_ACCOUNT_USERNAME")
@@ -98,20 +108,20 @@ private struct XDigestEngine {
     let now = now(from: input)
     let windowStart = Calendar(identifier: .gregorian).date(byAdding: .minute, value: -lookbackMinutes, to: now) ?? now
     let sinceId = nonEmptyString(previousState["lastPostId"]) ?? ""
-    return XDigestResult(
-      when: ["always": true],
-      payload: [
-        "stateFile": .string(stateFile),
-        "accountUsername": .string(accountUsername),
-        "accountUsernameBare": .string(accountUsername.trimmingPrefix("@")),
-        "lookbackMinutes": .number(Double(lookbackMinutes)),
-        "maxPosts": .number(Double(maxPosts)),
-        "sinceId": .string(sinceId),
-        "windowStartIso": .string(isoString(windowStart)),
-        "requestedAt": .string(isoString(now)),
-        "previousState": .object(previousState)
-      ]
-    )
+    var payload: JSONObject = [
+      "accountUsername": .string(accountUsername),
+      "accountUsernameBare": .string(accountUsername.trimmingPrefix("@")),
+      "lookbackMinutes": .number(Double(lookbackMinutes)),
+      "maxPosts": .number(Double(maxPosts)),
+      "sinceId": .string(sinceId),
+      "windowStartIso": .string(isoString(windowStart)),
+      "requestedAt": .string(isoString(now)),
+      "previousState": .object(previousState)
+    ]
+    for (key, value) in stateFields {
+      payload[key] = value
+    }
+    return XDigestResult(when: ["always": true], payload: payload)
   }
 
   private func normalizeFetchedPosts(_ input: WorkflowAddonExecutionInput) -> XDigestResult {
@@ -280,32 +290,60 @@ private struct XDigestEngine {
 
   private func persistState(_ input: WorkflowAddonExecutionInput) throws -> XDigestResult {
     let payload = upstreamPayloads(input.resolvedInputPayload).last ?? [:]
-    let stateFile = try stateFile(from: input)
+    let storage = try stateStorage(from: input, workflowInput: workflowInput(input))
     let maxFetchedPostId = nonEmptyString(payload["maxFetchedPostId"]) ?? ""
     let shouldSend = bool(payload["shouldSendTelegram"]) == true
     let replyText = string(payload["replyText"]) ?? ""
-    if !maxFetchedPostId.isEmpty {
-      let url = URL(fileURLWithPath: stateFile, relativeTo: currentDirectory).standardizedFileURL
-      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      let retainedTopics = array(payload["topicDigests"]) ?? []
-      let state: JSONObject = [
-        "lastPostId": .string(maxFetchedPostId),
-        "updatedAt": .string(isoString(now(from: input))),
-        "retainedTopicCount": .number(Double(retainedTopics.count))
-      ]
-      let data = try JSONEncoder.prettySorted.encode(JSONValue.object(state))
-      try data.write(to: url, options: [.atomic])
+    let retainedTopics = array(payload["topicDigests"]) ?? []
+    let state: JSONObject = [
+      "lastPostId": .string(maxFetchedPostId),
+      "updatedAt": .string(isoString(now(from: input))),
+      "retainedTopicCount": .number(Double(retainedTopics.count))
+    ]
+    let stateFields: JSONObject
+    switch storage {
+    case .file:
+      let stateFile = try stateFile(from: input)
+      if !maxFetchedPostId.isEmpty {
+        let url = URL(fileURLWithPath: stateFile, relativeTo: currentDirectory).standardizedFileURL
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONEncoder.prettySorted.encode(JSONValue.object(state))
+        try data.write(to: url, options: [.atomic])
+      }
+      stateFields = ["stateFile": .string(stateFile), "stateBackend": .string("file")]
+    case let .keyValue(kvStore):
+      if !maxFetchedPostId.isEmpty {
+        try kvStore.writeState(state)
+      }
+      stateFields = kvStore.payloadFields()
     }
     let shouldSendTelegram = shouldSend && !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    var resultPayload: JSONObject = [
+      "shouldSendTelegram": .bool(shouldSend),
+      "replyText": .string(replyText),
+      "maxFetchedPostId": .string(maxFetchedPostId),
+      "persisted": .bool(!maxFetchedPostId.isEmpty)
+    ]
+    for (key, value) in stateFields {
+      resultPayload[key] = value
+    }
     return XDigestResult(
       when: ["should_send_telegram": shouldSendTelegram],
-      payload: [
-        "shouldSendTelegram": .bool(shouldSend),
-        "replyText": .string(replyText),
-        "maxFetchedPostId": .string(maxFetchedPostId),
-        "stateFile": .string(stateFile),
-        "persisted": .bool(!maxFetchedPostId.isEmpty)
-      ]
+      payload: resultPayload
+    )
+  }
+
+  private func stateStorage(
+    from input: WorkflowAddonExecutionInput,
+    workflowInput: JSONObject
+  ) throws -> DigestStateStorage {
+    try resolveDigestStateStorage(
+      addonConfig: input.addon.config ?? [:],
+      workflowInput: workflowInput,
+      workflowId: input.workflowId,
+      currentDirectory: currentDirectory,
+      defaultStoreId: "x-digest",
+      addonName: "riela/x-digest"
     )
   }
 

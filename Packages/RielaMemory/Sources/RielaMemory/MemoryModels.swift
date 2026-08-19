@@ -20,6 +20,9 @@ public enum RielaMemoryError: Error, Equatable, Sendable {
   case sqliteFailed(String)
   case jsonBUnavailable
   case invalidJSON(String)
+  case invalidStoreId(String)
+  case invalidStoreScope(String)
+  case invalidStoreKey(String)
 }
 
 public enum MemoryValueSortOrder: String, Codable, Equatable, Sendable {

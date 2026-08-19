@@ -1,9 +1,91 @@
 import Foundation
 import RielaCore
+import RielaMemory
 import XCTest
 @testable import RielaCLI
 
 final class GmailDigestAddonTests: XCTestCase {
+  func testGmailDigestAddonReadsAndPersistsCursorStateInKeyValueStore() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-gmail-digest-kv-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      try? FileManager.default.removeItem(at: root)
+    }
+    let kvRoot = root.appendingPathComponent("kv", isDirectory: true)
+    let messageRoot = root.appendingPathComponent("messages", isDirectory: true).path
+    let attachmentRoot = root.appendingPathComponent("attachments", isDirectory: true).path
+    let store = RielaKeyValueStore(rootDirectory: kvRoot.path)
+    try store.set(
+      storeId: "gmail-digest",
+      scope: "gmail-latest-mail-digest-telegram",
+      key: "digest-state",
+      value: .object([
+        "lastFetchedMessageId": .string("m1"),
+        "seenMessageIds": .array([.string("m1")])
+      ])
+    )
+    let kvWorkflowInput: JSONValue = .object([
+      "stateBackend": .string("kv"),
+      "kvRoot": .string(kvRoot.path),
+      "messageFileRoot": .string(messageRoot),
+      "attachmentDownloadRoot": .string(attachmentRoot)
+    ])
+
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let readOutput = try await resolver.execute(
+      gmailDigestInput(
+        operation: "read-state",
+        variables: [
+          "nowIso": .string("2026-06-23T04:00:00Z"),
+          "workflowInput": kvWorkflowInput
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(readOutput.payload["knownMessageIds"], .array([.string("m1")]))
+    XCTAssertEqual(readOutput.payload["lastFetchedMessageId"], .string("m1"))
+    XCTAssertEqual(readOutput.payload["stateBackend"], .string("kv"))
+    XCTAssertEqual(readOutput.payload["stateFile"], .string(""))
+    XCTAssertEqual(readOutput.payload["stateStoreId"], .string("gmail-digest"))
+
+    let persistOutput = try await resolver.execute(
+      gmailDigestInput(
+        operation: "persist-state",
+        resolvedInputPayload: upstreamPayloads([
+          [
+            "knownMessageIds": .array([.string("m1")]),
+            "maxMessages": .number(10)
+          ],
+          [
+            "shouldSendTelegram": .bool(false),
+            "replyText": .string(""),
+            "fetchedMessageIds": .array([.string("m2")])
+          ]
+        ]),
+        variables: [
+          "nowIso": .string("2026-06-23T04:05:00Z"),
+          "workflowInput": kvWorkflowInput
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(persistOutput.payload["persisted"], .bool(true))
+    XCTAssertEqual(persistOutput.payload["stateBackend"], .string("kv"))
+    let entry = try XCTUnwrap(store.get(
+      storeId: "gmail-digest",
+      scope: "gmail-latest-mail-digest-telegram",
+      key: "digest-state"
+    ))
+    guard case let .object(state) = entry.value else {
+      return XCTFail("persisted kv state was not an object")
+    }
+    XCTAssertEqual(state["lastFetchedMessageId"], .string("m2"))
+    XCTAssertEqual(state["seenMessageIds"], .array([.string("m2"), .string("m1")]))
+    XCTAssertEqual(state["updatedAt"], .string("2026-06-23T04:05:00Z"))
+  }
+
   func testGmailDigestAddonNormalizesValidatesAndPersistsCursorState() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-gmail-digest-addon-\(UUID().uuidString)", isDirectory: true)

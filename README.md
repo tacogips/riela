@@ -376,6 +376,31 @@ notes are linked. Appends are idempotent per step execution, or per an explicit
 `examples/memory-consolidation`, which also shows the cron event source that
 drives it on a schedule.
 
+## Workflow Key-Value Store Add-Ons
+
+`riela/kv-set`, `riela/kv-get`, `riela/kv-delete`, and `riela/kv-list` give
+workflows a durable-object-style persistent key-value store: JSON values
+addressed by key, upserted into a local SQLite database that survives across
+workflow runs. Entries are scoped to the executing workflow id by default, so
+each workflow gets its own namespace inside a shared store file; an explicit
+`config.scope` opts into sharing a namespace across workflows. The canonical
+use is an incremental fetch cursor: persist the newest fetched post id or page
+token with `kv-set` at the end of a run, read it back with `kv-get` (with an
+optional `default` for the first run) at the start of the next run, and clear
+it with `kv-delete` when resetting.
+
+Values come from `config.value` (literal JSON), `config.valueTemplate`
+(template-rendered JSON, preserving types for exact `{{...}}` references), or
+rendered `addon.inputs.value`. Databases live under `.riela/kv/<storeId>.sqlite`
+in the working directory (default `storeId` is `workflow-kv`; override the root
+with addon config `kvRoot` or workflow input `kvRoot`). `kv-get` reports
+`found` plus the stored `value`, `kv-delete` reports `deleted`, and `kv-list`
+enumerates scoped keys with an optional `keyPrefix` filter. The reference
+bundle is `examples/x-incremental-posts-kv`. The digest add-ons reuse the same
+store: `riela/x-digest` and `riela/gmail-digest` accept `stateBackend: "kv"`
+on `read-state`/`persist-state` to keep their fetch cursor in the key-value
+store instead of an ad-hoc JSON state file, as the shipped digest examples do.
+
 ## Document Conversion Add-On
 
 `riela/file-markdown-convert` converts local documents (pdf, doc, docx, ppt,

@@ -103,15 +103,23 @@ private struct GmailDigestEngine {
   }
 
   private func readState(_ input: WorkflowAddonExecutionInput) throws -> GmailDigestResult {
-    let stateFile = try stateFile(from: input)
+    let storage = try stateStorage(from: input)
+    let state: JSONObject
+    let stateFields: JSONObject
+    switch storage {
+    case .file:
+      let stateFile = try stateFile(from: input)
+      state = readStateFile(stateFile)
+      stateFields = ["stateFile": .string(stateFile), "stateBackend": .string("file")]
+    case let .keyValue(kvStore):
+      state = try kvStore.readState()
+      stateFields = kvStore.payloadFields()
+    }
     let messageFileRoot = try messageFileRoot(from: input)
     let attachmentDownloadRoot = try attachmentDownloadRoot(from: input)
-    let state = readStateFile(stateFile)
     let knownIds = (gmailArray(state["seenMessageIds"]) ?? []).compactMap(gmailNonEmptyString)
-    return GmailDigestResult(
-      when: ["always": true],
-      payload: [
-        "stateFile": .string(stateFile),
+    var payload: JSONObject = stateFields
+    payload.merge([
         "messageFileRoot": .string(messageFileRoot),
         "attachmentDownloadRoot": .string(attachmentDownloadRoot),
         "pdfOcrModel": .string(pdfOCRModel(from: input)),
@@ -122,8 +130,8 @@ private struct GmailDigestEngine {
         "lastFetchedMessageId": .string(gmailNonEmptyString(state["lastFetchedMessageId"]) ?? ""),
         "requestedAt": .string(gmailISOString(now(from: input))),
         "previousState": .object(state)
-      ]
-    )
+    ]) { _, new in new }
+    return GmailDigestResult(when: ["always": true], payload: payload)
   }
 
   private func normalizeNewMail(_ input: WorkflowAddonExecutionInput) throws -> GmailDigestResult {
@@ -269,34 +277,67 @@ private struct GmailDigestEngine {
   private func persistState(_ input: WorkflowAddonExecutionInput) throws -> GmailDigestResult {
     let payloads = gmailUpstreamPayloads(input.resolvedInputPayload)
     let payload = payloads.last ?? [:]
-    let stateFile = try stateFile(from: input, fallback: gmailNonEmptyString(payload["stateFile"]))
+    let storage = try stateStorage(from: input)
     let fetchedIds = (gmailArray(payload["fetchedMessageIds"]) ?? []).compactMap(gmailNonEmptyString)
     let retainedIds = orderedUnique(fetchedIds + priorKnownIds(payloads)).prefix(Self.maxRetainedIds)
-    if !fetchedIds.isEmpty {
-      let url = URL(fileURLWithPath: stateFile, relativeTo: currentDirectory).standardizedFileURL
-      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      let state: JSONObject = [
-        "lastFetchedMessageId": .string(fetchedIds[0]),
-        "seenMessageIds": .array(retainedIds.map(JSONValue.string)),
-        "updatedAt": .string(gmailISOString(now(from: input))),
-        "retainedMessageIdCount": .number(Double(retainedIds.count)),
-        "latestFetchedMessageIdCount": .number(Double(fetchedIds.count))
-      ]
-      try JSONEncoder.gmailPrettySorted.encode(JSONValue.object(state)).write(to: url, options: [.atomic])
+    let stateFields: JSONObject
+    switch storage {
+    case .file:
+      let stateFile = try stateFile(from: input, fallback: gmailNonEmptyString(payload["stateFile"]))
+      if !fetchedIds.isEmpty {
+        let url = URL(fileURLWithPath: stateFile, relativeTo: currentDirectory).standardizedFileURL
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let state = persistedState(fetchedIds: fetchedIds, retainedIds: Array(retainedIds), input: input)
+        try JSONEncoder.gmailPrettySorted.encode(JSONValue.object(state)).write(to: url, options: [.atomic])
+      }
+      stateFields = ["stateFile": .string(stateFile), "stateBackend": .string("file")]
+    case let .keyValue(kvStore):
+      if !fetchedIds.isEmpty {
+        try kvStore.writeState(persistedState(fetchedIds: fetchedIds, retainedIds: Array(retainedIds), input: input))
+      }
+      stateFields = kvStore.payloadFields()
     }
     let replyText = gmailString(payload["replyText"]) ?? ""
     let shouldSend = gmailBool(payload["shouldSendTelegram"]) == true && !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    var resultPayload: JSONObject = [
+      "shouldSendTelegram": .bool(shouldSend),
+      "replyText": .string(replyText),
+      "persisted": .bool(!fetchedIds.isEmpty),
+      "fetchedMessageIds": .array(fetchedIds.map(JSONValue.string)),
+      "lastFetchedMessageId": .string(fetchedIds.first ?? gmailNonEmptyString(payload["lastFetchedMessageId"]) ?? ""),
+      "messageDigests": payload["messageDigests"] ?? .array([])
+    ]
+    for (key, value) in stateFields {
+      resultPayload[key] = value
+    }
     return GmailDigestResult(
       when: ["should_send_telegram": shouldSend],
-      payload: [
-        "shouldSendTelegram": .bool(shouldSend),
-        "replyText": .string(replyText),
-        "stateFile": .string(stateFile),
-        "persisted": .bool(!fetchedIds.isEmpty),
-        "fetchedMessageIds": .array(fetchedIds.map(JSONValue.string)),
-        "lastFetchedMessageId": .string(fetchedIds.first ?? gmailNonEmptyString(payload["lastFetchedMessageId"]) ?? ""),
-        "messageDigests": payload["messageDigests"] ?? .array([])
-      ]
+      payload: resultPayload
+    )
+  }
+
+  private func persistedState(
+    fetchedIds: [String],
+    retainedIds: [String],
+    input: WorkflowAddonExecutionInput
+  ) -> JSONObject {
+    [
+      "lastFetchedMessageId": .string(fetchedIds[0]),
+      "seenMessageIds": .array(retainedIds.map(JSONValue.string)),
+      "updatedAt": .string(gmailISOString(now(from: input))),
+      "retainedMessageIdCount": .number(Double(retainedIds.count)),
+      "latestFetchedMessageIdCount": .number(Double(fetchedIds.count))
+    ]
+  }
+
+  private func stateStorage(from input: WorkflowAddonExecutionInput) throws -> DigestStateStorage {
+    try resolveDigestStateStorage(
+      addonConfig: input.addon.config ?? [:],
+      workflowInput: workflowInput(input),
+      workflowId: input.workflowId,
+      currentDirectory: currentDirectory,
+      defaultStoreId: "gmail-digest",
+      addonName: "riela/gmail-digest"
     )
   }
 

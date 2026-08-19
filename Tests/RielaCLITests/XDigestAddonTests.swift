@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaMemory
 import XCTest
 @testable import RielaCLI
 
@@ -122,6 +123,91 @@ final class XDigestAddonTests: XCTestCase {
     XCTAssertEqual(state["lastPostId"], .string("102"))
     XCTAssertEqual(state["updatedAt"], .string("2026-06-23T04:05:00Z"))
     XCTAssertEqual(state["retainedTopicCount"], .number(1))
+  }
+
+  func testXDigestAddonReadsAndPersistsCursorStateInKeyValueStore() async throws {
+    let kvRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-x-digest-kv-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      try? FileManager.default.removeItem(at: kvRoot)
+    }
+    let store = RielaKeyValueStore(rootDirectory: kvRoot.path)
+    try store.set(
+      storeId: "x-digest",
+      scope: "x-follower-ai-business-digest",
+      key: "digest-state",
+      value: .object(["lastPostId": .string("100")])
+    )
+    let kvWorkflowInput: JSONValue = .object([
+      "stateBackend": .string("kv"),
+      "kvRoot": .string(kvRoot.path)
+    ])
+
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    let readOutput = try await resolver.execute(
+      xDigestInput(
+        operation: "read-state",
+        variables: [
+          "nowIso": .string("2026-06-23T04:00:00Z"),
+          "workflowInput": kvWorkflowInput
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(readOutput.payload["sinceId"], .string("100"))
+    XCTAssertEqual(readOutput.payload["stateBackend"], .string("kv"))
+    XCTAssertEqual(readOutput.payload["stateFile"], .string(""))
+    XCTAssertEqual(readOutput.payload["stateStoreId"], .string("x-digest"))
+    XCTAssertEqual(readOutput.payload["stateScope"], .string("x-follower-ai-business-digest"))
+
+    let persistOutput = try await resolver.execute(
+      xDigestInput(
+        operation: "persist-state",
+        resolvedInputPayload: upstreamPayloads([[
+          "shouldSendTelegram": .bool(true),
+          "replyText": .string("digest text"),
+          "maxFetchedPostId": .string("102"),
+          "topicDigests": .array([.object(["topic": .string("AI launch")])])
+        ]]),
+        variables: [
+          "nowIso": .string("2026-06-23T04:05:00Z"),
+          "workflowInput": kvWorkflowInput
+        ]
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(persistOutput.payload["persisted"], .bool(true))
+    XCTAssertEqual(persistOutput.payload["stateBackend"], .string("kv"))
+    let entry = try XCTUnwrap(store.get(
+      storeId: "x-digest",
+      scope: "x-follower-ai-business-digest",
+      key: "digest-state"
+    ))
+    XCTAssertEqual(entry.value, .object([
+      "lastPostId": .string("102"),
+      "updatedAt": .string("2026-06-23T04:05:00Z"),
+      "retainedTopicCount": .number(1)
+    ]))
+  }
+
+  func testXDigestAddonRejectsUnknownStateBackend() async throws {
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+        xDigestInput(
+          operation: "read-state",
+          variables: [
+            "workflowInput": .object(["stateBackend": .string("s3")])
+          ]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected unknown state backend to be rejected")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("stateBackend"))
+    }
   }
 
   func testXDigestAddonRejectsPublicStateFilePath() async throws {

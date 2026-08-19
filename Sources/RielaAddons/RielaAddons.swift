@@ -82,6 +82,13 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/file-markdown-convert", version: "1")
   ]
 
+  public static let keyValueStoreAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/kv-set", version: "1"),
+    .init(name: "riela/kv-get", version: "1"),
+    .init(name: "riela/kv-delete", version: "1"),
+    .init(name: "riela/kv-list", version: "1")
+  ]
+
   public static let wrikeGatewayAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/wrike-gateway-read", version: "1"),
     .init(name: "riela/wrike-gateway-write", version: "1"),
@@ -110,6 +117,7 @@ public enum RielaBuiltinAddonCatalog {
     + noteAddons
     + workflowAddons
     + documentAddons
+    + keyValueStoreAddons
     + wrikeGatewayAddons
     + googleServiceGatewayAddons
 

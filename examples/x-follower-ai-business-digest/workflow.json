@@ -19,7 +19,8 @@
         "name": "riela/x-digest",
         "version": "1",
         "config": {
-          "operation": "read-state"
+          "operation": "read-state",
+          "stateBackend": "kv"
         }
       }
     },
@@ -86,7 +87,8 @@
         "name": "riela/x-digest",
         "version": "1",
         "config": {
-          "operation": "persist-state"
+          "operation": "persist-state",
+          "stateBackend": "kv"
         }
       }
     },

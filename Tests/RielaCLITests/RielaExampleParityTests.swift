@@ -73,7 +73,8 @@ private func rielaExampleWorkflowNames() -> [String] {
     "workflow-call-review-target",
     "workflow-call-simple",
     "wrike-project-kanban-agent",
-    "x-follower-ai-business-digest"
+    "x-follower-ai-business-digest",
+    "x-incremental-posts-kv"
   ]
 }
 
@@ -84,7 +85,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 33
+    static let expectedMockScenarioCount = 34
     static let expectedNodeMockScenarioCount = 0
   }
 

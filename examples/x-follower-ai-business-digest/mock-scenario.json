@@ -3,7 +3,7 @@
     "accountUsername": "@yu_kawa_taco",
     "lookbackMinutes": 60,
     "maxPosts": 50,
-    "stateFile": ".riela-data/x-follower-ai-business-digest/mock-state.json",
+    "kvRoot": ".riela-data/x-follower-ai-business-digest/mock-kv",
     "replyTarget": {
       "sourceId": "telegram-gateway-personas",
       "provider": "telegram",

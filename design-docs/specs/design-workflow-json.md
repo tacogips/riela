@@ -485,6 +485,12 @@ Initial built-in add-ons:
 - `riela/chat-memory-raw-daily-summary`: worker node that appends a raw chat
   log record and creates or updates the per-day summary record in two distinct
   memory databases
+- `riela/kv-set`, `riela/kv-get`, `riela/kv-delete`, and `riela/kv-list`:
+  worker nodes for a durable-object-style persistent key-value store; JSON
+  values are upserted by `(scope, key)` into per-store-id SQLite databases
+  under the configured kv root, with the scope defaulting to the executing
+  workflow id so state persists across runs of the same workflow without
+  leaking into other workflows
 - `riela/x-digest`: worker node that summarizes X/Twitter data through the
   production X digest adapter
 - `riela/gmail-digest`: worker node that summarizes Gmail/mail-gateway data

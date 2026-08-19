@@ -1,0 +1,45 @@
+{
+  "fetch-posts": {
+    "provider": "scenario-mock",
+    "model": "x-gateway-read",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "xGateway": {
+        "data": {
+          "data": {
+            "followingTimeline": {
+              "posts": [
+                {
+                  "id": "190002",
+                  "text": "mock post about AI infrastructure",
+                  "createdAt": "2026-08-19T08:30:00Z",
+                  "author": {
+                    "username": "alice",
+                    "name": "Alice"
+                  }
+                },
+                {
+                  "id": "190001",
+                  "text": "mock post about business ops",
+                  "createdAt": "2026-08-19T08:00:00Z",
+                  "author": {
+                    "username": "bob",
+                    "name": "Bob"
+                  }
+                }
+              ],
+              "pageInfo": {
+                "resultCount": 2,
+                "newestId": "190002",
+                "oldestId": "190001",
+                "nextToken": "mock-next-token"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

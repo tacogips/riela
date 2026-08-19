@@ -7,9 +7,11 @@ import { LogsView } from './views/LogsView'
 import { RunDetailView } from './views/RunDetailView'
 import { SettingsView } from './views/SettingsView'
 import { WorkflowsView } from './views/WorkflowsView'
+import { OpsRunView } from './ops/OpsRunView'
+import { OpsWorkflowsView } from './ops/OpsWorkflowsView'
 
-type NavigationView = 'instances' | 'logs' | 'workflows' | 'settings'
-type View = NavigationView | 'run-detail'
+type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'settings'
+type View = NavigationView | 'run-detail' | 'ops-run'
 
 export interface ProfileViewTransition {
   clearSelection: boolean
@@ -24,9 +26,10 @@ export function profileViewTransition(
 ): ProfileViewTransition {
   if (mode === 'cli-serve') return { clearSelection: true, view: 'instances' }
   const profileChanged = previousProfileKey !== undefined && previousProfileKey !== nextProfileKey
+  const fallbackView = currentView === 'run-detail' ? 'logs' : currentView === 'ops-run' ? 'ops' : currentView
   return {
     clearSelection: profileChanged,
-    view: profileChanged && currentView === 'run-detail' ? 'logs' : currentView,
+    view: profileChanged ? fallbackView : currentView,
   }
 }
 
@@ -34,17 +37,23 @@ const navigation: Array<{ id: NavigationView; label: string; glyph: string }> = 
   { id: 'instances', label: 'Instances', glyph: '◇' },
   { id: 'logs', label: 'Run logs', glyph: '≋' },
   { id: 'workflows', label: 'Workflows', glyph: '⌘' },
+  { id: 'ops', label: 'Command deck', glyph: '✦' },
   { id: 'settings', label: 'Settings', glyph: '◉' },
 ]
+
+// The command deck relies on riela-app-only aggregate APIs, so it is hidden
+// alongside Settings when the host is a bare CLI serve.
+const CLI_SERVE_HIDDEN_VIEWS = new Set<NavigationView>(['settings', 'ops'])
 
 export function App() {
   const [view, setView] = createSignal<View>('instances')
   const [selectedInstanceId, setSelectedInstanceId] = createSignal('')
   const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
+  const [selectedOpsRun, setSelectedOpsRun] = createSignal<{ instanceId: string; sessionId: string; workflowId: string }>()
   const host = createPollingResource(() => 'active-host', discoverHost)
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
   const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve'
-    ? navigation.filter((item) => item.id !== 'settings')
+    ? navigation.filter((item) => !CLI_SERVE_HIDDEN_VIEWS.has(item.id))
     : navigation)
   let previousProfileKey: string | undefined
   const restoreRunHash = () => {
@@ -67,6 +76,7 @@ export function App() {
     if (transition.clearSelection) {
       setSelectedInstanceId('')
       setSelectedRun(undefined)
+      setSelectedOpsRun(undefined)
     }
     if (transition.view !== view()) setView(transition.view)
     previousProfileKey = nextProfileKey
@@ -82,7 +92,7 @@ export function App() {
         </div>
         <nav aria-label="Primary navigation">
           <For each={visibleNavigation()}>{(item) => (
-            <button classList={{ active: view() === item.id || (item.id === 'logs' && view() === 'run-detail') }} aria-current={view() === item.id || (item.id === 'logs' && view() === 'run-detail') ? 'page' : undefined} onClick={() => setView(item.id)}>
+            <button classList={{ active: view() === item.id || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
               <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>{item.label}
             </button>
           )}</For>
@@ -111,6 +121,27 @@ export function App() {
                   profileName={host.data()?.bootstrap?.profile ?? ''}
                 />
               }</Show>
+            </Match>
+            <Match when={view() === 'ops'}>
+              <Show when={profileKey()} keyed>{(_opsProfileKey) =>
+                <OpsWorkflowsView
+                  profileKey={profileKey()}
+                  profileName={host.data()?.bootstrap?.profile ?? ''}
+                  onOpenRun={(run) => {
+                    setSelectedOpsRun({ instanceId: run.instanceId, sessionId: run.sessionId, workflowId: run.workflowId })
+                    setView('ops-run')
+                  }}
+                />
+              }</Show>
+            </Match>
+            <Match when={view() === 'ops-run' && selectedOpsRun()}>
+              <OpsRunView
+                profileKey={profileKey()}
+                instanceId={selectedOpsRun()!.instanceId}
+                sessionId={selectedOpsRun()!.sessionId}
+                workflowId={selectedOpsRun()!.workflowId}
+                onBack={() => setView('ops')}
+              />
             </Match>
             <Match when={view() === 'settings'}>
               <Show when={profileKey()} keyed>{(_settingsProfileKey) =>

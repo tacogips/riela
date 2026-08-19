@@ -311,3 +311,67 @@ export interface APIErrorPayload {
   error: { code: string; message: string }
   revision: number
 }
+
+export interface OpsOverviewResponse {
+  profile: string
+  revision: number
+  workflows: OpsWorkflowGraph[]
+  workflowsTruncated: boolean
+  instances: OpsInstanceSummary[]
+  runs: OpsRunSummary[]
+  runsTruncated: boolean
+  diagnostics: string[]
+}
+
+export interface OpsWorkflowGraph {
+  sourceId: string
+  name: string
+  workflowId: string
+  scope: string
+  sourceKind: 'directory' | 'package'
+  description: string
+  entryStepId: string
+  managerStepId: string | null
+  steps: OpsWorkflowStep[]
+  nodes: OpsWorkflowNode[]
+  stepsTruncated: boolean
+}
+
+export interface OpsWorkflowStep {
+  id: string
+  nodeId: string
+  role: string | null
+  description: string | null
+  transitions: OpsWorkflowTransition[]
+}
+
+export interface OpsWorkflowTransition {
+  toStepId: string
+  label: string | null
+  fanoutJoinStepId: string | null
+}
+
+export interface OpsWorkflowNode {
+  id: string
+  kind: string | null
+  role: string | null
+  addon: string | null
+}
+
+export interface OpsInstanceSummary {
+  id: string
+  name: string
+  workflowId: string
+  status: string
+  active: boolean
+}
+
+export interface OpsRunSummary {
+  instanceId: string
+  sessionId: string
+  workflowId: string
+  status: string
+  currentStepId: string | null
+  activeStepIds: string[]
+  updatedAt: string
+}

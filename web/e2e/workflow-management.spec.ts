@@ -120,6 +120,17 @@ async function installWorkflowAPI(page: Page, options: {
     if (operation === 'WebRegisterMutableWorkflow') {
       return result({ registerMutableWorkflow: { accepted: true, workflow: mutableWorkflow, errors: [] } })
     }
+    if (operation === 'WebUpdateWorkflowInstanceConfiguration') {
+      const input = (body.variables as { input?: { expectedRevision?: number } } | undefined)?.input
+      if (options.externalInstanceChange && input?.expectedRevision === 1) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ errors: [{ message: 'Changed elsewhere', extensions: { code: 'REVISION_CONFLICT' } }] }),
+        })
+      }
+      return result({ updateWorkflowInstanceConfiguration: { profile: 'e2e', revision: 2 } })
+    }
     return route.fulfill({ status: 418, body: 'unexpected operation' })
   })
   await page.route('**/api/v1/**', async (route: Route) => {
@@ -141,17 +152,6 @@ async function installWorkflowAPI(page: Page, options: {
           ? [instance, secondInstance]
           : [{ ...instance, workingDirectory: changed ? '/tmp/external-change' : null }],
       })
-    }
-    if (path === `/api/v1/instances/${encodeURIComponent(instanceId)}/configuration`) {
-      const body = request.postDataJSON() as { expectedRevision?: number }
-      if (options.externalInstanceChange && body.expectedRevision === 1) {
-        return route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: { code: 'revision_conflict', message: 'Changed elsewhere' }, revision: 2 }),
-        })
-      }
-      return json({ profile: 'e2e', revision: 2, item: instance })
     }
     if (path === `/api/v1/instances/${encodeURIComponent(instanceId)}` && request.method() === 'GET') {
       return json({
@@ -398,11 +398,16 @@ test('deactivates and confirmed-deletes a mutable workflow', async ({ page }) =>
   await expect(page.getByText('Workflow deleted.', { exact: true })).toBeVisible()
 })
 
-test('cli-serve hides every workflow-management surface', async ({ page }) => {
+test('cli-serve hides riela-app-only surfaces', async ({ page }) => {
   await page.route('**/api/v1/bootstrap', (route) => route.fulfill({
     status: 404,
     contentType: 'application/json',
     body: JSON.stringify({ error: { code: 'not_found', message: 'Not available' } }),
+  }))
+  await page.route('**/api/v1/**', (route) => route.fulfill({
+    status: 404,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 'not_found', message: 'Not available' }, revision: 1 }),
   }))
   await page.route('**/graphql', (route) => route.fulfill({
     status: 200,
@@ -410,8 +415,9 @@ test('cli-serve hides every workflow-management surface', async ({ page }) => {
     body: JSON.stringify({ data: {} }),
   }))
   await page.goto('/')
-  await expect(page.getByRole('button', { name: 'Notes', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Instances', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Run logs', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Workflows', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Instances', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Run logs', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Workflows', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Command deck', exact: true })).toHaveCount(0)
 })

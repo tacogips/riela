@@ -7,9 +7,12 @@ import { LogsView } from './views/LogsView'
 import { RunDetailView } from './views/RunDetailView'
 import { SettingsView } from './views/SettingsView'
 import { WorkflowsView } from './views/WorkflowsView'
+import { OpsRunView } from './ops/OpsRunView'
+import { OpsWorkflowsView } from './ops/OpsWorkflowsView'
+import { parseViewHash, viewHash, type HashRoute } from './routes'
 
-type NavigationView = 'instances' | 'logs' | 'workflows' | 'settings'
-type View = NavigationView | 'run-detail'
+type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'settings'
+type View = NavigationView | 'run-detail' | 'ops-run'
 
 export interface ProfileViewTransition {
   clearSelection: boolean
@@ -24,9 +27,10 @@ export function profileViewTransition(
 ): ProfileViewTransition {
   if (mode === 'cli-serve') return { clearSelection: true, view: 'instances' }
   const profileChanged = previousProfileKey !== undefined && previousProfileKey !== nextProfileKey
+  const fallbackView = currentView === 'run-detail' ? 'logs' : currentView === 'ops-run' ? 'ops' : currentView
   return {
     clearSelection: profileChanged,
-    view: profileChanged && currentView === 'run-detail' ? 'logs' : currentView,
+    view: profileChanged ? fallbackView : currentView,
   }
 }
 
@@ -34,39 +38,82 @@ const navigation: Array<{ id: NavigationView; label: string; glyph: string }> = 
   { id: 'instances', label: 'Instances', glyph: '◇' },
   { id: 'logs', label: 'Run logs', glyph: '≋' },
   { id: 'workflows', label: 'Workflows', glyph: '⌘' },
+  { id: 'ops', label: 'Command deck', glyph: '✦' },
   { id: 'settings', label: 'Settings', glyph: '◉' },
 ]
+
+// The command deck relies on riela-app-only aggregate APIs, so it is hidden
+// alongside Settings when the host is a bare CLI serve.
+const CLI_SERVE_HIDDEN_VIEWS = new Set<NavigationView>(['settings', 'ops'])
 
 export function App() {
   const [view, setView] = createSignal<View>('instances')
   const [selectedInstanceId, setSelectedInstanceId] = createSignal('')
   const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
+  const [selectedOpsRun, setSelectedOpsRun] = createSignal<{ instanceId: string; sessionId: string; workflowId: string }>()
   const host = createPollingResource(() => 'active-host', discoverHost)
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
   const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve'
-    ? navigation.filter((item) => item.id !== 'settings')
+    ? navigation.filter((item) => !CLI_SERVE_HIDDEN_VIEWS.has(item.id))
     : navigation)
   let previousProfileKey: string | undefined
-  const restoreRunHash = () => {
-    const match = window.location.hash.match(/^#\/runs\/([^/]+)$/)
-    if (!match) return
-    const sessionId = decodeURIComponent(match[1]!)
-    if (!sessionId) return
-    setSelectedInstanceId('')
-    setSelectedRun({ sessionId, workflowId: 'private workflow' })
-    setView('run-detail')
+  // Two-way hash routing: state changes write the canonical hash, and hash
+  // changes (deep links, back/forward, RIELA_WEB_RUN_LINK_TEMPLATE links)
+  // apply state. Self-written hashes are ignored via the canonical-hash guard.
+  const currentHashRoute = (): HashRoute | undefined => {
+    const currentView = view()
+    if (currentView === 'run-detail') {
+      const run = selectedRun()
+      return run ? { view: 'run-detail', sessionId: run.sessionId } : undefined
+    }
+    if (currentView === 'ops-run') {
+      const run = selectedOpsRun()
+      return run ? { view: 'ops-run', instanceId: run.instanceId, sessionId: run.sessionId } : undefined
+    }
+    return { view: currentView }
+  }
+  const applyHashRoute = () => {
+    const hash = window.location.hash
+    const applied = currentHashRoute()
+    if (applied && viewHash(applied) === hash) return
+    const route = parseViewHash(hash)
+    if (!route) return
+    if (route.view === 'run-detail') {
+      setSelectedInstanceId('')
+      setSelectedRun({ sessionId: route.sessionId, workflowId: 'private workflow' })
+    } else if (route.view === 'ops-run') {
+      setSelectedOpsRun({ instanceId: route.instanceId, sessionId: route.sessionId, workflowId: '' })
+    }
+    setView(route.view)
   }
   onMount(() => {
-    restoreRunHash()
-    window.addEventListener('hashchange', restoreRunHash)
-    onCleanup(() => window.removeEventListener('hashchange', restoreRunHash))
+    if (parseViewHash(window.location.hash)) {
+      applyHashRoute()
+    } else {
+      // Canonicalize the initial entry so the first back press never lands on
+      // a hashless URL that would immediately be pushed forward again.
+      window.history.replaceState(null, '', viewHash({ view: 'instances' }))
+    }
+    window.addEventListener('hashchange', applyHashRoute)
+    onCleanup(() => window.removeEventListener('hashchange', applyHashRoute))
+    createEffect(() => {
+      const route = currentHashRoute()
+      if (!route) return
+      const hash = viewHash(route)
+      if (window.location.hash !== hash) window.location.hash = hash
+    })
   })
   createEffect(() => {
+    // Until host discovery resolves, profileKey() is a provisional
+    // 'cli-serve'; treating the flip to the real profile as a profile change
+    // would wipe deep-linked run state on every page load.
+    if (!host.data()) return
     const nextProfileKey = profileKey()
     const transition = profileViewTransition(previousProfileKey, nextProfileKey, host.data()?.mode, view())
     if (transition.clearSelection) {
       setSelectedInstanceId('')
       setSelectedRun(undefined)
+      setSelectedOpsRun(undefined)
     }
     if (transition.view !== view()) setView(transition.view)
     previousProfileKey = nextProfileKey
@@ -82,7 +129,7 @@ export function App() {
         </div>
         <nav aria-label="Primary navigation">
           <For each={visibleNavigation()}>{(item) => (
-            <button classList={{ active: view() === item.id || (item.id === 'logs' && view() === 'run-detail') }} aria-current={view() === item.id || (item.id === 'logs' && view() === 'run-detail') ? 'page' : undefined} onClick={() => setView(item.id)}>
+            <button classList={{ active: view() === item.id || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
               <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>{item.label}
             </button>
           )}</For>
@@ -111,6 +158,27 @@ export function App() {
                   profileName={host.data()?.bootstrap?.profile ?? ''}
                 />
               }</Show>
+            </Match>
+            <Match when={view() === 'ops'}>
+              <Show when={profileKey()} keyed>{(_opsProfileKey) =>
+                <OpsWorkflowsView
+                  profileKey={profileKey()}
+                  profileName={host.data()?.bootstrap?.profile ?? ''}
+                  onOpenRun={(run) => {
+                    setSelectedOpsRun({ instanceId: run.instanceId, sessionId: run.sessionId, workflowId: run.workflowId })
+                    setView('ops-run')
+                  }}
+                />
+              }</Show>
+            </Match>
+            <Match when={view() === 'ops-run' && selectedOpsRun()}>
+              <OpsRunView
+                profileKey={profileKey()}
+                instanceId={selectedOpsRun()!.instanceId}
+                sessionId={selectedOpsRun()!.sessionId}
+                workflowId={selectedOpsRun()!.workflowId}
+                onBack={() => setView('ops')}
+              />
             </Match>
             <Match when={view() === 'settings'}>
               <Show when={profileKey()} keyed>{(_settingsProfileKey) =>

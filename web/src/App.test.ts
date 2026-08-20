@@ -20,6 +20,24 @@ describe('profile-owned view state', () => {
     )).toEqual({ clearSelection: false, view: 'workflows' })
   })
 
+  test('returns to the command deck after a profile change while inspecting an ops run', () => {
+    expect(profileViewTransition(
+      'riela-app:first',
+      'riela-app:second',
+      'riela-app',
+      'ops-run',
+    )).toEqual({ clearSelection: true, view: 'ops' })
+  })
+
+  test('keeps the command deck view for the same profile', () => {
+    expect(profileViewTransition(
+      'riela-app:first',
+      'riela-app:first',
+      'riela-app',
+      'ops',
+    )).toEqual({ clearSelection: false, view: 'ops' })
+  })
+
   test('clears profile state and lands on instances for CLI serve', () => {
     expect(profileViewTransition(
       'riela-app:first',

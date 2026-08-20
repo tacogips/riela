@@ -510,6 +510,113 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     )
   }
 
+  func testOpsOverviewAggregatesWorkflowGraphInstancesAndRuns() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let workflowDirectory = fixture.root.appendingPathComponent("workflow", isDirectory: true)
+    let nodeDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let promptDirectory = workflowDirectory.appendingPathComponent("prompts", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodeDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: promptDirectory, withIntermediateDirectories: true)
+    try Data("""
+      {
+        "workflowId": "review-loop",
+        "description": "Review then publish",
+        "defaults": { "nodeTimeoutMs": 120000, "maxLoopIterations": 3 },
+        "entryStepId": "review",
+        "nodes": [
+          { "id": "reviewer", "nodeFile": "nodes/reviewer.json" },
+          { "id": "publisher", "addon": { "name": "riela/notebook-upsert", "version": "1" }, "kind": "output" }
+        ],
+        "steps": [
+          {
+            "id": "review",
+            "nodeId": "reviewer",
+            "role": "worker",
+            "transitions": [{ "toStepId": "publish", "label": "approved" }]
+          },
+          { "id": "publish", "nodeId": "publisher", "role": "worker" }
+        ]
+      }
+      """.utf8).write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+    try Data("""
+      {
+        "id": "reviewer",
+        "executionBackend": "codex-agent",
+        "model": "gpt-5.6",
+        "promptTemplateFile": "prompts/reviewer.md",
+        "variables": {}
+      }
+      """.utf8).write(to: nodeDirectory.appendingPathComponent("reviewer.json"))
+    try Data("Review".utf8).write(to: promptDirectory.appendingPathComponent("reviewer.md"))
+    let sessionStore = fixture.root.appendingPathComponent("sessions", isDirectory: true)
+    fixture.app.webSessionStoreRootOverride = sessionStore.path
+    let now = Date()
+    try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: sessionStore.appendingPathComponent("runtime-records", isDirectory: true).path
+    ).save(WorkflowRuntimePersistenceSnapshot(
+      session: WorkflowSession(
+        workflowId: "review-loop",
+        sessionId: "session-ops-overview",
+        status: .running,
+        entryStepId: "review",
+        currentStepId: "review",
+        createdAt: now,
+        updatedAt: now
+      ),
+      workflowMessages: [],
+      diagnostics: []
+    ))
+
+    let response = await fixture.app.webAPIResponse(
+      for: RielaHTTPRequest(method: "GET", path: "/api/v1/ops/overview"),
+      csrfToken: "csrf"
+    )
+    XCTAssertEqual(response.status, 200)
+    let json = try jsonObject(response)
+    let workflows = try XCTUnwrap(json["workflows"] as? [[String: Any]])
+    XCTAssertEqual(workflows.count, 1)
+    let workflow = try XCTUnwrap(workflows.first)
+    XCTAssertEqual(workflow["workflowId"] as? String, "review-loop")
+    XCTAssertEqual(workflow["entryStepId"] as? String, "review")
+    XCTAssertEqual(workflow["stepsTruncated"] as? Bool, false)
+    let steps = try XCTUnwrap(workflow["steps"] as? [[String: Any]])
+    XCTAssertEqual(steps.count, 2)
+    let reviewStep = try XCTUnwrap(steps.first { $0["id"] as? String == "review" })
+    let transitions = try XCTUnwrap(reviewStep["transitions"] as? [[String: Any]])
+    XCTAssertEqual(transitions.first?["toStepId"] as? String, "publish")
+    XCTAssertEqual(transitions.first?["label"] as? String, "approved")
+    let nodes = try XCTUnwrap(workflow["nodes"] as? [[String: Any]])
+    // Materialized nodes are keyed by step id (same as the definition route).
+    let publisherNode = try XCTUnwrap(nodes.first { $0["id"] as? String == "publish" })
+    XCTAssertEqual(publisherNode["addon"] as? String, "riela/notebook-upsert")
+    XCTAssertEqual(publisherNode["kind"] as? String, "output")
+    let instances = try XCTUnwrap(json["instances"] as? [[String: Any]])
+    XCTAssertEqual(instances.first?["id"] as? String, identity)
+    XCTAssertEqual(instances.first?["workflowId"] as? String, "review-loop")
+    let runs = try XCTUnwrap(json["runs"] as? [[String: Any]])
+    XCTAssertEqual(runs.first?["sessionId"] as? String, "session-ops-overview")
+    XCTAssertEqual(runs.first?["instanceId"] as? String, identity)
+    XCTAssertEqual(runs.first?["status"] as? String, "running")
+    XCTAssertEqual(runs.first?["currentStepId"] as? String, "review")
+    XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(secret) ?? true)
+  }
+
+  func testOpsOverviewSurvivesMissingWorkflowDefinition() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let response = await fixture.app.webAPIResponse(
+      for: RielaHTTPRequest(method: "GET", path: "/api/v1/ops/overview"),
+      csrfToken: "csrf"
+    )
+    XCTAssertEqual(response.status, 200)
+    let json = try jsonObject(response)
+    XCTAssertEqual((json["workflows"] as? [[String: Any]])?.count, 0)
+    let diagnostics = try XCTUnwrap(json["diagnostics"] as? [String])
+    XCTAssertFalse(diagnostics.isEmpty)
+    XCTAssertEqual((json["instances"] as? [[String: Any]])?.first?["id"] as? String, identity)
+  }
+
   private func makeFixture() throws -> (app: RielaApp, root: URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let app = RielaApp()

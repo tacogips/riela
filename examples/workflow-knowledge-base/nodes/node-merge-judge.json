@@ -1,8 +1,9 @@
 {
   "id": "merge-judge",
-  "description": "Judge whether candidate knowledge should be created, merged into an existing note, or skipped.",
+  "description": "Judge whether candidate knowledge should be created, merged into an existing note, or skipped, and whether a redundant note should be archived.",
   "executionBackend": "codex-agent",
   "model": "gpt-5.3-codex",
+  "sessionPolicy": { "mode": "reuse" },
   "promptTemplateFile": "prompts/merge-judge.md",
   "variables": {},
   "output": {
@@ -17,7 +18,10 @@
         "reason": { "type": "string" },
         "entries": { "type": "array" },
         "mergeNoteId": { "type": "string" },
-        "mergedBody": { "type": "string" }
+        "mergedBody": { "type": "string" },
+        "archive_note": { "type": "boolean" },
+        "archiveNoteId": { "type": "string" },
+        "archivedPointerBody": { "type": "string" }
       },
       "additionalProperties": true
     },

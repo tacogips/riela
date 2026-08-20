@@ -14,8 +14,22 @@
       "defaultLimit": 30
     }
   ],
-  "entryStepId": "recall-prior-knowledge",
+  "entryStepId": "kb-seed",
   "nodes": [
+    {
+      "id": "kb-seed",
+      "addon": {
+        "name": "kaiba/memory-consolidate",
+        "version": "1",
+        "config": {
+          "entries": "{{workflowInput.seedKnowledge}}",
+          "allowEmptyEntries": true,
+          "autoAssociate": true,
+          "associationLimit": 8,
+          "idempotencyKey": "{{workflowInput.seedKey}}"
+        }
+      }
+    },
     {
       "id": "recall-prior-knowledge",
       "addon": {
@@ -104,6 +118,21 @@
       }
     },
     {
+      "id": "archive-brief",
+      "nodeFile": "nodes/node-archive-brief.json"
+    },
+    {
+      "id": "kb-archive",
+      "addon": {
+        "name": "kaiba/note-update",
+        "version": "1",
+        "config": {
+          "noteId": "{{archiveNoteId}}",
+          "bodyMarkdown": "{{archivedPointerBody}}"
+        }
+      }
+    },
+    {
       "id": "recall-verify",
       "addon": {
         "name": "kaiba/memory-recall",
@@ -123,6 +152,12 @@
     }
   ],
   "steps": [
+    {
+      "id": "kb-seed",
+      "nodeId": "kb-seed",
+      "role": "worker",
+      "transitions": [{ "toStepId": "recall-prior-knowledge" }]
+    },
     {
       "id": "recall-prior-knowledge",
       "nodeId": "recall-prior-knowledge",
@@ -172,6 +207,22 @@
     {
       "id": "kb-merge",
       "nodeId": "kb-merge",
+      "role": "worker",
+      "transitions": [{ "toStepId": "archive-brief" }]
+    },
+    {
+      "id": "archive-brief",
+      "nodeId": "archive-brief",
+      "role": "worker",
+      "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "merge-judge" },
+      "transitions": [
+        { "toStepId": "kb-archive", "label": "archive_note" },
+        { "toStepId": "recall-verify", "label": "!(archive_note)" }
+      ]
+    },
+    {
+      "id": "kb-archive",
+      "nodeId": "kb-archive",
       "role": "worker",
       "transitions": [{ "toStepId": "recall-verify" }]
     },

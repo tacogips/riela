@@ -22,5 +22,6 @@ Return only JSON:
 
 {
   "result": "<what you did and the outcome>",
-  "approachNotes": "<approaches tried, what worked, what did not>"
+  "approachNotes": "<approaches tried, what worked, what did not>",
+  "usedKnowledge": ["<verbatim reference to each prior-knowledge entry you applied, or empty>"]
 }

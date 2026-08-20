@@ -317,7 +317,18 @@ final class RielaExampleParityTests: XCTestCase {
         "workflowInput": [
           "task": "Implement retry handling for the flaky sync API client.",
           "knowledgeQuery": "backoff",
-          "runKey": "workflow-knowledge-base-example-2026-08-21"
+          "runKey": "workflow-knowledge-base-example-2026-08-21",
+          "seedKey": "kb-seed-demo",
+          "seedKnowledge": [
+            [
+              "content": "For flaky rate-limited APIs, exponential backoff with jitter stabilizes retries; fixed-interval backoff keeps failing under rate limiting.",
+              "topicTags": ["kb", "retry-backoff"]
+            ],
+            [
+              "content": "Retrying flaky APIs at a fixed interval keeps failing under rate limiting; prefer exponential backoff.",
+              "topicTags": ["kb", "retry-backoff"]
+            ]
+          ]
         ]
       ]
       let data = try JSONSerialization.data(withJSONObject: payload)

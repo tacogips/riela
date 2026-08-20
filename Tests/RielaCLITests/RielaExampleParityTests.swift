@@ -72,6 +72,7 @@ private func rielaExampleWorkflowNames() -> [String] {
     "workflow-call-live-echo-callee",
     "workflow-call-review-target",
     "workflow-call-simple",
+    "workflow-knowledge-base",
     "wrike-project-kanban-agent",
     "x-follower-ai-business-digest",
     "x-incremental-posts-kv"
@@ -85,7 +86,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 34
+    static let expectedMockScenarioCount = 35
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -306,6 +307,24 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
+  private enum WorkflowKnowledgeBaseExampleFixture {
+    static let workflowName = "workflow-knowledge-base"
+
+    static func variables(memoryRoot: String, noteRoot: String) throws -> String {
+      let payload: [String: Any] = [
+        "memoryRoot": memoryRoot,
+        "noteRoot": noteRoot,
+        "workflowInput": [
+          "task": "Implement retry handling for the flaky sync API client.",
+          "knowledgeQuery": "backoff",
+          "runKey": "workflow-knowledge-base-example-2026-08-21"
+        ]
+      ]
+      let data = try JSONSerialization.data(withJSONObject: payload)
+      return String(decoding: data, as: UTF8.self)
+    }
+  }
+
   func testAllRielaExampleWorkflowsArePortedAndValidateInSwift() throws {
     let root = repositoryRoot()
     let examplesRoot = root.appendingPathComponent(ExampleCatalog.directoryName, isDirectory: true)
@@ -382,6 +401,15 @@ final class RielaExampleParityTests: XCTestCase {
         arguments.append(contentsOf: [
           "--variables",
           try MemoryConsolidationExampleFixture.variables(
+            memoryRoot: sessionStore.appendingPathComponent("memory", isDirectory: true).path,
+            noteRoot: sessionStore.appendingPathComponent("notes", isDirectory: true).path
+          )
+        ])
+      }
+      if workflowName == WorkflowKnowledgeBaseExampleFixture.workflowName {
+        arguments.append(contentsOf: [
+          "--variables",
+          try WorkflowKnowledgeBaseExampleFixture.variables(
             memoryRoot: sessionStore.appendingPathComponent("memory", isDirectory: true).path,
             noteRoot: sessionStore.appendingPathComponent("notes", isDirectory: true).path
           )

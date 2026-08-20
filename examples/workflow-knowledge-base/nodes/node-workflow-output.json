@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Emit the final knowledge-base update summary payload.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the latest knowledge-base payload.",
+  "variables": {},
+  "output": {
+    "description": "The verification recall on create/merge, or the judge payload on skip.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

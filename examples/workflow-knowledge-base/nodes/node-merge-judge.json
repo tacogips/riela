@@ -1,0 +1,26 @@
+{
+  "id": "merge-judge",
+  "description": "Judge whether candidate knowledge should be created, merged into an existing note, or skipped.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.3-codex",
+  "promptTemplateFile": "prompts/merge-judge.md",
+  "variables": {},
+  "output": {
+    "description": "Return the knowledge-base update decision as JSON.",
+    "jsonSchema": {
+      "type": "object",
+      "required": ["decision", "create_knowledge", "merge_knowledge"],
+      "properties": {
+        "decision": { "type": "string", "enum": ["create", "merge", "skip"] },
+        "create_knowledge": { "type": "boolean" },
+        "merge_knowledge": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "entries": { "type": "array" },
+        "mergeNoteId": { "type": "string" },
+        "mergedBody": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "maxValidationAttempts": 2
+  }
+}

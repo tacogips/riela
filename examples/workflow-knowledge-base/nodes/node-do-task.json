@@ -1,0 +1,8 @@
+{
+  "id": "do-task",
+  "description": "Perform the requested task using recalled prior knowledge.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.3-codex",
+  "promptTemplateFile": "prompts/do-task.md",
+  "variables": {}
+}

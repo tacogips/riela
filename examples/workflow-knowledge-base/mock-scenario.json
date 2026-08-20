@@ -1,0 +1,46 @@
+{
+  "do-task": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "result": "Added exponential backoff with jitter to the sync API client; retries now succeed within 3 attempts.",
+      "approachNotes": "Fixed-interval retries kept failing under rate limiting; exponential backoff with jitter worked."
+    }
+  },
+  "self-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "knowledgeQuery": "backoff",
+      "candidateContent": "For flaky rate-limited APIs, exponential backoff with jitter stabilizes retries; fixed-interval backoff keeps failing under rate limiting.",
+      "candidateTags": ["kb", "retry-backoff"]
+    }
+  },
+  "merge-judge": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "decision": "create",
+      "create_knowledge": true,
+      "merge_knowledge": false,
+      "reason": "No existing note covers retry backoff for rate-limited APIs.",
+      "entries": [
+        {
+          "content": "For flaky rate-limited APIs, exponential backoff with jitter stabilizes retries; fixed-interval backoff keeps failing under rate limiting.",
+          "topicTags": ["kb", "retry-backoff"]
+        }
+      ],
+      "mergeNoteId": "",
+      "mergedBody": ""
+    }
+  }
+}

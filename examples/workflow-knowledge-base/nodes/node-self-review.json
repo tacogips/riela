@@ -1,0 +1,8 @@
+{
+  "id": "self-review",
+  "description": "Self-review the run journal and extract at most one durable knowledge candidate.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.3-codex",
+  "promptTemplateFile": "prompts/self-review.md",
+  "variables": {}
+}

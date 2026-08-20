@@ -1,0 +1,51 @@
+{
+  "do-task": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "result": "Added exponential backoff with jitter to the sync API client; retries now succeed within 3 attempts.",
+      "approachNotes": "Applied the recalled prior knowledge instead of rediscovering it; noticed uncapped backoff delayed recovery, so a max-attempts cap was added.",
+      "usedKnowledge": [
+        "For flaky rate-limited APIs, exponential backoff with jitter stabilizes retries; fixed-interval backoff keeps failing under rate limiting."
+      ]
+    }
+  },
+  "self-review": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "knowledgeQuery": "backoff",
+      "candidateContent": "Exponential backoff needs a max-attempts cap; uncapped backoff delays recovery on persistent failures.",
+      "candidateTags": ["kb", "retry-backoff"]
+    }
+  },
+  "merge-judge": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "decision": "merge",
+      "create_knowledge": false,
+      "merge_knowledge": true,
+      "reason": "Two existing notes overlap on retry backoff; consolidate them with the candidate into one note and archive the redundant one.",
+      "entries": [],
+      "mergeNoteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-1",
+      "mergedBody": "For flaky rate-limited APIs, retry with exponential backoff plus jitter and a max-attempts cap; fixed-interval retries keep failing under rate limiting, and uncapped backoff delays recovery.",
+      "archive_note": true,
+      "archiveNoteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-2",
+      "archivedPointerBody": "Superseded by the consolidated note for this topic."
+    }
+  },
+  "archive-brief": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": { "always": true },
+    "payload": {
+      "archive_note": true,
+      "archiveNoteId": "note-long-term-memory-c41ba0ce1b3d5cf2f09189de03848bda5d59621f056684f3aefdf6699296e35e-2",
+      "archivedPointerBody": "Superseded by the consolidated note for this topic."
+    }
+  }
+}

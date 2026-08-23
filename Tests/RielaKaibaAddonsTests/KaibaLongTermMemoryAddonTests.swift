@@ -191,4 +191,29 @@ final class KaibaLongTermMemoryAddonTests: XCTestCase {
     }
     XCTFail("expected an empty entry list to be rejected")
   }
+
+  func testConsolidateAllowsEmptyEntriesAsNoOpWhenOptedIn() async throws {
+    let noteRoot = scratchNoteRoot()
+    defer {
+      try? FileManager.default.removeItem(at: noteRoot)
+    }
+
+    let output = try await consolidate(
+      noteRoot: noteRoot.path,
+      config: [
+        "entries": .array([]),
+        "allowEmptyEntries": .bool(true),
+        "idempotencyKey": .string("seed-2026-08-21")
+      ],
+      resolvedInputPayload: [:]
+    )
+
+    XCTAssertEqual(output.payload["entriesWritten"], .number(0))
+    XCTAssertEqual(output.payload["idempotentReplay"], .bool(false))
+    XCTAssertEqual(output.payload["noteIds"], .array([]))
+    XCTAssertEqual(output.payload["notes"], .array([]))
+    XCTAssertEqual(output.payload["associations"], .array([]))
+    XCTAssertEqual(output.payload["idempotencyKey"], .string("seed-2026-08-21"))
+    XCTAssertNotNil(nonEmptyString(output.payload["notebookId"] ?? .null))
+  }
 }

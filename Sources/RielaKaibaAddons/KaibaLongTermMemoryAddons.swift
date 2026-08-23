@@ -89,6 +89,21 @@ private func consolidateLongTermMemory(_ context: NoteAddonContext) throws -> JS
     defaultPeriodEnd: defaultPeriodEnd
   )
   guard !entries.isEmpty else {
+    // Data-driven pipelines (seeded imports, summarizers that found nothing
+    // durable) can legitimately produce zero entries; erroring would fail the
+    // whole run, so an explicit opt-in turns the write into a no-op instead.
+    if context.bool("allowEmptyEntries", default: false) {
+      let notebookId = try context.service.longTermMemoryNotebook().notebookId
+      return [
+        "notebookId": .string(notebookId.rawValue),
+        "noteIds": .array([]),
+        "notes": .array([]),
+        "entriesWritten": .number(0),
+        "idempotentReplay": .bool(false),
+        "idempotencyKey": .string(longTermMemoryIdempotencyKey(context)),
+        "associations": .array([])
+      ]
+    }
     throw noteAddonInvalidInput(
       "\(context.input.addon.name) requires at least one entry in config.entries or upstream memoryEntries"
     )

@@ -124,7 +124,7 @@ final class GmailDigestAddonTests: XCTestCase {
     XCTAssertEqual(readOutput.payload["maxMessages"], .number(5))
 
     let gatewayPayload: JSONObject = [
-      "mailGateway": .object([
+      "gmailGateway": .object([
         "data": .object([
           "data": .object([
             "threads": .object([
@@ -174,7 +174,7 @@ final class GmailDigestAddonTests: XCTestCase {
       ])
     ]
     let messageFileSetPayload: JSONObject = [
-      "mailGateway": .object([
+      "gmailGateway": .object([
         "data": .object([
           "data": .object([
             "messageFileSet": .object([

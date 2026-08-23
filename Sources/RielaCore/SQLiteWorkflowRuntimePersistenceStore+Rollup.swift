@@ -38,52 +38,32 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     }
     let boundedLimit = max(1, min(limit, Self.defaultRollupSnapshotLimit))
     let db = try openDatabase(readOnly: true, strictReadOnly: true)
-    let columns = try mapRollupSQLiteError { try db.tableColumnNames("workflow_runtime_snapshots") }
-    let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-    let rows: [SQLiteRow]
-    if columns.contains("root_session_id") {
-      rows = try mapRollupSQLiteError {
-        try db.query(
-          """
-          SELECT json(session_json) AS session_json,
-            CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
-            json(diagnostics_json) AS diagnostics_json,
-            \(loopEvidenceSelect)
-          FROM workflow_runtime_snapshots
-          WHERE workflow_execution_id = ?
-             OR root_session_id = COALESCE(
-               (SELECT root_session_id FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?),
-               ?
-             )
-          ORDER BY CASE WHEN workflow_execution_id = ? THEN 0 ELSE 1 END,
-            created_at,
-            workflow_execution_id
-          LIMIT ?
-          """,
-          bindings: [
-            .text(sessionId),
-            .text(sessionId),
-            .text(sessionId),
-            .text(sessionId),
-            .int(Int64(boundedLimit + 1))
-          ]
-        )
-      }
-    } else {
-      rows = try mapRollupSQLiteError {
-        try db.query(
-          """
-          SELECT json(session_json) AS session_json,
-            CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
-            json(diagnostics_json) AS diagnostics_json,
-            \(loopEvidenceSelect)
-          FROM workflow_runtime_snapshots
-          WHERE workflow_execution_id = ?
-          LIMIT 1
-          """,
-          bindings: [.text(sessionId)]
-        )
-      }
+    let rows = try mapRollupSQLiteError {
+      try db.query(
+        """
+        SELECT json(session_json) AS session_json,
+          CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
+          json(diagnostics_json) AS diagnostics_json,
+          \(runtimeLoopEvidenceSelectSQL)
+        FROM workflow_runtime_snapshots
+        WHERE workflow_execution_id = ?
+           OR root_session_id = COALESCE(
+             (SELECT root_session_id FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?),
+             ?
+           )
+        ORDER BY CASE WHEN workflow_execution_id = ? THEN 0 ELSE 1 END,
+          created_at,
+          workflow_execution_id
+        LIMIT ?
+        """,
+        bindings: [
+          .text(sessionId),
+          .text(sessionId),
+          .text(sessionId),
+          .text(sessionId),
+          .int(Int64(boundedLimit + 1))
+        ]
+      )
     }
     guard !rows.isEmpty else {
       throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")

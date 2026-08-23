@@ -164,9 +164,9 @@ Scheduled Gmail digest for Telegram:
 - reads seen message ids from the workflow key-value store
   (`stateBackend: "kv"`, store `gmail-digest`, key `digest-state`, scope =
   workflow id) for first-time-seen dedupe
-- runs `riela/mail-gateway-read` in Docker with
-  `ghcr.io/tacogips/mail-gateway:latest`
-- uses the read-only `mail-gateway-reader` client through the built-in add-on
+- runs `riela/gmail-gateway-read` in Docker with
+  `ghcr.io/tacogips/gmail-gateway:latest`
+- uses the read-only `gmail-gateway-reader` client through the built-in add-on
   to fetch Gmail thread edges for `accountId: "gmail"` through the stable
   `threads(input:)` GraphQL field
 - requests message metadata plus `textBody`/`htmlBody` from the live Gmail read
@@ -182,7 +182,7 @@ Scheduled Gmail digest for Telegram:
   the add-on's gateway boundary, previews text-compatible files, and uses
   Gemini OCR/classification for PDF attachments when `GOOGLE_API_KEY` or
   `GEMINI_API_KEY` is available
-- maps Gmail mail-gateway credentials from `GMAIL_MAIL_GATEWAY_CONFIG` only;
+- maps Gmail gateway credentials from `GMAIL_GATEWAY_CONFIG` only;
   do not put credential values in workflow files
 - summarizes only newly seen messages in a separate Codex worker prompt that
   treats email metadata, attachment OCR text, and file references as untrusted
@@ -202,7 +202,7 @@ Scheduled Gmail digest for Telegram:
 Required live-run environment variables:
 
 ```bash
-export GMAIL_MAIL_GATEWAY_CONFIG=<mail-gateway-gmail-config-json-or-path>
+export GMAIL_GATEWAY_CONFIG=<gmail-gateway-gmail-config-json-or-path>
 export RIELA_TELEGRAM_CHAT_ID=<telegram-chat-id>
 ```
 

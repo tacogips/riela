@@ -102,6 +102,69 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       .prepareSchema(in: db)
   }
 
+  /// Bumped whenever the schema changes shape. The store never migrates old
+  /// layouts in place: a database stamped with an older generation must be
+  /// deleted (or garbage-collected) before this build can write to it.
+  public static let schemaGeneration: Int64 = 2
+
+  /// Refuses writable opens against a database whose tables predate the
+  /// current schema generation, and stamps fresh databases. Throws SQLiteError
+  /// so each store maps it into its own error domain.
+  public static func requireCompatibleSchemaGeneration(in db: SQLiteDatabase) throws {
+    let version = try db.query("PRAGMA user_version").first?["user_version"].flatMap(Int64.init) ?? 0
+    guard version < schemaGeneration else {
+      return
+    }
+    let hasPreGenerationTables = try db.tableExists("workflow_runtime_snapshots")
+      || db.tableExists("cli_workflow_sessions")
+    guard !hasPreGenerationTables else {
+      throw SQLiteError(
+        operation: .execute,
+        code: nil,
+        message: "session store schema predates generation \(schemaGeneration); delete the session store and rerun"
+      )
+    }
+    try db.execute("PRAGMA user_version = \(schemaGeneration)")
+  }
+
+  /// Deletes an incompatible pre-generation session store database (plus its
+  /// WAL/SHM sidecars) so the writable open that follows rebuilds the
+  /// current-generation schema from scratch. Session stores hold regenerable
+  /// run history, so discarding beats hard-failing every writable open;
+  /// memory stores keep their hard error because their data is not
+  /// regenerable. Unreadable databases are left for the normal open path to
+  /// report.
+  @discardableResult
+  public static func discardIncompatibleStoreIfNeeded(databasePath: String) -> Bool {
+    guard FileManager.default.fileExists(atPath: databasePath) else {
+      return false
+    }
+    let isIncompatible: Bool
+    do {
+      let db = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+      let version = try db.query("PRAGMA user_version").first?["user_version"].flatMap(Int64.init) ?? 0
+      if version >= schemaGeneration {
+        isIncompatible = false
+      } else {
+        isIncompatible = try db.tableExists("workflow_runtime_snapshots")
+          || db.tableExists("cli_workflow_sessions")
+          || db.tableExists("workflow_messages")
+      }
+    } catch {
+      return false
+    }
+    guard isIncompatible else {
+      return false
+    }
+    for suffix in ["", "-wal", "-shm"] {
+      try? FileManager.default.removeItem(atPath: databasePath + suffix)
+    }
+    FileHandle.standardError.write(Data(
+      "warning: discarded incompatible pre-generation session store at \(databasePath)\n".utf8
+    ))
+    return true
+  }
+
   public func load(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
     try load(sessionId: sessionId, strictReadOnly: false)
   }
@@ -118,14 +181,13 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
     }
     let db = try openDatabase(readOnly: true, strictReadOnly: strictReadOnly)
-    let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
     let rows = try mapRuntimeSQLiteError {
       try db.query(
         """
         SELECT json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
           json(diagnostics_json) AS diagnostics_json,
-          \(loopEvidenceSelect)
+          \(runtimeLoopEvidenceSelectSQL)
         FROM workflow_runtime_snapshots
         WHERE workflow_execution_id = ?
         LIMIT 1
@@ -144,14 +206,13 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
-    let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
     return try mapRuntimeSQLiteError {
       try db.query(
         """
         SELECT json(session_json) AS session_json,
           CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
           json(diagnostics_json) AS diagnostics_json,
-          \(loopEvidenceSelect)
+          \(runtimeLoopEvidenceSelectSQL)
         FROM workflow_runtime_snapshots
         ORDER BY updated_at DESC, workflow_execution_id
         """,
@@ -165,86 +226,44 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
-    let columns = try mapRuntimeSQLiteError { try db.tableColumnNames("workflow_runtime_snapshots") }
-    let hasSummaryColumns = Set(["workflow_id", "session_status", "created_at", "loop_summary_json"]).isSubset(of: columns)
     let limit = max(1, min(filter.limit, 200))
-    let loopEvidencePresenceSelect = columns.contains("loop_evidence_json")
-      ? "loop_evidence_json IS NOT NULL AS has_loop_evidence"
-      : "0 AS has_loop_evidence"
     var whereParts: [String] = []
     var bindings: [SQLiteValue] = []
-    if hasSummaryColumns, let workflowId = filter.workflowId {
-      whereParts.append("(workflow_id = ? OR workflow_id IS NULL)")
+    if let workflowId = filter.workflowId {
+      whereParts.append("workflow_id = ?")
       bindings.append(.text(workflowId))
     }
-    if hasSummaryColumns, let sessionStatus = filter.sessionStatus {
+    if let sessionStatus = filter.sessionStatus {
       if sessionStatus == "active" {
-        whereParts.append("(session_status IN ('created', 'running') OR session_status IS NULL)")
+        whereParts.append("session_status IN ('created', 'running')")
       } else {
-        whereParts.append("(session_status = ? OR session_status IS NULL)")
+        whereParts.append("session_status = ?")
         bindings.append(.text(sessionStatus))
       }
     }
+    if let lastGateDecision = filter.lastGateDecision {
+      whereParts.append("json_extract(loop_summary_json, '$.lastGateDecision') = ?")
+      bindings.append(.text(lastGateDecision))
+    }
     let whereSQL = whereParts.isEmpty ? "" : "WHERE " + whereParts.joined(separator: " AND ")
-    let batchSize = 200
-    var offset = 0
-    var overviews: [LoopSessionOverview] = []
-    repeat {
-      let rows: [SQLiteRow]
-      if hasSummaryColumns {
-        rows = try mapRuntimeSQLiteError {
-          try db.query(
-            """
-            SELECT workflow_execution_id,
-              workflow_id,
-              session_status,
-              created_at,
-              CASE WHEN loop_summary_json IS NULL THEN NULL ELSE json(loop_summary_json) END AS loop_summary_json,
-              \(loopEvidencePresenceSelect),
-              updated_at
-            FROM workflow_runtime_snapshots
-            \(whereSQL)
-            ORDER BY updated_at DESC, workflow_execution_id
-            LIMIT ? OFFSET ?
-            """,
-            bindings: bindings + [.int(Int64(batchSize)), .int(Int64(offset))]
-          )
-        }
-      } else {
-        let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-        rows = try mapRuntimeSQLiteError {
-          try db.query(
-            """
-            SELECT workflow_execution_id,
-              NULL AS workflow_id,
-              NULL AS session_status,
-              NULL AS created_at,
-              CASE WHEN session_json IS NULL THEN NULL ELSE json(session_json) END AS session_json,
-              \(loopEvidenceSelect),
-              NULL AS loop_summary_json,
-              0 AS has_loop_evidence,
-              updated_at
-            FROM workflow_runtime_snapshots
-            \(whereSQL)
-            ORDER BY updated_at DESC, workflow_execution_id
-            LIMIT ? OFFSET ?
-            """,
-            bindings: bindings + [.int(Int64(batchSize)), .int(Int64(offset))]
-          )
-        }
-      }
-      let filtered = try rows.compactMap { row in
-        try overview(from: row, db: db, hasSummaryColumns: hasSummaryColumns)
-      }.filter { overview in
-        overview.matches(filter)
-      }
-      overviews.append(contentsOf: filtered.prefix(limit - overviews.count))
-      if rows.count < batchSize || overviews.count >= limit {
-        break
-      }
-      offset += batchSize
-    } while true
-    return overviews
+    let rows = try mapRuntimeSQLiteError {
+      try db.query(
+        """
+        SELECT workflow_execution_id,
+          workflow_id,
+          session_status,
+          created_at,
+          CASE WHEN loop_summary_json IS NULL THEN NULL ELSE json(loop_summary_json) END AS loop_summary_json,
+          updated_at
+        FROM workflow_runtime_snapshots
+        \(whereSQL)
+        ORDER BY updated_at DESC, workflow_execution_id
+        LIMIT ?
+        """,
+        bindings: bindings + [.int(Int64(limit))]
+      )
+    }
+    return try rows.compactMap(summaryColumnOverview(from:))
   }
 
   // MARK: - Loop baselines (design S10)
@@ -334,7 +353,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
           session_id  TEXT NOT NULL,
           set_at      TEXT NOT NULL,
           note        TEXT
-        )
+        ) WITHOUT ROWID
         """
       )
     }
@@ -507,7 +526,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
           session_id   TEXT NOT NULL,
           acquired_at  TEXT NOT NULL,
           heartbeat_at TEXT NOT NULL
-        )
+        ) WITHOUT ROWID
         """
       )
     }
@@ -527,6 +546,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
     let databasePath = Self.defaultDatabasePath(rootDirectory: rootDirectory)
+    if !readOnly, !strictReadOnly {
+      Self.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+    }
     let mode: SQLiteOpenMode
     if strictReadOnly {
       mode = .strictReadOnlyWithImmutableFallback
@@ -545,62 +567,36 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   private func ensureSchema(_ db: SQLiteDatabase) throws {
     try mapRuntimeSQLiteError {
       try db.requireJSONBAvailable()
+      try Self.requireCompatibleSchemaGeneration(in: db)
+      // The summary columns are generated from session_json so they can never
+      // drift from the snapshot payload. created_at/updated_at stay explicit:
+      // the JSON dates are second-granularity ISO8601 while ordering needs the
+      // fractional-second timestamps the store writes itself.
       try db.execute(
       """
       CREATE TABLE IF NOT EXISTS workflow_runtime_snapshots (
         workflow_execution_id TEXT PRIMARY KEY,
-        workflow_id TEXT,
-        session_status TEXT,
-        created_at TEXT,
-        parent_session_id TEXT,
-        root_session_id TEXT,
         session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
         root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
         diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
         loop_evidence_json BLOB CHECK (loop_evidence_json IS NULL OR json_valid(loop_evidence_json, 8)),
         loop_summary_json BLOB CHECK (loop_summary_json IS NULL OR json_valid(loop_summary_json, 8)),
-        updated_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        workflow_id TEXT NOT NULL GENERATED ALWAYS AS (json_extract(session_json, '$.workflowId')) STORED,
+        session_status TEXT NOT NULL GENERATED ALWAYS AS (json_extract(session_json, '$.status')) STORED,
+        parent_session_id TEXT GENERATED ALWAYS AS (json_extract(session_json, '$.parentSessionId')) STORED,
+        root_session_id TEXT NOT NULL GENERATED ALWAYS AS (
+          COALESCE(json_extract(session_json, '$.rootSessionId'), workflow_execution_id)
+        ) STORED
       )
       """
       )
-      let columns = try db.tableColumnNames("workflow_runtime_snapshots")
-      if !columns.contains("workflow_id") {
-        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN workflow_id TEXT")
-      }
-      if !columns.contains("session_status") {
-        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN session_status TEXT")
-      }
-      if !columns.contains("created_at") {
-        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN created_at TEXT")
-      }
-      if !columns.contains("parent_session_id") {
-        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN parent_session_id TEXT")
-      }
-      if !columns.contains("root_session_id") {
-        try db.execute("ALTER TABLE workflow_runtime_snapshots ADD COLUMN root_session_id TEXT")
-      }
-      if !columns.contains("loop_evidence_json") {
-        try db.execute(
-        """
-        ALTER TABLE workflow_runtime_snapshots
-        ADD COLUMN loop_evidence_json BLOB CHECK (loop_evidence_json IS NULL OR json_valid(loop_evidence_json, 8))
-        """
-        )
-      }
-      if !columns.contains("loop_summary_json") {
-        try db.execute(
-        """
-        ALTER TABLE workflow_runtime_snapshots
-        ADD COLUMN loop_summary_json BLOB CHECK (loop_summary_json IS NULL OR json_valid(loop_summary_json, 8))
-        """
-        )
-      }
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_updated ON workflow_runtime_snapshots (updated_at DESC, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_summary ON workflow_runtime_snapshots (workflow_id, session_status, updated_at DESC)")
+      try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_workflow_updated ON workflow_runtime_snapshots (workflow_id, updated_at DESC, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_parent ON workflow_runtime_snapshots (parent_session_id, created_at, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_root ON workflow_runtime_snapshots (root_session_id, created_at, workflow_execution_id)")
-      try backfillRuntimeSessionSummaryColumns(db)
-      try backfillSummaryColumns(db)
     }
   }
 
@@ -614,117 +610,31 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.execute(
       """
       INSERT INTO workflow_runtime_snapshots (
-        workflow_execution_id, workflow_id, session_status, created_at, parent_session_id, root_session_id,
-        session_json, root_output_json, diagnostics_json, loop_evidence_json, loop_summary_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?)
+        workflow_execution_id, session_json, root_output_json, diagnostics_json,
+        loop_evidence_json, loop_summary_json, created_at, updated_at
+      ) VALUES (?, jsonb(?), jsonb(?), jsonb(?), jsonb(?), jsonb(?), ?, ?)
       ON CONFLICT(workflow_execution_id) DO UPDATE SET
-        workflow_id = excluded.workflow_id,
-        session_status = excluded.session_status,
-        created_at = excluded.created_at,
-        parent_session_id = excluded.parent_session_id,
-        root_session_id = excluded.root_session_id,
         session_json = excluded.session_json,
         root_output_json = excluded.root_output_json,
         diagnostics_json = excluded.diagnostics_json,
         loop_evidence_json = excluded.loop_evidence_json,
         loop_summary_json = excluded.loop_summary_json,
+        created_at = excluded.created_at,
         updated_at = excluded.updated_at
       """,
       bindings: [
         .text(snapshot.session.sessionId),
-        .text(snapshot.session.workflowId),
-        .text(snapshot.session.status.rawValue),
-        .text(Self.dateString(snapshot.session.createdAt)),
-        .optionalText(snapshot.session.parentSessionId),
-        .optionalText(snapshot.session.rootSessionId ?? snapshot.session.sessionId),
         .text(try jsonString(snapshot.session)),
         .optionalText(rootOutputJSON),
         .text(try jsonString(snapshot.diagnostics)),
         .optionalText(loopEvidenceJSON),
         .optionalText(loopSummaryJSON),
+        .text(Self.dateString(snapshot.session.createdAt)),
         .text(Self.dateString(snapshot.session.updatedAt))
       ]
       )
       try touchLoopConcurrencyLease(db, snapshot)
     }
-  }
-
-  private func backfillSummaryColumns(_ db: SQLiteDatabase) throws {
-    let rows = try db.query(
-      """
-      SELECT workflow_execution_id,
-        json(session_json) AS session_json,
-        CASE WHEN loop_evidence_json IS NULL THEN NULL ELSE json(loop_evidence_json) END AS loop_evidence_json
-      FROM workflow_runtime_snapshots
-      WHERE workflow_id IS NULL
-        OR session_status IS NULL
-        OR created_at IS NULL
-        OR (loop_evidence_json IS NOT NULL AND loop_summary_json IS NULL)
-      ORDER BY updated_at DESC, workflow_execution_id
-      LIMIT 500
-      """
-    )
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    for row in rows {
-      guard let sessionId = row["workflow_execution_id"],
-            let sessionText = row["session_json"],
-            let sessionData = sessionText.data(using: .utf8) else {
-        continue
-      }
-      guard let summary = legacySummary(from: row, sessionData: sessionData, decoder: decoder) else {
-        continue
-      }
-      try db.execute(
-        """
-        UPDATE workflow_runtime_snapshots
-        SET workflow_id = ?,
-          session_status = ?,
-          created_at = ?,
-          loop_summary_json = jsonb(?)
-        WHERE workflow_execution_id = ?
-        """,
-        bindings: [
-          .text(summary.workflowId),
-          .text(summary.sessionStatus),
-          .text(summary.createdAt),
-          .optionalText(summary.loopSummaryJSON),
-          .text(sessionId)
-        ]
-      )
-    }
-  }
-
-  private func legacySummary(
-    from row: SQLiteRow,
-    sessionData: Data,
-    decoder: JSONDecoder
-  ) -> LegacyWorkflowRuntimeSummary? {
-    do {
-      let session = try decoder.decode(WorkflowSession.self, from: sessionData)
-      let summaryJSON: String?
-      if let evidenceText = row["loop_evidence_json"], let evidenceData = evidenceText.data(using: .utf8) {
-        let evidence = try decoder.decode(LoopEvidenceManifest.self, from: evidenceData)
-        summaryJSON = try jsonString(LoopSessionSummary.make(manifest: evidence))
-      } else {
-        summaryJSON = nil
-      }
-      return LegacyWorkflowRuntimeSummary(
-        workflowId: session.workflowId,
-        sessionStatus: session.status.rawValue,
-        createdAt: Self.dateString(session.createdAt),
-        loopSummaryJSON: summaryJSON
-      )
-    } catch {
-      return nil
-    }
-  }
-
-  private struct LegacyWorkflowRuntimeSummary {
-    var workflowId: String
-    var sessionStatus: String
-    var createdAt: String
-    var loopSummaryJSON: String?
   }
 
   func snapshot(from row: SQLiteRow, db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
@@ -761,33 +671,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     )
   }
 
-  private func overview(
-    from row: SQLiteRow,
-    db: SQLiteDatabase,
-    hasSummaryColumns: Bool
-  ) throws -> LoopSessionOverview? {
-    guard hasSummaryColumns else {
-      return try legacyOverview(from: row)
-    }
-    if canBuildOverviewFromSummaryColumns(row) {
-      return try summaryColumnOverview(from: row)
-    }
-    guard let sessionId = row["workflow_execution_id"] else {
-      return nil
-    }
-    return try legacyOverview(sessionId: sessionId, db: db)
-  }
-
-  private func canBuildOverviewFromSummaryColumns(_ row: SQLiteRow) -> Bool {
-    guard row["workflow_id"] != nil,
-          row["session_status"] != nil,
-          row["created_at"] != nil,
-          row["updated_at"] != nil else {
-      return false
-    }
-    return row["loop_summary_json"] != nil || row["has_loop_evidence"] != "1"
-  }
-
   private func summaryColumnOverview(from row: SQLiteRow) throws -> LoopSessionOverview? {
     guard let sessionId = row["workflow_execution_id"],
           let workflowId = row["workflow_id"],
@@ -816,56 +699,6 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     )
   }
 
-  private func legacyOverview(sessionId: String, db: SQLiteDatabase) throws -> LoopSessionOverview? {
-    let loopEvidenceSelect = try loopEvidenceSelectExpression(db)
-    let rows = try mapRuntimeSQLiteError {
-      try db.query(
-        """
-        SELECT workflow_execution_id,
-          CASE WHEN session_json IS NULL THEN NULL ELSE json(session_json) END AS session_json,
-          \(loopEvidenceSelect),
-          NULL AS loop_summary_json
-        FROM workflow_runtime_snapshots
-        WHERE workflow_execution_id = ?
-        LIMIT 1
-        """,
-        bindings: [.text(sessionId)]
-      )
-    }
-    guard let row = rows.first else {
-      return nil
-    }
-    return try legacyOverview(from: row)
-  }
-
-  private func legacyOverview(from row: SQLiteRow) throws -> LoopSessionOverview? {
-    guard let sessionText = row["session_json"], let sessionData = sessionText.data(using: .utf8) else {
-      return nil
-    }
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    let session = try decoder.decode(WorkflowSession.self, from: sessionData)
-    let summary: LoopSessionSummary?
-    if let summaryText = row["loop_summary_json"], let data = summaryText.data(using: .utf8) {
-      summary = try decoder.decode(LoopSessionSummary.self, from: data)
-    } else if let evidenceText = row["loop_evidence_json"], let data = evidenceText.data(using: .utf8) {
-      let evidence = try decoder.decode(LoopEvidenceManifest.self, from: data)
-      summary = LoopSessionSummary.make(manifest: evidence)
-    } else {
-      summary = nil
-    }
-    return LoopSessionOverview.make(session: session, summary: summary)
-  }
-
-  func loopEvidenceSelectExpression(_ db: SQLiteDatabase) throws -> String {
-    if try mapRuntimeSQLiteError({
-      try db.tableColumnNames("workflow_runtime_snapshots")
-    }).contains("loop_evidence_json") {
-      return "CASE WHEN loop_evidence_json IS NULL THEN NULL ELSE json(loop_evidence_json) END AS loop_evidence_json"
-    }
-    return "NULL AS loop_evidence_json"
-  }
-
   private func jsonString<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -890,31 +723,13 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
 
 private let dateFormatter = LockedISO8601DateFormatter()
 
+let runtimeLoopEvidenceSelectSQL =
+  "CASE WHEN loop_evidence_json IS NULL THEN NULL ELSE json(loop_evidence_json) END AS loop_evidence_json"
+
 func mapRuntimeSQLiteError<T>(_ body: () throws -> T) throws -> T {
   do {
     return try body()
   } catch let error as SQLiteError {
     throw WorkflowRuntimePersistenceStoreError.sqliteFailed(error.message)
-  }
-}
-
-private extension LoopSessionOverview {
-  func matches(_ filter: SQLiteWorkflowRuntimePersistenceStore.LoopSessionOverviewFilter) -> Bool {
-    if let workflowId = filter.workflowId, self.workflowId != workflowId {
-      return false
-    }
-    if let sessionStatus = filter.sessionStatus {
-      if sessionStatus == "active" {
-        guard self.sessionStatus == "created" || self.sessionStatus == "running" else {
-          return false
-        }
-      } else if self.sessionStatus != sessionStatus {
-        return false
-      }
-    }
-    if let lastGateDecision = filter.lastGateDecision, self.lastGateDecision != lastGateDecision {
-      return false
-    }
-    return true
   }
 }

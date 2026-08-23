@@ -84,23 +84,10 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     )
   }
 
-  func testSQLiteRuntimePersistenceRoundTripsLoopEvidenceAndMigratesExistingDatabase() throws {
+  func testSQLiteRuntimePersistenceRoundTripsLoopEvidence() throws {
     let root = temporaryDirectory()
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let dbPath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
-    let migrationSetup = runSQLite(
-      dbPath,
-      """
-      CREATE TABLE workflow_runtime_snapshots (
-        workflow_execution_id TEXT PRIMARY KEY,
-        session_json BLOB NOT NULL CHECK (json_valid(session_json, 8)),
-        root_output_json BLOB CHECK (root_output_json IS NULL OR json_valid(root_output_json, 8)),
-        diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
-        updated_at TEXT NOT NULL
-      )
-      """
-    )
-    XCTAssertEqual(migrationSetup.exitCode, 0, migrationSetup.stderr)
     let date = Date(timeIntervalSince1970: 1_700_000_000)
     let session = WorkflowSession(
       workflowId: "wf",
@@ -143,7 +130,7 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     XCTAssertEqual(storage, ["blob", "1", "accepted"])
   }
 
-  func testSQLiteRuntimePersistenceSaveSkipsUndecodableLegacySummaryRows() throws {
+  func testSQLiteRuntimePersistenceSaveDiscardsPreGenerationStoreAndRebuilds() throws {
     let root = temporaryDirectory()
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let dbPath = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
@@ -157,15 +144,13 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
         diagnostics_json BLOB NOT NULL CHECK (json_valid(diagnostics_json, 8)),
         updated_at TEXT NOT NULL
       );
-      INSERT INTO workflow_runtime_snapshots (
-        workflow_execution_id, session_json, root_output_json, diagnostics_json, updated_at
-      ) VALUES (
-        'poisoned-legacy',
-        jsonb('{"workflowId":"wf","sessionId":"poisoned-legacy","status":"removed-status","entryStepId":"start","createdAt":"2023-11-14T22:13:20Z","updatedAt":"2023-11-14T22:13:20Z","executions":[]}'),
+      INSERT INTO workflow_runtime_snapshots VALUES (
+        'legacy-session',
+        jsonb('{"workflowId":"wf","sessionId":"legacy-session","status":"completed","entryStepId":"start","createdAt":"2023-11-14T22:13:20Z","updatedAt":"2023-11-14T22:13:20Z","executions":[]}'),
         NULL,
         jsonb('[]'),
         '2023-11-14T22:13:20Z'
-      )
+      );
       """
     )
     XCTAssertEqual(setup.exitCode, 0, setup.stderr)
@@ -185,15 +170,15 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
     let rows = runSQLite(
       dbPath,
       """
-      SELECT workflow_execution_id, COALESCE(workflow_id, 'NULL')
-      FROM workflow_runtime_snapshots
-      ORDER BY workflow_execution_id
+      SELECT group_concat(workflow_execution_id || '|' || workflow_id, char(10))
+      FROM workflow_runtime_snapshots;
+      SELECT 'user_version=' || (SELECT * FROM pragma_user_version);
       """
     )
     XCTAssertEqual(rows.exitCode, 0, rows.stderr)
     XCTAssertEqual(
       rows.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
-      "healthy-session|wf\npoisoned-legacy|NULL"
+      "healthy-session|wf\nuser_version=\(SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)"
     )
   }
 
@@ -263,7 +248,7 @@ final class SQLiteWorkflowMessageLogTests: XCTestCase {
       dbPath,
       """
       UPDATE workflow_runtime_snapshots
-      SET session_json = jsonb('{"poisoned":true}'),
+      SET session_json = jsonb('{"workflowId":"wf","status":"completed","poisoned":true}'),
         loop_evidence_json = jsonb('{"poisoned":true}')
       WHERE workflow_execution_id = 'session-summary-only'
       """

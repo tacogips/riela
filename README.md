@@ -562,7 +562,7 @@ directory, enabled state, and active state. The source column shows `profile`,
 or project-level workflow sources that are visible in every profile.
 On a fresh install, the default profile is seeded with inactive starter
 packages for a Discord Yuki chat bot, a Telegram Yuki chat bot, a Slack chat
-bot, and a mail-gateway latest-mail digest. They appear in the Instances window
+bot, and a gmail-gateway latest-mail digest. They appear in the Instances window
 with auto-start off, so new users can inspect required credentials in Web
 Config and activate only the instance they want to try.
 The Instances table uses `Active` for the saved profile preference that starts

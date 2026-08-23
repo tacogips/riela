@@ -7,11 +7,13 @@ final class SQLiteDatabaseTests: XCTestCase {
     let database = try SQLiteDatabase.open(path: temporaryDatabasePath())
 
     let journalMode = try database.query("PRAGMA journal_mode").first?["journal_mode"]
+    let synchronous = try database.query("PRAGMA synchronous").first?["synchronous"]
     let foreignKeys = try database.query("PRAGMA foreign_keys").first?["foreign_keys"]
     let busyTimeout = try database.query("PRAGMA busy_timeout").first?["timeout"]
     let jsonStorage = try database.query("SELECT typeof(jsonb('{}')) AS storage_type").first?["storage_type"]
 
     XCTAssertEqual(journalMode, "wal")
+    XCTAssertEqual(synchronous, "1")
     XCTAssertEqual(foreignKeys, "1")
     XCTAssertEqual(busyTimeout, "3000")
     XCTAssertEqual(jsonStorage, "blob")

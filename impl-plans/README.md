@@ -273,7 +273,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 | `third-party-addon-public-api`                           | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
 | `third-party-addon-resolver-validation`                  | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
 | `third-party-addon-resolution`                           | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
-| `mail-gateway-addons`                                    | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
+| `gmail-gateway-addons`                                    | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
 | `node-addon-authored-payload-guard`                      | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
 | `node-addon-worker-role-validation`                      | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
 | `x-gateway-addon`                                        | 2026-04-20 | `design-node-addon-catalog-and-chat-reply-worker`                                                                                             |
@@ -628,7 +628,7 @@ PHASE_TO_PLANS = {
   105: ["impl-plans/x-gateway-addon.md"],
   106: ["impl-plans/node-addon-worker-role-validation.md"],
   107: ["impl-plans/node-addon-authored-payload-guard.md"],
-  108: ["impl-plans/mail-gateway-addons.md"],
+  108: ["impl-plans/gmail-gateway-addons.md"],
   109: ["impl-plans/third-party-addon-resolution.md"],
   110: ["impl-plans/third-party-addon-resolver-validation.md"],
   111: ["impl-plans/third-party-addon-public-api.md"],

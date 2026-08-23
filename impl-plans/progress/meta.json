@@ -289,7 +289,7 @@
     "hook-snippet-command",
     "inline-node-and-nested-example-layout",
     "loaded-workflow-addon-validation-results",
-    "mail-gateway-addons",
+    "gmail-gateway-addons",
     "mailbox-artifact-atomic-writes",
     "mailbox-cross-boundary-edge-validation",
     "mailbox-cross-boundary-routing-scope",

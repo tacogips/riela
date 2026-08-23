@@ -455,8 +455,8 @@ private struct GmailDigestEngine {
   }
 
   private func gatewayMessages(_ payloads: [JSONObject]) -> [JSONValue] {
-    let gatewayPayload = payloads.first { gmailObject($0["mailGateway"]) != nil } ?? [:]
-    let gateway = gmailObject(gatewayPayload["mailGateway"]) ?? [:]
+    let gatewayPayload = payloads.first { gmailObject($0["gmailGateway"]) != nil } ?? [:]
+    let gateway = gmailObject(gatewayPayload["gmailGateway"]) ?? [:]
     var data = gmailObject(gateway["data"])
     if let nested = gmailObject(data?["data"]) {
       data = nested
@@ -494,7 +494,7 @@ private struct GmailDigestEngine {
   private func gatewayMessageFileDescriptors(_ payloads: [JSONObject]) -> [String: [JSONObject]] {
     var descriptors: [String: [JSONObject]] = [:]
     for payload in payloads {
-      guard let gateway = gmailObject(payload["mailGateway"]) else {
+      guard let gateway = gmailObject(payload["gmailGateway"]) else {
         continue
       }
       for fileSet in messageFileSets(.object(gateway)) {
@@ -696,16 +696,16 @@ private struct GmailDigestEngine {
     try assertPrivateRuntimeDirectory(outputRoot, label: "RIELA_GMAIL_ATTACHMENT_DOWNLOAD_ROOT")
     let keyed = candidates.compactMap { candidate -> String? in gmailNonEmptyString(candidate["downloadKey"]) }
     guard !keyed.isEmpty else { return [:] }
-    let command = mailGatewayReaderCommand()
+    let command = gmailGatewayReaderCommand()
       + ["file", "download"]
-      + mailGatewayConfigArgument()
+      + gmailGatewayConfigArgument()
       + keyed.flatMap { ["--key", $0] }
       + ["--output-dir", outputRoot]
     let output = try runCommand(command)
     guard let data = output.data(using: .utf8),
       let decoded = try? JSONDecoder().decode(JSONValue.self, from: data)
     else {
-      throw AdapterExecutionError(.providerError, "mail-gateway attachment download returned invalid JSON")
+      throw AdapterExecutionError(.providerError, "gmail-gateway attachment download returned invalid JSON")
     }
     let downloadedFiles = gmailArray(gmailObject(decoded)?["files"]) ?? [decoded]
     var result: [String: String] = [:]
@@ -825,12 +825,12 @@ private struct GmailDigestEngine {
     return result?.text ?? ""
   }
 
-  private func mailGatewayReaderCommand() -> [String] {
-    shellWords(nonEmptyEnvironment("RIELA_MAIL_GATEWAY_READER_COMMAND") ?? "mail-gateway-reader")
+  private func gmailGatewayReaderCommand() -> [String] {
+    shellWords(nonEmptyEnvironment("RIELA_GMAIL_GATEWAY_READER_COMMAND") ?? "gmail-gateway-reader")
   }
 
-  private func mailGatewayConfigArgument() -> [String] {
-    guard let configured = nonEmptyEnvironment("MAIL_GATEWAY_CONFIG") ?? nonEmptyEnvironment("GMAIL_MAIL_GATEWAY_CONFIG"),
+  private func gmailGatewayConfigArgument() -> [String] {
+    guard let configured = nonEmptyEnvironment("GMAIL_GATEWAY_CONFIG"),
       FileManager.default.fileExists(atPath: configured)
     else {
       return []
@@ -855,7 +855,7 @@ private struct GmailDigestEngine {
     let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     guard process.terminationStatus == 0 else {
-      throw AdapterExecutionError(.providerError, "mail-gateway attachment download failed: \(gmailCompactText(.string(stderr.isEmpty ? stdout : stderr)))")
+      throw AdapterExecutionError(.providerError, "gmail-gateway attachment download failed: \(gmailCompactText(.string(stderr.isEmpty ? stdout : stderr)))")
     }
     return stdout
   }

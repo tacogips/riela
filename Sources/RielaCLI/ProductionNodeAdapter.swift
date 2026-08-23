@@ -491,6 +491,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         ]
       )
     }
+    if let renamed = Self.renamedAddons[input.addon.name] {
+      throw AdapterExecutionError(
+        .providerError,
+        "add-on '\(input.addon.name)' was renamed to '\(renamed)'; update the workflow node to use the new add-on name"
+      )
+    }
     throw AdapterExecutionError(
       .providerError,
       "missing add-on resolver for '\(input.addon.name)'"
@@ -498,8 +504,13 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   }
 
   private static let deferredContainerAddons: Set<String> = [
-    "riela/mail-gateway-read",
+    "riela/gmail-gateway-read",
     "riela/x-gateway-read"
+  ]
+
+  private static let renamedAddons: [String: String] = [
+    "riela/mail-gateway-read": "riela/gmail-gateway-read",
+    "riela/mail-gateway": "riela/gmail-gateway"
   ]
 
   private func executeSDKWorker(

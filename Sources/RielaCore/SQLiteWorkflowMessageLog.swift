@@ -154,6 +154,9 @@ public struct SQLiteWorkflowMessageLog: Sendable {
   }
 
   private func openDatabase(readOnly: Bool = false) throws -> SQLiteDatabase {
+    if !readOnly {
+      SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+    }
     do {
       return try SQLiteDatabase.open(
         path: databasePath,
@@ -170,6 +173,9 @@ public struct SQLiteWorkflowMessageLog: Sendable {
   private func ensureSchema(_ db: SQLiteDatabase) throws {
     try ensureJSONBAvailable(db)
     try mapSQLiteError {
+      // Stamps the schema generation so a store created through the
+      // message-log-only path is not mistaken for a pre-generation store.
+      try SQLiteWorkflowRuntimePersistenceStore.requireCompatibleSchemaGeneration(in: db)
       try db.execute(
       """
       CREATE TABLE IF NOT EXISTS workflow_messages (
@@ -200,7 +206,10 @@ public struct SQLiteWorkflowMessageLog: Sendable {
         string_value TEXT,
         number_value REAL,
         bool_value INTEGER,
-        PRIMARY KEY (workflow_execution_id, communication_id, key)
+        PRIMARY KEY (workflow_execution_id, communication_id, key),
+        FOREIGN KEY (workflow_execution_id, communication_id)
+          REFERENCES workflow_messages (workflow_execution_id, communication_id)
+          ON DELETE CASCADE
       )
       """
       )

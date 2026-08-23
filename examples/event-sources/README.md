@@ -450,12 +450,12 @@ riela events emit x-follower-ai-business-hourly-cron \
 ```
 
 The `gmail-latest-mail-hourly-cron` source demonstrates a scheduled Telegram
-digest backed by Dockerized mail-gateway-reader. It fires every 30 minutes with
+digest backed by Dockerized gmail-gateway-reader. It fires every 30 minutes with
 `0 */30 * * * *`, dispatches `gmail-latest-mail-digest-telegram`, and uses
 `stateBackend: "kv"` (workflow key-value store under
 `.riela/kv/gmail-digest.sqlite`) to avoid duplicate
 message processing. The workflow fetches metadata for the latest 10 Gmail
-messages through mail-gateway's stable `threads(input:)` GraphQL field. Live
+messages through gmail-gateway's stable `threads(input:)` GraphQL field. Live
 Gmail reads can return `textBody`/`htmlBody`; the built-in `riela/gmail-digest`
 add-on materializes those bodies under the ignored runtime message directory
 and treats attachment records as metadata unless a `downloadKey` or local path
@@ -465,8 +465,8 @@ can download selected attachments out-of-band, preview text files, and use
 Gemini OCR to classify PDF attachments when `GOOGLE_API_KEY` or
 `GEMINI_API_KEY` is set.
 Provide the Gmail
-mail-gateway configuration through
-`GMAIL_MAIL_GATEWAY_CONFIG` and the Telegram target through
+gmail-gateway configuration through
+`GMAIL_GATEWAY_CONFIG` and the Telegram target through
 `RIELA_TELEGRAM_CHAT_ID`; keep live token values out of event and workflow
 files. The binding disables automatic final/error replies, so Telegram output
 should come only from the explicit digest reply step. The cursor file stores

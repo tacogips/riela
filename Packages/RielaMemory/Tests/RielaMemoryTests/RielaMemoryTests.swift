@@ -70,29 +70,46 @@ final class RielaMemoryTests: XCTestCase {
     ])
   }
 
-  func testOpeningLegacyDatabaseMigratesWithoutDeletingRecords() throws {
+  func testMatchPatternSearchStopsAtLimitAndKeepsNewestFirstOrder() throws {
+    let root = temporaryDirectory()
+    let store = RielaMemoryStore(rootDirectory: root.path)
+    for index in 0..<30 {
+      try store.save(
+        memoryId: "persona-scan",
+        workflowId: "wf",
+        registeredAt: String(format: "2026-06-20T10:00:%02dZ", index),
+        payload: .object(["text": .string(index % 2 == 0 ? "even entry \(index)" : "odd entry \(index)")])
+      )
+    }
+
+    let records = try store.search(
+      memoryId: "persona-scan",
+      options: MemorySearchOptions(workflowId: "wf", matchPatterns: ["even entry"], limit: 3)
+    )
+
+    XCTAssertEqual(records.map(\.registeredAt), [
+      "2026-06-20T10:00:28Z",
+      "2026-06-20T10:00:26Z",
+      "2026-06-20T10:00:24Z"
+    ])
+  }
+
+  func testOpeningLegacyDatabaseFailsWithSchemaVersionError() throws {
     let root = temporaryDirectory()
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let databaseURL = root.appendingPathComponent("legacy-memory.sqlite")
     try createLegacyMemoryDatabase(at: databaseURL)
 
     let store = RielaMemoryStore(rootDirectory: root.path)
-    let records = try store.load(memoryId: "legacy-memory", workflowId: "wf", limit: 10)
 
-    XCTAssertEqual(records.map(\.recordId), [1])
-    XCTAssertEqual(records[0].tags, [])
-    XCTAssertEqual(records[0].relatedRecordIds, [])
-    XCTAssertEqual(records[0].files, [])
-    XCTAssertEqual(records[0].payload, .object(["text": .string("legacy survives")]))
-
-    let saved = try store.save(
-      memoryId: "legacy-memory",
-      workflowId: "wf",
-      tags: ["new"],
-      relatedRecordIds: [records[0].recordId],
-      payload: .object(["text": .string("new record")])
-    )
-    XCTAssertEqual(saved.recordId, 2)
+    XCTAssertThrowsError(
+      try store.load(memoryId: "legacy-memory", workflowId: "wf", limit: 10)
+    ) { error in
+      guard case let RielaMemoryError.sqliteFailed(message) = error else {
+        return XCTFail("expected sqliteFailed, got \(error)")
+      }
+      XCTAssertTrue(message.contains("schema predates version"), message)
+    }
   }
 
   func testMetadataCanDescribeMemoryPurposeAndDataSchema() throws {

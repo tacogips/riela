@@ -40,7 +40,7 @@ Step 3 accepted the design for implementation planning with no findings and no
 Codex agent references. This plan preserves the accepted scope: add
 `riela/apple-mail-list` and `riela/apple-mail-message` as local Apple Mail
 add-ons backed by the external `apple-gateway` binary, keep them distinct from
-container-backed `riela/mail-gateway*`, and keep the shipped example read-only.
+container-backed `riela/gmail-gateway*`, and keep the shipped example read-only.
 
 Intentional divergences: none. The unresolved upstream file-download contract is
 carried forward as a required implementation checkpoint before finalizing the
@@ -324,9 +324,9 @@ operators enough setup context for read-only local Mail listing.
   surface, defaults, error mappings, and materialization contract.
   Evidence: catalog/security docs updated in prior sessions (see progress log
   2026-07-07 entries).
-- [x] Preserve the local Apple Mail versus container `mail-gateway` distinction.
+- [x] Preserve the local Apple Mail versus container `gmail-gateway` distinction.
   Evidence: catalog docs keep the local vs container distinction; the add-on ids
-  differ (`riela/apple-mail-*` vs `riela/mail-gateway*`).
+  differ (`riela/apple-mail-*` vs `riela/gmail-gateway*`).
 - [ ] Close or update the file-download QA note after upstream contract
   confirmation.
   DEFERRED (accepted): depends on the upstream `apple-gateway file download`

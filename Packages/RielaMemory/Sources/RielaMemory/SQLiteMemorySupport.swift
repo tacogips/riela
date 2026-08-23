@@ -38,6 +38,23 @@ func execute(_ db: OpaquePointer?, _ sql: String, bindings: [SQLiteBinding] = []
 }
 
 func queryRows(_ db: OpaquePointer?, sql: String, bindings: [SQLiteBinding]) throws -> [SQLiteRow] {
+  var rows: [SQLiteRow] = []
+  try streamRows(db, sql: sql, bindings: bindings) { row in
+    rows.append(row)
+    return true
+  }
+  return rows
+}
+
+/// Steps the statement one row at a time and hands each row to `handleRow`,
+/// stopping as soon as it returns false. Swift-side filters (regex payload
+/// matching) use this so an unbounded scan never materializes the whole table.
+func streamRows(
+  _ db: OpaquePointer?,
+  sql: String,
+  bindings: [SQLiteBinding],
+  handleRow: (SQLiteRow) throws -> Bool
+) throws {
   var statement: OpaquePointer?
   guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
     throw RielaMemoryError.sqliteFailed(sqliteErrorMessage(db))
@@ -47,11 +64,10 @@ func queryRows(_ db: OpaquePointer?, sql: String, bindings: [SQLiteBinding]) thr
   }
   try bind(bindings, to: statement)
 
-  var rows: [SQLiteRow] = []
   while true {
     let result = sqlite3_step(statement)
     if result == SQLITE_DONE {
-      return rows
+      return
     }
     if result == SQLITE_ROW {
       var row: [String: String] = [:]
@@ -66,7 +82,9 @@ func queryRows(_ db: OpaquePointer?, sql: String, bindings: [SQLiteBinding]) thr
           row[String(cString: name)] = String(cString: text)
         }
       }
-      rows.append(SQLiteRow(columns: row, db: db))
+      if try !handleRow(SQLiteRow(columns: row, db: db)) {
+        return
+      }
       continue
     }
     throw RielaMemoryError.sqliteFailed(sqliteErrorMessage(db))

@@ -1,6 +1,6 @@
 {
   "workflowId": "gmail-latest-mail-digest-telegram",
-  "description": "Read the latest Gmail messages through Dockerized mail-gateway-reader, keep only messages not seen by previous runs, summarize new mail with an LLM worker, persist the seen-message cursor, and notify Telegram through chat-reply-worker.",
+  "description": "Read the latest Gmail messages through Dockerized gmail-gateway-reader, keep only messages not seen by previous runs, summarize new mail with an LLM worker, persist the seen-message cursor, and notify Telegram through chat-reply-worker.",
   "defaults": {
     "maxLoopIterations": 3,
     "nodeTimeoutMs": 180000,
@@ -27,16 +27,16 @@
     {
       "id": "fetch-latest-gmail",
       "addon": {
-        "name": "riela/mail-gateway-read",
+        "name": "riela/gmail-gateway-read",
         "version": "1",
         "env": {
-          "MAIL_GATEWAY_CONFIG": {
-            "fromEnv": "GMAIL_MAIL_GATEWAY_CONFIG"
+          "GMAIL_GATEWAY_CONFIG": {
+            "fromEnv": "GMAIL_GATEWAY_CONFIG"
           }
         },
         "config": {
           "queryTemplate": "query {\n  threads(input: {\n    accountId: \"{{inbox.latest.output.payload.accountId}}\"\n    query: \"{{inbox.latest.output.payload.gmailSearchQuery}}\"\n  }) {\n    totalCount\n    pageInfo {\n      hasNextPage\n      endCursor\n    }\n    edges {\n      cursor\n      node {\n        id\n        accountId\n        subject\n        snippet\n        messages {\n          id\n          threadId\n          subject\n          snippet\n          sentAt\n          receivedAt\n          textBody\n          htmlBody\n          from {\n            name\n            address\n          }\n          to {\n            name\n            address\n          }\n          cc {\n            name\n            address\n          }\n          attachments {\n            id\n            filename\n            mimeType\n            sizeBytes\n            localPath\n            downloadKey\n            materializationState\n          }\n        }\n      }\n    }\n  }\n}",
-          "image": "ghcr.io/tacogips/mail-gateway:latest",
+          "image": "ghcr.io/tacogips/gmail-gateway:latest",
           "runnerKind": "docker",
           "networkPolicy": "egress-allowed"
         }

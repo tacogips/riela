@@ -2,14 +2,14 @@
 
 This document defines an authored workflow add-on mechanism and the current
 built-in worker add-ons: chat reply, agent worker, workflow package sandbox
-review, x-gateway worker nodes, and mail-gateway worker nodes.
+review, x-gateway worker nodes, and gmail-gateway worker nodes.
 
 ## Overview
 
 Workflow authors often need common nodes whose behavior is operational rather
 than business-specific. Examples include replying to a triggering chat event,
 running a standard agent-backed implementation worker, querying/posting through
-x-gateway, or reading/sending mail through mail-gateway without copying
+x-gateway, or reading/sending mail through gmail-gateway without copying
 container and credential plumbing into every workflow bundle.
 
 Authors should be able to reference these nodes as built-in add-ons from

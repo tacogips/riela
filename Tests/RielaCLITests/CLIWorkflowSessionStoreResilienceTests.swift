@@ -132,14 +132,11 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
     try database.execute(
       """
       INSERT INTO cli_workflow_sessions (
-        session_id, workflow_name, workflow_id, status, record_json, updated_at
-      ) VALUES (?, ?, ?, ?, jsonb(?), ?)
+        session_id, record_json, updated_at
+      ) VALUES (?, jsonb(?), ?)
       """,
       bindings: [
         .text(record.session.sessionId),
-        .text(record.workflowName),
-        .text(record.session.workflowId),
-        .text(record.session.status.rawValue),
         .text(incompatibleJSON),
         .text("2026-07-24T00:00:00.000Z")
       ]

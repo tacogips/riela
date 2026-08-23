@@ -3,7 +3,7 @@
 This document defines an authored workflow add-on mechanism and the current
 built-in worker add-ons: Git commit and push finalization, chat reply, agent
 worker, workflow package sandbox review, x-gateway worker nodes, and
-mail-gateway worker nodes.
+gmail-gateway worker nodes.
 
 ## Split Document Index
 

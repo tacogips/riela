@@ -281,6 +281,9 @@ public struct CLIWorkflowSessionStore: Sendable {
     readOnly: Bool = false,
     strictReadOnly: Bool = false
   ) throws -> SQLiteDatabase {
+    if !readOnly, !strictReadOnly {
+      SQLiteWorkflowRuntimePersistenceStore.discardIncompatibleStoreIfNeeded(databasePath: databasePath)
+    }
     let mode: SQLiteOpenMode
     if strictReadOnly {
       mode = .strictReadOnlyWithImmutableFallback
@@ -299,15 +302,19 @@ public struct CLIWorkflowSessionStore: Sendable {
   private func ensureSchema(_ db: SQLiteDatabase) throws {
     try mapSQLiteError {
       try db.requireJSONBAvailable()
+      try SQLiteWorkflowRuntimePersistenceStore.requireCompatibleSchemaGeneration(in: db)
+      // Filter columns are generated from record_json so they can never drift
+      // from the persisted record; updated_at stays explicit because the JSON
+      // dates lack the fractional seconds the list ordering relies on.
       try db.execute(
       """
       CREATE TABLE IF NOT EXISTS cli_workflow_sessions (
         session_id TEXT PRIMARY KEY,
-        workflow_name TEXT NOT NULL,
-        workflow_id TEXT NOT NULL,
-        status TEXT NOT NULL,
         record_json BLOB NOT NULL CHECK (json_valid(record_json, 8)),
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        workflow_name TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record_json, '$.workflowName')) STORED,
+        workflow_id TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record_json, '$.session.workflowId')) STORED,
+        status TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record_json, '$.session.status')) STORED
       )
       """
       )
@@ -327,20 +334,14 @@ public struct CLIWorkflowSessionStore: Sendable {
       try db.execute(
       """
       INSERT INTO cli_workflow_sessions (
-        session_id, workflow_name, workflow_id, status, record_json, updated_at
-      ) VALUES (?, ?, ?, ?, jsonb(?), ?)
+        session_id, record_json, updated_at
+      ) VALUES (?, jsonb(?), ?)
       ON CONFLICT(session_id) DO UPDATE SET
-        workflow_name = excluded.workflow_name,
-        workflow_id = excluded.workflow_id,
-        status = excluded.status,
         record_json = excluded.record_json,
         updated_at = excluded.updated_at
       """,
       bindings: [
         .text(record.session.sessionId),
-        .text(record.workflowName),
-        .text(record.session.workflowId),
-        .text(record.session.status.rawValue),
         .text(try jsonString(record)),
         .text(Self.dateString(record.session.updatedAt))
       ]

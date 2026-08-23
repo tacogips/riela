@@ -322,6 +322,10 @@ public final class SQLiteDatabase: @unchecked Sendable {
     }
     if options.enableWAL {
       _ = try query("PRAGMA journal_mode=WAL")
+      // WAL's recommended durability level: the database cannot corrupt on
+      // power loss and commits survive app crashes; only a last transaction
+      // may roll back. FULL would fsync the WAL on every snapshot save.
+      try execute("PRAGMA synchronous=NORMAL")
     }
     if options.requireJSONB {
       try requireJSONBAvailable()

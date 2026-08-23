@@ -93,27 +93,12 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       return []
     }
     let boundedLimit = max(1, min(limit, 200))
-    if try summarySchemaNeedsMigration() {
-      let writableDatabase = try openDatabase(readOnly: false)
-      try prepareSchema(in: writableDatabase)
-    }
     let db = try openDatabase(readOnly: true)
-    guard try !hasUnmigratedSummaryRows(database: db) else {
-      throw WorkflowRuntimePersistenceStoreError.sqliteFailed(
-        "runtime session summary migration did not complete"
-      )
-    }
-    let statuses: [WorkflowSessionStatus] = [.created, .running, .completed, .failed]
-    let rows = try statuses.flatMap { status in
-      try summaryRows(
-        database: db,
-        whereClause: "snapshots.workflow_id = ? AND snapshots.session_status = ?",
-        bindings: [.text(workflowId), .text(status.rawValue), .int(Int64(boundedLimit))]
-      )
-    }
-    .sorted(by: sessionSummaryRowPrecedes)
-    .prefix(boundedLimit)
-    .map { $0 }
+    let rows = try summaryRows(
+      database: db,
+      whereClause: "snapshots.workflow_id = ?",
+      bindings: [.text(workflowId), .int(Int64(boundedLimit))]
+    )
     let decoder = JSONDecoder()
     return try rows.map { row in
       guard let sessionId = row["workflow_execution_id"],
@@ -156,10 +141,6 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     ) else {
       throw WorkflowRuntimePersistenceStoreError.notFound(sessionId)
     }
-    if try webDetailSchemaNeedsMigration() {
-      let writableDatabase = try openDatabase(readOnly: false)
-      try prepareSchema(in: writableDatabase)
-    }
     let boundedMessageLimit = max(1, min(messageLimit, 500))
     let db = try openDatabase(readOnly: true)
     return try mapRuntimeSQLiteError {
@@ -178,13 +159,12 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     messageLimit: Int,
     database: SQLiteDatabase
   ) throws -> WebSessionDetail {
-    let loopEvidenceSelect = try loopEvidenceSelectExpression(database)
     let snapshotRows = try mapRuntimeSQLiteError {
       try database.query(
         """
         SELECT json(session_json) AS session_json,
           json(diagnostics_json) AS diagnostics_json,
-          \(loopEvidenceSelect)
+          \(runtimeLoopEvidenceSelectSQL)
         FROM workflow_runtime_snapshots
         WHERE workflow_execution_id = ?
         LIMIT 1
@@ -276,58 +256,11 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
           snapshots.updated_at
         FROM workflow_runtime_snapshots AS snapshots
         WHERE \(whereClause)
-        ORDER BY snapshots.updated_at DESC
+        ORDER BY snapshots.updated_at DESC, snapshots.workflow_execution_id
         LIMIT ?
         """,
         bindings: bindings
       )
-    }
-  }
-
-  private func summarySchemaNeedsMigration() throws -> Bool {
-    let db = try openDatabase(readOnly: true)
-    let columns = try mapRuntimeSQLiteError {
-      try db.tableColumnNames("workflow_runtime_snapshots")
-    }
-    guard columns.contains("workflow_id"),
-          columns.contains("session_status"),
-          columns.contains("created_at") else {
-      return true
-    }
-    return try hasUnmigratedSummaryRows(database: db)
-  }
-
-  private func hasUnmigratedSummaryRows(database: SQLiteDatabase) throws -> Bool {
-    try mapRuntimeSQLiteError {
-      try database.query(
-        """
-        SELECT workflow_execution_id
-        FROM workflow_runtime_snapshots
-        WHERE workflow_id IS NULL
-        LIMIT 1
-        """
-      ).first != nil
-    }
-  }
-
-  private func webDetailSchemaNeedsMigration() throws -> Bool {
-    let db = try openDatabase(readOnly: true)
-    let columns = try mapRuntimeSQLiteError {
-      try db.tableColumnNames("workflow_runtime_snapshots")
-    }
-    guard columns.contains("loop_evidence_json") else {
-      return true
-    }
-    return try mapRuntimeSQLiteError {
-      try db.query(
-        """
-        SELECT 1
-        FROM sqlite_schema
-        WHERE type = 'index'
-          AND name = 'idx_workflow_messages_session_order'
-        LIMIT 1
-        """
-      ).first == nil
     }
   }
 
@@ -399,34 +332,4 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       )
     }
   }
-}
-
-private func sessionSummaryRowPrecedes(_ lhs: SQLiteRow, _ rhs: SQLiteRow) -> Bool {
-  let lhsUpdatedAt = lhs["updated_at"] ?? ""
-  let rhsUpdatedAt = rhs["updated_at"] ?? ""
-  if lhsUpdatedAt != rhsUpdatedAt {
-    return lhsUpdatedAt > rhsUpdatedAt
-  }
-  return (lhs["workflow_execution_id"] ?? "") < (rhs["workflow_execution_id"] ?? "")
-}
-
-func backfillRuntimeSessionSummaryColumns(_ db: SQLiteDatabase) throws {
-  // Undecodable legacy rows must keep NULL summary columns (the decode-based
-  // backfill skips them); gate this cheap SQL pass on a known session status
-  // so it cannot resurrect rows the typed decoder rejects.
-  let knownStatuses = WorkflowSessionStatus.allCases
-    .map { "'\($0.rawValue)'" }
-    .joined(separator: ", ")
-  try db.execute(
-    """
-    UPDATE workflow_runtime_snapshots
-    SET workflow_id = COALESCE(workflow_id, json_extract(session_json, '$.workflowId')),
-      session_status = COALESCE(session_status, json_extract(session_json, '$.status')),
-      created_at = COALESCE(created_at, json_extract(session_json, '$.createdAt'))
-    WHERE (workflow_id IS NULL
-      OR session_status IS NULL
-      OR created_at IS NULL)
-      AND json_extract(session_json, '$.status') IN (\(knownStatuses))
-    """
-  )
 }

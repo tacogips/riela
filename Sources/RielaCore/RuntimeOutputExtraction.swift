@@ -30,7 +30,7 @@ private func extractJSONObjectCandidateText(_ text: String) -> String {
   if trimmed.hasPrefix("{"), let candidate = extractBalancedJSONObject(from: trimmed, start: trimmed.startIndex) {
     return candidate
   }
-  if let fenced = extractFirstFencedJSONBlock(from: trimmed) {
+  if let fenced = extractFencedJSONObjectBlock(from: trimmed) {
     return fenced
   }
   if let embedded = findFirstJSONObjectCandidate(in: trimmed) {
@@ -46,19 +46,39 @@ private func isCompleteJSON(_ text: String) -> Bool {
   return (try? JSONSerialization.jsonObject(with: data)) != nil
 }
 
-private func extractFirstFencedJSONBlock(from text: String) -> String? {
-  let pattern = #"```(?:json)?\s*([\s\S]*?)\s*```"#
+private func extractFencedJSONObjectBlock(from text: String) -> String? {
+  // Info string is captured so json-tagged fences win over untagged ones; fences
+  // tagged with another language (```tsx etc.) are only used when their content
+  // still parses as a JSON object.
+  let pattern = #"```([A-Za-z0-9_+-]*)[ \t]*\n?([\s\S]*?)\s*```"#
   guard let regex = try? NSRegularExpression(pattern: pattern) else {
     return nil
   }
   let range = NSRange(text.startIndex..<text.endIndex, in: text)
-  guard
-    let match = regex.firstMatch(in: text, range: range),
-    let contentRange = Range(match.range(at: 1), in: text)
-  else {
-    return nil
+  var jsonTagged: [String] = []
+  var others: [String] = []
+  for match in regex.matches(in: text, range: range) {
+    guard
+      let infoRange = Range(match.range(at: 1), in: text),
+      let contentRange = Range(match.range(at: 2), in: text)
+    else {
+      continue
+    }
+    let info = String(text[infoRange]).lowercased()
+    let content = String(text[contentRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+    if content.isEmpty {
+      continue
+    }
+    if info == "json" {
+      jsonTagged.append(content)
+    } else {
+      others.append(content)
+    }
   }
-  return String(text[contentRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+  for candidate in jsonTagged + others where isJSONObjectText(candidate) {
+    return candidate
+  }
+  return nil
 }
 
 private func findFirstJSONObjectCandidate(in text: String) -> String? {

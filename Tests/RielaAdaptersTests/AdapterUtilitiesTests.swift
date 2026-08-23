@@ -417,6 +417,48 @@ final class AdapterUtilitiesTests: XCTestCase {
     }
   }
 
+  func testParseJSONCandidatePicksFencedJSONBlockAfterNonJSONFence() throws {
+    let text = """
+      I will continue thinking and providing output in English. Here is a snippet:
+      ```tsx
+      const view = { kind: "month" };
+      ```
+      And the structured result:
+      ```json
+      {"designAccepted": true, "payload": {"summary": "calendar design"}}
+      ```
+      """
+    let object = try parseJSONObjectCandidate(text, source: "adapterOutput")
+    XCTAssertEqual(object["designAccepted"], .bool(true))
+    XCTAssertEqual(object["payload"], .object(["summary": .string("calendar design")]))
+  }
+
+  func testParseJSONCandidateFallsBackWhenFencedJSONContainsInnerFence() throws {
+    let text = """
+      Preamble prose before the payload.
+      ```json
+      {"designMarkdown": "example:\\n```ts\\nconst a = 1;\\n```\\ndone", "accepted": true}
+      ```
+      """
+    let object = try parseJSONObjectCandidate(text, source: "adapterOutput")
+    XCTAssertEqual(object["accepted"], .bool(true))
+    XCTAssertEqual(
+      object["designMarkdown"],
+      .string("example:\n```ts\nconst a = 1;\n```\ndone")
+    )
+  }
+
+  func testParseJSONCandidateStillAcceptsUntaggedFencedObject() throws {
+    let text = """
+      result below
+      ```
+      {"ok": true}
+      ```
+      """
+    let object = try parseJSONObjectCandidate(text, source: "adapterOutput")
+    XCTAssertEqual(object["ok"], .bool(true))
+  }
+
   func testParseJSONCandidateIgnoresEscapedQuotedBracesBeforeBalancedObject() throws {
     let object = try parseJSONObjectCandidate(
       #"prefix "{ \"ignored\": { not json } }" {"payload":{"text":"brace } and escaped quote \" still string"},"when":{"done":true}} suffix"#,

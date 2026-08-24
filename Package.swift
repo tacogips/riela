@@ -33,7 +33,10 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "Packages/RielaMemory"),
-    .package(path: "../agent-gateway"),
+    .package(
+      url: "https://github.com/tacogips/agent-gateway.git",
+      revision: "2ddea8aaa66567ec6b4f01d9eb9eca1077014315"
+    ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),

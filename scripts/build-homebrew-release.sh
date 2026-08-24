@@ -154,6 +154,32 @@ package_version() {
   tr -d '[:space:]' < "$repo_root/VERSION"
 }
 
+# Runs the release build as a plain statement (never inside a command
+# substitution): swift build reports compiler errors on stdout, and bash does
+# not inherit errexit into $(...), so a build wrapped in a substitution with
+# stdout discarded fails silently and the script "succeeds" with no binary.
+# Build output goes to stderr so CI logs keep the compiler diagnostics.
+swift_release_build() {
+  local target swift_bin developer_dir sdkroot triple
+  target="$1"
+  swift_bin="${RIELA_SWIFT:-$(swift_bin_default)}"
+  developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+  sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
+  triple="$(swift_triple_for_target "$target")"
+
+  (
+    cd "$repo_root"
+    if [[ "$target" == darwin-* ]]; then
+      DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
+        "$swift_bin" build -c release --product riela --triple "$triple" 1>&2
+    elif [[ "$target" == linux-* ]]; then
+      "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib 1>&2
+    else
+      "$swift_bin" build -c release --product riela --triple "$triple" 1>&2
+    fi
+  )
+}
+
 swift_release_bin_path() {
   local target swift_bin developer_dir sdkroot triple
   target="$1"
@@ -166,14 +192,10 @@ swift_release_bin_path() {
     cd "$repo_root"
     if [[ "$target" == darwin-* ]]; then
       DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-        "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
-      DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
         "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
     elif [[ "$target" == linux-* ]]; then
-      "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib >/dev/null
       "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib --show-bin-path
     else
-      "$swift_bin" build -c release --product riela --triple "$triple" >/dev/null
       "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
     fi
   )
@@ -222,7 +244,9 @@ build_target() {
   rm -rf "$work_dir" "$archive" "$archive.sha256"
   mkdir -p "$work_dir/bin"
 
+  swift_release_build "$target"
   bin_path="$(swift_release_bin_path "$target" | tail -n 1)"
+  test -x "$bin_path/riela"
   cp "$bin_path/riela" "$binary"
   chmod 0755 "$binary"
   cp "$repo_root/README.md" "$work_dir/README.md"

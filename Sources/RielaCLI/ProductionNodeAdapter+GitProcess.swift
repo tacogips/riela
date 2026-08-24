@@ -1,6 +1,10 @@
 import Foundation
 #if canImport(Darwin)
-import Darwin
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 #else
 import Glibc
 #endif
@@ -299,12 +303,15 @@ private final class GitCStringArray {
     }
   }
 
+  // Non-optional pointer: glibc's posix_spawn takes non-optional argv/envp
+  // (Darwin's optional parameters accept it either way), and the array always
+  // holds at least its nil terminator.
   func withUnsafeMutableBufferPointer<Result>(
-    _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Result
+    _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) -> Result
   ) -> Result {
     var mutableValues = values
     return mutableValues.withUnsafeMutableBufferPointer { buffer in
-      body(buffer.baseAddress)
+      body(buffer.baseAddress!)
     }
   }
 }

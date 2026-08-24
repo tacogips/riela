@@ -10,6 +10,7 @@ final class SourceDeletionReadinessTests: XCTestCase {
   private static let ignoredRepositoryPathPrefixes = [
     ".git/",
     ".build/",
+    ".build-linux/",
     ".claude/",
     ".riela/",
     "dist/",

@@ -103,3 +103,4 @@ examples/document-inbox-notebook/inbox/*
 /.claude/skills/riela-workflow/
 /.claude/skills/riela-workflow-use-skill/
 /.cursor/rules/riela-project-workflow.mdc
+.build-linux/

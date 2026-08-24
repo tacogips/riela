@@ -1,7 +1,11 @@
 import Foundation
 import RielaCore
 #if canImport(Darwin)
-import Darwin
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 #elseif canImport(Glibc)
 import Glibc
 #endif

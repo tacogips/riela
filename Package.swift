@@ -42,11 +42,11 @@ let package = Package(
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "5614bf27cabf0584ff5101256da3b5c81d82533e"
+      revision: "08c4843427a4df5914d8540fa498662c9564349c"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
-      revision: "0c4ffa2a2f7fad777bf28540517bf0938699b943"
+      revision: "3d964e69b3342cb70726f668f4600832421f7bf9"
     )
   ],
   targets: [

@@ -1,6 +1,10 @@
 import Foundation
 #if canImport(Darwin)
-import Darwin
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 #else
 import Glibc
 #endif

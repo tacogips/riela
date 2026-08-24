@@ -1,11 +1,19 @@
 import Foundation
 #if canImport(CryptoKit)
-import CryptoKit
+#if canImport(CryptoKit)
+  import CryptoKit
+#else
+  import Crypto
+#endif
 #else
 import Crypto
 #endif
 #if canImport(Darwin)
-import Darwin
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
 #else
 import Glibc
 #endif

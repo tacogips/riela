@@ -1,5 +1,5 @@
 {
-  "originHash" : "5ead418f6682b36e71d2a5fa3dd5730d2f6eca0c0c15e645252cff8010e70291",
+  "originHash" : "de6a3f6d2f52d71f8cfd7fcc8aae111b08e28a09ff884d88acb63c6ac2755b38",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-service-gateway.git",
       "state" : {
-        "revision" : "0c4ffa2a2f7fad777bf28540517bf0938699b943"
+        "revision" : "3d964e69b3342cb70726f668f4600832421f7bf9"
       }
     },
     {
@@ -30,7 +30,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "5614bf27cabf0584ff5101256da3b5c81d82533e"
+        "revision" : "08c4843427a4df5914d8540fa498662c9564349c"
       }
     },
     {

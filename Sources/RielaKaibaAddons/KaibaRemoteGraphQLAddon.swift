@@ -1,6 +1,10 @@
 import AppCore
 import AppGraphQL
 import Foundation
+
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
 import RielaAddonSupport
 import RielaCore
 

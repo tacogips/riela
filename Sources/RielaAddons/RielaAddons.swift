@@ -100,6 +100,27 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/google-service-gateway-write", version: "1")
   ]
 
+  public static let gmailGatewayCLIAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gmail-gateway-reader", version: "1"),
+    .init(name: "riela/gmail-gateway-draft", version: "1"),
+    .init(name: "riela/gmail-gateway-sender", version: "1")
+  ]
+
+  public static let googleAnalyticsGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/google-analytics-gateway-read", version: "1"),
+    .init(name: "riela/google-analytics-gateway-write", version: "1"),
+    .init(name: "riela/google-analytics-gateway-admin", version: "1")
+  ]
+
+  public static let googleDocumentsGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/google-docs-gateway-read", version: "1"),
+    .init(name: "riela/google-docs-gateway-write", version: "1"),
+    .init(name: "riela/google-sheet-gateway-read", version: "1"),
+    .init(name: "riela/google-sheet-gateway-write", version: "1"),
+    .init(name: "riela/google-drive-gateway-read", version: "1"),
+    .init(name: "riela/google-drive-gateway-write", version: "1")
+  ]
+
   public static let appleGatewayAdminAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/apple-gateway-graphql", version: "1"),
     .init(name: "riela/apple-gateway-schema", version: "1"),
@@ -120,6 +141,9 @@ public enum RielaBuiltinAddonCatalog {
     + keyValueStoreAddons
     + wrikeGatewayAddons
     + googleServiceGatewayAddons
+    + gmailGatewayCLIAddons
+    + googleAnalyticsGatewayAddons
+    + googleDocumentsGatewayAddons
 
   public static func descriptor(named name: String) -> RielaAddonDescriptor? {
     all.first { $0.name == name }

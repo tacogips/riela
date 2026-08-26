@@ -1840,6 +1840,208 @@ The `examples/wrike-project-kanban-agent` workflow demonstrates the three-tier
 split with a 30-second cron poll that claims one todo task, performs the ticket
 work with an agent node, posts the result as a comment, and completes the task.
 
+## Built-in `riela/gmail-gateway-reader`, `riela/gmail-gateway-draft`, and `riela/gmail-gateway-sender`
+
+### Purpose
+
+The three gmail-gateway CLI add-ons run GraphQL documents against Gmail
+through the locally installed gmail-gateway tier binaries. The tier is
+compiled into each executable, so each add-on maps to exactly one binary and
+workflow authors cannot escalate through inputs, variables, or upstream
+payload data:
+
+| Add-on | Binary | Surface |
+| --- | --- | --- |
+| `riela/gmail-gateway-reader` | `gmail-gateway-reader` | queries only; write fields fail with `SEND_DISABLED_IN_READER` |
+| `riela/gmail-gateway-draft` | `gmail-gateway-draft` | queries plus `sendMessage`/`createDraft`/`replyMessage`/`forwardMessage` as provider drafts, never direct sends |
+| `riela/gmail-gateway-sender` | `gmail-gateway-sender` | queries plus direct sends for `sendMessage`/`replyMessage`/`forwardMessage` |
+
+These are distinct from the container-backed `riela/gmail-gateway-read` and
+`riela/gmail-gateway` add-ons, which run the gateway image through a container
+runner instead of a local binary.
+
+All three are worker-only version `1` add-ons that follow the Shared Local CLI
+Gateway Rules. Binary resolution order is `addon.config.binaryPath`, then the
+per-tier environment fallback (`GMAIL_GATEWAY_READER_BIN`,
+`GMAIL_GATEWAY_DRAFT_BIN`, `GMAIL_GATEWAY_SENDER_BIN`), then `PATH` lookup of
+the fixed tier executable name.
+
+### Config Contract
+
+- `queryTemplate` (required): GraphQL document template rendered with node
+  variables; must render non-empty. Rendered documents run as
+  `<binary> graphql --query <document>`.
+- `variablesTemplate` is refused with a policy error: the gmail-gateway CLI
+  rejects GraphQL variables, so values must render into the document text.
+  The gateway's GraphQL engine also rejects fragments, spreads, and more than
+  one root field per document.
+- `selectFirst`, `whenFlags`, `payloadExtras`, and `nowVariables` follow the
+  wrike-gateway contract.
+
+### Environment Contract
+
+`addon.env` bindings are explicit and validated by shape: `GMAIL_GATEWAY_CONFIG`,
+`GMAIL_GATEWAY_CREDENTIAL_DIR` (relocates the default token-store directory,
+whose fallback is `${XDG_STATE_HOME:-~/.local/state}/gmail-gateway/credentials`),
+plus credential-material names matching
+`GMAIL_GATEWAY_CREDENTIAL_<SUFFIX>_OAUTH_CLIENT_SECRET_PATH|_OAUTH_CLIENT_SECRET_JSON|_TOKEN_STORE_PATH|_TOKEN_STORE_JSON`,
+where `<SUFFIX>` is an uppercase alphanumeric/underscore credential id suffix
+(gmail-gateway derives these names from config credential ids). Any other
+target name fails the node with a policy error; ambient runtime environment
+variables are never forwarded. When `TOKEN_STORE_JSON` is injected, refreshed
+tokens are not persisted back — each run may perform one in-memory refresh.
+
+### Output and Failure Rules
+
+- payload: `status`, `addon`, `stepId`, `data`, `requestId`, `replyText`,
+  `gmailGateway.binary.{path,source}`, plus `selected` and `payloadExtras`
+  keys when configured
+- a `{"data":null,"errors":[...]}` envelope (exit 5/6) fails the node with the
+  joined error messages and `extensions` (including the stable gmail-gateway
+  `code` and `requestId`) in the diagnostic
+- CLI/config/auth failures (exit 2/3/4) print nothing on stdout; the node
+  fails with the exit code and compacted stderr
+- GraphQL results never contain file bytes; attachment fields return
+  `downloadKey` values that require the separate `file download` command,
+  which this add-on does not expose
+
+## Built-in `riela/google-analytics-gateway-read`, `riela/google-analytics-gateway-write`, and `riela/google-analytics-gateway-admin`
+
+### Purpose
+
+The three google-analytics-gateway add-ons run GraphQL documents against GA4
+Admin/Data and Tag Manager through the locally installed
+google-analytics-gateway tier binaries. Capability tiers are cumulative and
+separated at link boundaries — the reader binary physically contains no write
+or admin code — so each add-on pins one tier:
+
+| Add-on | Binary | Surface |
+| --- | --- | --- |
+| `riela/google-analytics-gateway-read` | `google-analytics-gateway-reader` | gets, lists, reports, metadata, compatibility, snippets |
+| `riela/google-analytics-gateway-write` | `google-analytics-gateway-writer` | reader + creates/updates, GTM workspace mutations, versions, publish, gtag configs |
+| `riela/google-analytics-gateway-admin` | `google-analytics-gateway-admin` | writer + deletes, user permissions, provisioning, destination links |
+
+All three are worker-only version `1` add-ons that follow the Shared Local CLI
+Gateway Rules and the full wrike-gateway config contract (`queryTemplate`,
+`variablesTemplate`, `nowVariables`, `selectFirst`, `whenFlags`,
+`payloadExtras`). Rendered documents run as
+`<binary> graphql query <document> [--variables <compact-json>]`. Binary
+resolution order is `addon.config.binaryPath`, then the per-tier environment
+fallback (`GOOGLE_ANALYTICS_GATEWAY_READER_BIN`,
+`GOOGLE_ANALYTICS_GATEWAY_WRITER_BIN`, `GOOGLE_ANALYTICS_GATEWAY_ADMIN_BIN`),
+then `PATH` lookup of the fixed tier executable name.
+
+### Environment Contract
+
+Only `GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN` (the gateway's synthesized
+non-interactive profile token) and `GOOGLE_ANALYTICS_GATEWAY_CONFIG` (a
+credential-profile file that names environment variables, never secret values)
+are accepted as `addon.env` target names. Any other target name fails the
+node with a policy error; ambient runtime environment variables are never
+forwarded.
+
+### Output and Failure Rules
+
+Identical to the wrike-gateway rules with the payload namespace
+`googleAnalyticsGateway.binary.{path,source}`: a GraphQL error envelope fails
+the node with joined messages and extensions, and a nonzero exit without a
+parseable envelope fails with the exit code and compacted stderr.
+
+## Built-in `riela/google-docs-gateway-read`/`-write`, `riela/google-sheet-gateway-read`/`-write`, and `riela/google-drive-gateway-read`/`-write`
+
+### Purpose
+
+The six google-documents-gateway add-ons run Docs, Sheets, and Drive
+operations through the locally installed google-documents-gateway role
+binaries. A reader binary never includes a mutation command and each role
+carries exactly one OAuth scope, so each add-on pins one role executable:
+
+| Add-on | Binary | Scope |
+| --- | --- | --- |
+| `riela/google-docs-gateway-read` | `google-docs-gateway-reader` | `documents.readonly` |
+| `riela/google-docs-gateway-write` | `google-docs-gateway-writer` | `documents` |
+| `riela/google-sheet-gateway-read` | `google-sheet-gateway-reader` | `spreadsheets.readonly` |
+| `riela/google-sheet-gateway-write` | `google-sheet-gateway-writer` | `spreadsheets` |
+| `riela/google-drive-gateway-read` | `google-drive-gateway-reader` | `drive.readonly` |
+| `riela/google-drive-gateway-write` | `google-drive-gateway-writer` | `drive.file` |
+
+All six are worker-only version `1` add-ons that follow the Shared Local CLI
+Gateway Rules for binary pinning and environment allowlisting, but the gateway
+CLI is not GraphQL: each invocation is `<binary> <command> --flag=value ...`
+returning one `{"ok":bool,...}` JSON envelope on stdout.
+
+### Authored Example
+
+```json
+{
+  "id": "append-row",
+  "addon": {
+    "name": "riela/google-sheet-gateway-write",
+    "version": "1",
+    "env": {
+      "GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_SHEETS_WRITER_OAUTH_CLIENT_SECRET_JSON": { "fromEnv": "RIELA_SHEETS_WRITER_CLIENT_JSON" },
+      "GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_SHEETS_WRITER_TOKEN_STORE_JSON": { "fromEnv": "RIELA_SHEETS_WRITER_TOKEN_STORE" }
+    },
+    "config": {
+      "command": "values append",
+      "argsTemplate": {
+        "spreadsheet-id": "{{workflowInput.spreadsheetId}}",
+        "range": "Sheet1!A1",
+        "json-values": "{{input.rowsJSON}}",
+        "value-input-option": "USER_ENTERED"
+      },
+      "whenFlags": { "appended": "data.data.updates.updatedRows" }
+    }
+  }
+}
+```
+
+### Config Contract
+
+- `command` (required): one or two lowercase command words, read as a literal
+  `addon.config` value and never rendered from workflow input. `auth login`
+  (interactive browser OAuth) and `auth revoke` are refused with a policy
+  error; every other command is admitted and the pinned binary itself rejects
+  out-of-role commands with `FORBIDDEN_COMMAND`.
+- `argsTemplate` (optional object): flag name to rendered value. Flag names
+  must be lowercase words separated by dashes. Values bind as a single
+  `--flag=value` argv element so rendered text can never be parsed as an
+  extra flag; `true` emits a bare boolean flag, `false` and `null` omit the
+  flag, and arrays repeat the flag per element (for repeatable options).
+  `--dry-run` support comes for free as `"dry-run": true`.
+- `selectFirst`, `whenFlags`, `payloadExtras`, and `nowVariables` follow the
+  wrike-gateway contract, resolved against `{ "data": <envelope data> }`.
+
+### Environment Contract
+
+Each add-on accepts exactly the five credential variables of its own role —
+`GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_OAUTH_CLIENT_ID`,
+`_OAUTH_CLIENT_SECRET_JSON`, `_OAUTH_CLIENT_SECRET_PATH`,
+`_TOKEN_STORE_JSON`, and `_TOKEN_STORE_PATH` — plus the role-neutral
+`GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`, which relocates the gateway's
+default token-store directory (fallback
+`${XDG_STATE_HOME:-~/.local/state}/google-documents-gateway/credentials`;
+a per-credential `_TOKEN_STORE_PATH` still wins for one file). `<ROLE>` is
+`DOCS_READER`, `DOCS_WRITER`, `SHEETS_READER`, `SHEETS_WRITER`,
+`DRIVE_READER`, or `DRIVE_WRITER` (note the sheet binaries use the `SHEETS`
+suffix). A reader add-on cannot receive writer credentials through the
+binding mechanism. Injected `TOKEN_STORE_JSON` material must match the
+binary's role or the gateway fails with `SCOPE_MISMATCH`; refreshed tokens
+are not persisted back when the store came from the environment.
+
+### Output and Failure Rules
+
+- payload: `status`, `addon`, `stepId`, `command`, `data` (the envelope's
+  `data` object, which nests the provider response under `data.data`),
+  `replyText`, `googleDocumentsGateway.binary.{path,source}`, plus `selected`
+  and `payloadExtras` keys when configured
+- an `{"ok":false,"error":{code,message}}` envelope fails the node with the
+  stable error code; `INVALID_ARGUMENT`, `FORBIDDEN_COMMAND`, and
+  `INPUT_TOO_LARGE` map to invalid input and every other code (auth,
+  transport, provider, stale-state) to a provider error
+- a nonzero exit without a parseable JSON envelope fails the node with the
+  exit code and compacted stderr
+
 ## Built-in `riela/calendar-*` and `riela/event-*`
 
 ### Purpose

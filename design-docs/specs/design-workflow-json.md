@@ -515,6 +515,30 @@ Initial built-in add-ons:
 - `riela/wrike-gateway-admin`: worker node that runs the locally installed
   `wrike-gateway-admin graphql query` surface, including reviewed delete
   mutations
+- `riela/gmail-gateway-reader`: worker node that runs the locally installed
+  read-only `gmail-gateway-reader graphql --query` surface
+- `riela/gmail-gateway-draft`: worker node that runs the locally installed
+  `gmail-gateway-draft graphql --query` surface, where send-shaped mutations
+  produce provider drafts instead of direct sends
+- `riela/gmail-gateway-sender`: worker node that runs the locally installed
+  `gmail-gateway-sender graphql --query` surface, including direct sends
+- `riela/google-analytics-gateway-read`: worker node that runs the locally
+  installed read-only `google-analytics-gateway-reader graphql query` surface
+- `riela/google-analytics-gateway-write`: worker node that runs the locally
+  installed `google-analytics-gateway-writer graphql query` surface, including
+  create/update and publish mutations but never deletes
+- `riela/google-analytics-gateway-admin`: worker node that runs the locally
+  installed `google-analytics-gateway-admin graphql query` surface, including
+  reviewed deletes, user permissions, and provisioning
+- `riela/google-docs-gateway-read` / `riela/google-docs-gateway-write`:
+  worker nodes that run the locally installed google-docs-gateway role
+  binaries with a fixed command plus validated flag map
+- `riela/google-sheet-gateway-read` / `riela/google-sheet-gateway-write`:
+  worker nodes that run the locally installed google-sheet-gateway role
+  binaries with a fixed command plus validated flag map
+- `riela/google-drive-gateway-read` / `riela/google-drive-gateway-write`:
+  worker nodes that run the locally installed google-drive-gateway role
+  binaries with a fixed command plus validated flag map
 
 Detailed design:
 `design-docs/specs/design-node-addon-catalog-and-chat-reply-worker.md`.

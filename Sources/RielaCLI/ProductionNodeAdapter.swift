@@ -423,6 +423,15 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         context: context
       )
     }
+    if let gmailGatewayCLIAddon = BuiltinGmailGatewayCLIAddon(rawValue: input.addon.name) {
+      return try executeGmailGatewayCLIAddon(input, operation: gmailGatewayCLIAddon, context: context)
+    }
+    if let googleAnalyticsGatewayAddon = BuiltinGoogleAnalyticsGatewayAddon(rawValue: input.addon.name) {
+      return try executeGoogleAnalyticsGatewayAddon(input, operation: googleAnalyticsGatewayAddon, context: context)
+    }
+    if let googleDocumentsGatewayAddon = BuiltinGoogleDocumentsGatewayAddon(rawValue: input.addon.name) {
+      return try executeGoogleDocumentsGatewayAddon(input, operation: googleDocumentsGatewayAddon, context: context)
+    }
     if input.addon.name == "riela/gmail-digest" {
       return try await executeGmailDigest(input)
     }

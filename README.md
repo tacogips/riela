@@ -181,6 +181,39 @@ Credentials require an explicit `addon.env.GOOGLE_SERVICE_GATEWAY_ACCESS_TOKEN`
 binding. Ambient process credentials are not forwarded implicitly, and the
 read add-on cannot invoke a mutation.
 
+## Local Gateway CLI Add-ons
+
+Three add-on families bridge to locally installed gateway CLI tier binaries
+the same way the wrike-gateway add-ons do: each add-on pins one tier
+executable, resolves it via `addon.config.binaryPath`, a per-tier `*_BIN`
+environment fallback, then `PATH`, and forwards only an explicit `addon.env`
+allowlist.
+
+- `riela/gmail-gateway-reader@1`, `riela/gmail-gateway-draft@1`, and
+  `riela/gmail-gateway-sender@1` run `gmail-gateway-<tier> graphql --query`
+  with a rendered `config.queryTemplate`. The gmail-gateway CLI rejects
+  GraphQL variables, so values render into the document text;
+  `config.variablesTemplate` is refused. Allowed `addon.env` targets are
+  `GMAIL_GATEWAY_CONFIG` and the
+  `GMAIL_GATEWAY_CREDENTIAL_<SUFFIX>_{OAUTH_CLIENT_SECRET,TOKEN_STORE}_{PATH,JSON}`
+  credential shapes. (Distinct from the container-backed
+  `riela/gmail-gateway-read` / `riela/gmail-gateway` add-ons.)
+- `riela/google-analytics-gateway-read@1`, `-write@1`, and `-admin@1` run
+  `google-analytics-gateway-<tier> graphql query <document> --variables <json>`
+  with the wrike-style `queryTemplate` / `variablesTemplate` / `selectFirst` /
+  `whenFlags` / `payloadExtras` contract. Allowed `addon.env` targets are
+  `GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN` and
+  `GOOGLE_ANALYTICS_GATEWAY_CONFIG`.
+- `riela/google-docs-gateway-read@1`/`-write@1`,
+  `riela/google-sheet-gateway-read@1`/`-write@1`, and
+  `riela/google-drive-gateway-read@1`/`-write@1` run the six
+  google-documents-gateway role binaries. The CLI is not GraphQL, so the
+  config is `command` (one or two literal words) plus `argsTemplate`
+  (flag map bound as `--flag=value`); `auth login` and `auth revoke` are
+  refused. Allowed `addon.env` targets are exactly the five
+  `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's
+  own role.
+
 ## Session Observability
 
 Session observers open the runtime store read-only and never create, migrate,

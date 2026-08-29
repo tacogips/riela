@@ -345,6 +345,15 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   var gitFailureInjector: any GitFinalizationFailureInjecting
   var gitPushTransportPolicy: any GitPushTransportValidating
   var googleServiceGatewayClientFactory: GoogleServiceGatewayAddonClientFactory
+  /// Test seam. The wrike / gmail / google-analytics add-ons call their
+  /// gateway's GraphQL runtime directly, so covering add-on policy — document
+  /// rendering, variable binding, the environment allowlist, and payload shape
+  /// — would otherwise need live accounts. Production leaves this nil and each
+  /// add-on's pinned tier answers.
+  var localGatewayGraphQLRunner: LocalGatewayGraphQLRunner?
+  /// The same seam for the google-documents add-ons, whose gateway takes CLI
+  /// arguments rather than a GraphQL document.
+  var googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner?
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -362,7 +371,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     gitPushTransportPolicy: any GitPushTransportValidating = VersionOneGitPushTransportPolicy(),
     googleServiceGatewayClientFactory: @escaping GoogleServiceGatewayAddonClientFactory = {
       LiveGoogleServiceGatewayAddonClient(accessToken: $0)
-    }
+    },
+    localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil,
+    googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -378,6 +389,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.gitFailureInjector = gitFailureInjector
     self.gitPushTransportPolicy = gitPushTransportPolicy
     self.googleServiceGatewayClientFactory = googleServiceGatewayClientFactory
+    self.localGatewayGraphQLRunner = localGatewayGraphQLRunner
+    self.googleDocumentsGatewayRunner = googleDocumentsGatewayRunner
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
@@ -412,7 +425,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try executeXDigest(input)
     }
     if let wrikeGatewayAddon = BuiltinWrikeGatewayAddon(rawValue: input.addon.name) {
-      return try executeWrikeGatewayAddon(input, operation: wrikeGatewayAddon, context: context)
+      return try await executeWrikeGatewayAddon(input, operation: wrikeGatewayAddon, context: context)
     }
     if let googleServiceGatewayAddon = BuiltinGoogleServiceGatewayAddon(rawValue: input.addon.name) {
       return try await executeGoogleServiceGatewayAddon(
@@ -422,13 +435,13 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       )
     }
     if let gmailGatewayCLIAddon = BuiltinGmailGatewayCLIAddon(rawValue: input.addon.name) {
-      return try executeGmailGatewayCLIAddon(input, operation: gmailGatewayCLIAddon, context: context)
+      return try await executeGmailGatewayCLIAddon(input, operation: gmailGatewayCLIAddon, context: context)
     }
     if let googleAnalyticsGatewayAddon = BuiltinGoogleAnalyticsGatewayAddon(rawValue: input.addon.name) {
-      return try executeGoogleAnalyticsGatewayAddon(input, operation: googleAnalyticsGatewayAddon, context: context)
+      return try await executeGoogleAnalyticsGatewayAddon(input, operation: googleAnalyticsGatewayAddon, context: context)
     }
     if let googleDocumentsGatewayAddon = BuiltinGoogleDocumentsGatewayAddon(rawValue: input.addon.name) {
-      return try executeGoogleDocumentsGatewayAddon(input, operation: googleDocumentsGatewayAddon, context: context)
+      return try await executeGoogleDocumentsGatewayAddon(input, operation: googleDocumentsGatewayAddon, context: context)
     }
     if input.addon.name == "riela/gmail-digest" {
       return try await executeGmailDigest(input)

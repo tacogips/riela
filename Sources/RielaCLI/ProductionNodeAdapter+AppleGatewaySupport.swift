@@ -13,7 +13,11 @@ import Glibc
 
 struct AppleGatewayProcessRunner {
   private static let pipeCloseGraceInterval: TimeInterval = 0.25
-  private static let childEnvironmentAllowlist = [
+  /// Ambient process variables an external gateway is allowed to see. Secrets
+  /// are never forwarded implicitly; only names an add-on's contract declares
+  /// are injected on top of this list. Add-ons that call a gateway as a linked
+  /// library sanitize the same way through `sanitizedGatewayEnvironment`.
+  static let childEnvironmentAllowlist = [
     "HOME",
     "LANG",
     "LC_ALL",
@@ -125,17 +129,7 @@ struct AppleGatewayProcessRunner {
   }
 
   private func sanitizedChildEnvironment() -> [String: String] {
-    var childEnvironment: [String: String] = [:]
-    for name in Self.childEnvironmentAllowlist {
-      guard let value = runtimeEnvironment[name], !value.isEmpty else {
-        continue
-      }
-      childEnvironment[name] = value
-    }
-    for (name, value) in extraChildEnvironment where !value.isEmpty {
-      childEnvironment[name] = value
-    }
-    return childEnvironment
+    sanitizedGatewayEnvironment(runtimeEnvironment: runtimeEnvironment, bindings: extraChildEnvironment)
   }
 
   #if canImport(Darwin) || canImport(Glibc)
@@ -989,4 +983,24 @@ private extension Array {
   subscript(safe index: Int) -> Element? {
     indices.contains(index) ? self[index] : nil
   }
+}
+
+/// The environment a gateway is allowed to observe: the ambient allowlist plus
+/// exactly the bindings an add-on's contract declared. Shared by the add-ons
+/// that spawn a gateway executable and the add-ons that call a gateway linked
+/// as a library, so hosting a gateway in this process cannot widen what it can
+/// read compared with running it as a child.
+func sanitizedGatewayEnvironment(
+  runtimeEnvironment: [String: String],
+  bindings: [String: String]
+) -> [String: String] {
+  var environment: [String: String] = [:]
+  for name in AppleGatewayProcessRunner.childEnvironmentAllowlist {
+    guard let value = runtimeEnvironment[name], !value.isEmpty else { continue }
+    environment[name] = value
+  }
+  for (name, value) in bindings where !value.isEmpty {
+    environment[name] = value
+  }
+  return environment
 }

@@ -1,36 +1,41 @@
 import Foundation
+import GoogleAnalyticsGatewayAdmin
+import GoogleAnalyticsGatewayCore
+import GoogleAnalyticsGatewayRead
+import GoogleAnalyticsGatewayWrite
 import RielaAddonSupport
 import RielaCore
 
-/// Built-in add-ons that run the locally installed google-analytics-gateway
-/// CLI tier binaries (GA4 Admin/Data APIs plus Tag Manager). Capability tiers
-/// are separated at link boundaries in the gateway itself — the reader binary
-/// physically contains no write or admin code — so each add-on pins one tier
-/// and the workflow cannot escalate through inputs or payload data.
+/// Built-in add-ons that run the sibling google-analytics-gateway package's
+/// GraphQL runtime inside this process (GA4 Admin/Data APIs plus Tag Manager).
+/// Each add-on pins one tier: the role and capability list go to the gateway's
+/// own `CapabilityRegistry`, which refuses a document naming a capability
+/// outside that tier, so the workflow cannot escalate through inputs or
+/// payload data.
 enum BuiltinGoogleAnalyticsGatewayAddon: String {
   case read = "riela/google-analytics-gateway-read"
   case write = "riela/google-analytics-gateway-write"
   case admin = "riela/google-analytics-gateway-admin"
 
-  var executableName: String {
+  var role: RoleDescriptor {
     switch self {
     case .read:
-      "google-analytics-gateway-reader"
+      .reader
     case .write:
-      "google-analytics-gateway-writer"
+      .writer
     case .admin:
-      "google-analytics-gateway-admin"
+      .admin
     }
   }
 
-  var executableEnvironmentName: String {
+  var capabilities: [CapabilityDefinition] {
     switch self {
     case .read:
-      "GOOGLE_ANALYTICS_GATEWAY_READER_BIN"
+      ReadCapabilities.all
     case .write:
-      "GOOGLE_ANALYTICS_GATEWAY_WRITER_BIN"
+      WriteCapabilities.all
     case .admin:
-      "GOOGLE_ANALYTICS_GATEWAY_ADMIN_BIN"
+      AdminCapabilities.all
     }
   }
 
@@ -44,14 +49,34 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
     "GOOGLE_ANALYTICS_GATEWAY_CONFIG"
   ]
 
-  var descriptor: LocalGatewayGraphQLCLIDescriptor {
-    LocalGatewayGraphQLCLIDescriptor(
+  var descriptor: LocalGatewayGraphQLDescriptor {
+    let role = role
+    let capabilities = capabilities
+    return LocalGatewayGraphQLDescriptor(
       providerName: "google-analytics-gateway",
       payloadNamespaceKey: "googleAnalyticsGateway",
-      executableName: executableName,
-      executableEnvironmentName: executableEnvironmentName,
-      invocationStyle: .queryPositionalWithVariables,
-      isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) }
+      tier: role.executableName,
+      acceptsVariables: true,
+      isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) },
+      run: { _, document, variablesJSON, environment in
+        let frame = try GatewayComposition.makeCommandFrame(
+          role: role,
+          definitions: capabilities,
+          environment: environment
+        )
+        var arguments = ["graphql", "query", document]
+        if let variablesJSON {
+          arguments += ["--variables", variablesJSON]
+        }
+        let outcome = await frame.run(arguments: arguments)
+        guard !outcome.standardOutput.isEmpty else {
+          throw AdapterExecutionError(
+            .providerError,
+            "google-analytics-gateway \(role.executableName) failed: \(appleGatewayCompactText(outcome.standardError))"
+          )
+        }
+        return outcome.standardOutput
+      }
     )
   }
 }
@@ -61,8 +86,11 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     operation: BuiltinGoogleAnalyticsGatewayAddon,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
-    try LocalGatewayGraphQLCLIEngine(environment: environment, descriptor: operation.descriptor)
-      .execute(input, context: context)
+  ) async throws -> AdapterExecutionOutput {
+    try await LocalGatewayGraphQLEngine(
+      environment: environment,
+      descriptor: operation.descriptor,
+      runnerOverride: localGatewayGraphQLRunner
+    ).execute(input, context: context)
   }
 }

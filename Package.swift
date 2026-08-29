@@ -47,6 +47,22 @@ let package = Package(
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
       revision: "3d964e69b3342cb70726f668f4600832421f7bf9"
+    ),
+    .package(
+      url: "https://github.com/tacogips/wrike-gateway.git",
+      revision: "d607aaa6783fef2b34c1a73ec9e091ef421143bf"
+    ),
+    .package(
+      url: "https://github.com/tacogips/gmail-gateway.git",
+      revision: "acdb5e857ac6856644098a8666c065b8deaeb9cf"
+    ),
+    .package(
+      url: "https://github.com/tacogips/google-analytics-gateway.git",
+      revision: "c46443a5e8f744244cb9825d3238958a797c4f2b"
+    ),
+    .package(
+      url: "https://github.com/tacogips/google-documents-gateway.git",
+      revision: "cda93cdd770a51f6f9d1bc63b1db555884824606"
     )
   ],
   targets: [
@@ -161,6 +177,13 @@ let package = Package(
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
+        // Gateway add-ons run inside this process; riela spawns no `*-gateway`
+        // executable. The cumulative tier products carry every tier module, and
+        // each add-on stays pinned to one tier through its role descriptor.
+        .product(name: "WrikeGatewayAdmin", package: "wrike-gateway"),
+        .product(name: "GmailGatewayCore", package: "gmail-gateway"),
+        .product(name: "GoogleAnalyticsGatewayAdmin", package: "google-analytics-gateway"),
+        .product(name: "GoogleDocumentsGatewayCore", package: "google-documents-gateway"),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
         "RielaVersion",

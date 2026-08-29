@@ -1,5 +1,5 @@
 {
-  "originHash" : "0fd78502229b8fa2b9b35461561e811109fe79cb1d77df6ce19776c533434e7b",
+  "originHash" : "78d83b3689d49474df5714c9eb56ec8b8c4a09bf0535599a8def934195bafa0a",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -15,6 +15,30 @@
       "location" : "https://github.com/tacogips/anydoc-swift.git",
       "state" : {
         "revision" : "d957c08372786b7062553e83fe9c29880fdee7a4"
+      }
+    },
+    {
+      "identity" : "gmail-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/gmail-gateway.git",
+      "state" : {
+        "revision" : "acdb5e857ac6856644098a8666c065b8deaeb9cf"
+      }
+    },
+    {
+      "identity" : "google-analytics-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-analytics-gateway.git",
+      "state" : {
+        "revision" : "c46443a5e8f744244cb9825d3238958a797c4f2b"
+      }
+    },
+    {
+      "identity" : "google-documents-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-documents-gateway.git",
+      "state" : {
+        "revision" : "cda93cdd770a51f6f9d1bc63b1db555884824606"
       }
     },
     {
@@ -67,6 +91,14 @@
       "state" : {
         "revision" : "34a27e3ac6b042d498673a8de9cf42c136ebb8c2",
         "version" : "0.2.0"
+      }
+    },
+    {
+      "identity" : "wrike-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/wrike-gateway.git",
+      "state" : {
+        "revision" : "d607aaa6783fef2b34c1a73ec9e091ef421143bf"
       }
     }
   ],

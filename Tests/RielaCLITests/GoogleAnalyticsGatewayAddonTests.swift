@@ -3,15 +3,20 @@ import RielaCore
 import XCTest
 @testable import RielaCLI
 
+/// The google-analytics gateway is linked into this process, so these tests
+/// record what the add-on hands its GraphQL runtime — tier, document,
+/// variables, and the environment the gateway is allowed to see — instead of
+/// stubbing an executable on `PATH`. The gateway's own tests cover the runtime.
 final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
   func testReadRendersDocumentAndVariables() async throws {
-    let fake = try FakeGoogleAnalyticsGateway(mode: "accounts-success")
-    defer { fake.cleanup() }
+    let gateway = RecordingGatewayGraphQLRunner(
+      response: #"{"data":{"gaAccountSummaries":{"nodes":[{"name":"accountSummaries/1","displayName":"Main"}]}}}"#
+    )
 
     let output = try await runAnalytics(
+      gateway: gateway,
       name: "riela/google-analytics-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "queryTemplate": .string("query P($id: ID!) { gaProperty(propertyId: $id) { name displayName } }"),
         "variablesTemplate": .object(["id": .string("{{workflowInput.propertyId}}")]),
         "whenFlags": .object(["has_accounts": .string("data.gaAccountSummaries.nodes.0.name")])
@@ -21,27 +26,23 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
       ]
     )
 
-    let document = try String(contentsOf: fake.queryLogURL)
-    XCTAssertTrue(document.contains("gaProperty(propertyId: $id)"))
-    let variablesJSON = try String(contentsOf: fake.variablesLogURL)
-    XCTAssertTrue(variablesJSON.contains("\"id\":\"properties/123\""))
+    let call = try XCTUnwrap(gateway.lastCall())
+    XCTAssertTrue(call.document.contains("gaProperty(propertyId: $id)"))
+    XCTAssertTrue(try XCTUnwrap(call.variablesJSON).contains("\"id\":\"properties/123\""))
     XCTAssertEqual(output.when["has_accounts"], true)
     XCTAssertEqual(output.when["ok"], true)
     let data = analyticsTestObject(output.payload["data"])
     XCTAssertNotNil(data?["gaAccountSummaries"])
-    XCTAssertEqual(analyticsBinaryPath(output), fake.executableURL.path)
+    XCTAssertEqual(analyticsTier(output), "google-analytics-gateway-reader")
   }
 
   func testEnvironmentBindingsInjectOnlyAllowedAnalyticsVariables() async throws {
-    let fake = try FakeGoogleAnalyticsGateway(mode: "accounts-success")
-    defer { fake.cleanup() }
+    let gateway = RecordingGatewayGraphQLRunner(response: #"{"data":{"gaAccountSummaries":{"nodes":[]}}}"#)
 
     _ = try await runAnalytics(
+      gateway: gateway,
       name: "riela/google-analytics-gateway-read",
-      config: [
-        "binaryPath": .string(fake.executableURL.path),
-        "queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")
-      ],
+      config: ["queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")],
       env: [
         "GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN": .object(["fromEnv": .string("RIELA_GA_ACCESS_TOKEN")])
       ],
@@ -51,21 +52,19 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
       ]
     )
 
-    let childEnvironment = try String(contentsOf: fake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN=sentinel-token"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-openai"))
+    let call = try XCTUnwrap(gateway.lastCall())
+    XCTAssertEqual(call.environment["GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN"], "sentinel-token")
+    // Hosting the gateway in this process must not widen what it can read:
+    // ambient secrets are still withheld.
+    XCTAssertNil(call.environment["OPENAI_API_KEY"])
+    XCTAssertNil(call.environment["RIELA_GA_ACCESS_TOKEN"])
   }
 
   func testEnvironmentBindingRejectsNonAnalyticsTargetNames() async throws {
-    let fake = try FakeGoogleAnalyticsGateway(mode: "accounts-success")
-    defer { fake.cleanup() }
-
     try await assertAnalyticsFailure(
+      gateway: RecordingGatewayGraphQLRunner(response: "{}"),
       name: "riela/google-analytics-gateway-read",
-      config: [
-        "binaryPath": .string(fake.executableURL.path),
-        "queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")
-      ],
+      config: ["queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")],
       env: ["LD_PRELOAD": .object(["fromEnv": .string("RIELA_GA_ACCESS_TOKEN")])],
       environment: ["RIELA_GA_ACCESS_TOKEN": "sentinel-token"],
       code: .policyBlocked,
@@ -73,67 +72,63 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
     )
   }
 
-  func testWriteAndAdminResolveTierSpecificExecutablesFromPath() async throws {
-    let writerFake = try FakeGoogleAnalyticsGateway(
-      mode: "mutation-success",
-      executableName: "google-analytics-gateway-writer"
-    )
-    let adminFake = try FakeGoogleAnalyticsGateway(
-      mode: "mutation-success",
-      executableName: "google-analytics-gateway-admin"
-    )
-    defer {
-      writerFake.cleanup()
-      adminFake.cleanup()
-    }
+  func testWriteAndAdminPinTheirOwnTier() async throws {
+    let gateway = RecordingGatewayGraphQLRunner(response: #"{"data":{"result":{"ok":true}}}"#)
 
     let writeOutput = try await runAnalytics(
+      gateway: gateway,
       name: "riela/google-analytics-gateway-write",
-      config: ["queryTemplate": .string("mutation { gtmPublishVersion(input: { path: \"v\" }) { path } }")],
-      environment: ["PATH": writerFake.binURL.path]
+      config: ["queryTemplate": .string("mutation { gtmPublishVersion(input: { path: \"v\" }) { path } }")]
     )
-    XCTAssertEqual(analyticsBinaryPath(writeOutput), writerFake.executableURL.path)
+    XCTAssertEqual(analyticsTier(writeOutput), "google-analytics-gateway-writer")
+    XCTAssertEqual(gateway.lastCall()?.tier, "google-analytics-gateway-writer")
 
     let adminOutput = try await runAnalytics(
+      gateway: gateway,
       name: "riela/google-analytics-gateway-admin",
-      config: ["queryTemplate": .string("mutation { gaDeleteProperty(input: { propertyId: \"p\" }) { name } }")],
-      environment: ["PATH": adminFake.binURL.path]
+      config: ["queryTemplate": .string("mutation { gaDeleteProperty(input: { propertyId: \"p\" }) { name } }")]
     )
-    XCTAssertEqual(analyticsBinaryPath(adminOutput), adminFake.executableURL.path)
+    XCTAssertEqual(analyticsTier(adminOutput), "google-analytics-gateway-admin")
+    XCTAssertEqual(gateway.lastCall()?.tier, "google-analytics-gateway-admin")
   }
 
   func testGraphQLErrorEnvelopeFailsWithStableCode() async throws {
-    let fake = try FakeGoogleAnalyticsGateway(mode: "graphql-error")
-    defer { fake.cleanup() }
-
     try await assertAnalyticsFailure(
+      gateway: RecordingGatewayGraphQLRunner(
+        response: #"{"data":null,"errors":[{"message":"caller lacks analytics access","extensions":{"code":"PERMISSION_DENIED"}}]}"#
+      ),
       name: "riela/google-analytics-gateway-read",
-      config: [
-        "binaryPath": .string(fake.executableURL.path),
-        "queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")
-      ],
+      config: ["queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")],
       code: .providerError,
       messageContains: "PERMISSION_DENIED"
     )
   }
 
-  func testNonzeroExitWithoutJSONReportsExitCode() async throws {
-    let fake = try FakeGoogleAnalyticsGateway(mode: "nonzero-plain")
-    defer { fake.cleanup() }
-
+  func testGatewayFailureIsSurfacedAsAProviderError() async throws {
     try await assertAnalyticsFailure(
+      gateway: RecordingGatewayGraphQLRunner(
+        failure: AdapterExecutionError(.providerError, "google-analytics-gateway failed: credential profile unavailable")
+      ),
       name: "riela/google-analytics-gateway-read",
-      config: [
-        "binaryPath": .string(fake.executableURL.path),
-        "queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")
-      ],
+      config: ["queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")],
       code: .providerError,
-      messageContains: "exit code 3"
+      messageContains: "credential profile unavailable"
+    )
+  }
+
+  func testNonJSONOutputIsRejected() async throws {
+    try await assertAnalyticsFailure(
+      gateway: RecordingGatewayGraphQLRunner(response: "not json at all"),
+      name: "riela/google-analytics-gateway-read",
+      config: ["queryTemplate": .string("{ gaAccountSummaries { nodes { name } } }")],
+      code: .invalidOutput,
+      messageContains: "riela/google-analytics-gateway-read"
     )
   }
 
   func testMissingQueryTemplateIsRejected() async throws {
     try await assertAnalyticsFailure(
+      gateway: RecordingGatewayGraphQLRunner(response: "{}"),
       name: "riela/google-analytics-gateway-read",
       config: [:],
       code: .policyBlocked,
@@ -142,13 +137,17 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
   }
 
   private func runAnalytics(
+    gateway: RecordingGatewayGraphQLRunner,
     name: String,
     config: JSONObject = [:],
     env: JSONObject? = nil,
     environment: [String: String] = [:],
     variables: JSONObject = [:]
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      localGatewayGraphQLRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "google-analytics-gateway-test",
         stepId: "analytics-step",
@@ -168,6 +167,7 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
   }
 
   private func assertAnalyticsFailure(
+    gateway: RecordingGatewayGraphQLRunner,
     name: String,
     config: JSONObject = [:],
     env: JSONObject? = nil,
@@ -176,7 +176,13 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
     messageContains: String
   ) async throws {
     do {
-      _ = try await runAnalytics(name: name, config: config, env: env, environment: environment)
+      _ = try await runAnalytics(
+        gateway: gateway,
+        name: name,
+        config: config,
+        env: env,
+        environment: environment
+      )
       XCTFail("expected google-analytics-gateway add-on to fail")
     } catch let error as AdapterExecutionError {
       XCTAssertEqual(error.code, code)
@@ -184,70 +190,13 @@ final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
     }
   }
 
-  private func analyticsBinaryPath(_ output: AdapterExecutionOutput) -> String? {
+  private func analyticsTier(_ output: AdapterExecutionOutput) -> String? {
     guard case let .object(gateway)? = output.payload["googleAnalyticsGateway"],
-          case let .object(binary)? = gateway["binary"],
-          case let .string(path)? = binary["path"] else {
+          case let .object(runtime)? = gateway["runtime"],
+          case let .string(tier)? = runtime["tier"] else {
       return nil
     }
-    return path
-  }
-}
-
-private struct FakeGoogleAnalyticsGateway {
-  var rootURL: URL
-  var binURL: URL
-  var executableURL: URL
-  var queryLogURL: URL
-  var variablesLogURL: URL
-  var environmentLogURL: URL
-
-  init(mode: String, executableName: String = "fake-google-analytics-gateway") throws {
-    rootURL = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-google-analytics-gateway-addon-\(UUID().uuidString)", isDirectory: true)
-    binURL = rootURL.appendingPathComponent("bin", isDirectory: true)
-    executableURL = binURL.appendingPathComponent(executableName)
-    queryLogURL = rootURL.appendingPathComponent("query.graphql")
-    variablesLogURL = rootURL.appendingPathComponent("variables.json")
-    environmentLogURL = rootURL.appendingPathComponent("environment.log")
-    try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
-    try script(mode: mode).write(to: executableURL, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
-  }
-
-  func cleanup() {
-    try? FileManager.default.removeItem(at: rootURL)
-  }
-
-  private func script(mode: String) -> String {
-    """
-    #!/bin/sh
-    printf "%s" "$3" > "\(queryLogURL.path)"
-    if [ "$4" = "--variables" ]; then
-      printf "%s" "$5" > "\(variablesLogURL.path)"
-    fi
-    {
-      printf "GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN=%s\\n" "${GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN:-}"
-      printf "GOOGLE_ANALYTICS_GATEWAY_CONFIG=%s\\n" "${GOOGLE_ANALYTICS_GATEWAY_CONFIG:-}"
-      printf "OPENAI_API_KEY=%s\\n" "${OPENAI_API_KEY:-}"
-    } > "\(environmentLogURL.path)"
-    case "\(mode)" in
-      accounts-success)
-        printf '{"data":{"gaAccountSummaries":{"nodes":[{"name":"accountSummaries/1","displayName":"Main"}]}}}\\n'
-        ;;
-      mutation-success)
-        printf '{"data":{"result":{"ok":true}}}\\n'
-        ;;
-      graphql-error)
-        printf '{"data":null,"errors":[{"message":"caller lacks analytics access","extensions":{"code":"PERMISSION_DENIED"}}]}\\n'
-        exit 4
-        ;;
-      nonzero-plain)
-        echo "credential profile unavailable" >&2
-        exit 3
-        ;;
-    esac
-    """
+    return tier
   }
 }
 

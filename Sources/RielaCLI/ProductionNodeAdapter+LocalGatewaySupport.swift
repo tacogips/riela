@@ -2,41 +2,62 @@ import Foundation
 import RielaAddonSupport
 import RielaCore
 
-/// How a local gateway CLI accepts a GraphQL document.
-enum LocalGatewayGraphQLInvocationStyle {
-  /// `<binary> graphql query <document> [--variables <compact-json>]`
-  /// (wrike-gateway, google-analytics-gateway).
-  case queryPositionalWithVariables
-  /// `<binary> graphql --query <document>`; the CLI rejects `--variables`,
-  /// so values must be rendered into the document text (gmail-gateway).
-  case queryFlagInlineOnly
-}
+/// Runs one GraphQL document against the gateway library backing an add-on
+/// tier and returns the JSON envelope that gateway's CLI would have printed on
+/// stdout. The gateway runs inside the riela process; `environment` is the
+/// only environment it can observe.
+typealias LocalGatewayGraphQLRunner = @Sendable (
+  _ tier: String,
+  _ document: String,
+  _ variablesJSON: String?,
+  _ environment: [String: String]
+) async throws -> String
 
-/// Static description of one local gateway CLI tier. The executable is pinned
-/// per add-on so a workflow cannot swap in a broader tier through inputs or
-/// payload data; capability boundaries are enforced by the binary itself.
-struct LocalGatewayGraphQLCLIDescriptor {
+/// Static description of one local gateway tier.
+///
+/// The tier is pinned per add-on, so a workflow cannot widen it through inputs
+/// or payload data. The gateways are linked as libraries rather than launched
+/// as executables, so the boundary is the role and capability list this
+/// descriptor hands the gateway's own capability registry — which refuses a
+/// document naming a capability outside the tier — instead of which binary was
+/// on `PATH`.
+struct LocalGatewayGraphQLDescriptor {
   var providerName: String
   var payloadNamespaceKey: String
-  var executableName: String
-  var executableEnvironmentName: String
-  var invocationStyle: LocalGatewayGraphQLInvocationStyle
+  /// Reported in the add-on payload so a run records which tier answered.
+  var tier: String
+  /// Whether the gateway accepts GraphQL variables. gmail-gateway does not, so
+  /// values must be rendered into the document text and
+  /// `config.variablesTemplate` is refused.
+  var acceptsVariables: Bool
   /// addon.env may only populate target names this predicate accepts, so the
-  /// binding mechanism cannot inject arbitrary variables into the child
-  /// process.
+  /// binding mechanism cannot inject arbitrary variables into the gateway.
   var isAllowedEnvironmentTarget: (String) -> Bool
+  var run: LocalGatewayGraphQLRunner
 }
 
-/// Shared engine for built-in add-ons that bridge to a locally installed
-/// gateway CLI speaking the GraphQL JSON envelope contract on stdout.
-struct LocalGatewayGraphQLCLIEngine {
+/// Shared engine for built-in add-ons that call a sibling gateway package's
+/// GraphQL runtime and read its JSON envelope.
+struct LocalGatewayGraphQLEngine {
   var environment: [String: String]
-  var descriptor: LocalGatewayGraphQLCLIDescriptor
+  var descriptor: LocalGatewayGraphQLDescriptor
+
+  init(
+    environment: [String: String],
+    descriptor: LocalGatewayGraphQLDescriptor,
+    runnerOverride: LocalGatewayGraphQLRunner? = nil
+  ) {
+    self.environment = environment
+    self.descriptor = descriptor
+    if let runnerOverride {
+      self.descriptor.run = runnerOverride
+    }
+  }
 
   func execute(
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
+  ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
@@ -47,39 +68,32 @@ struct LocalGatewayGraphQLCLIEngine {
     }
     let childEnvironment = try resolvedChildEnvironment(input)
     let document = try renderedDocument(config: config, variables: variables, addonName: input.addon.name)
-    let resolvedBinary = try localGatewayResolvedBinary(
-      executableName: descriptor.executableName,
-      executableEnvironmentName: descriptor.executableEnvironmentName,
-      config: config,
-      environment: environment,
-      addonName: input.addon.name
-    )
-    var arguments: [String]
-    switch descriptor.invocationStyle {
-    case .queryPositionalWithVariables:
-      arguments = ["graphql", "query", document]
-      if let variablesJSON = try renderedVariablesJSON(config: config, variables: variables, addonName: input.addon.name) {
-        arguments.append(contentsOf: ["--variables", variablesJSON])
-      }
-    case .queryFlagInlineOnly:
+    let variablesJSON: String?
+    if descriptor.acceptsVariables {
+      variablesJSON = try renderedVariablesJSON(config: config, variables: variables, addonName: input.addon.name)
+    } else {
       guard config["variablesTemplate"] == nil else {
         throw AdapterExecutionError(
           .policyBlocked,
-          "\(input.addon.name) config.variablesTemplate is not supported; \(descriptor.executableName) rejects GraphQL variables, render values into config.queryTemplate instead"
+          "\(input.addon.name) config.variablesTemplate is not supported; \(descriptor.providerName) rejects GraphQL variables, render values into config.queryTemplate instead"
         )
       }
-      arguments = ["graphql", "--query", document]
+      variablesJSON = nil
     }
-    var runner = AppleGatewayProcessRunner(runtimeEnvironment: environment)
-    runner.toolLabel = descriptor.executableName
-    runner.extraChildEnvironment = childEnvironment
-    let processOutput = try runner.run(
-      executablePath: resolvedBinary.path,
-      arguments: arguments,
-      deadline: context.deadline,
-      allowNonzeroExit: true
+    let gatewayEnvironment = sanitizedGatewayEnvironment(
+      runtimeEnvironment: environment,
+      bindings: childEnvironment
     )
-    let envelope = try envelope(from: processOutput, addonName: input.addon.name)
+    let run = descriptor.run
+    let tier = descriptor.tier
+    let stdout = try await localGatewayRunWithDeadline(
+      deadline: context.deadline,
+      addonName: input.addon.name,
+      providerName: descriptor.providerName
+    ) {
+      try await run(tier, document, variablesJSON, gatewayEnvironment)
+    }
+    let envelope = try envelope(from: stdout, addonName: input.addon.name)
     guard envelope.errors.isEmpty else {
       let detail = appleGatewayCompactText(envelope.errors.joined(separator: "; "))
       throw AdapterExecutionError(.providerError, "\(input.addon.name) GraphQL errors: \(detail)")
@@ -100,11 +114,13 @@ struct LocalGatewayGraphQLCLIEngine {
       "stepId": .string(input.stepId),
       "data": .object(envelope.data),
       "requestId": .string(envelope.requestId ?? ""),
-      "replyText": .string("\(descriptor.providerName) \(descriptor.executableName) query succeeded."),
+      "replyText": .string("\(descriptor.providerName) \(descriptor.tier) query succeeded."),
       descriptor.payloadNamespaceKey: .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
+        // The gateway is linked into this process, so there is no resolved
+        // binary to report; the tier that answered is the useful fact.
+        "runtime": .object([
+          "mode": .string("in-process"),
+          "tier": .string(descriptor.tier)
         ]),
         "requestId": .string(envelope.requestId ?? "")
       ])
@@ -168,57 +184,39 @@ struct LocalGatewayGraphQLCLIEngine {
   }
 
   private func envelope(
-    from processOutput: AppleGatewayProcessOutput,
+    from stdout: String,
     addonName: String
   ) throws -> AppleGatewayGraphQLEnvelope {
-    do {
-      return try AppleGatewayGraphQLEnvelope(stdout: processOutput.stdout, addonName: addonName)
-    } catch {
-      guard processOutput.terminationStatus != 0 else {
-        throw error
-      }
-      let detail = appleGatewayCompactText(
-        processOutput.stderr.isEmpty ? processOutput.stdout : processOutput.stderr
-      )
-      throw AdapterExecutionError(
-        .providerError,
-        "\(addonName) failed with exit code \(processOutput.terminationStatus): \(detail)"
-      )
-    }
+    try AppleGatewayGraphQLEnvelope(stdout: stdout, addonName: addonName)
   }
 }
 
-/// Binary resolution order shared by every local gateway CLI add-on:
-/// `addon.config.binaryPath` (literal, never rendered), then the per-tier
-/// environment fallback, then `PATH` lookup of the fixed executable name.
-func localGatewayResolvedBinary(
-  executableName: String,
-  executableEnvironmentName: String,
-  config: JSONObject,
-  environment: [String: String],
-  addonName: String
-) throws -> AppleGatewayResolvedBinary {
-  let searchPath = executableSearchPath(environment: environment)
-  if let configured = nonEmptyString(config["binaryPath"])?.trimmingCharacters(in: .whitespacesAndNewlines),
-     !configured.isEmpty {
-    guard let path = resolveExecutable(configured, searchPath: searchPath) else {
-      throw AdapterExecutionError(.policyBlocked, "\(addonName) config.binaryPath is not executable: \(configured)")
+/// Applies the step deadline to an in-process gateway call. A linked gateway
+/// has no process to terminate, so the call is cancelled and the same timeout
+/// error a spawned gateway would have produced is raised.
+func localGatewayRunWithDeadline(
+  deadline: Date?,
+  addonName: String,
+  providerName: String,
+  operation: @escaping @Sendable () async throws -> String
+) async throws -> String {
+  guard let deadline else { return try await operation() }
+  let remaining = deadline.timeIntervalSinceNow
+  guard remaining > 0 else {
+    throw AdapterExecutionError(.timeout, "\(addonName) exceeded its deadline before \(providerName) was called")
+  }
+  return try await withThrowingTaskGroup(of: String.self) { group in
+    group.addTask { try await operation() }
+    group.addTask {
+      try await Task.sleep(for: .seconds(remaining))
+      throw AdapterExecutionError(.timeout, "\(addonName) exceeded its deadline while calling \(providerName)")
     }
-    return AppleGatewayResolvedBinary(path: path, source: .config)
-  }
-  if let envPath = environmentValue(executableEnvironmentName, environment: environment) {
-    guard let path = resolveExecutable(envPath, searchPath: searchPath) else {
-      throw AdapterExecutionError(.policyBlocked, "\(executableEnvironmentName) is not executable: \(envPath)")
+    defer { group.cancelAll() }
+    guard let first = try await group.next() else {
+      throw AdapterExecutionError(.invalidOutput, "\(addonName) produced no \(providerName) response")
     }
-    return AppleGatewayResolvedBinary(path: path, source: .environment)
+    return first
   }
-  guard let path = resolveExecutable(executableName, searchPath: searchPath) else {
-    throw AdapterExecutionError(
-      .policyBlocked,
-      "\(addonName) requires \(executableName); set config.binaryPath, \(executableEnvironmentName), or PATH"
-    )
-  }
-  return AppleGatewayResolvedBinary(path: path, source: .path)
 }
 
 func localGatewayNowVariables(config: JSONObject, addonName: String) throws -> [String: String] {

@@ -1,15 +1,17 @@
 import Foundation
+import GoogleDocumentsGatewayCore
 import RielaAddonSupport
 import RielaCore
 
-/// Built-in add-ons that run the locally installed google-documents-gateway
-/// role binaries (Docs / Sheets / Drive, split into reader and writer
-/// executables with disjoint OAuth scopes). The gateway CLI is not GraphQL:
-/// each invocation is `<binary> <command> --flag=value ...` returning one
-/// `{"ok":bool,...}` JSON envelope on stdout, so these add-ons take a fixed
-/// command plus a validated flag map instead of a query template. Each add-on
-/// pins one role binary, so a workflow cannot escalate from reader to writer
-/// scopes through inputs or payload data.
+/// Built-in add-ons that run the sibling google-documents-gateway package
+/// inside this process (Docs / Sheets / Drive, split into reader and writer
+/// roles with disjoint OAuth scopes). The gateway's surface is not GraphQL:
+/// each call is `<command> --flag=value ...` returning one `{"ok":bool,...}`
+/// JSON envelope, so these add-ons take a fixed command plus a validated flag
+/// map instead of a query template. Each add-on pins one role, which the
+/// gateway's own command runner enforces by refusing commands outside it, so a
+/// workflow cannot escalate from reader to writer scopes through inputs or
+/// payload data.
 enum BuiltinGoogleDocumentsGatewayAddon: String {
   case docsRead = "riela/google-docs-gateway-read"
   case docsWrite = "riela/google-docs-gateway-write"
@@ -18,7 +20,9 @@ enum BuiltinGoogleDocumentsGatewayAddon: String {
   case driveRead = "riela/google-drive-gateway-read"
   case driveWrite = "riela/google-drive-gateway-write"
 
-  var executableName: String {
+  /// The role name reported in the add-on payload, matching the executable
+  /// this add-on used to launch.
+  var tier: String {
     switch self {
     case .docsRead:
       "google-docs-gateway-reader"
@@ -35,20 +39,20 @@ enum BuiltinGoogleDocumentsGatewayAddon: String {
     }
   }
 
-  var executableEnvironmentName: String {
+  var role: GatewayRole {
     switch self {
     case .docsRead:
-      "GOOGLE_DOCS_GATEWAY_READER_BIN"
+      GatewayRole(service: .docs, accessMode: .read)
     case .docsWrite:
-      "GOOGLE_DOCS_GATEWAY_WRITER_BIN"
+      GatewayRole(service: .docs, accessMode: .write)
     case .sheetRead:
-      "GOOGLE_SHEET_GATEWAY_READER_BIN"
+      GatewayRole(service: .sheets, accessMode: .read)
     case .sheetWrite:
-      "GOOGLE_SHEET_GATEWAY_WRITER_BIN"
+      GatewayRole(service: .sheets, accessMode: .write)
     case .driveRead:
-      "GOOGLE_DRIVE_GATEWAY_READER_BIN"
+      GatewayRole(service: .drive, accessMode: .read)
     case .driveWrite:
-      "GOOGLE_DRIVE_GATEWAY_WRITER_BIN"
+      GatewayRole(service: .drive, accessMode: .write)
     }
   }
 
@@ -87,30 +91,41 @@ enum BuiltinGoogleDocumentsGatewayAddon: String {
   }
 }
 
+/// Runs one google-documents-gateway command for a pinned role and returns the
+/// JSON envelope that gateway's CLI would have printed.
+typealias GoogleDocumentsGatewayRunner = @Sendable (
+  _ tier: String,
+  _ arguments: [String],
+  _ environment: [String: String]
+) async throws -> String
+
 extension BuiltinWorkflowAddonResolver {
   func executeGoogleDocumentsGatewayAddon(
     _ input: WorkflowAddonExecutionInput,
     operation: BuiltinGoogleDocumentsGatewayAddon,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
-    try GoogleDocumentsGatewayAddonEngine(environment: environment)
-      .execute(input, operation: operation, context: context)
+  ) async throws -> AdapterExecutionOutput {
+    try await GoogleDocumentsGatewayAddonEngine(
+      environment: environment,
+      runnerOverride: googleDocumentsGatewayRunner
+    ).execute(input, operation: operation, context: context)
   }
 }
 
 private struct GoogleDocumentsGatewayAddonEngine {
   /// `auth login` opens a browser and blocks on a loopback OAuth callback;
   /// `auth revoke` destroys stored credentials. Neither belongs in a workflow
-  /// node, so both are refused before the process starts.
+  /// node, so both are refused before the gateway is called.
   private static let forbiddenCommands: Set<String> = ["auth login", "auth revoke"]
 
   var environment: [String: String]
+  var runnerOverride: GoogleDocumentsGatewayRunner?
 
   func execute(
     _ input: WorkflowAddonExecutionInput,
     operation: BuiltinGoogleDocumentsGatewayAddon,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
+  ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
@@ -121,28 +136,32 @@ private struct GoogleDocumentsGatewayAddonEngine {
     }
     let childEnvironment = try resolvedChildEnvironment(input, operation: operation)
     let commandTokens = try commandTokens(config: config, addonName: input.addon.name)
-    let resolvedBinary = try localGatewayResolvedBinary(
-      executableName: operation.executableName,
-      executableEnvironmentName: operation.executableEnvironmentName,
-      config: config,
-      environment: environment,
-      addonName: input.addon.name
-    )
     let arguments = commandTokens + (try renderedFlagArguments(
       config: config,
       variables: variables,
       addonName: input.addon.name
     ))
-    var runner = AppleGatewayProcessRunner(runtimeEnvironment: environment)
-    runner.toolLabel = operation.executableName
-    runner.extraChildEnvironment = childEnvironment
-    let processOutput = try runner.run(
-      executablePath: resolvedBinary.path,
-      arguments: arguments,
-      deadline: context.deadline,
-      allowNonzeroExit: true
+    let gatewayEnvironment = sanitizedGatewayEnvironment(
+      runtimeEnvironment: environment,
+      bindings: childEnvironment
     )
-    let data = try successData(from: processOutput, addonName: input.addon.name)
+    let role = operation.role
+    let tier = operation.tier
+    let run: GoogleDocumentsGatewayRunner = runnerOverride ?? { tier, arguments, environment in
+      let result = GatewayCommandRunner(role: role, environment: environment).run(arguments: arguments)
+      guard !result.stdout.isEmpty else {
+        throw AdapterExecutionError(.providerError, "\(tier) failed with exit code \(result.exitCode)")
+      }
+      return result.stdout
+    }
+    let stdout = try await localGatewayRunWithDeadline(
+      deadline: context.deadline,
+      addonName: input.addon.name,
+      providerName: "google-documents-gateway"
+    ) {
+      try await run(tier, arguments, gatewayEnvironment)
+    }
+    let data = try successData(from: stdout, addonName: input.addon.name)
     var payloadRoot: JSONObject = ["data": .object(data)]
     if let selected = try localGatewaySelectedValue(
       config: config,
@@ -159,11 +178,13 @@ private struct GoogleDocumentsGatewayAddonEngine {
       "stepId": .string(input.stepId),
       "command": .string(commandTokens.joined(separator: " ")),
       "data": .object(data),
-      "replyText": .string("google-documents-gateway \(operation.executableName) command succeeded."),
+      "replyText": .string("google-documents-gateway \(operation.tier) command succeeded."),
       "googleDocumentsGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
+        // The gateway is linked into this process, so there is no resolved
+        // binary to report; the role that answered is the useful fact.
+        "runtime": .object([
+          "mode": .string("in-process"),
+          "tier": .string(operation.tier)
         ])
       ])
     ]
@@ -302,25 +323,16 @@ private struct GoogleDocumentsGatewayAddonEngine {
   /// stable `error.code`; argument-shaped codes map to invalidInput and
   /// everything else (auth, transport, provider) to providerError.
   private func successData(
-    from processOutput: AppleGatewayProcessOutput,
+    from stdout: String,
     addonName: String
   ) throws -> JSONObject {
-    guard let bytes = processOutput.stdout.data(using: .utf8),
+    guard let bytes = stdout.data(using: .utf8),
           let decoded = try? JSONDecoder().decode(JSONValue.self, from: bytes),
           case let .object(envelope) = decoded,
           case let .bool(ok)? = envelope["ok"] else {
-      guard processOutput.terminationStatus != 0 else {
-        throw AdapterExecutionError(
-          .invalidOutput,
-          "\(addonName) stdout was not a google-documents-gateway JSON envelope"
-        )
-      }
-      let detail = appleGatewayCompactText(
-        processOutput.stderr.isEmpty ? processOutput.stdout : processOutput.stderr
-      )
       throw AdapterExecutionError(
-        .providerError,
-        "\(addonName) failed with exit code \(processOutput.terminationStatus): \(detail)"
+        .invalidOutput,
+        "\(addonName) output was not a google-documents-gateway JSON envelope: \(appleGatewayCompactText(stdout))"
       )
     }
     guard ok else {

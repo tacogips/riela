@@ -179,7 +179,8 @@ policy version.
 
 `riela/google-service-gateway-read@1` and
 `riela/google-service-gateway-write@1` import the sibling
-`GoogleServiceGatewayCore` Swift library directly. The read add-on supports
+`GoogleServiceGatewayCore` Swift library directly, the same way the local
+gateway add-ons below do. The read add-on supports
 `services.list`, `services.get`, and `operations.get`; the write add-on supports
 `services.enable`, `services.disable`, and `services.batchEnable`. Set the
 operation in `addon.config.operation` and pass request fields through
@@ -189,38 +190,58 @@ Credentials require an explicit `addon.env.GOOGLE_SERVICE_GATEWAY_ACCESS_TOKEN`
 binding. Ambient process credentials are not forwarded implicitly, and the
 read add-on cannot invoke a mutation.
 
-## Local Gateway CLI Add-ons
+## Local Gateway Add-ons
 
-Three add-on families bridge to locally installed gateway CLI tier binaries
-the same way the wrike-gateway add-ons do: each add-on pins one tier
-executable, resolves it via `addon.config.binaryPath`, a per-tier `*_BIN`
-environment fallback, then `PATH`, and forwards only an explicit `addon.env`
-allowlist.
+Four add-on families bridge to sibling gateway packages. Riela links each
+gateway as a **library** and calls it inside the `riela` process: no gateway
+executable is spawned, and none has to be installed. There is consequently no
+`addon.config.binaryPath` and no per-tier `*_BIN` environment fallback.
 
+Each add-on still pins one capability tier. With the gateway linked rather than
+launched, the boundary is the role and capability list the add-on hands the
+gateway's own registry — which refuses a document or command naming a
+capability outside that tier — instead of which binary was on `PATH`. A
+workflow cannot widen the tier through inputs or payload data either way. The
+add-on payload reports the tier that answered under
+`<namespace>.runtime.tier` (the old `<namespace>.binary.path` is gone, since
+there is no binary).
+
+A gateway sees only the sanitized ambient allowlist (`HOME`, `PATH`, `LANG`,
+`TMPDIR`, …) plus exactly the `addon.env` bindings its contract declares —
+the same environment it saw as a child process. Nothing is written into
+riela's own environment, so concurrent steps with different credentials do not
+collide.
+
+- `riela/wrike-gateway-read@1`, `-write@1`, and `-admin@1` run wrike-gateway's
+  GraphQL runtime with a rendered `config.queryTemplate` plus optional
+  `variablesTemplate` / `selectFirst` / `whenFlags` / `payloadExtras`. Allowed
+  `addon.env` targets are the five `WRIKE_GATEWAY_*` credential variables.
 - `riela/gmail-gateway-reader@1`, `riela/gmail-gateway-draft@1`, and
-  `riela/gmail-gateway-sender@1` run `gmail-gateway-<tier> graphql --query`
-  with a rendered `config.queryTemplate`. The gmail-gateway CLI rejects
-  GraphQL variables, so values render into the document text;
-  `config.variablesTemplate` is refused. Allowed `addon.env` targets are
-  `GMAIL_GATEWAY_CONFIG` and the
+  `riela/gmail-gateway-sender@1` run gmail-gateway's GraphQL surface in the
+  matching mode. gmail-gateway rejects GraphQL variables, so values render into
+  the document text and `config.variablesTemplate` is refused. Allowed
+  `addon.env` targets are `GMAIL_GATEWAY_CONFIG`,
+  `GMAIL_GATEWAY_CREDENTIAL_DIR`, and the
   `GMAIL_GATEWAY_CREDENTIAL_<SUFFIX>_{OAUTH_CLIENT_SECRET,TOKEN_STORE}_{PATH,JSON}`
   credential shapes. (Distinct from the container-backed
   `riela/gmail-gateway-read` / `riela/gmail-gateway` add-ons.)
 - `riela/google-analytics-gateway-read@1`, `-write@1`, and `-admin@1` run
-  `google-analytics-gateway-<tier> graphql query <document> --variables <json>`
-  with the wrike-style `queryTemplate` / `variablesTemplate` / `selectFirst` /
-  `whenFlags` / `payloadExtras` contract. Allowed `addon.env` targets are
-  `GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN` and
+  google-analytics-gateway's GraphQL runtime (GA4 Admin/Data plus Tag Manager)
+  with the same `queryTemplate` contract as wrike. Allowed `addon.env` targets
+  are `GOOGLE_ANALYTICS_GATEWAY_ACCESS_TOKEN` and
   `GOOGLE_ANALYTICS_GATEWAY_CONFIG`.
 - `riela/google-docs-gateway-read@1`/`-write@1`,
   `riela/google-sheet-gateway-read@1`/`-write@1`, and
   `riela/google-drive-gateway-read@1`/`-write@1` run the six
-  google-documents-gateway role binaries. The CLI is not GraphQL, so the
-  config is `command` (one or two literal words) plus `argsTemplate`
-  (flag map bound as `--flag=value`); `auth login` and `auth revoke` are
-  refused. Allowed `addon.env` targets are exactly the five
-  `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's
-  own role.
+  google-documents-gateway roles. That gateway is not GraphQL, so the config is
+  `command` (one or two literal words) plus `argsTemplate` (flag map bound as
+  `--flag=value`); `auth login` and `auth revoke` are refused. Allowed
+  `addon.env` targets are exactly the five
+  `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's own
+  role, plus `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`.
+
+The apple-gateway and anydoc-swift add-ons still launch their tools as child
+processes; see the notes in their example READMEs.
 
 ## Session Observability
 

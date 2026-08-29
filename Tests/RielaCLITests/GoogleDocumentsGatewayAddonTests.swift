@@ -3,15 +3,19 @@ import RielaCore
 import XCTest
 @testable import RielaCLI
 
+/// google-documents-gateway is linked into this process, so these tests record
+/// what the add-on hands its command runner — role, arguments, and the
+/// environment the gateway is allowed to see — instead of stubbing an
+/// executable on `PATH`. The gateway's own tests cover the runner.
 final class GoogleDocumentsGatewayAddonTests: XCTestCase {
+  private static let valuesResponse = #"{"ok":true,"data":{"data":{"values":[["A1","B1"]]}}}"#
   func testSheetReadRendersCommandAndSortedEqualsBoundFlags() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "values-success")
-    defer { fake.cleanup() }
+    let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
 
     let output = try await runDocuments(
+      gateway: gateway,
       name: "riela/google-sheet-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("values get"),
         "argsTemplate": .object([
           "spreadsheet-id": .string("{{workflowInput.spreadsheetId}}"),
@@ -24,22 +28,25 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
       ]
     )
 
-    let invocation = try String(contentsOf: fake.argumentsLogURL)
-    XCTAssertEqual(invocation, "values get --range=Sheet1!A1:B2 --spreadsheet-id=SHEET-1")
+    let call = try XCTUnwrap(gateway.lastCall())
+    XCTAssertEqual(call.tier, "google-sheet-gateway-reader")
+    XCTAssertEqual(
+      call.arguments,
+      ["values", "get", "--range=Sheet1!A1:B2", "--spreadsheet-id=SHEET-1"]
+    )
     XCTAssertEqual(output.payload["command"], .string("values get"))
     XCTAssertEqual(output.when["has_values"], true)
     XCTAssertEqual(output.when["ok"], true)
-    XCTAssertEqual(documentsBinaryPath(output), fake.executableURL.path)
+    XCTAssertEqual(documentsTier(output), "google-sheet-gateway-reader")
   }
 
   func testBooleanArrayAndOmittedFlagEncodings() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "values-success")
-    defer { fake.cleanup() }
+    let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
 
     _ = try await runDocuments(
+      gateway: gateway,
       name: "riela/google-drive-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("files list"),
         "argsTemplate": .object([
           "page-all": .bool(true),
@@ -50,18 +57,17 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
       ]
     )
 
-    let invocation = try String(contentsOf: fake.argumentsLogURL)
-    XCTAssertEqual(invocation, "files list --fields=id --fields=name --page-all --page-size=25")
+    XCTAssertEqual(
+      gateway.lastCall()?.arguments,
+      ["files", "list", "--fields=id", "--fields=name", "--page-all", "--page-size=25"]
+    )
   }
 
   func testInteractiveAuthCommandsAreRefused() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "values-success")
-    defer { fake.cleanup() }
 
     try await assertDocumentsFailure(
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("auth login")
       ],
       code: .policyBlocked,
@@ -70,7 +76,6 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
     try await assertDocumentsFailure(
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("auth revoke")
       ],
       code: .policyBlocked,
@@ -79,13 +84,10 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
   }
 
   func testMalformedCommandAndFlagNamesAreRejected() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "values-success")
-    defer { fake.cleanup() }
 
     try await assertDocumentsFailure(
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("document get extra-word")
       ],
       code: .policyBlocked,
@@ -94,7 +96,6 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
     try await assertDocumentsFailure(
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("--document-id")
       ],
       code: .policyBlocked,
@@ -103,7 +104,6 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
     try await assertDocumentsFailure(
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("document get"),
         "argsTemplate": .object(["Evil Flag": .string("x")])
       ],
@@ -122,13 +122,12 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
   }
 
   func testEnvironmentBindingsAllowOnlyOwnRoleCredentials() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "values-success")
-    defer { fake.cleanup() }
+    let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
 
     _ = try await runDocuments(
+      gateway: gateway,
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("document get"),
         "argsTemplate": .object(["document-id": .string("DOC-1")])
       ],
@@ -142,14 +141,18 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
         "OPENAI_API_KEY": "sentinel-openai"
       ]
     )
-    let childEnvironment = try String(contentsOf: fake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DOCS_READER_TOKEN_STORE_JSON=sentinel-token-store"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-openai"))
+    let call = try XCTUnwrap(gateway.lastCall())
+    XCTAssertEqual(
+      call.environment["GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DOCS_READER_TOKEN_STORE_JSON"],
+      "sentinel-token-store"
+    )
+    // Hosting the gateway in this process must not widen what it can read:
+    // ambient secrets are still withheld.
+    XCTAssertNil(call.environment["OPENAI_API_KEY"])
 
     try await assertDocumentsFailure(
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("document get")
       ],
       env: [
@@ -164,13 +167,12 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
   }
 
   func testEnvironmentBindingsAllowCredentialDirectoryRelocation() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "values-success")
-    defer { fake.cleanup() }
+    let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
 
     _ = try await runDocuments(
+      gateway: gateway,
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
         "command": .string("document get"),
         "argsTemplate": .object(["document-id": .string("DOC-1")])
       ],
@@ -181,18 +183,17 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
       ],
       environment: ["RIELA_DOCS_CREDENTIAL_DIR": "/tmp/riela-credentials"]
     )
-    let childEnvironment = try String(contentsOf: fake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR=/tmp/riela-credentials"))
+    XCTAssertEqual(
+      gateway.lastCall()?.environment["GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR"],
+      "/tmp/riela-credentials"
+    )
   }
 
-  func testRoleBinariesResolveFromPath() async throws {
-    let writerFake = try FakeGoogleDocumentsGateway(
-      mode: "values-success",
-      executableName: "google-sheet-gateway-writer"
-    )
-    defer { writerFake.cleanup() }
+  func testEachAddonPinsItsOwnRole() async throws {
+    let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
 
     let output = try await runDocuments(
+      gateway: gateway,
       name: "riela/google-sheet-gateway-write",
       config: [
         "command": .string("values clear"),
@@ -201,33 +202,29 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
           "range": .string("Sheet1!A1"),
           "confirm-clear": .bool(true)
         ])
-      ],
-      environment: ["PATH": writerFake.binURL.path]
+      ]
     )
-    XCTAssertEqual(documentsBinaryPath(output), writerFake.executableURL.path)
+    XCTAssertEqual(documentsTier(output), "google-sheet-gateway-writer")
+    XCTAssertEqual(gateway.lastCall()?.tier, "google-sheet-gateway-writer")
   }
 
   func testErrorEnvelopeMapsArgumentCodesToInvalidInput() async throws {
-    let invalidFake = try FakeGoogleDocumentsGateway(mode: "invalid-argument")
-    defer { invalidFake.cleanup() }
-
     try await assertDocumentsFailure(
+      gateway: RecordingGoogleDocumentsGatewayRunner(
+        response: #"{"ok":false,"error":{"code":"INVALID_ARGUMENT","message":"unknown flag"}}"#
+      ),
       name: "riela/google-docs-gateway-read",
-      config: [
-        "binaryPath": .string(invalidFake.executableURL.path),
-        "command": .string("document get")
-      ],
+      config: ["command": .string("document get")],
       code: .invalidInput,
       messageContains: "INVALID_ARGUMENT"
     )
 
-    let providerFake = try FakeGoogleDocumentsGateway(mode: "provider-error")
-    defer { providerFake.cleanup() }
-
     try await assertDocumentsFailure(
+      gateway: RecordingGoogleDocumentsGatewayRunner(
+        response: #"{"ok":false,"error":{"code":"AUTH_REQUIRED","message":"configure a credential"}}"#
+      ),
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(providerFake.executableURL.path),
         "command": .string("document get"),
         "argsTemplate": .object(["document-id": .string("DOC-1")])
       ],
@@ -236,14 +233,29 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
     )
   }
 
-  func testNonzeroExitWithoutJSONReportsExitCode() async throws {
-    let fake = try FakeGoogleDocumentsGateway(mode: "nonzero-plain")
-    defer { fake.cleanup() }
-
+  func testNonEnvelopeOutputIsRejected() async throws {
     try await assertDocumentsFailure(
+      gateway: RecordingGoogleDocumentsGatewayRunner(response: "credential store unavailable"),
       name: "riela/google-docs-gateway-read",
       config: [
-        "binaryPath": .string(fake.executableURL.path),
+        "command": .string("document get"),
+        "argsTemplate": .object(["document-id": .string("DOC-1")])
+      ],
+      code: .invalidOutput,
+      messageContains: "not a google-documents-gateway JSON envelope"
+    )
+  }
+
+  func testGatewayFailureIsSurfacedAsAProviderError() async throws {
+    try await assertDocumentsFailure(
+      gateway: RecordingGoogleDocumentsGatewayRunner(
+        failure: AdapterExecutionError(
+          .providerError,
+          "google-docs-gateway-reader failed with exit code 5"
+        )
+      ),
+      name: "riela/google-docs-gateway-read",
+      config: [
         "command": .string("document get"),
         "argsTemplate": .object(["document-id": .string("DOC-1")])
       ],
@@ -253,13 +265,17 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
   }
 
   private func runDocuments(
+    gateway: RecordingGoogleDocumentsGatewayRunner = RecordingGoogleDocumentsGatewayRunner(),
     name: String,
     config: JSONObject = [:],
     env: JSONObject? = nil,
     environment: [String: String] = [:],
     variables: JSONObject = [:]
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      googleDocumentsGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "google-documents-gateway-test",
         stepId: "documents-step",
@@ -279,6 +295,7 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
   }
 
   private func assertDocumentsFailure(
+    gateway: RecordingGoogleDocumentsGatewayRunner = RecordingGoogleDocumentsGatewayRunner(),
     name: String,
     config: JSONObject = [:],
     env: JSONObject? = nil,
@@ -287,7 +304,13 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
     messageContains: String
   ) async throws {
     do {
-      _ = try await runDocuments(name: name, config: config, env: env, environment: environment)
+      _ = try await runDocuments(
+        gateway: gateway,
+        name: name,
+        config: config,
+        env: env,
+        environment: environment
+      )
       XCTFail("expected google-documents-gateway add-on to fail")
     } catch let error as AdapterExecutionError {
       XCTAssertEqual(error.code, code)
@@ -295,65 +318,13 @@ final class GoogleDocumentsGatewayAddonTests: XCTestCase {
     }
   }
 
-  private func documentsBinaryPath(_ output: AdapterExecutionOutput) -> String? {
+  private func documentsTier(_ output: AdapterExecutionOutput) -> String? {
     guard case let .object(gateway)? = output.payload["googleDocumentsGateway"],
-          case let .object(binary)? = gateway["binary"],
-          case let .string(path)? = binary["path"] else {
+          case let .object(runtime)? = gateway["runtime"],
+          case let .string(tier)? = runtime["tier"] else {
       return nil
     }
-    return path
+    return tier
   }
 }
 
-private struct FakeGoogleDocumentsGateway {
-  var rootURL: URL
-  var binURL: URL
-  var executableURL: URL
-  var argumentsLogURL: URL
-  var environmentLogURL: URL
-
-  init(mode: String, executableName: String = "fake-google-documents-gateway") throws {
-    rootURL = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-google-documents-gateway-addon-\(UUID().uuidString)", isDirectory: true)
-    binURL = rootURL.appendingPathComponent("bin", isDirectory: true)
-    executableURL = binURL.appendingPathComponent(executableName)
-    argumentsLogURL = rootURL.appendingPathComponent("arguments.log")
-    environmentLogURL = rootURL.appendingPathComponent("environment.log")
-    try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
-    try script(mode: mode).write(to: executableURL, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
-  }
-
-  func cleanup() {
-    try? FileManager.default.removeItem(at: rootURL)
-  }
-
-  private func script(mode: String) -> String {
-    """
-    #!/bin/sh
-    printf "%s" "$*" > "\(argumentsLogURL.path)"
-    {
-      printf "GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DOCS_READER_TOKEN_STORE_JSON=%s\\n" "${GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DOCS_READER_TOKEN_STORE_JSON:-}"
-      printf "GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR=%s\\n" "${GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR:-}"
-      printf "OPENAI_API_KEY=%s\\n" "${OPENAI_API_KEY:-}"
-    } > "\(environmentLogURL.path)"
-    case "\(mode)" in
-      values-success)
-        printf '{"ok":true,"data":{"operation":"values.get","data":{"range":"Sheet1!A1:B2","values":[["a","b"],["c","d"]]},"requestId":"req-1"}}\\n'
-        ;;
-      invalid-argument)
-        printf '{"ok":false,"error":{"code":"INVALID_ARGUMENT","message":"Missing required option --document-id."}}\\n'
-        exit 2
-        ;;
-      provider-error)
-        printf '{"ok":false,"error":{"code":"AUTH_REQUIRED","message":"No stored token for docs-reader."}}\\n'
-        exit 4
-        ;;
-      nonzero-plain)
-        echo "transport unavailable" >&2
-        exit 5
-        ;;
-    esac
-    """
-  }
-}

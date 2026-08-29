@@ -1,11 +1,12 @@
 import Foundation
+import GmailGatewayCore
 import RielaAddonSupport
 import RielaCore
 
-/// Built-in add-ons that run the locally installed gmail-gateway CLI tier
-/// binaries. The tier is compiled into each executable (reader is read-only,
-/// draft turns sendMessage/replyMessage/forwardMessage into provider drafts,
-/// sender performs direct sends), so each add-on pins one binary and the
+/// Built-in add-ons that run the sibling gmail-gateway package's CLI surface
+/// inside this process. The tier is a mode the gateway enforces (reader is
+/// read-only, draft turns sendMessage/replyMessage/forwardMessage into provider
+/// drafts, sender performs direct sends), and each add-on pins one mode, so the
 /// workflow cannot escalate through inputs or payload data.
 ///
 /// These are distinct from `riela/gmail-gateway-read` / `riela/gmail-gateway`,
@@ -15,7 +16,18 @@ enum BuiltinGmailGatewayCLIAddon: String {
   case draft = "riela/gmail-gateway-draft"
   case sender = "riela/gmail-gateway-sender"
 
-  var executableName: String {
+  var mode: GmailGatewayCLIMode {
+    switch self {
+    case .reader:
+      .reader
+    case .draft:
+      .draftGateway
+    case .sender:
+      .directSender
+    }
+  }
+
+  var tier: String {
     switch self {
     case .reader:
       "gmail-gateway-reader"
@@ -23,17 +35,6 @@ enum BuiltinGmailGatewayCLIAddon: String {
       "gmail-gateway-draft"
     case .sender:
       "gmail-gateway-sender"
-    }
-  }
-
-  var executableEnvironmentName: String {
-    switch self {
-    case .reader:
-      "GMAIL_GATEWAY_READER_BIN"
-    case .draft:
-      "GMAIL_GATEWAY_DRAFT_BIN"
-    case .sender:
-      "GMAIL_GATEWAY_SENDER_BIN"
     }
   }
 
@@ -66,14 +67,30 @@ enum BuiltinGmailGatewayCLIAddon: String {
     }
   }
 
-  var descriptor: LocalGatewayGraphQLCLIDescriptor {
-    LocalGatewayGraphQLCLIDescriptor(
+  var descriptor: LocalGatewayGraphQLDescriptor {
+    let mode = mode
+    let tier = tier
+    return LocalGatewayGraphQLDescriptor(
       providerName: "gmail-gateway",
       payloadNamespaceKey: "gmailGateway",
-      executableName: executableName,
-      executableEnvironmentName: executableEnvironmentName,
-      invocationStyle: .queryFlagInlineOnly,
-      isAllowedEnvironmentTarget: { Self.isAllowedTargetEnvironmentName($0) }
+      tier: tier,
+      // gmail-gateway rejects GraphQL variables; values render into the
+      // document text instead.
+      acceptsVariables: false,
+      isAllowedEnvironmentTarget: { Self.isAllowedTargetEnvironmentName($0) },
+      run: { _, document, _, environment in
+        let result = GmailGatewayCLI(mode: mode).run(
+          arguments: ["graphql", "--query", document],
+          environment: environment
+        )
+        guard !result.stdout.isEmpty else {
+          throw AdapterExecutionError(
+            .providerError,
+            "gmail-gateway \(tier) failed with exit code \(result.exitCode): \(appleGatewayCompactText(result.stderr))"
+          )
+        }
+        return result.stdout
+      }
     )
   }
 }
@@ -83,8 +100,11 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     operation: BuiltinGmailGatewayCLIAddon,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
-    try LocalGatewayGraphQLCLIEngine(environment: environment, descriptor: operation.descriptor)
-      .execute(input, context: context)
+  ) async throws -> AdapterExecutionOutput {
+    try await LocalGatewayGraphQLEngine(
+      environment: environment,
+      descriptor: operation.descriptor,
+      runnerOverride: localGatewayGraphQLRunner
+    ).execute(input, context: context)
   }
 }

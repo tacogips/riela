@@ -1,41 +1,47 @@
 import Foundation
 import RielaAddonSupport
 import RielaCore
+import WrikeGatewayAdmin
+import WrikeGatewayCore
+import WrikeGatewayRead
+import WrikeGatewayWrite
 
-/// Built-in add-ons that run the locally installed wrike-gateway CLI tier
-/// binaries. Capability boundaries (read / write / delete) are enforced by the
-/// selected binary itself, so each add-on pins one tier and never lets the
-/// workflow swap in a broader executable through inputs or payload data.
+/// Built-in add-ons that run the sibling wrike-gateway package's GraphQL
+/// runtime inside this process. Capability boundaries (read / write / delete)
+/// are enforced by the tier each add-on pins: the role and capability list go
+/// to wrike-gateway's own `CapabilityRegistry`, which refuses a document
+/// naming a capability outside that tier, so a workflow cannot widen the tier
+/// through inputs or payload data.
 enum BuiltinWrikeGatewayAddon: String {
   case read = "riela/wrike-gateway-read"
   case write = "riela/wrike-gateway-write"
   case admin = "riela/wrike-gateway-admin"
 
-  var executableName: String {
+  var role: RoleDescriptor {
     switch self {
     case .read:
-      "wrike-gateway-reader"
+      .reader
     case .write:
-      "wrike-gateway-writer"
+      .writer
     case .admin:
-      "wrike-gateway-admin"
+      .admin
     }
   }
 
-  var executableEnvironmentName: String {
+  var capabilities: [CapabilityDefinition] {
     switch self {
     case .read:
-      "WRIKE_GATEWAY_READER_BIN"
+      ReadCapabilities.all
     case .write:
-      "WRIKE_GATEWAY_WRITER_BIN"
+      WriteCapabilities.all
     case .admin:
-      "WRIKE_GATEWAY_ADMIN_BIN"
+      AdminCapabilities.all
     }
   }
 
   /// The exact wrike-gateway credential contract. addon.env may only populate
   /// these target names, so a workflow cannot use the binding mechanism to
-  /// inject arbitrary variables into the child process.
+  /// inject arbitrary variables into the gateway.
   static let allowedTargetEnvironmentNames: Set<String> = [
     "WRIKE_GATEWAY_API_CLIENT_ID",
     "WRIKE_GATEWAY_API_CLIENT_SECRET",
@@ -44,14 +50,34 @@ enum BuiltinWrikeGatewayAddon: String {
     "WRIKE_GATEWAY_OAUTH_CALLBACK_PORT"
   ]
 
-  var descriptor: LocalGatewayGraphQLCLIDescriptor {
-    LocalGatewayGraphQLCLIDescriptor(
+  var descriptor: LocalGatewayGraphQLDescriptor {
+    let role = role
+    let capabilities = capabilities
+    return LocalGatewayGraphQLDescriptor(
       providerName: "wrike-gateway",
       payloadNamespaceKey: "wrikeGateway",
-      executableName: executableName,
-      executableEnvironmentName: executableEnvironmentName,
-      invocationStyle: .queryPositionalWithVariables,
-      isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) }
+      tier: role.executableName,
+      acceptsVariables: true,
+      isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) },
+      run: { _, document, variablesJSON, environment in
+        let frame = try GatewayComposition.makeCommandFrame(
+          role: role,
+          definitions: capabilities,
+          environment: StaticEnvironmentReader(extra: environment)
+        )
+        var arguments = ["graphql", "query", document]
+        if let variablesJSON {
+          arguments += ["--variables", variablesJSON]
+        }
+        let outcome = await frame.run(arguments: arguments)
+        guard !outcome.standardOutput.isEmpty else {
+          throw AdapterExecutionError(
+            .providerError,
+            "wrike-gateway \(role.executableName) failed: \(appleGatewayCompactText(outcome.standardError))"
+          )
+        }
+        return outcome.standardOutput
+      }
     )
   }
 }
@@ -61,8 +87,11 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     operation: BuiltinWrikeGatewayAddon,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
-    try LocalGatewayGraphQLCLIEngine(environment: environment, descriptor: operation.descriptor)
-      .execute(input, context: context)
+  ) async throws -> AdapterExecutionOutput {
+    try await LocalGatewayGraphQLEngine(
+      environment: environment,
+      descriptor: operation.descriptor,
+      runnerOverride: localGatewayGraphQLRunner
+    ).execute(input, context: context)
   }
 }

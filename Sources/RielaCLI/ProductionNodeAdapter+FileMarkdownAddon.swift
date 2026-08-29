@@ -34,6 +34,11 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
   ) async throws -> AdapterExecutionOutput {
+    #if !canImport(AnydocKit)
+    // The converter's Linux route is a pkg-config staticlib built from Rust,
+    // which riela does not require; refuse rather than half-convert.
+    throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
+    #else
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(
         .policyBlocked,
@@ -59,13 +64,7 @@ extension BuiltinWorkflowAddonResolver {
       environment: environment,
       workingDirectory: workingDirectory
     )
-    #if canImport(AnydocKit)
     let converterVersion = Anydoc.version
-    #else
-    // The converter's Linux route is a pkg-config staticlib built from Rust,
-    // which riela does not require; refuse rather than half-convert.
-    throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
-    #endif
 
     var documents: [JSONObject] = []
     var markdownSections: [String] = []
@@ -139,6 +138,7 @@ extension BuiltinWorkflowAddonResolver {
       ],
       payload: payload
     )
+    #endif
   }
 
   #if canImport(AnydocKit)

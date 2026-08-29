@@ -10,7 +10,7 @@ extension BuiltinWorkflowAddonResolver {
     guard let operation = AppleClockAlarmOperation(addonName: input.addon.name) else {
       throw AdapterExecutionError(.providerError, "missing Apple Clock Alarm add-on resolver for '\(input.addon.name)'")
     }
-    let engine = AppleClockAlarmEngine(environment: environment)
+    let engine = AppleClockAlarmEngine(environment: environment, appleGatewayRunner: appleGatewayRunner)
     return try engine.execute(operation, input: input, context: context)
   }
 }
@@ -88,6 +88,7 @@ private struct AppleClockAlarmEngine {
   ]
 
   var environment: [String: String]
+  var appleGatewayRunner: AppleGatewayRunner?
 
   func execute(
     _ operation: AppleClockAlarmOperation,
@@ -97,24 +98,19 @@ private struct AppleClockAlarmEngine {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
     let config = input.addon.config ?? [:]
     let variables = addonVariables(for: input)
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
     let request = try graphQLRequest(operation: operation, input: input, config: config, variables: variables)
     var arguments = ["graphql", "--query", request.document]
     if let requestVariables = request.variables {
       arguments += ["--variables", try requestVariables.compactJSONString()]
     }
     let processOutput = try runGraphQLRequest(
-      resolvedBinary: resolvedBinary,
       arguments: arguments,
       deadline: context.deadline
     )
@@ -135,20 +131,18 @@ private struct AppleClockAlarmEngine {
 
     switch operation {
     case .list:
-      return try listOutput(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try listOutput(input: input, envelope: envelope)
     case .create, .toggle, .update, .delete:
-      return try mutationOutput(operation: operation, input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try mutationOutput(operation: operation, input: input, envelope: envelope)
     }
   }
 
   private func runGraphQLRequest(
-    resolvedBinary: AppleGatewayResolvedBinary,
     arguments: [String],
     deadline: Date?
   ) throws -> AppleGatewayProcessOutput {
-    let runner = AppleGatewayProcessRunner(runtimeEnvironment: environment)
+    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
     return try runner.run(
-      executablePath: resolvedBinary.path,
       arguments: arguments,
       deadline: deadline,
       allowNonzeroExit: true
@@ -205,7 +199,6 @@ private struct AppleClockAlarmEngine {
 
   private func listOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     let alarms = try appleGatewayRequiredArray(
@@ -215,7 +208,7 @@ private struct AppleClockAlarmEngine {
     let validatedAlarms = try alarms.enumerated().map { index, alarm in
       try validatedClockAlarm(alarm, field: "\(input.addon.name) GraphQL data.clockAlarms[\(index)]")
     }
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     payload["clockAlarms"] = .array(validatedAlarms)
     payload["alarmCount"] = .number(Double(validatedAlarms.count))
     payload["replyText"] = .string("Listed \(validatedAlarms.count) Apple Clock alarms.")
@@ -225,7 +218,6 @@ private struct AppleClockAlarmEngine {
   private func mutationOutput(
     operation: AppleClockAlarmOperation,
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     guard let fieldName = operation.mutationFieldName else {
@@ -243,7 +235,7 @@ private struct AppleClockAlarmEngine {
       result["alarm"],
       field: "\(input.addon.name) GraphQL data.\(fieldName).alarm"
     )
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     payload["clockAlarm"] = alarm
     payload["result"] = .object(result)
     payload["replyText"] = .string("Apple Clock alarm \(operation.actionPastTense).")
@@ -300,7 +292,6 @@ private struct AppleClockAlarmEngine {
 
   private func commonPayload(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) -> JSONObject {
     let requestId = envelope.requestId ?? ""
@@ -309,10 +300,7 @@ private struct AppleClockAlarmEngine {
       "addon": .string(input.addon.name),
       "stepId": .string(input.stepId),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "hostOSVersion": .string(ProcessInfo.processInfo.operatingSystemVersionString),
         "requestId": .string(requestId),
         "rawData": .object(envelope.data)

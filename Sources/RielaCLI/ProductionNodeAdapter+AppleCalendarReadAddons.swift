@@ -18,7 +18,7 @@ extension BuiltinWorkflowAddonResolver {
     operation: BuiltinCalendarAddon,
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
-    try AppleCalendarAddonEngine(environment: environment).execute(operation, input: input, context: context)
+    try AppleCalendarAddonEngine(environment: environment, appleGatewayRunner: appleGatewayRunner).execute(operation, input: input, context: context)
   }
 }
 
@@ -31,6 +31,7 @@ struct AppleCalendarAddonEngine {
   private static let recurrenceFrequencyValues = Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"])
 
   var environment: [String: String]
+  var appleGatewayRunner: AppleGatewayRunner?
 
   func execute(
     _ operation: BuiltinCalendarAddon,
@@ -40,20 +41,15 @@ struct AppleCalendarAddonEngine {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
     let config = input.addon.config ?? [:]
     let inputValues = renderedInputValues(for: input)
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
     let request = try graphQLRequest(operation, input: input, config: config, inputValues: inputValues)
-    let processOutput = try AppleGatewayProcessRunner(runtimeEnvironment: environment).run(
-      executablePath: resolvedBinary.path,
+    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", request.document, "--variables", try request.variables.compactJSONString()],
       deadline: context.deadline
     )
@@ -64,12 +60,11 @@ struct AppleCalendarAddonEngine {
         "\(input.addon.name) GraphQL errors: \(appleGatewayCompactText(envelope.errors.joined(separator: "; ")))"
       )
     }
-    return try output(operation, input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    return try output(operation, input: input, envelope: envelope)
   }
 
   func commonPayload(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope,
     appleCalendar: JSONObject,
     replyText: String
@@ -83,10 +78,7 @@ struct AppleCalendarAddonEngine {
       "appleCalendar": .object(appleCalendar.merging(["requestId": .string(requestId)]) { current, _ in current }),
       "replyText": .string(replyText),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "requestId": .string(requestId),
         "rawData": .object(envelope.data)
       ])
@@ -156,7 +148,6 @@ struct AppleCalendarAddonEngine {
   private func output(
     _ operation: BuiltinCalendarAddon,
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     switch operation {
@@ -171,7 +162,6 @@ struct AppleCalendarAddonEngine {
       ]
       var payload = commonPayload(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleCalendar: appleCalendar,
         replyText: "Listed \(calendars.count) Apple calendars."
@@ -208,7 +198,6 @@ struct AppleCalendarAddonEngine {
         when: ["always": true, "has_events": !events.isEmpty],
         payload: commonPayload(
           input: input,
-          resolvedBinary: resolvedBinary,
           envelope: envelope,
           appleCalendar: appleCalendar,
           replyText: "Fetched \(events.count) Apple Calendar events."
@@ -236,14 +225,13 @@ struct AppleCalendarAddonEngine {
         when: ["always": true, "has_event": hasEvent],
         payload: commonPayload(
           input: input,
-          resolvedBinary: resolvedBinary,
           envelope: envelope,
           appleCalendar: appleCalendar,
           replyText: hasEvent ? "Fetched Apple Calendar event." : "Apple Calendar event was not found."
         )
       )
     case .eventCreate, .eventUpdate, .eventDelete, .eventAlarmsSet:
-      return try writeOutput(operation, input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try writeOutput(operation, input: input, envelope: envelope)
     }
   }
 

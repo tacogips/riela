@@ -385,50 +385,24 @@ final class AppleCalendarAddonTests: XCTestCase {
     )
   }
 
-  func testCalendarBinaryPrecedenceAndBinaryPathIsolation() async throws {
-    let configFake = try CalendarFakeAppleGateway(mode: "calendar-list", requestId: "config")
-    let envFake = try CalendarFakeAppleGateway(mode: "calendar-list", requestId: "env")
-    let pathFake = try CalendarFakeAppleGateway(mode: "calendar-list", requestId: "path", executableName: "apple-gateway")
-    let maliciousFake = try CalendarFakeAppleGateway(mode: "calendar-list", requestId: "malicious")
-    defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
-      maliciousFake.cleanup()
-    }
+  /// The gateway is linked in, so nothing a workflow supplies can select an
+  /// executable; an input that happens to be named `binaryPath` is just an
+  /// unused input.
+  func testBinaryPathInInputsVariablesOrPayloadIsInert() async throws {
+    let gateway = try CalendarFakeAppleGateway(mode: "calendar-list", requestId: "gateway")
+    defer { gateway.cleanup() }
 
-    let configOutput = try await runCalendarAddon(
+    let output = try await runCalendarAddon(
       "riela/calendar-list",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(gatewayBinarySource(configOutput), "config")
-    XCTAssertEqual(gatewayRequestId(configOutput), "config")
-
-    let envOutput = try await runCalendarAddon(
-      "riela/calendar-list",
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(gatewayBinarySource(envOutput), "environment")
-    XCTAssertEqual(gatewayRequestId(envOutput), "env")
-
-    let pathOutput = try await runCalendarAddon(
-      "riela/calendar-list",
-      environment: ["PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(gatewayBinarySource(pathOutput), "path")
-    XCTAssertEqual(gatewayRequestId(pathOutput), "path")
-
-    let isolatedOutput = try await runCalendarAddon(
-      "riela/calendar-list",
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       inputs: ["binaryPath": .string("{{binaryPath}}")],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path],
-      variables: ["binaryPath": .string(maliciousFake.executableURL.path)],
-      resolvedInputPayload: ["binaryPath": .string(maliciousFake.executableURL.path)]
+      variables: ["binaryPath": .string("/usr/bin/true")],
+      resolvedInputPayload: ["binaryPath": .string("/usr/bin/true")]
     )
-    XCTAssertEqual(gatewayBinarySource(isolatedOutput), "environment")
-    XCTAssertEqual(gatewayRequestId(isolatedOutput), "env")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: maliciousFake.argumentLogURL.path))
+
+    XCTAssertEqual(gatewayRequestId(output), "gateway")
+    let arguments = try String(contentsOf: gateway.argumentLogURL)
+    XCTAssertFalse(arguments.contains("/usr/bin/true"), arguments)
   }
 
   func testCalendarProviderInvalidOutputTimeoutEnvAndVersionFailures() async throws {
@@ -484,7 +458,7 @@ final class AppleCalendarAddonTests: XCTestCase {
       config: ["binaryPath": .string(sleepFake.executableURL.path)],
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
     XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
 
@@ -495,7 +469,7 @@ final class AppleCalendarAddonTests: XCTestCase {
       config: ["binaryPath": .string(childFake.executableURL.path)],
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
     try await Task.sleep(nanoseconds: 1_300_000_000)
     XCTAssertFalse(FileManager.default.fileExists(atPath: childFake.childSurvivalLogURL.path))
@@ -527,7 +501,15 @@ final class AppleCalendarAddonTests: XCTestCase {
     resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-calendar",
         stepId: "calendar-step",
@@ -535,7 +517,7 @@ final class AppleCalendarAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: addonName,
           version: version,
-          config: config,
+          config: gateway.config,
           env: env,
           inputs: inputs
         ),
@@ -595,11 +577,6 @@ final class AppleCalendarAddonTests: XCTestCase {
     }
   }
 
-  private func gatewayBinarySource(_ output: AdapterExecutionOutput) -> String? {
-    calendarTestObject(output.payload["appleGateway"])
-      .flatMap { calendarTestObject($0["binary"]) }
-      .flatMap { calendarTestString($0["source"]) }
-  }
 
   private func gatewayRequestId(_ output: AdapterExecutionOutput) -> String? {
     calendarTestObject(output.payload["appleGateway"]).flatMap { calendarTestString($0["requestId"]) }

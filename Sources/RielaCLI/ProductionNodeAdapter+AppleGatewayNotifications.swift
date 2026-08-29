@@ -7,7 +7,7 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
-    let engine = AppleGatewayNotificationsEngine(environment: environment)
+    let engine = AppleGatewayNotificationsEngine(environment: environment, appleGatewayRunner: appleGatewayRunner)
     return try engine.execute(.list, input: input, context: context)
   }
 
@@ -15,7 +15,7 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
-    let engine = AppleGatewayNotificationsEngine(environment: environment)
+    let engine = AppleGatewayNotificationsEngine(environment: environment, appleGatewayRunner: appleGatewayRunner)
     return try engine.execute(.post, input: input, context: context)
   }
 
@@ -23,7 +23,7 @@ extension BuiltinWorkflowAddonResolver {
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
-    let engine = AppleGatewayNotificationsEngine(environment: environment)
+    let engine = AppleGatewayNotificationsEngine(environment: environment, appleGatewayRunner: appleGatewayRunner)
     return try engine.execute(.dismiss, input: input, context: context)
   }
 }
@@ -41,6 +41,7 @@ private struct AppleGatewayNotificationsEngine {
   private static let allowedSources = ["GATEWAY_HELPER", "SYSTEM_DB"]
 
   var environment: [String: String]
+  var appleGatewayRunner: AppleGatewayRunner?
 
   func execute(
     _ operation: AppleGatewayNotificationsOperation,
@@ -50,22 +51,17 @@ private struct AppleGatewayNotificationsEngine {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
     let config = input.addon.config ?? [:]
     let variables = addonVariables(for: input)
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
     let document = try graphQLDocument(operation: operation, input: input, config: config, variables: variables)
     let processOutput: AppleGatewayProcessOutput
     do {
-      processOutput = try AppleGatewayProcessRunner(runtimeEnvironment: environment).run(
-        executablePath: resolvedBinary.path,
+      processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
         arguments: ["graphql", "--query", document],
         deadline: context.deadline
       )
@@ -84,11 +80,11 @@ private struct AppleGatewayNotificationsEngine {
 
     switch operation {
     case .list:
-      return try listOutput(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try listOutput(input: input, envelope: envelope)
     case .post:
-      return try postOutput(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try postOutput(input: input, envelope: envelope)
     case .dismiss:
-      return try dismissOutput(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try dismissOutput(input: input, envelope: envelope)
     }
   }
 
@@ -224,7 +220,6 @@ private struct AppleGatewayNotificationsEngine {
 
   private func listOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     let notificationsPayload = try AppleGatewayNotificationsPayload(data: envelope.data, addonName: input.addon.name)
@@ -235,7 +230,7 @@ private struct AppleGatewayNotificationsEngine {
       "totalCount": notificationsPayload.totalCount,
       "requestId": .string(requestId)
     ]
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     payload["appleNotifications"] = .object(appleNotifications)
     payload["notificationCount"] = .integer(Int64(notificationsPayload.notifications.count))
     payload["replyText"] = .string("Listed \(notificationsPayload.notifications.count) Apple Notifications.")
@@ -244,7 +239,6 @@ private struct AppleGatewayNotificationsEngine {
 
   private func postOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     let posted = try envelope.mutationField("postNotification", addonName: input.addon.name)
@@ -261,7 +255,7 @@ private struct AppleGatewayNotificationsEngine {
     if normalizedPosted["activation"] == nil {
       normalizedPosted["activation"] = .null
     }
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     payload["appleNotification"] = .object(["posted": .object(normalizedPosted)])
     payload["postedNotificationId"] = .string(notificationId)
     payload["replyText"] = .string("Posted Apple notification \(notificationId).")
@@ -279,7 +273,6 @@ private struct AppleGatewayNotificationsEngine {
 
   private func dismissOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     let config = input.addon.config ?? [:]
@@ -296,7 +289,7 @@ private struct AppleGatewayNotificationsEngine {
       "mode": .string(dismissDocument.mode),
       "requestId": .string(requestId)
     ]
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     payload["appleNotifications"] = .object(appleNotifications)
     payload["dismissedCount"] = dismissedCount
     payload["replyText"] = .string("Dismissed Apple notifications: \(dismissedCount.compactJSONStringOrEmpty()).")
@@ -305,7 +298,6 @@ private struct AppleGatewayNotificationsEngine {
 
   private func commonPayload(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) -> JSONObject {
     let requestId = envelope.requestId ?? ""
@@ -314,10 +306,7 @@ private struct AppleGatewayNotificationsEngine {
       "addon": .string(input.addon.name),
       "stepId": .string(input.stepId),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "requestId": .string(requestId),
         "rawData": .object(envelope.data)
       ])

@@ -4,69 +4,43 @@ import XCTest
 @testable import RielaCLI
 
 final class AppleGatewayAdminAddonTests: XCTestCase {
-  func testAdminAddonsResolveBinaryFromConfigEnvThenPathAndSanitizeEnvironment() async throws {
-    let configFake = try FakeAdminAppleGateway(mode: "permissions-status")
-    let envFake = try FakeAdminAppleGateway(mode: "permissions-status")
-    let pathFake = try FakeAdminAppleGateway(mode: "permissions-status", executableName: "apple-gateway")
-    defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
-    }
+  func testAdminAddonsSanitizeTheGatewayEnvironment() async throws {
+    let gateway = try FakeAdminAppleGateway(mode: "permissions-status")
+    defer { gateway.cleanup() }
 
-    let configOutput = try await runAdminAddon(
+    _ = try await runAdminAddon(
       "riela/apple-gateway-permissions-status",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path,
         "OPENAI_API_KEY": "sentinel-openai",
         "GITHUB_TOKEN": "sentinel-github",
         "RIELA_SECRET": "sentinel-riela",
         "USER": "riela-test"
       ]
     )
-    XCTAssertEqual(adminGatewayBinarySource(configOutput), "config")
-    XCTAssertEqual(try configFake.arguments(), ["permissions", "status", "--json"])
-    let childEnvironment = try String(contentsOf: configFake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("USER=riela-test"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-openai"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-github"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-riela"))
-
-    let envOutput = try await runAdminAddon(
-      "riela/apple-gateway-permissions-status",
-      environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path
-      ]
-    )
-    XCTAssertEqual(adminGatewayBinarySource(envOutput), "environment")
-
-    let pathOutput = try await runAdminAddon(
-      "riela/apple-gateway-permissions-status",
-      environment: ["PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(adminGatewayBinarySource(pathOutput), "path")
+    XCTAssertEqual(try gateway.arguments(), ["permissions", "status", "--json"])
+    // Hosting the gateway in this process must not widen what it can read.
+    let gatewayEnvironment = try String(contentsOf: gateway.environmentLogURL)
+    XCTAssertTrue(gatewayEnvironment.contains("USER=riela-test"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-openai"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-github"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-riela"))
   }
 
   func testAdminAddonsIgnoreBinaryPathOutsideLiteralConfigAndRejectAddonEnvAndVersions() async throws {
-    let maliciousFake = try FakeAdminAppleGateway(mode: "permissions-status")
     let envFake = try FakeAdminAppleGateway(mode: "permissions-status")
-    defer {
-      maliciousFake.cleanup()
-      envFake.cleanup()
-    }
+    defer { envFake.cleanup() }
 
+    // The gateway is linked in, so an input named `binaryPath` is inert.
     let output = try await runAdminAddon(
       "riela/apple-gateway-permissions-status",
+      config: ["binaryPath": .string(envFake.executableURL.path)],
       inputs: ["binaryPath": .string("{{binaryPath}}")],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path],
-      variables: ["binaryPath": .string(maliciousFake.executableURL.path)],
-      resolvedInputPayload: ["binaryPath": .string(maliciousFake.executableURL.path)]
+      variables: ["binaryPath": .string("/usr/bin/true")],
+      resolvedInputPayload: ["binaryPath": .string("/usr/bin/true")]
     )
-    XCTAssertEqual(adminGatewayBinarySource(output), "environment")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: maliciousFake.argumentLogURL.path))
+    XCTAssertEqual(output.payload["status"], .string("ok"))
+    XCTAssertFalse(try envFake.arguments().contains("/usr/bin/true"))
 
     try await assertAdminFailure(
       "riela/apple-gateway-permissions-status",
@@ -92,7 +66,7 @@ final class AppleGatewayAdminAddonTests: XCTestCase {
     try await assertAdminFailure(
       "riela/apple-gateway-schema",
       config: ["binaryPath": .string(fake.executableURL.path)],
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1)),
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1)),
       code: .timeout,
       messageContains: "deadline"
     )
@@ -414,7 +388,15 @@ final class AppleGatewayAdminAddonTests: XCTestCase {
     addonEnv: JSONObject? = nil,
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-gateway-admin",
         stepId: "admin-step",
@@ -422,7 +404,7 @@ final class AppleGatewayAdminAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: name,
           version: version,
-          config: config,
+          config: gateway.config,
           env: addonEnv,
           inputs: inputs
         ),
@@ -547,11 +529,6 @@ private func adminGatewayObject(_ output: AdapterExecutionOutput) -> JSONObject?
   adminObject(output.payload["appleGateway"])
 }
 
-private func adminGatewayBinarySource(_ output: AdapterExecutionOutput) -> String? {
-  adminGatewayObject(output)
-    .flatMap { adminObject($0["binary"]) }
-    .flatMap { adminString($0["source"]) }
-}
 
 private func adminObject(_ value: JSONValue?) -> JSONObject? {
   guard case let .object(object)? = value else {

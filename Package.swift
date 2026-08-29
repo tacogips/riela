@@ -9,6 +9,23 @@ let rielaVersionFileURL = URL(fileURLWithPath: #filePath)
 let rielaVersion = try String(contentsOf: rielaVersionFileURL, encoding: .utf8)
   .trimmingCharacters(in: .whitespacesAndNewlines)
 
+// The riela executables call apple-gateway as a linked library, and macOS
+// attaches TCC permission grants to the calling executable's own identity. The
+// section below gives riela its own bundle identifier and usage strings, so
+// the Apple Events / Calendars / Reminders / Contacts prompts name riela
+// rather than borrowing another tool's wording. Only Apple platforms embed it.
+let rielaInfoPlistLinkerSettings: [LinkerSetting] = [
+  .unsafeFlags(
+    [
+      "-Xlinker", "-sectcreate",
+      "-Xlinker", "__TEXT",
+      "-Xlinker", "__info_plist",
+      "-Xlinker", "Resources/RielaInfo.plist"
+    ],
+    .when(platforms: [.macOS])
+  )
+]
+
 let package = Package(
   name: "riela",
   platforms: [
@@ -59,6 +76,10 @@ let package = Package(
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
       revision: "c46443a5e8f744244cb9825d3238958a797c4f2b"
+    ),
+    .package(
+      url: "https://github.com/tacogips/apple-gateway.git",
+      revision: "3a2320ef74aa40c6ee42852b10f48f3c3911b917"
     ),
     .package(
       url: "https://github.com/tacogips/anydoc-swift.git",
@@ -191,6 +212,7 @@ let package = Package(
         // The document converter is the same native library kaiba already
         // links, so calling it directly adds no new platform requirement.
         .product(name: "AnydocKit", package: "anydoc-swift"),
+        .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
         "RielaVersion",
@@ -210,7 +232,11 @@ let package = Package(
         .product(name: "WebHooky", package: "web-hooky")
       ]
     ),
-    .executableTarget(name: "RielaCLIExecutable", dependencies: ["RielaCLI"]),
+    .executableTarget(
+      name: "RielaCLIExecutable",
+      dependencies: ["RielaCLI"],
+      linkerSettings: rielaInfoPlistLinkerSettings
+    ),
     .executableTarget(
       name: "RielaApp",
       dependencies: [
@@ -222,7 +248,8 @@ let package = Package(
         "RielaViewer",
         "RielaObservability",
         "RielaWorkflowRegistry"
-      ]
+      ],
+      linkerSettings: rielaInfoPlistLinkerSettings
     ),
     .testTarget(
       name: "RielaCoreTests",

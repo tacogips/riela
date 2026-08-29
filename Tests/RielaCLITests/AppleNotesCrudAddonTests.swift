@@ -480,77 +480,28 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     )
   }
 
-  func testAppleNoteCrudMapsBinaryTimeoutEnvAndVersionFailures() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-apple-notes-crud-nonexec-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let nonExecutable = root.appendingPathComponent("apple-gateway")
-    try Data("#!/bin/sh\n".utf8).write(to: nonExecutable)
+  /// The gateway is linked in, so the old process-lifecycle cases — a
+  /// non-executable `binaryPath`, a child holding stdout open, a descendant
+  /// surviving termination — no longer exist. What remains is the deadline,
+  /// `addon.env`, and version contract.
+  func testAppleNoteCrudMapsDeadlineEnvAndVersionFailures() async throws {
+    let gateway = try CrudFakeAppleGateway(mode: "sleep")
+    defer { gateway.cleanup() }
 
-    try await assertAppleNoteFailure(
-      "riela/apple-note-get",
-      config: ["binaryPath": .string(nonExecutable.path)],
-      inputs: ["noteId": .string("note-1")],
-      code: .policyBlocked,
-      messageContains: "config.binaryPath is not executable"
-    )
-
-    let sleepFake = try CrudFakeAppleGateway(mode: "sleep")
-    let childStdoutFake = try CrudFakeAppleGateway(mode: "timeout-child-holds-stdout")
-    let childStdoutAfterExitFake = try CrudFakeAppleGateway(mode: "child-holds-stdout-after-success")
-    let childMutationFake = try CrudFakeAppleGateway(mode: "timeout-child-writes-marker")
-    defer {
-      sleepFake.cleanup()
-      childStdoutFake.cleanup()
-      childStdoutAfterExitFake.cleanup()
-      childMutationFake.cleanup()
-    }
     let startedAt = Date()
     try await assertAppleNoteFailure(
       "riela/apple-note-get",
-      config: ["binaryPath": .string(sleepFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       inputs: ["noteId": .string("note-1")],
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
     XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
 
-    let inheritedPipeStartedAt = Date()
     try await assertAppleNoteFailure(
       "riela/apple-note-get",
-      config: ["binaryPath": .string(childStdoutFake.executableURL.path)],
-      inputs: ["noteId": .string("note-1")],
-      code: .timeout,
-      messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
-    )
-    XCTAssertLessThan(Date().timeIntervalSince(inheritedPipeStartedAt), 2)
-
-    let inheritedPipeNoDeadlineStartedAt = Date()
-    let inheritedPipeOutput = try await runAppleNoteAddon(
-      "riela/apple-note-get",
-      config: ["binaryPath": .string(childStdoutAfterExitFake.executableURL.path)],
-      inputs: ["noteId": .string("note-1")]
-    )
-    XCTAssertEqual(inheritedPipeOutput.when["has_note"], true)
-    XCTAssertLessThan(Date().timeIntervalSince(inheritedPipeNoDeadlineStartedAt), 2)
-
-    try await assertAppleNoteFailure(
-      "riela/apple-note-delete",
-      config: ["binaryPath": .string(childMutationFake.executableURL.path)],
-      inputs: ["noteId": .string("note-1")],
-      code: .timeout,
-      messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
-    )
-    try await Task.sleep(nanoseconds: 700_000_000)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: childMutationFake.descendantMarkerURL.path))
-
-    try await assertAppleNoteFailure(
-      "riela/apple-note-get",
-      config: ["binaryPath": .string(sleepFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       inputs: ["noteId": .string("note-1")],
       env: ["UNSAFE": .object(["fromEnv": .string("UNSAFE")])],
       code: .policyBlocked,
@@ -558,7 +509,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     )
     try await assertAppleNoteFailure(
       "riela/apple-note-get",
-      config: ["binaryPath": .string(sleepFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       inputs: ["noteId": .string("note-1")],
       version: "2",
       code: .policyBlocked,
@@ -620,7 +571,15 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-notes-crud",
         stepId: "apple-note-step",
@@ -628,7 +587,7 @@ final class AppleNotesCrudAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: addonName,
           version: version,
-          config: config,
+          config: gateway.config,
           env: env,
           inputs: inputs
         ),

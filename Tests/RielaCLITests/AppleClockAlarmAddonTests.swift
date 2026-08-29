@@ -285,7 +285,7 @@ final class AppleClockAlarmAddonTests: XCTestCase {
       config: ["binaryPath": .string(sleepFake.executableURL.path)],
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
     XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
   }
@@ -330,44 +330,13 @@ final class AppleClockAlarmAddonTests: XCTestCase {
     )
   }
 
-  func testBinaryPrecedenceEnvStrippingAddonEnvAndVersionRejection() async throws {
-    let configFake = try ClockFakeAppleGateway(mode: "list", requestId: "config")
-    let envFake = try ClockFakeAppleGateway(mode: "list", requestId: "env")
-    let pathFake = try ClockFakeAppleGateway(mode: "list", requestId: "path", executableName: "apple-gateway")
-    defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
-    }
-
-    let configOutput = try await runClockAddon(
-      "riela/apple-clock-alarms-list",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
-      environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path
-      ]
-    )
-    XCTAssertEqual(clockGatewayBinarySource(configOutput), "config")
-
-    let envOutput = try await runClockAddon(
-      "riela/apple-clock-alarms-list",
-      environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path
-      ]
-    )
-    XCTAssertEqual(clockGatewayBinarySource(envOutput), "environment")
-
-    let pathOutput = try await runClockAddon(
-      "riela/apple-clock-alarms-list",
-      environment: ["PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(clockGatewayBinarySource(pathOutput), "path")
+  func testEnvironmentStrippingAddonEnvAndVersionRejection() async throws {
+    let gateway = try ClockFakeAppleGateway(mode: "list", requestId: "config")
+    defer { gateway.cleanup() }
 
     _ = try await runClockAddon(
       "riela/apple-clock-alarms-list",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       environment: [
         "OPENAI_API_KEY": "sentinel-openai",
         "GITHUB_TOKEN": "sentinel-github",
@@ -375,14 +344,15 @@ final class AppleClockAlarmAddonTests: XCTestCase {
         "USER": "riela-test"
       ]
     )
-    let childEnvironment = try String(contentsOf: configFake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("USER=riela-test"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-openai"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-github"))
+    // Hosting the gateway in this process must not widen what it can read.
+    let gatewayEnvironment = try String(contentsOf: gateway.environmentLogURL)
+    XCTAssertTrue(gatewayEnvironment.contains("USER=riela-test"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-openai"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-github"))
 
     try await assertClockFailure(
       "riela/apple-clock-alarms-list",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       env: ["UNSAFE": .object(["fromEnv": .string("OPENAI_API_KEY")])],
       code: .policyBlocked,
       messageContains: "does not support addon.env"
@@ -390,30 +360,30 @@ final class AppleClockAlarmAddonTests: XCTestCase {
     try await assertClockFailure(
       "riela/apple-clock-alarms-list",
       version: "2",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       code: .policyBlocked,
       messageContains: "unsupported"
     )
   }
 
-  func testBinaryPathIsNotSourcedFromInputsVariablesOrPayload() async throws {
-    let maliciousFake = try ClockFakeAppleGateway(mode: "list", requestId: "payload")
-    let envFake = try ClockFakeAppleGateway(mode: "list", requestId: "env")
-    defer {
-      maliciousFake.cleanup()
-      envFake.cleanup()
-    }
+  /// The gateway is linked in, so nothing a workflow supplies can select an
+  /// executable; an input that happens to be named `binaryPath` is just an
+  /// unused input.
+  func testBinaryPathInInputsVariablesOrPayloadIsInert() async throws {
+    let gateway = try ClockFakeAppleGateway(mode: "list", requestId: "gateway")
+    defer { gateway.cleanup() }
 
     let output = try await runClockAddon(
       "riela/apple-clock-alarms-list",
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       inputs: ["binaryPath": .string("{{binaryPath}}")],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path],
-      variables: ["binaryPath": .string(maliciousFake.executableURL.path)],
-      resolvedInputPayload: ["binaryPath": .string(maliciousFake.executableURL.path)]
+      variables: ["binaryPath": .string("/usr/bin/true")],
+      resolvedInputPayload: ["binaryPath": .string("/usr/bin/true")]
     )
 
-    XCTAssertEqual(clockGatewayBinarySource(output), "environment")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: maliciousFake.argumentLogURL.path))
+    XCTAssertEqual(output.payload["status"], .string("ok"))
+    let arguments = try String(contentsOf: gateway.argumentLogURL)
+    XCTAssertFalse(arguments.contains("/usr/bin/true"), arguments)
   }
 
   private func runClockAddon(
@@ -427,7 +397,15 @@ final class AppleClockAlarmAddonTests: XCTestCase {
     resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-clock-alarms",
         stepId: "clock-step",
@@ -435,7 +413,7 @@ final class AppleClockAlarmAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: addonName,
           version: version,
-          config: config,
+          config: gateway.config,
           env: env,
           inputs: inputs
         ),
@@ -472,11 +450,6 @@ final class AppleClockAlarmAddonTests: XCTestCase {
     }
   }
 
-  private func clockGatewayBinarySource(_ output: AdapterExecutionOutput) -> String? {
-    clockTestObject(output.payload["appleGateway"])
-      .flatMap { clockTestObject($0["binary"]) }
-      .flatMap { clockTestString($0["source"]) }
-  }
 }
 
 private struct ClockMutationCase {

@@ -32,7 +32,6 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     XCTAssertEqual(appleNotifications["requestId"], .string("req-list"))
     XCTAssertEqual(output.payload["notificationCount"], .integer(1))
     XCTAssertEqual(output.when["has_notifications"], true)
-    XCTAssertEqual(gatewayBinarySource(output), "config")
   }
 
   func testNotificationPostBuildsMutationAndExposesPostedId() async throws {
@@ -128,36 +127,59 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     XCTAssertEqual(allPayload["mode"], .string("all"))
   }
 
+  /// The example bundle's two add-on nodes, driven with the configs the bundle
+  /// declares. The end-to-end CLI form of this test drove a stand-in through
+  /// `APPLE_GATEWAY_BIN`; the gateway is linked now, so the add-ons are driven
+  /// directly and `RielaExampleParityTests` covers the bundle's structure.
   func testAppleNotificationsExampleDismissesPostedNotificationId() async throws {
-    let fake = try NotificationsFakeAppleGateway(requestId: "req-example", mode: "example-workflow")
-    let sessionStore = notificationsRepositoryTmpRoot()
-      .appendingPathComponent("riela-apple-notifications-sessions-\(UUID().uuidString)", isDirectory: true)
-    defer {
-      fake.cleanup()
-      try? FileManager.default.removeItem(at: sessionStore)
-    }
+    let gateway = try NotificationsFakeAppleGateway(requestId: "req-example", mode: "example-workflow")
+    defer { gateway.cleanup() }
 
-    let result = await RielaCLIApplication().run([
-      "workflow", "run", "apple-notifications",
-      "--workflow-definition-dir", notificationsRepositoryRoot().appendingPathComponent("examples", isDirectory: true).path,
-      "--session-store", sessionStore.path,
-      "--output", "json"
-    ], environment: ["APPLE_GATEWAY_BIN": fake.executableURL.path])
-
-    XCTAssertEqual(result.exitCode, .success, "\(result.stderr)\n\(result.stdout)")
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
-    XCTAssertEqual(payload.status, .completed)
-    let dismissOutput = try XCTUnwrap(
-      payload.session.executions.first { $0.stepId == "dismiss-posted-notification" }?.acceptedOutput?.payload
+    let workflowURL = notificationsRepositoryRoot()
+      .appendingPathComponent("examples/apple-notifications/workflow.json")
+    let workflow = try JSONDecoder().decode(
+      JSONValue.self,
+      from: Data(contentsOf: workflowURL)
     )
-    XCTAssertEqual(dismissOutput["dismissedCount"], .integer(1))
+    let nodes = exampleNodes(workflow)
 
-    let queryHistory = try String(contentsOf: fake.queryHistoryLogURL)
+    let postOutput = try await runNotificationAddon(
+      "riela/apple-notification-post",
+      config: nodes["post-demo-notification"]!.merging(
+        ["binaryPath": .string(gateway.executableURL.path)]
+      ) { _, new in new }
+    )
+    let postedId = try XCTUnwrap(exampleString(postOutput.payload["postedNotificationId"]))
+
+    let dismissOutput = try await runNotificationAddon(
+      "riela/apple-notifications-dismiss",
+      config: ["binaryPath": .string(gateway.executableURL.path)],
+      inputs: ["ids": .array([.string(postedId)])]
+    )
+    XCTAssertEqual(dismissOutput.payload["dismissedCount"], .integer(1))
+
+    let queryHistory = try String(contentsOf: gateway.queryHistoryLogURL)
     XCTAssertTrue(queryHistory.contains("postNotification(input:"), queryHistory)
     XCTAssertTrue(queryHistory.contains("dismissNotifications(ids: [\"posted-example\"])"), queryHistory)
     XCTAssertFalse(queryHistory.contains("dismissAllGatewayNotifications"), queryHistory)
+  }
+
+  private func exampleNodes(_ workflow: JSONValue) -> [String: JSONObject] {
+    guard case let .object(root) = workflow, case let .array(nodes)? = root["nodes"] else { return [:] }
+    var result: [String: JSONObject] = [:]
+    for node in nodes {
+      guard case let .object(object) = node,
+            case let .string(id)? = object["id"],
+            case let .object(addon)? = object["addon"],
+            case let .object(config)? = addon["config"] else { continue }
+      result[id] = config
+    }
+    return result
+  }
+
+  private func exampleString(_ value: JSONValue?) -> String? {
+    guard case let .string(text)? = value else { return nil }
+    return text
   }
 
   func testNotificationsValidateAuthoredInputsBeforeExecution() async throws {
@@ -241,43 +263,21 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     )
   }
 
-  func testNotificationsBinaryPrecedenceIgnoresInputsAndPayloadBinaryPath() async throws {
-    let configFake = try NotificationsFakeAppleGateway(requestId: "config", mode: "list-success")
-    let envFake = try NotificationsFakeAppleGateway(requestId: "env", mode: "list-success")
-    let pathFake = try NotificationsFakeAppleGateway(requestId: "path", executableName: "apple-gateway", mode: "list-success")
-    let maliciousFake = try NotificationsFakeAppleGateway(requestId: "malicious", mode: "list-success")
-    defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
-      maliciousFake.cleanup()
-    }
+  /// The gateway is linked in, so nothing a workflow supplies can select an
+  /// executable; an input that happens to be named `binaryPath` is inert.
+  func testNotificationsIgnoreInputsAndPayloadBinaryPath() async throws {
+    let gateway = try NotificationsFakeAppleGateway(requestId: "gateway", mode: "list-success")
+    defer { gateway.cleanup() }
 
-    let configOutput = try await runNotificationAddon(
+    let output = try await runNotificationAddon(
       "riela/apple-notifications-list",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(gatewayBinarySource(configOutput), "config")
-    XCTAssertEqual(requestId(configOutput), "config")
-
-    let envOutput = try await runNotificationAddon(
-      "riela/apple-notifications-list",
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(gatewayBinarySource(envOutput), "environment")
-    XCTAssertEqual(requestId(envOutput), "env")
-
-    let pathOutput = try await runNotificationAddon(
-      "riela/apple-notifications-list",
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       inputs: ["binaryPath": .string("{{binaryPath}}")],
-      environment: ["PATH": pathFake.binURL.path],
-      variables: ["binaryPath": .string(maliciousFake.executableURL.path)],
-      resolvedInputPayload: ["binaryPath": .string(maliciousFake.executableURL.path)]
+      variables: ["binaryPath": .string("/usr/bin/true")],
+      resolvedInputPayload: ["binaryPath": .string("/usr/bin/true")]
     )
-    XCTAssertEqual(gatewayBinarySource(pathOutput), "path")
-    XCTAssertEqual(requestId(pathOutput), "path")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: maliciousFake.argumentLogURL.path))
+    XCTAssertEqual(requestId(output), "gateway")
+    XCTAssertFalse(try String(contentsOf: gateway.queryHistoryLogURL).contains("/usr/bin/true"))
   }
 
   func testNotificationsDoNotForwardSecretLikeEnvironment() async throws {
@@ -370,7 +370,7 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
       config: ["binaryPath": .string(fake.executableURL.path), "title": .string("x"), "waitSeconds": .integer(1)],
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
     XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
   }
@@ -386,7 +386,15 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-notifications",
         stepId: "apple-notifications-step",
@@ -394,7 +402,7 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: addonName,
           version: version,
-          config: config,
+          config: gateway.config,
           env: env,
           inputs: inputs
         ),
@@ -431,11 +439,6 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     }
   }
 
-  private func gatewayBinarySource(_ output: AdapterExecutionOutput) -> String? {
-    notificationTestObject(output.payload["appleGateway"])
-      .flatMap { notificationTestObject($0["binary"]) }
-      .flatMap { notificationTestString($0["source"]) }
-  }
 
   private func requestId(_ output: AdapterExecutionOutput) -> String? {
     notificationTestObject(output.payload["appleNotifications"]).flatMap { notificationTestString($0["requestId"]) }

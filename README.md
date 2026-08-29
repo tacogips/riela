@@ -240,11 +240,22 @@ collide.
   `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's own
   role, plus `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`.
 
-The apple-gateway add-ons still launch `apple-gateway` as a child process: on
-macOS the executable's own bundle identity is what the TCC permission grants
-for Apple Events, Calendars, Reminders, and Contacts are attached to, so
-linking that gateway would move those grants onto `riela` and require every
-user to re-authorize.
+### Apple permissions
+
+The apple-gateway add-ons are linked the same way, which moves one thing that
+is not just an implementation detail. macOS attaches Apple Events, Calendars,
+Reminders, and Contacts permission grants to the executable that asks, so the
+asker is now `riela` (bundle id `me.tacogips.riela`, usage strings in
+`Resources/RielaInfo.plist`) rather than a separate `apple-gateway` binary.
+**Grants previously given to `apple-gateway` do not carry over** — the first
+Apple add-on step prompts again, and a headless `riela` cannot answer a prompt,
+so approve it once from an interactive run before relying on it in a daemon.
+`addon.config.binaryPath` and `APPLE_GATEWAY_BIN` are gone with the executable
+and a leftover `binaryPath` is refused rather than ignored.
+
+A step deadline is checked before each gateway call. A linked call already
+under way cannot be killed the way the child process could, so a step whose
+deadline passes mid-call fails when that call returns.
 
 ## Session Observability
 
@@ -512,16 +523,17 @@ riela setup container --yes
 
 ## Apple Gateway Add-Ons
 
-Riela includes built-in worker add-ons for local Apple integrations through an
-external `apple-gateway` executable. The runtime invokes `apple-gateway` with
-separate process arguments and does not vendor the gateway source. Executable
-resolution is `addon.config.binaryPath`, then `APPLE_GATEWAY_BIN`, then `PATH`;
-these add-ons reject authored `addon.env` and forward only the minimal process
-environment required by the shared gateway bridge.
+Riela includes built-in worker add-ons for local Apple integrations. They call
+the sibling `apple-gateway` package's `AppleGatewayCore` library inside the
+`riela` process, so no `apple-gateway` executable is spawned or installed and
+there is no `addon.config.binaryPath` or `APPLE_GATEWAY_BIN`. These add-ons
+reject authored `addon.env` and let the gateway see only the minimal process
+environment the shared bridge allows.
 
-Apple Mail access requires `apple-gateway` 0.1.6 or newer so the gateway can
-adapt to the installed Mail Envelope Index schema. Check or update a Homebrew
-installation with `apple-gateway --version` and `brew upgrade apple-gateway`.
+macOS attaches Apple Events, Calendars, Reminders, and Contacts permission
+grants to the executable that asks, so `riela` is now the asker — see
+[Apple permissions](#apple-permissions) for what that means for existing
+grants.
 
 Current Apple gateway add-ons include `riela/apple-notes-list`,
 `riela/apple-notifications-list`, `riela/apple-notification-post`, and

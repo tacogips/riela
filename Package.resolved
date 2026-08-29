@@ -1,5 +1,5 @@
 {
-  "originHash" : "78d83b3689d49474df5714c9eb56ec8b8c4a09bf0535599a8def934195bafa0a",
+  "originHash" : "bcd4b92d3e6f0d0840fa31c804f9fc2db4c2b4e50a1f284827aefbd0cd6e964f",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -15,6 +15,14 @@
       "location" : "https://github.com/tacogips/anydoc-swift.git",
       "state" : {
         "revision" : "d957c08372786b7062553e83fe9c29880fdee7a4"
+      }
+    },
+    {
+      "identity" : "apple-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/apple-gateway.git",
+      "state" : {
+        "revision" : "3a2320ef74aa40c6ee42852b10f48f3c3911b917"
       }
     },
     {

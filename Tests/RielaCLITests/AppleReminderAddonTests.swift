@@ -353,7 +353,7 @@ final class AppleReminderAddonTests: XCTestCase {
     assertFakeGatewayWasNotInvoked(fake)
   }
 
-  func testGatewayErrorMappingAndMissingBinary() async throws {
+  func testGatewayErrorMapping() async throws {
     let graphqlErrorFake = try FakeAppleReminderGateway(mode: "graphql-error")
     let nonzeroFake = try FakeAppleReminderGateway(mode: "nonzero")
     let malformedFake = try FakeAppleReminderGateway(mode: "malformed")
@@ -378,63 +378,32 @@ final class AppleReminderAddonTests: XCTestCase {
       code: .providerError,
       messageContains: "deleteReminder.success was false"
     )
-
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-apple-reminder-nonexec-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let nonExecutable = root.appendingPathComponent("apple-gateway")
-    try Data("#!/bin/sh\n".utf8).write(to: nonExecutable)
-    try await assertReminderFailure(
-      "riela/apple-reminder-lists",
-      environment: ["PATH": root.path],
-      code: .policyBlocked,
-      messageContains: "requires apple-gateway"
-    )
   }
 
-  func testDeadlineAndSharedBinaryResolutionAndSanitizedEnvironment() async throws {
-    let configFake = try FakeAppleReminderGateway(mode: "lists", requestId: "config")
-    let envFake = try FakeAppleReminderGateway(mode: "lists", requestId: "env")
-    let pathFake = try FakeAppleReminderGateway(mode: "lists", requestId: "path", executableName: "apple-gateway")
+  func testDeadlineAndSanitizedGatewayEnvironment() async throws {
+    let gateway = try FakeAppleReminderGateway(mode: "lists", requestId: "gateway")
     let sleepFake = try FakeAppleReminderGateway(mode: "sleep")
     defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
+      gateway.cleanup()
       sleepFake.cleanup()
     }
 
-    let configOutput = try await runReminderAddon(
+    _ = try await runReminderAddon(
       "riela/apple-reminder-lists",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
+      config: ["binaryPath": .string(gateway.executableURL.path)],
+      environment: ["OPENAI_API_KEY": "sentinel", "USER": "riela-test"]
     )
-    XCTAssertEqual(gatewayBinarySource(configOutput), "config")
-
-    let envOutput = try await runReminderAddon(
-      "riela/apple-reminder-lists",
-      environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path,
-        "OPENAI_API_KEY": "sentinel",
-        "USER": "riela-test"
-      ]
-    )
-    XCTAssertEqual(gatewayBinarySource(envOutput), "environment")
-    let childEnvironment = try String(contentsOf: envFake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("USER=riela-test"))
-    XCTAssertFalse(childEnvironment.contains("sentinel"))
-
-    let pathOutput = try await runReminderAddon("riela/apple-reminder-lists", environment: ["PATH": pathFake.binURL.path])
-    XCTAssertEqual(gatewayBinarySource(pathOutput), "path")
+    // Hosting the gateway in this process must not widen what it can read.
+    let gatewayEnvironment = try String(contentsOf: gateway.environmentLogURL)
+    XCTAssertTrue(gatewayEnvironment.contains("USER=riela-test"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel"))
 
     try await assertReminderFailure(
       "riela/apple-reminder-lists",
       fake: sleepFake,
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
   }
 }
@@ -476,12 +445,19 @@ private func runReminderAddon(
   environment: [String: String],
   context: AdapterExecutionContext = AdapterExecutionContext()
 ) async throws -> AdapterExecutionOutput {
-  try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+  // apple-gateway is linked into riela, so a test must not reach the real
+  // Reminders. `config.binaryPath` names this test's stand-in and is consumed
+  // here rather than by the add-on, which refuses it.
+  let gateway = splitAppleGatewayStandIn(config)
+  return try await BuiltinWorkflowAddonResolver(
+    environment: environment,
+    appleGatewayRunner: gateway.runner
+  ).execute(
     WorkflowAddonExecutionInput(
       workflowId: "apple-reminders",
       stepId: "apple-reminders-step",
       nodeId: "apple-reminders-node",
-      addon: WorkflowNodeAddonRef(name: addonName, version: version, config: config, env: env, inputs: inputs),
+      addon: WorkflowNodeAddonRef(name: addonName, version: version, config: gateway.config, env: env, inputs: inputs),
       variables: variables,
       resolvedInputPayload: resolvedInputPayload
     ),
@@ -681,11 +657,6 @@ private func inputObject(_ fake: FakeAppleReminderGateway) throws -> JSONObject 
   try XCTUnwrap(testObject(variablesObject(fake)["input"]))
 }
 
-private func gatewayBinarySource(_ output: AdapterExecutionOutput) -> String? {
-  testObject(output.payload["appleGateway"])
-    .flatMap { testObject($0["binary"]) }
-    .flatMap { testString($0["source"]) }
-}
 
 private func assertFakeGatewayWasNotInvoked(_ fake: FakeAppleReminderGateway, file: StaticString = #filePath, line: UInt = #line) {
   let fileManager = FileManager.default

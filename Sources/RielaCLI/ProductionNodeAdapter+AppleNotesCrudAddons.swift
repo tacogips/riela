@@ -10,6 +10,7 @@ extension BuiltinWorkflowAddonResolver {
     let operation = try AppleNotesCrudOperation(addonName: input.addon.name)
     let engine = AppleNotesCrudEngine(
       environment: environment,
+      appleGatewayRunner: appleGatewayRunner,
       currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     )
     return try engine.execute(operation, input: input, context: context)
@@ -33,6 +34,7 @@ private enum AppleNotesCrudOperation: String {
 
 private struct AppleNotesCrudEngine {
   var environment: [String: String]
+  var appleGatewayRunner: AppleGatewayRunner?
   var currentDirectory: URL
 
   func execute(
@@ -43,21 +45,16 @@ private struct AppleNotesCrudEngine {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
     let config = input.addon.config ?? [:]
     let variables = addonVariables(for: input)
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
-    let runner = AppleGatewayProcessRunner(runtimeEnvironment: environment)
+    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
     let request = try graphQLRequest(operation: operation, input: input, config: config, variables: variables)
     let processOutput = try runner.run(
-      executablePath: resolvedBinary.path,
       arguments: ["graphql", "--query", request.document, "--variables", request.variables.compactJSONString()],
       deadline: context.deadline
     )
@@ -74,7 +71,6 @@ private struct AppleNotesCrudEngine {
       return try getOutput(
         input: input,
         config: config,
-        resolvedBinary: resolvedBinary,
         runner: runner,
         envelope: envelope,
         context: context
@@ -83,7 +79,6 @@ private struct AppleNotesCrudEngine {
       let note = try envelope.mutationField("createNote", addonName: input.addon.name)
       return operationOutput(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleNote: note,
         flagName: "created",
@@ -94,7 +89,6 @@ private struct AppleNotesCrudEngine {
       let note = try envelope.mutationField("updateNoteBody", addonName: input.addon.name)
       return operationOutput(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleNote: note,
         flagName: "updated",
@@ -104,7 +98,7 @@ private struct AppleNotesCrudEngine {
     case .delete:
       let deleteResult = try envelope.mutationField("deleteNote", addonName: input.addon.name)
       let deleted = boolValue(deleteResult["success"]) == true
-      var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      var payload = commonPayload(input: input, envelope: envelope)
       payload["deleteResult"] = .object(deleteResult)
       payload["deleted"] = .bool(deleted)
       return output(input: input, when: ["always": true, "deleted": deleted], payload: payload)
@@ -112,7 +106,6 @@ private struct AppleNotesCrudEngine {
       let note = try envelope.mutationField("moveNote", addonName: input.addon.name)
       return operationOutput(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleNote: note,
         flagName: "moved",
@@ -184,12 +177,11 @@ private struct AppleNotesCrudEngine {
   private func getOutput(
     input: WorkflowAddonExecutionInput,
     config: JSONObject,
-    resolvedBinary: AppleGatewayResolvedBinary,
-    runner: AppleGatewayProcessRunner,
+    runner: AppleGatewayInvoker,
     envelope: AppleGatewayGraphQLEnvelope,
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     guard case var .object(note)? = envelope.data["note"] else {
       if envelope.data["note"] == nil || envelope.data["note"] == .null {
         payload["appleNote"] = envelope.data["note"] ?? .null
@@ -203,7 +195,6 @@ private struct AppleNotesCrudEngine {
       let outputRoot = try downloadRoot(input: input, config: config)
       let downloader = AppleGatewayFileDownloader(
         runner: runner,
-        resolvedBinary: resolvedBinary,
         currentDirectory: currentDirectory
       )
       let downloaded = try downloader.download(keys: [downloadKey], outputRoot: outputRoot, deadline: context.deadline)
@@ -222,14 +213,13 @@ private struct AppleNotesCrudEngine {
 
   private func operationOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope,
     appleNote: JSONObject,
     flagName: String,
     flagValue: Bool,
     when: [String: Bool]
   ) -> AdapterExecutionOutput {
-    var payload = commonPayload(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+    var payload = commonPayload(input: input, envelope: envelope)
     payload["appleNote"] = .object(appleNote)
     payload[flagName] = .bool(flagValue)
     return output(input: input, when: when, payload: payload)
@@ -248,7 +238,6 @@ private struct AppleNotesCrudEngine {
 
   private func commonPayload(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) -> JSONObject {
     let requestId = envelope.requestId ?? ""
@@ -257,10 +246,7 @@ private struct AppleNotesCrudEngine {
       "addon": .string(input.addon.name),
       "stepId": .string(input.stepId),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "requestId": .string(requestId),
         "rawData": .object(envelope.data)
       ])

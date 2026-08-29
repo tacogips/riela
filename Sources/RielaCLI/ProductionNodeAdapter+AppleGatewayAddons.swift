@@ -10,19 +10,14 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
     let listContext = try AppleNotesListContext(input: input, environment: environment)
     let query = try listContext.graphQLQuery()
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: input.addon.config ?? [:],
-      environment: environment
-    ).resolvedBinary()
-    let processOutput = try AppleGatewayProcessRunner(runtimeEnvironment: environment).run(
-      executablePath: resolvedBinary.path,
+    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", query],
       deadline: context.deadline
     )
@@ -52,10 +47,7 @@ extension BuiltinWorkflowAddonResolver {
       "noteCount": .number(Double(notesPayload.notes.count)),
       "replyText": .string("Listed \(notesPayload.notes.count) Apple Notes."),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "requestId": .string(requestId),
         "rawData": .object(data)
       ])

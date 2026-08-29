@@ -9,6 +9,7 @@ extension BuiltinWorkflowAddonResolver {
   ) throws -> AdapterExecutionOutput {
     try AppleMailAddonEngine(
       environment: environment,
+      appleGatewayRunner: appleGatewayRunner,
       currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     ).execute(input, context: context)
   }
@@ -23,6 +24,7 @@ private struct AppleMailAddonEngine {
   private static let defaultMaxDownloadBytes = 25 * 1_024 * 1_024
 
   var environment: [String: String]
+  var appleGatewayRunner: AppleGatewayRunner?
   var currentDirectory: URL
 
   func execute(
@@ -32,23 +34,18 @@ private struct AppleMailAddonEngine {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
     let config = input.addon.config ?? [:]
     let variables = addonVariables(for: input)
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
-    let runner = AppleGatewayProcessRunner(runtimeEnvironment: environment)
+    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
     let query = try graphQLQuery(for: input, config: config, variables: variables)
     let processOutput: AppleGatewayProcessOutput
     do {
       processOutput = try runner.run(
-        executablePath: resolvedBinary.path,
         arguments: ["graphql", "--query", query],
         deadline: context.deadline
       )
@@ -59,13 +56,12 @@ private struct AppleMailAddonEngine {
     try validateEnvelope(envelope, addonName: input.addon.name)
     switch input.addon.name {
     case "riela/apple-mail-list":
-      return try listOutput(input: input, resolvedBinary: resolvedBinary, envelope: envelope)
+      return try listOutput(input: input, envelope: envelope)
     case "riela/apple-mail-message":
       return try messageOutput(
         input: input,
         config: config,
         variables: variables,
-        resolvedBinary: resolvedBinary,
         runner: runner,
         envelope: envelope,
         context: context
@@ -165,7 +161,6 @@ private struct AppleMailAddonEngine {
 
   private func listOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     let accounts = try appleGatewayRequiredArray(envelope.data["mailAccounts"], field: "\(input.addon.name) GraphQL data.mailAccounts")
@@ -190,7 +185,6 @@ private struct AppleMailAddonEngine {
     ]
     return output(
       input: input,
-      resolvedBinary: resolvedBinary,
       envelope: envelope,
       appleMail: appleMail,
       when: ["always": true, "has_messages": !messages.isEmpty],
@@ -203,8 +197,7 @@ private struct AppleMailAddonEngine {
     input: WorkflowAddonExecutionInput,
     config: JSONObject,
     variables: JSONObject,
-    resolvedBinary: AppleGatewayResolvedBinary,
-    runner: AppleGatewayProcessRunner,
+    runner: AppleGatewayInvoker,
     envelope: AppleGatewayGraphQLEnvelope,
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
@@ -216,7 +209,6 @@ private struct AppleMailAddonEngine {
     guard messageValue != .null else {
       return output(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleMail: [
           "message": .null,
@@ -236,7 +228,6 @@ private struct AppleMailAddonEngine {
       input: input,
       config: config,
       variables: variables,
-      resolvedBinary: resolvedBinary,
       runner: runner,
       context: context
     )
@@ -253,7 +244,6 @@ private struct AppleMailAddonEngine {
     ]
     return output(
       input: input,
-      resolvedBinary: resolvedBinary,
       envelope: envelope,
       appleMail: appleMail,
       when: ["always": true, "found": true],
@@ -263,7 +253,6 @@ private struct AppleMailAddonEngine {
 
   private func output(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope,
     appleMail: JSONObject,
     when: [String: Bool],
@@ -278,10 +267,7 @@ private struct AppleMailAddonEngine {
       "appleMail": .object(appleMail),
       "replyText": .string(replyText),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "requestId": .string(requestId),
         "rawData": .object(envelope.data)
       ])
@@ -320,8 +306,7 @@ private struct AppleMailAddonEngine {
     input: WorkflowAddonExecutionInput,
     config: JSONObject,
     variables: JSONObject,
-    resolvedBinary: AppleGatewayResolvedBinary,
-    runner: AppleGatewayProcessRunner,
+    runner: AppleGatewayInvoker,
     context: AdapterExecutionContext
   ) throws -> AppleMailMaterializationResult {
     let descriptors = try selectedDescriptors(
@@ -355,7 +340,6 @@ private struct AppleMailAddonEngine {
       let data: AppleGatewayProcessDataOutput
       do {
         data = try runner.runData(
-          executablePath: resolvedBinary.path,
           arguments: ["file", "download", "--key", downloadKey],
           deadline: context.deadline
         )
@@ -505,8 +489,7 @@ private struct AppleMailAddonEngine {
     let basePath = configured?.isEmpty == false ? configured : env
     let rawPath = basePath ?? defaultDownloadRoot(input: input, variables: variables).path
     let validator = AppleGatewayFileDownloader(
-      runner: AppleGatewayProcessRunner(runtimeEnvironment: environment),
-      resolvedBinary: AppleGatewayResolvedBinary(path: "", source: .config),
+      runner: AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner),
       currentDirectory: currentDirectory
     )
     let validatedPath = try validator.validatedOutputRootPath(rawPath, label: "downloadDir")

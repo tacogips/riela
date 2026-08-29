@@ -8,7 +8,7 @@ extension BuiltinWorkflowAddonResolver {
     context: AdapterExecutionContext
   ) throws -> AdapterExecutionOutput {
     let operation = try BuiltinAppleReminderAddon(addonName: input.addon.name)
-    return try AppleReminderEngine(environment: environment).execute(operation, input: input, context: context)
+    return try AppleReminderEngine(environment: environment, appleGatewayRunner: appleGatewayRunner).execute(operation, input: input, context: context)
   }
 }
 
@@ -36,6 +36,7 @@ private struct AppleReminderEngine {
   private static let maxFirst = 100
 
   var environment: [String: String]
+  var appleGatewayRunner: AppleGatewayRunner?
 
   func execute(
     _ operation: BuiltinAppleReminderAddon,
@@ -45,6 +46,7 @@ private struct AppleReminderEngine {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
@@ -59,13 +61,7 @@ private struct AppleReminderEngine {
       operationInputs: operationInputs,
       templateVariables: templateVariables
     )
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
-    let processOutput = try AppleGatewayProcessRunner(runtimeEnvironment: environment).run(
-      executablePath: resolvedBinary.path,
+    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", request.document, "--variables", request.variables.compactJSONString()],
       deadline: context.deadline
     )
@@ -80,7 +76,6 @@ private struct AppleReminderEngine {
       operation: operation,
       input: input,
       request: request,
-      resolvedBinary: resolvedBinary,
       envelope: envelope
     )
   }
@@ -242,7 +237,6 @@ private struct AppleReminderEngine {
     operation: BuiltinAppleReminderAddon,
     input: WorkflowAddonExecutionInput,
     request: AppleReminderGraphQLRequest,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     var appleReminders: JSONObject
@@ -310,10 +304,7 @@ private struct AppleReminderEngine {
       "stepId": .string(input.stepId),
       "appleReminders": .object(appleReminders),
       "appleGateway": .object([
-        "binary": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue)
-        ]),
+        "runtime": .object(["mode": .string("in-process")]),
         "requestId": .string(requestId),
         "rawData": .object(envelope.data)
       ])

@@ -5,12 +5,10 @@
 Read-only Apple Notes gateway example:
 
 - uses the built-in `riela/apple-notes-list` add-on
-- invokes a locally installed `apple-gateway` executable through
-  `apple-gateway graphql --query <query>`
-- resolves the executable from literal `addon.config.binaryPath`,
-  `APPLE_GATEWAY_BIN`, then `PATH`
+- calls the linked `apple-gateway` library in-process with a
+  `graphql --query <query>` invocation; there is no executable to install
 - rejects `addon.env`; credentials and secret-like process environment values
-  are not forwarded to the gateway subprocess
+  are not forwarded to the gateway
 - publishes `appleNotes.accounts`, `appleNotes.folders`, `appleNotes.notes`,
   `appleNotes.pageInfo`, `appleNotes.totalCount`, and the upstream request id
 
@@ -29,13 +27,12 @@ Apple Notifications gateway example:
 - posts one demo notification through AppleGatewayNotifier.app, then dismisses
   only the returned `postedNotificationId`
 - never uses dismiss-all in the shipped example
-- uses the same literal binary resolution order as the Notes add-on:
-  `addon.config.binaryPath`, `APPLE_GATEWAY_BIN`, then `PATH`
-- rejects `addon.env`; the runtime invokes `apple-gateway` with separate
-  `graphql`, `--query`, and `<mutation>` arguments and no shell interpolation
+- calls the linked gateway the same way the Notes add-on does
+- rejects `addon.env`; the runtime passes separate `graphql`, `--query`, and
+  `<mutation>` arguments with no shell interpolation
 - requires AppleGatewayNotifier.app authorization for posting; `SYSTEM_DB`
   notification reads through `riela/apple-notifications-list` require Full Disk
-  Access for the apple-gateway host process
+  Access for `riela` itself, which now makes the request
 
 Validate it without posting a notification:
 

@@ -38,18 +38,14 @@ Request the notifications helper permission before running post flows. Reading
 notifications from `SYSTEM_DB` also requires granting Full Disk Access to the
 apple-gateway host process.
 
-If `apple-gateway` is not on `PATH`, either set `APPLE_GATEWAY_BIN`:
+The `apple-gateway` code is linked into `riela`; there is no executable to
+install, no `APPLE_GATEWAY_BIN`, and no `binaryPath` add-on config. macOS
+attaches Apple permission grants to the executable that asks, so grants given
+to a standalone `apple-gateway` do not carry over — approve `riela` once from
+an interactive run before using this from a daemon.
 
-```bash
-export APPLE_GATEWAY_BIN=<apple-gateway-checkout>/.build/debug/apple-gateway
-```
-
-or add `binaryPath` to each add-on config in `workflow.json`.
-
-The runtime resolves the executable from literal `addon.config.binaryPath`,
-then `APPLE_GATEWAY_BIN`, then `PATH`. These built-ins reject authored
-`addon.env`; secret-like process environment values are not forwarded to the
-gateway subprocess.
+These built-ins reject authored `addon.env`; secret-like process environment
+values are not forwarded to the gateway.
 
 ## Run
 

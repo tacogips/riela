@@ -66,7 +66,6 @@ extension AppleCalendarAddonEngine {
   func writeOutput(
     _ operation: BuiltinCalendarAddon,
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope
   ) throws -> AdapterExecutionOutput {
     switch operation {
@@ -74,7 +73,6 @@ extension AppleCalendarAddonEngine {
       let event = try envelope.mutationField("createEvent", addonName: input.addon.name)
       return eventMutationOutput(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         event: event,
         when: ["always": true, "created": true],
@@ -84,7 +82,6 @@ extension AppleCalendarAddonEngine {
       let event = try envelope.mutationField("updateEvent", addonName: input.addon.name)
       return eventMutationOutput(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         event: event,
         when: ["always": true, "updated": true],
@@ -107,7 +104,6 @@ extension AppleCalendarAddonEngine {
       let appleCalendar: JSONObject = ["deleteResult": .object(deleteResult)]
       var payload = commonPayload(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleCalendar: appleCalendar,
         replyText: "Deleted Apple Calendar event."
@@ -118,7 +114,6 @@ extension AppleCalendarAddonEngine {
       let event = try envelope.mutationField("setEventAlarms", addonName: input.addon.name)
       return eventMutationOutput(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         event: event,
         when: ["always": true, "alarms_set": true],
@@ -131,7 +126,6 @@ extension AppleCalendarAddonEngine {
 
   private func eventMutationOutput(
     input: WorkflowAddonExecutionInput,
-    resolvedBinary: AppleGatewayResolvedBinary,
     envelope: AppleGatewayGraphQLEnvelope,
     event: JSONObject,
     when: [String: Bool],
@@ -144,7 +138,6 @@ extension AppleCalendarAddonEngine {
       when: outputWhen,
       payload: commonPayload(
         input: input,
-        resolvedBinary: resolvedBinary,
         envelope: envelope,
         appleCalendar: ["event": .object(event)],
         replyText: replyText

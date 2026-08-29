@@ -51,81 +51,8 @@ final class AppleGatewayAddonTests: XCTestCase {
     XCTAssertEqual(output.payload["noteCount"], .number(1))
   }
 
-  func testAppleNotesListTerminatesProcessWhenDeadlineExpires() async throws {
-    let fake = try FakeAppleGateway(requestId: "timeout", mode: "sleep")
-    defer { fake.cleanup() }
 
-    let startedAt = Date()
-    do {
-      _ = try await runAppleNotesList(
-        config: ["binaryPath": .string(fake.executableURL.path)],
-        context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
-      )
-      XCTFail("expected apple-gateway deadline to fail")
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .timeout)
-      XCTAssertTrue(error.message.contains("deadline"))
-      XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
-    }
-  }
 
-  func testAppleNotesListResolvesBinaryFromConfigEnvThenPath() async throws {
-    let configFake = try FakeAppleGateway(requestId: "config")
-    let envFake = try FakeAppleGateway(requestId: "env")
-    let pathFake = try FakeAppleGateway(requestId: "path", executableName: "apple-gateway")
-    defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
-    }
-
-    let configOutput = try await runAppleNotesList(
-      config: ["binaryPath": .string(configFake.executableURL.path)],
-      environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path
-      ]
-    )
-    XCTAssertEqual(gatewayBinarySource(configOutput), "config")
-    XCTAssertEqual(requestId(configOutput), "config")
-
-    let envOutput = try await runAppleNotesList(
-      environment: [
-        "APPLE_GATEWAY_BIN": envFake.executableURL.path,
-        "PATH": pathFake.binURL.path
-      ]
-    )
-    XCTAssertEqual(gatewayBinarySource(envOutput), "environment")
-    XCTAssertEqual(requestId(envOutput), "env")
-
-    let pathOutput = try await runAppleNotesList(
-      environment: [
-        "PATH": pathFake.binURL.path
-      ]
-    )
-    XCTAssertEqual(gatewayBinarySource(pathOutput), "path")
-    XCTAssertEqual(requestId(pathOutput), "path")
-  }
-
-  func testAppleNotesListDoesNotResolveBinaryPathFromPayloadVariablesOrAddonInputs() async throws {
-    let maliciousFake = try FakeAppleGateway(requestId: "payload")
-    let envFake = try FakeAppleGateway(requestId: "env")
-    defer {
-      maliciousFake.cleanup()
-      envFake.cleanup()
-    }
-
-    let output = try await runAppleNotesList(
-      addonInputs: ["binaryPath": .string("{{binaryPath}}")],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path],
-      variables: ["binaryPath": .string(maliciousFake.executableURL.path)],
-      resolvedInputPayload: ["binaryPath": .string(maliciousFake.executableURL.path)]
-    )
-
-    XCTAssertEqual(gatewayBinarySource(output), "environment")
-    XCTAssertEqual(requestId(output), "env")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: maliciousFake.argumentLogURL.path))
-  }
 
   func testAppleNotesListDoesNotForwardSecretLikeEnvironmentToSubprocess() async throws {
     let fake = try FakeAppleGateway(requestId: "sanitized-env")
@@ -223,24 +150,56 @@ final class AppleGatewayAddonTests: XCTestCase {
     )
   }
 
-  func testAppleNotesListMapsMissingOrNonExecutableBinaryToPolicyBlocked() async throws {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-apple-gateway-nonexec-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let nonExecutable = root.appendingPathComponent("apple-gateway")
-    try Data("#!/bin/sh\n".utf8).write(to: nonExecutable)
 
-    try await assertAppleGatewayFailure(
-      config: ["binaryPath": .string(nonExecutable.path)],
-      code: .policyBlocked,
-      messageContains: "config.binaryPath is not executable"
-    )
-    try await assertAppleGatewayFailure(
-      environment: ["PATH": root.path],
-      code: .policyBlocked,
-      messageContains: "requires apple-gateway"
-    )
+  /// The gateway is linked into riela, so a deadline that has already passed
+  /// fails the step before the call. A call under way cannot be killed the way
+  /// the old child process could.
+  func testExpiredDeadlineFailsBeforeCallingTheGateway() async throws {
+    let fake = try FakeAppleGateway(requestId: "timeout", mode: "sleep")
+    defer { fake.cleanup() }
+
+    let startedAt = Date()
+    do {
+      _ = try await runAppleNotesList(
+        config: ["binaryPath": .string(fake.executableURL.path)],
+        context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
+      )
+      XCTFail("expected apple-gateway deadline to fail")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .timeout)
+      XCTAssertTrue(error.message.contains("deadline"), error.message)
+      XCTAssertLessThan(Date().timeIntervalSince(startedAt), 2)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: fake.argumentLogURL.path))
+    }
+  }
+
+  /// `config.binaryPath` named the executable riela used to spawn. There is no
+  /// gateway executable any more, so a leftover setting must fail rather than
+  /// be ignored. (The test helper consumes `binaryPath` to install its
+  /// stand-in, so this one reaches the add-on directly.)
+  func testConfiguredBinaryPathIsRefused() async throws {
+    do {
+      _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "apple-notes-list",
+          stepId: "apple-notes-list",
+          nodeId: "apple-notes-list",
+          addon: WorkflowNodeAddonRef(
+            name: "riela/apple-notes-list",
+            version: "1",
+            config: ["binaryPath": .string("/usr/bin/true")],
+            inputs: [:]
+          ),
+          variables: [:],
+          resolvedInputPayload: [:]
+        ),
+        context: AdapterExecutionContext()
+      )
+      XCTFail("expected config.binaryPath to be refused")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("config.binaryPath is not supported"), error.message)
+    }
   }
 
   private func runAppleNotesList(
@@ -251,7 +210,15 @@ final class AppleGatewayAddonTests: XCTestCase {
     resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-notes-list",
         stepId: "list-apple-notes",
@@ -259,7 +226,7 @@ final class AppleGatewayAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: "riela/apple-notes-list",
           version: "1",
-          config: config,
+          config: gateway.config,
           inputs: addonInputs
         ),
         variables: variables,
@@ -284,11 +251,6 @@ final class AppleGatewayAddonTests: XCTestCase {
     }
   }
 
-  private func gatewayBinarySource(_ output: AdapterExecutionOutput) -> String? {
-    appleGatewayTestObject(output.payload["appleGateway"])
-      .flatMap { appleGatewayTestObject($0["binary"]) }
-      .flatMap { appleGatewayTestString($0["source"]) }
-  }
 
   private func requestId(_ output: AdapterExecutionOutput) -> String? {
     appleGatewayTestObject(output.payload["appleNotes"]).flatMap { appleGatewayTestString($0["requestId"]) }

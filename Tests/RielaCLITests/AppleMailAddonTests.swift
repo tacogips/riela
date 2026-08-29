@@ -39,66 +39,42 @@ final class AppleMailAddonTests: XCTestCase {
     XCTAssertEqual(output.when["has_messages"], true)
   }
 
-  func testAppleMailBinaryResolutionAndEnvironmentFiltering() async throws {
-    let configFake = try FakeAppleMailGateway(mode: "list-success", requestId: "config")
-    let envFake = try FakeAppleMailGateway(mode: "list-success", requestId: "env")
-    let pathFake = try FakeAppleMailGateway(mode: "list-success", requestId: "path", executableName: "apple-gateway")
-    defer {
-      configFake.cleanup()
-      envFake.cleanup()
-      pathFake.cleanup()
-    }
+  func testAppleMailSanitizesTheGatewayEnvironment() async throws {
+    let gateway = try FakeAppleMailGateway(mode: "list-success", requestId: "gateway")
+    defer { gateway.cleanup() }
 
-    let configOutput = try await runAppleMail(
+    let output = try await runAppleMail(
       name: "riela/apple-mail-list",
-      config: ["binaryPath": .string(configFake.executableURL.path)],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(binarySource(configOutput), "config")
-    XCTAssertEqual(requestId(configOutput), "config")
-
-    let envOutput = try await runAppleMail(
-      name: "riela/apple-mail-list",
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path, "PATH": pathFake.binURL.path]
-    )
-    XCTAssertEqual(binarySource(envOutput), "environment")
-    XCTAssertEqual(requestId(envOutput), "env")
-
-    let pathOutput = try await runAppleMail(
-      name: "riela/apple-mail-list",
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       environment: [
-        "PATH": pathFake.binURL.path,
         "OPENAI_API_KEY": "sentinel-openai",
         "GITHUB_TOKEN": "sentinel-github",
         "USER": "riela-test"
       ]
     )
-    XCTAssertEqual(binarySource(pathOutput), "path")
-    let childEnvironment = try String(contentsOf: pathFake.environmentLogURL)
-    XCTAssertTrue(childEnvironment.contains("USER=riela-test"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-openai"))
-    XCTAssertFalse(childEnvironment.contains("sentinel-github"))
+    XCTAssertEqual(requestId(output), "gateway")
+    // Hosting the gateway in this process must not widen what it can read.
+    let gatewayEnvironment = try String(contentsOf: gateway.environmentLogURL)
+    XCTAssertTrue(gatewayEnvironment.contains("USER=riela-test"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-openai"))
+    XCTAssertFalse(gatewayEnvironment.contains("sentinel-github"))
   }
 
-  func testAppleMailDoesNotResolveBinaryPathFromInputsVariablesOrPayload() async throws {
-    let maliciousFake = try FakeAppleMailGateway(mode: "list-success", requestId: "payload")
-    let envFake = try FakeAppleMailGateway(mode: "list-success", requestId: "env")
-    defer {
-      maliciousFake.cleanup()
-      envFake.cleanup()
-    }
+  func testAppleMailBinaryPathInInputsVariablesOrPayloadIsInert() async throws {
+    let gateway = try FakeAppleMailGateway(mode: "list-success", requestId: "gateway")
+    defer { gateway.cleanup() }
 
+    // The gateway is linked in, so an input named `binaryPath` is inert.
     let output = try await runAppleMail(
       name: "riela/apple-mail-list",
+      config: ["binaryPath": .string(gateway.executableURL.path)],
       addonInputs: ["binaryPath": .string("{{binaryPath}}")],
-      environment: ["APPLE_GATEWAY_BIN": envFake.executableURL.path],
-      variables: ["binaryPath": .string(maliciousFake.executableURL.path)],
-      resolvedInputPayload: ["binaryPath": .string(maliciousFake.executableURL.path)]
+      variables: ["binaryPath": .string("/usr/bin/true")],
+      resolvedInputPayload: ["binaryPath": .string("/usr/bin/true")]
     )
 
-    XCTAssertEqual(binarySource(output), "environment")
-    XCTAssertEqual(requestId(output), "env")
-    XCTAssertFalse(FileManager.default.fileExists(atPath: maliciousFake.argumentLogURL.path))
+    XCTAssertEqual(requestId(output), "gateway")
+    XCTAssertFalse(try String(contentsOf: gateway.argumentLogURL).contains("/usr/bin/true"))
   }
 
   func testAppleMailMapsFullDiskAccessDenialToPolicyBlocked() async throws {
@@ -123,7 +99,7 @@ final class AppleMailAddonTests: XCTestCase {
     )
   }
 
-  func testAppleMailErrorMappingForProviderInvalidOutputMissingBinaryAndTimeout() async throws {
+  func testAppleMailErrorMappingForProviderInvalidOutputAndTimeout() async throws {
     let graphqlError = try FakeAppleMailGateway(mode: "graphql-error", requestId: "graphql-error")
     let malformed = try FakeAppleMailGateway(mode: "malformed", requestId: "malformed")
     let missingData = try FakeAppleMailGateway(mode: "missing-data", requestId: "missing-data")
@@ -155,16 +131,10 @@ final class AppleMailAddonTests: XCTestCase {
     )
     try await assertMailFailure(
       name: "riela/apple-mail-list",
-      environment: ["PATH": FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path],
-      code: .policyBlocked,
-      messageContains: "requires apple-gateway"
-    )
-    try await assertMailFailure(
-      name: "riela/apple-mail-list",
       config: ["binaryPath": .string(sleep.executableURL.path)],
       code: .timeout,
       messageContains: "deadline",
-      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(0.1))
+      context: AdapterExecutionContext(deadline: Date().addingTimeInterval(-1))
     )
   }
 
@@ -457,7 +427,15 @@ final class AppleMailAddonTests: XCTestCase {
     resolvedInputPayload: JSONObject = [:],
     context: AdapterExecutionContext = AdapterExecutionContext()
   ) async throws -> AdapterExecutionOutput {
-    try await BuiltinWorkflowAddonResolver(environment: environment).execute(
+    // apple-gateway is linked into riela, so a test must not reach the
+    // real Notes/Mail/Calendars. `config.binaryPath` names this test's
+    // stand-in and is consumed here rather than by the add-on, which
+    // refuses it.
+    let gateway = splitAppleGatewayStandIn(config)
+    return try await BuiltinWorkflowAddonResolver(
+      environment: environment,
+      appleGatewayRunner: gateway.runner
+    ).execute(
       WorkflowAddonExecutionInput(
         workflowId: "apple-mail-test",
         stepId: "apple-mail",
@@ -465,7 +443,7 @@ final class AppleMailAddonTests: XCTestCase {
         addon: WorkflowNodeAddonRef(
           name: name,
           version: "1",
-          config: config,
+          config: gateway.config,
           inputs: addonInputs
         ),
         variables: variables,
@@ -503,11 +481,6 @@ final class AppleMailAddonTests: XCTestCase {
     }
   }
 
-  private func binarySource(_ output: AdapterExecutionOutput) -> String? {
-    testObject(output.payload["appleGateway"])
-      .flatMap { testObject($0["binary"]) }
-      .flatMap { testString($0["source"]) }
-  }
 
   private func requestId(_ output: AdapterExecutionOutput) -> String? {
     testObject(output.payload["appleMail"]).flatMap { testString($0["requestId"]) }

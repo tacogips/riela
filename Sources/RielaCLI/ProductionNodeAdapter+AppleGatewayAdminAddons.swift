@@ -21,6 +21,7 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
+    try refuseAppleGatewayBinaryPath(input)
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
@@ -29,19 +30,12 @@ extension BuiltinWorkflowAddonResolver {
       input: input,
       currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     )
-    let resolvedBinary = try AppleGatewayBinaryResolver(
-      addonName: input.addon.name,
-      config: input.addon.config ?? [:],
-      environment: environment
-    ).resolvedBinary()
-    let output = try AppleGatewayProcessRunner(runtimeEnvironment: environment).run(
-      executablePath: resolvedBinary.path,
+    let output = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
       arguments: try adminContext.arguments(for: operation),
       deadline: context.deadline
     )
     return try adminContext.adapterOutput(
       operation: operation,
-      resolvedBinary: resolvedBinary,
       processOutput: output
     )
   }
@@ -101,10 +95,9 @@ private struct AppleGatewayAdminContext {
 
   func adapterOutput(
     operation: BuiltinAppleGatewayAdminAddon,
-    resolvedBinary: AppleGatewayResolvedBinary,
     processOutput: AppleGatewayProcessOutput
   ) throws -> AdapterExecutionOutput {
-    var appleGateway = baseAppleGatewayPayload(resolvedBinary)
+    var appleGateway = baseAppleGatewayPayload()
     var payload: JSONObject = [
       "status": .string("ok"),
       "addon": .string(input.addon.name),
@@ -219,8 +212,7 @@ private struct AppleGatewayAdminContext {
     }
     if let outputDir = stringValue("outputDir") {
       let validator = AppleGatewayFileDownloader(
-        runner: AppleGatewayProcessRunner(runtimeEnvironment: [:]),
-        resolvedBinary: AppleGatewayResolvedBinary(path: "", source: .config),
+        runner: AppleGatewayInvoker(runtimeEnvironment: [:]),
         currentDirectory: currentDirectory
       )
       let validatedOutputDir = try validator.validatedOutputRootPath(outputDir, label: "outputDir")
@@ -237,13 +229,10 @@ private struct AppleGatewayAdminContext {
     return arguments
   }
 
-  private func baseAppleGatewayPayload(_ resolvedBinary: AppleGatewayResolvedBinary) -> JSONObject {
-    [
-      "binary": .object([
-        "path": .string(resolvedBinary.path),
-        "source": .string(resolvedBinary.source.rawValue)
-      ])
-    ]
+  private func baseAppleGatewayPayload() -> JSONObject {
+    // The gateway is linked into this process, so there is no resolved binary
+    // to report.
+    ["runtime": .object(["mode": .string("in-process")])]
   }
 
   private func configPath() -> String? {

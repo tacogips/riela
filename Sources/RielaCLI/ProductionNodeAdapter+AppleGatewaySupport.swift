@@ -1,3 +1,6 @@
+#if canImport(AppleGatewayCore)
+import AppleGatewayCore
+#endif
 import Foundation
 import RielaAddonSupport
 import RielaCore
@@ -10,14 +13,27 @@ import RielaCore
 #elseif canImport(Glibc)
 import Glibc
 #endif
+/// Calls apple-gateway, which riela links as a library and runs inside its own
+/// process. macOS attaches Apple Events / Calendars / Reminders / Contacts
+/// permission grants to the calling executable, so those grants now belong to
+/// `riela` (bundle id `me.tacogips.riela`, usage strings in
+/// `Resources/RielaInfo.plist`) rather than to a separate `apple-gateway`
+/// binary.
+/// Runs one apple-gateway invocation. Production leaves this nil and the
+/// linked gateway answers; tests substitute a stand-in so add-on policy is
+/// covered without touching the machine's real Notes, Mail, or Calendars.
+typealias AppleGatewayRunner = @Sendable (
+  _ arguments: [String],
+  _ environment: [String: String],
+  _ deadline: Date?
+) throws -> AppleGatewayProcessOutput
 
-struct AppleGatewayProcessRunner {
-  private static let pipeCloseGraceInterval: TimeInterval = 0.25
-  /// Ambient process variables an external gateway is allowed to see. Secrets
-  /// are never forwarded implicitly; only names an add-on's contract declares
-  /// are injected on top of this list. Add-ons that call a gateway as a linked
-  /// library sanitize the same way through `sanitizedGatewayEnvironment`.
-  static let childEnvironmentAllowlist = [
+struct AppleGatewayInvoker {
+  /// Ambient process variables the gateway is allowed to see. Secrets are
+  /// never forwarded implicitly; only names an add-on's contract declares are
+  /// injected on top of this list, exactly as when the gateway ran as a child
+  /// process.
+  static let environmentAllowlist = [
     "HOME",
     "LANG",
     "LC_ALL",
@@ -30,500 +46,115 @@ struct AppleGatewayProcessRunner {
   ]
 
   var runtimeEnvironment: [String: String]
-  /// Names the external tool in process diagnostics. Other add-ons that reuse
-  /// this runner (for example the anydoc-swift document converter) override it
-  /// so failures do not read as apple-gateway failures.
-  var toolLabel: String = "apple-gateway"
   /// Explicitly resolved add-on environment bindings injected on top of the
-  /// sanitized allowlist. Callers must only pass values the add-on contract
-  /// declares; ambient secrets are never forwarded implicitly.
-  var extraChildEnvironment: [String: String] = [:]
+  /// allowlist. Callers must only pass values the add-on contract declares.
+  var extraEnvironment: [String: String] = [:]
+  /// Test seam; nil in production.
+  var runnerOverride: AppleGatewayRunner?
 
+  /// Runs one gateway command.
+  ///
+  /// `deadline` is checked before the call: the gateway is a linked library
+  /// now, so unlike the child process it replaced, a call already under way
+  /// cannot be killed. A step whose deadline passes mid-call fails when the
+  /// call returns rather than at the deadline itself.
   func run(
-    executablePath: String,
     arguments: [String],
     deadline: Date?,
     allowNonzeroExit: Bool = false
   ) throws -> AppleGatewayProcessOutput {
-    let output = try runData(
-      executablePath: executablePath,
-      arguments: arguments,
-      deadline: deadline,
-      allowNonzeroExit: allowNonzeroExit
-    )
-    let stdout = String(data: output.stdoutData, encoding: .utf8) ?? ""
-    let stderr = String(data: output.stderrData, encoding: .utf8) ?? ""
-    return AppleGatewayProcessOutput(stdout: stdout, stderr: stderr, terminationStatus: output.terminationStatus)
-  }
-
-  func runData(
-    executablePath: String,
-    arguments: [String],
-    deadline: Date?,
-    allowNonzeroExit: Bool = false
-  ) throws -> AppleGatewayProcessDataOutput {
-    #if canImport(Darwin) || canImport(Glibc)
-    return try runInIsolatedProcessGroup(
-      executablePath: executablePath,
-      arguments: arguments,
-      deadline: deadline,
-      allowNonzeroExit: allowNonzeroExit
+    if let deadline, deadline.timeIntervalSinceNow <= 0 {
+      throw AdapterExecutionError(.timeout, "apple-gateway exceeded deadline before it was called")
+    }
+    if let runnerOverride {
+      let output = try runnerOverride(arguments, gatewayEnvironment(), deadline)
+      guard allowNonzeroExit || output.terminationStatus == 0 else {
+        throw AdapterExecutionError(
+          .providerError,
+          "apple-gateway failed with exit code \(output.terminationStatus): \(appleGatewayCompactText(output.stderr.isEmpty ? output.stdout : output.stderr))"
+        )
+      }
+      return output
+    }
+    #if canImport(AppleGatewayCore)
+    let result: AppleGatewayCommandResult
+    do {
+      result = try AppleGatewayCommand(
+        arguments: arguments,
+        environment: gatewayEnvironment(),
+        role: .full
+      ).runResult()
+    } catch let error as AppleGatewayCommand.Error {
+      throw AdapterExecutionError(.invalidInput, "apple-gateway rejected the request: \(error)")
+    } catch {
+      throw AdapterExecutionError(.providerError, "apple-gateway failed: \(error)")
+    }
+    guard allowNonzeroExit || result.exitCode == 0 else {
+      throw AdapterExecutionError(
+        .providerError,
+        "apple-gateway failed with exit code \(result.exitCode): \(appleGatewayCompactText(result.output))"
+      )
+    }
+    return AppleGatewayProcessOutput(
+      stdout: result.output,
+      stderr: "",
+      terminationStatus: result.exitCode
     )
     #else
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executablePath)
-    process.arguments = arguments
-    process.environment = sanitizedChildEnvironment()
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    let termination = DispatchSemaphore(value: 0)
-    process.terminationHandler = { _ in
-      termination.signal()
-    }
-    do {
-      try process.run()
-    } catch {
-      throw AdapterExecutionError(.providerError, "\(toolLabel) failed to start: \(error.localizedDescription)")
-    }
-    let stdoutDrain = AppleGatewayPipeDrain(
-      handle: outputPipe.fileHandleForReading,
-      label: "riela.apple-gateway.stdout"
-    )
-    let stderrDrain = AppleGatewayPipeDrain(
-      handle: errorPipe.fileHandleForReading,
-      label: "riela.apple-gateway.stderr"
-    )
-    if !waitForAppleGatewayProcess(process, termination: termination, until: deadline) {
-      terminateAppleGatewayProcess(process, termination: termination)
-      stdoutDrain.cancel()
-      stderrDrain.cancel()
-      _ = stdoutDrain.waitForData(timeout: .now() + 1)
-      _ = stderrDrain.waitForData(timeout: .now() + 1)
-      throw AdapterExecutionError(.timeout, "\(toolLabel) exceeded deadline and was terminated")
-    }
-    process.terminationHandler = nil
-    let stdoutData = try collectPipeDataAfterTermination(
-      stdoutDrain,
-      deadline: deadline,
-      streamName: "stdout"
-    )
-    let stderrData = try collectPipeDataAfterTermination(
-      stderrDrain,
-      deadline: deadline,
-      streamName: "stderr"
-    )
-    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-    let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-    guard process.terminationStatus == 0 || allowNonzeroExit else {
-      let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
-      throw AdapterExecutionError(.providerError, "\(toolLabel) failed with exit code \(process.terminationStatus): \(detail)")
-    }
-    return AppleGatewayProcessDataOutput(
-      stdoutData: stdoutData,
-      stderrData: stderrData,
-      terminationStatus: process.terminationStatus
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "apple-gateway add-ons require macOS"
     )
     #endif
   }
 
-  private func sanitizedChildEnvironment() -> [String: String] {
-    sanitizedGatewayEnvironment(runtimeEnvironment: runtimeEnvironment, bindings: extraChildEnvironment)
-  }
-
-  #if canImport(Darwin) || canImport(Glibc)
-  private func runInIsolatedProcessGroup(
-    executablePath: String,
+  /// The same call as `run`, handing back the gateway's stdout bytes for
+  /// callers that write them straight to a file. The gateway's commands all
+  /// return text, so this is the UTF-8 encoding of the same output the CLI
+  /// would have printed.
+  func runData(
     arguments: [String],
     deadline: Date?,
     allowNonzeroExit: Bool = false
   ) throws -> AppleGatewayProcessDataOutput {
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    let pid = try spawnProcessGroup(
-      executablePath: executablePath,
-      arguments: arguments,
-      environment: sanitizedChildEnvironment(),
-      stdoutPipe: outputPipe,
-      stderrPipe: errorPipe,
-      toolLabel: toolLabel
-    )
-    outputPipe.fileHandleForWriting.closeFile()
-    errorPipe.fileHandleForWriting.closeFile()
-    let termination = AppleGatewayProcessTermination(pid: pid)
-    let stdoutDrain = AppleGatewayPipeDrain(
-      handle: outputPipe.fileHandleForReading,
-      label: "riela.apple-gateway.stdout"
-    )
-    let stderrDrain = AppleGatewayPipeDrain(
-      handle: errorPipe.fileHandleForReading,
-      label: "riela.apple-gateway.stderr"
-    )
-    if !termination.wait(until: deadline) {
-      terminateAppleGatewayProcessGroup(pid: pid, termination: termination)
-      stdoutDrain.cancel()
-      stderrDrain.cancel()
-      _ = stdoutDrain.waitForData(timeout: .now() + 1)
-      _ = stderrDrain.waitForData(timeout: .now() + 1)
-      throw AdapterExecutionError(.timeout, "\(toolLabel) exceeded deadline and was terminated")
-    }
-    let stdoutData = try collectPipeDataAfterTermination(
-      stdoutDrain,
-      deadline: deadline,
-      streamName: "stdout"
-    )
-    let stderrData = try collectPipeDataAfterTermination(
-      stderrDrain,
-      deadline: deadline,
-      streamName: "stderr"
-    )
-    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-    let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-    let terminationStatus = termination.exitStatus()
-    guard terminationStatus == 0 || allowNonzeroExit else {
-      let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
-      throw AdapterExecutionError(.providerError, "\(toolLabel) failed with exit code \(terminationStatus): \(detail)")
-    }
+    let output = try run(arguments: arguments, deadline: deadline, allowNonzeroExit: allowNonzeroExit)
     return AppleGatewayProcessDataOutput(
-      stdoutData: stdoutData,
-      stderrData: stderrData,
-      terminationStatus: terminationStatus
+      stdoutData: Data(output.stdout.utf8),
+      stderrData: Data(output.stderr.utf8),
+      terminationStatus: output.terminationStatus
     )
   }
-  #endif
 
-  private func collectPipeDataAfterTermination(
-    _ drain: AppleGatewayPipeDrain,
-    deadline: Date?,
-    streamName: String
-  ) throws -> Data {
-    if let deadline {
-      return try drain.waitForDataOrTimeout(deadline: deadline, streamName: streamName)
+  private func gatewayEnvironment() -> [String: String] {
+    var environment: [String: String] = [:]
+    for name in Self.environmentAllowlist {
+      guard let value = runtimeEnvironment[name], !value.isEmpty else { continue }
+      environment[name] = value
     }
-    if let data = drain.waitForData(timeout: .now() + Self.pipeCloseGraceInterval) {
-      return data
+    for (name, value) in extraEnvironment where !value.isEmpty {
+      environment[name] = value
     }
-    return drain.cancelAndReturnData()
+    return environment
   }
 }
 
-func waitForAppleGatewayProcess(
-  _ process: Process,
-  termination: DispatchSemaphore,
-  until deadline: Date?
-) -> Bool {
-  guard process.isRunning else {
-    return true
+/// The environment a gateway is allowed to observe: the ambient allowlist plus
+/// exactly the bindings an add-on's contract declared. Shared by every add-on
+/// that calls a gateway linked as a library, so hosting a gateway in this
+/// process cannot widen what it can read compared with running it as a child.
+func sanitizedGatewayEnvironment(
+  runtimeEnvironment: [String: String],
+  bindings: [String: String]
+) -> [String: String] {
+  var environment: [String: String] = [:]
+  for name in AppleGatewayInvoker.environmentAllowlist {
+    guard let value = runtimeEnvironment[name], !value.isEmpty else { continue }
+    environment[name] = value
   }
-  guard let deadline else {
-    termination.wait()
-    return true
+  for (name, value) in bindings where !value.isEmpty {
+    environment[name] = value
   }
-  let remaining = deadline.timeIntervalSinceNow
-  guard remaining > 0 else {
-    return false
-  }
-  return termination.wait(timeout: .now() + remaining) == .success
-}
-
-func terminateAppleGatewayProcess(_ process: Process, termination: DispatchSemaphore) {
-  if process.isRunning {
-    process.terminate()
-  }
-  guard termination.wait(timeout: .now() + 1) == .timedOut else {
-    return
-  }
-  #if canImport(Darwin) || canImport(Glibc)
-  if process.isRunning {
-    _ = kill(process.processIdentifier, SIGKILL)
-  }
-  #endif
-  _ = termination.wait(timeout: .now() + 1)
-}
-
-#if canImport(Darwin) || canImport(Glibc)
-private func spawnProcessGroup(
-  executablePath: String,
-  arguments: [String],
-  environment: [String: String],
-  stdoutPipe: Pipe,
-  stderrPipe: Pipe,
-  toolLabel: String
-) throws -> pid_t {
-  #if canImport(Glibc)
-  var fileActions = posix_spawn_file_actions_t()
-  var attributes = posix_spawnattr_t()
-  #else
-  var fileActions: posix_spawn_file_actions_t?
-  var attributes: posix_spawnattr_t?
-  #endif
-  posix_spawn_file_actions_init(&fileActions)
-  posix_spawnattr_init(&attributes)
-  defer {
-    posix_spawn_file_actions_destroy(&fileActions)
-    posix_spawnattr_destroy(&attributes)
-  }
-  try appleGatewaySpawnCheck(
-    posix_spawn_file_actions_adddup2(&fileActions, stdoutPipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO),
-    operation: "prepare stdout pipe",
-    toolLabel: toolLabel
-  )
-  try appleGatewaySpawnCheck(
-    posix_spawn_file_actions_adddup2(&fileActions, stderrPipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO),
-    operation: "prepare stderr pipe",
-    toolLabel: toolLabel
-  )
-  try appleGatewaySpawnCheck(
-    posix_spawn_file_actions_addclose(&fileActions, stdoutPipe.fileHandleForReading.fileDescriptor),
-    operation: "close child stdout read pipe",
-    toolLabel: toolLabel
-  )
-  try appleGatewaySpawnCheck(
-    posix_spawn_file_actions_addclose(&fileActions, stderrPipe.fileHandleForReading.fileDescriptor),
-    operation: "close child stderr read pipe",
-    toolLabel: toolLabel
-  )
-  #if canImport(Darwin)
-  let flags = Int16(POSIX_SPAWN_SETSID)
-  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set session flag", toolLabel: toolLabel)
-  #else
-  let flags = Int16(POSIX_SPAWN_SETPGROUP)
-  try appleGatewaySpawnCheck(posix_spawnattr_setflags(&attributes, flags), operation: "set process-group flag", toolLabel: toolLabel)
-  try appleGatewaySpawnCheck(posix_spawnattr_setpgroup(&attributes, 0), operation: "set process group", toolLabel: toolLabel)
-  #endif
-
-  var pid = pid_t()
-  let argv = [executablePath] + arguments
-  let envp = environment
-    .sorted { $0.key < $1.key }
-    .map { "\($0.key)=\($0.value)" }
-  let result = executablePath.withCString { pathPointer in
-    withAppleGatewayCStringArray(argv) { argvPointer in
-      withAppleGatewayCStringArray(envp) { envpPointer in
-        posix_spawn(&pid, pathPointer, &fileActions, &attributes, argvPointer, envpPointer)
-      }
-    }
-  }
-  if result != 0 {
-    throw AdapterExecutionError(
-      .providerError,
-      "\(toolLabel) failed to start: \(String(cString: strerror(result)))"
-    )
-  }
-  return pid
-}
-
-private func appleGatewaySpawnCheck(_ result: Int32, operation: String, toolLabel: String) throws {
-  guard result == 0 else {
-    throw AdapterExecutionError(
-      .providerError,
-      "\(toolLabel) failed to \(operation): \(String(cString: strerror(result)))"
-    )
-  }
-}
-
-private func withAppleGatewayCStringArray<T>(_ strings: [String], _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) throws -> T) rethrows -> T {
-  var cStrings = strings.map { strdup($0) }
-  cStrings.append(nil)
-  defer {
-    for string in cStrings {
-      free(string)
-    }
-  }
-  return try cStrings.withUnsafeMutableBufferPointer { buffer in
-    try body(buffer.baseAddress!)
-  }
-}
-
-private func terminateAppleGatewayProcessGroup(pid: pid_t, termination: AppleGatewayProcessTermination) {
-  let descendants = appleGatewayDescendantPIDs(of: pid)
-  let processGroup = getpgid(pid)
-  let groupToTerminate = processGroup > 0 ? processGroup : pid
-  terminateAppleGatewayPIDs(descendants, signal: SIGTERM)
-  _ = kill(-groupToTerminate, SIGTERM)
-  terminateAppleGatewayPIDs(appleGatewayDescendantPIDs(of: pid) + descendants, signal: SIGKILL)
-  _ = kill(-groupToTerminate, SIGKILL)
-  guard !termination.wait(timeout: .now() + 1) else {
-    return
-  }
-  _ = termination.wait(timeout: .now() + 1)
-}
-
-private func terminateAppleGatewayPIDs(_ pids: [pid_t], signal: Int32) {
-  for pid in Set(pids) where pid > 0 {
-    _ = kill(pid, signal)
-  }
-}
-
-private func appleGatewayDescendantPIDs(of rootPID: pid_t) -> [pid_t] {
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/bin/ps")
-  process.arguments = ["-axo", "pid=,ppid="]
-  let pipe = Pipe()
-  process.standardOutput = pipe
-  process.standardError = Pipe()
-  do {
-    try process.run()
-  } catch {
-    return []
-  }
-  process.waitUntilExit()
-  let data = pipe.fileHandleForReading.readDataToEndOfFile()
-  guard let output = String(data: data, encoding: .utf8) else {
-    return []
-  }
-  var childrenByParent: [pid_t: [pid_t]] = [:]
-  for line in output.split(whereSeparator: \.isNewline) {
-    let fields = line.split(whereSeparator: \.isWhitespace)
-    guard fields.count >= 2,
-      let pid = pid_t(fields[0]),
-      let parent = pid_t(fields[1])
-    else {
-      continue
-    }
-    childrenByParent[parent, default: []].append(pid)
-  }
-  var descendants: [pid_t] = []
-  var stack = childrenByParent[rootPID] ?? []
-  while let pid = stack.popLast() {
-    descendants.append(pid)
-    stack.append(contentsOf: childrenByParent[pid] ?? [])
-  }
-  return descendants
-}
-
-private final class AppleGatewayProcessTermination: @unchecked Sendable {
-  private let completion = DispatchSemaphore(value: 0)
-  private let lock = NSLock()
-  private let pid: pid_t
-  private var status: Int32?
-
-  init(pid: pid_t) {
-    self.pid = pid
-    DispatchQueue.global(qos: .utility).async { [weak self] in
-      self?.waitForExit()
-    }
-  }
-
-  func wait(until deadline: Date?) -> Bool {
-    guard let deadline else {
-      completion.wait()
-      return true
-    }
-    let remaining = deadline.timeIntervalSinceNow
-    guard remaining > 0 else {
-      return false
-    }
-    return wait(timeout: .now() + remaining)
-  }
-
-  func wait(timeout: DispatchTime) -> Bool {
-    completion.wait(timeout: timeout) == .success
-  }
-
-  func exitStatus() -> Int32 {
-    lock.lock()
-    let rawStatus = status ?? 1
-    lock.unlock()
-    if rawStatus & 0x7f == 0 {
-      return (rawStatus >> 8) & 0xff
-    }
-    return 128 + (rawStatus & 0x7f)
-  }
-
-  private func waitForExit() {
-    var rawStatus: Int32 = 0
-    while waitpid(pid, &rawStatus, 0) == -1 {
-      guard errno == EINTR else {
-        rawStatus = 1
-        break
-      }
-    }
-    lock.lock()
-    status = rawStatus
-    lock.unlock()
-    completion.signal()
-  }
-}
-#endif
-
-final class AppleGatewayPipeDrain: @unchecked Sendable {
-  private let handle: FileHandle
-  private let lock = NSLock()
-  private let completion = DispatchSemaphore(value: 0)
-  private var data = Data()
-  private var completed = false
-
-  init(handle: FileHandle, label: String) {
-    _ = label
-    self.handle = handle
-    handle.readabilityHandler = { [weak self] readableHandle in
-      let chunk = readableHandle.availableData
-      self?.record(chunk)
-    }
-  }
-
-  func waitForData(timeout: DispatchTime? = nil) -> Data? {
-    if let timeout {
-      guard completion.wait(timeout: timeout) == .success else {
-        return nil
-      }
-    } else {
-      completion.wait()
-    }
-    lock.lock()
-    defer { lock.unlock() }
-    return data
-  }
-
-  func waitForDataOrTimeout(deadline: Date?, streamName: String) throws -> Data {
-    if let deadline {
-      let remaining = deadline.timeIntervalSinceNow
-      guard remaining > 0,
-        let data = waitForData(timeout: .now() + remaining)
-      else {
-        cancel()
-        throw AdapterExecutionError(.timeout, "apple-gateway \(streamName) pipe did not close before deadline")
-      }
-      return data
-    }
-    return waitForData() ?? Data()
-  }
-
-  func cancel() {
-    completeIfNeeded()
-    handle.readabilityHandler = nil
-    handle.closeFile()
-  }
-
-  func cancelAndReturnData() -> Data {
-    cancel()
-    return waitForData() ?? Data()
-  }
-
-  private func record(_ chunk: Data) {
-    guard !chunk.isEmpty else {
-      completeIfNeeded()
-      return
-    }
-    lock.lock()
-    if !completed {
-      data.append(chunk)
-    }
-    lock.unlock()
-  }
-
-  private func completeIfNeeded() {
-    lock.lock()
-    let shouldSignal = !completed
-    completed = true
-    lock.unlock()
-    if shouldSignal {
-      handle.readabilityHandler = nil
-      completion.signal()
-    }
-  }
+  return environment
 }
 
 struct AppleGatewayProcessOutput {
@@ -584,56 +215,6 @@ struct AppleGatewayGraphQLEnvelope {
   }
 }
 
-struct AppleGatewayResolvedBinary {
-  var path: String
-  var source: AppleGatewayBinarySource
-}
-
-enum AppleGatewayBinarySource: String {
-  case config
-  case environment
-  case path
-}
-
-struct AppleGatewayBinaryResolver {
-  private static let executableName = "apple-gateway"
-  private static let executableEnvironmentName = "APPLE_GATEWAY_BIN"
-
-  var addonName: String
-  var config: JSONObject
-  var environment: [String: String]
-
-  func resolvedBinary() throws -> AppleGatewayResolvedBinary {
-    if let configured = configuredBinaryPath() {
-      guard let path = resolveExecutable(configured, searchPath: executableSearchPath(environment: environment)) else {
-        throw AdapterExecutionError(.policyBlocked, "\(addonName) config.binaryPath is not executable: \(configured)")
-      }
-      return AppleGatewayResolvedBinary(path: path, source: .config)
-    }
-    if let envPath = environmentValue(Self.executableEnvironmentName, environment: environment) {
-      guard let path = resolveExecutable(envPath, searchPath: executableSearchPath(environment: environment)) else {
-        throw AdapterExecutionError(.policyBlocked, "\(Self.executableEnvironmentName) is not executable: \(envPath)")
-      }
-      return AppleGatewayResolvedBinary(path: path, source: .environment)
-    }
-    guard let path = resolveExecutable(Self.executableName, searchPath: executableSearchPath(environment: environment)) else {
-      throw AdapterExecutionError(
-        .policyBlocked,
-        "\(addonName) requires apple-gateway; set config.binaryPath, \(Self.executableEnvironmentName), or PATH"
-      )
-    }
-    return AppleGatewayResolvedBinary(path: path, source: .path)
-  }
-
-  private func configuredBinaryPath() -> String? {
-    guard let configured = nonEmptyString(config["binaryPath"]) else {
-      return nil
-    }
-    let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
-  }
-}
-
 struct AppleGatewayFileDownloader {
   private static let ownerOnlyDirectoryPermissions = 0o700
   private static let groupOrOtherPermissionBits = 0o077
@@ -664,8 +245,7 @@ struct AppleGatewayFileDownloader {
     "/var"
   ]
 
-  var runner: AppleGatewayProcessRunner
-  var resolvedBinary: AppleGatewayResolvedBinary
+  var runner: AppleGatewayInvoker
   var currentDirectory: URL
 
   func download(keys: [String], outputRoot: String, deadline: Date?) throws -> [String: String] {
@@ -677,7 +257,6 @@ struct AppleGatewayFileDownloader {
       return [:]
     }
     let output = try runner.run(
-      executablePath: resolvedBinary.path,
       arguments: ["file", "download"] + keys.flatMap { ["--key", $0] }
         + ["--output-dir", validatedOutputRoot.path],
       deadline: deadline
@@ -985,22 +564,14 @@ private extension Array {
   }
 }
 
-/// The environment a gateway is allowed to observe: the ambient allowlist plus
-/// exactly the bindings an add-on's contract declared. Shared by the add-ons
-/// that spawn a gateway executable and the add-ons that call a gateway linked
-/// as a library, so hosting a gateway in this process cannot widen what it can
-/// read compared with running it as a child.
-func sanitizedGatewayEnvironment(
-  runtimeEnvironment: [String: String],
-  bindings: [String: String]
-) -> [String: String] {
-  var environment: [String: String] = [:]
-  for name in AppleGatewayProcessRunner.childEnvironmentAllowlist {
-    guard let value = runtimeEnvironment[name], !value.isEmpty else { continue }
-    environment[name] = value
+/// `config.binaryPath` and `APPLE_GATEWAY_BIN` named the executable riela used
+/// to spawn. The gateway is linked in now, so a leftover setting would point at
+/// a binary nothing runs; refusing it beats ignoring it.
+func refuseAppleGatewayBinaryPath(_ input: WorkflowAddonExecutionInput) throws {
+  guard (input.addon.config ?? [:])["binaryPath"] == nil else {
+    throw AdapterExecutionError(
+      .policyBlocked,
+      "\(input.addon.name) config.binaryPath is not supported; apple-gateway runs in-process, remove it"
+    )
   }
-  for (name, value) in bindings where !value.isEmpty {
-    environment[name] = value
-  }
-  return environment
 }

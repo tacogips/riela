@@ -354,6 +354,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   /// The same seam for the google-documents add-ons, whose gateway takes CLI
   /// arguments rather than a GraphQL document.
   var googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner?
+  /// The same seam for apple-gateway, whose add-ons would otherwise reach the
+  /// machine's real Notes, Mail, Calendars, and Reminders.
+  var appleGatewayRunner: AppleGatewayRunner?
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -373,7 +376,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       LiveGoogleServiceGatewayAddonClient(accessToken: $0)
     },
     localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil,
-    googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil
+    googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil,
+    appleGatewayRunner: AppleGatewayRunner? = nil
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -391,6 +395,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.googleServiceGatewayClientFactory = googleServiceGatewayClientFactory
     self.localGatewayGraphQLRunner = localGatewayGraphQLRunner
     self.googleDocumentsGatewayRunner = googleDocumentsGatewayRunner
+    self.appleGatewayRunner = appleGatewayRunner
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {

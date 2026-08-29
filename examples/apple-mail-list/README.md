@@ -34,13 +34,11 @@ then verify the gateway can see the permission state:
 apple-gateway permissions status --json
 ```
 
-If `apple-gateway` is not on `PATH`, either set `APPLE_GATEWAY_BIN`:
-
-```bash
-export APPLE_GATEWAY_BIN=<apple-gateway-checkout>/.build/debug/apple-gateway
-```
-
-or add `binaryPath` to the add-on config in `workflow.json`.
+The `apple-gateway` code is linked into `riela`; there is no executable to
+install, no `APPLE_GATEWAY_BIN`, and no `binaryPath` add-on config. macOS
+attaches Apple permission grants to the executable that asks, so grants given
+to a standalone `apple-gateway` do not carry over — approve `riela` once from
+an interactive run before using this from a daemon.
 
 `riela/apple-mail-message` can materialize selected body and attachment
 download keys by running `apple-gateway file download --key <downloadKey>` and

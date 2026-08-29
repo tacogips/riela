@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(GoogleDocumentsGatewayCore)
 import GoogleDocumentsGatewayCore
+#endif
 import RielaAddonSupport
 import RielaCore
 
@@ -39,6 +41,7 @@ enum BuiltinGoogleDocumentsGatewayAddon: String {
     }
   }
 
+  #if canImport(GoogleDocumentsGatewayCore)
   var role: GatewayRole {
     switch self {
     case .docsRead:
@@ -55,6 +58,7 @@ enum BuiltinGoogleDocumentsGatewayAddon: String {
       GatewayRole(service: .drive, accessMode: .write)
     }
   }
+  #endif
 
   /// The credential-variable suffix the gateway derives from its default
   /// credential id for this role (note: sheet binaries use the SHEETS suffix).
@@ -98,6 +102,27 @@ typealias GoogleDocumentsGatewayRunner = @Sendable (
   _ arguments: [String],
   _ environment: [String: String]
 ) async throws -> String
+
+extension BuiltinGoogleDocumentsGatewayAddon {
+  #if canImport(GoogleDocumentsGatewayCore)
+  var runner: GoogleDocumentsGatewayRunner {
+    let role = role
+    return { tier, arguments, environment in
+      let result = GatewayCommandRunner(role: role, environment: environment).run(arguments: arguments)
+      guard !result.stdout.isEmpty else {
+        throw AdapterExecutionError(.providerError, "\(tier) failed with exit code \(result.exitCode)")
+      }
+      return result.stdout
+    }
+  }
+  #else
+  var runner: GoogleDocumentsGatewayRunner {
+    { tier, _, _ in
+      throw AdapterExecutionError(.policyBlocked, "\(tier) requires macOS")
+    }
+  }
+  #endif
+}
 
 extension BuiltinWorkflowAddonResolver {
   func executeGoogleDocumentsGatewayAddon(
@@ -145,15 +170,8 @@ private struct GoogleDocumentsGatewayAddonEngine {
       runtimeEnvironment: environment,
       bindings: childEnvironment
     )
-    let role = operation.role
     let tier = operation.tier
-    let run: GoogleDocumentsGatewayRunner = runnerOverride ?? { tier, arguments, environment in
-      let result = GatewayCommandRunner(role: role, environment: environment).run(arguments: arguments)
-      guard !result.stdout.isEmpty else {
-        throw AdapterExecutionError(.providerError, "\(tier) failed with exit code \(result.exitCode)")
-      }
-      return result.stdout
-    }
+    let run: GoogleDocumentsGatewayRunner = runnerOverride ?? operation.runner
     let stdout = try await localGatewayRunWithDeadline(
       deadline: context.deadline,
       addonName: input.addon.name,

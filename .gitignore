@@ -104,3 +104,6 @@ examples/document-inbox-notebook/inbox/*
 /.claude/skills/riela-workflow-use-skill/
 /.cursor/rules/riela-project-workflow.mdc
 .build-linux/
+
+# QEMU crash dumps from cross-platform container builds
+qemu_*.core

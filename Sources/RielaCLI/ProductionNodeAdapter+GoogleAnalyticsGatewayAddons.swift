@@ -1,8 +1,10 @@
 import Foundation
+#if canImport(GoogleAnalyticsGatewayCore)
 import GoogleAnalyticsGatewayAdmin
 import GoogleAnalyticsGatewayCore
 import GoogleAnalyticsGatewayRead
 import GoogleAnalyticsGatewayWrite
+#endif
 import RielaAddonSupport
 import RielaCore
 
@@ -17,6 +19,19 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
   case write = "riela/google-analytics-gateway-write"
   case admin = "riela/google-analytics-gateway-admin"
 
+  /// The tier this add-on is pinned to, reported in the payload.
+  var tier: String {
+    switch self {
+    case .read:
+      "google-analytics-gateway-reader"
+    case .write:
+      "google-analytics-gateway-writer"
+    case .admin:
+      "google-analytics-gateway-admin"
+    }
+  }
+
+  #if canImport(GoogleAnalyticsGatewayCore)
   var role: RoleDescriptor {
     switch self {
     case .read:
@@ -38,6 +53,7 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
       AdminCapabilities.all
     }
   }
+  #endif
 
   /// The gateway's fixed non-interactive credential contract: with no config
   /// file a synthesized profile reads the access token from
@@ -50,35 +66,47 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
   ]
 
   var descriptor: LocalGatewayGraphQLDescriptor {
-    let role = role
-    let capabilities = capabilities
-    return LocalGatewayGraphQLDescriptor(
+    LocalGatewayGraphQLDescriptor(
       providerName: "google-analytics-gateway",
       payloadNamespaceKey: "googleAnalyticsGateway",
-      tier: role.executableName,
+      tier: tier,
       acceptsVariables: true,
       isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) },
-      run: { _, document, variablesJSON, environment in
-        let frame = try GatewayComposition.makeCommandFrame(
-          role: role,
-          definitions: capabilities,
-          environment: environment
-        )
-        var arguments = ["graphql", "query", document]
-        if let variablesJSON {
-          arguments += ["--variables", variablesJSON]
-        }
-        let outcome = await frame.run(arguments: arguments)
-        guard !outcome.standardOutput.isEmpty else {
-          throw AdapterExecutionError(
-            .providerError,
-            "google-analytics-gateway \(role.executableName) failed: \(appleGatewayCompactText(outcome.standardError))"
-          )
-        }
-        return outcome.standardOutput
-      }
+      run: runner
     )
   }
+
+  #if canImport(GoogleAnalyticsGatewayCore)
+  private var runner: LocalGatewayGraphQLRunner {
+    let role = role
+    let capabilities = capabilities
+    return { tier, document, variablesJSON, environment in
+      let frame = try GatewayComposition.makeCommandFrame(
+        role: role,
+        definitions: capabilities,
+        environment: environment
+      )
+      var arguments = ["graphql", "query", document]
+      if let variablesJSON {
+        arguments += ["--variables", variablesJSON]
+      }
+      let outcome = await frame.run(arguments: arguments)
+      guard !outcome.standardOutput.isEmpty else {
+        throw AdapterExecutionError(
+          .providerError,
+          "google-analytics-gateway \(tier) failed: \(appleGatewayCompactText(outcome.standardError))"
+        )
+      }
+      return outcome.standardOutput
+    }
+  }
+  #else
+  private var runner: LocalGatewayGraphQLRunner {
+    { tier, _, _, _ in
+      throw AdapterExecutionError(.policyBlocked, "\(tier) requires macOS")
+    }
+  }
+  #endif
 }
 
 extension BuiltinWorkflowAddonResolver {

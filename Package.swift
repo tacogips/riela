@@ -205,10 +205,21 @@ let package = Package(
         // Gateway add-ons run inside this process; riela spawns no `*-gateway`
         // executable. The cumulative tier products carry every tier module, and
         // each add-on stays pinned to one tier through its role descriptor.
-        .product(name: "WrikeGatewayAdmin", package: "wrike-gateway"),
-        .product(name: "GmailGatewayCore", package: "gmail-gateway"),
-        .product(name: "GoogleAnalyticsGatewayAdmin", package: "google-analytics-gateway"),
-        .product(name: "GoogleDocumentsGatewayCore", package: "google-documents-gateway"),
+        // These gateways use Darwin, Security, Network, and AppKit without
+        // portability guards, so they are macOS-only; the add-ons that call
+        // them refuse to run elsewhere.
+        .product(name: "WrikeGatewayAdmin", package: "wrike-gateway", condition: .when(platforms: [.macOS])),
+        .product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS])),
+        .product(
+          name: "GoogleAnalyticsGatewayAdmin",
+          package: "google-analytics-gateway",
+          condition: .when(platforms: [.macOS])
+        ),
+        .product(
+          name: "GoogleDocumentsGatewayCore",
+          package: "google-documents-gateway",
+          condition: .when(platforms: [.macOS])
+        ),
         // The document converter is the same native library kaiba already
         // links, so calling it directly adds no new platform requirement.
         .product(name: "AnydocKit", package: "anydoc-swift"),

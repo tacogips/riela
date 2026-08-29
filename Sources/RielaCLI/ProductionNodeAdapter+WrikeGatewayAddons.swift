@@ -1,10 +1,12 @@
 import Foundation
 import RielaAddonSupport
 import RielaCore
+#if canImport(WrikeGatewayCore)
 import WrikeGatewayAdmin
 import WrikeGatewayCore
 import WrikeGatewayRead
 import WrikeGatewayWrite
+#endif
 
 /// Built-in add-ons that run the sibling wrike-gateway package's GraphQL
 /// runtime inside this process. Capability boundaries (read / write / delete)
@@ -17,6 +19,19 @@ enum BuiltinWrikeGatewayAddon: String {
   case write = "riela/wrike-gateway-write"
   case admin = "riela/wrike-gateway-admin"
 
+  /// The tier this add-on is pinned to, reported in the payload.
+  var tier: String {
+    switch self {
+    case .read:
+      "wrike-gateway-reader"
+    case .write:
+      "wrike-gateway-writer"
+    case .admin:
+      "wrike-gateway-admin"
+    }
+  }
+
+  #if canImport(WrikeGatewayCore)
   var role: RoleDescriptor {
     switch self {
     case .read:
@@ -38,6 +53,7 @@ enum BuiltinWrikeGatewayAddon: String {
       AdminCapabilities.all
     }
   }
+  #endif
 
   /// The exact wrike-gateway credential contract. addon.env may only populate
   /// these target names, so a workflow cannot use the binding mechanism to
@@ -51,35 +67,47 @@ enum BuiltinWrikeGatewayAddon: String {
   ]
 
   var descriptor: LocalGatewayGraphQLDescriptor {
-    let role = role
-    let capabilities = capabilities
-    return LocalGatewayGraphQLDescriptor(
+    LocalGatewayGraphQLDescriptor(
       providerName: "wrike-gateway",
       payloadNamespaceKey: "wrikeGateway",
-      tier: role.executableName,
+      tier: tier,
       acceptsVariables: true,
       isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) },
-      run: { _, document, variablesJSON, environment in
-        let frame = try GatewayComposition.makeCommandFrame(
-          role: role,
-          definitions: capabilities,
-          environment: StaticEnvironmentReader(extra: environment)
-        )
-        var arguments = ["graphql", "query", document]
-        if let variablesJSON {
-          arguments += ["--variables", variablesJSON]
-        }
-        let outcome = await frame.run(arguments: arguments)
-        guard !outcome.standardOutput.isEmpty else {
-          throw AdapterExecutionError(
-            .providerError,
-            "wrike-gateway \(role.executableName) failed: \(appleGatewayCompactText(outcome.standardError))"
-          )
-        }
-        return outcome.standardOutput
-      }
+      run: runner
     )
   }
+
+  #if canImport(WrikeGatewayCore)
+  private var runner: LocalGatewayGraphQLRunner {
+    let role = role
+    let capabilities = capabilities
+    return { tier, document, variablesJSON, environment in
+      let frame = try GatewayComposition.makeCommandFrame(
+        role: role,
+        definitions: capabilities,
+        environment: StaticEnvironmentReader(extra: environment)
+      )
+      var arguments = ["graphql", "query", document]
+      if let variablesJSON {
+        arguments += ["--variables", variablesJSON]
+      }
+      let outcome = await frame.run(arguments: arguments)
+      guard !outcome.standardOutput.isEmpty else {
+        throw AdapterExecutionError(
+          .providerError,
+          "wrike-gateway \(tier) failed: \(appleGatewayCompactText(outcome.standardError))"
+        )
+      }
+      return outcome.standardOutput
+    }
+  }
+  #else
+  private var runner: LocalGatewayGraphQLRunner {
+    { tier, _, _, _ in
+      throw AdapterExecutionError(.policyBlocked, "\(tier) requires macOS")
+    }
+  }
+  #endif
 }
 
 extension BuiltinWorkflowAddonResolver {

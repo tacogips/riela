@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(GmailGatewayCore)
 import GmailGatewayCore
+#endif
 import RielaAddonSupport
 import RielaCore
 
@@ -16,6 +18,7 @@ enum BuiltinGmailGatewayCLIAddon: String {
   case draft = "riela/gmail-gateway-draft"
   case sender = "riela/gmail-gateway-sender"
 
+  #if canImport(GmailGatewayCore)
   var mode: GmailGatewayCLIMode {
     switch self {
     case .reader:
@@ -26,6 +29,7 @@ enum BuiltinGmailGatewayCLIAddon: String {
       .directSender
     }
   }
+  #endif
 
   var tier: String {
     switch self {
@@ -68,9 +72,7 @@ enum BuiltinGmailGatewayCLIAddon: String {
   }
 
   var descriptor: LocalGatewayGraphQLDescriptor {
-    let mode = mode
-    let tier = tier
-    return LocalGatewayGraphQLDescriptor(
+    LocalGatewayGraphQLDescriptor(
       providerName: "gmail-gateway",
       payloadNamespaceKey: "gmailGateway",
       tier: tier,
@@ -78,21 +80,34 @@ enum BuiltinGmailGatewayCLIAddon: String {
       // document text instead.
       acceptsVariables: false,
       isAllowedEnvironmentTarget: { Self.isAllowedTargetEnvironmentName($0) },
-      run: { _, document, _, environment in
-        let result = GmailGatewayCLI(mode: mode).run(
-          arguments: ["graphql", "--query", document],
-          environment: environment
-        )
-        guard !result.stdout.isEmpty else {
-          throw AdapterExecutionError(
-            .providerError,
-            "gmail-gateway \(tier) failed with exit code \(result.exitCode): \(appleGatewayCompactText(result.stderr))"
-          )
-        }
-        return result.stdout
-      }
+      run: runner
     )
   }
+
+  #if canImport(GmailGatewayCore)
+  private var runner: LocalGatewayGraphQLRunner {
+    let mode = mode
+    return { tier, document, _, environment in
+      let result = GmailGatewayCLI(mode: mode).run(
+        arguments: ["graphql", "--query", document],
+        environment: environment
+      )
+      guard !result.stdout.isEmpty else {
+        throw AdapterExecutionError(
+          .providerError,
+          "gmail-gateway \(tier) failed with exit code \(result.exitCode): \(appleGatewayCompactText(result.stderr))"
+        )
+      }
+      return result.stdout
+    }
+  }
+  #else
+  private var runner: LocalGatewayGraphQLRunner {
+    { tier, _, _, _ in
+      throw AdapterExecutionError(.policyBlocked, "\(tier) requires macOS")
+    }
+  }
+  #endif
 }
 
 extension BuiltinWorkflowAddonResolver {

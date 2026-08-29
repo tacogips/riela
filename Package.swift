@@ -52,7 +52,7 @@ let package = Package(
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "59ecaec96e850f9721f67fcf95266a27aae27add"
+      revision: "0a28f04d91f5149cead7aa96b048bed1e3be737c"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),

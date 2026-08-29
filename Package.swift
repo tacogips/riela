@@ -221,8 +221,10 @@ let package = Package(
           condition: .when(platforms: [.macOS])
         ),
         // The document converter is the same native library kaiba already
-        // links, so calling it directly adds no new platform requirement.
-        .product(name: "AnydocKit", package: "anydoc-swift"),
+        // links. Its Linux route is a pkg-config staticlib that has to be
+        // built from Rust, so — like kaiba — the dependency is conditional and
+        // the add-on refuses to run where the converter is unavailable.
+        .product(name: "AnydocKit", package: "anydoc-swift", condition: .when(platforms: [.macOS])),
         .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",

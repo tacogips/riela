@@ -1,4 +1,6 @@
+#if canImport(AnydocKit)
 import AnydocKit
+#endif
 import Foundation
 import RielaAddonSupport
 import RielaCore
@@ -57,7 +59,13 @@ extension BuiltinWorkflowAddonResolver {
       environment: environment,
       workingDirectory: workingDirectory
     )
+    #if canImport(AnydocKit)
     let converterVersion = Anydoc.version
+    #else
+    // The converter's Linux route is a pkg-config staticlib built from Rust,
+    // which riela does not require; refuse rather than half-convert.
+    throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
+    #endif
 
     var documents: [JSONObject] = []
     var markdownSections: [String] = []
@@ -133,6 +141,7 @@ extension BuiltinWorkflowAddonResolver {
     )
   }
 
+  #if canImport(AnydocKit)
   private func convertDocumentToMarkdown(
     _ document: FileMarkdownConvertDocument,
     addonName: String,
@@ -177,6 +186,7 @@ extension BuiltinWorkflowAddonResolver {
       )
     )
   }
+  #endif
 
   private func truncatedMarkdown(_ markdown: String, maxBytes: Int) -> (text: String, wasTruncated: Bool) {
     guard markdown.utf8.count > maxBytes else {
@@ -458,9 +468,11 @@ struct FileMarkdownConvertRequest {
     // The converter's own extension aliases (`xlsx` -> `excel`,
     // `docm` -> `docx`, ...) decide what is supported, so the add-on has no
     // second list to keep in sync.
+    #if canImport(AnydocKit)
     guard AnydocFormat(fileExtension: normalized) != nil || AnydocFormat(rawValue: normalized) != nil else {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) config.format '\(format)' is not supported")
     }
+    #endif
     return normalized
   }
 
@@ -550,6 +562,7 @@ struct FileMarkdownDocumentFailure: Error {
 
 /// `anydoc-swift convert <path> --json` result envelope.
 
+#if canImport(AnydocKit)
 /// Applies the step deadline to one native conversion.
 ///
 /// The converter is a synchronous FFI call, so unlike the old child process it
@@ -582,3 +595,4 @@ private func withAnydocDeadline(
     return first
   }
 }
+#endif

@@ -297,20 +297,22 @@ extension WorkflowCommandTests {
     }
     """.write(to: nodesDirectory.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
 
-    let marker = root.appendingPathComponent("gateway-request.json")
-    let fakeGateway = try createExecutable(
+    // The gateway runs inside riela, so the only process a step spawns is the
+    // vendor CLI; that is what this stands in for.
+    let marker = root.appendingPathComponent("vendor-request.txt")
+    let fakeCodex = try createExecutable(
       directory: root,
-      name: "fake-agent-gateway.sh",
+      name: "fake-codex.sh",
       body: """
       printf '%s\\n' "$@" > '\(marker.path)'
       cat >> '\(marker.path)'
-      printf '%s\\n' '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","_meta":{"agentGateway":{"vendor":"codex","model":"gpt-5.5","resultText":"fake codex reached"}}}}'
+      printf '%s\\n' '{"item":{"type":"agent_message","text":"fake codex reached"}}'
       exit 0
       """
     )
-    let previousGatewayExecutable = environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE")
-    setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", fakeGateway.path)
-    defer { setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", previousGatewayExecutable) }
+    let previousCodexExecutable = environmentValue("RIELA_CODEX_AGENT_EXECUTABLE")
+    setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", fakeCodex.path)
+    defer { setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", previousCodexExecutable) }
 
     let result = await RielaCLIApplication().run([
       "workflow", "run", "codex-dispatch",
@@ -324,10 +326,10 @@ extension WorkflowCommandTests {
     XCTAssertEqual(run.status, .completed)
     XCTAssertEqual(run.session.executions.first?.adapterOutput?.provider, "codex")
     let recordedRequest = try String(contentsOf: marker, encoding: .utf8)
-    XCTAssertTrue(recordedRequest.contains("client"))
-    XCTAssertTrue(recordedRequest.contains("--vendor"))
-    XCTAssertTrue(recordedRequest.contains("codex"))
-    XCTAssertTrue(recordedRequest.contains(#""type":"text""#))
+    XCTAssertTrue(recordedRequest.contains("exec"))
+    XCTAssertTrue(recordedRequest.contains("--json"))
+    XCTAssertTrue(recordedRequest.contains("gpt-5.5"))
+    XCTAssertTrue(recordedRequest.contains("dispatch through codex"))
   }
 
   func testProjectScopeCodexDesignIntakePromptIncludesWorkflowRunVariables() async throws {
@@ -339,18 +341,13 @@ extension WorkflowCommandTests {
     defer { try? FileManager.default.removeItem(at: tempDir) }
 
     let counter = tempDir.appendingPathComponent("prompt-count.txt")
-    let fakeGateway = try createExecutable(
+    // The gateway is hosted in riela, so the system prompt and the step prompt
+    // reach the vendor CLI as one stdin document instead of `--system` argv
+    // plus ACP content blocks.
+    let fakeCodex = try createExecutable(
       directory: tempDir,
-      name: "fake-agent-gateway.sh",
+      name: "fake-codex.sh",
       body: """
-      system=''
-      previous=''
-      for argument in "$@"; do
-        if [ "$previous" = "--system" ]; then
-          system="$argument"
-        fi
-        previous="$argument"
-      done
       request=$(cat)
       count=0
       if [ -f '\(counter.path)' ]; then
@@ -358,22 +355,20 @@ extension WorkflowCommandTests {
       fi
       count=$((count + 1))
       printf '%s' "$count" > '\(counter.path)'
-      printf '%s' "$system" > '\(promptDirectory.path)'/prompt-"$count".txt
-      printf '\\n\\n' >> '\(promptDirectory.path)'/prompt-"$count".txt
-      printf '%s' "$request" | /usr/bin/plutil -extract 0.text raw -o - - >> '\(promptDirectory.path)'/prompt-"$count".txt
+      printf '%s' "$request" > '\(promptDirectory.path)'/prompt-"$count".txt
       if [ "$count" = "1" ]; then
         text='{"completionPassed":true,"when":{"always":true},"payload":{"status":"manager-ready"}}'
       else
         text='{"completionPassed":true,"when":{"has_feature_fanout":false},"payload":{"workflowMode":"issue-resolution","problemSummary":"captured intake","acceptanceSignals":[],"impactedAreas":[],"constraints":[],"unknowns":[],"risks":[],"requiresAdversarialReview":false,"codexAgentReferences":[],"featureFanoutItems":[]}}'
       fi
       escaped=$(printf '%s' "$text" | sed 's/"/\\\\"/g')
-      printf '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn","_meta":{"agentGateway":{"vendor":"codex","model":"gpt-5.5","resultText":"%s"}}}}\\n' "$escaped"
+      printf '{"item":{"type":"agent_message","text":"%s"}}\\n' "$escaped"
       exit 0
       """
     )
-    let previousGatewayExecutable = environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE")
-    setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", fakeGateway.path)
-    defer { setEnvironmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", previousGatewayExecutable) }
+    let previousCodexExecutable = environmentValue("RIELA_CODEX_AGENT_EXECUTABLE")
+    setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", fakeCodex.path)
+    defer { setEnvironmentValue("RIELA_CODEX_AGENT_EXECUTABLE", previousCodexExecutable) }
 
     let variableObject: JSONObject = [
       "workflowInput": .object([

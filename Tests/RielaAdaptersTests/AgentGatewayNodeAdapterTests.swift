@@ -1,31 +1,89 @@
 import ACP
 import AgentGateway
+import AgentGatewayAppCore
 import Foundation
 import Testing
 @testable import RielaAdapters
 @testable import RielaCore
 
+/// Riela no longer spawns `agent-gateway`; it hosts the gateway ACP agent in
+/// its own process. These tests therefore assert on the `GatewayExecuteParams`
+/// the gateway hands to its vendor executor — the contract that used to be
+/// observed as `agent-gateway client` argv — and drive streaming through the
+/// executor's event emitter.
+private final class GatewayStubExecutor: GatewayExecuting, @unchecked Sendable {
+  enum Step: Sendable {
+    case delta(String)
+    case thought(String)
+  }
+
+  private let lock = NSLock()
+  private let steps: [Step]
+  private let resultText: String
+  private let vendorSessionId: String?
+  private let usage: GatewayUsage?
+  private let failure: GatewayRPCError?
+  private var capturedParams: GatewayExecuteParams?
+  private var capturedEnvironment: [String: String] = [:]
+
+  init(
+    steps: [Step] = [],
+    resultText: String = "ok",
+    vendorSessionId: String? = nil,
+    usage: GatewayUsage? = nil,
+    failure: GatewayRPCError? = nil
+  ) {
+    self.steps = steps
+    self.resultText = resultText
+    self.vendorSessionId = vendorSessionId
+    self.usage = usage
+    self.failure = failure
+  }
+
+  /// Factory that records the turn environment the adapter resolved.
+  var factory: AgentGatewayExecutorFactory {
+    { [self] environment in
+      lock.withLock { capturedEnvironment = environment }
+      return self
+    }
+  }
+
+  func execute(
+    _ params: GatewayExecuteParams, emit: @escaping GatewayEventEmitter
+  ) async throws -> GatewayExecuteResult {
+    lock.withLock { capturedParams = params }
+    if let failure { throw failure }
+    for step in steps {
+      switch step {
+      case .delta(let text):
+        emit(GatewayEvent(type: "assistant.delta", channel: .assistant, textDelta: text))
+      case .thought(let text):
+        emit(GatewayEvent(type: "thinking.delta", channel: .thinking, textDelta: text))
+      }
+    }
+    return GatewayExecuteResult(
+      vendor: params.vendor,
+      model: params.model,
+      text: resultText,
+      usage: usage,
+      sessionId: vendorSessionId
+    )
+  }
+
+  func params() -> GatewayExecuteParams? { lock.withLock { capturedParams } }
+  func environment() -> [String: String] { lock.withLock { capturedEnvironment } }
+}
+
+private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { params.arguments }
+
 @Test func gatewayAdapterSelectsVendorAndStreamsACPEvents() async throws {
-  let notification = try acpLine(method: "session/update", params: ACPSessionNotification(
-    sessionId: "sess-1",
-    update: .agentMessageChunk(.text("hello"))
-  ))
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object([
-      "vendor": .string("openrouter"),
-      "model": .string("openai/gpt-5"),
-      "resultText": .string("hello"),
-      "usage": .object([
-        "inputTokens": .integer(2),
-        "outputTokens": .integer(1),
-        "totalTokens": .integer(3)
-      ])
-    ])])
-  ))
-  let runner = GatewayStubRunner(lines: [notification, response])
+  let executor = GatewayStubExecutor(
+    steps: [.delta("hello")],
+    resultText: "hello",
+    usage: GatewayUsage(inputTokens: 2, outputTokens: 1, totalTokens: 3)
+  )
   let events = GatewayEventStore()
-  let adapter = AgentGatewayNodeAdapter(executableName: "agent-gateway", runner: runner)
+  let adapter = AgentGatewayNodeAdapter(executorFactory: executor.factory)
   let provider = try AgentProviderConfiguration(
     name: "openrouter",
     baseUrl: "https://openrouter.ai/api/v1",
@@ -57,14 +115,51 @@ import Testing
   #expect(streamed.count == 1)
   #expect(streamed.first?.contentDelta == "hello")
   #expect(streamed.first?.channel == .assistant)
-  let arguments = try #require(runner.arguments())
-  #expect(arguments.contains("client"))
-  #expect(pairedValue(arguments, "--vendor") == "openrouter")
-  #expect(pairedValue(arguments, "--api-key-environment") == "OPENROUTER_API_KEY")
-  #expect(pairedValue(arguments, "--base-url") == "https://openrouter.ai/api/v1")
-  #expect(pairedValue(arguments, "--prompt-blocks") == "-")
-  let blocks = try #require(runner.promptBlocks())
-  #expect(blocks == [.text("hello")])
+  let params = try #require(executor.params())
+  #expect(params.vendor == .openRouter)
+  #expect(params.apiKeyEnvironment == "OPENROUTER_API_KEY")
+  #expect(params.baseURL == "https://openrouter.ai/api/v1")
+  #expect(params.prompt == "hello")
+  #expect(params.images.isEmpty)
+}
+
+@Test func gatewayAdapterRunsInProcessWithoutTheGatewayExecutable() async throws {
+  // The gateway agent and ACP client are linked libraries, so no `PATH`
+  // lookup of `agent-gateway` can happen: an empty PATH still completes a turn.
+  let executor = GatewayStubExecutor(resultText: "in-process")
+  let output = try await AgentGatewayNodeAdapter(
+    environment: ["PATH": ""],
+    executorFactory: executor.factory
+  ).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "prompt"
+    ),
+    context: AdapterExecutionContext()
+  )
+  #expect(output.payload == ["text": .string("in-process")])
+}
+
+@Test func gatewayAdapterScopesNodeEnvironmentToTheTurn() async throws {
+  let executor = GatewayStubExecutor()
+  _ = try await AgentGatewayNodeAdapter(
+    environment: ["PATH": "/usr/bin", "SHARED": "riela"],
+    executorFactory: executor.factory
+  ).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      promptText: "prompt",
+      agentEnvironment: ["SHARED": "node", "NODE_ONLY": "value"]
+    ),
+    context: AdapterExecutionContext()
+  )
+  let environment = executor.environment()
+  #expect(environment["PATH"] == "/usr/bin")
+  // The node's binding wins over riela's, and nothing is written back into
+  // riela's own environment.
+  #expect(environment["SHARED"] == "node")
+  #expect(environment["NODE_ONLY"] == "value")
+  #expect(ProcessInfo.processInfo.environment["NODE_ONLY"] == nil)
 }
 
 @Test func gatewayAdapterMapsEveryProductionBackendToAnExplicitVendor() async throws {
@@ -78,12 +173,8 @@ import Testing
     (.officialCursorSDK, .cursorAPI)
   ]
   for (backend, vendor) in mappings {
-    let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-      stopReason: .endTurn,
-      meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
-    ))
-    let runner = GatewayStubRunner(lines: [response])
-    _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+    let executor = GatewayStubExecutor()
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
       AdapterExecutionInput(
         node: AgentNodePayload(id: "worker", executionBackend: backend, model: "model"),
         promptText: "prompt",
@@ -95,18 +186,14 @@ import Testing
       ),
       context: AdapterExecutionContext()
     )
-    #expect(pairedValue(runner.arguments() ?? [], "--vendor") == vendor.rawValue)
+    #expect(executor.params()?.vendor == vendor)
   }
 }
 
 @Test func cliVendorKeepsOpenRouterAsProviderRoutingInsteadOfChangingHarness() async throws {
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
-  ))
-  let runner = GatewayStubRunner(lines: [response])
+  let executor = GatewayStubExecutor()
   let provider = try OpenRouterProvider.configuration(for: .codexAgent)
-  _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+  _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(
         id: "worker",
@@ -123,19 +210,15 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  let arguments = try #require(runner.arguments())
-  #expect(pairedValue(arguments, "--vendor") == "codex")
-  #expect(pairedValue(arguments, "--provider-name") == "openrouter")
-  #expect(pairedValue(arguments, "--api-key-environment") == "OPENROUTER_API_KEY")
+  let params = try #require(executor.params())
+  #expect(params.vendor == .codex)
+  #expect(params.providerName == "openrouter")
+  #expect(params.apiKeyEnvironment == "OPENROUTER_API_KEY")
 }
 
 @Test func cliVendorForwardsCustomBaseURLAndCredentialEnvironment() async throws {
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
-  ))
-  let runner = GatewayStubRunner(lines: [response])
-  _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+  let executor = GatewayStubExecutor()
+  _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(
         id: "worker",
@@ -153,21 +236,17 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  let arguments = try #require(runner.arguments())
-  #expect(pairedValue(arguments, "--vendor") == "claude-code")
-  #expect(pairedValue(arguments, "--model") == "custom")
-  #expect(pairedValue(arguments, "--base-url") == "https://api.kimi.example")
-  #expect(pairedValue(arguments, "--api-key-environment") == "KIMI_API_KEY")
-  #expect(pairedValue(arguments, "--provider-name") == nil)
+  let params = try #require(executor.params())
+  #expect(params.vendor == .claudeCode)
+  #expect(params.model == "custom")
+  #expect(params.baseURL == "https://api.kimi.example")
+  #expect(params.apiKeyEnvironment == "KIMI_API_KEY")
+  #expect(params.providerName == nil)
 }
 
 @Test func gatewayAdapterPreservesCLIExecutionControls() async throws {
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
-  ))
-  let runner = GatewayStubRunner(lines: [response])
-  _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+  let executor = GatewayStubExecutor()
+  _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(
         id: "worker",
@@ -187,26 +266,20 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  let arguments = try #require(runner.arguments())
-  let separator = try #require(arguments.firstIndex(of: "--"))
-  let vendorArguments = Array(arguments[arguments.index(after: separator)...])
-  #expect(vendorArguments.contains(#"model_reasoning_effort="high""#))
-  #expect(vendorArguments.contains("--sandbox"))
-  #expect(vendorArguments.contains("workspace-write"))
-  #expect(vendorArguments.contains("--search"))
-  #expect(vendorArguments.contains("--ephemeral"))
-  #expect(pairedValue(vendorArguments, "--disable") == "multi_agent")
+  let arguments = vendorArguments(try #require(executor.params()))
+  #expect(arguments.contains(#"model_reasoning_effort="high""#))
+  #expect(arguments.contains("--sandbox"))
+  #expect(arguments.contains("workspace-write"))
+  #expect(arguments.contains("--search"))
+  #expect(arguments.contains("--ephemeral"))
+  #expect(pairedValue(arguments, "--disable") == "multi_agent")
 }
 
 @Test func gatewayAdapterEnablesCodexSupervisorModeOnlyWhenRequested() async throws {
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
-  ))
-  let runner = GatewayStubRunner(lines: [response])
+  let executor = GatewayStubExecutor()
   _ = try await AgentGatewayNodeAdapter(
-    runner: runner,
-    codexSupervisorModeEnabled: true
+    codexSupervisorModeEnabled: true,
+    executorFactory: executor.factory
   ).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
@@ -215,24 +288,15 @@ import Testing
     context: AdapterExecutionContext()
   )
 
-  let arguments = try #require(runner.arguments())
-  let separator = try #require(arguments.firstIndex(of: "--"))
-  let vendorArguments = Array(arguments[arguments.index(after: separator)...])
-  #expect(pairedValue(vendorArguments, "--enable") == "multi_agent")
-  #expect(!vendorArguments.contains("--disable"))
+  let arguments = vendorArguments(try #require(executor.params()))
+  #expect(pairedValue(arguments, "--enable") == "multi_agent")
+  #expect(!arguments.contains("--disable"))
 }
 
 @Test func gatewayAdapterReusesOnlyTheInheritedWorkflowSession() async throws {
   let store = AgentGatewaySessionStore()
-  let firstResponse = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object([
-      "resultText": .string("first"),
-      "vendorSessionId": .string("backend-session-1")
-    ])])
-  ))
-  let firstRunner = GatewayStubRunner(lines: [firstResponse])
-  _ = try await AgentGatewayNodeAdapter(runner: firstRunner, sessionStore: store).execute(
+  let first = GatewayStubExecutor(resultText: "first", vendorSessionId: "backend-session-1")
+  _ = try await AgentGatewayNodeAdapter(executorFactory: first.factory, sessionStore: store).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "producer", executionBackend: .codexAgent, model: "gpt-5"),
       promptText: "first",
@@ -244,14 +308,11 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  #expect(pairedValue(firstRunner.arguments() ?? [], "--session-id") == nil)
+  #expect(first.params()?.sessionId == nil)
+  #expect(first.params()?.sessionMode == .new)
 
-  let secondResponse = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object(["resultText": .string("second")])])
-  ))
-  let secondRunner = GatewayStubRunner(lines: [secondResponse])
-  _ = try await AgentGatewayNodeAdapter(runner: secondRunner, sessionStore: store).execute(
+  let second = GatewayStubExecutor(resultText: "second")
+  _ = try await AgentGatewayNodeAdapter(executorFactory: second.factory, sessionStore: store).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "consumer", executionBackend: .codexAgent, model: "gpt-5"),
       promptText: "second",
@@ -264,7 +325,8 @@ import Testing
     ),
     context: AdapterExecutionContext()
   )
-  #expect(pairedValue(secondRunner.arguments() ?? [], "--session-id") == "backend-session-1")
+  #expect(second.params()?.sessionId == "backend-session-1")
+  #expect(second.params()?.sessionMode == .reuse)
 
   let isolatedKey = AgentGatewaySessionKey(
     workflowRunId: "run-1",
@@ -275,10 +337,11 @@ import Testing
 }
 
 @Test func gatewayAdapterSurfacesACPErrorResponses() async throws {
-  let errorLine = #"{"jsonrpc":"2.0","id":3,"error":{"code":-32011,"message":"missing credential environment 'OPENAI_API_KEY'"}}"#
-  let runner = GatewayStubRunner(lines: [errorLine], terminationStatus: 1)
+  let executor = GatewayStubExecutor(
+    failure: GatewayRPCError(code: -32011, message: "missing credential environment 'OPENAI_API_KEY'")
+  )
   do {
-    _ = try await AgentGatewayNodeAdapter(runner: runner).execute(
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
       AdapterExecutionInput(
         node: AgentNodePayload(id: "worker", executionBackend: .officialOpenAISDK, model: "gpt-5"),
         promptText: "prompt",
@@ -298,17 +361,8 @@ import Testing
 }
 
 @Test func gatewayAdapterFallsBackToAccumulatedChunksWithoutResultText() async throws {
-  let chunks = [
-    try acpLine(method: "session/update", params: ACPSessionNotification(
-      sessionId: "sess-1", update: .agentMessageChunk(.text("hel"))
-    )),
-    try acpLine(method: "session/update", params: ACPSessionNotification(
-      sessionId: "sess-1", update: .agentMessageChunk(.text("lo"))
-    ))
-  ]
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(stopReason: .endTurn))
-  let runner = GatewayStubRunner(lines: [chunks[0], chunks[1], response])
-  let output = try await AgentGatewayNodeAdapter(runner: runner).execute(
+  let executor = GatewayStubExecutor(steps: [.delta("hel"), .delta("lo")], resultText: "")
+  let output = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
       promptText: "prompt",
@@ -323,47 +377,28 @@ import Testing
   #expect(output.payload == ["text": .string("hello")])
 }
 
-@Test func gatewayAdapterIgnoresForwardCompatibleUnknownACPUpdates() async throws {
-  let unknownUpdate = #"{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"available_commands_update","commands":[]}}}"#
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object(["resultText": .string("ok")])])
-  ))
-  let runner = GatewayStubRunner(lines: [unknownUpdate, response])
+@Test func gatewayAdapterStreamsThoughtChunksOnTheThinkingChannel() async throws {
+  let executor = GatewayStubExecutor(steps: [.thought("planning"), .delta("done")], resultText: "done")
   let events = GatewayEventStore()
-
-  let output = try await AgentGatewayNodeAdapter(runner: runner).execute(
+  _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
       node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
-      promptText: "prompt",
-      executionIdentity: AdapterExecutionIdentity(
-        workflowRunId: "run",
-        workflowSessionId: "session",
-        stepId: "worker"
-      )
+      promptText: "prompt"
     ),
     context: AdapterExecutionContext { event in await events.append(event) }
   )
-
-  #expect(output.payload == ["text": .string("ok")])
-  #expect(await events.values.isEmpty)
+  let streamed = await events.values
+  #expect(streamed.map(\.channel) == [.thinking, .assistant])
+  #expect(streamed.map(\.eventType) == ["agent_thought_chunk", "agent_message_chunk"])
 }
 
 @Test func clientTurnRunsOneShotACPPromptAndParsesTypedResult() async throws {
-  let chunk = try acpLine(method: "session/update", params: ACPSessionNotification(
-    sessionId: "sess-1",
-    update: .agentMessageChunk(.text("partial"))
-  ))
-  let response = try acpResponseLine(id: 3, result: ACPPromptResponse(
-    stopReason: .endTurn,
-    meta: .object(["agentGateway": .object([
-      "model": .string("gemini-3.5-flash"),
-      "resultText": .string("ocr text"),
-      "usage": .object(["inputTokens": .integer(10), "outputTokens": .integer(4), "totalTokens": .integer(14)])
-    ])])
-  ))
-  let runner = GatewayStubRunner(lines: [chunk, response])
-  let turn = AgentGatewayClientTurn(runner: runner)
+  let executor = GatewayStubExecutor(
+    steps: [.delta("partial")],
+    resultText: "ocr text",
+    usage: GatewayUsage(inputTokens: 10, outputTokens: 4, totalTokens: 14)
+  )
+  let turn = AgentGatewayClientTurn(executorFactory: executor.factory)
 
   let result = try await turn.run(AgentGatewayClientTurn.Request(
     vendor: .gemini,
@@ -381,25 +416,19 @@ import Testing
   #expect(result.text == "ocr text")
   #expect(result.model == "gemini-3.5-flash")
   #expect(result.usage?.totalTokens == 14)
-  let arguments = try #require(runner.arguments())
-  #expect(arguments.contains("client"))
-  #expect(pairedValue(arguments, "--vendor") == "gemini")
-  #expect(pairedValue(arguments, "--model") == "gemini-3.5-flash")
-  #expect(pairedValue(arguments, "--system") == "system")
-  #expect(pairedValue(arguments, "--api-key-environment") == "GOOGLE_API_KEY")
-  #expect(pairedValue(arguments, "--cwd") == "/work")
-  #expect(pairedValue(arguments, "--prompt-blocks") == "-")
-  let blocks = try #require(runner.promptBlocks())
-  #expect(blocks == [
-    .text("read this"),
-    .image(ACPImageContent(data: "cGRm", mimeType: "application/pdf"))
-  ])
+  let params = try #require(executor.params())
+  #expect(params.vendor == .gemini)
+  #expect(params.model == "gemini-3.5-flash")
+  #expect(params.systemPrompt == "system")
+  #expect(params.apiKeyEnvironment == "GOOGLE_API_KEY")
+  #expect(params.workingDirectory == "/work")
+  #expect(params.prompt == "read this")
+  #expect(params.images == [GatewayImageInput(dataBase64: "cGRm", mimeType: "application/pdf")])
 }
 
 @Test func clientTurnSurfacesACPProtocolErrors() async throws {
-  let errorLine = #"{"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"vendor exploded"}}"#
-  let runner = GatewayStubRunner(lines: [errorLine])
-  let turn = AgentGatewayClientTurn(runner: runner)
+  let executor = GatewayStubExecutor(failure: GatewayRPCError(code: -32603, message: "vendor exploded"))
+  let turn = AgentGatewayClientTurn(executorFactory: executor.factory)
 
   await #expect(throws: AdapterExecutionError.self) {
     _ = try await turn.run(AgentGatewayClientTurn.Request(
@@ -407,55 +436,6 @@ import Testing
       model: "gemini-3.5-flash",
       promptBlocks: [.text("read this")]
     ))
-  }
-}
-
-private final class GatewayStubRunner: LocalProcessEventStreaming, @unchecked Sendable {
-  private let lock = NSLock()
-  private let lines: [String]
-  private let terminationStatus: Int32
-  private var capturedArguments: [String]?
-  private var capturedStdin: String?
-
-  init(lines: [String], terminationStatus: Int32 = 0) {
-    self.lines = lines
-    self.terminationStatus = terminationStatus
-  }
-
-  func run(
-    configuration: LocalProcessConfiguration,
-    stdin: String,
-    deadline: Date?
-  ) async throws -> LocalProcessResult {
-    try await run(configuration: configuration, stdin: stdin, deadline: deadline, outputEventHandler: nil)
-  }
-
-  func run(
-    configuration: LocalProcessConfiguration,
-    stdin: String,
-    deadline _: Date?,
-    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
-  ) async throws -> LocalProcessResult {
-    lock.withLock {
-      capturedArguments = configuration.arguments
-      capturedStdin = stdin
-    }
-    for line in lines {
-      outputEventHandler?(LocalProcessOutputEvent(stream: .stdout, line: line))
-    }
-    return LocalProcessResult(
-      stdout: lines.joined(separator: "\n"),
-      stderr: "",
-      terminationStatus: terminationStatus
-    )
-  }
-
-  func arguments() -> [String]? { lock.withLock { capturedArguments } }
-
-  func promptBlocks() -> [ACPContentBlock]? {
-    let stdin = lock.withLock { capturedStdin }
-    guard let stdin else { return nil }
-    return try? JSONDecoder().decode([ACPContentBlock].self, from: Data(stdin.utf8))
   }
 }
 
@@ -467,32 +447,4 @@ private actor GatewayEventStore {
 private func pairedValue(_ arguments: [String], _ key: String) -> String? {
   guard let index = arguments.firstIndex(of: key), index + 1 < arguments.count else { return nil }
   return arguments[index + 1]
-}
-
-private struct ACPNotificationLine<T: Encodable>: Encodable {
-  var jsonrpc = "2.0"
-  var method: String
-  var params: T
-}
-
-private struct ACPResponseEnvelopeLine<Value: Encodable>: Encodable {
-  var jsonrpc = "2.0"
-  var id: Int
-  var result: Value
-}
-
-private func acpLine<Params: Encodable>(method: String, params: Params) throws -> String {
-  let data = try JSONEncoder().encode(ACPNotificationLine(method: method, params: params))
-  guard let line = String(bytes: data, encoding: .utf8) else {
-    throw AdapterExecutionError(.invalidOutput, "not UTF-8")
-  }
-  return line
-}
-
-private func acpResponseLine<T: Encodable>(id: Int, result: T) throws -> String {
-  let data = try JSONEncoder().encode(ACPResponseEnvelopeLine(id: id, result: result))
-  guard let line = String(bytes: data, encoding: .utf8) else {
-    throw AdapterExecutionError(.invalidOutput, "not UTF-8")
-  }
-  return line
 }

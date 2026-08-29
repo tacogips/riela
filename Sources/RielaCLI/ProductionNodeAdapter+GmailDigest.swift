@@ -794,7 +794,7 @@ private struct GmailDigestEngine {
     ]
   }
 
-  /// Routes PDF OCR through one `agent-gateway client` ACP turn instead of
+  /// Routes PDF OCR through one in-process gateway ACP turn instead of
   /// calling the Gemini API directly, so vendor execution and credential
   /// handling stay owned by the gateway. The PDF travels as an ACP image
   /// content block on stdin; the final text comes from the `session/prompt`
@@ -806,10 +806,7 @@ private struct GmailDigestEngine {
     prompt: String,
     pdfBase64: String
   ) async -> String {
-    let turn = AgentGatewayClientTurn(
-      executableName: nonEmptyEnvironment("RIELA_AGENT_GATEWAY_EXECUTABLE") ?? "agent-gateway",
-      environment: environment
-    )
+    let turn = AgentGatewayClientTurn(environment: environment)
     let request = AgentGatewayClientTurn.Request(
       vendor: .gemini,
       model: model,

@@ -1,57 +1,67 @@
 import ACP
 import AgentGateway
+import AgentGatewayAppCore
 import Foundation
 import RielaCore
+import RielaVersion
 
-public struct AgentGatewayAdapterConfiguration: Equatable, Sendable {
-  public var executableName: String
+/// Builds a gateway executor for one turn. The default hosts the production
+/// executor with a turn-scoped environment; tests substitute a stub so no
+/// vendor process is spawned.
+public typealias AgentGatewayExecutorFactory = @Sendable (_ environment: [String: String]) -> any GatewayExecuting
+
+public struct AgentGatewayAdapterConfiguration: Sendable {
   public var environment: [String: String]
   public var codexSupervisorModeEnabled: Bool
+  public var executorFactory: AgentGatewayExecutorFactory
 
   public init(
-    executableName: String = "agent-gateway",
     environment: [String: String] = [:],
-    codexSupervisorModeEnabled: Bool = false
+    codexSupervisorModeEnabled: Bool = false,
+    executorFactory: @escaping AgentGatewayExecutorFactory = defaultAgentGatewayExecutorFactory
   ) {
-    self.executableName = executableName
     self.environment = environment
     self.codexSupervisorModeEnabled = codexSupervisorModeEnabled
+    self.executorFactory = executorFactory
   }
 
   public init(processEnvironment environment: [String: String]) {
-    self.init(
-      executableName: environment["RIELA_AGENT_GATEWAY_EXECUTABLE"] ?? "agent-gateway",
-      environment: environment
-    )
+    self.init(environment: environment)
   }
 
   public func makeAdapter() -> AgentGatewayNodeAdapter {
     AgentGatewayNodeAdapter(
-      executableName: executableName,
       environment: environment,
-      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled,
+      executorFactory: executorFactory
     )
   }
 }
 
+public let defaultAgentGatewayExecutorFactory: AgentGatewayExecutorFactory = { environment in
+  ProductionGatewayExecutor(environment: environment)
+}
+
+/// Runs agent steps through the gateway hosted **inside this process**: the
+/// ACP agent (`GatewayACPAgent`) and the ACP client are linked as libraries
+/// and connected over an in-memory transport, so the only child process riela
+/// creates is the vendor CLI itself (`claude`, `codex`, `cursor-agent`). The
+/// `agent-gateway` executable is not required at runtime.
 public struct AgentGatewayNodeAdapter: NodeAdapter {
-  public var executableName: String
-  public var runner: any LocalProcessRunning
   public var environment: [String: String]
   public var codexSupervisorModeEnabled: Bool
+  public var executorFactory: AgentGatewayExecutorFactory
   private let sessionStore: AgentGatewaySessionStore
 
   public init(
-    executableName: String = "agent-gateway",
-    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
     environment: [String: String] = [:],
     codexSupervisorModeEnabled: Bool = false,
+    executorFactory: @escaping AgentGatewayExecutorFactory = defaultAgentGatewayExecutorFactory,
     sessionStore: AgentGatewaySessionStore = AgentGatewaySessionStore()
   ) {
-    self.executableName = executableName
-    self.runner = runner
     self.environment = environment
     self.codexSupervisorModeEnabled = codexSupervisorModeEnabled
+    self.executorFactory = executorFactory
     self.sessionStore = sessionStore
   }
 
@@ -59,118 +69,50 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
     let vendor = try gatewayVendor(input.node)
     let outputSessionKey = gatewayOutputSessionKey(input)
     let inputSessionKey = gatewayInputSessionKey(input)
-    let model = gatewayVendorModel(vendor, input: input)
-    // The gateway is driven as an ACP client turn: `agent-gateway client`
-    // owns the initialize/session/new/session/prompt handshake and echoes
-    // the agent's raw ACP JSONL messages on stdout. The prompt travels as
-    // ACP content blocks on stdin to stay clear of argv limits.
-    var arguments = [
-      executableName, "client",
-      "--vendor", vendor.rawValue,
-      "--model", model,
-      "--prompt-blocks", "-"
-    ]
-    if let systemPrompt = input.systemPromptText {
-      arguments += ["--system", systemPrompt]
-    }
-    if let workingDirectory = input.node.workingDirectory {
-      arguments += ["--cwd", workingDirectory]
-    }
-    if let executable = gatewayVendorExecutable(vendor, input: input, environment: environment) {
-      arguments += ["--executable", executable]
-    }
-    if let provider = input.node.provider {
-      arguments += ["--provider-name", provider.name, "--base-url", provider.baseUrl]
-      if let apiKeyEnv = provider.apiKeyEnv {
-        arguments += ["--api-key-environment", apiKeyEnv]
-      }
-    } else if let baseURL = input.node.baseURL {
-      arguments += ["--base-url", baseURL]
-      if let apiKeyEnvironment = input.node.apiKeyEnvironment {
-        arguments += ["--api-key-environment", apiKeyEnvironment]
-      }
-    }
-    if let maxTokens = gatewayMaxTokens(input.node.variables) {
-      arguments += ["--max-tokens", String(maxTokens)]
-    }
-    if input.sessionPolicy?.mode == .reuse,
-       let sessionId = inputSessionKey.flatMap(sessionStore.sessionId(for:)) {
-      arguments += ["--session-id", sessionId]
-    }
-    if let cursorAPI = gatewayCursorAPIOptions(vendor, input: input) {
-      if let repositoryURL = cursorAPI.repositoryURL {
-        arguments += ["--cursor-repository-url", repositoryURL]
-      }
-      if let startingRef = cursorAPI.startingRef {
-        arguments += ["--cursor-starting-ref", startingRef]
-      }
-      if let workOnCurrentBranch = cursorAPI.workOnCurrentBranch {
-        arguments += ["--cursor-work-on-current-branch", String(workOnCurrentBranch)]
-      }
-      if let autoCreatePR = cursorAPI.autoCreatePR {
-        arguments += ["--cursor-auto-create-pr", String(autoCreatePR)]
-      }
-    }
-    arguments += resolveAdapterImagePaths(input).flatMap { ["--image", $0] }
-    let vendorArguments = gatewayVendorArguments(
-      vendor,
-      input: input,
-      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+    let providerName = input.node.provider?.name
+    let baseURL = input.node.provider?.baseUrl ?? input.node.baseURL
+    let model = gatewayResolvedModel(
+      gatewayVendorModel(vendor, input: input),
+      vendor: vendor,
+      providerName: providerName,
+      baseURL: baseURL
     )
-    if !vendorArguments.isEmpty {
-      arguments += ["--"] + vendorArguments
-    }
-
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    guard let promptBlocksLine = String(
-      bytes: try encoder.encode(gatewayPromptBlocks(input)),
-      encoding: .utf8
-    ) else {
-      throw AdapterExecutionError(.invalidInput, "agent-gateway prompt is not valid UTF-8")
-    }
-
-    let collector = GatewayACPMessageCollector(vendor: vendor.rawValue)
-    let (stream, continuation) = AsyncStream.makeStream(of: AdapterBackendEvent.self)
-    let consumer = Task {
-      for await event in stream {
-        await context.backendEventHandler?(event)
-      }
-    }
-    let configuration = LocalProcessConfiguration(
-      executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-      arguments: arguments,
-      environment: environment.merging(input.agentEnvironment) { _, nodeValue in nodeValue },
-      workingDirectoryURL: input.node.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let defaults = GatewayAgentDefaults(
+      vendor: vendor,
+      model: model,
+      systemPrompt: input.systemPromptText,
+      executable: gatewayVendorExecutable(vendor, input: input, environment: environment),
+      arguments: gatewayVendorArguments(
+        vendor,
+        input: input,
+        codexSupervisorModeEnabled: codexSupervisorModeEnabled
+      ),
+      providerName: providerName,
+      apiKeyEnvironment: input.node.provider?.apiKeyEnv ?? input.node.apiKeyEnvironment,
+      baseURL: baseURL,
+      maxTokens: gatewayMaxTokens(input.node.variables),
+      cursorAPI: gatewayCursorAPIOptions(vendor, input: input)
     )
-    let result: LocalProcessResult
-    do {
-      if let streamingRunner = runner as? any LocalProcessEventStreaming {
-        result = try await streamingRunner.run(
-          configuration: configuration,
-          stdin: promptBlocksLine + "\n",
-          deadline: context.deadline,
-          outputEventHandler: { output in
-            guard output.stream == .stdout else { return }
-            if let event = collector.consume(output.line) {
-              continuation.yield(event)
-            }
-          }
-        )
-      } else {
-        result = try await runner.run(configuration: configuration, stdin: promptBlocksLine + "\n", deadline: context.deadline)
-        for line in result.stdout.split(whereSeparator: \.isNewline) {
-          if let event = collector.consume(String(line)) { continuation.yield(event) }
-        }
-      }
-    } catch {
-      continuation.finish()
-      await consumer.value
-      throw error
-    }
-    continuation.finish()
-    await consumer.value
-    let turn = try gatewayTerminalTurn(collector, processResult: result)
+    // The node's own environment wins over riela's so per-step credentials and
+    // credential directories reach the vendor. Nothing is written back into
+    // riela's process environment, so concurrent steps cannot collide.
+    let turnEnvironment = environment.merging(input.agentEnvironment) { _, nodeValue in nodeValue }
+    let reusedSessionId = input.sessionPolicy?.mode == .reuse
+      ? inputSessionKey.flatMap(sessionStore.sessionId(for:))
+      : nil
+
+    let turn = try await runGatewayTurn(
+      GatewayTurnRequest(
+        defaults: defaults,
+        environment: turnEnvironment,
+        workingDirectory: input.node.workingDirectory,
+        promptBlocks: try gatewayPromptBlocks(input),
+        vendorSessionId: reusedSessionId,
+        deadline: context.deadline
+      ),
+      executorFactory: executorFactory,
+      backendEventHandler: context.backendEventHandler
+    )
     guard turn.stopReason == .endTurn else {
       throw AdapterExecutionError(.providerError, "agent-gateway turn ended with stop reason '\(turn.stopReason.rawValue)'")
     }
@@ -198,11 +140,10 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
   }
 }
 
-/// One `agent-gateway client` ACP prompt turn outside the workflow node path,
-/// for callers (e.g. builtin add-ons) that need a single vendor completion.
-/// Shares the adapter's typed ACP stream parsing, so protocol error lines and
-/// the authoritative `_meta.agentGateway` result are surfaced instead of each
-/// caller hand-rolling JSONL scanning.
+/// One gateway ACP prompt turn outside the workflow node path, for callers
+/// (e.g. builtin add-ons) that need a single vendor completion. Shares the
+/// adapter's in-process host, so these callers do not need the
+/// `agent-gateway` executable either.
 public struct AgentGatewayClientTurn: Sendable {
   public struct Request: Sendable {
     public var vendor: GatewayVendor
@@ -236,78 +177,166 @@ public struct AgentGatewayClientTurn: Sendable {
     public var usage: AdapterUsage?
   }
 
-  public var executableName: String
-  public var runner: any LocalProcessRunning
   public var environment: [String: String]
+  public var executorFactory: AgentGatewayExecutorFactory
 
   public init(
-    executableName: String = "agent-gateway",
-    runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
-    environment: [String: String] = [:]
+    environment: [String: String] = [:],
+    executorFactory: @escaping AgentGatewayExecutorFactory = defaultAgentGatewayExecutorFactory
   ) {
-    self.executableName = executableName
-    self.runner = runner
     self.environment = environment
+    self.executorFactory = executorFactory
   }
 
   public func run(_ request: Request, deadline: Date? = nil) async throws -> Result {
-    var arguments = [
-      executableName, "client",
-      "--vendor", request.vendor.rawValue,
-      "--model", request.model,
-      "--prompt-blocks", "-"
-    ]
-    if let systemPrompt = request.systemPrompt {
-      arguments += ["--system", systemPrompt]
-    }
-    if let workingDirectory = request.workingDirectory {
-      arguments += ["--cwd", workingDirectory]
-    }
-    if let apiKeyEnvironment = request.apiKeyEnvironment {
-      arguments += ["--api-key-environment", apiKeyEnvironment]
-    }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    guard let promptBlocksLine = String(
-      bytes: try encoder.encode(request.promptBlocks),
-      encoding: .utf8
-    ) else {
-      throw AdapterExecutionError(.invalidInput, "agent-gateway prompt is not valid UTF-8")
-    }
-    let configuration = LocalProcessConfiguration(
-      executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-      arguments: arguments,
-      environment: environment,
-      workingDirectoryURL: request.workingDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    let turn = try await runGatewayTurn(
+      GatewayTurnRequest(
+        defaults: GatewayAgentDefaults(
+          vendor: request.vendor,
+          model: request.model,
+          systemPrompt: request.systemPrompt,
+          apiKeyEnvironment: request.apiKeyEnvironment
+        ),
+        environment: environment,
+        workingDirectory: request.workingDirectory,
+        promptBlocks: request.promptBlocks,
+        vendorSessionId: nil,
+        deadline: deadline
+      ),
+      executorFactory: executorFactory,
+      backendEventHandler: nil
     )
-    let result = try await runner.run(
-      configuration: configuration,
-      stdin: promptBlocksLine + "\n",
-      deadline: deadline
-    )
-    let collector = GatewayACPMessageCollector(vendor: request.vendor.rawValue)
-    for line in result.stdout.split(whereSeparator: \.isNewline) {
-      _ = collector.consume(String(line))
-    }
-    let turn = try gatewayTerminalTurn(collector, processResult: result)
     return Result(stopReason: turn.stopReason, text: turn.text, model: turn.model, usage: turn.usage)
   }
 }
 
-private func gatewayTerminalTurn(
-  _ collector: GatewayACPMessageCollector,
-  processResult result: LocalProcessResult
-) throws -> GatewayACPTurn {
-  if let error = collector.protocolError() {
-    throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
+struct GatewayTurnRequest: Sendable {
+  var defaults: GatewayAgentDefaults
+  var environment: [String: String]
+  var workingDirectory: String?
+  var promptBlocks: [ACPContentBlock]
+  var vendorSessionId: String?
+  var deadline: Date?
+}
+
+/// Hosts `GatewayACPAgent` on an in-memory ACP transport and drives exactly
+/// one prompt turn against it. Streaming `session/update` notifications become
+/// riela backend events; the `session/prompt` response carries the final text,
+/// usage, and resumable vendor session id in `_meta.agentGateway`.
+func runGatewayTurn(
+  _ request: GatewayTurnRequest,
+  executorFactory: AgentGatewayExecutorFactory,
+  backendEventHandler: AdapterBackendEventHandler?
+) async throws -> GatewayACPTurn {
+  guard let vendor = request.defaults.vendor else {
+    throw AdapterExecutionError(.invalidInput, "agent-gateway requires an explicit execution backend")
   }
-  guard result.terminationStatus == 0 else {
-    throw AdapterExecutionError(
-      .providerError,
-      "agent-gateway failed with exit code \(result.terminationStatus): \(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
+  let agent = GatewayACPAgent(
+    defaults: request.defaults,
+    executor: executorFactory(request.environment)
+  )
+  let (client, server) = await ACPClientConnection.inProcess(agent: agent)
+  let collector = GatewayACPUpdateCollector(vendor: vendor.rawValue)
+  defer {
+    let server = server
+    Task { await server.connection.stop() }
+  }
+
+  do {
+    _ = try await client.initialize(
+      ACPInitializeRequest(
+        clientInfo: ACPImplementation(name: "riela", version: String(cString: rielaEmbeddedVersion))
+      )
     )
+    let session = try await client.newSession(
+      ACPNewSessionRequest(
+        cwd: request.workingDirectory ?? FileManager.default.currentDirectoryPath,
+        mcpServers: [],
+        meta: request.vendorSessionId.map {
+          .object(["agentGateway": .object(["vendorSessionId": .string($0)])])
+        }
+      )
+    )
+    let watchdog = GatewayDeadlineWatchdog(
+      deadline: request.deadline,
+      client: client,
+      sessionId: session.sessionId
+    )
+    defer { watchdog.cancel() }
+
+    var response: ACPPromptResponse?
+    let stream = client.promptStream(ACPPromptRequest(sessionId: session.sessionId, prompt: request.promptBlocks))
+    try await withTaskCancellationHandler {
+      for try await event in stream {
+        switch event {
+        case .update(let update):
+          if let backendEvent = collector.consume(update) {
+            await backendEventHandler?(backendEvent)
+          }
+        case .response(let value):
+          response = value
+        }
+      }
+    } onCancel: {
+      watchdog.cancelTurn()
+    }
+    guard let response else {
+      throw AdapterExecutionError(.invalidOutput, "agent-gateway stream ended without a session/prompt response")
+    }
+    if response.stopReason == .cancelled, watchdog.deadlineExpired {
+      throw AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
+    }
+    await client.stop()
+    return collector.turn(response: response)
+  } catch let error as ACPError {
+    await client.stop()
+    throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
+  } catch {
+    await client.stop()
+    throw error
   }
-  return try collector.terminalTurn()
+}
+
+/// Cancels the in-flight ACP turn when the step deadline passes. The gateway
+/// agent forwards the cancellation to the vendor process group, which is what
+/// terminating the `agent-gateway` child used to accomplish.
+private final class GatewayDeadlineWatchdog: @unchecked Sendable {
+  private let lock = NSLock()
+  private var expired = false
+  private var task: Task<Void, Never>?
+  private let client: ACPClientConnection
+  private let sessionId: ACPSessionID
+
+  init(deadline: Date?, client: ACPClientConnection, sessionId: ACPSessionID) {
+    self.client = client
+    self.sessionId = sessionId
+    guard let deadline else { return }
+    let interval = deadline.timeIntervalSinceNow
+    task = Task { [weak self] in
+      if interval > 0 {
+        try? await Task.sleep(for: .seconds(interval))
+      }
+      guard !Task.isCancelled, let self else { return }
+      self.lock.withLock { self.expired = true }
+      try? await client.cancel(sessionId: sessionId)
+    }
+  }
+
+  var deadlineExpired: Bool {
+    lock.withLock { expired }
+  }
+
+  func cancel() {
+    lock.withLock { task }?.cancel()
+  }
+
+  /// Propagates surrounding-task cancellation into the ACP turn so the vendor
+  /// process is terminated instead of being orphaned.
+  func cancelTurn() {
+    let client = client
+    let sessionId = sessionId
+    Task { try? await client.cancel(sessionId: sessionId) }
+  }
 }
 
 /// Backend event types the gateway adapter emits, mirroring the ACP
@@ -360,90 +389,57 @@ struct GatewayACPTurn {
   var usage: AdapterUsage?
 }
 
-/// Parses the raw ACP JSON-RPC lines echoed by `agent-gateway client`:
-/// `session/update` notifications become backend events, and the
-/// `session/prompt` response (the only response carrying `stopReason`)
-/// terminates the turn. Vendor identity, usage, and the authoritative final
-/// text arrive in the response `_meta.agentGateway` extension.
-private final class GatewayACPMessageCollector: @unchecked Sendable {
-  private struct NotificationLine: Decodable {
-    var method: String
-    var params: ACPSessionNotification
-  }
-
-  private struct PromptResponseLine: Decodable {
-    var result: ACPPromptResponse
-  }
-
-  private struct ErrorLine: Decodable {
-    var error: ACPError
-  }
-
+/// Turns the ACP `session/update` notifications of one turn into riela backend
+/// events, and the `session/prompt` response into the turn result. Vendor
+/// identity, usage, and the authoritative final text arrive in the response's
+/// `_meta.agentGateway` extension; the accumulated chunk text is the fallback.
+private final class GatewayACPUpdateCollector: @unchecked Sendable {
   private let lock = NSLock()
   private let vendor: String
   private var sequence = 0
   private var accumulatedText = ""
-  private var response: ACPPromptResponse?
-  private var error: ACPError?
 
   init(vendor: String) {
     self.vendor = vendor
   }
 
-  func consume(_ line: String) -> AdapterBackendEvent? {
+  func consume(_ update: ACPSessionUpdate) -> AdapterBackendEvent? {
     lock.withLock {
-      let data = Data(line.utf8)
-      let decoder = JSONDecoder()
-      if let notification = try? decoder.decode(NotificationLine.self, from: data),
-         notification.method == "session/update" {
-        return backendEvent(notification.params.update)
-      }
-      if let decoded = try? decoder.decode(ErrorLine.self, from: data) {
-        error = decoded.error
+      switch update {
+      case .agentMessageChunk(let content):
+        guard case .text(let text) = content else { return nil }
+        accumulatedText += text.text
+        return chunkEvent(.agentMessageChunk, channel: .assistant, text: text.text)
+      case .agentThoughtChunk(let content):
+        guard case .text(let text) = content else { return nil }
+        return chunkEvent(.agentThoughtChunk, channel: .thinking, text: text.text)
+      case .toolCall(let toolCall):
+        return chunkEvent(
+          .toolCall,
+          channel: .tool,
+          text: nil,
+          toolCall: GatewayToolCallEventMetadata(
+            toolCallId: toolCall.toolCallId,
+            title: toolCall.title,
+            kind: toolCall.kind,
+            status: toolCall.status
+          )
+        )
+      case .toolCallUpdate(let update):
+        return chunkEvent(
+          .toolCallUpdate,
+          channel: .tool,
+          text: nil,
+          toolCall: GatewayToolCallEventMetadata(
+            toolCallId: update.toolCallId,
+            title: update.title,
+            kind: update.kind,
+            status: update.status
+          )
+        )
+      case .userMessageChunk, .plan, .other:
         return nil
       }
-      if let decoded = try? decoder.decode(PromptResponseLine.self, from: data) {
-        response = decoded.result
-      }
-      return nil
-    }
-  }
-
-  private func backendEvent(_ update: ACPSessionUpdate) -> AdapterBackendEvent? {
-    switch update {
-    case .agentMessageChunk(let content):
-      guard case .text(let text) = content else { return nil }
-      accumulatedText += text.text
-      return chunkEvent(.agentMessageChunk, channel: .assistant, text: text.text)
-    case .agentThoughtChunk(let content):
-      guard case .text(let text) = content else { return nil }
-      return chunkEvent(.agentThoughtChunk, channel: .thinking, text: text.text)
-    case .toolCall(let toolCall):
-      return chunkEvent(
-        .toolCall,
-        channel: .tool,
-        text: nil,
-        toolCall: GatewayToolCallEventMetadata(
-          toolCallId: toolCall.toolCallId,
-          title: toolCall.title,
-          kind: toolCall.kind,
-          status: toolCall.status
-        )
-      )
-    case .toolCallUpdate(let update):
-      return chunkEvent(
-        .toolCallUpdate,
-        channel: .tool,
-        text: nil,
-        toolCall: GatewayToolCallEventMetadata(
-          toolCallId: update.toolCallId,
-          title: update.title,
-          kind: update.kind,
-          status: update.status
-        )
-      )
-    case .userMessageChunk, .plan, .other:
-      return nil
     }
   }
 
@@ -466,15 +462,8 @@ private final class GatewayACPMessageCollector: @unchecked Sendable {
     )
   }
 
-  func protocolError() -> ACPError? {
-    lock.withLock { error }
-  }
-
-  func terminalTurn() throws -> GatewayACPTurn {
-    try lock.withLock {
-      guard let response else {
-        throw AdapterExecutionError(.invalidOutput, "agent-gateway stream ended without a session/prompt response")
-      }
+  func turn(response: ACPPromptResponse) -> GatewayACPTurn {
+    lock.withLock {
       let meta = response.meta?["agentGateway"]
       let usage = meta?["usage"].map { value in
         AdapterUsage(
@@ -485,7 +474,9 @@ private final class GatewayACPMessageCollector: @unchecked Sendable {
       }
       return GatewayACPTurn(
         stopReason: response.stopReason,
-        text: meta?["resultText"]?.stringValue ?? accumulatedText,
+        // An empty authoritative result falls back to the streamed chunks
+        // rather than reporting no text at all.
+        text: meta?["resultText"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? accumulatedText,
         model: meta?["model"]?.stringValue,
         vendorSessionId: meta?["vendorSessionId"]?.stringValue,
         usage: usage
@@ -623,6 +614,20 @@ private func gatewayVendorArguments(
   return arguments
 }
 
+/// A bare `baseURL` on Codex or Claude Code selects the gateway's implicit
+/// custom provider, whose model name is fixed. `agent-gateway client` applied
+/// this before spawning its agent; hosting the agent in-process keeps it so a
+/// step's reported model stays `custom` rather than the node's empty model.
+private func gatewayResolvedModel(
+  _ model: String,
+  vendor: GatewayVendor,
+  providerName: String?,
+  baseURL: String?
+) -> String {
+  guard baseURL != nil, providerName == nil, [.codex, .claudeCode].contains(vendor) else { return model }
+  return CustomProvider.modelName
+}
+
 private func gatewayVendorModel(_ vendor: GatewayVendor, input: AdapterExecutionInput) -> String {
   guard vendor == .cursor,
         let effort = input.node.effort,
@@ -681,19 +686,25 @@ private func gatewayCursorAPIOptions(
   )
 }
 
-/// The ACP prompt for one turn: the resolved prompt text plus any inline
-/// base64 image parts. File-based images travel as `--image` flags instead
-/// so the gateway client owns file loading and validation.
-private func gatewayPromptBlocks(_ input: AdapterExecutionInput) -> [ACPContentBlock] {
+/// The ACP prompt for one turn: the resolved prompt text, any inline base64
+/// image parts, and any file-backed images. File loading and validation is
+/// the gateway's own `gatewayImageContentBlocks`, the code path
+/// `agent-gateway client --image` uses, so hosting it in-process does not
+/// change how images are read.
+private func gatewayPromptBlocks(_ input: AdapterExecutionInput) throws -> [ACPContentBlock] {
   var blocks: [ACPContentBlock] = [.text(gatewayPrompt(input))]
-  guard case let .array(parts)? = input.mergedVariables["geminiInlineDataParts"] else {
-    return blocks
+  if case let .array(parts)? = input.mergedVariables["geminiInlineDataParts"] {
+    blocks += parts.compactMap { part in
+      guard case let .object(object) = part,
+            case let .string(mimeType)? = object["mimeType"],
+            case let .string(dataBase64)? = object["dataBase64"] else { return nil }
+      return .image(ACPImageContent(data: dataBase64, mimeType: mimeType))
+    }
   }
-  blocks += parts.compactMap { part in
-    guard case let .object(object) = part,
-          case let .string(mimeType)? = object["mimeType"],
-          case let .string(dataBase64)? = object["dataBase64"] else { return nil }
-    return .image(ACPImageContent(data: dataBase64, mimeType: mimeType))
+  do {
+    blocks += try gatewayImageContentBlocks(resolveAdapterImagePaths(input).map { .filePath($0) })
+  } catch let error as GatewayRPCError {
+    throw AdapterExecutionError(.invalidInput, error.message)
   }
   return blocks
 }

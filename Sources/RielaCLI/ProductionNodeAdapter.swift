@@ -13,8 +13,6 @@ func makeProductionNodeAdapter(
 ) -> any NodeAdapter {
   let gatewayFactory: NodeAdapterFactory = {
     AgentGatewayNodeAdapter(
-      executableName: environmentValue("RIELA_AGENT_GATEWAY_EXECUTABLE", environment: environment)
-        ?? "agent-gateway",
       environment: environment,
       codexSupervisorModeEnabled: codexSupervisorModeEnabled
     )

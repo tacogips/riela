@@ -125,10 +125,7 @@ extension RielaApp {
   private func assistantAdapter(for vendor: RielaAppAssistantVendor) throws -> any NodeAdapter {
     if vendor == .automatic { return try assistantAdapter(for: resolvedAssistantVendor(vendor)) }
     let environment = ProcessInfo.processInfo.environment
-    return AgentGatewayNodeAdapter(
-      executableName: environment["RIELA_AGENT_GATEWAY_EXECUTABLE"] ?? "agent-gateway",
-      environment: environment
-    )
+    return AgentGatewayNodeAdapter(environment: environment)
   }
 
   private func assistantInput(

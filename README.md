@@ -74,14 +74,22 @@ compatibility selectors; every one is dispatched through `agent-gateway`.
 Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,
 OpenAI, Anthropic, Gemini, and OpenRouter is supplied by the sibling
 `agent-gateway` package, which speaks the Agent Client Protocol (ACP,
-https://agentclientprotocol.com). Riela drives one `agent-gateway client`
-turn per step: the prompt travels as ACP content blocks on stdin, streaming
-output arrives as `session/update` notifications (`agent_message_chunk`,
-`agent_thought_chunk`, tool call updates) on stdout, and the `session/prompt`
-response carries the final text, usage, and resumable vendor session id in
-`_meta.agentGateway`. stderr stays reserved for diagnostics. Set
-`RIELA_AGENT_GATEWAY_EXECUTABLE` when `agent-gateway` is not available on
-`PATH`.
+https://agentclientprotocol.com). Riela links that package as a **library**
+and hosts its ACP agent inside the `riela` process: the agent and an ACP
+client are connected over an in-memory transport, so no `agent-gateway`
+executable is spawned and none has to be installed. The only child process a
+step creates is the vendor CLI itself (`claude`, `codex`, `cursor-agent`);
+API vendors make HTTP requests from the riela process.
+
+Each step is one ACP prompt turn: the prompt travels as ACP content blocks,
+streaming output arrives as `session/update` notifications
+(`agent_message_chunk`, `agent_thought_chunk`, tool call updates), and the
+`session/prompt` response carries the final text, usage, and resumable vendor
+session id in `_meta.agentGateway`. A step's `agentEnvironment` is applied to
+that turn only — it reaches the vendor process without ever being written into
+riela's own environment, so concurrent steps with different credentials cannot
+collide. A step deadline cancels the ACP turn, which terminates the vendor
+process group.
 
 RielaApp also uses agent-gateway's model catalog when the Assistant settings
 select OpenAI API, Claude API, or Cursor API. The live vendor response replaces

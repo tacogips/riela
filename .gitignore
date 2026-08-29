@@ -105,5 +105,7 @@ examples/document-inbox-notebook/inbox/*
 /.cursor/rules/riela-project-workflow.mdc
 .build-linux/
 
-# QEMU crash dumps from cross-platform container builds
+# Crash dumps from cross-platform container builds (QEMU writes these)
 qemu_*.core
+core
+*.core

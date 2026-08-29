@@ -1,6 +1,6 @@
 {
   "workflowId": "file-markdown-convert",
-  "description": "Convert local documents (pdf, docx, pptx, xlsx, odt, rtf, epub, csv) to Markdown through the external anydoc-swift converter.",
+  "description": "Convert local documents (pdf, docx, pptx, xlsx, odt, rtf, epub, csv) to Markdown through the linked anydoc-swift converter.",
   "defaults": {
     "maxLoopIterations": 3,
     "nodeTimeoutMs": 120000

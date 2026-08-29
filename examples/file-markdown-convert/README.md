@@ -15,26 +15,10 @@ anydoc does not do; they fail with the `unsupported` error kind.
 
 ## Setup
 
-Install or build `anydoc-swift` outside this repository:
-
-```bash
-git clone https://github.com/tacogips/anydoc-swift.git
-cd anydoc-swift
-git submodule update --init --recursive
-task build   # or: scripts/build-native.sh && swift build
-```
-
-The add-on requires `anydoc-swift` 0.1.1 or newer, which is the first version
-with the `--json` result envelope. Older builds fail the step with a policy
-error rather than converting.
-
-If `anydoc-swift` is not on `PATH`, either set `ANYDOC_SWIFT_BIN`:
-
-```bash
-export ANYDOC_SWIFT_BIN=<anydoc-swift-checkout>/.build/debug/anydoc-swift
-```
-
-or add `binaryPath` to the add-on config in `workflow.json`.
+Nothing to install: the converter is the `anydoc-swift` package's `AnydocKit`
+library, linked into `riela` and called in-process. There is no `anydoc-swift`
+executable to put on `PATH`, no `ANYDOC_SWIFT_BIN`, and no `binaryPath`
+add-on config — a leftover `binaryPath` is refused rather than ignored.
 
 ## Run
 
@@ -99,7 +83,6 @@ success.
 
 | Key | Default | Purpose |
 | --- | --- | --- |
-| `binaryPath` | unset | Path to `anydoc-swift`; falls back to `ANYDOC_SWIFT_BIN`, then `PATH` |
 | `format` | unset | Name the input format instead of detecting it (needed for CSV read from a path without a `.csv` extension); accepts the canonical names and extension aliases such as `xlsx`, `docm`, `ppsx` |
 | `continueOnError` | `false` | Record failed documents and keep converting instead of failing the step |
 | `maxDocuments` | `10` | Reject a request with more paths than this (ceiling 50) |

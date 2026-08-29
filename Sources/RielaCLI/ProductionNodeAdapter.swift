@@ -450,7 +450,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       return try executeTimeSignal(input)
     }
     if input.addon.name == FileMarkdownAddon.name {
-      return try executeFileMarkdownConvert(input, context: context)
+      return try await executeFileMarkdownConvert(input, context: context)
     }
     if input.addon.name == "riela/apple-notes-list" {
       return try executeAppleNotesList(input, context: context)

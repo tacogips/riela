@@ -240,8 +240,11 @@ collide.
   `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's own
   role, plus `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`.
 
-The apple-gateway and anydoc-swift add-ons still launch their tools as child
-processes; see the notes in their example READMEs.
+The apple-gateway add-ons still launch `apple-gateway` as a child process: on
+macOS the executable's own bundle identity is what the TCC permission grants
+for Apple Events, Calendars, Reminders, and Contacts are attached to, so
+linking that gateway would move those grants onto `riela` and require every
+user to re-authorize.
 
 ## Session Observability
 
@@ -467,17 +470,19 @@ store instead of an ad-hoc JSON state file, as the shipped digest examples do.
 
 `riela/file-markdown-convert` converts local documents (pdf, doc, docx, ppt,
 pptx, xls/xlsx, odt, ods, odp, rtf, epub, csv) to GitHub-Flavored Markdown
-through the external [`anydoc-swift`](https://github.com/tacogips/anydoc-swift)
-executable, which wraps [firecrawl/anydoc](https://github.com/firecrawl/anydoc).
-The runtime does not vendor the converter: it invokes
-`anydoc-swift convert <path> --json` with separate process arguments and reads
-the result envelope, so a failed document keeps its machine-readable error kind
-(`unsupported`, `malformed`, `encrypted`, `resourceLimit`, `io`, ...) instead of
-a prose message. Version 0.1.1 or newer is required.
+through the [`anydoc-swift`](https://github.com/tacogips/anydoc-swift) package's
+`AnydocKit` library, which wraps
+[firecrawl/anydoc](https://github.com/firecrawl/anydoc). That library is linked
+into `riela` and called in-process — it is the same native converter kaiba's
+document intake already uses — so no `anydoc-swift` executable has to be
+installed. Failures arrive as a typed error kind (`unsupported`, `malformed`,
+`encrypted`, `resourceLimit`, `io`, ...) rather than a prose message.
 
-Executable resolution is `addon.config.binaryPath`, then `ANYDOC_SWIFT_BIN`,
-then `PATH`; document paths come from `addon.inputs.path` / `addon.inputs.paths`
-only. The add-on rejects authored `addon.env`, caps input size, document count,
+`addon.config.binaryPath` and `ANYDOC_SWIFT_BIN` no longer exist; a leftover
+`binaryPath` is refused rather than ignored. Document paths come from
+`addon.inputs.path` / `addon.inputs.paths` only. A step deadline still fails the
+step on time, but the native conversion cannot be interrupted, so at most one
+document's work finishes in the background after that. The add-on rejects authored `addon.env`, caps input size, document count,
 and emitted Markdown size, and can be restricted to `config.allowedRoots`.
 
 ```bash

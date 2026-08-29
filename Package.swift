@@ -61,6 +61,10 @@ let package = Package(
       revision: "c46443a5e8f744244cb9825d3238958a797c4f2b"
     ),
     .package(
+      url: "https://github.com/tacogips/anydoc-swift.git",
+      revision: "d957c08372786b7062553e83fe9c29880fdee7a4"
+    ),
+    .package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
       revision: "cda93cdd770a51f6f9d1bc63b1db555884824606"
     )
@@ -184,6 +188,9 @@ let package = Package(
         .product(name: "GmailGatewayCore", package: "gmail-gateway"),
         .product(name: "GoogleAnalyticsGatewayAdmin", package: "google-analytics-gateway"),
         .product(name: "GoogleDocumentsGatewayCore", package: "google-documents-gateway"),
+        // The document converter is the same native library kaiba already
+        // links, so calling it directly adds no new platform requirement.
+        .product(name: "AnydocKit", package: "anydoc-swift"),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
         "RielaVersion",

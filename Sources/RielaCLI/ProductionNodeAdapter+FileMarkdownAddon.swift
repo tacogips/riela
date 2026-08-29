@@ -1,15 +1,16 @@
+import AnydocKit
 import Foundation
 import RielaAddonSupport
 import RielaCore
 
 /// Built-in worker add-on that converts local documents (pdf, docx, pptx,
-/// xlsx, odt, rtf, epub, csv, ...) to GitHub-Flavored Markdown through the
-/// external `anydoc-swift` executable.
+/// xlsx, odt, rtf, epub, csv, ...) to GitHub-Flavored Markdown.
 ///
-/// The runtime does not vendor the converter: it invokes the executable with
-/// separate process arguments and reads the `--json` result envelope, so the
-/// add-on stays insulated from stdout formatting changes and receives a
-/// machine-readable error kind for failed documents.
+/// The converter is the sibling `anydoc-swift` package's `AnydocKit` library,
+/// called inside this process — the same native library kaiba's document
+/// intake already links, so no `anydoc-swift` executable has to be installed.
+/// Failures arrive as a typed `AnydocError.Kind`, so a failed document keeps
+/// its machine-readable kind instead of a prose message.
 enum FileMarkdownAddon {
   static let name = "riela/file-markdown-convert"
   static let provider = "anydoc-swift"
@@ -30,7 +31,7 @@ extension BuiltinWorkflowAddonResolver {
   func executeFileMarkdownConvert(
     _ input: WorkflowAddonExecutionInput,
     context: AdapterExecutionContext
-  ) throws -> AdapterExecutionOutput {
+  ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(
         .policyBlocked,
@@ -40,6 +41,14 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.env?.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
+    // The converter is linked in, so there is no executable to point at.
+    // Failing loudly beats silently ignoring a build the author chose.
+    guard (input.addon.config ?? [:])["binaryPath"] == nil else {
+      throw AdapterExecutionError(
+        .policyBlocked,
+        "\(input.addon.name) config.binaryPath is not supported; the converter runs in-process, remove it"
+      )
+    }
 
     let config = input.addon.config ?? [:]
     let request = try FileMarkdownConvertRequest(
@@ -48,20 +57,7 @@ extension BuiltinWorkflowAddonResolver {
       environment: environment,
       workingDirectory: workingDirectory
     )
-    let resolvedBinary = try AnydocBinaryResolver(
-      addonName: input.addon.name,
-      config: config,
-      environment: environment
-    ).resolvedBinary()
-    let runner = AppleGatewayProcessRunner(
-      runtimeEnvironment: environment,
-      toolLabel: FileMarkdownAddon.provider
-    )
-    let converterVersion = anydocConverterVersion(
-      runner: runner,
-      executablePath: resolvedBinary.path,
-      deadline: context.deadline
-    )
+    let converterVersion = Anydoc.version
 
     var documents: [JSONObject] = []
     var markdownSections: [String] = []
@@ -73,11 +69,9 @@ extension BuiltinWorkflowAddonResolver {
         documents.append(document.failurePayload(kind: failure.kind, message: failure.message))
       case let .resolved(document):
         do {
-          let converted = try convertDocumentToMarkdown(
+          let converted = try await convertDocumentToMarkdown(
             document,
             addonName: input.addon.name,
-            runner: runner,
-            executablePath: resolvedBinary.path,
             format: request.format,
             maxMarkdownBytes: request.maxMarkdownBytes,
             deadline: context.deadline
@@ -110,9 +104,11 @@ extension BuiltinWorkflowAddonResolver {
         "convertedCount": .integer(Int64(converted)),
         "failedCount": .integer(Int64(failedCount)),
         "markdown": .string(markdown),
+        // The converter is linked in, so there is no resolved binary to
+        // report; the pinned native library version is the useful fact.
         "converter": .object([
-          "path": .string(resolvedBinary.path),
-          "source": .string(resolvedBinary.source.rawValue),
+          "mode": .string("in-process"),
+          "library": .string(FileMarkdownAddon.provider),
           "version": .string(converterVersion)
         ])
       ]),
@@ -140,55 +136,46 @@ extension BuiltinWorkflowAddonResolver {
   private func convertDocumentToMarkdown(
     _ document: FileMarkdownConvertDocument,
     addonName: String,
-    runner: AppleGatewayProcessRunner,
-    executablePath: String,
     format: String?,
     maxMarkdownBytes: Int,
     deadline: Date?
-  ) throws -> (markdown: String, payload: JSONObject) {
-    var arguments = ["convert", document.path, "--json"]
-    if let format {
-      arguments.append(contentsOf: ["--format", format])
+  ) async throws -> (markdown: String, payload: JSONObject) {
+    // `config.format` is validated against the alias set on the way in, so an
+    // unrecognized name here would be a runtime mismatch rather than authoring
+    // error; treat it the way the converter treats an unusable input.
+    let requestedFormat = try format.map { name -> AnydocFormat in
+      guard let resolved = AnydocFormat(fileExtension: name) ?? AnydocFormat(rawValue: name) else {
+        throw FileMarkdownDocumentFailure(
+          kind: AnydocError.Kind.unsupported.rawValue,
+          message: "unsupported format '\(name)'",
+          code: .policyBlocked
+        )
+      }
+      return resolved
     }
-    let output = try runner.run(
-      executablePath: executablePath,
-      arguments: arguments,
-      deadline: deadline,
-      allowNonzeroExit: true
-    )
-    let envelope = try AnydocConvertEnvelope(
-      stdout: output.stdout,
-      stderr: output.stderr,
-      terminationStatus: output.terminationStatus,
-      addonName: addonName
-    )
-    let truncated = truncatedMarkdown(envelope.markdown, maxBytes: maxMarkdownBytes)
+    let path = document.path
+    let conversion: AnydocConversion
+    do {
+      conversion = try await withAnydocDeadline(deadline, addonName: addonName) {
+        try Anydoc.convert(contentsOf: URL(fileURLWithPath: path), format: requestedFormat)
+      }
+    } catch let error as AnydocError {
+      throw FileMarkdownDocumentFailure(
+        kind: error.kind.rawValue,
+        message: appleGatewayCompactText(error.message),
+        code: .providerError
+      )
+    }
+    let truncated = truncatedMarkdown(conversion.markdown, maxBytes: maxMarkdownBytes)
     return (
       truncated.text,
       document.successPayload(
         markdown: truncated.text,
         markdownByteCount: truncated.text.utf8.count,
         truncated: truncated.wasTruncated,
-        format: envelope.format
+        format: conversion.format.rawValue
       )
     )
-  }
-
-  private func anydocConverterVersion(
-    runner: AppleGatewayProcessRunner,
-    executablePath: String,
-    deadline: Date?
-  ) -> String {
-    guard let output = try? runner.run(
-      executablePath: executablePath,
-      arguments: ["--version"],
-      deadline: deadline,
-      allowNonzeroExit: true
-    ) else {
-      return ""
-    }
-    let firstLine = output.stdout.split(separator: "\n", omittingEmptySubsequences: false).first ?? ""
-    return appleGatewayCompactText(String(firstLine).trimmingCharacters(in: .whitespacesAndNewlines), maxLength: 120)
   }
 
   private func truncatedMarkdown(_ markdown: String, maxBytes: Int) -> (text: String, wasTruncated: Bool) {
@@ -468,7 +455,10 @@ struct FileMarkdownConvertRequest {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) config.format must be a non-empty string")
     }
     let normalized = format.lowercased()
-    guard AnydocConvertEnvelope.knownFormats.contains(normalized) else {
+    // The converter's own extension aliases (`xlsx` -> `excel`,
+    // `docm` -> `docx`, ...) decide what is supported, so the add-on has no
+    // second list to keep in sync.
+    guard AnydocFormat(fileExtension: normalized) != nil || AnydocFormat(rawValue: normalized) != nil else {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) config.format '\(format)' is not supported")
     }
     return normalized
@@ -559,129 +549,36 @@ struct FileMarkdownDocumentFailure: Error {
 }
 
 /// `anydoc-swift convert <path> --json` result envelope.
-struct AnydocConvertEnvelope {
-  /// Format names the converter accepts: the canonical set plus the extension
-  /// aliases that resolve onto it (`xlsx` -> `excel`, `docm` -> `docx`, ...).
-  static let knownFormats: Set<String> = [
-    "doc", "docx", "docm", "odt", "pdf", "ppt", "pps", "pot", "pptx", "pptm",
-    "ppsx", "ppsm", "rtf", "epub", "excel", "xls", "xlsx", "xlsm", "xlsb",
-    "ods", "odp", "csv"
-  ]
 
-  var markdown: String
-  var format: String
-
-  init(stdout: String, stderr: String, terminationStatus: Int32, addonName: String) throws {
-    guard let bytes = stdout.data(using: .utf8), !bytes.isEmpty else {
-      throw AnydocConvertEnvelope.processError(
-        stderr: stderr,
-        stdout: stdout,
-        terminationStatus: terminationStatus,
-        addonName: addonName
-      )
-    }
-    let decoded: JSONValue
-    do {
-      decoded = try JSONDecoder().decode(JSONValue.self, from: bytes)
-    } catch {
-      throw AnydocConvertEnvelope.processError(
-        stderr: stderr,
-        stdout: stdout,
-        terminationStatus: terminationStatus,
-        addonName: addonName
-      )
-    }
-    guard case let .object(envelope) = decoded else {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) stdout must be a JSON object")
-    }
-    if nonEmptyString(envelope["status"]) == "error" {
-      let error = objectValue(envelope["error"]) ?? [:]
-      throw FileMarkdownDocumentFailure(
-        kind: nonEmptyString(error["kind"]) ?? "unknown",
-        message: appleGatewayCompactText(nonEmptyString(error["message"]) ?? "conversion failed"),
-        code: .providerError
-      )
-    }
-    guard terminationStatus == 0 else {
-      throw AnydocConvertEnvelope.processError(
-        stderr: stderr,
-        stdout: stdout,
-        terminationStatus: terminationStatus,
-        addonName: addonName
-      )
-    }
-    guard case let .string(markdown)? = envelope["markdown"] else {
-      throw AdapterExecutionError(.invalidOutput, "\(addonName) result is missing 'markdown'")
-    }
-    self.markdown = markdown
-    self.format = nonEmptyString(envelope["format"]) ?? ""
+/// Applies the step deadline to one native conversion.
+///
+/// The converter is a synchronous FFI call, so unlike the old child process it
+/// cannot be killed: when the deadline wins, the step fails on time and the
+/// worker thread finishes the document it already started before going away.
+/// A workflow therefore still sees its timeout, and at most one document's
+/// work outlives it.
+private func withAnydocDeadline(
+  _ deadline: Date?,
+  addonName: String,
+  operation: @escaping @Sendable () throws -> AnydocConversion
+) async throws -> AnydocConversion {
+  guard let deadline else {
+    return try operation()
   }
-
-  private static func processError(
-    stderr: String,
-    stdout: String,
-    terminationStatus: Int32,
-    addonName: String
-  ) -> AdapterExecutionError {
-    guard terminationStatus != 0 else {
-      return AdapterExecutionError(.invalidOutput, "\(addonName) stdout was not a valid JSON result envelope")
-    }
-    let detail = appleGatewayCompactText(stderr.isEmpty ? stdout : stderr)
-    // Exit code 2 is the converter's usage error: the add-on built an
-    // invocation the installed executable does not accept.
-    let code: AdapterExecutionErrorCode = terminationStatus == 2 ? .policyBlocked : .providerError
-    let hint = terminationStatus == 2
-      ? " (anydoc-swift 0.1.1 or newer is required for --json)"
-      : ""
-    return AdapterExecutionError(
-      code,
-      "\(addonName) failed with exit code \(terminationStatus)\(hint): \(detail)"
-    )
+  let remaining = deadline.timeIntervalSinceNow
+  guard remaining > 0 else {
+    throw AdapterExecutionError(.timeout, "\(addonName) exceeded deadline before conversion started")
   }
-}
-
-struct AnydocResolvedBinary {
-  var path: String
-  var source: AppleGatewayBinarySource
-}
-
-/// Resolves the `anydoc-swift` executable from `config.binaryPath`, then
-/// `ANYDOC_SWIFT_BIN`, then `PATH`. Never from node payload variables.
-struct AnydocBinaryResolver {
-  private static let executableName = "anydoc-swift"
-  private static let executableEnvironmentName = "ANYDOC_SWIFT_BIN"
-
-  var addonName: String
-  var config: JSONObject
-  var environment: [String: String]
-
-  func resolvedBinary() throws -> AnydocResolvedBinary {
-    let searchPath = executableSearchPath(environment: environment)
-    if let configured = nonEmptyString(config["binaryPath"])?
-      .trimmingCharacters(in: .whitespacesAndNewlines), !configured.isEmpty {
-      guard let path = resolveExecutable(configured, searchPath: searchPath) else {
-        throw AdapterExecutionError(
-          .policyBlocked,
-          "\(addonName) config.binaryPath is not executable: \(configured)"
-        )
-      }
-      return AnydocResolvedBinary(path: path, source: .config)
+  return try await withThrowingTaskGroup(of: AnydocConversion.self) { group in
+    group.addTask { try operation() }
+    group.addTask {
+      try await Task.sleep(for: .seconds(remaining))
+      throw AdapterExecutionError(.timeout, "\(addonName) exceeded deadline while converting")
     }
-    if let envPath = environmentValue(Self.executableEnvironmentName, environment: environment) {
-      guard let path = resolveExecutable(envPath, searchPath: searchPath) else {
-        throw AdapterExecutionError(
-          .policyBlocked,
-          "\(Self.executableEnvironmentName) is not executable: \(envPath)"
-        )
-      }
-      return AnydocResolvedBinary(path: path, source: .environment)
+    defer { group.cancelAll() }
+    guard let first = try await group.next() else {
+      throw AdapterExecutionError(.invalidOutput, "\(addonName) produced no conversion result")
     }
-    if let path = resolveExecutable(Self.executableName, searchPath: searchPath) {
-      return AnydocResolvedBinary(path: path, source: .path)
-    }
-    throw AdapterExecutionError(
-      .policyBlocked,
-      "\(addonName) requires \(Self.executableName); set config.binaryPath, \(Self.executableEnvironmentName), or PATH"
-    )
+    return first
   }
 }

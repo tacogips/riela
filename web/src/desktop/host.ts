@@ -9,6 +9,11 @@
  *
  * Nothing outside this file (and `web/src/index.tsx`, which installs it) knows
  * that a desktop shell exists.
+ *
+ * Cancellation is honoured at this boundary only: aborting rejects the caller
+ * with the same `AbortError` a browser `fetch` produces, but the Rust request
+ * already in flight is not cancelled and runs to completion (bounded by the
+ * host's own 30s request timeout). Its response is discarded.
  */
 import { setHostTransport, type HostTransport } from '../transport'
 
@@ -116,20 +121,47 @@ function toHostError(error: unknown): DesktopHostError {
   return new DesktopHostError('request_failed', String(error))
 }
 
+function abortError(signal: AbortSignal): unknown {
+  // `signal.reason` is what a browser fetch rejects with; the DOMException
+  // fallback keeps `polling.ts`'s AbortError check working everywhere.
+  return signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+}
+
+/**
+ * Rejects as soon as `signal` aborts, mirroring `fetch`. An already-aborted
+ * signal short-circuits before `start` runs, so no host request is issued; once
+ * started, the host request keeps running — see the module header.
+ */
+function withAbort<T>(start: () => Promise<T>, signal: AbortSignal | null | undefined): Promise<T> {
+  if (!signal) return start()
+  if (signal.aborted) return Promise.reject(abortError(signal))
+  const pending = start()
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError(signal))
+    signal.addEventListener('abort', onAbort, { once: true })
+    pending.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
 export function createDesktopTransport(invoke: DesktopInvoke): HostTransport {
   return async (input, init) => {
     const request = toDesktopFetchRequest(input, init)
+    const signal = init?.signal
+    const send = () =>
+      withAbort(() => invoke<DesktopFetchResponse>('riela_fetch', { request }), signal)
     try {
-      return fromDesktopFetchResponse(await invoke<DesktopFetchResponse>('riela_fetch', { request }))
+      return fromDesktopFetchResponse(await send())
     } catch (error) {
+      if (signal?.aborted) throw error
       const hostError = toHostError(error)
       if (hostError.code !== 'server_unavailable') throw hostError
       // The server may still be starting (or was restarted underneath us);
       // re-run discovery once and retry exactly one more time.
-      await invoke<DesktopServerStatus>('riela_server_retry')
+      await withAbort(() => invoke<DesktopServerStatus>('riela_server_retry'), signal)
       try {
-        return fromDesktopFetchResponse(await invoke<DesktopFetchResponse>('riela_fetch', { request }))
+        return fromDesktopFetchResponse(await send())
       } catch (retryError) {
+        if (signal?.aborted) throw retryError
         throw toHostError(retryError)
       }
     }

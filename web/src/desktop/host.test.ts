@@ -188,6 +188,76 @@ describe('createDesktopTransport', () => {
     expect(calls.map((call) => call.command)).toEqual(['riela_fetch'])
   })
 
+  test('rejects with AbortError when the signal is already aborted, without invoking', async () => {
+    const { invoke, calls } = fakeInvoke({ riela_fetch: () => okResponse() })
+    const controller = new AbortController()
+    controller.abort()
+
+    const rejection = await createDesktopTransport(invoke)('/api/v1/bootstrap', {
+      signal: controller.signal,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    expect((rejection as DOMException).name).toBe('AbortError')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('rejects with AbortError when the signal aborts mid-flight', async () => {
+    const controller = new AbortController()
+    const { invoke } = fakeInvoke({
+      riela_fetch: () => new Promise<DesktopFetchResponse>(() => {}),
+    })
+
+    const pending = createDesktopTransport(invoke)('/api/v1/instances', {
+      signal: controller.signal,
+    })
+    controller.abort()
+
+    const rejection = await pending.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    // polling.ts suppresses exactly this shape, so a cancelled poll must not
+    // surface as an error banner.
+    expect(rejection).toBeInstanceOf(DOMException)
+    expect((rejection as DOMException).name).toBe('AbortError')
+  })
+
+  test('an abort is never rewritten into a host error or retried', async () => {
+    const controller = new AbortController()
+    const { invoke, calls } = fakeInvoke({
+      riela_fetch: () => new Promise<DesktopFetchResponse>(() => {}),
+      riela_server_retry: () => ({ state: 'connected' }),
+    })
+
+    const pending = createDesktopTransport(invoke)('/api/v1/instances', {
+      signal: controller.signal,
+    })
+    controller.abort()
+    const rejection = await pending.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+
+    expect(rejection).not.toBeInstanceOf(DesktopHostError)
+    expect(calls.map((call) => call.command)).toEqual(['riela_fetch'])
+  })
+
+  test('a signal that never aborts does not disturb a normal request', async () => {
+    const { invoke } = fakeInvoke({ riela_fetch: () => okResponse('{"ok":true}') })
+    const controller = new AbortController()
+
+    const response = await createDesktopTransport(invoke)('/api/v1/bootstrap', {
+      signal: controller.signal,
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+  })
+
   test('rejects invalid requests before reaching the host', async () => {
     const { invoke, calls } = fakeInvoke({ riela_fetch: () => okResponse() })
 

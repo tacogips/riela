@@ -67,7 +67,6 @@ pub fn run() {
         .manage(AppState::new(lifecycle))
         .invoke_handler(tauri::generate_handler![
             commands::riela_fetch,
-            commands::riela_server_status,
             commands::riela_server_retry
         ])
         .setup(move |_app| {
@@ -80,10 +79,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build Riela Dashboard")
         .run(move |_handle, event| {
-            if matches!(
-                event,
-                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
-            ) {
+            // `Exit` only, not `ExitRequested`: the latter fires before exit is
+            // committed and can be prevented, which would kill the managed
+            // `riela serve` while the app keeps running.
+            if matches!(event, tauri::RunEvent::Exit) {
                 // Only a server this process started is terminated.
                 shutdown_lifecycle.shutdown();
             }

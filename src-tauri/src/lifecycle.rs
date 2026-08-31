@@ -10,6 +10,7 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::process::Child;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -165,6 +166,13 @@ pub struct ServerLifecycle {
     spawner: Arc<dyn Spawner>,
     state: Mutex<ServerState>,
     child: Mutex<Option<Child>>,
+    /// Serialises `discover()`. Tauri runs commands concurrently and every
+    /// in-flight `riela_fetch` that fails triggers its own `riela_server_retry`,
+    /// so without this several callers would probe and spawn at the same time.
+    discovery: tokio::sync::Mutex<()>,
+    /// Incremented once per completed discovery run so callers that queued
+    /// behind an in-flight run can tell it apart from a stale result.
+    discovery_generation: AtomicU64,
     notify: Notify,
 }
 
@@ -186,6 +194,8 @@ impl ServerLifecycle {
             spawner,
             state: Mutex::new(initial),
             child: Mutex::new(None),
+            discovery: tokio::sync::Mutex::new(()),
+            discovery_generation: AtomicU64::new(0),
             notify: Notify::new(),
         })
     }
@@ -248,10 +258,31 @@ impl ServerLifecycle {
     }
 
     /// Runs the full discovery state machine. Idempotent while connected.
+    ///
+    /// Concurrent callers are serialised and collapsed. The SPA runs several
+    /// independent polling resources, so one endpoint failure produces a burst
+    /// of `riela_server_retry` calls; they must share a single discovery rather
+    /// than each probing and spawning a server of their own.
     pub async fn discover(self: &Arc<Self>) {
         if matches!(self.current_state(), ServerState::Connected(_)) {
             return;
         }
+        let observed = self.discovery_generation.load(Ordering::SeqCst);
+        let _discovery = self.discovery.lock().await;
+        if matches!(self.current_state(), ServerState::Connected(_)) {
+            return;
+        }
+        // A discovery that overlapped this request has already run to
+        // completion; its outcome — success or failure — is this caller's
+        // answer too. A later retry still starts a fresh run.
+        if self.discovery_generation.load(Ordering::SeqCst) != observed {
+            return;
+        }
+        self.run_discovery().await;
+        self.discovery_generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    async fn run_discovery(self: &Arc<Self>) {
         if let Some(detail) = &self.config.configuration_error {
             self.set_state(ServerState::Failed {
                 detail: detail.clone(),
@@ -348,6 +379,13 @@ impl ServerLifecycle {
             });
             return;
         };
+
+        // A previous managed server may still be alive — e.g. it wedged, a
+        // request timed out, `mark_unreachable` demoted it, and the retry
+        // brought us back here. Overwriting its handle would orphan it
+        // (`std::process::Child` does not kill or reap on drop) and leave it
+        // holding the port forever, so it is terminated and reaped first.
+        self.terminate_managed_child();
 
         let child = match self.spawner.spawn(&binary, self.config.serve_port) {
             Ok(child) => child,
@@ -958,6 +996,140 @@ mod tests {
 
         // The child was reaped, so no zombie is left behind holding the pid.
         assert!(pid > 0);
+    }
+
+    /// True while the process still exists (signal 0 probes without delivering).
+    #[cfg(unix)]
+    fn process_is_alive(pid: u32) -> bool {
+        // SAFETY: `kill` with signal 0 only performs an existence/permission
+        // check and delivers nothing.
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn respawning_terminates_the_previous_managed_child_instead_of_orphaning_it() {
+        // healthz: unreachable -> spawn A; ok -> A connected; unreachable after
+        // mark_unreachable -> respawn; ok -> B connected.
+        let prober = FakeProber::new(&[(
+            "http://127.0.0.1:8787/healthz",
+            vec![
+                ProbeResult::Unreachable,
+                healthz_ok(),
+                ProbeResult::Unreachable,
+                healthz_ok(),
+            ],
+        )]);
+        let spawner = FakeSpawner::sleeping();
+        let lifecycle = ServerLifecycle::new(config_with_binary(), prober, spawner.clone());
+
+        lifecycle.discover().await;
+        let first_pid = lifecycle
+            .child
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|child| child.id())
+            .expect("a managed child after the first discovery");
+        assert!(process_is_alive(first_pid));
+
+        lifecycle.mark_unreachable("connection refused".to_string());
+        lifecycle.discover().await;
+
+        assert_eq!(spawner.calls(), 2);
+        assert!(
+            !process_is_alive(first_pid),
+            "the first managed server was orphaned instead of terminated"
+        );
+
+        let second_pid = lifecycle
+            .child
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|child| child.id())
+            .expect("exactly one tracked child after the second discovery");
+        assert_ne!(second_pid, first_pid);
+        assert!(process_is_alive(second_pid));
+        assert_eq!(
+            lifecycle.current_state(),
+            ServerState::Connected(Endpoint::new(8787, EndpointKind::CliServe, true))
+        );
+
+        lifecycle.shutdown();
+        assert!(lifecycle.child.lock().unwrap().is_none());
+        assert!(!process_is_alive(second_pid));
+    }
+
+    #[tokio::test]
+    async fn concurrent_discoveries_collapse_into_a_single_spawn() {
+        // Nothing ever answers, so each unguarded caller would spawn its own
+        // server and only the last handle would be tracked.
+        let prober = FakeProber::new(&[(
+            "http://127.0.0.1:8787/healthz",
+            vec![ProbeResult::Unreachable],
+        )]);
+        let spawner = FakeSpawner::sleeping();
+        let config = LifecycleConfig {
+            startup_timeout: Duration::from_millis(60),
+            poll_interval: Duration::from_millis(10),
+            ..config_with_binary()
+        };
+        let lifecycle = ServerLifecycle::new(config, prober, spawner.clone());
+
+        let (first, second, third) = tokio::join!(
+            {
+                let lifecycle = lifecycle.clone();
+                async move { lifecycle.discover().await }
+            },
+            {
+                let lifecycle = lifecycle.clone();
+                async move { lifecycle.discover().await }
+            },
+            {
+                let lifecycle = lifecycle.clone();
+                async move { lifecycle.discover().await }
+            },
+        );
+        let _ = (first, second, third);
+
+        assert_eq!(
+            spawner.calls(),
+            1,
+            "concurrent retries must share one discovery"
+        );
+        assert!(lifecycle.child.lock().unwrap().is_none());
+        assert!(matches!(
+            lifecycle.current_state(),
+            ServerState::Failed { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_retry_after_a_completed_discovery_still_runs_a_fresh_one() {
+        let prober = FakeProber::new(&[(
+            "http://127.0.0.1:8787/healthz",
+            vec![ProbeResult::Unreachable],
+        )]);
+        let spawner = FakeSpawner::sleeping();
+        let config = LifecycleConfig {
+            startup_timeout: Duration::from_millis(40),
+            poll_interval: Duration::from_millis(10),
+            ..config_with_binary()
+        };
+        let lifecycle = ServerLifecycle::new(config, prober, spawner.clone());
+
+        lifecycle.discover().await;
+        assert!(matches!(
+            lifecycle.current_state(),
+            ServerState::Failed { .. }
+        ));
+
+        // Sequential, so the collapse guard must not suppress this attempt.
+        lifecycle.discover().await;
+        assert_eq!(spawner.calls(), 2);
+
+        lifecycle.shutdown();
     }
 
     #[tokio::test]

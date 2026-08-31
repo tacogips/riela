@@ -184,9 +184,10 @@ Until a server answers, the window shows the dashboard's normal
 Two environment variables override discovery:
 
 - `RIELA_DESKTOP_SERVER_URL` — pin a single loopback origin, e.g.
-  `http://127.0.0.1:19091`. Only `127.0.0.1`, `localhost` and `[::1]` over plain
-  HTTP with an explicit port are accepted, and no server is ever started when
-  this is set.
+  `http://127.0.0.1:19091`. Only `127.0.0.1` and `localhost` over plain HTTP with
+  an explicit port are accepted; `localhost` is normalised to `127.0.0.1` because
+  RielaApp's guard requires `Host: 127.0.0.1:<port>`, and `[::1]` is rejected for
+  the same reason. No server is ever started when this is set.
 - `RIELA_DESKTOP_RIELA_BIN` — the `riela` binary to start. Otherwise the app
   searches `PATH`, then `.build/release/riela`, `.build/debug/riela`,
   `/opt/homebrew/bin/riela` and `/usr/local/bin/riela`.

@@ -179,13 +179,6 @@ pub async fn riela_fetch(
 }
 
 #[tauri::command]
-pub async fn riela_server_status(
-    state: tauri::State<'_, AppState>,
-) -> Result<ServerStatus, CommandError> {
-    Ok(snapshot(&state.lifecycle))
-}
-
-#[tauri::command]
 pub async fn riela_server_retry(
     state: tauri::State<'_, AppState>,
 ) -> Result<ServerStatus, CommandError> {

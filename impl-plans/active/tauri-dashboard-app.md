@@ -708,3 +708,33 @@ T12 checkpoint the plan itself anticipated; none changes the design.
   released; an external SIGTERM does the same via the new signal handler.
 - **(c) no binary** — `RIELA_DESKTOP_RIELA_BIN=/nonexistent PATH=/usr/bin:/bin` produced the
   dashboard's "Could not connect" panel with the actionable message and a Try again button.
+
+## 11. Independent Review Response (round 1)
+
+`opus-review` returned `changes_requested` with seven findings. All seven are addressed.
+
+| ID | Severity | Resolution |
+| -- | -------- | ---------- |
+| R1 | medium | `spawn_and_wait` now calls `terminate_managed_child()` before spawning, so a still-live managed `riela serve` can never be dropped and orphaned holding port 8787. Covered by `respawning_terminates_the_previous_managed_child_instead_of_orphaning_it`, which drives spawn -> Connected -> `mark_unreachable` -> re-discover and asserts (via `kill(pid, 0)`) that the first process is dead, that exactly one live child is tracked, and that its pid differs. |
+| R2 | medium | `discover()` is serialised by a `tokio::sync::Mutex` **and** collapsed by a `discovery_generation` counter: a caller that queued behind an in-flight run adopts that run's outcome instead of starting its own. The generation is what makes the collapse hold when discovery *fails* — a plain re-check of `Connected` would still let every queued caller spawn. Covered by `concurrent_discoveries_collapse_into_a_single_spawn` (three `tokio::join!`ed callers, both ports unreachable, asserts `spawner.calls() == 1`) and `a_retry_after_a_completed_discovery_still_runs_a_fresh_one` (sequential retries are *not* suppressed). |
+| R3 | low | The run-event match is narrowed to `RunEvent::Exit`, with a comment explaining why `ExitRequested` must not trigger shutdown. Re-verified live: quitting through the app's own Quit menu item still terminates the app and its managed child and releases the port. |
+| R4 | low | Implemented rather than only documented. `createDesktopTransport` honours `init.signal`: an already-aborted signal rejects before any `riela_fetch` is issued, and an abort in flight rejects with the same `AbortError` shape `web/src/polling.ts` suppresses. An abort is never rewritten into a `DesktopHostError` and never triggers the retry. The module header states the remaining limitation — the Rust-side request is not cancelled and runs to its 30s timeout with its response discarded. Four new tests. |
+| R5 | low | `accept-encoding` added to the dropped-header list (reqwest is built without a decompression feature), with the reason in a comment and coverage in `keeps_riela_headers_and_drops_webview_context`. |
+| R6 | low | `http://[::1]:<port>` is now rejected with a specific message instead of being silently rewritten to the IPv4 loopback. `localhost` is still normalised to `127.0.0.1` — that is required, since RielaApp's guard demands `Host: 127.0.0.1:<port>` — and the README now says so. New test `rejects_the_ipv6_loopback_with_an_actionable_message`. |
+| R7 | low | The unused `riela_server_status` command and its handler registration are removed. `DesktopServerStatus` stays: it is the return type of the `riela_server_retry` invoke. |
+
+### Post-fix gates
+
+| Gate | Result |
+| ---- | ------ |
+| `mise run desktop:lint` | exit 0 (fmt --check, clippy `-D warnings`, cargo check) |
+| `mise run desktop:test` | 38 pass / 0 fail (was 34; +4 regression tests) |
+| `bun run lint` / `typecheck` | pass; "Production source audit passed" |
+| `bun test src` | 93 pass / 0 fail (was 89; +4 abort tests) |
+| `bun run build` | `dist/index.html` + `dist/assets/` unchanged in shape |
+| `bun run test:e2e` | 20/20 pass (1.7m) — re-run because `web/src` changed |
+| `mise run desktop:build -- --debug` | `target/debug/riela-dashboard` built |
+| Desktop live | one spawned child (not several); Quit menu -> app and child gone, port released; SIGTERM -> same; missing binary -> nothing spawned, app exits cleanly |
+
+`swift build` was not re-run: `git diff` over `Sources/`, `Packages/`, `scripts/`, `.github/`
+and `Package.swift` is still empty, so no Swift-visible input changed since the green run.

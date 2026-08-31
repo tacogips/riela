@@ -80,7 +80,16 @@ pub fn parse_loopback_origin(raw: &str) -> Result<u16, EndpointError> {
         }
     };
 
-    if !matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1") {
+    // Only hosts that are correct to reach as 127.0.0.1: `Endpoint` always
+    // rebuilds the origin that way, because RielaApp's guard requires
+    // `Host: 127.0.0.1:<port>`. `[::1]` would silently be redirected to a
+    // different interface, so it is rejected rather than quietly rewritten.
+    if host == "::1" {
+        return Err(EndpointError::InvalidOrigin(format!(
+            "\"{raw}\" names the IPv6 loopback; Riela's servers are reached as http://127.0.0.1:<port>"
+        )));
+    }
+    if !matches!(host.as_str(), "127.0.0.1" | "localhost") {
         return Err(invalid());
     }
     let port = port.ok_or_else(|| {
@@ -136,6 +145,9 @@ fn is_dropped_header(name: &str) -> bool {
         "host",
         "origin",
         "referer",
+        // reqwest is built without any decompression feature, so a negotiated
+        // encoding would reach `response.text()` as undecodable bytes.
+        "accept-encoding",
         "cookie",
         "set-cookie",
         "connection",
@@ -250,10 +262,23 @@ mod tests {
             parse_loopback_origin("http://localhost:19091").unwrap(),
             19091
         );
-        assert_eq!(parse_loopback_origin("http://[::1]:4000").unwrap(), 4000);
         assert_eq!(
             parse_loopback_origin("  http://127.0.0.1:8787/  ").unwrap(),
             8787
+        );
+    }
+
+    #[test]
+    fn rejects_the_ipv6_loopback_with_an_actionable_message() {
+        // The origin is always rebuilt as 127.0.0.1, so accepting [::1] would
+        // silently probe a different interface than the one configured.
+        let error = parse_loopback_origin("http://[::1]:9000").unwrap_err();
+        assert_eq!(
+            error,
+            EndpointError::InvalidOrigin(
+                "\"http://[::1]:9000\" names the IPv6 loopback; Riela's servers are reached as http://127.0.0.1:<port>"
+                    .to_string()
+            )
         );
     }
 
@@ -268,6 +293,7 @@ mod tests {
             "http://localhost",
             "http://127.0.0.1:0",
             "http://127.0.0.1:99999",
+            "http://[::1]:4000",
             "127.0.0.1:8787",
             "",
         ] {
@@ -326,6 +352,7 @@ mod tests {
             header("Origin", "tauri://localhost"),
             header("Cookie", "session=1"),
             header("Sec-Fetch-Mode", "cors"),
+            header("Accept-Encoding", "gzip, deflate"),
             header("Referer", "tauri://localhost/"),
             header("Connection", "keep-alive"),
             header("Content-Length", "42"),

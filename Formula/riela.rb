@@ -21,10 +21,12 @@ class Riela < Formula
 
   def install
     bin.install "bin/riela"
+    pkgshare.install "share/riela/web"
   end
 
   test do
     assert_match "Usage:", shell_output("#{bin}/riela --help")
+    assert_path_exists pkgshare/"web/index.html"
     (testpath/"addon-smoke").mkpath
     (testpath/"addon-smoke/workflow.json").write <<~JSON
       {

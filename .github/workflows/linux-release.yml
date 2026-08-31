@@ -51,6 +51,24 @@ jobs:
           fi
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+
+      # The swift release container has no bun, so the dashboard bundle is built on
+      # the host and the archive builder is told to reuse it.
+      - name: Build dashboard web assets
+        run: |
+          set -euo pipefail
+          cd web
+          bun install --frozen-lockfile
+          bun run lint
+          bun run typecheck
+          bun run test
+          bun run build
+          test -s dist/index.html
+
       - name: Build Linux x64 CLI archive
         env:
           SWIFT_IMAGE: swift@sha256:4c6af6663ed2316002a3b38ff5505a1fc1f2749ec31e84936c32dd336713c569
@@ -58,6 +76,7 @@ jobs:
           set -euo pipefail
           docker run --rm \
             --platform linux/amd64 \
+            -e RIELA_WEB_ASSETS_PREBUILT=1 \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             "$SWIFT_IMAGE" \
@@ -79,6 +98,7 @@ jobs:
           test -f "$checksum"
           (cd dist/homebrew && sha256sum -c "riela-$RELEASE_VERSION-linux-x64.tar.gz.sha256")
           tar -tzf "$archive" | grep -Fx './bin/riela'
+          tar -tzf "$archive" | grep -Fx './share/riela/web/index.html'
           "dist/homebrew/work/riela-$RELEASE_VERSION-linux-x64/bin/riela" --version | grep -Fx "$RELEASE_VERSION"
 
       - name: Smoke test archive on clean Ubuntu
@@ -99,6 +119,7 @@ jobs:
               mkdir -p /tmp/riela-install
               tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz" -C /tmp/riela-install
               install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela
+              test -s /tmp/riela-install/share/riela/web/index.html
               riela --version | grep -Fx "$RELEASE_VERSION"
             '
 

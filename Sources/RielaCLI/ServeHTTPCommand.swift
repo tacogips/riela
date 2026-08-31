@@ -5,6 +5,9 @@ import RielaServer
 struct ServeHTTPCommand: Sendable {
   typealias ReadyHandler = @Sendable (String) -> Void
 
+  /// Discovery seam for the default web root; production uses `RielaWebAssetLocator`.
+  var locateWebAssets: @Sendable () -> URL? = { RielaWebAssetLocator.locate() }
+
   static func isLongRunningInvocation(_ arguments: [String]) -> Bool {
     guard case let .scoped(command) = try? RielaArgumentParser().parse(arguments) else {
       return false
@@ -35,7 +38,7 @@ struct ServeHTTPCommand: Sendable {
   ) async throws -> CLICommandResult {
     let host = parsed.host ?? "127.0.0.1"
     let requestedPort = parsed.port ?? 8787
-    let webRoot = try resolvedServeWebRoot(parsed: parsed)
+    let webRoot = try resolvedServeWebRoot(parsed: parsed, locateDefault: locateWebAssets)
     let configuration = RielaServerConfiguration(
       host: host,
       port: requestedPort,
@@ -46,8 +49,8 @@ struct ServeHTTPCommand: Sendable {
       context: serveRequestContext(parsed: parsed)
     )
     let routeHandler: any RielaHTTPRouteHandling
-    if let webRoot {
-      routeHandler = RielaStaticSPAHTTPRouter(service: adapter, webRoot: webRoot)
+    if let root = webRoot.root {
+      routeHandler = RielaStaticSPAHTTPRouter(service: adapter, webRoot: root)
     } else {
       routeHandler = adapter
     }
@@ -59,7 +62,7 @@ struct ServeHTTPCommand: Sendable {
       command: nil,
       target: nil,
       status: "running",
-      records: readyRecords(
+      records: Self.readyRecords(
         endpoint: endpoint,
         webRoot: webRoot
       )
@@ -93,23 +96,76 @@ struct ServeHTTPCommand: Sendable {
     return inProcessListener
   }
 
-  private func readyRecords(
+  static func readyRecords(
     endpoint: String,
-    webRoot: URL?
+    webRoot: ServeWebRootResolution
   ) -> [String] {
     var records = ["endpoint=\(endpoint)"]
-    if let webRoot {
-      records.append("webRoot=\(webRoot.path)")
+    if let root = webRoot.root {
+      records.append("webRoot=\(root.path)")
+      records.append("webRootSource=\(webRoot.source?.rawValue ?? ServeWebRootSource.located.rawValue)")
+    } else {
+      records.append("webRoot=none")
+      records.append("webAssets=\(webRoot.diagnostic ?? ServeWebRootResolution.missingAssetsDiagnostic)")
     }
     return records
   }
 }
 
-func resolvedServeWebRoot(parsed: ParsedParityOptions) throws -> URL? {
-  guard let raw = parsed.webRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-        !raw.isEmpty else {
-    return nil
+/// Where the effective `serve` web root came from.
+enum ServeWebRootSource: String, Sendable {
+  case explicit = "--web-root"
+  case located = "auto"
+}
+
+/// The outcome of resolving the `serve` web root. A `nil` root means API-only mode, which is
+/// never an error: `diagnostic` then explains why no dashboard is being served.
+struct ServeWebRootResolution: Equatable, Sendable {
+  var root: URL?
+  var source: ServeWebRootSource?
+  var diagnostic: String?
+
+  static let apiOnlyAdvice =
+    "serving the API only. Build the dashboard with 'cd web && bun run build' or pass --web-root <dir>"
+  static let missingAssetsDiagnostic = "missing; \(apiOnlyAdvice)"
+  static let unavailable = ServeWebRootResolution(
+    root: nil,
+    source: nil,
+    diagnostic: missingAssetsDiagnostic
+  )
+
+  static func rejected(_ url: URL) -> ServeWebRootResolution {
+    ServeWebRootResolution(
+      root: nil,
+      source: nil,
+      diagnostic: "rejected \(url.path); \(apiOnlyAdvice)"
+    )
   }
+}
+
+/// Resolves the web root for `riela serve`.
+///
+/// An explicit `--web-root` always wins and still fails the command with the existing
+/// `CLIUsageError` when it does not name a readable directory containing `index.html`.
+/// Without it the located default is validated the same way but never throws: a missing or
+/// unusable directory downgrades to API-only mode with a diagnostic.
+func resolvedServeWebRoot(
+  parsed: ParsedParityOptions,
+  locateDefault: () -> URL? = { RielaWebAssetLocator.locate() }
+) throws -> ServeWebRootResolution {
+  if let raw = parsed.webRoot?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+    return ServeWebRootResolution(root: try validatedServeWebRoot(raw), source: .explicit)
+  }
+  guard let located = locateDefault() else {
+    return .unavailable
+  }
+  guard let root = try? validatedServeWebRoot(located.path) else {
+    return .rejected(located)
+  }
+  return ServeWebRootResolution(root: root, source: .located)
+}
+
+private func validatedServeWebRoot(_ raw: String) throws -> URL {
   let root = URL(fileURLWithPath: raw, isDirectory: true)
     .standardizedFileURL
     .resolvingSymlinksInPath()

@@ -345,25 +345,54 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
 #endif
 
 public enum RielaWebAssetLocator {
+  /// Directories tried relative to the *resolved* executable's own directory, in order.
+  /// `../Resources/Web` is the RielaApp.app / DMG layout; `../share/riela/web` is the
+  /// Homebrew formula and CLI archive layout (`pkgshare`).
+  public static let executableRelativeCandidates = ["../Resources/Web", "../share/riela/web"]
+
   public static func locate(
-    bundle: Bundle = .main,
+    bundle: Bundle? = .main,
     executableURL: URL? = Bundle.main.executableURL,
     currentDirectoryURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
   ) -> URL? {
+    candidates(
+      bundle: bundle,
+      executableURL: executableURL,
+      currentDirectoryURL: currentDirectoryURL
+    ).first { candidate in
+      FileManager.default.fileExists(atPath: candidate.appendingPathComponent("index.html").path)
+    }
+  }
+
+  /// The search order used by `locate`, exposed for tests and diagnostics.
+  ///
+  /// The executable path is symlink-resolved first: Homebrew links
+  /// `/opt/homebrew/bin/riela` to `../Cellar/riela/<version>/bin/riela`, and
+  /// `Bundle.main.executableURL` reports the *symlink* for such an invocation, so the
+  /// installed assets sit next to the real binary rather than next to the link.
+  public static func candidates(
+    bundle: Bundle? = .main,
+    executableURL: URL? = Bundle.main.executableURL,
+    currentDirectoryURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+  ) -> [URL] {
     var candidates: [URL] = []
-    if let resourceURL = bundle.resourceURL {
+    if let resourceURL = bundle?.resourceURL {
       candidates.append(resourceURL.appendingPathComponent("Web", isDirectory: true))
     }
     if let executableURL {
-      candidates.append(
-        executableURL.deletingLastPathComponent()
-          .appendingPathComponent("../Resources/Web", isDirectory: true)
-          .standardizedFileURL
-      )
+      let executableDirectory = executableURL
+        .resolvingSymlinksInPath()
+        .standardizedFileURL
+        .deletingLastPathComponent()
+      for relative in executableRelativeCandidates {
+        candidates.append(
+          executableDirectory
+            .appendingPathComponent(relative, isDirectory: true)
+            .standardizedFileURL
+        )
+      }
     }
     candidates.append(currentDirectoryURL.appendingPathComponent("web/dist", isDirectory: true))
-    return candidates.first { candidate in
-      FileManager.default.fileExists(atPath: candidate.appendingPathComponent("index.html").path)
-    }
+    return candidates
   }
 }

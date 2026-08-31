@@ -19,6 +19,8 @@ Environment:
   RIELA_SWIFT               Swift executable. Defaults to Xcode's Swift toolchain on macOS and swift elsewhere.
   RIELA_SWIFT_DEVELOPER_DIR Defaults to /Applications/Xcode.app/Contents/Developer.
   RIELA_SWIFT_SDKROOT       Defaults to Xcode's macOS SDK path.
+  RIELA_WEB_ASSETS_PREBUILT Set to 1 when web/dist was already built on the host (bun-less
+                            containers). The web/dist/index.html assertion still runs.
 
 Examples:
   scripts/build-homebrew-release.sh
@@ -28,7 +30,8 @@ Examples:
 This production builder stages Swift CLI release archives only. It does not
 publish release assets, mutate a tap, render a formula, or remove TypeScript/Bun
 source. macOS archives feed the Homebrew Formula; Linux archives are standalone
-GitHub release assets.
+GitHub release assets. Archives contain bin/riela, README.md, and the built
+dashboard under share/riela/web so an installed `riela serve` finds it.
 EOF
 }
 
@@ -76,6 +79,38 @@ absolute_path() {
     /*) printf '%s\n' "$1" ;;
     *) printf '%s/%s\n' "$repo_root" "$1" ;;
   esac
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf 'missing required command: %s\n' "$1" >&2
+    return 1
+  fi
+}
+
+# Same shape as build-homebrew-cask-release.sh / build-riela-menu-bar-app.sh.
+build_web_assets() {
+  require_command bun
+  (
+    cd "$repo_root/web"
+    bun install --frozen-lockfile
+    bun run lint
+    bun run typecheck
+    bun run test
+    bun run build
+  )
+  test -s "$repo_root/web/dist/index.html"
+}
+
+# The Linux release job builds web/dist on the host because its swift container has
+# no bun; it opts in with RIELA_WEB_ASSETS_PREBUILT=1. The index.html assertion is
+# never skipped, so a missing or empty bundle still fails the release build.
+ensure_web_assets() {
+  if [[ "${RIELA_WEB_ASSETS_PREBUILT:-}" == "1" ]]; then
+    test -s "$repo_root/web/dist/index.html"
+    return
+  fi
+  build_web_assets
 }
 
 validate_release_dir() {
@@ -224,6 +259,8 @@ print_plan() {
     printf '  release bin path command: swift build -c release --product riela --triple %s --show-bin-path\n' "$triple"
   fi
   printf '  staged binary: %s\n' "$binary"
+  printf '  staged web assets: %s/share/riela/web\n' "$work_dir"
+  printf '  web assets prebuilt: %s\n' "${RIELA_WEB_ASSETS_PREBUILT:-0}"
   printf '  archive: %s\n' "$archive"
   printf '  checksum: %s.sha256\n' "$archive"
   printf '  publish side effects: false\n'
@@ -250,6 +287,13 @@ build_target() {
   cp "$bin_path/riela" "$binary"
   chmod 0755 "$binary"
   cp "$repo_root/README.md" "$work_dir/README.md"
+
+  # The dashboard ships next to the binary so RielaWebAssetLocator finds it at
+  # <bin>/../share/riela/web after `pkgshare.install "share/riela/web"`.
+  test -s "$repo_root/web/dist/index.html"
+  mkdir -p "$work_dir/share/riela/web"
+  cp -R "$repo_root/web/dist/." "$work_dir/share/riela/web/"
+  test -s "$work_dir/share/riela/web/index.html"
 
   tar -C "$work_dir" -czf "$archive" .
   write_sha256 "$archive" > "$archive.sha256"
@@ -288,6 +332,13 @@ main() {
   local target
   for target in "${targets[@]}"; do
     validate_target "$target"
+  done
+
+  if [[ "$dry_run" != true ]]; then
+    ensure_web_assets
+  fi
+
+  for target in "${targets[@]}"; do
     if [[ "$dry_run" == true ]]; then
       print_plan "$version" "$target" "$release_dir"
     else

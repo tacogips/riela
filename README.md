@@ -151,10 +151,36 @@ v2 desktop app — there is exactly one copy of the frontend source.
 **In a browser.** RielaApp serves it on `http://127.0.0.1:19091` once its web
 listener is started (menu -> Open Web Config); this host answers
 `GET /api/v1/bootstrap` and is the only one that serves the aggregate Instances,
-Run-logs, Command-deck and Settings surfaces. Bare `riela serve --web-root
-web/dist` serves it on `http://127.0.0.1:8787`; that host answers `/healthz`
-but returns 404 for `/api/v1/bootstrap`, which the dashboard treats as its
-`cli-serve` mode and hides the RielaApp-only views.
+Run-logs, Command-deck and Settings surfaces.
+
+`riela serve` serves the dashboard on `http://127.0.0.1:8787` by default — no
+flag needed. It looks for the built assets in this order and uses the first
+directory that contains `index.html`:
+
+1. the app bundle's `Resources/Web` (RielaApp),
+2. `<bin>/../Resources/Web` (the DMG layout),
+3. `<bin>/../share/riela/web` — where the Homebrew formula installs them via
+   `pkgshare`, resolved through the `/opt/homebrew/bin/riela` symlink,
+4. `./web/dist` — a repository checkout after `cd web && bun run build`.
+
+`--web-root <dir>` overrides the search and still fails with
+`--web-root requires a readable directory containing index.html` when the
+directory is unreadable or has no `index.html`. When nothing is found the server
+still starts and serves the API; its ready output then reads
+`webRoot=none` and `webAssets=missing; serving the API only. …`. Otherwise it
+prints the directory in use plus `webRootSource=--web-root` or `webRootSource=auto`.
+
+What actually works there is a subset. Measured against a bare `riela serve`
+(0.1.33): `GET /` returns the SPA, hashed assets under `/assets/` are served with
+an immutable cache header, unknown routes such as `/workflows` fall back to
+`index.html`, and `GET /healthz` and `GET /overview` answer JSON. But
+`GET /api/v1/bootstrap` is 404, so the dashboard enters its `cli-serve` mode and
+hides Settings and the Command deck; the remaining Instances and Run-logs views
+call `/api/v1/instances`, which is also 404, and the Workflows view's
+`POST /graphql` registry query returns `WORKFLOW_REGISTRY_UNAVAILABLE`. In other
+words `riela serve` gives you the dashboard shell and navigation, while the data
+views still need RielaApp on 19091 (or the desktop app below). Widening
+`riela serve`'s API surface is separate, larger work.
 
 **As a desktop app.**
 

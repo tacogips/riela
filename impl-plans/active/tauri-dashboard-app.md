@@ -1,13 +1,13 @@
 # Riela Dashboard Desktop App (Tauri v2) — Implementation Plan
 
-**Status**: Ready
+**Status**: Implemented
 **Feature ID**: `tauri-dashboard-app`
 **Workflow mode**: `fable-and-improve-opus` (ONE feature, ONE work package, no fan-out)
 **Design reference**: `design-docs/tauri-dashboard-app.md`
 **Research brief**: `design-docs/research/tauri-dashboard-app-brief.md`
 **Branch**: `feat/tauri-dashboard-app` (worktree `/Users/taco/gits/tacogips/riela-worktrees/tauri-dashboard-app`)
 **Created**: 2026-08-31
-**Last updated**: 2026-08-31
+**Last updated**: 2026-08-31 (implementation complete)
 
 ## 1. Objective and Boundaries
 
@@ -58,7 +58,7 @@ replace it (from the analysis):
 
 #### `web/src/transport.ts` (new)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```ts
 export type HostTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -70,15 +70,15 @@ export const requestThroughHost: HostTransport   // delegates to the active tran
 Default active transport: `(input, init) => fetch(input, init)`.
 
 **Checklist**:
-- [ ] Implement module (no top-level side effects, no Tauri imports).
-- [ ] `web/src/transport.test.ts`: (a) default delegates to global-fetch-equivalent behaviour by
+- [x] Implement module (no top-level side effects, no Tauri imports).
+- [x] `web/src/transport.test.ts`: (a) default delegates to global-fetch-equivalent behaviour by
       injecting a transport and asserting late binding — construct `new RielaAPIClient()`
       *before* `setHostTransport(fake)`, call `bootstrap()`, assert the fake was hit;
       (b) `resetHostTransport()` restores; use `try/finally` to reset in every test.
 
 #### `web/src/api.ts`, `web/src/config/client.ts`, `web/src/workflows/client.ts` (edit)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 - `api.ts:29-30`: default `transport = requestThroughHost` (import from `./transport`).
 - `config/client.ts:18-19`: default `request = requestThroughHost`.
@@ -86,14 +86,14 @@ Default active transport: `(input, init) => fetch(input, init)`.
 - No other changes; explicit-transport tests remain valid.
 
 **Checklist**:
-- [ ] Three one-line default swaps + imports.
-- [ ] `bun test src` still green (api.test.ts, config/client.test.ts, workflows/client.test.ts).
+- [x] Three one-line default swaps + imports.
+- [x] `bun test src` still green (api.test.ts, config/client.test.ts, workflows/client.test.ts).
 
 ### 2.2 Frontend — Tauri boundary module
 
 #### `web/src/desktop/host.ts` (new; the ONLY Tauri-aware frontend file)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```ts
 export interface DesktopInvoke { <T>(command: string, args?: Record<string, unknown>): Promise<T> }
@@ -130,8 +130,8 @@ Rules:
   This is the only place `@tauri-apps/api` is imported (dynamic import → lazy chunk).
 
 **Checklist**:
-- [ ] Implement module.
-- [ ] `web/src/desktop/host.test.ts` (bun:test, fakes named `fakeInvoke`):
+- [x] Implement module.
+- [x] `web/src/desktop/host.test.ts` (bun:test, fakes named `fakeInvoke`):
       runtime detection true/false; header normalisation for `Headers`/array/record; default
       method GET; absolute URL / `Request` / non-string body → `invalid_request`; 204 response
       rebuilds without throwing; `.ok`, `.status`, `.text()`, `.json()` behave; error mapping;
@@ -140,7 +140,7 @@ Rules:
 
 #### `web/src/index.tsx` (edit)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```tsx
 async function main() {
@@ -153,13 +153,13 @@ void main()
 ```
 
 **Checklist**:
-- [ ] Edit; keep the root-element guard and `./styles.css` import.
+- [x] Edit; keep the root-element guard and `./styles.css` import.
 
 ### 2.3 Frontend — build configuration
 
 #### `web/vite.config.ts` (edit)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```ts
 const tauriDevHost = process.env.TAURI_DEV_HOST
@@ -182,11 +182,11 @@ export default defineConfig({
 `vite.config.ts`, so `process.env` type-checks (verify with `bun run typecheck`).
 
 **Checklist**:
-- [ ] Edit; `bun run build` output unchanged in path/shape (`dist/index.html`, `dist/assets/`).
+- [x] Edit; `bun run build` output unchanged in path/shape (`dist/index.html`, `dist/assets/`).
 
 #### `web/package.json` + `web/bun.lock` (edit)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 - `scripts.tauri = "tauri"`.
 - `dependencies["@tauri-apps/api"] = "^2"`.
@@ -194,7 +194,7 @@ export default defineConfig({
 - Run `bun install` in `web/` and commit the updated `bun.lock`.
 
 **Checklist**:
-- [ ] Edit + install + lockfile committed; `bun install --frozen-lockfile` succeeds afterwards.
+- [x] Edit + install + lockfile committed; `bun install --frozen-lockfile` succeeds afterwards.
 
 ### 2.4 Rust crate
 
@@ -295,7 +295,7 @@ small). Do not commit anything else under `src-tauri/gen/`.
 
 #### `src-tauri/src/endpoint.rs` (new, pure, unit-tested)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```rust
 pub const DEFAULT_APP_PORT: u16 = 19_091;
@@ -336,8 +336,8 @@ pub fn resolve_riela_binary(lookup: &BinaryLookup, exists: impl Fn(&Path) -> boo
 ```
 
 **Checklist**:
-- [ ] Implement.
-- [ ] `#[cfg(test)] mod tests`: origin parsing (127.0.0.1, localhost, [::1] → canonical port;
+- [x] Implement.
+- [x] `#[cfg(test)] mod tests`: origin parsing (127.0.0.1, localhost, [::1] → canonical port;
       reject https/other hosts/paths/missing port), path guard (accept `/api/v1/x?y=1`,
       reject `//evil`, `http://x`, `/a/../b`, `api`), header policy (Origin only for
       POST/PUT/DELETE/PATCH; host/origin/cookie/sec-fetch-mode dropped; `X-Riela-CSRF`,
@@ -346,7 +346,7 @@ pub fn resolve_riela_binary(lookup: &BinaryLookup, exists: impl Fn(&Path) -> boo
 
 #### `src-tauri/src/lifecycle.rs` (new)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```rust
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -402,8 +402,8 @@ Every transition calls `notify.notify_waiters()`. `wait_ready` loops: `Connected
 connecting to Riela…").
 
 **Checklist**:
-- [ ] Implement with the two injected traits.
-- [ ] `#[cfg(test)]` with `FakeProber` (scripted responses per URL) and `FakeSpawner`
+- [x] Implement with the two injected traits.
+- [x] `#[cfg(test)]` with `FakeProber` (scripted responses per URL) and `FakeSpawner`
       (returns a real `Command::new("sleep").arg("30")` child, or a `Command::new("false")`
       child for the early-exit case): RielaApp preferred over serve; serve accepted; busy
       non-Riela 8787 → Failed, spawner never called; no binary → Failed; spawn → Starting →
@@ -414,7 +414,7 @@ connecting to Riela…").
 
 #### `src-tauri/src/commands.rs` (new)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```rust
 #[derive(serde::Deserialize)] pub struct FetchRequest { pub path: String, pub method: String, pub headers: Vec<(String, String)>, pub body: Option<String> }
@@ -437,12 +437,12 @@ other send errors ⇒ `request_failed`; success ⇒ status, headers (skip `set-c
 `riela_server_retry`: `discover()` then `status()`.
 
 **Checklist**:
-- [ ] Implement; `#[cfg(test)]` for the method/header mapping helpers if any are extracted
+- [x] Implement; `#[cfg(test)]` for the method/header mapping helpers if any are extracted
       (keep network-free).
 
 #### `src-tauri/src/lib.rs` + `src-tauri/src/main.rs` (new)
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED
 
 ```rust
 // lib.rs
@@ -465,7 +465,7 @@ fn main() { riela_dashboard_lib::run(); }
 ```
 
 **Checklist**:
-- [ ] Implement; `cargo fmt`, `cargo clippy --all-targets -- -D warnings` clean.
+- [x] Implement; `cargo fmt`, `cargo clippy --all-targets -- -D warnings` clean.
 
 ### 2.5 Repository plumbing
 
@@ -571,17 +571,17 @@ Parallelizable groups: {T1, T2, T4} → {T3, T5, T9} → {T6, T10} → {T7, T11}
 
 | Module | File Path | Status | Tests |
 | ------ | --------- | ------ | ----- |
-| Host transport seam | `web/src/transport.ts` | NOT_STARTED | `transport.test.ts` |
-| Desktop boundary | `web/src/desktop/host.ts` | NOT_STARTED | `desktop/host.test.ts` |
-| Seam wiring | `web/src/{api,config/client,workflows/client}.ts` | NOT_STARTED | existing suites |
-| Entry | `web/src/index.tsx` | NOT_STARTED | build |
-| Vite/package | `web/vite.config.ts`, `web/package.json`, `web/bun.lock` | NOT_STARTED | build, e2e |
-| Crate skeleton | `src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/default.json,icons/}` | NOT_STARTED | cargo check |
-| Endpoint rules | `src-tauri/src/endpoint.rs` | NOT_STARTED | cargo test |
-| Lifecycle | `src-tauri/src/lifecycle.rs` | NOT_STARTED | cargo test |
-| Commands / app | `src-tauri/src/{commands,lib,main}.rs` | NOT_STARTED | clippy, live |
-| Plumbing | `Cargo.toml`, `mise.toml`, `.gitignore` | NOT_STARTED | mise tasks |
-| Docs | `README.md`, design, this plan | NOT_STARTED | review |
+| Host transport seam | `web/src/transport.ts` | COMPLETED | `transport.test.ts` |
+| Desktop boundary | `web/src/desktop/host.ts` | COMPLETED | `desktop/host.test.ts` |
+| Seam wiring | `web/src/{api,config/client,workflows/client}.ts` | COMPLETED | existing suites |
+| Entry | `web/src/index.tsx` | COMPLETED | build |
+| Vite/package | `web/vite.config.ts`, `web/package.json`, `web/bun.lock` | COMPLETED | build, e2e |
+| Crate skeleton | `src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/default.json,icons/}` | COMPLETED | cargo check |
+| Endpoint rules | `src-tauri/src/endpoint.rs` | COMPLETED | cargo test |
+| Lifecycle | `src-tauri/src/lifecycle.rs` | COMPLETED | cargo test |
+| Commands / app | `src-tauri/src/{commands,lib,main}.rs` | COMPLETED | clippy, live |
+| Plumbing | `Cargo.toml`, `mise.toml`, `.gitignore` | COMPLETED | mise tasks |
+| Docs | `README.md`, design, this plan | COMPLETED | review |
 
 ## 5. Verification Commands (paste real output; run from the worktree root)
 
@@ -623,16 +623,16 @@ Cleanup: `rm -rf tmp/tauri-dashboard-app` before the final commit; never leave f
 
 ## 6. Completion Criteria
 
-- [ ] All acceptance criteria in the workflow input are met with pasted evidence.
-- [ ] `git ls-files web/src` shows exactly one SPA; Tauri-only frontend code = `web/src/desktop/host.ts` (+ test) and `web/src/transport.ts`.
-- [ ] `bun run lint` (incl. audit-source) / `typecheck` / `bun test src` / `bun run build` green; `web/dist/index.html` + `assets/` present.
-- [ ] Browser curl proof against `riela serve --web-root web/dist` (index 200, asset 200, healthz 200, bootstrap 404).
-- [ ] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo check`, `cargo test` green via `mise run desktop:lint` / `desktop:test`.
-- [ ] `swift build` green; no diff under `Sources/`, `Packages/`, `scripts/`, `.github/`.
-- [ ] `bun run test:e2e` green (or the attempt's actual failure output + reason).
-- [ ] Desktop launch evidence per §5.6 with the RielaApp caveat stated truthfully.
-- [ ] README documents browser + desktop, discovery order and env vars; design + plan committed; plan statuses updated to COMPLETED.
-- [ ] Clean `git status` on `feat/tauri-dashboard-app`; no PR opened; no `tmp/`, root scratch, `target/` or `gen/schemas` committed.
+- [x] All acceptance criteria in the workflow input are met with pasted evidence.
+- [x] `git ls-files web/src` shows exactly one SPA; Tauri-only frontend code = `web/src/desktop/host.ts` (+ test) and `web/src/transport.ts`.
+- [x] `bun run lint` (incl. audit-source) / `typecheck` / `bun test src` / `bun run build` green; `web/dist/index.html` + `assets/` present.
+- [x] Browser curl proof against `riela serve --web-root web/dist` (index 200, asset 200, healthz 200, bootstrap 404).
+- [x] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo check`, `cargo test` green via `mise run desktop:lint` / `desktop:test`.
+- [x] `swift build` green; no diff under `Sources/`, `Packages/`, `scripts/`, `.github/`.
+- [x] `bun run test:e2e` green (or the attempt's actual failure output + reason).
+- [x] Desktop launch evidence per §5.6 with the RielaApp caveat stated truthfully.
+- [x] README documents browser + desktop, discovery order and env vars; design + plan committed; plan statuses updated to COMPLETED.
+- [x] Clean `git status` on `feat/tauri-dashboard-app`; no PR opened; no `tmp/`, root scratch, `target/` or `gen/schemas` committed.
 
 ## 7. Dependencies
 
@@ -651,3 +651,60 @@ Cleanup: `rm -rf tmp/tauri-dashboard-app` before the final commit; never leave f
 - `web/bun.lock` forgotten → completion criterion + `bun install --frozen-lockfile` check.
 - Vite server block leaking into e2e → env gate + T16.
 - Managed child kill semantics → only `managed == true`, SIGTERM first, 3 s grace.
+
+## 9. Implementation Notes (deviations from §2, with reasons)
+
+Three things differ from the module sketch above. Each is a repository fact discovered at the
+T12 checkpoint the plan itself anticipated; none changes the design.
+
+1. **Tauri CLI invocation directory.** The plan ran the CLI as `cd web && bun run tauri …`.
+   The CLI locates a project by searching the current directory *and its subdirectories* for
+   `tauri.conf.json`, and `src-tauri/` is a sibling of `web/`, not a child — so that form
+   aborts with "Couldn't recognize the current folder as a Tauri project". `desktop:dev` and
+   `desktop:build` therefore run `web/node_modules/.bin/tauri` from the repository root, and
+   `web/package.json`'s `tauri` script is `cd .. && tauri` so `bun run tauri` still works from
+   `web/`. `beforeDevCommand`/`beforeBuildCommand` use `"cwd": "../web"`, which the CLI
+   resolves relative to `src-tauri/` — verified by a real `tauri build --debug` that ran
+   `bun run build` in `web/` and emitted `target/debug/riela-dashboard`.
+2. **Signal-driven shutdown.** `RunEvent::Exit` only fires for a real quit. A managed
+   `riela serve` therefore outlived the app whenever the shell terminated it (Ctrl-C on
+   `mise run desktop:dev`), which was observed directly. `lib.rs` now blocks SIGTERM/SIGINT/
+   SIGHUP before Tauri starts any threads and consumes them in one `sigwait` thread that calls
+   the same `shutdown()`. Both paths are verified live (§10).
+3. **`tokio` dev-dependency.** `#[tokio::test]` needs a runtime; relying on Cargo feature
+   unification with `tauri` for `rt-multi-thread` is brittle, so the requirement is stated
+   explicitly in `[dev-dependencies]`.
+
+## 10. Verification Results
+
+| Gate | Result |
+| ---- | ------ |
+| `bun run lint` (eslint + audit-source) | pass — "Production source audit passed" |
+| `bun run typecheck` | pass |
+| `bun test src` | 89 pass / 0 fail across 17 files |
+| `bun run build` | `dist/index.html` + `dist/assets/` (incl. the lazy `core-*.js` Tauri chunk) |
+| Browser proof vs `riela serve --web-root web/dist` | index 200, asset 200, `/healthz` 200 `{"service":"riela"}`, `/api/v1/bootstrap` 404 (cli-serve fallback intact) |
+| `mise run desktop:lint` | pass (fmt --check, clippy `-D warnings`, cargo check) |
+| `mise run desktop:test` | 34 pass / 0 fail |
+| `mise run desktop:build -- --debug` | `target/debug/riela-dashboard` built |
+| `swift build` | "Build complete!"; no diff under `Sources/`, `Packages/`, `scripts/`, `.github/` |
+| `bun run test:e2e` | 20/20 pass (two consecutive runs). One earlier run, concurrent with the Swift and Tauri builds, hit a 30s click-stability timeout in "command deck focuses workflows and opens run telemetry"; the failure snapshot shows the button present and its dialog open, and the same spec passes in isolation on this branch and on the base commit. Treated as a load-induced flake, not a regression. |
+
+### Desktop live checks
+
+- **(a) riela-app host** — RielaApp was running but its listener is off by default and can only
+  be started from its menu, which was not enabled on the operator's machine. Instead the app was
+  driven against a loopback stand-in (`tmp/`, deleted) that enforces
+  `Sources/RielaApp/RielaAppWebRouter.swift:71-91` verbatim. Result: the Rust host sent
+  `Host: 127.0.0.1:19091` and passed the guard, where the same request with a WebView-style
+  `Host: tauri.localhost` is rejected 403 `invalid_host`. The window rendered riela-app mode
+  (profile shown, RielaApp-only views present, status chip `Running 127.0.0.1:19091`) with live
+  **Instances** rows and, after selecting an instance, live **Run logs** rows polled from
+  `/api/v1/instances/<id>/executions`. What remains unproven is only RielaApp's own listener,
+  not the desktop transport.
+- **(b) nothing running** — the app started `riela serve --host 127.0.0.1 --port 8787`, connected
+  in `cli-serve` mode with Settings and Command deck hidden exactly as the browser behaves on
+  that host. Quitting with Cmd+Q terminated the app and its managed child, and port 8787 was
+  released; an external SIGTERM does the same via the new signal handler.
+- **(c) no binary** — `RIELA_DESKTOP_RIELA_BIN=/nonexistent PATH=/usr/bin:/bin` produced the
+  dashboard's "Could not connect" panel with the actionable message and a Try again button.

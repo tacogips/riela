@@ -142,6 +142,67 @@ interactive package creation and import flows. Use `--output json` only when a
 legacy caller explicitly needs a single non-streaming JSON document after
 completion.
 
+## Dashboard: browser and desktop
+
+The Riela dashboard is a single SolidJS application under `web/`. It is served
+in a browser by either loopback host, and the same bundle also ships as a Tauri
+v2 desktop app — there is exactly one copy of the frontend source.
+
+**In a browser.** RielaApp serves it on `http://127.0.0.1:19091` once its web
+listener is started (menu -> Open Web Config); this host answers
+`GET /api/v1/bootstrap` and is the only one that serves the aggregate Instances,
+Run-logs, Command-deck and Settings surfaces. Bare `riela serve --web-root
+web/dist` serves it on `http://127.0.0.1:8787`; that host answers `/healthz`
+but returns 404 for `/api/v1/bootstrap`, which the dashboard treats as its
+`cli-serve` mode and hides the RielaApp-only views.
+
+**As a desktop app.**
+
+```bash
+mise run desktop:dev              # Vite dev server + the Tauri window
+mise run desktop:build -- --debug # build target/debug/riela-dashboard
+mise run desktop:run              # run the release binary, building it if missing
+mise run desktop:lint             # web build, cargo fmt --check, clippy -D warnings, cargo check
+mise run desktop:test             # cargo test for the desktop crate
+```
+
+On startup the app looks for a server in this order:
+
+1. `http://127.0.0.1:19091/api/v1/bootstrap` — a running RielaApp listener.
+2. `http://127.0.0.1:8787/healthz` — an already running `riela serve`. If that
+   port answers but is not Riela, the app reports the conflict instead of
+   starting anything.
+3. Otherwise it starts `riela serve --host 127.0.0.1 --port 8787` itself and
+   waits up to 20s for it to become ready. Only a server the app started is
+   stopped again when the app quits (SIGTERM, then SIGKILL after 3s); an
+   already-running server is never touched.
+
+Until a server answers, the window shows the dashboard's normal
+"Connecting to Riela..." state, and an unreachable server produces its
+"Could not connect" panel with a Try again button — never a blank window.
+
+Two environment variables override discovery:
+
+- `RIELA_DESKTOP_SERVER_URL` — pin a single loopback origin, e.g.
+  `http://127.0.0.1:19091`. Only `127.0.0.1`, `localhost` and `[::1]` over plain
+  HTTP with an explicit port are accepted, and no server is ever started when
+  this is set.
+- `RIELA_DESKTOP_RIELA_BIN` — the `riela` binary to start. Otherwise the app
+  searches `PATH`, then `.build/release/riela`, `.build/debug/riela`,
+  `/opt/homebrew/bin/riela` and `/usr/local/bin/riela`.
+
+All HTTP is performed by the Rust process, never by the WebView, and only
+against loopback. Riela's servers send no CORS headers and validate `Host`,
+`Origin` and `X-Riela-CSRF`, which a `tauri://localhost` page cannot satisfy;
+the host therefore drops the WebView's own `Host`/`Origin`/`Cookie`/`Sec-*`
+headers, forwards the dashboard's CSRF and profile headers unchanged, and
+stamps `Origin: http://127.0.0.1:<port>` on every state-changing request.
+
+Because the aggregate Instances and Run-logs APIs exist only on the RielaApp
+host, the desktop app shows them only when it is connected to RielaApp. Against
+a spawned or already-running bare `riela serve` it behaves exactly like the
+browser does on that host: `cli-serve` mode with the RielaApp-only views hidden.
+
 ## Built-in Git Workflow Finalization
 
 `riela/git-commit@1` and `riela/git-push@1` are opt-in workflow add-ons for

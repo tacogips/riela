@@ -13,6 +13,36 @@ use std::sync::Arc;
 use commands::AppState;
 use lifecycle::{LifecycleConfig, ProcessSpawner, ReqwestProber, ServerLifecycle};
 
+/// Terminates a spawned `riela serve` when the shell — not the user interface —
+/// ends the app, e.g. Ctrl-C on `mise run desktop:dev`. Tauri's `RunEvent::Exit`
+/// only fires for a real quit, so without this a managed child would outlive it.
+///
+/// The signals are blocked before Tauri starts any threads (blocking is
+/// inherited), then consumed by one dedicated thread through `sigwait`, which
+/// keeps the shutdown work off the async-signal-safe path.
+#[cfg(unix)]
+fn install_signal_shutdown(lifecycle: Arc<ServerLifecycle>) {
+    // SAFETY: plain libc signal-mask calls on a freshly zeroed `sigset_t`,
+    // performed on the main thread before any other thread exists.
+    unsafe {
+        let mut signals: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut signals);
+        for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
+            libc::sigaddset(&mut signals, signal);
+        }
+        if libc::pthread_sigmask(libc::SIG_BLOCK, &signals, std::ptr::null_mut()) != 0 {
+            return;
+        }
+        std::thread::spawn(move || {
+            let mut received: libc::c_int = 0;
+            if libc::sigwait(&signals, &mut received) == 0 {
+                lifecycle.shutdown();
+                std::process::exit(128 + received);
+            }
+        });
+    }
+}
+
 pub fn run() {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let config = LifecycleConfig::from_environment(
@@ -26,6 +56,9 @@ pub fn run() {
         Arc::new(ReqwestProber::default()),
         Arc::new(ProcessSpawner),
     );
+
+    #[cfg(unix)]
+    install_signal_shutdown(lifecycle.clone());
 
     let setup_lifecycle = lifecycle.clone();
     let shutdown_lifecycle = lifecycle.clone();

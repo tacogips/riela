@@ -1,4 +1,5 @@
 import type { APIErrorPayload, Bootstrap } from './contracts'
+import { requestThroughHost } from './transport'
 
 export class APIError extends Error {
   constructor(
@@ -27,7 +28,7 @@ export class RielaAPIClient {
 
   constructor(
     private readonly transport: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> =
-      (input, init) => fetch(input, init),
+      requestThroughHost,
   ) {}
 
   async bootstrap(signal?: AbortSignal): Promise<Bootstrap> {

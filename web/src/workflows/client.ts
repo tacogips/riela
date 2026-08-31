@@ -1,4 +1,5 @@
 import { APIError, api } from '../api'
+import { requestThroughHost } from '../transport'
 import type { RegistryMutationPayload, RegistryWorkflow } from './types'
 
 interface GraphQLResponse<T> {
@@ -185,7 +186,7 @@ export class WorkflowRegistryClient {
 }
 
 const defaultClient = new WorkflowRegistryClient({
-  request: (input, init) => fetch(input, init),
+  request: requestThroughHost,
   appHeaders: () => api.noteHeaders(),
 })
 

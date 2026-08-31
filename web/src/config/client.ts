@@ -1,5 +1,6 @@
 import { APIError, api } from '../api'
 import type { ConfigurationRevision, RielaConfiguration } from '../contracts'
+import { requestThroughHost } from '../transport'
 
 interface GraphQLResponse<T> {
   data?: T
@@ -16,7 +17,7 @@ const configurationFields = `
 export class RielaConfigurationClient {
   constructor(
     private readonly request: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> =
-      (input, init) => fetch(input, init),
+      requestThroughHost,
   ) {}
 
   async get(): Promise<RielaConfiguration> {

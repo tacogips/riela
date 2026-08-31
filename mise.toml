@@ -18,6 +18,7 @@ fi
 
 [tools]
 swift = "6.3.3"
+rust = "1.92.0"
 swiftlint = "latest"
 bun = "latest"
 biome = "latest"
@@ -89,6 +90,53 @@ else
   open "$app_path" --args --project-root "$PWD"
 fi
 
+'''
+
+[tasks."desktop:dev"]
+description = "Run the Riela Dashboard desktop app (Tauri v2) in development mode"
+run = '''
+set -euo pipefail
+# The crate lives at the repository root, so the Tauri CLI must run from here;
+# the CLI itself is a devDependency of the shared web/ frontend.
+( cd web && bun install )
+web/node_modules/.bin/tauri dev "$@"
+'''
+
+[tasks."desktop:build"]
+description = "Build the Riela Dashboard desktop binary (pass tauri build args after --, e.g. -- --debug)"
+run = '''
+set -euo pipefail
+( cd web && bun install )
+web/node_modules/.bin/tauri build "$@"
+'''
+
+[tasks."desktop:run"]
+description = "Run the built Riela Dashboard binary, building it first when missing"
+run = '''
+set -euo pipefail
+binary="${RIELA_DESKTOP_BINARY:-target/release/riela-dashboard}"
+if [ ! -x "$binary" ]; then
+  mise run desktop:build
+fi
+"$binary" "$@"
+'''
+
+[tasks."desktop:lint"]
+description = "Rust format check, clippy (-D warnings) and cargo check for the desktop crate"
+run = '''
+set -euo pipefail
+( cd web && bun install && bun run build )
+CARGO_TERM_QUIET=true cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+CARGO_TERM_QUIET=true cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+CARGO_TERM_QUIET=true cargo check --manifest-path src-tauri/Cargo.toml
+'''
+
+[tasks."desktop:test"]
+description = "Run the desktop crate's Rust tests"
+run = '''
+set -euo pipefail
+( cd web && bun install && bun run build )
+CARGO_TERM_QUIET=true cargo test --manifest-path src-tauri/Cargo.toml
 '''
 
 [tasks."homebrew:formula"]

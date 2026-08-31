@@ -7,6 +7,12 @@ ui/dist/
 .build/
 *.tsbuildinfo
 
+# Rust / Tauri build artifacts
+/target/
+/src-tauri/target/
+/src-tauri/gen/schemas/
+**/*.rs.bk
+
 # Bun (binary lockfile - we use text lockfile bun.lock instead)
 bun.lockb
 

@@ -14,7 +14,6 @@ public struct RielaAppDaemonWorkflowLoadResult: Equatable, Sendable {
 public struct RielaAppDaemonWorkflowStore: Sendable {
   public var profileName: RielaAppProfileName
   public var stateURL: URL
-  public var legacyStateURLs: [URL]
 
   public init(
     profileName: RielaAppProfileName = .default,
@@ -22,17 +21,14 @@ public struct RielaAppDaemonWorkflowStore: Sendable {
   ) {
     self.profileName = profileName
     stateURL = Self.defaultStateURL(profileName: profileName, homeDirectory: homeDirectory)
-    legacyStateURLs = profileName == .default ? Self.defaultLegacyStateURLs(homeDirectory: homeDirectory) : []
   }
 
   public init(
     stateURL: URL,
-    legacyStateURLs: [URL] = [],
     profileName: RielaAppProfileName = .default
   ) {
     self.profileName = profileName
     self.stateURL = stateURL
-    self.legacyStateURLs = legacyStateURLs
   }
 
   public func load() -> RielaAppDaemonWorkflowState {
@@ -40,7 +36,7 @@ public struct RielaAppDaemonWorkflowStore: Sendable {
   }
 
   public func loadResult() -> RielaAppDaemonWorkflowLoadResult {
-    let loadURL = ([stateURL] + legacyStateURLs).first { FileManager.default.fileExists(atPath: $0.path) }
+    let loadURL = FileManager.default.fileExists(atPath: stateURL.path) ? stateURL : nil
     guard let loadURL, let data = try? Data(contentsOf: loadURL) else {
       return RielaAppDaemonWorkflowLoadResult(state: RielaAppDaemonWorkflowState())
     }
@@ -97,29 +93,5 @@ public struct RielaAppDaemonWorkflowStore: Sendable {
     }
   }
 
-  public static func defaultLegacyStateURLs(
-    homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-  ) -> [URL] {
-    [
-      legacyUserRielaStateURL(homeDirectory: homeDirectory),
-      legacyApplicationSupportStateURL()
-    ]
-  }
-
-  public static func legacyApplicationSupportStateURL() -> URL {
-    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-      ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
-    return base
-      .appendingPathComponent("RielaApp", isDirectory: true)
-      .appendingPathComponent("daemon-workflows.json")
-  }
-
-  public static func legacyUserRielaStateURL(
-    homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-  ) -> URL {
-    homeDirectory
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("rielaapp-daemon-workflows.json")
-  }
 }
 #endif

@@ -548,13 +548,6 @@ extension WorkflowCommandTests {
     let continuedSnapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: tempDir.appendingPathComponent("sessions", isDirectory: true).path))
       .load(sessionId: runResult.session.sessionId)
     XCTAssertTrue(continuedSnapshot.workflowMessages.contains { $0.communicationId == "comm-000001" && $0.payload["mode"] == .string("preserve-on-resume") })
-    let eventConfig = tempDir.appendingPathComponent("events.json")
-    try """
-    {
-      "sources": [{"id":"web-a","kind":"webhook","path":"/events/web","signingSecretEnv":"WEBHOOK_SECRET"}],
-      "bindings": [{"id":"bind-a","sourceId":"web-a","workflowName":"worker-only-single-step","inputMapping":{"mode":"event-input"}}]
-    }
-    """.write(to: eventConfig, atomically: true, encoding: .utf8)
 
     let eventEnvelope = tempDir.appendingPathComponent("event-envelope.json")
     try """
@@ -568,9 +561,6 @@ extension WorkflowCommandTests {
     """.write(to: eventEnvelope, atomically: true, encoding: .utf8)
 
     for command in [
-      ["events", "validate", eventConfig.path],
-      ["events", "list", eventConfig.path],
-      ["events", "emit", eventConfig.path, "--variables", eventEnvelope.path],
       ["hook", "codex"],
       ["graphql", "schema"],
       ["graphql", "session", runResult.session.sessionId, "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path],

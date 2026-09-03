@@ -571,12 +571,6 @@ fileprivate extension ScopedParityCommandRunner {
 
   private func eventResult(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
     let action = options.command ?? "validate"
-    if let target = options.target,
-      parsed.eventRoot == nil,
-      FileManager.default.fileExists(atPath: absoluteURL(target, relativeTo: URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)).path),
-      action == "validate" || action == "list" || parsed.variables != nil {
-      return try await legacyEventResult(options: options, parsed: parsed)
-    }
     let root = eventRootURL(parsed: parsed)
     switch action {
     case "validate":
@@ -784,60 +778,6 @@ fileprivate extension ScopedParityCommandRunner {
     )
   }
 
-  private func legacyEventResult(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
-    let action = options.command ?? "validate"
-    guard let target = options.target else {
-      throw CLIUsageError("events \(action) legacy compatibility requires an event configuration file")
-    }
-    let path = absoluteURL(target, relativeTo: URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath))
-    let config = try JSONDecoder().decode(EventConfig.self, from: Data(contentsOf: path))
-    let diagnostics = EventContractValidator.validate(sources: config.sources, bindings: config.bindings)
-    if action == "validate" {
-      return ScopedParityCommandResult(
-        scope: "events",
-        command: action,
-        target: target,
-        status: diagnostics.isEmpty ? "ok" : "failed",
-        records: diagnostics.isEmpty ? ["valid"] : diagnostics.map { "\($0.path): \($0.message)" }
-      )
-    }
-    if action == "list" {
-      return ScopedParityCommandResult(
-        scope: "events",
-        command: action,
-        target: target,
-        status: diagnostics.isEmpty ? "ok" : "failed",
-        records: ["sources=\(config.sources.map(\.id).joined(separator: ","))", "bindings=\(config.bindings.map(\.id).joined(separator: ","))"]
-      )
-    }
-    guard diagnostics.isEmpty else {
-      return ScopedParityCommandResult(
-        scope: "events",
-        command: action,
-        target: target,
-        status: "failed",
-        records: diagnostics.map { "\($0.path): \($0.message)" }
-      )
-    }
-    guard action == "emit" || action == "replay" else {
-      throw CLIUsageError("unknown events command '\(action)'")
-    }
-    let envelope = try parsed.variables.map {
-      try eventEnvelope(from: JSONReferenceLoader().object(from: $0, workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath))
-    } ?? defaultEventEnvelope(config: config, action: action)
-    let result = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(sources: config.sources, bindings: config.bindings, envelope: envelope))
-    return ScopedParityCommandResult(
-      scope: "events",
-      command: action,
-      target: target,
-      status: result.accepted ? "ok" : "ignored",
-      records: [
-        "receipt=\(result.receipt?.status ?? "none")",
-        "triggers=\(result.triggers.map(\.bindingId).joined(separator: ","))"
-      ]
-    )
-  }
-
   private func eventRootURL(parsed: ParsedParityOptions) -> URL {
     let workingDirectory = URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
     if let eventRoot = parsed.eventRoot {
@@ -967,19 +907,6 @@ fileprivate extension ScopedParityCommandRunner {
       .filter { $0.pathExtension == "json" }
       .map { try JSONDecoder().decode(PersistedEventSchedule.self, from: Data(contentsOf: $0)) }
       .sorted { $0.scheduleId < $1.scheduleId }
-  }
-
-  private func defaultEventEnvelope(config: EventConfig, action: String) -> ExternalEventEnvelope {
-    let source = config.sources.first
-    return ExternalEventEnvelope(
-      sourceId: source?.id ?? "source",
-      eventId: "\(action)-dry-run",
-      provider: source?.provider?.rawValue ?? "riela",
-      eventType: action,
-      receivedAt: Date(timeIntervalSince1970: 0),
-      dedupeKey: action == "replay" ? "replay-dry-run" : nil,
-      input: ["mode": .string("event-input")]
-    )
   }
 
 }

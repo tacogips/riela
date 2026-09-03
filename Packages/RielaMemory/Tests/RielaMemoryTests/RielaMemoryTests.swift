@@ -108,7 +108,7 @@ final class RielaMemoryTests: XCTestCase {
       guard case let RielaMemoryError.sqliteFailed(message) = error else {
         return XCTFail("expected sqliteFailed, got \(error)")
       }
-      XCTAssertTrue(message.contains("schema predates version"), message)
+      XCTAssertTrue(message.contains("has no migration path"), message)
     }
   }
 

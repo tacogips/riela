@@ -12,7 +12,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     let bundle = try writeBundle(at: layout.inputs, workflowId: "marker-demo", description: "registered")
 
     let register = await app.run([
-      "workflow", "register", bundle.path, "--temporary", "--output", "json"
+      "workflow", "register", bundle.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(register.exitCode, .success, register.stderr + register.stdout)
     let registered = try decode(MutableWorkflowRegistrationResult.self, register.stdout)
@@ -49,7 +49,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     XCTAssertEqual(queried.workflows[0].provenance, .mutable)
 
     let excluded = await app.run([
-      "workflow", "list", "marker", "--scope", "user", "--exclude-temporary", "--output", "json"
+      "workflow", "list", "marker", "--scope", "user", "--exclude-mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(try decode(WorkflowCatalogResult.self, excluded.stdout).workflows, [])
 
@@ -98,7 +98,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
         description: output
       )
       let result = await app.run([
-        "workflow", "register", bundle.path, "--temporary", "--output", output
+        "workflow", "register", bundle.path, "--mutable", "--output", output
       ], environment: environment)
       XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
       if output == "jsonl" || output == "json" {
@@ -135,12 +135,12 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     """.write(to: file, atomically: true, encoding: .utf8)
 
     let first = await app.run([
-      "workflow", "register", file.path, "--temporary", "--output", "json"
+      "workflow", "register", file.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(first.exitCode, .success, first.stderr + first.stdout)
 
     let second = await app.run([
-      "workflow", "register", file.path, "--temporary", "--output", "json"
+      "workflow", "register", file.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(second.exitCode, .usage)
     XCTAssertTrue(second.stdout.contains("--overwrite"))
@@ -158,7 +158,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     try #"{"workflowId":"invalid""#.write(to: invalid, atomically: true, encoding: .utf8)
 
     let failed = await app.run([
-      "workflow", "register", invalid.path, "--temporary", "--output", "json"
+      "workflow", "register", invalid.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(failed.exitCode, .failure)
     let failure = try decode(MutableWorkflowRegistrationFailure.self, failed.stdout)
@@ -167,7 +167,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     let link = layout.inputs.appendingPathComponent("linked.json")
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: invalid)
     let linked = await app.run([
-      "workflow", "register", link.path, "--temporary", "--output", "json"
+      "workflow", "register", link.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertNotEqual(linked.exitCode, .success)
 
@@ -188,7 +188,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
       description: "reserved"
     )
     let reservedResult = await app.run([
-      "workflow", "register", reserved.path, "--temporary", "--output", "json"
+      "workflow", "register", reserved.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertNotEqual(reservedResult.exitCode, .success)
 
@@ -206,13 +206,13 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     try #"{"id":"worker","executionBackend":"codex-agent","model":"gpt-5.5"}"#
       .write(to: layout.inputs.appendingPathComponent("outside.json"), atomically: true, encoding: .utf8)
     let escapingResult = await app.run([
-      "workflow", "register", escaping.path, "--temporary", "--output", "json"
+      "workflow", "register", escaping.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertNotEqual(escapingResult.exitCode, .success)
 
     let valid = try writeBundle(at: layout.inputs, workflowId: "valid-demo", description: "valid")
     let validRegistration = await app.run([
-      "workflow", "register", valid.path, "--temporary", "--output", "json"
+      "workflow", "register", valid.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(validRegistration.exitCode, .success)
     let external = layout.base.appendingPathComponent("external-record.json")
@@ -317,7 +317,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
       )
       let environment = ["HOME": layout.home.path]
       let initialRegistration = await app.run([
-        "workflow", "register", original.path, "--temporary", "--output", "json"
+        "workflow", "register", original.path, "--mutable", "--output", "json"
       ], environment: environment)
       XCTAssertEqual(
         initialRegistration.exitCode,
@@ -332,7 +332,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
         workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(registry: registry)
       )
       let overwrite = await failingApp.run([
-        "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+        "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
       ], environment: environment)
       if phase == .replacementPublished {
         XCTAssertEqual(overwrite.exitCode, .success, overwrite.stderr + overwrite.stdout)
@@ -379,7 +379,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
       )
       let environment = ["HOME": layout.home.path]
       let initialRegistration = await app.run([
-        "workflow", "register", original.path, "--temporary", "--output", "json"
+        "workflow", "register", original.path, "--mutable", "--output", "json"
       ], environment: environment)
       XCTAssertEqual(initialRegistration.exitCode, .success, phase.rawValue)
 
@@ -390,7 +390,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
         workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(registry: registry)
       )
       let overwrite = await interruptedApp.run([
-        "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+        "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
       ], environment: environment)
       XCTAssertNotEqual(overwrite.exitCode, .success, phase.rawValue)
 
@@ -429,7 +429,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await app.run([
-      "workflow", "register", bundle.path, "--temporary", "--output", "json"
+      "workflow", "register", bundle.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
@@ -486,7 +486,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: layout.base) }
     let temporary = try writeBundle(at: layout.inputs, workflowId: "precedence-demo", description: "temporary")
     let temporaryRegistration = await app.run([
-      "workflow", "register", temporary.path, "--temporary", "--output", "json"
+      "workflow", "register", temporary.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(temporaryRegistration.exitCode, .success)
 
@@ -505,7 +505,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
       description: "temporary only"
     )
     let temporaryOnlyRegistration = await app.run([
-      "workflow", "register", temporaryOnly.path, "--temporary", "--output", "json"
+      "workflow", "register", temporaryOnly.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
     XCTAssertEqual(temporaryOnlyRegistration.exitCode, .success)
     let projectOnlyMissing = await app.run([
@@ -530,7 +530,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await app.run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
@@ -574,7 +574,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     let projectPath = layout.project.path
     let overwriteTask = Task {
       await registeringApp.run([
-        "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+        "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
       ], environment: environment)
     }
     XCTAssertEqual(phaseReached.wait(timeout: .now() + 2), .success)
@@ -615,7 +615,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await app.run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
     let bundle = try CLIRuntimeEnvironment.$overrides.withValue(environment) {
@@ -644,7 +644,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     let projectPath = layout.project.path
     let overwriteTask = Task {
       await registeringApp.run([
-        "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+        "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
       ], environment: environment)
     }
     XCTAssertEqual(phaseReached.wait(timeout: .now() + 2), .success)
@@ -694,7 +694,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await app.run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
@@ -722,7 +722,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
 
     let overwriteTask = Task {
       await registeringApp.run([
-        "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+        "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
       ], environment: environment)
     }
     lockProbe.assertBlocked()

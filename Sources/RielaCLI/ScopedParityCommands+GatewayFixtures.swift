@@ -3,10 +3,6 @@ import RielaCore
 import RielaEvents
 
 extension ScopedParityCommandRunner {
-  func eventEnvelope(from object: JSONObject) throws -> ExternalEventEnvelope {
-    try eventEnvelope(from: object, sourceIdOverride: nil, source: nil)
-  }
-
   func eventEnvelope(
     from object: JSONObject,
     sourceIdOverride: String?,

@@ -45,15 +45,6 @@ final class WorkflowInstanceResolverTests: XCTestCase {
     XCTAssertEqual(resolved.nodePayloads["worker"]?.effort, .high)
   }
 
-  func testHistoricalTemporaryInstanceKindDecodesAsEphemeral() throws {
-    let decoded = try JSONDecoder().decode(
-      WorkflowInstanceKind.self,
-      from: Data(#""temporary""#.utf8)
-    )
-    XCTAssertEqual(decoded, .ephemeral)
-    XCTAssertEqual(String(data: try JSONEncoder().encode(decoded), encoding: .utf8), #""ephemeral""#)
-  }
-
   func testFrozenModelRejectsInstanceLayerPatch() throws {
     let base = WorkflowInstanceDefinition(
       identity: "prod",

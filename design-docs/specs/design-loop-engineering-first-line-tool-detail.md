@@ -701,8 +701,7 @@ The transaction coordinator performs these ordered phases:
    immutable fields and allowed phase transitions; incomplete, extra,
    ambiguous, or tampered generations fail closed. The active history marker
    is only a stable transaction-id pointer and does not duplicate mutable
-   phase. Readers of legacy split-written records reconcile only adjacent
-   monotonic phase states whose immutable transaction fields match exactly.
+   phase.
 4. Build a sibling staging directory on the target filesystem. Materialize a
    complete copy of the ownership root, including unowned regular files that
    are inside it, then change only reviewed owned paths. Unowned files are

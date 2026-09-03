@@ -164,27 +164,14 @@ func discoverWorkflowTransaction(
   }
   guard try historyEntryExistsWithoutFollowingLinks(active) else { return nonterminal.first }
   let activeBytes = try WorkflowHistorySecurePersistence.readPersistedBytes(from: active, historyRoot: historyRoot)
-  let marker = try? WorkflowHistoryCanonicalCoding.decode(WorkflowTransactionActiveMarker.self, from: activeBytes)
-  let legacy = marker == nil
-    ? try WorkflowHistoryCanonicalCoding.decode(WorkflowDirectoryTransactionRecord.self, from: activeBytes)
-    : nil
-  let transactionId = marker?.transactionId ?? legacy?.transactionId ?? ""
+  let marker = try WorkflowHistoryCanonicalCoding.decode(WorkflowTransactionActiveMarker.self, from: activeBytes)
+  let transactionId = marker.transactionId
   try WorkflowHistoryCanonicalCoding.validateSafeComponent(transactionId)
-  guard var selected = records[transactionId] else {
+  guard let selected = records[transactionId] else {
     throw CLIUsageError("active workflow transaction marker has no durable transaction record")
   }
   if let other = nonterminal.first, other.record.transactionId != transactionId {
     throw CLIUsageError("active workflow transaction marker conflicts with another nonterminal record")
-  }
-  if let legacy, legacy != selected.record {
-    selected.record = try reconcileWorkflowTransaction(record: selected.record, legacyActive: legacy)
-    try validateWorkflowTransactionRecordForDiscovery(selected.record, historyRoot: historyRoot)
-    try WorkflowTransactionGenerationStore.write(
-      selected.record,
-      logicalURL: selected.recordURL,
-      historyRoot: historyRoot,
-      betweenPayloadAndSidecar: {}
-    )
   }
   return selected
 }
@@ -338,20 +325,6 @@ private extension WorkflowDirectoryTransactionPhase {
   var isTerminal: Bool {
     self == .committed || self == .failed || self == .recovered
   }
-}
-
-func reconcileWorkflowTransaction(
-  record: WorkflowDirectoryTransactionRecord,
-  legacyActive: WorkflowDirectoryTransactionRecord
-) throws -> WorkflowDirectoryTransactionRecord {
-  // Legacy writers durably replaced the transaction record before replacing
-  // active.json. Therefore the active value may equal the generation value or
-  // be its immediate predecessor; it may never be a successor or a different
-  // branch. Validate in chronological order so immutable fields, verification,
-  // diagnostics, and the real branched phase graph use the generation rules.
-  if record == legacyActive { return record }
-  try WorkflowTransactionGenerationStore.validateTransition(from: legacyActive, to: record)
-  return record
 }
 
 func validateWorkflowTransactionStableMetadata(

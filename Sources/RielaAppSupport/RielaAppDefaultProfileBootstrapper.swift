@@ -57,9 +57,7 @@ public struct RielaAppDefaultProfileBootstrapper: Sendable {
   }
 
   private var hasExistingDaemonState: Bool {
-    ([daemonStore.stateURL] + daemonStore.legacyStateURLs).contains {
-      FileManager.default.fileExists(atPath: $0.path)
-    }
+    FileManager.default.fileExists(atPath: daemonStore.stateURL.path)
   }
 }
 

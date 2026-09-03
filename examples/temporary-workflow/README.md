@@ -3,12 +3,12 @@
 ## Register For Reuse
 
 The current Swift CLI can persist a normal workflow JSON file or bundle as a
-user-scoped temporary workflow:
+user-scoped mutable workflow:
 
 ```bash
-riela workflow register ./path/to/workflow-bundle --temporary --output jsonl
+riela workflow register ./path/to/workflow-bundle --mutable --output jsonl
 riela workflow list --output table
-riela workflow list --exclude-temporary --output jsonl
+riela workflow list --exclude-mutable --output jsonl
 riela workflow validate <workflowId> --output jsonl
 riela workflow run <workflowId> --mock-scenario ./path/to/mock.json --output jsonl
 ```

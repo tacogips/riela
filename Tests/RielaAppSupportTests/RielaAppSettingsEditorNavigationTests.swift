@@ -207,7 +207,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     var state = RielaAppDaemonWorkflowState(
       assistant: RielaAppAssistantSettings(
         vendor: .openAIAPI,
-        model: "gpt-5",
+        modelsByVendor: [RielaAppAssistantVendor.openAIAPI.rawValue: "gpt-5"],
         isFolded: false,
         messages: [RielaAppAssistantMessage(role: .assistant, content: "Ready.")]
       )

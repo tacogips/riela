@@ -93,22 +93,6 @@ public struct LoopSessionSummary: Codable, Equatable, Sendable {
     self.evidenceUpdatedAt = evidenceUpdatedAt
   }
 
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-    self.loopKind = try container.decodeIfPresent(String.self, forKey: .loopKind)
-    self.loopRequired = try container.decodeIfPresent(Bool.self, forKey: .loopRequired)
-    self.gateOutcomes = try container.decodeIfPresent([LoopGateOutcome].self, forKey: .gateOutcomes) ?? []
-    self.lastGateDecision = try container.decodeIfPresent(String.self, forKey: .lastGateDecision)
-    self.blockingFindingCount = try container.decodeIfPresent(Int.self, forKey: .blockingFindingCount) ?? 0
-    self.entryMode = try container.decodeIfPresent(String.self, forKey: .entryMode)
-    self.sourceSessionId = try container.decodeIfPresent(String.self, forKey: .sourceSessionId)
-    self.rootSessionId = try container.decodeIfPresent(String.self, forKey: .rootSessionId)
-    self.attemptNumber = try container.decodeIfPresent(Int.self, forKey: .attemptNumber)
-    self.cost = try container.decodeIfPresent(LoopCostSummary.self, forKey: .cost)
-    self.evidenceUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .evidenceUpdatedAt) ?? Date(timeIntervalSince1970: 0)
-  }
-
   public static func make(
     manifest: LoopEvidenceManifest,
     loopMetadata: WorkflowLoopMetadata? = nil
@@ -180,7 +164,8 @@ public struct LoopSessionOverview: Codable, Equatable, Sendable {
   public var sourceSessionId: String?
   public var cost: LoopCostSummary?
   /// Frozen per-gate outcomes (with requiredness) carried through from the
-  /// session summary. Optional for legacy overviews; consumers treat nil as
+  /// session summary. Nil when the session has no loop evidence summary;
+  /// consumers treat nil as
   /// empty. Enables faithful `loop stats` aggregation ("all *required* gates
   /// accepted") without re-reading workflow definitions.
   public var gateOutcomes: [LoopGateOutcome]?

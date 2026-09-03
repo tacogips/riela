@@ -5,12 +5,12 @@ import XCTest
 final class GarbageCollectionCommandTests: XCTestCase {
   func testManualGarbageCollectionUsesTypedArguments() async throws {
     let home = try makeRoot()
-    let session = home.appendingPathComponent(".riela/sessions/old-session.json")
-    try FileManager.default.createDirectory(at: session.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("test".utf8).write(to: session)
+    let log = home.appendingPathComponent(".riela/logs/old-run.jsonl")
+    try FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("test".utf8).write(to: log)
     try FileManager.default.setAttributes(
       [.modificationDate: Date(timeIntervalSince1970: 1_000)],
-      ofItemAtPath: session.path
+      ofItemAtPath: log.path
     )
 
     let result = await RielaCLIApplication().run(
@@ -19,7 +19,7 @@ final class GarbageCollectionCommandTests: XCTestCase {
     )
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: session.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
     XCTAssertTrue(result.stdout.contains(#""enabled":true"#), result.stdout)
   }
 

@@ -27,7 +27,6 @@ final class WorkflowObservabilityTests: XCTestCase {
         "RIELA_OTEL_RESOURCE_ATTRIBUTES": "deployment.environment=test,profile=default",
         "RIELA_OTEL_LOGS_ENABLED": "false",
         "RIELA_OTEL_MAX_BUFFER_RECORDS": "17",
-        "RIELA_OTEL_LEGACY_PAYLOAD": "true",
         "traceparent": "00-11111111111111111111111111111111-2222222222222222-01"
       ],
       surface: .app
@@ -40,7 +39,6 @@ final class WorkflowObservabilityTests: XCTestCase {
     XCTAssertFalse(enabled.enabledSignals.contains(.logs))
     XCTAssertTrue(enabled.enabledSignals.contains(.traces))
     XCTAssertEqual(enabled.maxBufferRecords, 17)
-    XCTAssertTrue(enabled.legacyPayload)
     XCTAssertEqual(enabled.traceContext?.traceparent, "00-11111111111111111111111111111111-2222222222222222-01")
   }
 

@@ -72,74 +72,12 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(decoded.nodePatchJSONObject?["worker"], .object(["model": .string("gpt-5-mini")]))
   }
 
-  func testWorkflowPreferenceDecodesLegacyInstanceConfigurationFields() throws {
-    let data = Data("""
-    {
-      "identity": "telegram-persona-a",
-      "sourceIdentity": "user-workflow:telegram-bot",
-      "available": true,
-      "active": true,
-      "environmentFilePath": "/secrets/persona-a.env",
-      "environmentVariables": {"PERSONA": "assistant-a"},
-      "defaultVariables": {"persona": "assistant-a"},
-      "nodePatches": {"worker": {"model": "gpt-5-mini"}}
-    }
-    """.utf8)
-
-    let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowPreference.self, from: data)
-
-    XCTAssertEqual(decoded.environmentFilePath, "/secrets/persona-a.env")
-    XCTAssertEqual(decoded.environmentVariables["PERSONA"], "assistant-a")
-    XCTAssertEqual(decoded.defaultVariables["persona"], .string("assistant-a"))
-    XCTAssertEqual(decoded.nodePatches["worker"]?.model, "gpt-5-mini")
-  }
-
-  func testWorkflowStateDecodesLegacyV1DaemonWorkflowsJSONLosslessly() throws {
-    let data = Data("""
-    {
-      "version": 1,
-      "preferences": {
-        "telegram-persona-a": {
-          "identity": "telegram-persona-a",
-          "sourceIdentity": "user-workflow:telegram-bot",
-          "displayName": "Telegram Persona A",
-          "available": true,
-          "active": true,
-          "environmentFilePath": "/secrets/persona-a.env",
-          "environmentVariables": {"PERSONA": "assistant-a"},
-          "defaultVariables": {"persona": "assistant-a"},
-          "nodePatches": {"worker": {"model": "gpt-5-mini"}}
-        }
-      },
-      "workflowDirectories": ["/workflows/telegram-bot"],
-      "projectDirectories": ["/projects/chat"]
-    }
-    """.utf8)
-
-    let decoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: data)
-    let preference = try XCTUnwrap(decoded.preferences["telegram-persona-a"])
-
-    XCTAssertEqual(decoded.version, 1)
-    XCTAssertEqual(decoded.workflowDirectories, ["/workflows/telegram-bot"])
-    XCTAssertEqual(decoded.projectDirectories, ["/projects/chat"])
-    XCTAssertEqual(preference.identity, "telegram-persona-a")
-    XCTAssertEqual(preference.sourceIdentity, "user-workflow:telegram-bot")
-    XCTAssertEqual(preference.environmentFilePath, "/secrets/persona-a.env")
-    XCTAssertEqual(preference.environmentVariables["PERSONA"], "assistant-a")
-    XCTAssertEqual(preference.defaultVariables["persona"], .string("assistant-a"))
-    XCTAssertEqual(preference.nodePatches["worker"]?.model, "gpt-5-mini")
-
-    let encoded = try JSONEncoder().encode(decoded)
-    let redecoded = try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: encoded)
-    XCTAssertEqual(redecoded, decoded)
-  }
-
   func testWorkflowStateStoresAssistantAssistance() throws {
     let state = RielaAppDaemonWorkflowState(
       assistant: RielaAppAssistantSettings(
         assistance: "Prefer concise help.",
         vendor: .openAIAPI,
-        model: "gpt-5",
+        modelsByVendor: [RielaAppAssistantVendor.openAIAPI.rawValue: "gpt-5"],
         isFolded: true,
         messages: [
           RielaAppAssistantMessage(role: .user, content: "Create an instance"),
@@ -153,12 +91,12 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
 
     XCTAssertEqual(decoded.assistant.assistance, "Prefer concise help.")
     XCTAssertEqual(decoded.assistant.vendor, .openAIAPI)
-    XCTAssertEqual(decoded.assistant.model, "gpt-5")
+    XCTAssertEqual(decoded.assistant.selectedModel(for: .openAIAPI), "gpt-5")
     XCTAssertEqual(decoded.assistant.isFolded, true)
     XCTAssertEqual(decoded.assistant.messages.map(\.content), ["Create an instance", "Use the Add Instance control."])
   }
 
-  func testWorkflowStateDecodesLegacyAssistantAssistanceOnly() throws {
+  func testWorkflowStateDecodesAssistantAssistanceOnly() throws {
     let data = Data("""
     {
       "version": 1,

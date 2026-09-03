@@ -36,10 +36,6 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
   func testCollectRemovesOnlyGeneratedEntriesOlderThanCutoff() throws {
     let home = try makeRoot()
     let rielaRoot = home.appendingPathComponent(".riela", isDirectory: true)
-    let sessions = rielaRoot.appendingPathComponent("sessions", isDirectory: true)
-    let oldSession = sessions.appendingPathComponent("old-session.json")
-    let newSession = sessions.appendingPathComponent("new-session.json")
-    let oldRuntime = sessions.appendingPathComponent("runtime-records/old-session", isDirectory: true)
     let oldSnapshot = rielaRoot.appendingPathComponent(
       "workflow-history/demo/snapshots/snapshot-old",
       isDirectory: true
@@ -49,22 +45,19 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
     let oldLog = rielaRoot.appendingPathComponent("logs/old-run.jsonl")
     let workflow = rielaRoot.appendingPathComponent("workflows/demo/workflow.json")
     let generatedFiles = [
-      oldRuntime.appendingPathComponent("log.txt"),
       oldSnapshot.appendingPathComponent("manifest.json"),
       oldReceipt,
       oldArtifact,
       oldLog
     ]
-    for file in [oldSession, newSession, workflow] + generatedFiles {
+    for file in [workflow] + generatedFiles {
       try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
       try Data("test".utf8).write(to: file)
     }
     let oldDate = Date(timeIntervalSince1970: 1_000)
-    try setModificationDate(oldDate, for: oldSession)
     for file in generatedFiles {
       try setModificationDate(oldDate, for: file)
     }
-    try setModificationDate(oldDate, for: oldRuntime)
     try setModificationDate(oldDate, for: oldSnapshot)
     try setModificationDate(oldDate, for: oldArtifact.deletingLastPathComponent())
     try setModificationDate(oldDate, for: oldReceipt)
@@ -78,13 +71,10 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
     )
 
     XCTAssertTrue(report.enabled)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: oldSession.path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: oldRuntime.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: oldSnapshot.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: oldReceipt.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: oldArtifact.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: oldLog.path))
-    XCTAssertTrue(FileManager.default.fileExists(atPath: newSession.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: workflow.path))
   }
 

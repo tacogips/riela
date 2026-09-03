@@ -114,9 +114,15 @@ public struct RoutineStoreError: Error, Equatable, Sendable, CustomStringConvert
 /// are opened per operation (WAL for writes, read-only opens for reads, a
 /// missing database reads as empty).
 public struct RoutineStore: Sendable {
-  /// Routine records are not regenerable, so an incompatible older store is a
-  /// hard error rather than an auto-discard.
+  /// Routine records are not regenerable, so an older store without a
+  /// registered migration path is a hard error rather than an auto-discard.
+  /// When bumping, append an upgrade step to `schemaMigrations`.
   public static let schemaGeneration: Int64 = 1
+
+  /// Ordered `from → from+1` upgrade steps applied in place when an older
+  /// stamped store is opened. Append a `SQLiteSchemaMigration(fromGeneration:)`
+  /// here for every future `schemaGeneration` bump.
+  public static let schemaMigrations: [SQLiteSchemaMigration] = []
   public static let databaseFileName = "routines.sqlite"
   public static let rootDirectoryEnvironmentKey = "RIELA_ROUTINE_STORE"
   public static let maximumListLimit = 1_000
@@ -281,8 +287,17 @@ public struct RoutineStore: Sendable {
       return nil
     }
     let db = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
-    try requireCompatibleGeneration(db)
-    return db
+    do {
+      try requireCompatibleGeneration(db, mode: .verify)
+      return db
+    } catch is SQLiteSchemaMigrator.MigrationPendingError {
+      // An older migratable store: migrate through a writable open, then
+      // reopen read-only against the upgraded schema.
+      _ = try openWritable()
+      let migrated = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+      try requireCompatibleGeneration(migrated, mode: .verify)
+      return migrated
+    }
   }
 
   private func ensureSchema(_ db: SQLiteDatabase) throws {
@@ -306,17 +321,26 @@ public struct RoutineStore: Sendable {
     }
   }
 
-  private func requireCompatibleGeneration(_ db: SQLiteDatabase) throws {
-    let rows = try db.query("PRAGMA user_version")
-    let version = rows.first?["user_version"].flatMap(Int64.init) ?? 0
-    guard version <= Self.schemaGeneration else {
-      throw RoutineStoreError(
-        "routine store at \(databasePath) uses schema generation \(version); this build supports \(Self.schemaGeneration)"
+  private func requireCompatibleGeneration(
+    _ db: SQLiteDatabase,
+    mode: SQLiteSchemaMigrator.Mode = .migrate
+  ) throws {
+    do {
+      try SQLiteSchemaMigrator.migrateIfNeeded(
+        in: db,
+        currentGeneration: Self.schemaGeneration,
+        migrations: Self.schemaMigrations,
+        preGenerationProbe: { try $0.tableExists("routines") },
+        storeDescription: "routine store",
+        mode: mode
       )
-    }
-    if version < Self.schemaGeneration, try db.tableExists("routines") {
+    } catch let error as SQLiteSchemaMigrator.NewerGenerationError {
       throw RoutineStoreError(
-        "routine store at \(databasePath) predates schema generation \(Self.schemaGeneration); move it aside and recreate routines"
+        "routine store at \(databasePath) uses schema generation \(error.stampedGeneration); this build supports \(Self.schemaGeneration)"
+      )
+    } catch let error as SQLiteSchemaMigrator.MissingMigrationPathError {
+      throw RoutineStoreError(
+        "routine store at \(databasePath) (schema generation \(error.stampedGeneration)) has no migration path to generation \(Self.schemaGeneration); move it aside and recreate routines"
       )
     }
   }

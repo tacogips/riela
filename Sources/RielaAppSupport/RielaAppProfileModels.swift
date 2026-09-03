@@ -50,7 +50,6 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
 
   public var assistance: String
   public var vendor: RielaAppAssistantVendor
-  public var model: String
   public var modelsByVendor: [String: String]
   public var isFolded: Bool
   public var messages: [RielaAppAssistantMessage]
@@ -58,7 +57,6 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case assistance
     case vendor
-    case model
     case modelsByVendor
     case isFolded
     case messages
@@ -67,14 +65,12 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
   public init(
     assistance: String = "",
     vendor: RielaAppAssistantVendor = RielaAppAssistantVendor.defaultSelectableVendor,
-    model: String = "",
     modelsByVendor: [String: String] = [:],
     isFolded: Bool = true,
     messages: [RielaAppAssistantMessage] = []
   ) {
     self.assistance = assistance
     self.vendor = vendor
-    self.model = model
     self.modelsByVendor = modelsByVendor
     self.isFolded = isFolded
     self.messages = messages
@@ -85,7 +81,6 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
     assistance = try container.decodeIfPresent(String.self, forKey: .assistance) ?? ""
     vendor = try container.decodeIfPresent(RielaAppAssistantVendor.self, forKey: .vendor)
       ?? RielaAppAssistantVendor.defaultSelectableVendor
-    model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
     modelsByVendor = try container.decodeIfPresent([String: String].self, forKey: .modelsByVendor) ?? [:]
     isFolded = try container.decodeIfPresent(Bool.self, forKey: .isFolded) ?? true
     messages = try container.decodeIfPresent([RielaAppAssistantMessage].self, forKey: .messages) ?? []
@@ -104,10 +99,6 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
     if let configured, !configured.isEmpty {
       return configured
     }
-    let legacyModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-    if vendor == self.vendor, !legacyModel.isEmpty {
-      return legacyModel
-    }
     return vendor.defaultModel
   }
 
@@ -115,9 +106,6 @@ public struct RielaAppAssistantSettings: Codable, Equatable, Sendable {
     let candidate = model.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalized = candidate.isEmpty ? vendor.defaultModel : candidate
     modelsByVendor[vendor.rawValue] = normalized
-    if vendor == self.vendor {
-      self.model = normalized
-    }
   }
 
   public var isEmpty: Bool {

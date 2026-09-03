@@ -554,18 +554,50 @@ public struct RielaMemoryStore: Sendable {
     committed = true
   }
 
-  /// The store never migrates old layouts in place: a database created by an
-  /// earlier schema version must be deleted before this build can use it.
+  /// Brings the database up to `currentSchemaVersion`. Fresh databases are
+  /// stamped by `ensureSchema` after table creation; older stamped databases
+  /// are upgraded in place through `memorySchemaMigrations`, one version at a
+  /// time inside a transaction. A database without a complete migration chain,
+  /// or one written by a newer build, is a hard error — memory data is not
+  /// regenerable, so it is never auto-discarded.
   private func requireCurrentSchemaVersion(_ db: OpaquePointer?) throws {
     let rows = try queryRows(db, sql: "PRAGMA user_version", bindings: [])
     let version = rows.first?.columns["user_version"].flatMap(Int.init) ?? 0
-    guard version < currentSchemaVersion else {
+    if version == currentSchemaVersion {
       return
     }
-    guard try !tableExists("memory_entries", db: db) else {
+    if version > currentSchemaVersion {
       throw RielaMemoryError.sqliteFailed(
-        "memory store schema predates version \(currentSchemaVersion); delete the memory database and rerun"
+        "memory store uses schema version \(version); this build supports \(currentSchemaVersion)"
       )
+    }
+    if version == 0 {
+      guard try !tableExists("memory_entries", db: db) else {
+        throw RielaMemoryError.sqliteFailed(
+          "memory store schema predates version \(currentSchemaVersion) and has no migration path; delete the memory database and rerun"
+        )
+      }
+      return
+    }
+    let covered = Set(memorySchemaMigrations.map(\.fromVersion))
+    guard (version..<currentSchemaVersion).allSatisfy(covered.contains) else {
+      throw RielaMemoryError.sqliteFailed(
+        "memory store schema version \(version) has no migration path to version \(currentSchemaVersion); delete the memory database and rerun"
+      )
+    }
+    let steps = memorySchemaMigrations
+      .filter { (version..<currentSchemaVersion).contains($0.fromVersion) }
+      .sorted { $0.fromVersion < $1.fromVersion }
+    for step in steps {
+      try execute(db, "BEGIN IMMEDIATE")
+      do {
+        try step.migrate(db)
+        try execute(db, "PRAGMA user_version = \(step.fromVersion + 1)")
+        try execute(db, "COMMIT")
+      } catch {
+        try? execute(db, "ROLLBACK")
+        throw error
+      }
     }
   }
 

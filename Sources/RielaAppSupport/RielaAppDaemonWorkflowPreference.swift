@@ -16,12 +16,7 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     case sourceIdentity
     case displayName
     case available
-    case enabledAtLaunch
     case active
-    case environmentFilePath
-    case environmentVariables
-    case defaultVariables
-    case nodePatches
     case configuration
   }
 
@@ -51,10 +46,6 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     )
   }
 
-  public init(identity: String, enabledAtLaunch: Bool, active: Bool = false) {
-    self.init(identity: identity, available: enabledAtLaunch, active: active)
-  }
-
   public static func imported(identity: String, startsImmediately: Bool) -> RielaAppDaemonWorkflowPreference {
     RielaAppDaemonWorkflowPreference(identity: identity, available: true, active: startsImmediately)
   }
@@ -69,26 +60,12 @@ public struct RielaAppDaemonWorkflowPreference: Codable, Equatable, Sendable {
     identity = try container.decode(String.self, forKey: .identity)
     sourceIdentity = try container.decodeIfPresent(String.self, forKey: .sourceIdentity)
     displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
-    available = try container.decodeIfPresent(Bool.self, forKey: .available)
-      ?? container.decodeIfPresent(Bool.self, forKey: .enabledAtLaunch)
-      ?? false
+    available = try container.decodeIfPresent(Bool.self, forKey: .available) ?? false
     active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? available
-    if let decodedConfiguration = try container.decodeIfPresent(
+    configuration = try container.decodeIfPresent(
       RielaAppDaemonWorkflowConfiguration.self,
       forKey: .configuration
-    ) {
-      configuration = decodedConfiguration
-    } else {
-      configuration = RielaAppDaemonWorkflowConfiguration(
-        environmentFilePath: try container.decodeIfPresent(String.self, forKey: .environmentFilePath),
-        environmentVariables: try container.decodeIfPresent([String: String].self, forKey: .environmentVariables) ?? [:],
-        defaultVariables: try container.decodeIfPresent(JSONObject.self, forKey: .defaultVariables) ?? [:],
-        nodePatches: try container.decodeIfPresent(
-          [String: RielaAppDaemonWorkflowNodePatch].self,
-          forKey: .nodePatches
-        ) ?? [:]
-      )
-    }
+    ) ?? RielaAppDaemonWorkflowConfiguration()
   }
 
   public func encode(to encoder: Encoder) throws {

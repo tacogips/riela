@@ -221,36 +221,6 @@ final class WorkflowRound8AdversarialTests: XCTestCase {
     ).publish(gateEvidence(id: "gate-result-leaf-swap")))
     XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
   }
-
-  func testLegacyReconciliationRejectsCommittedToFailedBranch() throws {
-    let base = transactionRecord(phase: .committed)
-    var failed = base
-    failed.phase = .failed
-    XCTAssertThrowsError(try reconcileWorkflowTransaction(record: failed, legacyActive: base))
-  }
-
-  func testLegacyReconciliationRejectsFailedToRecoveredBranch() throws {
-    let base = transactionRecord(phase: .failed)
-    var recovered = base
-    recovered.phase = .recovered
-    XCTAssertThrowsError(try reconcileWorkflowTransaction(record: recovered, legacyActive: base))
-  }
-
-  func testLegacyReconciliationRejectsReversedTransition() throws {
-    let prepared = transactionRecord(phase: .prepared)
-    var preparing = prepared
-    preparing.phase = .preparing
-    XCTAssertThrowsError(try reconcileWorkflowTransaction(record: preparing, legacyActive: prepared))
-  }
-
-  func testLegacyReconciliationRejectsRewrittenEvidence() throws {
-    var previous = transactionRecord(phase: .prepared)
-    previous.verification = [verification(summary: "original")]
-    var next = previous
-    next.phase = .committing
-    next.verification = [verification(summary: "rewritten")]
-    XCTAssertThrowsError(try reconcileWorkflowTransaction(record: next, legacyActive: previous))
-  }
 }
 
 private extension WorkflowRound8AdversarialTests {

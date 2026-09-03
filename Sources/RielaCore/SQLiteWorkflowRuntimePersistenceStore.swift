@@ -102,38 +102,58 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       .prepareSchema(in: db)
   }
 
-  /// Bumped whenever the schema changes shape. The store never migrates old
-  /// layouts in place: a database stamped with an older generation must be
-  /// deleted (or garbage-collected) before this build can write to it.
+  /// Bumped whenever the schema changes shape. When bumping, register an
+  /// in-place upgrade step in `schemaMigrations` so existing stores are
+  /// migrated instead of discarded.
   public static let schemaGeneration: Int64 = 2
 
-  /// Refuses writable opens against a database whose tables predate the
-  /// current schema generation, and stamps fresh databases. Throws SQLiteError
-  /// so each store maps it into its own error domain.
+  /// Ordered `from → from+1` upgrade steps for the session store database
+  /// (covers the snapshot, message-log, and CLI session tables — they share
+  /// one file). Append a `SQLiteSchemaMigration(fromGeneration:)` here for
+  /// every future `schemaGeneration` bump. Stores stamped before generation 2
+  /// (the migration baseline) have no path and are discarded.
+  public static let schemaMigrations: [SQLiteSchemaMigration] = []
+
+  /// Brings the database up to the current schema generation: stamps fresh
+  /// databases, migrates older stamped generations via `schemaMigrations`,
+  /// and refuses databases without a migration path or written by a newer
+  /// build. Throws SQLiteError so each store maps it into its own error
+  /// domain.
   public static func requireCompatibleSchemaGeneration(in db: SQLiteDatabase) throws {
-    let version = try db.query("PRAGMA user_version").first?["user_version"].flatMap(Int64.init) ?? 0
-    guard version < schemaGeneration else {
-      return
-    }
-    let hasPreGenerationTables = try db.tableExists("workflow_runtime_snapshots")
-      || db.tableExists("cli_workflow_sessions")
-    guard !hasPreGenerationTables else {
+    do {
+      try SQLiteSchemaMigrator.migrateIfNeeded(
+        in: db,
+        currentGeneration: schemaGeneration,
+        migrations: schemaMigrations,
+        preGenerationProbe: { db in
+          try db.tableExists("workflow_runtime_snapshots")
+            || db.tableExists("cli_workflow_sessions")
+        },
+        storeDescription: "session store"
+      )
+    } catch let error as SQLiteSchemaMigrator.MissingMigrationPathError {
       throw SQLiteError(
         operation: .execute,
         code: nil,
-        message: "session store schema predates generation \(schemaGeneration); delete the session store and rerun"
+        message: "session store schema (generation \(error.stampedGeneration)) has no migration path to generation \(schemaGeneration); delete the session store and rerun"
+      )
+    } catch let error as SQLiteSchemaMigrator.NewerGenerationError {
+      throw SQLiteError(
+        operation: .execute,
+        code: nil,
+        message: "session store uses schema generation \(error.stampedGeneration); this build supports \(schemaGeneration)"
       )
     }
-    try db.execute("PRAGMA user_version = \(schemaGeneration)")
   }
 
-  /// Deletes an incompatible pre-generation session store database (plus its
-  /// WAL/SHM sidecars) so the writable open that follows rebuilds the
-  /// current-generation schema from scratch. Session stores hold regenerable
-  /// run history, so discarding beats hard-failing every writable open;
-  /// memory stores keep their hard error because their data is not
-  /// regenerable. Unreadable databases are left for the normal open path to
-  /// report.
+  /// Deletes a session store database (plus its WAL/SHM sidecars) that is
+  /// older than the current generation and has no registered migration path,
+  /// so the writable open that follows rebuilds the current-generation schema
+  /// from scratch. Session stores hold regenerable run history, so discarding
+  /// beats hard-failing every writable open; routine and memory stores keep
+  /// their hard error because their data is not regenerable. Migratable and
+  /// newer-generation databases are left alone; unreadable databases are left
+  /// for the normal open path to report.
   @discardableResult
   public static func discardIncompatibleStoreIfNeeded(databasePath: String) -> Bool {
     guard FileManager.default.fileExists(atPath: databasePath) else {
@@ -142,8 +162,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let isIncompatible: Bool
     do {
       let db = try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
-      let version = try db.query("PRAGMA user_version").first?["user_version"].flatMap(Int64.init) ?? 0
-      if version >= schemaGeneration {
+      let version = try SQLiteSchemaMigrator.stampedGeneration(in: db)
+      if version >= schemaGeneration
+        || SQLiteSchemaMigrator.hasCompletePath(from: version, to: schemaGeneration, migrations: schemaMigrations) {
         isIncompatible = false
       } else {
         isIncompatible = try db.tableExists("workflow_runtime_snapshots")
@@ -160,7 +181,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try? FileManager.default.removeItem(atPath: databasePath + suffix)
     }
     FileHandle.standardError.write(Data(
-      "warning: discarded incompatible pre-generation session store at \(databasePath)\n".utf8
+      "warning: discarded incompatible session store without a migration path at \(databasePath)\n".utf8
     ))
     return true
   }

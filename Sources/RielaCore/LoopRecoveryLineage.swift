@@ -18,11 +18,12 @@ public struct LoopRecoveryLineage: Codable, Equatable, Sendable {
   public var reason: String?
   public var inputReusePolicy: String
   public var preservedFailureEvidenceRefs: [String]
-  /// First session of this loop lineage (additive; nil on legacy records and
-  /// on initial runs, where the session is its own root).
+  /// First session of this loop lineage (nil on initial runs, where the
+  /// session is its own root).
   public var rootSessionId: String?
   /// 1-based attempt counter within the lineage. Rerun increments it; resume
-  /// continues the source attempt. Nil on legacy records (treated as 1).
+  /// continues the source attempt. Nil when the entry point does not track
+  /// attempts (treated as 1).
   public var attemptNumber: Int?
 
   public init(

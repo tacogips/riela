@@ -79,17 +79,6 @@ final class LoopSessionOverviewTests: XCTestCase {
     XCTAssertNil(overview.gateSummary)
     XCTAssertTrue(overview.possiblyStale)
   }
-
-  func testSummaryDecodesLegacyPayloadWithDefaults() throws {
-    let data = Data(#"{"evidenceUpdatedAt":"2023-11-14T22:13:20Z"}"#.utf8)
-
-    let summary = try JSONDecoder.rielaISO8601.decode(LoopSessionSummary.self, from: data)
-
-    XCTAssertEqual(summary.schemaVersion, 1)
-    XCTAssertEqual(summary.gateOutcomes, [])
-    XCTAssertEqual(summary.blockingFindingCount, 0)
-    XCTAssertNil(summary.lastGateDecision)
-  }
 }
 
 private extension JSONDecoder {

@@ -801,9 +801,6 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
 
   private func loadActiveRecord(_ active: URL, historyRoot: URL) throws -> WorkflowDirectoryTransactionRecord {
     let bytes = try WorkflowHistorySecurePersistence.readPersistedBytes(from: active, historyRoot: historyRoot)
-    if let record = try? WorkflowHistoryCanonicalCoding.decode(WorkflowDirectoryTransactionRecord.self, from: bytes) {
-      return record
-    }
     let marker = try WorkflowHistoryCanonicalCoding.decode(WorkflowTransactionActiveMarker.self, from: bytes)
     return try WorkflowHistorySecurePersistence.readCanonical(
       WorkflowDirectoryTransactionRecord.self,

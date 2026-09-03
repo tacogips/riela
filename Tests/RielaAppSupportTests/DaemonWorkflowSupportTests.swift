@@ -456,7 +456,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     )
   }
 
-  func testStoreLoadsLegacyStateWithoutWorkflowDirectories() throws {
+  func testStoreLoadsStateWithoutWorkflowDirectories() throws {
     let root = try temporaryHome()
     let stateURL = root.appendingPathComponent("state/daemon-workflows.json")
     try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -466,7 +466,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       "preferences": {
         "workflow-a": {
           "identity": "workflow-a",
-          "enabledAtLaunch": true,
+          "available": true,
           "active": false
         }
       }
@@ -481,7 +481,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     XCTAssertEqual(state.preferences["workflow-a"]?.active, false)
   }
 
-  func testStoreLoadsLegacyAvailableWorkflowAsActiveWhenActiveIsMissing() throws {
+  func testStoreLoadsAvailableWorkflowAsActiveWhenActiveIsMissing() throws {
     let root = try temporaryHome()
     let stateURL = root.appendingPathComponent("state/daemon-workflows.json")
     try FileManager.default.createDirectory(at: stateURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -491,7 +491,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
       "preferences": {
         "workflow-a": {
           "identity": "workflow-a",
-          "enabledAtLaunch": true
+          "available": true
         }
       }
     }
@@ -515,33 +515,6 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     let defaultPath = RielaAppProfileStore.defaultWorkflowRootURL(homeDirectory: root).path
 
     XCTAssertEqual(defaultPath, "/tmp/rielaapp-home/.riela/rielaapp/profiles/default/workflows")
-  }
-
-  func testProfileStoreLoadsLegacyUserRielaStateForDefaultProfileOnly() throws {
-    let root = try temporaryHome()
-    let legacyURL = RielaAppDaemonWorkflowStore.legacyUserRielaStateURL(homeDirectory: root)
-    try FileManager.default.createDirectory(at: legacyURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try """
-    {
-      "version": 1,
-      "workflowDirectories": ["/tmp/legacy-workflow"],
-      "preferences": {
-        "legacy": {
-          "identity": "legacy",
-          "enabledAtLaunch": true,
-          "active": true
-        }
-      }
-    }
-    """.write(to: legacyURL, atomically: true, encoding: .utf8)
-
-    let defaultState = RielaAppDaemonWorkflowStore(profileName: .default, homeDirectory: root).load()
-    let otherState = RielaAppDaemonWorkflowStore(profileName: RielaAppProfileName("work"), homeDirectory: root).load()
-
-    XCTAssertEqual(defaultState.workflowDirectories, ["/tmp/legacy-workflow"])
-    XCTAssertEqual(defaultState.projectDirectories, [])
-    XCTAssertEqual(defaultState.preferences["legacy"]?.available, true)
-    XCTAssertEqual(otherState, RielaAppDaemonWorkflowState())
   }
 
   func testManagedWorkflowInstallerCopiesWorkflowIntoProfileWorkflowRoot() throws {

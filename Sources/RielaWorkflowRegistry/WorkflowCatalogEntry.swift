@@ -32,7 +32,6 @@ public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
     case packageVersion
     case packageDirectory
     case mutable
-    case temporary
     case valid
     case diagnostics
   }
@@ -85,9 +84,7 @@ public struct WorkflowCatalogEntry: Codable, Equatable, Sendable {
     let scope = try container.decode(WorkflowScope.self, forKey: .scope)
     let sourceKind = try container.decode(WorkflowSourceKind.self, forKey: .sourceKind)
     let workflowDirectory = try container.decode(String.self, forKey: .workflowDirectory)
-    let legacyTemporary = try container.decodeIfPresent(Bool.self, forKey: .temporary) ?? false
-    let provenance = try container.decodeIfPresent(WorkflowProvenance.self, forKey: .provenance)
-      ?? (legacyTemporary ? .mutable : .immutable)
+    let provenance = try container.decodeIfPresent(WorkflowProvenance.self, forKey: .provenance) ?? .immutable
     self.init(
       workflowName: workflowName,
       workflowId: workflowId,

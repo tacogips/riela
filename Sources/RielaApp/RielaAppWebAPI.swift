@@ -472,7 +472,7 @@ extension RielaApp {
   private func webGlobalExecutionDetail(sessionId: String) -> RielaHTTPResponse {
     // Private definitions can be gone by the time a Web link is opened. Read
     // the profile-owned runtime record directly, without resolving a workflow
-    // directory, before trying the legacy instance-bound projection.
+    // directory.
     let runtimeRoot = URL(fileURLWithPath: webSessionStoreRootPath, isDirectory: true)
       .appendingPathComponent("runtime-records", isDirectory: true).path
     if let snapshot = try? SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).load(sessionId: sessionId) {
@@ -498,10 +498,6 @@ extension RielaApp {
         "gates": .array([]), "gatesTotalCount": .number(0), "gatesTruncated": .bool(false),
         "recovery": .null, "truncated": .bool(false)
       ])
-    }
-    for instance in daemonInstances {
-      let response = webExecutionDetail(identity: instance.identity, sessionId: sessionId)
-      if response.status != 404 { return response }
     }
     return webError(status: 404, code: "session_not_found", message: "Workflow session was not found")
   }

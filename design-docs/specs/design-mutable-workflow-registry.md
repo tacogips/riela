@@ -110,15 +110,10 @@ term becomes `ephemeral`:
 - `temporaryIdentity(_:)` becomes `ephemeralIdentity(_:)`, retaining the
   existing stable `<base>+overrides` identity value;
 - new runtime sessions, CLI/session projections, and GraphQL `instanceKind`
-  values emit `ephemeral`, never `temporary`;
-- decoding a historical Codable enum value or persisted session
-  `instanceKind: "temporary"` maps to `.ephemeral`, and subsequent projections
-  normalize it to `ephemeral`;
+  values emit `ephemeral`, never `temporary` (the historical
+  `instanceKind: "temporary"` decode alias was removed on 2026-09-03);
 - the existing GraphQL field remains a `String` and is not removed or renamed,
   so existing query documents remain structurally compatible.
-
-This compatibility decoder is limited to historical instance/session input and
-does not make an ephemeral effective instance a mutable registry workflow.
 
 ## Storage and compatibility
 
@@ -270,11 +265,8 @@ riela workflow register <path> --mutable [--overwrite]
   [--working-dir <dir>] [--output jsonl|json|text|table]
 ```
 
-`--temporary` remains a deprecated alias for `--mutable` until the next major
-CLI release. Removing it is a breaking-change milestone outside this work
-package. Supplying both is a usage error. Help leads with `--mutable`, labels
-the legacy alias deprecated until the next major release, and all results use
-mutable terminology.
+`--temporary` was removed (2026-09-03); `--mutable` is the only accepted flag
+and all results use mutable terminology.
 
 Catalog filtering uses:
 
@@ -285,8 +277,7 @@ riela workflow list [query] [--scope project|user|auto]
   [--working-dir <dir>] [--output jsonl|json|text|table]
 ```
 
-`--exclude-temporary` remains a deprecated alias for `--exclude-mutable` until
-the same next-major-release milestone. Supplying both is a usage error. The
+`--exclude-temporary` was removed (2026-09-03); use `--exclude-mutable`. The
 positional query becomes a case-insensitive partial match on workflow id/name
 and description. Filters are conjunctive and apply before stable sorting.
 

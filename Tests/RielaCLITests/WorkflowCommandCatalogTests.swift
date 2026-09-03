@@ -14,16 +14,16 @@ final class WorkflowCommandCatalogTests: XCTestCase {
     XCTAssertTrue((result.stderr + result.stdout).contains("query must not be empty"))
   }
 
-  func testListParserKeepsTemporaryExclusionAndQuery() throws {
+  func testListParserKeepsMutableExclusionAndQuery() throws {
     let command = try RielaArgumentParser().parse([
-      "workflow", "list", "Needle", "--scope", "user", "--exclude-temporary", "--output", "table"
+      "workflow", "list", "Needle", "--scope", "user", "--exclude-mutable", "--output", "table"
     ])
     guard case let .workflow(.list(options)) = command else {
       return XCTFail("expected workflow list command")
     }
     XCTAssertEqual(options.target, "Needle")
     XCTAssertEqual(options.output, .table)
-    XCTAssertTrue(options.arguments.contains("--exclude-temporary"))
+    XCTAssertTrue(options.arguments.contains("--exclude-mutable"))
   }
 }
 

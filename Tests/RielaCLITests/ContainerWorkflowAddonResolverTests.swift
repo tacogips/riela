@@ -613,45 +613,8 @@ final class ContainerWorkflowAddonResolverTests: XCTestCase {
     XCTAssertEqual(registrations.map(\.capabilities).flatMap { $0 }.map(\.name), ["container.run"])
   }
 
-  func testInstalledContainerAddonRegistrationsReadLegacySharedAddonStore() async throws {
-    let root = try makeRielaCLITestTemporaryDirectory("riela-shared-container-addon")
-    defer { try? FileManager.default.removeItem(at: root) }
-    let sharedAddon = root.appendingPathComponent(".riela/content-ad/addons/tacogips/pdf-to-images/1", isDirectory: true)
-    try FileManager.default.createDirectory(at: sharedAddon, withIntermediateDirectories: true)
-    try "FROM scratch\n".write(to: sharedAddon.appendingPathComponent("Containerfile"), atomically: true, encoding: .utf8)
-    try """
-    {
-      "name": "@tacogips/pdf-to-images-addon",
-      "version": "1.0.0",
-      "kind": "node-addon",
-      "description": "PDF renderer legacy shared add-on",
-      "addons": [{
-        "name": "tacogips/pdf-to-images",
-        "version": "1",
-        "sourcePath": ".",
-        "contentDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "execution": {
-          "kind": "container",
-          "entrypoint": "pdf_to_images.py",
-          "containerfilePath": "Containerfile"
-        },
-        "capabilities": [{"name": "container.run", "reason": "render", "defaultPolicy": "prompt"}]
-      }]
-    }
-    """.write(to: sharedAddon.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
-
-    let registrations = try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": root.path]) {
-      try await installedContainerAddonRegistrations(workingDirectory: root.appendingPathComponent("project", isDirectory: true))
-    }
-
-    XCTAssertEqual(registrations.map(\.packageName), ["@tacogips/pdf-to-images-addon"])
-    XCTAssertEqual(registrations.map(\.addonName), ["tacogips/pdf-to-images"])
-    XCTAssertEqual(registrations.map(\.addonRoot), [sharedAddon])
-    XCTAssertEqual(registrations.map(\.containerfilePath), ["Containerfile"])
-  }
-
   func testInstalledContainerAddonRegistrationsReadSharedAddonStore() async throws {
-    let root = try makeRielaCLITestTemporaryDirectory("riela-legacy-shared-container-addon")
+    let root = try makeRielaCLITestTemporaryDirectory("riela-shared-container-addon")
     defer { try? FileManager.default.removeItem(at: root) }
     let sharedAddon = root.appendingPathComponent(".riela/addons/tacogips/pdf-to-images/1", isDirectory: true)
     try FileManager.default.createDirectory(at: sharedAddon, withIntermediateDirectories: true)

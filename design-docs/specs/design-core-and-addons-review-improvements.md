@@ -936,9 +936,9 @@ the deterministic runner and in-memory runtime store.
    three signals (small, dependency-free: ~200 lines of encodable structs),
    generating random `traceId`/`spanId` (`RielaTraceContext` already produces
    hex ids) and honoring the parent context from
-   `telemetryChildProcessEnvironment`. Keep the legacy shape behind
-   `RIELA_OTEL_LEGACY_PAYLOAD=1` for one release if the bespoke receiver
-   exists in the wild.
+   `telemetryChildProcessEnvironment`. (The legacy shape behind
+   `RIELA_OTEL_LEGACY_PAYLOAD=1` was removed on 2026-09-03; OTLP JSON is the
+   only payload.)
 2. **Real span timing.** `recordStepStartedExecution` already exists — carry
    `execution.createdAt` into the step-completed emission and pass it as
    `startedAt` (add `startedAt` to the event payload in the F3 redesign;
@@ -964,7 +964,7 @@ and bounds exporter memory.
 1. `OTLPRielaTelemetryExporter` now emits standard OTLP JSON roots:
    `resourceSpans`, `resourceLogs`, and `resourceMetrics` for the three
    signal endpoints. The previous custom `{serviceName, surface, records}`
-   envelope remains available only behind `RIELA_OTEL_LEGACY_PAYLOAD=1`.
+   envelope was removed on 2026-09-03.
 2. Exported resources include `service.name`, `riela.surface`, configured
    resource attributes, and dropped-record counters when buffers overflow.
 3. Trace exports honor an incoming `traceparent` from

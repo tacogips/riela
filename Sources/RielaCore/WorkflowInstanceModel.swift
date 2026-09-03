@@ -232,7 +232,7 @@ public enum WorkflowInstanceKind: String, Codable, Equatable, Sendable {
       self = .default
     case Self.named.rawValue:
       self = .named
-    case Self.ephemeral.rawValue, "temporary":
+    case Self.ephemeral.rawValue:
       self = .ephemeral
     default:
       throw DecodingError.dataCorruptedError(

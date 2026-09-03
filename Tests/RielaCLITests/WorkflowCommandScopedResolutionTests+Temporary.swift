@@ -36,7 +36,7 @@ extension WorkflowCommandScopedResolutionTests {
       description: "temporary-workflow"
     )
     let registration = await RielaCLIApplication().run([
-      "workflow", "register", temporaryInput.path, "--temporary", "--output", "json"
+      "workflow", "register", temporaryInput.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
@@ -115,7 +115,7 @@ extension WorkflowCommandScopedResolutionTests {
         description: "temporary-fallback"
       )
       let registration = await application.run([
-        "workflow", "register", temporaryInput.path, "--temporary", "--output", "json"
+        "workflow", "register", temporaryInput.path, "--mutable", "--output", "json"
       ], environment: environment)
       XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 

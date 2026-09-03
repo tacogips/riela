@@ -14,11 +14,11 @@ extension WorkflowTemporaryRegistrationTests {
     let workflowHelp = await application.run(["workflow", "--help"])
     XCTAssertEqual(workflowHelp.exitCode, .success)
     XCTAssertTrue(workflowHelp.stdout.contains("workflow register"))
-    XCTAssertTrue(workflowHelp.stdout.contains("--exclude-temporary"))
+    XCTAssertTrue(workflowHelp.stdout.contains("--exclude-mutable"))
 
     let help = await application.run(["workflow", "register", "--help"])
     XCTAssertEqual(help.exitCode, .success)
-    for token in ["register", "--mutable", "--temporary", "--overwrite", "--working-dir", "--output"] {
+    for token in ["register", "--mutable", "--overwrite", "--working-dir", "--output"] {
       XCTAssertTrue(help.stdout.contains(token), "missing \(token)")
     }
   }
@@ -34,7 +34,7 @@ extension WorkflowTemporaryRegistrationTests {
 
     let result = await RielaCLIApplication().run([
       "workflow", "register", bundle.lastPathComponent,
-      "--temporary", "--working-dir", layout.inputs.path, "--output", "json"
+      "--mutable", "--working-dir", layout.inputs.path, "--output", "json"
     ], environment: ["HOME": layout.home.path])
 
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
@@ -74,7 +74,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
 
     let result = await application.run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
 
     XCTAssertNotEqual(result.exitCode, .success)
@@ -109,7 +109,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
 
     let result = await application.run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: ["HOME": layout.home.path])
 
     XCTAssertNotEqual(result.exitCode, .success)
@@ -144,7 +144,7 @@ extension WorkflowTemporaryRegistrationTests {
     let environment = ["HOME": layout.home.path]
     let application = RielaCLIApplication()
     let registered = await application.run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registered.exitCode, .success, registered.stderr + registered.stdout)
     try FileManager.default.removeItem(
@@ -182,7 +182,7 @@ extension WorkflowTemporaryRegistrationTests {
     let application = RielaCLIApplication()
 
     let registration = await application.run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
     let registered = try decodeMatrix(MutableWorkflowRegistrationResult.self, registration.stdout)
@@ -296,7 +296,7 @@ extension WorkflowTemporaryRegistrationTests {
 
     for input in [missingWorkflow, fifo, specialBundle, missingAsset] {
       let result = await application.run([
-        "workflow", "register", input.path, "--temporary", "--output", "json"
+        "workflow", "register", input.path, "--mutable", "--output", "json"
       ], environment: environment)
       XCTAssertNotEqual(result.exitCode, .success, "\(input.path): \(result.stdout) \(result.stderr)")
     }
@@ -324,7 +324,7 @@ extension WorkflowTemporaryRegistrationTests {
       )
       let environment = ["HOME": layout.home.path]
       let initial = await RielaCLIApplication().run([
-        "workflow", "register", original.path, "--temporary", "--output", "json"
+        "workflow", "register", original.path, "--mutable", "--output", "json"
       ], environment: environment)
       XCTAssertEqual(initial.exitCode, .success, initial.stderr + initial.stdout)
 
@@ -341,7 +341,7 @@ extension WorkflowTemporaryRegistrationTests {
       )
       let overwriteTask = Task {
         await registeringApp.run([
-          "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+          "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
         ], environment: environment)
       }
       XCTAssertEqual(phaseReached.wait(timeout: .now() + 2), .success, phase.rawValue)
@@ -391,7 +391,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let environment = ["HOME": layout.home.path]
     let initial = await RielaCLIApplication().run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(initial.exitCode, .success, initial.stderr + initial.stdout)
 
@@ -414,7 +414,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let overwriteTask = Task {
       await registeringApp.run([
-        "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+        "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
       ], environment: environment)
     }
     lockProbe.assertBlocked()
@@ -479,7 +479,7 @@ extension WorkflowTemporaryRegistrationTests {
       )
     )
     let interrupted = await interruptedApp.run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertNotEqual(interrupted.exitCode, .success)
 
@@ -545,7 +545,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await RielaCLIApplication().run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
@@ -597,7 +597,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await RielaCLIApplication().run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
     let prepared = try CLIRuntimeEnvironment.$overrides.withValue(environment) {
@@ -663,7 +663,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await RielaCLIApplication().run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
     let bundle = try CLIRuntimeEnvironment.$overrides.withValue(environment) {
@@ -748,7 +748,7 @@ extension WorkflowTemporaryRegistrationTests {
     )
     let environment = ["HOME": layout.home.path]
     let initial = await RielaCLIApplication().run([
-      "workflow", "register", original.path, "--temporary", "--output", "json"
+      "workflow", "register", original.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(initial.exitCode, .success, initial.stderr + initial.stdout)
 
@@ -765,7 +765,7 @@ extension WorkflowTemporaryRegistrationTests {
       workflowMutableRegistrationCommand: WorkflowMutableRegistrationCommand(registry: registry)
     )
     let failed = await application.run([
-      "workflow", "register", replacement.path, "--temporary", "--overwrite", "--output", "json"
+      "workflow", "register", replacement.path, "--mutable", "--overwrite", "--output", "json"
     ], environment: environment)
     XCTAssertNotEqual(failed.exitCode, .success)
     XCTAssertTrue(failed.stdout.contains("recovery failed and registry artifacts were preserved"), failed.stdout)

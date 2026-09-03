@@ -136,7 +136,6 @@ struct ParsedWorkflowFamily: RielaClientFamilyArguments {
 
 struct ParsedWorkflowRegisterArguments: RielaClientFamilyArguments {
   @Argument var inputPath: String
-  @Flag var temporary = false
   @Flag var mutable = false
   @Flag var overwrite = false
   @Option(name: [.customLong("working-dir"), .customLong("working-directory")])

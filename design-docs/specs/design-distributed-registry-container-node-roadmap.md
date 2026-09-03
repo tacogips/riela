@@ -120,8 +120,7 @@ the GitHub releases page, and requires `container system start` after install.
 Reduce duplicated node implementations between projects.
 
 - Shared add-on content is stored under
-  `~/.riela/addons/<namespace>/<name>/<version>`, with legacy reads from
-  `~/.riela/content-ad/addons/<namespace>/<name>/<version>` for compatibility.
+  `~/.riela/addons/<namespace>/<name>/<version>`.
 - Workflow manifests can reference package add-ons without copying the same
   worker files into every workflow directory.
 - Add a user-facing single-node runner, `riela node run`, plus `rrun` as a

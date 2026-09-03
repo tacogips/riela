@@ -111,27 +111,8 @@ func installSharedAddonProjections(
 func sharedAddonManifestURLs(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) throws -> [URL] {
-  var manifests: [URL] = []
-  for root in sharedAddonStoreRoots(environment: environment) {
-    manifests.append(contentsOf: try manifestURLs(inSharedAddonRoot: root))
-  }
-  return manifests.sorted { $0.path < $1.path }
-}
-
-private func sharedAddonStoreRoots(
-  environment: [String: String]
-) -> [URL] {
-  [
-    sharedAddonStoreRoot(environment: environment),
-    legacySharedAddonStoreRoot(environment: environment)
-  ]
-}
-
-private func legacySharedAddonStoreRoot(
-  environment: [String: String]
-) -> URL {
-  URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true)
-    .appendingPathComponent(".riela/content-ad/addons", isDirectory: true)
+  try manifestURLs(inSharedAddonRoot: sharedAddonStoreRoot(environment: environment))
+    .sorted { $0.path < $1.path }
 }
 
 private func manifestURLs(inSharedAddonRoot root: URL) throws -> [URL] {

@@ -187,7 +187,6 @@ public struct RielaDataGarbageCollector {
     let database = sessions
       .appendingPathComponent("runtime-records", isDirectory: true)
       .appendingPathComponent("runtime-message-log.sqlite")
-    var expiredSessionIds = Set<String>()
     if fileManager.fileExists(atPath: database.path) {
       do {
         let databaseResult = try collectDatabase(
@@ -195,20 +194,12 @@ public struct RielaDataGarbageCollector {
           cutoff: cutoff,
           dryRun: dryRun
         )
-        expiredSessionIds.formUnion(databaseResult.sessionIds)
         report.removedSessionCount += databaseResult.sessionIds.count
         report.removedEntryCount += databaseResult.rowCount
       } catch {
         report.diagnostics.append("\(database.path): \(error.localizedDescription)")
       }
     }
-    collectLegacySessions(
-      at: sessions,
-      cutoff: cutoff,
-      knownExpiredSessionIds: expiredSessionIds,
-      dryRun: dryRun,
-      report: &report
-    )
     collectWorkflowHistory(
       at: root.appendingPathComponent("workflow-history", isDirectory: true),
       cutoff: cutoff,
@@ -292,38 +283,6 @@ public struct RielaDataGarbageCollector {
       }
     }
     return (sessionIds, removedRows)
-  }
-
-  private func collectLegacySessions(
-    at sessions: URL,
-    cutoff: Date,
-    knownExpiredSessionIds: Set<String>,
-    dryRun: Bool,
-    report: inout RielaGarbageCollectionReport
-  ) {
-    guard let entries = try? fileManager.contentsOfDirectory(
-      at: sessions,
-      includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey],
-      options: [.skipsHiddenFiles]
-    ) else { return }
-    for entry in entries where entry.pathExtension == "json" {
-      guard !isSymbolicLink(entry) else { continue }
-      guard isOlderThanCutoff(entry, cutoff: cutoff) else { continue }
-      remove(entry, dryRun: dryRun, report: &report, countsAsSession: true)
-    }
-    let runtimeRecords = sessions.appendingPathComponent("runtime-records", isDirectory: true)
-    guard let runtimeEntries = try? fileManager.contentsOfDirectory(
-      at: runtimeRecords,
-      includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
-      options: [.skipsHiddenFiles]
-    ) else { return }
-    for entry in runtimeEntries where entry.pathExtension != "sqlite" && !entry.lastPathComponent.contains(".sqlite-") {
-      guard !isSymbolicLink(entry) else { continue }
-      guard knownExpiredSessionIds.contains(entry.lastPathComponent) || isOlderThanCutoff(entry, cutoff: cutoff) else {
-        continue
-      }
-      remove(entry, dryRun: dryRun, report: &report)
-    }
   }
 
   private func collectWorkflowHistory(

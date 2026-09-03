@@ -148,7 +148,6 @@ public struct WorkflowCatalogCommand: Sendable {
     @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
     var workingDirectory = FileManager.default.currentDirectoryPath
     @Option var output: String?
-    @Flag var excludeTemporary = false
     @Flag var excludeMutable = false
     @Option var activation: String?
     @Option var provenance: String?
@@ -439,9 +438,6 @@ public struct WorkflowCatalogCommand: Sendable {
     guard let scope = WorkflowScope(rawValue: arguments.scope), scope != .direct else {
       throw CLIUsageError("invalid --scope value; expected auto, project, or user")
     }
-    if arguments.excludeMutable && arguments.excludeTemporary {
-      throw CLIUsageError("--exclude-mutable and --exclude-temporary are mutually exclusive")
-    }
     let activation = try arguments.activation.map {
       guard let value = WorkflowActivationState(rawValue: $0) else {
         throw CLIUsageError("invalid --activation value; expected active or deactivated")
@@ -457,7 +453,7 @@ public struct WorkflowCatalogCommand: Sendable {
     return ParsedCatalogOptions(
       scope: scope,
       workingDirectory: arguments.workingDirectory,
-      excludeMutable: arguments.excludeMutable || arguments.excludeTemporary,
+      excludeMutable: arguments.excludeMutable,
       activation: activation,
       provenance: provenance,
       description: arguments.description

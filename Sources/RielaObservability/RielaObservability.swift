@@ -29,7 +29,6 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
   public var resourceAttributes: [String: String]
   public var enabledSignals: Set<RielaTelemetrySignal>
   public var maxBufferRecords: Int
-  public var legacyPayload: Bool
   public var traceContext: RielaTraceContext?
   public var autoFlushInterval: Duration?
 
@@ -41,7 +40,6 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
     resourceAttributes: [String: String] = [:],
     enabledSignals: Set<RielaTelemetrySignal> = [.traces, .logs, .metrics],
     maxBufferRecords: Int = 2_048,
-    legacyPayload: Bool = false,
     traceContext: RielaTraceContext? = nil,
     autoFlushInterval: Duration? = .seconds(10)
   ) {
@@ -52,7 +50,6 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
     self.resourceAttributes = resourceAttributes
     self.enabledSignals = enabledSignals
     self.maxBufferRecords = max(1, maxBufferRecords)
-    self.legacyPayload = legacyPayload
     self.traceContext = traceContext
     self.autoFlushInterval = autoFlushInterval
   }
@@ -77,7 +74,6 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
     ))
     let signals = resolveEnabledSignals(environment)
     let maxBufferRecords = positiveInt(environment["RIELA_OTEL_MAX_BUFFER_RECORDS"]) ?? 2_048
-    let legacyPayload = boolValue(environment["RIELA_OTEL_LEGACY_PAYLOAD"]) == true
     return RielaTelemetryConfiguration(
       enabled: enabled,
       surface: surface,
@@ -86,7 +82,6 @@ public struct RielaTelemetryConfiguration: Equatable, Sendable {
       resourceAttributes: resources,
       enabledSignals: signals,
       maxBufferRecords: maxBufferRecords,
-      legacyPayload: legacyPayload,
       traceContext: RielaTraceContext.fromEnvironment(environment)
     )
   }
@@ -520,9 +515,6 @@ private func telemetryBody(
   configuration: RielaTelemetryConfiguration,
   dropped: DroppedTelemetryCounts
 ) throws -> Data {
-  if configuration.legacyPayload {
-    return try legacyTelemetryBody(records: records, configuration: configuration, dropped: dropped)
-  }
   let encoder = JSONEncoder.telemetryEncoder
   switch records {
   case let .spans(spans, traceId, parentSpanId):
@@ -590,37 +582,6 @@ private func telemetryBody(
   }
 }
 
-private func legacyTelemetryBody(
-  records: TelemetryExportRecords,
-  configuration: RielaTelemetryConfiguration,
-  dropped: DroppedTelemetryCounts
-) throws -> Data {
-  let resourceAttributes = resourceAttributes(configuration: configuration, dropped: dropped)
-  switch records {
-  case let .spans(spans, _, _):
-    return try JSONEncoder.telemetryEncoder.encode(OTLPLegacyPayload(
-      serviceName: configuration.serviceName,
-      surface: configuration.surface.rawValue,
-      resourceAttributes: resourceAttributes,
-      records: spans
-    ))
-  case let .logs(logs):
-    return try JSONEncoder.telemetryEncoder.encode(OTLPLegacyPayload(
-      serviceName: configuration.serviceName,
-      surface: configuration.surface.rawValue,
-      resourceAttributes: resourceAttributes,
-      records: logs
-    ))
-  case let .metrics(metrics):
-    return try JSONEncoder.telemetryEncoder.encode(OTLPLegacyPayload(
-      serviceName: configuration.serviceName,
-      surface: configuration.surface.rawValue,
-      resourceAttributes: resourceAttributes,
-      records: metrics
-    ))
-  }
-}
-
 private func signalPath(for signal: RielaTelemetrySignal) -> String {
   switch signal {
   case .traces:
@@ -637,13 +598,6 @@ private func timeoutInterval(for duration: Duration) -> TimeInterval {
   let seconds = TimeInterval(components.seconds)
   let fractionalSeconds = TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
   return max(0.001, seconds + fractionalSeconds)
-}
-
-private struct OTLPLegacyPayload<Record: Encodable>: Encodable {
-  var serviceName: String
-  var surface: String
-  var resourceAttributes: [String: String]
-  var records: [Record]
 }
 
 private struct OTLPTraceExportRequest: Encodable {

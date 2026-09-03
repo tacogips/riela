@@ -4,7 +4,6 @@ import RielaCore
 public struct WorkflowMutableRegistrationOptions: Equatable, Sendable {
   public var inputPath: String
   public var mutable: Bool
-  public var usedDeprecatedTemporaryAlias: Bool
   public var overwrite: Bool
   public var workingDirectory: String
   public var output: WorkflowOutputFormat
@@ -12,14 +11,12 @@ public struct WorkflowMutableRegistrationOptions: Equatable, Sendable {
   public init(
     inputPath: String,
     mutable: Bool,
-    usedDeprecatedTemporaryAlias: Bool = false,
     overwrite: Bool,
     workingDirectory: String,
     output: WorkflowOutputFormat
   ) {
     self.inputPath = inputPath
     self.mutable = mutable
-    self.usedDeprecatedTemporaryAlias = usedDeprecatedTemporaryAlias
     self.overwrite = overwrite
     self.workingDirectory = workingDirectory
     self.output = output
@@ -132,6 +129,6 @@ Usage:
     [--working-dir <dir>] [--output jsonl|json|text|table]
 
 Registers a validated mutable workflow in the user registry.
---mutable is required. --temporary is a deprecated alias supported until the next major release.
+--mutable is required.
 --overwrite replaces an existing mutable workflow with the same workflowId.
 """ + "\n"

@@ -794,14 +794,7 @@ extension RielaApp {
     let stateURL = RielaAppProfileStore.profilesRootURL(appRootURL: profileStore.appRootURL)
       .appendingPathComponent(profileName.rawValue, isDirectory: true)
       .appendingPathComponent("daemon-workflows.json")
-    let legacyStateURLs = profileStore.appRootURL == RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
-      ? RielaAppDaemonWorkflowStore.defaultLegacyStateURLs(homeDirectory: appHomeDirectory)
-      : []
-    return RielaAppDaemonWorkflowStore(
-      stateURL: stateURL,
-      legacyStateURLs: profileName == .default ? legacyStateURLs : [],
-      profileName: profileName
-    )
+    return RielaAppDaemonWorkflowStore(stateURL: stateURL, profileName: profileName)
   }
 
   private func loadDaemonStateReportingCorruption(

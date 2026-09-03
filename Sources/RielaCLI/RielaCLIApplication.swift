@@ -301,10 +301,8 @@ Usage:
   riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow usage <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow list [query] [--scope project|user|auto] [--exclude-mutable] [--activation active|deactivated] [--provenance mutable|immutable] [--output jsonl|json|text|table]
-    (--exclude-temporary remains a deprecated alias for --exclude-mutable)
   riela workflow status <workflow> [--output jsonl|json|text|table]
   riela workflow register <path> --mutable [--overwrite] [--working-dir <dir>] [--output jsonl|json|text|table]
-    (--temporary remains a deprecated alias for --mutable)
   riela workflow update <workflow> <path> [--scope auto|project|user] [--origin-id <id>] [--output jsonl|json|text]
   riela workflow delete|activate|deactivate <workflow> [--scope auto|project|user] [--origin-id <id>] [--output jsonl|json|text]
   riela workflow consolidate --source <workflow> --source <workflow> --replacement <path> --retire deactivate|delete [--output jsonl|json|text]
@@ -349,9 +347,8 @@ Usage:
 Output defaults to JSONL for machine-readable commands. Prefer --output jsonl
 for automation, agents, and LLM-driven tool use. Workflow run, session rerun,
 and session resume stream lifecycle and backend events while they execute.
-Use --output text for human-readable output. Use --output json only when a
-legacy caller explicitly requires one non-streaming JSON document after
-completion.
+Use --output text for human-readable output. Use --output json when a caller
+requires one non-streaming JSON document after completion.
 
 Session progress observers are read-only. `--follow` and `--poll-interval`
 (finite `0.1...3600`, default `2.0`) are progress-only; follow rejects
@@ -492,7 +489,7 @@ func workflowRunHelpText(target: String?) -> String {
                                    Use 0 to disable. Defaults to 120000.
     --agent-silence-monitor-interval-ms <n>
                                    Polling interval for agent silence warnings. Defaults to 1000.
-    --output jsonl|json|text       Defaults to jsonl. Prefer jsonl for agents/LLMs; json is legacy and emits only after completion.
+    --output jsonl|json|text       Defaults to jsonl. Prefer jsonl for agents/LLMs; json emits one document after completion.
 
   Stall detection:
     --stall-timeout-ms is opt-in. CLI agent and official SDK backends are not

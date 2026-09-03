@@ -1,6 +1,6 @@
 # SQLite Store Schema Generation and Storage-Layer Hardening
 
-Status: implemented (2026-08-23)
+Status: implemented (2026-08-23); migration framework added (2026-09-03)
 
 ## Problem
 
@@ -37,29 +37,38 @@ with `NOT NULL` where the payload guarantees presence:
 second-granularity ISO8601 while ordering relies on the fractional-second
 timestamps the stores write themselves.
 
-### Schema generation (no in-place migration)
+### Schema generation and in-place migration
 
 `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` (currently `2`) is
 stamped into `PRAGMA user_version` when a session store database is created.
-The store never migrates old layouts in place:
+Since 2026-09-03 the shared `SQLiteSchemaMigrator` (RielaSQLite) drives the
+lifecycle for the session store, `RoutineStore`, and `RielaMemoryStore`:
 
-- **Writable opens discard incompatible stores.**
+- **`user_version == current`**: no-op. **`> current`**: hard error in every
+  store — the database was written by a newer build.
+- **`0 < user_version < current`**: registered `from → from+1` steps
+  (`schemaMigrations` on each store; `memorySchemaMigrations` in RielaMemory)
+  are applied in place, one generation at a time, each inside its own
+  transaction that also stamps the new `user_version`. Every future
+  generation/version bump MUST append a migration step alongside it.
+- **No migration path** (a gap in the chain, or a pre-generation store at
+  `user_version == 0` with existing tables): each store applies its own
+  fallback policy. The session store discards —
   `discardIncompatibleStoreIfNeeded(databasePath:)` runs before every writable
-  open (runtime store, CLI session store, standalone message log). A database
-  whose `user_version` predates the generation and which contains any of the
-  session-store tables is deleted together with its WAL/SHM sidecars, a
-  warning is written to stderr, and the open recreates the current schema.
-  Session stores hold regenerable run history, so discarding beats failing
-  every run after an upgrade.
-- **`requireCompatibleSchemaGeneration(in:)`** remains as the in-connection
-  safety net and the stamping point; every schema-ensuring path calls it,
-  including the message-log-only path (so a store created through it is never
-  mistaken for a pre-generation store later).
-- **Memory stores keep a hard error instead.** `RielaMemoryStore` data is not
-  regenerable, so a pre-`currentSchemaVersion` database throws
-  `sqliteFailed("memory store schema predates version …")` and is never
-  auto-deleted. Version 3 stores remain valid: the v3 layout differs from a
-  fresh store only by the absence of the new FK constraints.
+  open (runtime store, CLI session store, standalone message log), deletes the
+  database with its WAL/SHM sidecars, warns on stderr, and the open recreates
+  the current schema; run history is regenerable. Routine and memory stores
+  hard-error instead — their data is not regenerable and is never
+  auto-deleted. Stores stamped before the framework baseline (session
+  generation 2, routine generation 1, memory version 3) have no path by
+  definition.
+- **Read-only opens** use the migrator's `.verify` mode (never writes): a
+  fresh unstamped database passes, an older migratable one throws
+  `MigrationPendingError`. `RoutineStore` reacts by migrating through a
+  writable open and reopening read-only.
+- **`requireCompatibleSchemaGeneration(in:)`** remains the in-connection
+  entry point and the stamping point for fresh databases; every
+  schema-ensuring path calls it, including the message-log-only path.
 
 ### Referential integrity
 

@@ -51,11 +51,9 @@ riela workflow run mutable-name --mock-scenario ./path/to/mock.json
 
 Registration accepts a standalone workflow JSON file or a bundle directory,
 copies it under `~/.riela/temporary-workflows/<workflowId>/`, and requires
-`--overwrite` to replace an existing entry. The legacy physical directory is
-retained for read compatibility; public results use `provenance: "mutable"`,
-`mutable: true`, and `activationState`. `--temporary` and
-`--exclude-temporary` remain deprecated aliases for `--mutable` and
-`--exclude-mutable` until the next major CLI release. Name resolution considers mutable entries after
+`--overwrite` to replace an existing entry. Public results use
+`provenance: "mutable"`, `mutable: true`, and `activationState`.
+Name resolution considers mutable entries after
 project workflows, user workflows, project packages, and user packages.
 Project, user, and installed-package workflows have immutable provenance:
 they remain readable but update/delete operations return
@@ -339,7 +337,7 @@ riela gc --retention-days 30 --scope project --dry-run --output json
 
 With no configured or explicit retention period, `riela gc` reports that GC is
 off and changes nothing. The collector removes expired session/runtime rows,
-message-log rows, legacy session files, workflow-history snapshots, event
+message-log rows, workflow-history snapshots, event
 receipts, artifacts, and logs. Authored workflows, installed packages,
 registries, profiles, notes, and configuration files are not GC targets.
 `--scope all` covers both `~/.riela` and the current project's `.riela`;

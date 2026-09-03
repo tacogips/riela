@@ -401,8 +401,8 @@ extension DeterministicWorkflowRunner {
 
   /// Enforces `budget.maxSessionAttempts` from the recovery lineage computed at
   /// entry. Only rerun increments the attempt number, so run/resume entries
-  /// never trip this bound; lineage without an attempt number (legacy sources)
-  /// is treated as attempt one and never fails closed retroactively.
+  /// never trip this bound; lineage without an attempt number is treated as
+  /// attempt one and never fails closed retroactively.
   func enforceLoopSessionAttempts(
     lineage: LoopRecoveryLineage,
     workflow: WorkflowDefinition

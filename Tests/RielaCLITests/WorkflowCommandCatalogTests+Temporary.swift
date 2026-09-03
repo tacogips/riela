@@ -41,7 +41,7 @@ extension WorkflowCommandCatalogTests {
     let environment = ["HOME": layout.home.path]
     let application = RielaCLIApplication()
     let registration = await application.run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
@@ -84,7 +84,7 @@ extension WorkflowCommandCatalogTests {
 
     let excludedInvalid = await application.run([
       "workflow", "list", "invalid-temporary", "--scope", "user",
-      "--exclude-temporary", "--output", "json"
+      "--exclude-mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(try decodeCatalogMatrix(excludedInvalid.stdout).workflows, [])
   }
@@ -100,7 +100,7 @@ extension WorkflowCommandCatalogTests {
     )
     let environment = ["HOME": layout.home.path]
     let registration = await RielaCLIApplication().run([
-      "workflow", "register", input.path, "--temporary", "--output", "json"
+      "workflow", "register", input.path, "--mutable", "--output", "json"
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 

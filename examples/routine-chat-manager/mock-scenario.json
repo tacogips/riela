@@ -1,0 +1,16 @@
+{
+  "parse-instruction": {
+    "provider": "scenario-mock",
+    "model": "claude-haiku-4-5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "name": "release status check",
+      "task": "Check the release pipeline status and summarize failures.",
+      "schedule": "0 */30 * * * *",
+      "timezone": "Asia/Tokyo",
+      "completionCriteria": "The v2.0 release is published."
+    }
+  }
+}

@@ -89,6 +89,15 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/kv-list", version: "1")
   ]
 
+  public static let routineAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/routine-create", version: "1"),
+    .init(name: "riela/routine-complete", version: "1"),
+    .init(name: "riela/routine-get", version: "1"),
+    .init(name: "riela/routine-list", version: "1"),
+    .init(name: "riela/routine-update-status", version: "1"),
+    .init(name: "riela/routine-delete", version: "1")
+  ]
+
   public static let wrikeGatewayAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/wrike-gateway-read", version: "1"),
     .init(name: "riela/wrike-gateway-write", version: "1"),
@@ -139,6 +148,7 @@ public enum RielaBuiltinAddonCatalog {
     + workflowAddons
     + documentAddons
     + keyValueStoreAddons
+    + routineAddons
     + wrikeGatewayAddons
     + googleServiceGatewayAddons
     + gmailGatewayCLIAddons

@@ -59,7 +59,7 @@ let package = Package(
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "08c4843427a4df5914d8540fa498662c9564349c"
+      revision: "31f23145d26f87803d7c10984969f937a6926ff7"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
@@ -71,7 +71,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "acdb5e857ac6856644098a8666c065b8deaeb9cf"
+      revision: "2761f3bccf30ead78de5d6968d827929925eae80"
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
@@ -192,6 +192,7 @@ let package = Package(
       dependencies: [
         "RielaAddons",
         "RielaCore",
+        "RielaEvents",
         "RielaGraphQL",
         .product(name: "Crypto", package: "swift-crypto")
       ]
@@ -318,6 +319,7 @@ let package = Package(
       name: "RielaCLITests",
       dependencies: [
         "RielaCore",
+        "RielaEvents",
         "RielaAdapters",
         "RielaAppSupport",
         "RielaCLI",

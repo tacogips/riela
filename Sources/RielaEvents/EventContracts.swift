@@ -634,6 +634,13 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
   public var execution: EventWorkflowExecutionPolicy?
   public var outputDestinations: [String]?
   public var mailboxBridge: EventMailboxBridgePolicy?
+  /// When set, the binding belongs to a managed routine: the live serve loop
+  /// consults the routine store before dispatching and skips the run unless
+  /// the routine is active.
+  public var routineId: String?
+  /// Root directory of the routine store to consult for `routineId`; the
+  /// serve working directory's default store is used when absent.
+  public var routineStoreRoot: String?
 
   private enum CodingKeys: String, CodingKey {
     case id
@@ -646,6 +653,8 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     case execution
     case outputDestinations
     case mailboxBridge
+    case routineId
+    case routineStoreRoot
   }
 
   public init(
@@ -658,7 +667,9 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     inputMapping: EventInputMapping,
     execution: EventWorkflowExecutionPolicy? = nil,
     outputDestinations: [String]? = nil,
-    mailboxBridge: EventMailboxBridgePolicy? = nil
+    mailboxBridge: EventMailboxBridgePolicy? = nil,
+    routineId: String? = nil,
+    routineStoreRoot: String? = nil
   ) {
     self.id = id
     self.enabled = enabled
@@ -670,6 +681,8 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     self.execution = execution
     self.outputDestinations = outputDestinations
     self.mailboxBridge = mailboxBridge
+    self.routineId = routineId
+    self.routineStoreRoot = routineStoreRoot
   }
 
   public init(from decoder: Decoder) throws {
@@ -684,6 +697,8 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     self.execution = try container.decodeIfPresent(EventWorkflowExecutionPolicy.self, forKey: .execution)
     self.outputDestinations = try container.decodeIfPresent([String].self, forKey: .outputDestinations)
     self.mailboxBridge = try container.decodeIfPresent(EventMailboxBridgePolicy.self, forKey: .mailboxBridge)
+    self.routineId = try container.decodeIfPresent(String.self, forKey: .routineId)
+    self.routineStoreRoot = try container.decodeIfPresent(String.self, forKey: .routineStoreRoot)
   }
 }
 

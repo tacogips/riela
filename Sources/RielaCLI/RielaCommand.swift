@@ -210,6 +210,7 @@ public enum ScopedCommandKind: String, Codable, Sendable {
   case gql
   case hook
   case events
+  case routine
   case serve
   case callStep = "call-step"
   case workflowCall = "workflow-call"
@@ -508,6 +509,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .scoped(try parseScoped(kind: .hook, arguments: route.passthroughArguments))
     case let route as EventsRoute:
       return .scoped(try parseScoped(kind: .events, arguments: route.passthroughArguments))
+    case let route as RoutineRoute:
+      return .scoped(try parseScoped(kind: .routine, arguments: route.passthroughArguments))
     case let route as ServeRoute:
       return .scoped(try parseScoped(kind: .serve, arguments: route.passthroughArguments))
     case let route as CallStepRoute:

@@ -1,0 +1,44 @@
+{
+  "workflowId": "routine-task-runner",
+  "description": "Generic per-tick routine executor: perform the routine's task, judge the completion criteria, and complete the routine (via riela/routine-complete) only when the criteria is met.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 300000
+  },
+  "entryStepId": "run-task",
+  "nodes": [
+    {
+      "id": "run-task",
+      "nodeFile": "nodes/node-run-task.json"
+    },
+    {
+      "id": "complete-routine",
+      "addon": {
+        "name": "riela/routine-complete",
+        "version": "1",
+        "inputs": {
+          "routineId": "{{workflowInput.routineId}}",
+          "conditionMet": "{{inbox.latest.output.payload.conditionMet}}",
+          "note": "{{inbox.latest.output.payload.completionNote}}"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "run-task",
+      "nodeId": "run-task",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "complete-routine"
+        }
+      ]
+    },
+    {
+      "id": "complete-routine",
+      "nodeId": "complete-routine",
+      "role": "worker"
+    }
+  ]
+}

@@ -70,6 +70,9 @@ examples/document-inbox-notebook/inbox/*
 .riela-datas/
 .riela-datas/**
 
+# Web-app local runtime stores
+/web/.riela/
+
 # Local temporary run/verify wrappers and swift-migration parity evidence
 # (scratch artifacts; must not be tracked in VCS)
 /.run-*

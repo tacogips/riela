@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaEvents
 @testable import RielaCLI
 import XCTest
 
@@ -88,6 +89,69 @@ final class EventLiveServeCronTests: XCTestCase {
     }
     XCTAssertTrue(scheduledAt.hasSuffix("Z"))
     XCTAssertEqual(input["timezone"], .string("UTC"))
+  }
+
+  func testRoutineGateSkipsDisabledRoutineAndCountsActiveRun() async throws {
+    let root = try temporaryDirectory()
+    let store = RoutineStore(rootDirectory: root.appendingPathComponent("routines").path)
+    var routine = RoutineRecord(
+      routineId: "routine-a",
+      name: "gate test",
+      task: "run once",
+      schedule: "* * * * * *",
+      workflowName: "cron-flow",
+      status: .disabled,
+      createdAt: RoutineStore.timestamp(),
+      updatedAt: RoutineStore.timestamp(),
+      eventRoot: root.path,
+      sourceId: "cron-live",
+      bindingId: "cron-to-workflow"
+    )
+    try store.save(routine)
+    let config = EventLiveConfig(
+      sources: [EventSourceContract(id: "cron-live", kind: .cron)],
+      bindings: [EventBindingContract(
+        id: "cron-to-workflow",
+        sourceId: "cron-live",
+        eventType: "cron.tick",
+        workflowName: "cron-flow",
+        inputMapping: EventInputMapping(mode: .eventInput),
+        routineId: routine.routineId,
+        routineStoreRoot: store.rootDirectory
+      )]
+    )
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "", replyAs: "")
+    let server = DefaultEventLiveServer(workflowRunner: workflowRunner)
+    let source = CronScheduleSource(id: "cron-live", schedule: "* * * * * *", timezone: "UTC")
+    let parsed = try ParsedParityOptions([])
+    let now = Date()
+
+    let skipped = try await server.dispatchCronTick(
+      source: source,
+      scheduledAt: now,
+      firedAt: now,
+      config: config,
+      eventRoot: root,
+      parsed: parsed
+    )
+    XCTAssertEqual(skipped, 0)
+    var requests = await workflowRunner.requests
+    XCTAssertEqual(requests.count, 0)
+
+    routine.status = .active
+    try store.save(routine)
+    let dispatched = try await server.dispatchCronTick(
+      source: source,
+      scheduledAt: now.addingTimeInterval(1),
+      firedAt: now.addingTimeInterval(1),
+      config: config,
+      eventRoot: root,
+      parsed: parsed
+    )
+    XCTAssertEqual(dispatched, 1)
+    requests = await workflowRunner.requests
+    XCTAssertEqual(requests.count, 1)
+    XCTAssertEqual(try store.load(routineId: routine.routineId)?.runCount, 1)
   }
 
   private func writeCronEventConfig(eventRoot: URL) throws {

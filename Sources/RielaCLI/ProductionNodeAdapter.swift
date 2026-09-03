@@ -426,9 +426,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if let gitAddon = BuiltinGitAddon(rawValue: input.addon.name) {
       return try executeGitAddon(input, operation: gitAddon, deadline: context.deadline)
     }
-    if input.addon.name == "riela/x-digest" {
-      return try executeXDigest(input)
-    }
     if let wrikeGatewayAddon = BuiltinWrikeGatewayAddon(rawValue: input.addon.name) {
       return try await executeWrikeGatewayAddon(input, operation: wrikeGatewayAddon, context: context)
     }
@@ -447,9 +444,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     }
     if let googleDocumentsGatewayAddon = BuiltinGoogleDocumentsGatewayAddon(rawValue: input.addon.name) {
       return try await executeGoogleDocumentsGatewayAddon(input, operation: googleDocumentsGatewayAddon, context: context)
-    }
-    if input.addon.name == "riela/gmail-digest" {
-      return try await executeGmailDigest(input)
     }
     if input.addon.name == "riela/time-signal" {
       return try executeTimeSignal(input)
@@ -497,11 +491,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if KaibaAddonCatalog.handles(input.addon.name) {
       return try await KaibaAddonCatalog.execute(input, environment: environment)
     }
-    if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
-      return try executeMemoryAddon(input, operation: memoryAddon)
-    }
-    if let keyValueAddon = BuiltinKeyValueAddon(rawValue: input.addon.name) {
-      return try executeKeyValueAddon(input, operation: keyValueAddon)
+    if let output = try await executeStatefulAddonIfSupported(input) {
+      return output
     }
     if Self.deferredContainerAddons.contains(input.addon.name) {
       return AdapterExecutionOutput(

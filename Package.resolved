@@ -1,5 +1,5 @@
 {
-  "originHash" : "29aef8ed130220fd7ac12b1c2fb5a766db671db0017309c648a411d919ab9892",
+  "originHash" : "ada9b7c2d97127400c7b2dede28e86a92a0a566e6677461ae7bc761ba281e94a",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -30,7 +30,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "acdb5e857ac6856644098a8666c065b8deaeb9cf"
+        "revision" : "2761f3bccf30ead78de5d6968d827929925eae80"
       }
     },
     {
@@ -62,7 +62,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "08c4843427a4df5914d8540fa498662c9564349c"
+        "revision" : "31f23145d26f87803d7c10984969f937a6926ff7"
       }
     },
     {
@@ -79,8 +79,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "a9a5efd40eaf558a2bcd48d64b1d1646be686008",
-        "version" : "1.7.1"
+        "revision" : "d9a5b37470adc940d22c3bcd5ca6953a516b727f",
+        "version" : "1.7.2"
       }
     },
     {

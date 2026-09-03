@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaGraphQL
+import RielaWorkflowRegistry
 
 // `riela graphql execute|document` — executes GraphQL documents against the
 // workflow-registry executor. The note GraphQL domain moved to the kaiba
@@ -16,19 +17,28 @@ extension ScopedParityCommandRunner {
     let variables = try parsed.variables.map {
       try JSONReferenceLoader().object(from: $0, workingDirectory: workingDirectory)
     } ?? [:]
-    let executor = WorkflowRegistryGraphQLDocumentExecutor(
-      localProvider: FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
-    )
-    let response = await executor.execute(GraphQLDocumentRequest(
+    let request = GraphQLDocumentRequest(
       query: query,
       variables: variables,
       operationName: parsed.graphQLOperationName,
       environment: CLIRuntimeEnvironment.mergedProcessEnvironment(),
       isLocallyTrusted: true,
       localWorkingDirectory: workingDirectory
-    ))
+    )
+    let executor = CompositeGraphQLDocumentExecutor(
+      workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
+        localProvider: FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
+      ),
+      fallback: RoutineGraphQLDocumentExecutor(
+        provider: FileRoutineGraphQLProvider(
+          workingDirectory: workingDirectory,
+          environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+        )
+      )
+    )
+    let response = await executor.execute(request)
     guard response.handled else {
-      throw CLIUsageError("graphql \(action) document was not handled by the workflow-registry executor")
+      throw CLIUsageError("graphql \(action) document was not handled by the workflow-registry or routine executor")
     }
     return try jsonString(response.body)
   }

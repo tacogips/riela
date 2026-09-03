@@ -477,6 +477,45 @@ store: `riela/x-digest` and `riela/gmail-digest` accept `stateBackend: "kv"`
 on `read-state`/`persist-state` to keep their fetch cursor in the key-value
 store instead of an ad-hoc JSON state file, as the shipped digest examples do.
 
+## Routines (first-class recurring jobs)
+
+A routine is a managed "do NN every YY" job: a task prompt, a six-field cron
+schedule, a target workflow run on every tick, an optional natural-language
+completion criteria, and a lifecycle status (`active` / `disabled` /
+`completed`) stored in SQLite at `.riela/routines/routines.sqlite` (override
+with `--routine-store` or `RIELA_ROUTINE_STORE`). Creating a routine also
+writes a cron event source and a routine-tagged binding under the event root
+(default `.riela/events`), so `riela events serve` fires it; the cron dispatch
+path checks the SQLite status before every run, so completing or disabling a
+routine stops it immediately without restarting the serve loop (new/changed
+schedules still need one restart to load).
+
+Relative routine-store paths resolve against `--working-dir`, and routine list
+limits must be between 1 and 1,000 so CLI, GraphQL, and add-on queries stay
+bounded.
+
+Surfaces:
+
+- CLI: `riela routine create --name <n> --task <t> (--schedule "0 */30 * * * *" | --every 30m) --workflow routine-task-runner [--completion-criteria <c>] [--timezone Asia/Tokyo] [--deactivate-workflow-on-completion]`,
+  plus `list`, `inspect <id>`, `complete <id> [--note ...]`, `enable <id>`,
+  `disable <id>`, and `delete <id>`.
+- GraphQL (locally trusted hosts): `routines` / `routine` queries and
+  `createRoutine` / `completeRoutine` / `setRoutineStatus` / `deleteRoutine`
+  mutations, available through `riela graphql execute --query ...` and the
+  RielaApp web `/graphql` endpoint.
+- Add-ons: `riela/routine-create`, `riela/routine-complete`,
+  `riela/routine-get`, `riela/routine-list`, `riela/routine-update-status`,
+  and `riela/routine-delete`, so workflows can manage routines themselves.
+
+When a completion criteria is set, the per-tick workflow judges it and calls
+`riela/routine-complete` with `conditionMet`; on completion the routine's
+event source/binding files are disabled and, when the routine was created
+with `deactivateWorkflowOnCompletion`, the target workflow is deactivated in
+the workflow registry. Reference bundles: `examples/routine-task-runner` (the
+generic per-tick executor) and `examples/routine-chat-manager` (create a
+routine from a chat instruction like "check the release status every 30
+minutes and stop once v2.0 ships" and confirm in the conversation).
+
 ## Document Conversion Add-On
 
 `riela/file-markdown-convert` converts local documents (pdf, doc, docx, ppt,

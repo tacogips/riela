@@ -16,4 +16,13 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // Solid assigns `let node: HTMLElement | undefined` through `ref={node}`
+    // in compiled output, which ESLint 10's recommended `no-unassigned-vars`
+    // cannot see. The rule stays on for plain .ts files.
+    files: ['**/*.tsx'],
+    rules: {
+      'no-unassigned-vars': 'off',
+    },
+  },
 )

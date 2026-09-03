@@ -1,0 +1,77 @@
+{
+  "workflowId": "routine-chat-manager",
+  "description": "Create a managed routine from a natural-language chat instruction such as 'check the release status every 30 minutes' — parse the instruction into a name, task, six-field cron schedule, and optional completion criteria, register the routine with riela/routine-create, and confirm in the conversation.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 180000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Never invent schedule fields; derive them from the user's instruction."
+  },
+  "entryStepId": "parse-instruction",
+  "nodes": [
+    {
+      "id": "parse-instruction",
+      "nodeFile": "nodes/node-parse-instruction.json"
+    },
+    {
+      "id": "create-routine",
+      "addon": {
+        "name": "riela/routine-create",
+        "version": "1",
+        "config": {
+          "workflowName": "routine-task-runner"
+        },
+        "inputs": {
+          "name": "{{inbox.latest.output.payload.name}}",
+          "task": "{{inbox.latest.output.payload.task}}",
+          "schedule": "{{inbox.latest.output.payload.schedule}}",
+          "timezone": "{{inbox.latest.output.payload.timezone}}",
+          "completionCriteria": "{{inbox.latest.output.payload.completionCriteria}}",
+          "instruction": "{{workflowInput.text}}",
+          "origin": "{{event.conversation}}"
+        }
+      }
+    },
+    {
+      "id": "send-reply",
+      "addon": {
+        "name": "riela/chat-reply-worker",
+        "version": "1",
+        "config": {
+          "textTemplate": "ルーチンを作成しました: {{inbox.latest.output.payload.routine.name}} (id: {{inbox.latest.output.payload.routineId}}, schedule: {{inbox.latest.output.payload.routine.schedule}}). 'riela events serve' の再起動後にスケジュール実行が始まります。",
+          "visibility": "public",
+          "threadPolicy": "same-thread",
+          "onMissingTarget": "dry-run"
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "parse-instruction",
+      "nodeId": "parse-instruction",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "create-routine"
+        }
+      ]
+    },
+    {
+      "id": "create-routine",
+      "nodeId": "create-routine",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "send-reply"
+        }
+      ]
+    },
+    {
+      "id": "send-reply",
+      "nodeId": "send-reply",
+      "role": "worker"
+    }
+  ]
+}

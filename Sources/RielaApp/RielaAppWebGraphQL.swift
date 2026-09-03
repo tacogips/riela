@@ -36,8 +36,13 @@ extension RielaApp {
           ),
           localManagedReferenceResolver: RielaAppWebManagedReferenceResolver()
         ),
-        fallback: RielaConfigGraphQLDocumentExecutor(
-          provider: RielaAppConfigurationGraphQLProvider(app: self)
+        fallback: RoutineAwareGraphQLFallbackExecutor(
+          routine: RoutineGraphQLDocumentExecutor(
+            provider: FileRoutineGraphQLProvider(workingDirectory: appHomeDirectory.path)
+          ),
+          next: RielaConfigGraphQLDocumentExecutor(
+            provider: RielaAppConfigurationGraphQLProvider(app: self)
+          )
         )
       ),
       registryWorkingDirectory: appHomeDirectory.path

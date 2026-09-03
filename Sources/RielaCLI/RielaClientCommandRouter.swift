@@ -21,6 +21,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       GQLRoute.self,
       HookRoute.self,
       EventsRoute.self,
+      RoutineRoute.self,
       ServeRoute.self,
       CallStepRoute.self,
       WorkflowCallRoute.self,
@@ -105,6 +106,11 @@ struct HookRoute: RielaClientPassthroughRoute {
 
 struct EventsRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("events", abstract: "Manage external event sources.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct RoutineRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("routine", abstract: "Manage recurring routines.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

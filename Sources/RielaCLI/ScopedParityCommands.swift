@@ -75,6 +75,9 @@ public struct ScopedParityCommandRunner: Sendable {
         parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
       } else if command.kind == .events, options.command == "schedules" {
         parityArguments = try ParsedTargetAndOptions.parseCLI(options.arguments).options
+      } else if command.kind == .routine {
+        // Routine flags are parsed by ParsedRoutineOptions inside routineResult.
+        parityArguments = []
       } else {
         parityArguments = options.arguments
       }
@@ -104,6 +107,9 @@ public struct ScopedParityCommandRunner: Sendable {
         return rendered.withHookInferenceWarning(from: parsedHook.context)
       case .events:
         let result = try await eventResult(options: options, parsed: parsed)
+        return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
+      case .routine:
+        let result = try routineResult(options: options)
         return try render(result, options: options) { result in result.records.joined(separator: "\n") + "\n" }
       case .serve:
         let response = try await serverResponse(options: options, parsed: parsed)
@@ -961,38 +967,6 @@ fileprivate extension ScopedParityCommandRunner {
       .filter { $0.pathExtension == "json" }
       .map { try JSONDecoder().decode(PersistedEventSchedule.self, from: Data(contentsOf: $0)) }
       .sorted { $0.scheduleId < $1.scheduleId }
-  }
-
-  private func safeReceiptId(sourceId: String, eventId: String) -> String {
-    let raw = "\(sourceId)\u{0}\(eventId)"
-    let encoded = Data(raw.utf8)
-      .base64EncodedString()
-      .replacingOccurrences(of: "+", with: "-")
-      .replacingOccurrences(of: "/", with: "_")
-      .replacingOccurrences(of: "=", with: "")
-    return "event-\(encoded)"
-  }
-
-  private func eventRecordURL(id: String, root: URL, kind: String) throws -> URL {
-    guard isSafeEventRecordId(id) else {
-      throw CLIUsageError("invalid \(kind) id '\(id)'")
-    }
-    let standardizedRoot = root.standardizedFileURL
-    let url = standardizedRoot.appendingPathComponent("\(id).json").standardizedFileURL
-    guard isURL(url, containedIn: standardizedRoot) else {
-      throw CLIUsageError("invalid \(kind) id '\(id)'")
-    }
-    return url
-  }
-
-  private func isSafeEventRecordId(_ value: String) -> Bool {
-    let scalars = Array(value.unicodeScalars)
-    guard (1...128).contains(scalars.count), value != ".", value != "..", !value.contains("..") else {
-      return false
-    }
-    return scalars.allSatisfy { scalar in
-      isParityASCIIAlphaNumeric(scalar) || scalar == "." || scalar == "-" || scalar == "_"
-    }
   }
 
   private func defaultEventEnvelope(config: EventConfig, action: String) -> ExternalEventEnvelope {

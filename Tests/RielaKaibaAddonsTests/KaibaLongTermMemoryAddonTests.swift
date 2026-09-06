@@ -1,219 +1,149 @@
-import AppCore
-import Foundation
+import KaibaClient
 import RielaAddonSupport
 import RielaCore
 import XCTest
 @testable import RielaKaibaAddons
 
 final class KaibaLongTermMemoryAddonTests: XCTestCase {
-  private func scratchNoteRoot() -> URL {
-    FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-long-term-memory-addon-\(UUID().uuidString)", isDirectory: true)
+  func testEveryRegisteredMemoryAddonHasAnExactCompatibilityPayload() async throws {
+    let client = try fixtureKaibaClient()
+    let consolidateOutput = try await consolidate(
+      client: client,
+      config: ["idempotencyKey": .string("memory-shape")],
+      payload: ["memoryEntries": .array([.object(["content": .string("# durable fact")])])]
+    )
+    XCTAssertEqual(
+      Set(consolidateOutput.payload.keys),
+      [
+        "status", "addon", "operation", "stepId", "notebookId", "noteIds", "notes",
+        "entriesWritten", "idempotentReplay", "idempotencyKey", "associations"
+      ]
+    )
+    XCTAssertEqual(consolidateOutput.payload["entriesWritten"], .number(1))
+    XCTAssertEqual(consolidateOutput.payload["idempotencyKey"], .string("memory-shape"))
+    guard case let .array(notes)? = consolidateOutput.payload["notes"],
+          case let .object(note)? = notes.first else {
+      return XCTFail("expected a projected memory note")
+    }
+    XCTAssertEqual(
+      Set(note.keys),
+      ["noteId", "notebookId", "noteNumber", "title", "bodyMarkdown", "readOnly", "createdAt", "updatedAt", "metaJSON", "tags"]
+    )
+    XCTAssertNil(note["diagnostics"])
+    XCTAssertNil(note["localPath"])
+
+    let recallOutput = try await KaibaAddonCatalog.executeForTesting(
+      .init(
+        workflowId: "memory-test", stepId: "recall", nodeId: "recall",
+        addon: .init(name: "kaiba/memory-recall", version: "1", config: ["query": .string("fixture")])
+      ),
+      client: client,
+      environment: [:]
+    )
+    XCTAssertEqual(
+      Set(recallOutput.payload.keys),
+      [
+        "status", "addon", "operation", "stepId", "query", "limit", "includeAssociations",
+        "associationDepth", "results", "resultCount", "noteIds", "recallText"
+      ]
+    )
+    XCTAssertEqual(recallOutput.payload["query"], .string("fixture"))
+    guard case let .array(results)? = recallOutput.payload["results"],
+          case let .object(result)? = results.first else {
+      return XCTFail("expected a projected recall result")
+    }
+    XCTAssertEqual(
+      Set(result.keys),
+      ["noteId", "notebookId", "title", "bodyMarkdown", "snippet", "rank", "isAssociation", "edgeKind", "weight", "hopCount", "pathNoteIds", "createdAt", "metaJSON"]
+    )
+    XCTAssertNil(result["diagnostics"])
+    XCTAssertNil(result["localPath"])
+  }
+
+  func testConsolidatePreservesCompatibilityFieldsAndRecordMetadata() async throws {
+    let transport = KaibaHTTPFixture()
+    let output = try await consolidate(
+      client: fixtureKaibaClient(transport),
+      config: ["idempotencyKey": .string("period-2026-08-01")],
+      payload: ["memoryEntries": .array([.object([
+        "content": .string("# durable fact"), "sourceMemoryRecordIds": .array([.integer(1), .string("two")])
+      ])])]
+    )
+    XCTAssertEqual(output.payload["entriesWritten"], .number(1))
+    XCTAssertEqual(output.payload["idempotencyKey"], .string("period-2026-08-01"))
+    XCTAssertEqual(output.payload["noteIds"], .array([.string("note-1")]))
+    XCTAssertNotNil(output.payload["associations"])
+    let request = try XCTUnwrap(transport.requests.first)
+    let requestText = String(bytes: request.body, encoding: .utf8) ?? ""
+    XCTAssertTrue(requestText.contains("sourceMemoryRecordIds"))
+    XCTAssertTrue(requestText.contains("period-2026-08-01"))
+  }
+
+  func testLostResponseReplayUsesTheSameAutomaticIdempotencyKey() async throws {
+    let transport = KaibaHTTPFixture(lostResponseOperations: ["KaibaAppendLongTermMemory"])
+    let client = try fixtureKaibaClient(transport)
+    let payload: JSONObject = ["memoryEntries": .array([.object(["content": .string("# retry")])])]
+    let initial = identity(step: "step-1", operation: "step-1", attempt: 1, predecessor: nil)
+    let retry = identity(step: "step-2", operation: "step-1", attempt: 2, predecessor: "step-1")
+    do {
+      _ = try await consolidate(client: client, payload: payload, identity: initial)
+      XCTFail("expected the committed request to lose its response")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+    }
+    let firstReplay = try await consolidate(client: client, payload: payload, identity: retry)
+    let secondReplay = try await consolidate(client: client, payload: payload, identity: retry)
+    XCTAssertEqual(firstReplay.payload["idempotencyKey"], secondReplay.payload["idempotencyKey"])
+    XCTAssertEqual(firstReplay.payload["idempotentReplay"], .bool(true))
+    XCTAssertEqual(secondReplay.payload["idempotentReplay"], .bool(true))
+    let appendCount = transport.requests.filter {
+      (String(bytes: $0.body, encoding: .utf8) ?? "").contains("KaibaAppendLongTermMemory")
+    }.count
+    XCTAssertEqual(appendCount, 3)
+  }
+
+  func testConsolidateFailsClosedWithoutIdentityWhenNoKeyIsProvided() async throws {
+    do {
+      _ = try await consolidate(client: fixtureKaibaClient(), payload: ["memoryEntries": .array([.object(["content": .string("# retry")])])])
+      XCTFail("expected missing identity")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .invalidInput)
+      XCTAssertEqual(error.message, "missing_idempotency_identity")
+    }
+  }
+
+  func testRecallProducesPromptReadyCompatibilityPayload() async throws {
+    let output = try await KaibaAddonCatalog.executeForTesting(
+      .init(workflowId: "memory-test", stepId: "recall", nodeId: "recall", addon: .init(name: "kaiba/memory-recall", version: "1", config: ["query": .string("fixture")])),
+      client: fixtureKaibaClient(),
+      environment: [:]
+    )
+    XCTAssertEqual(output.payload["resultCount"], .number(1))
+    XCTAssertEqual(output.payload["noteIds"], .array([.string("note-1")]))
+    guard case let .string(recallText)? = output.payload["recallText"] else {
+      return XCTFail("expected recall text")
+    }
+    XCTAssertTrue(recallText.contains("[direct]"))
   }
 
   private func consolidate(
-    noteRoot: String,
-    config extraConfig: JSONObject = [:],
-    resolvedInputPayload: JSONObject
+    client: KaibaClient,
+    config: JSONObject = [:],
+    payload: JSONObject,
+    identity: WorkflowAddonExecutionIdentity? = nil
   ) async throws -> AdapterExecutionOutput {
-    var config: JSONObject = ["noteRoot": .string(noteRoot)]
-    for (key, value) in extraConfig {
-      config[key] = value
-    }
-    return try await KaibaAddonCatalog.execute(
-      WorkflowAddonExecutionInput(
-        workflowId: "memory-consolidation",
-        stepId: "consolidate-long-term",
-        nodeId: "consolidate-long-term",
-        addon: WorkflowNodeAddonRef(name: "kaiba/memory-consolidate", version: "1", config: config),
-        resolvedInputPayload: resolvedInputPayload
+    try await KaibaAddonCatalog.executeForTesting(
+      .init(
+        workflowId: "memory-test", stepId: "consolidate", nodeId: "consolidate",
+        addon: .init(name: "kaiba/memory-consolidate", version: "1", config: config),
+        resolvedInputPayload: payload, executionIdentity: identity
       ),
+      client: client,
       environment: [:]
     )
   }
 
-  func testConsolidateStoresShortTermRecordIdsAsMetadataNotNoteLinks() async throws {
-    let noteRoot = scratchNoteRoot()
-    defer {
-      try? FileManager.default.removeItem(at: noteRoot)
-    }
-
-    let output = try await consolidate(
-      noteRoot: noteRoot.path,
-      config: ["idempotencyKey": .string("period-2026-08-01")],
-      resolvedInputPayload: [
-        "memoryEntries": .array([
-          .object([
-            "content": .string("# project-atlas kickoff\n\nScope was settled in the design review."),
-            "topicTags": .array([.string("project-atlas")]),
-            "sourceMemoryRecordIds": .array([.integer(1), .integer(2)]),
-            "periodStart": .string("2026-08-01T00:00:00Z"),
-            "periodEnd": .string("2026-08-08T00:00:00Z")
-          ])
-        ])
-      ]
-    )
-
-    XCTAssertEqual(output.payload["entriesWritten"], .number(1))
-    XCTAssertEqual(output.payload["idempotentReplay"], .bool(false))
-    guard case let .array(noteIds)? = output.payload["noteIds"], noteIds.count == 1 else {
-      return XCTFail("consolidation did not return exactly one note id")
-    }
-
-    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
-    let noteId = NoteID(try XCTUnwrap(nonEmptyString(noteIds[0])))
-    let note = try service.getNote(noteId)
-    let metaJSON = try XCTUnwrap(note.metaJSON)
-    XCTAssertTrue(metaJSON.contains("\"sourceMemoryRecordIds\":[1,2]"), metaJSON)
-    XCTAssertTrue(metaJSON.contains("\"sourceNoteIds\":[]"), metaJSON)
-    XCTAssertEqual(note.tags.map(\.tag.name), ["project-atlas"])
-    XCTAssertEqual(try service.listLinks(noteId: noteId), [])
-  }
-
-  func testConsolidateReplaysUnderTheSameIdempotencyKey() async throws {
-    let noteRoot = scratchNoteRoot()
-    defer {
-      try? FileManager.default.removeItem(at: noteRoot)
-    }
-    let payload: JSONObject = [
-      "memoryEntries": .array([
-        .object(["content": .string("# nightly window\n\nOne durable fact.")])
-      ])
-    ]
-
-    let first = try await consolidate(
-      noteRoot: noteRoot.path,
-      config: ["idempotencyKey": .string("period-2026-08-01")],
-      resolvedInputPayload: payload
-    )
-    let second = try await consolidate(
-      noteRoot: noteRoot.path,
-      config: ["idempotencyKey": .string("period-2026-08-01")],
-      resolvedInputPayload: payload
-    )
-
-    XCTAssertEqual(first.payload["idempotentReplay"], .bool(false))
-    XCTAssertEqual(second.payload["idempotentReplay"], .bool(true))
-    XCTAssertEqual(first.payload["noteIds"], second.payload["noteIds"])
-    // A replay must not re-run association linking against the same note.
-    XCTAssertEqual(second.payload["associations"], .array([]))
-
-    let service = try NoteService(driver: SQLiteNoteDatabaseDriver(noteRoot: noteRoot.path))
-    XCTAssertEqual(try service.listLongTermMemoryNotes(limit: 20).count, 1)
-  }
-
-  func testRecallReturnsPromptReadyTextForConsolidatedMemories() async throws {
-    let noteRoot = scratchNoteRoot()
-    defer {
-      try? FileManager.default.removeItem(at: noteRoot)
-    }
-    _ = try await consolidate(
-      noteRoot: noteRoot.path,
-      config: ["idempotencyKey": .string("period-2026-08-01")],
-      resolvedInputPayload: [
-        "memoryEntries": .array([
-          .object([
-            "content": .string("# project-atlas kickoff\n\nScope was settled in the design review."),
-            "topicTags": .array([.string("project-atlas")])
-          ])
-        ])
-      ]
-    )
-
-    let output = try await KaibaAddonCatalog.execute(
-      WorkflowAddonExecutionInput(
-        workflowId: "memory-consolidation",
-        stepId: "recall-long-term",
-        nodeId: "recall-long-term",
-        addon: WorkflowNodeAddonRef(
-          name: "kaiba/memory-recall",
-          version: "1",
-          config: [
-            "noteRoot": .string(noteRoot.path),
-            "query": .string("project-atlas"),
-            "passthrough": .object(["entriesWritten": .string("{{entriesWritten}}")])
-          ]
-        ),
-        resolvedInputPayload: ["entriesWritten": .number(1)]
-      ),
-      environment: [:]
-    )
-
-    XCTAssertEqual(output.payload["resultCount"], .number(1))
-    // The passthrough keeps the upstream value's JSON type instead of stringifying it.
-    XCTAssertEqual(output.payload["entriesWritten"], .number(1))
-    let recallText = try XCTUnwrap(nonEmptyString(output.payload["recallText"]))
-    XCTAssertTrue(recallText.contains("[direct]"), recallText)
-    XCTAssertTrue(recallText.contains("project-atlas kickoff"), recallText)
-  }
-
-  func testUnsupportedVersionIsRejected() async {
-    let noteRoot = scratchNoteRoot()
-    defer {
-      try? FileManager.default.removeItem(at: noteRoot)
-    }
-    do {
-      _ = try await KaibaAddonCatalog.execute(
-        WorkflowAddonExecutionInput(
-          workflowId: "memory-consolidation",
-          stepId: "recall-long-term",
-          nodeId: "recall-long-term",
-          addon: WorkflowNodeAddonRef(
-            name: "kaiba/memory-recall",
-            version: "2",
-            config: ["noteRoot": .string(noteRoot.path), "query": .string("anything")]
-          ),
-          resolvedInputPayload: [:]
-        ),
-        environment: [:]
-      )
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .policyBlocked)
-      return
-    } catch {
-      return XCTFail("expected a policy-blocked version rejection, got \(error)")
-    }
-    XCTFail("expected version '2' to be rejected")
-  }
-
-  func testConsolidateRequiresAtLeastOneEntry() async {
-    let noteRoot = scratchNoteRoot()
-    defer {
-      try? FileManager.default.removeItem(at: noteRoot)
-    }
-    do {
-      _ = try await consolidate(noteRoot: noteRoot.path, resolvedInputPayload: [:])
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .invalidInput)
-      return
-    } catch {
-      return XCTFail("expected an invalid-input rejection, got \(error)")
-    }
-    XCTFail("expected an empty entry list to be rejected")
-  }
-
-  func testConsolidateAllowsEmptyEntriesAsNoOpWhenOptedIn() async throws {
-    let noteRoot = scratchNoteRoot()
-    defer {
-      try? FileManager.default.removeItem(at: noteRoot)
-    }
-
-    let output = try await consolidate(
-      noteRoot: noteRoot.path,
-      config: [
-        "entries": .array([]),
-        "allowEmptyEntries": .bool(true),
-        "idempotencyKey": .string("seed-2026-08-21")
-      ],
-      resolvedInputPayload: [:]
-    )
-
-    XCTAssertEqual(output.payload["entriesWritten"], .number(0))
-    XCTAssertEqual(output.payload["idempotentReplay"], .bool(false))
-    XCTAssertEqual(output.payload["noteIds"], .array([]))
-    XCTAssertEqual(output.payload["notes"], .array([]))
-    XCTAssertEqual(output.payload["associations"], .array([]))
-    XCTAssertEqual(output.payload["idempotencyKey"], .string("seed-2026-08-21"))
-    XCTAssertNotNil(nonEmptyString(output.payload["notebookId"] ?? .null))
+  private func identity(step: String, operation: String, attempt: Int, predecessor: String?) -> WorkflowAddonExecutionIdentity {
+    .init(workflowExecutionId: "execution", stepExecutionId: step, operationExecutionId: operation, attempt: attempt, predecessorStepExecutionId: predecessor, predecessorStepExecutionIds: predecessor.map { [$0] } ?? [])
   }
 }

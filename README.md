@@ -352,20 +352,31 @@ agent chat and note editing, links, file attachments (local/S3), FTS5 search,
 a note GraphQL API, a `kaiba serve` web viewer, and API-key authentication
 (`kaiba client issue`).
 
-Riela consumes kaiba as an add-on knowledge/context source, and the coupling
-stops at the add-on layer: kaiba is linked by exactly one target
-(`RielaKaibaAddons`), which exposes a RielaCore-only façade, so no kaiba type —
-its note service, its identifiers, its JSON model — reaches the rest of riela.
-Riela keeps its own short-term memory in its own store; long-term notes and
-knowledge live only in kaiba.
+Riela accesses Kaiba only through the dependency-free first-party
+`KaibaClient` HTTP(S) SDK. It never opens a Kaiba store, resolves a Kaiba
+configuration file, or falls back to an in-process service. Riela keeps its
+own short-term memory; Kaiba owns long-term notes and knowledge.
 
-Two node families sit behind that boundary, and they are separate nodes rather
-than one node with a mode flag.
+Configure a named server once, then use its stable ID in a node's
+`addon.config.kaibaInstanceId`. If the field is absent, the enabled default is
+used; an unknown, disabled, or missing ID fails before add-on transport. The
+catalog stores only an environment-variable *name*, never a bearer value.
 
-**Local nodes** reach the store through kaiba's library API. They need no
-credential: holding the store file is kaiba's operator view, which spans every
-account and every library. The note root comes from config `noteRoot`, env
-`KAIBA_NOTE_ROOT`, or `~/.kaiba`.
+```text
+riela kaiba instance add --name local --endpoint http://127.0.0.1:8787 \
+  --unauthenticated --allow-insecure-http
+riela kaiba instance test <instance-id>
+riela kaiba instance list --output json
+```
+
+Use `list`, `show`, `add`, `update`, `remove`, `test`, and `set-default` under
+`riela kaiba instance`. The RielaApp Kaiba settings surface uses the same
+user-wide catalog and readiness policy. Remote HTTP and remote unauthenticated
+servers require their explicit opt-ins. Do not put a token in workflow JSON,
+CLI arguments, logs, or `instances.json`: supply it only through the named
+process environment variable at runtime.
+
+All existing Kaiba nodes use that resolution path:
 
 - `kaiba/note-create`, `kaiba/note-update`, `kaiba/note-get`,
   `kaiba/note-search`, `kaiba/note-tag-search`,
@@ -374,43 +385,20 @@ account and every library. The note root comes from config `noteRoot`, env
   `kaiba/note-comment-add`, `kaiba/notebook-ingest-pages`,
   `kaiba/document-import`, `kaiba/note-conversation-save`
 - Long-term memory: `kaiba/memory-consolidate`, `kaiba/memory-recall`
-- Raw GraphQL against the local store: `kaiba/note-graphql-document`
+- Arbitrary GraphQL: `kaiba/note-graphql-document` and
+  `kaiba/note-graphql-remote`
 
-**The remote node** — `kaiba/note-graphql-remote` — is for kaiba running as an
-external GraphQL server. It opens no local store at all; it forwards the
-document in `config.query` (with `addon.inputs.variables`) to the `endpoint`
-and lets kaiba's own authentication and library access control decide what the
-call reaches:
+`noteRoot`, `databasePath`, `configPath`, `KAIBA_NOTE_ROOT`, and
+`RIELA_NOTE_ROOT` are inert legacy inputs. They cannot select a server. Legacy
+remote connection fields are assertions only and fail on a mismatch.
 
-- `kaiba serve` (no flag) requires a bearer key. The node reads it from the
-  env var named by `apiKeyEnv` (default `KAIBA_API_KEY`; issue one with
-  `kaiba client issue`). With no key it refuses before the request unless the
-  node sets `allowUnauthenticated: true`, and a keyless request against an
-  authenticating server surfaces as `endpoint returned status 401`.
-- `kaiba serve --allow-unauthenticated` accepts keyless requests but answers
-  only from libraries created with `--auth none` (the seeded `default` library
-  is one). A notebook moved into an `--auth required` library disappears from
-  keyless responses and comes back once a key is presented; add `--as-admin`
-  to give an open port the seeded admin's full reach.
-- An API key belongs to an account (`kaiba client issue --user <id>`, the
-  default account otherwise), so a non-admin key reaches the open libraries
-  plus the ones its account was granted.
-
-Kaiba carries no store migrations: 0.1.7 stores are schema 15 and an older
-`~/.kaiba` is rejected with `unsupportedLegacyVersion`. Recreate the note root
-(or point `noteRoot`/`KAIBA_NOTE_ROOT` at a fresh one) when upgrading. Only the
-local nodes are affected — the remote node never touches a store file.
-
-`kaiba/document-import` consumes a local `path` (normally
-`event.input.file.absolutePath` from a `file-change` source), converts PDF,
-EPUB, office, CSV, and related formats through Kaiba's in-process AnydocKit,
-and stores the original as a notebook attachment. Set node input `ocr: true`
-for Kaiba's agent-gateway image OCR, and `translate: true` plus
-`targetLanguage` for post-import notebook translation. OCR and translation
-vendor/model fields can be supplied directly (`ocrVendor`/`ocrModel`,
-`translationVendor`/`translationModel`) or loaded from the Kaiba config named
-by addon config `configPath` / `KAIBA_CONFIG_PATH`. Kaiba 0.1.6 OCR applies to
-standalone PNG/JPEG/GIF/WebP inputs; PDF and EPUB use AnydocKit conversion.
+`kaiba/document-import` reads a bounded local source path (normally a
+file-change input), sends the original as an inline attachment, and imports
+caller-supplied pages or UTF-8 text over HTTP. Non-text conversion/OCR and
+translation are caller-owned preparation inputs; the HTTP add-on refuses
+unsupported server-local paths, S3 routing, and configuration-derived
+conversion. This keeps document content and credentials on the caller side of
+the API boundary.
 
 `kaiba/note-tag-search` performs tag-only retrieval without requiring an FTS
 query. `kaiba/note-chain` returns bounded graph paths. Attachments include a
@@ -424,11 +412,6 @@ the AI-produced parameters in `addon.inputs.variables`; JSON templates retain
 the variables' JSON types. The reference bundle
 `examples/kaiba-document-intake` shows directory intake and GraphQL retrieval.
 
-Riela always accesses in-process document conversion through Kaiba's
-`AnydocKit` product from `anydoc-swift`; it does not build or invoke the native
-converter directly. On macOS, `anydoc-swift` automatically uses its published
-XCFramework, so building Riela does not require Cargo or `PKG_CONFIG_PATH`.
-Platform-specific native integration remains encapsulated by `anydoc-swift`.
 
 ## Workflow memory (short-term)
 

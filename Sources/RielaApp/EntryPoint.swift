@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import RielaAppSupport
+import RielaKaibaSupport
 import RielaObservability
 import RielaServer
 import UniformTypeIdentifiers
@@ -37,6 +38,11 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var marketplaceErrors: [String: String] = [:]
   var marketplaceRefreshingRepositoryIds: Set<String> = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+  /// Injectable only to make approval races deterministic in App-target tests.
+  /// Production always reloads the catalog from its configured home.
+  var kaibaCatalogLoader: @Sendable (URL) async throws -> KaibaInstanceCatalog = { homeURL in
+    try KaibaInstanceStore(homeURL: homeURL).load()
+  }
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
   var webServerController: RielaAppWebServerController?
@@ -193,6 +199,17 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         onRestartInstance: { [weak self] identity in
           self?.restartDaemonWorkflowInstance(identity: identity)
         },
+        onSaveKaibaNodeBinding: { [weak self] identity, nodeId, instanceID, hasAuthoredBinding in
+          self?.saveDaemonKaibaNodeBinding(
+            identity: identity,
+            nodeId: nodeId,
+            instanceID: instanceID,
+            hasAuthoredBinding: hasAuthoredBinding
+          ) ?? false
+        },
+        onCheckKaibaWorkflowReadiness: { [weak self] identity in
+          await self?.daemonKaibaWorkflowReadiness(identity: identity) ?? .notApplicable
+        },
         onSetEnvironment: { [weak self] identity in
           self?.setDaemonWorkflowEnvironment(identity: identity)
         },
@@ -232,7 +249,15 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         },
         onWindowWillClose: { [weak self] in
           self?.restoreAccessoryActivationPolicyIfNoAppWindows()
-        }
+        },
+        kaibaInstanceController: RielaAppKaibaInstanceController(
+          homeURL: appHomeDirectory,
+          bindingScanRoots: KaibaBindingScanRoots(
+            projectRootURL: launchOptions.projectRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+            homeURL: appHomeDirectory,
+            appRootURL: profileStore.appRootURL
+          )
+        )
       )
     }
     refreshDaemonWorkflowWindow()
@@ -332,7 +357,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     Task { @MainActor in
       for candidate in candidatesToStart {
         let runtimeIdentity = profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: candidate.id)
-        guard let resolved = resolveDaemonWorkflowInstance(identity: runtimeIdentity) else {
+        guard let resolved = await approvedDaemonWorkflowInstance(identity: runtimeIdentity),
+              resolved.preference.available, resolved.preference.active else {
+          disableDaemonWorkflowAutostart(identity: runtimeIdentity)
           continue
         }
         await daemonRuntime.start(
@@ -412,13 +439,19 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       guard preference.available, preference.active else {
         continue
       }
+      let runtimeIdentity = profiledInstance.runtimeIdentity.rawValue
+      guard let approved = await approvedDaemonWorkflowInstance(identity: runtimeIdentity),
+            approved.preference.available, approved.preference.active else {
+        disableDaemonWorkflowAutostart(identity: runtimeIdentity)
+        continue
+      }
       await daemonRuntime.start(
-        candidate,
-        configuration: daemonRuntimeConfiguration(for: candidate, preference: preference),
-        server: daemonServerConfiguration(profileName: profiledInstance.profileName)
+        approved.candidate,
+        configuration: daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
+        server: daemonServerConfiguration(profileName: approved.profileName)
       )
-      let snapshot = daemonRuntime.snapshot(for: candidate.id)
-      logDaemon("start candidate=\(candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
+      let snapshot = daemonRuntime.snapshot(for: approved.candidate.id)
+      logDaemon("start candidate=\(approved.candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")
     }
   }
 

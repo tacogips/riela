@@ -4,19 +4,32 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public var executionBackend: NodeExecutionBackend?
   public var model: String?
   public var effort: NodeReasoningEffort?
+  /// A stable named Kaiba API instance override for a `kaiba/*` node.
+  public var kaibaInstanceId: String?
+  /// Distinguishes an inherited binding from an explicit reset persisted as
+  /// `kaibaInstanceId: null` in a workflow-instance patch.
+  public var clearsKaibaInstanceId: Bool
 
   public init(
     executionBackend: NodeExecutionBackend? = nil,
     model: String? = nil,
-    effort: NodeReasoningEffort? = nil
+    effort: NodeReasoningEffort? = nil,
+    kaibaInstanceId: String? = nil,
+    clearsKaibaInstanceId: Bool = false
   ) {
     self.executionBackend = executionBackend
     self.model = model
     self.effort = effort
+    self.kaibaInstanceId = kaibaInstanceId
+    self.clearsKaibaInstanceId = clearsKaibaInstanceId
   }
 
   public var isEmpty: Bool {
-    executionBackend == nil && normalizedModel == nil && effort == nil
+    executionBackend == nil
+      && normalizedModel == nil
+      && effort == nil
+      && kaibaInstanceId == nil
+      && !clearsKaibaInstanceId
   }
 
   public var jsonObject: JSONObject {
@@ -29,6 +42,11 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     }
     if let effort {
       object["effort"] = .string(effort.rawValue)
+    }
+    if clearsKaibaInstanceId {
+      object["kaibaInstanceId"] = .null
+    } else if let kaibaInstanceId {
+      object["kaibaInstanceId"] = .string(kaibaInstanceId)
     }
     return object
   }
@@ -58,6 +76,16 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
           throw WorkflowInstanceResolutionError.invalidFieldValue(field)
         }
         self.effort = effort
+      case "kaibaInstanceId":
+        if case .null = jsonObject[field] {
+          clearsKaibaInstanceId = true
+          continue
+        }
+        guard let identifier = Self.stringValue(jsonObject[field]),
+              !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          throw WorkflowInstanceResolutionError.invalidFieldValue(field)
+        }
+        kaibaInstanceId = identifier
       default:
         throw WorkflowInstanceResolutionError.unsupportedField(field)
       }
@@ -65,7 +93,62 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     _ = nodeId
   }
 
-  private static let supportedFields: Set<String> = ["executionBackend", "model", "effort"]
+  private static let supportedFields: Set<String> = ["executionBackend", "model", "effort", "kaibaInstanceId"]
+
+  private enum CodingKeys: String, CodingKey {
+    case executionBackend
+    case model
+    case effort
+    case kaibaInstanceId
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
+    model = try container.decodeIfPresent(String.self, forKey: .model)
+    effort = try container.decodeIfPresent(NodeReasoningEffort.self, forKey: .effort)
+    if container.contains(.kaibaInstanceId) {
+      clearsKaibaInstanceId = try container.decodeNil(forKey: .kaibaInstanceId)
+    } else {
+      clearsKaibaInstanceId = false
+    }
+    kaibaInstanceId = clearsKaibaInstanceId
+      ? nil
+      : try container.decodeIfPresent(String.self, forKey: .kaibaInstanceId)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(executionBackend, forKey: .executionBackend)
+    try container.encodeIfPresent(model, forKey: .model)
+    try container.encodeIfPresent(effort, forKey: .effort)
+    if clearsKaibaInstanceId {
+      try container.encodeNil(forKey: .kaibaInstanceId)
+    } else {
+      try container.encodeIfPresent(kaibaInstanceId, forKey: .kaibaInstanceId)
+    }
+  }
+
+  public func merging(_ override: WorkflowInstanceNodePatch) -> WorkflowInstanceNodePatch {
+    var merged = self
+    if let executionBackend = override.executionBackend {
+      merged.executionBackend = executionBackend
+    }
+    if let model = override.model {
+      merged.model = model
+    }
+    if let effort = override.effort {
+      merged.effort = effort
+    }
+    if override.clearsKaibaInstanceId {
+      merged.kaibaInstanceId = nil
+      merged.clearsKaibaInstanceId = true
+    } else if let kaibaInstanceId = override.kaibaInstanceId {
+      merged.kaibaInstanceId = kaibaInstanceId
+      merged.clearsKaibaInstanceId = false
+    }
+    return merged
+  }
 
   private static func stringValue(_ value: JSONValue?) -> String? {
     guard case let .string(string)? = value else {
@@ -166,7 +249,7 @@ public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
       merged.defaultVariables[key] = value
     }
     for (key, value) in override.nodePatches {
-      merged.nodePatches[key] = value
+      merged.nodePatches[key] = (merged.nodePatches[key] ?? WorkflowInstanceNodePatch()).merging(value)
     }
     return merged
   }

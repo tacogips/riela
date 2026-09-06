@@ -46,6 +46,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "node-combinations-showcase",
     "note-agent",
     "note-link-extract",
+    "note-rag-retrieval-fusion",
     "open-model-provider-codex",
     "recent-change-quality-loop",
     "required-loop-gate-failure",

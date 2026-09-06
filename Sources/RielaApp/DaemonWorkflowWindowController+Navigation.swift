@@ -13,7 +13,8 @@ extension DaemonWorkflowWindowController {
       marketplaceOverviewView,
       marketplaceWorkflowDetailView,
       assistantOverviewView,
-      profilesOverviewView
+      profilesOverviewView,
+      kaibaOverviewView
     ].compactMap { $0 }
     for pane in panes where pane !== visiblePane {
       pane.isHidden = true
@@ -113,6 +114,19 @@ extension DaemonWorkflowWindowController {
     updateSidebarSelection()
   }
 
+  @objc func showKaibaPane() {
+    activeSidebarPane = .kaiba
+    rebuildKaibaOverviewView()
+    isShowingInstanceDetail = false
+    isShowingAddInstanceSelection = false
+    isShowingWorkflowSourceDetail = false
+    isShowingMarketplaceWorkflowDetail = false
+    showContentPane(kaibaOverviewView)
+    navigationTitleLabel.stringValue = "Kaiba API Instances"
+    updateNavigationState()
+    updateSidebarSelection()
+  }
+
   func updateNavigationState() {
     let isAvailable = isBackNavigationAvailable
     navigationBackButton.isEnabled = isAvailable
@@ -134,6 +148,7 @@ extension DaemonWorkflowWindowController {
     updateSidebarButton(sidebarMarketplaceButton, selected: activeSidebarPane == .marketplace)
     updateSidebarButton(sidebarAssistantButton, selected: activeSidebarPane == .assistant)
     updateSidebarButton(sidebarProfilesButton, selected: activeSidebarPane == .profiles)
+    updateSidebarButton(sidebarKaibaButton, selected: activeSidebarPane == .kaiba)
   }
 
   private func updateSidebarButton(_ button: NSButton, selected: Bool) {

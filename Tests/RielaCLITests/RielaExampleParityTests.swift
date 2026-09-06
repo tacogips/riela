@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 37
+    static let expectedMockScenarioCount = 38
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -138,74 +138,22 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
-  /// The graph-RAG examples drive the `kaiba/*` retrieval add-ons for real (only
-  /// their agent step is mocked), so the mock run needs a note root that already
-  /// contains a bounded graph. Seeding `subject -> hop-one -> hop-two` lets the
-  /// traversal return actual neighbors instead of failing on missing input.
+  /// Graph-RAG examples are fully deterministic under `--mock-scenario`.
+  /// Their Kaiba node responses live beside the workflow, so this fixture never
+  /// creates a local note store or invokes production Kaiba resolution.
   private enum GraphRAGExampleFixture {
     static let workflowNames: Set<String> = ["note-agent", "note-link-extract"]
 
-    /// Seeded through the `kaiba/*` add-ons rather than kaiba's own API: the
-    /// CLI test target does not link kaiba, and going through the same nodes
-    /// the examples use keeps the fixture honest.
-    static func variables(noteRoot: String, workflowName: String) async throws -> String {
-      try FileManager.default.createDirectory(
-        atPath: noteRoot,
-        withIntermediateDirectories: true
-      )
-      let subject = try await createNote(noteRoot: noteRoot, body: "# Subject\n\nprojectalpha kickoff planning")
-      let hopOne = try await createNote(noteRoot: noteRoot, body: "# Hop One\n\nprojectalpha design decisions")
-      let hopTwo = try await createNote(noteRoot: noteRoot, body: "# Hop Two\n\nrollout notes")
-      try await linkNotes(noteRoot: noteRoot, from: subject, to: hopOne)
-      try await linkNotes(noteRoot: noteRoot, from: hopOne, to: hopTwo)
+    static func variables(workflowName: String) throws -> String {
       let input: [String: Any] = workflowName == "note-link-extract"
-        ? ["noteId": subject, "limit": 8]
+        ? ["noteId": "note-agent-source", "limit": 8]
         : ["query": "projectalpha", "limit": 5]
-      let payload: [String: Any] = ["noteRoot": noteRoot, "workflowInput": input]
+      let payload: [String: Any] = ["workflowInput": input]
       let data = try JSONSerialization.data(withJSONObject: payload)
-      return String(decoding: data, as: UTF8.self)
-    }
-
-    private static func createNote(noteRoot: String, body: String) async throws -> String {
-      let output = try await execute(
-        addon: "kaiba/note-create",
-        config: ["noteRoot": .string(noteRoot), "bodyMarkdown": .string(body)]
-      )
-      guard case let .string(noteId)? = output.payload["noteId"] else {
-        throw CLIUsageError("kaiba/note-create returned no noteId")
+      guard let variables = String(data: data, encoding: .utf8) else {
+        throw CLIUsageError("unable to encode Graph-RAG scenario variables")
       }
-      return noteId
-    }
-
-    private static func linkNotes(noteRoot: String, from: String, to: String) async throws {
-      _ = try await execute(
-        addon: "kaiba/note-graphql-document",
-        config: [
-          "noteRoot": .string(noteRoot),
-          "query": .string(
-            "mutation Link($input: LinkNotesInput!) { linkNotes(input: $input) { result { accepted } link { fromNoteId toNoteId } } }"
-          ),
-          "variables": .object([
-            "input": .object(["fromNoteId": .string(from), "toNoteId": .string(to)])
-          ])
-        ]
-      )
-    }
-
-    private static func execute(
-      addon: String,
-      config: RielaCore.JSONObject
-    ) async throws -> AdapterExecutionOutput {
-      try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
-        WorkflowAddonExecutionInput(
-          workflowId: "graph-rag-fixture",
-          stepId: "seed",
-          nodeId: "seed",
-          addon: WorkflowNodeAddonRef(name: addon, version: "1", config: config),
-          resolvedInputPayload: [:]
-        ),
-        context: AdapterExecutionContext()
-      )
+      return variables
     }
   }
 
@@ -232,13 +180,28 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
+  /// The retrieval-fusion mock scenario supplies all Kaiba operations, so its
+  /// test input needs only the user question and never a local note root.
+  private enum RetrievalFusionExampleFixture {
+    static let workflowName = "note-rag-retrieval-fusion"
+
+    static func variables() throws -> String {
+      let payload: [String: Any] = [
+        "workflowInput": [
+          "question": "How does retrieval-fusion search behave on a tagged notebook?"
+        ]
+      ]
+      let data = try JSONSerialization.data(withJSONObject: payload)
+      return String(decoding: data, as: UTF8.self)
+    }
+  }
+
   private enum WorkflowKnowledgeBaseExampleFixture {
     static let workflowName = "workflow-knowledge-base"
 
-    static func variables(memoryRoot: String, noteRoot: String) throws -> String {
+    static func variables(memoryRoot: String) throws -> String {
       let payload: [String: Any] = [
         "memoryRoot": memoryRoot,
-        "noteRoot": noteRoot,
         "workflowInput": [
           "task": "Implement retry handling for the flaky sync API client.",
           "knowledgeQuery": "backoff",
@@ -346,16 +309,20 @@ final class RielaExampleParityTests: XCTestCase {
         arguments.append(contentsOf: [
           "--variables",
           try WorkflowKnowledgeBaseExampleFixture.variables(
-            memoryRoot: sessionStore.appendingPathComponent("memory", isDirectory: true).path,
-            noteRoot: sessionStore.appendingPathComponent("notes", isDirectory: true).path
+            memoryRoot: sessionStore.appendingPathComponent("memory", isDirectory: true).path
           )
         ])
       }
-      if GraphRAGExampleFixture.workflowNames.contains(workflowName) {
-        let noteRoot = sessionStore.appendingPathComponent("notes", isDirectory: true)
+      if workflowName == RetrievalFusionExampleFixture.workflowName {
         arguments.append(contentsOf: [
           "--variables",
-          try await GraphRAGExampleFixture.variables(noteRoot: noteRoot.path, workflowName: workflowName)
+          try RetrievalFusionExampleFixture.variables()
+        ])
+      }
+      if GraphRAGExampleFixture.workflowNames.contains(workflowName) {
+        arguments.append(contentsOf: [
+          "--variables",
+          try GraphRAGExampleFixture.variables(workflowName: workflowName)
         ])
       }
       let generatedWorkflowHome = sessionStore.appendingPathComponent("home", isDirectory: true)

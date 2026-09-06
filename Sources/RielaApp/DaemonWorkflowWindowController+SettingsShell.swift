@@ -302,7 +302,8 @@ extension DaemonWorkflowWindowController {
       sidebarSourcesButton,
       sidebarMarketplaceButton,
       sidebarAssistantButton,
-      sidebarProfilesButton
+      sidebarProfilesButton,
+      sidebarKaibaButton
     ] {
       button.target = self
       button.bezelStyle = .regularSquare
@@ -323,6 +324,10 @@ extension DaemonWorkflowWindowController {
     sidebarAssistantButton.action = #selector(showAssistantPane)
     sidebarProfilesButton.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
     sidebarProfilesButton.action = #selector(showProfilesPane)
+    sidebarKaibaButton.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)
+    sidebarKaibaButton.action = #selector(showKaibaPane)
+    sidebarKaibaButton.toolTip = "Manage Kaiba API instances"
+    sidebarKaibaButton.setAccessibilityLabel("Kaiba API Instances")
 
     let appTitle = NSTextField(labelWithString: "Riela")
     appTitle.font = .systemFont(ofSize: 20, weight: .bold)
@@ -333,7 +338,8 @@ extension DaemonWorkflowWindowController {
       sidebarSourcesButton,
       sidebarMarketplaceButton,
       sidebarAssistantButton,
-      sidebarProfilesButton
+      sidebarProfilesButton,
+      sidebarKaibaButton
     ])
     menuStack.orientation = .vertical
     menuStack.alignment = .width
@@ -351,7 +357,8 @@ extension DaemonWorkflowWindowController {
       sidebarSourcesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarMarketplaceButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarAssistantButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
-      sidebarProfilesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor)
+      sidebarProfilesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
+      sidebarKaibaButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor)
     ])
     return container
   }

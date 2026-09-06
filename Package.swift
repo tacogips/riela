@@ -59,7 +59,7 @@ let package = Package(
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "31f23145d26f87803d7c10984969f937a6926ff7"
+      revision: "b436b91d39a5eaee8243a43096dd13f1e8ad819e"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
@@ -138,16 +138,23 @@ let package = Package(
     // out of RielaCLI so add-on targets can depend on it without depending on
     // the CLI.
     .target(name: "RielaAddonSupport", dependencies: ["RielaCore"]),
-    // The only target that links kaiba. Everything kaiba-typed — its note
-    // service, its identifiers, its JSON model — stops here; RielaCLI sees a
-    // RielaCore-only façade (`KaibaAddonCatalog`).
+    .target(
+      name: "RielaKaibaSupport",
+      dependencies: [
+        "RielaCore",
+        .product(name: "KaibaClient", package: "kaiba")
+      ]
+    ),
+    // The only target that links Kaiba's dependency-free HTTP client. RielaCLI
+    // sees a RielaCore-only façade (`KaibaAddonCatalog`); no Riela production
+    // path imports Kaiba's service, GraphQL server, or storage modules.
     .target(
       name: "RielaKaibaAddons",
       dependencies: [
         "RielaAddonSupport",
         "RielaCore",
-        .product(name: "AppCore", package: "kaiba"),
-        .product(name: "AppGraphQL", package: "kaiba"),
+        "RielaKaibaSupport",
+        .product(name: "KaibaClient", package: "kaiba"),
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
@@ -169,6 +176,7 @@ let package = Package(
         .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         "RielaAddons",
         "RielaCore",
+        "RielaKaibaSupport",
         "RielaEvents",
         "RielaServer",
         "RielaObservability"
@@ -235,6 +243,7 @@ let package = Package(
         "RielaAdapters",
         "RielaAddons",
         "RielaAddonSupport",
+        "RielaKaibaSupport",
         "RielaKaibaAddons",
         "RielaEvents",
         "RielaObservability",
@@ -255,6 +264,7 @@ let package = Package(
       name: "RielaApp",
       dependencies: [
         "RielaAppSupport",
+        "RielaKaibaSupport",
         "RielaAdapters",
         "RielaCore",
         "RielaGraphQL",
@@ -287,6 +297,10 @@ let package = Package(
       ]
     ),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
+    .testTarget(
+      name: "RielaKaibaSupportTests",
+      dependencies: ["RielaCore", "RielaKaibaSupport"]
+    ),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
     .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
@@ -298,6 +312,7 @@ let package = Package(
         .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         "RielaAddons",
         "RielaAppSupport",
+        "RielaKaibaSupport",
         "RielaServer",
         "RielaApp",
         "RielaCLI"

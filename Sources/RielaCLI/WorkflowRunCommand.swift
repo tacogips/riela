@@ -6,6 +6,7 @@ import RielaAdapters
 import RielaAddonSupport
 import RielaAddons
 import RielaCore
+import RielaKaibaAddons
 import RielaObservability
 
 public struct WorkflowRunCommand: Sendable {
@@ -44,33 +45,19 @@ public struct WorkflowRunCommand: Sendable {
       )
       var bundle = try resolveRunBundle(options: options, resolution: resolution)
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
-      let instanceResolution = try resolveEffectiveInstance(
+      let prepared = try await prepareRunExecution(
         options: options,
-        workflowId: bundle.workflow.workflowId,
-        variables: variables,
-        nodePayloads: bundle.nodePayloads
+        resolution: resolution,
+        bundle: &bundle,
+        variables: variables
       )
-      bundle.nodePayloads = instanceResolution.nodePayloads
-      try validateEffectiveSessionPolicies(bundle)
-      if let saveInstance = options.saveInstance {
-        try saveEffectiveInstance(
-          identity: saveInstance,
-          workflowId: bundle.workflow.workflowId,
-          sourceIdentity: persistenceIdentity(
-            requestedResolution: resolution,
-            bundle: bundle,
-            fromRegistry: options.fromRegistry
-          ).workflowName,
-          effectiveInstance: instanceResolution.instance,
-          options: options
-        )
-      }
-      let effectiveVariables = instanceResolution.instance.configuration.defaultVariables
-      let runWorkingDirectory = effectiveRunWorkingDirectory(options: options, instance: instanceResolution.instance)
-      let runEnvironment = try effectiveRunEnvironment(
-        configuration: instanceResolution.instance.configuration,
-        workingDirectory: runWorkingDirectory
-      )
+      let effectiveInstance = prepared.instance
+      let calleeResolver = prepared.calleeResolver
+      let effectiveVariables = effectiveInstance.configuration.defaultVariables
+      let runContext = prepared.context
+      let runWorkingDirectory = runContext.workingDirectory
+      let runEnvironment = runContext.environment
+      let kaibaSnapshot = runContext.snapshot
       let adapter = try makeScenarioBackedNodeAdapter(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
@@ -110,7 +97,7 @@ public struct WorkflowRunCommand: Sendable {
         stdioNodeExecutor: stdioNodeExecutor,
         telemetry: telemetry,
         simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil,
-        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+        calleeResolver: calleeResolver
       )
       let persistedIdentity = persistenceIdentity(
         requestedResolution: resolution,
@@ -172,19 +159,24 @@ public struct WorkflowRunCommand: Sendable {
         timeoutMs: options.timeoutMs,
         agentSilenceWarningMs: options.agentSilenceWarningMs,
         agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
-        effectiveInstance: instanceResolution.instance,
+        effectiveInstance: effectiveInstance,
         eventHandler: runEventHandler
       )
       if options.autoImprove {
-        var finalResult = try await runWithAutoImprove(
-          initialRequest: initialRequest,
-          runner: runner,
-          workflow: bundle.workflow,
-          nodePayloads: bundle.nodePayloads,
-          variables: effectiveVariables,
-          options: options,
-          runtimeStore: runtimeStore
-        )
+        var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
+          kaibaSnapshot,
+          allowsMockExecution: options.mockScenarioPath != nil
+        ) {
+          try await runWithAutoImprove(
+            initialRequest: initialRequest,
+            runner: runner,
+            workflow: bundle.workflow,
+            nodePayloads: bundle.nodePayloads,
+            variables: effectiveVariables,
+            options: options,
+            runtimeStore: runtimeStore
+          )
+        }
         return try await finalizeRun(
           &finalResult,
           context: RunFinalizeContext(
@@ -199,7 +191,12 @@ public struct WorkflowRunCommand: Sendable {
           )
         )
       }
-      var finalResult = try await runner.run(initialRequest)
+      var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
+        kaibaSnapshot,
+        allowsMockExecution: options.mockScenarioPath != nil
+      ) {
+        try await runner.run(initialRequest)
+      }
       return try await finalizeRun(
         &finalResult,
         context: RunFinalizeContext(
@@ -326,7 +323,7 @@ public struct WorkflowRunCommand: Sendable {
     return try jsonLoader.object(from: reference, workingDirectory: workingDirectory)
   }
 
-  private func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws {
+  func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws {
     let diagnostics = DefaultWorkflowValidator().validate(
       bundle.workflow,
       nodePayloads: bundle.nodePayloads
@@ -340,7 +337,7 @@ public struct WorkflowRunCommand: Sendable {
     RielaTelemetryFactory.make(configuration: .fromEnvironment(environment, surface: .cli))
   }
 
-  private func resolveEffectiveInstance(
+  func resolveEffectiveInstance(
     options: WorkflowRunOptions,
     workflowId: String,
     variables: JSONObject,
@@ -388,7 +385,7 @@ public struct WorkflowRunCommand: Sendable {
     return resolved.1
   }
 
-  private func saveEffectiveInstance(
+  func saveEffectiveInstance(
     identity: String,
     workflowId: String,
     sourceIdentity: String?,
@@ -406,7 +403,7 @@ public struct WorkflowRunCommand: Sendable {
     try stores.save(instance, scope: scope)
   }
 
-  private func effectiveRunWorkingDirectory(
+  func effectiveRunWorkingDirectory(
     options: WorkflowRunOptions,
     instance: EffectiveWorkflowInstance
   ) -> String {
@@ -417,7 +414,7 @@ public struct WorkflowRunCommand: Sendable {
     return workingDirectory
   }
 
-  private func effectiveRunEnvironment(
+  func effectiveRunEnvironment(
     configuration: WorkflowInstanceConfiguration,
     workingDirectory: String
   ) throws -> [String: String] {
@@ -565,7 +562,7 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  private func persistenceIdentity(
+  func persistenceIdentity(
     requestedResolution: WorkflowResolutionOptions,
     bundle: ResolvedWorkflowBundle,
     fromRegistry: Bool
@@ -841,7 +838,7 @@ private func workflowRunPath(_ child: URL, isContainedIn parent: URL) -> Bool {
   return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
 }
 
-private func parseEnvironmentFile(_ url: URL) throws -> [String: String] {
+func parseEnvironmentFile(_ url: URL) throws -> [String: String] {
   guard FileManager.default.fileExists(atPath: url.path) else {
     throw CLIUsageError("instance environment file not found: \(url.path)")
   }

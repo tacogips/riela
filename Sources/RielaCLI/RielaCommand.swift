@@ -42,6 +42,7 @@ public enum RielaCommand: Equatable, Sendable {
   case node(NodeCommand)
   case setup(CLICommandOptions)
   case memory(MemoryCommand)
+  case kaiba(CLICommandOptions)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
   case gc(CLICommandOptions)
@@ -479,6 +480,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .setup(try parseSetup(route.passthroughArguments))
     case let route as MemoryRoute:
       return .memory(try parseMemory(route.passthroughArguments))
+    case let route as KaibaRoute:
+      return .kaiba(try parseKaiba(route.passthroughArguments))
     case let route as InstanceRoute:
       return .instance(try parseInstance(route.passthroughArguments))
     case let route as DoctorRoute:
@@ -840,6 +843,29 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       arguments: route.options,
       allowTableOutput: family.subcommand == .list,
       defaultOutput: family.subcommand == .list ? .table : .json
+    )
+  }
+
+  private func parseKaiba(_ arguments: [String]) throws -> CLICommandOptions {
+    guard arguments.first == "instance" else {
+      return CLICommandOptions(scope: "kaiba", command: "invalid", arguments: arguments, output: .text)
+    }
+    let remainder = Array(arguments.dropFirst())
+    guard let command = remainder.first, !["--help", "-h", "help"].contains(command) else {
+      return CLICommandOptions(scope: "kaiba", command: "help", output: .text)
+    }
+    let allowed = Set(["list", "show", "add", "update", "remove", "test", "set-default"])
+    guard allowed.contains(command) else {
+      return CLICommandOptions(scope: "kaiba", command: "invalid", arguments: remainder, output: .text)
+    }
+    return CLICommandOptions(
+      scope: "kaiba",
+      command: command,
+      arguments: Array(remainder.dropFirst()),
+      // Kaiba instance commands own their deliberately narrow text/JSON
+      // contract. Keep the original tokens so their runner can reject unknown
+      // options and render a contract-shaped JSON usage error.
+      output: .text
     )
   }
 

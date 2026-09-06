@@ -5,6 +5,7 @@ import FoundationNetworking
 import RielaAdapters
 import RielaAddons
 import RielaCore
+import RielaKaibaSupport
 
 public struct RielaCLIApplication: Sendable {
   public var parser: any CLIArgumentParsing
@@ -24,6 +25,7 @@ public struct RielaCLIApplication: Sendable {
   public var nodeCommandRunner: NodeCommandRunner
   public var setupContainerCommand: SetupContainerCommand
   public var memoryCommandRunner: MemoryCommandRunner
+  public var kaibaInstanceCommandRunner: KaibaInstanceCommandRunner
   public var instanceCommandRunner: InstanceCommandRunner
   public var doctorCommand: DoctorCommand
   public var garbageCollectionCommand: GarbageCollectionCommand
@@ -49,6 +51,7 @@ public struct RielaCLIApplication: Sendable {
     nodeCommandRunner: NodeCommandRunner = NodeCommandRunner(),
     setupContainerCommand: SetupContainerCommand = SetupContainerCommand(),
     memoryCommandRunner: MemoryCommandRunner = MemoryCommandRunner(),
+    kaibaInstanceCommandRunner: KaibaInstanceCommandRunner = KaibaInstanceCommandRunner(),
     instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
     doctorCommand: DoctorCommand = DoctorCommand(),
     garbageCollectionCommand: GarbageCollectionCommand = GarbageCollectionCommand(),
@@ -73,6 +76,7 @@ public struct RielaCLIApplication: Sendable {
     self.nodeCommandRunner = nodeCommandRunner
     self.setupContainerCommand = setupContainerCommand
     self.memoryCommandRunner = memoryCommandRunner
+    self.kaibaInstanceCommandRunner = kaibaInstanceCommandRunner
     self.instanceCommandRunner = instanceCommandRunner
     self.doctorCommand = doctorCommand
     self.garbageCollectionCommand = garbageCollectionCommand
@@ -117,6 +121,8 @@ public struct RielaCLIApplication: Sendable {
         return await setupContainerCommand.run(options)
       case let .memory(command):
         return memoryCommandRunner.run(command)
+      case let .kaiba(options):
+        return await kaibaInstanceCommandRunner.run(options)
       case let .instance(options):
         return instanceCommandRunner.run(options)
       case let .doctor(options):

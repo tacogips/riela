@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import RielaCore
 
 extension DaemonWorkflowWindowController {
   func buildInstanceDetailView() -> NSView {
@@ -98,11 +99,13 @@ extension DaemonWorkflowWindowController {
       restartRow,
       removeRow
     ])
+    let kaibaBindingViews = buildKaibaNodeBindingViews()
 
     let stack = settingsDocumentStack(views: [
       workflowGraphPaneView,
       settingsSectionCaption("Current Settings"),
-      settingsSection,
+      settingsSection
+    ] + kaibaBindingViews + [
       settingsSectionCaption("Manage Instance"),
       actionsSection
     ])

@@ -6,19 +6,19 @@ extension RielaApp {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
       return
     }
-    let candidate = resolved.candidate
-    let preference = resolved.preference
-    guard preference.available, preference.active else {
+    guard resolved.preference.available, resolved.preference.active else {
       return
     }
     Task { @MainActor in
       await daemonRuntime.stop(identity: resolved.runtimeIdentity)
+      guard let approved = await approvedDaemonWorkflowInstance(identity: identity),
+            approved.preference.available, approved.preference.active else { return }
       await daemonRuntime.start(
-        candidate,
-        configuration: daemonRuntimeConfiguration(for: candidate, preference: preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
+        approved.candidate,
+        configuration: daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
+        server: daemonServerConfiguration(profileName: approved.profileName)
       )
-      status = "Applied \(changeDescription) and restarted \(candidate.displayName)"
+      status = "Applied \(changeDescription) and restarted \(approved.candidate.displayName)"
       refreshDaemonWorkflowWindow()
     }
   }

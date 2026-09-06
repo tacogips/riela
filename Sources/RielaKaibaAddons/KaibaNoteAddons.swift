@@ -1,773 +1,482 @@
-import AppCore
+import Crypto
 import Foundation
+import KaibaClient
 import RielaAddonSupport
 import RielaCore
 
-private let noteAddonDefaultMaxAttachmentBytes = InlineWorkflowAddonAttachmentProjector.maxAttachmentBytes
-private let noteAddonDefaultMaxPageCount = 500
+/// HTTP-only implementations for every registered note add-on. Endpoint,
+/// authentication, and transport have already been frozen in `client` by
+/// Kaiba preflight; authored configuration is input data only.
 extension KaibaAddonCatalog {
   static func executeNoteAddon(
     _ input: WorkflowAddonExecutionInput,
-    environment: [String: String],
+    client: KaibaClient,
     operation: BuiltinNoteAddon
   ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    let context = try NoteAddonContext(input: input, environment: environment)
-    let candidate: JSONObject
-    switch operation {
-    case .create:
-      candidate = try createNote(context)
-    case .update:
-      candidate = try updateNote(context)
-    case .get:
-      candidate = try getNote(context)
-    case .search:
-      candidate = try searchNotes(context)
-    case .tagSearch:
-      candidate = try searchNotesByTag(context)
-    case .graphNeighbors:
-      candidate = try graphNeighbors(context)
-    case .chain:
-      candidate = try noteChain(context)
-    case .tagApply:
-      candidate = try applyNoteTags(context)
-    case .attachFile:
-      candidate = try attachNoteFile(context, input: input)
-    case .attachments:
-      candidate = try noteAttachments(context)
-    case .memos:
-      candidate = try noteMemos(context)
-    case .graphQLDocument:
-      candidate = try await executeNoteGraphQLDocument(context)
-    case .commentAdd:
-      candidate = try addNoteComment(context)
-    case .notebookIngestPages:
-      candidate = try ingestNotebookPages(context)
-    case .documentImport:
-      candidate = try await importKaibaDocument(context)
-    case .conversationSave:
-      candidate = try saveNoteConversation(context)
-    }
-
-    var payload: JSONObject = [
-      "status": .string("ok"),
-      "addon": .string(input.addon.name),
-      "operation": .string(operation.outputName),
-      "stepId": .string(input.stepId),
-      "noteRoot": .string(context.noteRoot),
-      "databasePath": .string(context.service.driver.databasePath)
-    ]
-    for (key, value) in candidate {
-      payload[key] = value
-    }
-    let when: [String: Bool] = ["always": true]
-    return AdapterExecutionOutput(
-      provider: "riela-builtin-addon",
-      model: input.addon.name,
-      promptText: "",
-      completionPassed: true,
-      when: when,
-      payload: payload
-    )
-  }
-}
-struct NoteAddonContext {
-  var input: WorkflowAddonExecutionInput
-  var inputs: KaibaAddonInputs
-  var noteRoot: String
-  var service: NoteService
-  var kaibaConfiguration: KaibaConfiguration
-  var config: JSONObject { inputs.config }
-  var variables: JSONObject { inputs.variables }
-  var environment: [String: String] { inputs.environment }
-  var maxAttachmentBytes: Int {
-    max(0, int("maxAttachmentBytes", default: noteAddonDefaultMaxAttachmentBytes))
-  }
-  var maxPageCount: Int {
-    max(1, int("maxPageCount", default: noteAddonDefaultMaxPageCount))
-  }
-  var localFileRoot: URL {
-    let rawRoot = string("localFileRoot", "workingDirectory") ?? FileManager.default.currentDirectoryPath
-    return URL(fileURLWithPath: rawRoot, isDirectory: true).standardizedFileURL
-  }
-  var allowsLocalFileReferencesOutsideRoot: Bool {
-    bool("allowLocalFileReferencesOutsideWorkingDirectory", default: false)
-  }
-
-  init(input: WorkflowAddonExecutionInput, environment: [String: String]) throws {
-    self.input = input
-    inputs = KaibaAddonInputs(input: input, environment: environment)
-    let config = inputs.config
-    let variables = inputs.variables
-    let workflowInput = noteObject(variables["workflowInput"])
-    noteRoot = noteString("noteRoot", config: config, variables: variables)
-      ?? nonEmptyString(workflowInput["noteRoot"])
-      ?? environment["KAIBA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
-      ?? environment["RIELA_NOTE_ROOT"].flatMap { $0.isEmpty ? nil : $0 }
-      ?? "\(NSHomeDirectory())/.kaiba"
-    noteRoot = (noteRoot as NSString).expandingTildeInPath
-    let configuredPath = noteString("configPath", config: config, variables: variables)
-      ?? environment["KAIBA_CONFIG_PATH"].flatMap { $0.isEmpty ? nil : $0 }
-    if let configuredPath {
-      kaibaConfiguration = try KaibaConfigurationLoader.load(
-        at: (configuredPath as NSString).expandingTildeInPath,
-        required: true
-      )
-    } else {
-      kaibaConfiguration = KaibaConfiguration()
-    }
-    let driver = try KaibaConfigurationLoader.makeDriver(
-      configuration: kaibaConfiguration.database,
-      noteRoot: noteRoot,
-      environment: environment
-    )
-    // Kaiba owns the note store; riela does not dispatch auto-action
-    // workflows here. Pending auto-action rows accumulate only for actions
-    // the user explicitly enabled in kaiba.
-    service = try NoteService(driver: driver)
-  }
-
-  func string(_ keys: String...) -> String? {
-    inputs.string(keys)
-  }
-
-  func requiredString(_ keys: String..., fieldName: String) throws -> String {
-    try inputs.requiredString(keys, fieldName: fieldName)
-  }
-
-  func bool(_ key: String, default defaultValue: Bool) -> Bool {
-    inputs.bool(key, default: defaultValue)
-  }
-
-  func int(_ key: String, default defaultValue: Int) -> Int {
-    inputs.int(key, default: defaultValue)
-  }
-
-  func value(_ key: String) -> JSONValue? {
-    inputs.value(key)
-  }
-}
-
-private func createNote(_ context: NoteAddonContext) throws -> JSONObject {
-  let bodyMarkdown = try context.requiredString("bodyMarkdown", "body", "markdown", "text", fieldName: "bodyMarkdown")
-  let notebookId = context.string("notebookId")
-  let notebookKindTag = context.string("notebookKindTag", "kindTagName")
-  let effectiveNotebookId: NotebookID?
-  if notebookId == nil, let notebookKindTag {
-    let notebook = try context.service.createNotebook(
-      title: context.string("notebookTitle", "title") ?? noteTitleFallback(from: bodyMarkdown),
-      kindTagName: notebookKindTag,
-      metaJSON: noteMetaJSONString(context.value("notebookMeta"), context.value("notebookMetaJSON")),
-      originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
-    )
-    effectiveNotebookId = notebook.notebookId
-  } else {
-    effectiveNotebookId = notebookId.map(NotebookID.init)
-  }
-  let note = try context.service.createNote(
-    notebookId: effectiveNotebookId,
-    notebookTitle: context.string("notebookTitle"),
-    bodyMarkdown: bodyMarkdown,
-    readOnly: context.bool("readOnly", default: false),
-    tags: try noteTags(context.value("tags")),
-    provenance: noteProvenance(context.string("provenance")) ?? .human,
-    assignedBy: context.string("assignedBy"),
-    metaJSON: noteMetaJSONString(context.value("meta"), context.value("metaJSON")),
-    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
-  )
-  return [
-    "noteId": .string(note.noteId.rawValue),
-    "notebookId": .string(note.notebookId.rawValue),
-    "note": noteJSON(note)
-  ]
-}
-
-private func updateNote(_ context: NoteAddonContext) throws -> JSONObject {
-  // kaiba/note-update re-derives the stored title from the new body.
-  let note = try context.service.updateNoteBody(
-    noteId: NoteID(try context.requiredString("noteId", fieldName: "noteId")),
-    bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "markdown", "text", fieldName: "bodyMarkdown"),
-    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
-  )
-  return [
-    "noteId": .string(note.noteId.rawValue),
-    "notebookId": .string(note.notebookId.rawValue),
-    "note": noteJSON(note)
-  ]
-}
-
-private func getNote(_ context: NoteAddonContext) throws -> JSONObject {
-  // An explicit noteId keeps the original single-note response shape even when
-  // upstream inputs (e.g. a forwarded kaiba/note-search payload) also carry a
-  // top-level noteIds array; the batch shape applies only when no noteId is
-  // addressed. Batch ids are deduplicated and capped so a hostile or buggy
-  // workflow cannot drive unbounded sequential getNote round-trips.
-  if context.string("noteId") == nil, let rawNoteIds = context.value("noteIds") {
-    let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
-    let noteIds = orderedUniqueNoteIds(requestedNoteIds)
-      .prefix(NoteGraphPolicy.maximumSeedCount)
-      .map(NoteID.init)
-    let notes = try noteIds.map(context.service.getNote)
-    var payload: JSONObject = [
-      "notes": .array(notes.map(noteJSON)),
-      "noteIds": .array(notes.map { .string($0.noteId.rawValue) })
-    ]
-    if let graphEvidence = context.value("graphEvidence") {
-      payload["graphEvidence"] = graphEvidence
-    }
-    return payload
-  }
-  let note = try context.service.getNote(NoteID(try context.requiredString("noteId", fieldName: "noteId")))
-  return [
-    "noteId": .string(note.noteId.rawValue),
-    "notebookId": .string(note.notebookId.rawValue),
-    "note": noteJSON(note),
-    "comments": .array(try context.service.listComments(noteId: note.noteId).map(noteCommentJSON)),
-    "links": .array(try context.service.listLinks(noteId: note.noteId).map(noteLinkJSON)),
-    "files": .array(try context.service.listFiles(noteId: note.noteId).map(noteFileAttachmentJSON))
-  ]
-}
-
-private func searchNotes(_ context: NoteAddonContext) throws -> JSONObject {
-  let includeLinked = context.bool("includeLinked", default: false)
-  let results = try context.service.searchNotes(
-    query: try context.requiredString("query", "match", fieldName: "query"),
-    tagFilter: try noteStringArray(context.value("tagFilter") ?? context.value("tags"), fieldName: "note tagFilter") ?? [],
-    classFilter: try noteStringArray(context.value("classFilter"), fieldName: "note classFilter") ?? [],
-    includeLinked: includeLinked,
-    depth: context.int("depth", default: 1),
-    limit: context.int("limit", default: 20)
-  )
-  return [
-    "results": .array(results.map(noteSearchResultJSON)),
-    "resultCount": .number(Double(results.count)),
-    "noteIds": .array(results.map { .string($0.note.noteId.rawValue) })
-  ]
-}
-
-private func graphNeighbors(_ context: NoteAddonContext) throws -> JSONObject {
-  guard let rawNoteIds = context.value("noteIds") ?? context.value("noteId") else {
-    throw noteAddonInvalidInput("\(context.input.addon.name) noteIds is required")
-  }
-  let requestedNoteIds = try noteStringArray(rawNoteIds, fieldName: "note noteIds") ?? []
-  // Clamp to the service's 20-seed cap instead of surfacing invalidInput:
-  // upstream nodes (e.g. kaiba/note-search with a caller-controlled limit) may
-  // legitimately hand over more ids, and the search-side expansion path clamps
-  // the same way (appendLinkedNeighborResults / prefix(maximumSeedCount)).
-  let noteIds = orderedUniqueNoteIds(requestedNoteIds)
-    .prefix(NoteGraphPolicy.maximumSeedCount)
-    .map(NoteID.init)
-  let results = try context.service.graphNeighbors(
-    noteIds: noteIds,
-    maxDepth: context.int("depth", default: NoteGraphPolicy.defaultMaxDepth),
-    limit: context.int("limit", default: NoteGraphPolicy.defaultLimit)
-  )
-  return [
-    "results": .array(results.map(noteGraphNeighborJSON)),
-    "resultCount": .number(Double(results.count)),
-    "noteIds": .array(results.map { .string($0.note.noteId.rawValue) }),
-    "seedNoteIds": .array(noteIds.map { .string($0.rawValue) }),
-    "retrievalNoteIds": .array(
-      orderedUniqueNoteIds(noteIds + results.map(\.note.noteId)).map { .string($0.rawValue) }
-    )
-  ]
-}
-
-// Generic over the id type: the payload side still carries raw strings while
-// the kaiba side is typed, and both spellings need the same order-preserving
-// deduplication.
-private func orderedUniqueNoteIds<ID: Hashable>(_ noteIds: [ID]) -> [ID] {
-  var seen = Set<ID>()
-  return noteIds.filter { seen.insert($0).inserted }
-}
-
-private func applyNoteTags(_ context: NoteAddonContext) throws -> JSONObject {
-  let note = try context.service.applyTags(
-    noteId: NoteID(try context.requiredString("noteId", fieldName: "noteId")),
-    tags: try noteTagsRequired(context.value("tags") ?? context.value("tag")),
-    provenance: .ai,
-    assignedBy: noteAddonWorkflowActor(context)
-  )
-  return [
-    "noteId": .string(note.noteId.rawValue),
-    "notebookId": .string(note.notebookId.rawValue),
-    "note": noteJSON(note),
-    "tags": .array(note.tags.map(tagAssignmentJSON))
-  ]
-}
-
-private func attachNoteFile(
-  _ context: NoteAddonContext,
-  input: WorkflowAddonExecutionInput
-) throws -> JSONObject {
-  let attachment = try noteAttachmentData(context: context, input: input)
-  let stored = try context.service.attachFile(
-    noteId: NoteID(try context.requiredString("noteId", fieldName: "noteId")),
-    data: attachment.data,
-    role: noteFileRole(context.string("role")) ?? .related,
-    mediaType: attachment.mediaType,
-    originalFilename: attachment.filename,
-    position: context.int("position", default: 0)
-  )
-  return [
-    "noteId": .string(stored.noteId.rawValue),
-    "fileId": .string(stored.file.fileId.rawValue),
-    "file": noteFileAttachmentJSON(stored)
-  ]
-}
-
-private func addNoteComment(_ context: NoteAddonContext) throws -> JSONObject {
-  let noteId = NoteID(try context.requiredString("noteId", fieldName: "noteId"))
-  let comment = try context.service.addComment(
-    noteId: noteId,
-    bodyMarkdown: try context.requiredString("bodyMarkdown", "body", "comment", "text", fieldName: "bodyMarkdown"),
-    author: context.string("author", "assignedBy") ?? "user"
-  )
-  return [
-    "noteId": .string((comment.noteId ?? noteId).rawValue),
-    "commentId": .string(comment.commentId.rawValue),
-    "comment": noteCommentJSON(comment)
-  ]
-}
-
-private func ingestNotebookPages(_ context: NoteAddonContext) throws -> JSONObject {
-  let sourceDocumentRef = context.string("sourceDocumentRef")
-  let pages = try notePageInputs(context)
-  let result = try context.service.createNotebookWithNotes(
-    title: context.string("notebookTitle", "title") ?? sourceDocumentRef ?? "Imported Material",
-    kindTagName: context.string("notebookKindTag", "kindTagName") ?? "notebook-kind:imported-material",
-    metaJSON: notebookIngestMetaJSON(context: context, sourceDocumentRef: sourceDocumentRef),
-    pages: pages.map { page in
-      NotePageDraft(
-        bodyMarkdown: page.bodyMarkdown,
-        readOnly: false,
-        tags: page.tags,
-        metaJSON: pageMetaJSON(page),
-        noteNumber: page.number
-      )
-    },
-    provenance: noteProvenance(context.string("provenance")) ?? .system,
-    assignedBy: context.string("assignedBy") ?? "riela-note-ingest",
-    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
-  )
-  do {
-    let sourceDocument = try attachSourceDocument(context: context, notebookId: result.notebook.notebookId)
-    let pageImages = try attachPageImages(context: context, pages: pages, notes: result.notes)
-    let notes = try applyIngestedPageReadOnlyState(
-      pages: pages,
-      notes: result.notes,
-      service: context.service
-    )
-    return [
-      "notebookId": .string(result.notebook.notebookId.rawValue),
-      "notebook": notebookJSON(result.notebook),
-      "notes": .array(notes.map(noteJSON)),
-      "noteIds": .array(notes.map { JSONValue.string($0.noteId.rawValue) }),
-      "pageCount": .number(Double(notes.count)),
-      "sourceDocument": sourceDocument.map(notebookFileAttachmentJSON) ?? .null,
-      "pageImages": .array(pageImages.map(noteFileAttachmentJSON))
-    ]
-  } catch let ingestionError {
+    let values = KaibaAddonInputs(input: input, environment: [:])
+    let payload: JSONObject
     do {
-      _ = try applyIngestedPageReadOnlyState(pages: pages, notes: result.notes, service: context.service)
+      switch operation {
+      case .create: payload = try await create(input, values: values, client: client)
+      case .update: payload = try await update(values: values, client: client)
+      case .get: payload = try await get(values: values, client: client)
+      case .search: payload = try await search(values: values, client: client, tagsOnly: false)
+      case .tagSearch: payload = try await search(values: values, client: client, tagsOnly: true)
+      case .graphNeighbors, .chain: payload = try await neighbors(values: values, client: client, chain: operation == .chain)
+      case .tagApply: payload = try await applyTags(values: values, client: client)
+      case .attachFile: payload = try await attach(input, values: values, client: client)
+      case .attachments: payload = try await attachments(values: values, client: client)
+      case .memos: payload = try await memos(values: values, client: client)
+      case .graphQLDocument, .graphQLRemote:
+        return try await KaibaRemoteGraphQLAddon.execute(input, client: client)
+      case .commentAdd: payload = try await comment(values: values, client: client)
+      case .notebookIngestPages:
+        payload = try await ingest(input, values: values, client: client, discriminator: operation.rawValue)
+      case .documentImport: payload = try await importDocument(input, values: values, client: client)
+      case .conversationSave: payload = try await conversation(values: values, client: client)
+      }
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as AdapterExecutionError {
+      throw error
     } catch {
-      throw noteAddonInvalidInput(
-        "notebook ingestion failed and page read-only recovery failed: \(ingestionError); \(error)"
-      )
+      throw AdapterExecutionError(.providerError, "Kaiba HTTP operation failed")
     }
-    throw ingestionError
+    return addonOutput(input: input, operation: operation.outputName, payload: payload, values: values)
   }
 }
 
-private func saveNoteConversation(_ context: NoteAddonContext) throws -> JSONObject {
-  let saved = try context.service.saveConversation(
-    title: try context.requiredString("title", "conversationTitle", fieldName: "title"),
-    transcript: try noteConversationTurns(context),
-    assignedBy: context.string("assignedBy"),
-    originatingActionId: context.string("originatingActionId", "actionId").map(AutoActionID.init)
+private func create(_ input: WorkflowAddonExecutionInput, values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let result = try await client.createNote(
+    notebookId: values.string(["notebookId"]).map(KaibaNotebookID.init(rawValue:)),
+    notebookTitle: values.string(["notebookTitle"]), title: values.string(["title"]),
+    bodyMarkdown: try values.requiredString(["bodyMarkdown", "body", "markdown", "text"], fieldName: "bodyMarkdown"),
+    readOnly: values.bool("readOnly", default: false), tags: try tags(values.value("tags")),
+    provenance: values.string(["provenance"]), assignedBy: values.string(["assignedBy"]),
+    metaJSON: values.string(["metaJSON"])
   )
-  return [
-    "notebookId": .string(saved.notebook.notebookId.rawValue),
-    "notebook": notebookJSON(saved.notebook),
-    "notes": .array(saved.notes.map(noteJSON)),
-    "noteIds": .array(saved.notes.map { .string($0.noteId.rawValue) })
-  ]
+  try requireAccepted(result.result)
+  return kaibaSingleNotePayload(try requiredNote(result))
 }
 
-private func attachSourceDocument(
-  context: NoteAddonContext,
-  notebookId: NotebookID
-) throws -> NotebookFileAttachment? {
-  guard let sourceDocumentRef = context.string("sourceDocumentRef") else {
-    return nil
-  }
-  let attachment = try sourceAttachmentInput(ref: sourceDocumentRef, context: context)
-  guard let attachment else {
-    return nil
-  }
-  switch attachment {
-  case let .inline(data):
-    return try context.service.attachNotebookFile(
-      notebookId: notebookId,
-      data: data.data,
-      role: .sourceDocument,
-      mediaType: data.mediaType,
-      originalFilename: data.filename
-    )
-  case let .localFile(url, mediaType, filename):
-    return try context.service.attachNotebookFile(
-      notebookId: notebookId,
-      fileURL: url,
-      role: .sourceDocument,
-      mediaType: mediaType,
-      originalFilename: filename
-    )
-  }
+private func update(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let noteID = try values.requiredString(["noteId"], fieldName: "noteId")
+  let body = try values.requiredString(["bodyMarkdown", "body", "markdown", "text"], fieldName: "bodyMarkdown")
+  let result = try await client.updateNote(.init(rawValue: noteID), bodyMarkdown: body)
+  try requireAccepted(result.result)
+  return kaibaSingleNotePayload(try requiredNote(result))
 }
 
-private func attachPageImages(
-  context: NoteAddonContext,
-  pages: [NotePageInput],
-  notes: [Note]
-) throws -> [NoteFileAttachment] {
-  var attachments: [NoteFileAttachment] = []
-  for (index, page) in pages.enumerated() {
-    guard index < notes.count, let pageImageRef = page.pageImageRef else {
-      continue
-    }
-    guard let attachment = try sourceAttachmentInput(ref: pageImageRef, context: context) else {
-      continue
-    }
-    switch attachment {
-    case let .inline(data):
-      attachments.append(try context.service.attachFile(
-        noteId: notes[index].noteId,
-        data: data.data,
-        role: .sourcePageImage,
-        mediaType: data.mediaType,
-        originalFilename: data.filename,
-        position: page.number ?? index + 1
-      ))
-    case let .localFile(url, mediaType, filename):
-      attachments.append(try context.service.attachFile(
-        noteId: notes[index].noteId,
-        fileURL: url,
-        role: .sourcePageImage,
-        mediaType: mediaType,
-        originalFilename: filename,
-        position: page.number ?? index + 1
-      ))
-    }
+private func get(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  if let noteID = values.string(["noteId"]) {
+    let typedID = KaibaNoteID(rawValue: noteID)
+    async let noteResult = client.getNote(typedID)
+    async let commentsResult = client.listNoteComments(typedID)
+    async let linksResult = client.noteLinks(typedID)
+    async let filesResult = client.listNoteAttachments(typedID)
+    let result = try await noteResult
+    let comments = try await commentsResult
+    let links = try await linksResult
+    let files = try await filesResult
+    try requireAccepted(result.result)
+    try requireAccepted(comments.result)
+    try requireAccepted(links.result)
+    try requireAccepted(files.result)
+    guard let note = result.value else { return kaibaNotesPayload([]) }
+    return [
+      "noteId": .string(note.noteId.rawValue),
+      "notebookId": .string(note.notebookId.rawValue),
+      "note": kaibaNoteJSON(note),
+      "comments": .array((comments.value ?? []).map(kaibaCommentJSON)),
+      "links": .array((links.value ?? []).map(kaibaLinkJSON)),
+      "files": .array((files.value ?? []).map(kaibaFileAttachmentJSON))
+    ]
   }
-  return attachments
-}
-
-private func noteConversationTurns(_ context: NoteAddonContext) throws -> [NoteConversationTurn] {
-  if case let .array(values)? = context.value("transcript") ?? context.value("turns") {
-    return try values.enumerated().map { index, value in
-      guard case let .object(turn) = value else {
-        throw noteAddonInvalidInput("\(context.input.addon.name) transcript[\(index)] must be an object")
-      }
-      return try noteConversationTurn(turn, path: "transcript[\(index)]")
+  if let rawIDs = values.value("noteIds") {
+    let requested = try stringArray(rawIDs, field: "noteIds")
+    let uniqueIDs = Array(NSOrderedSet(array: requested)).compactMap { $0 as? String }.prefix(20)
+    var notes: [KaibaNote] = []
+    for noteID in uniqueIDs {
+      let result = try await client.getNote(.init(rawValue: noteID))
+      try requireAccepted(result.result)
+      if let note = result.value { notes.append(note) }
     }
+    var output = kaibaNotesPayload(notes)
+    if let evidence = values.value("graphEvidence") { output["graphEvidence"] = evidence }
+    return output
   }
-  return [
-    NoteConversationTurn(
-      userMarkdown: try context.requiredString("userMarkdown", "user", "request", fieldName: "userMarkdown"),
-      assistantMarkdown: try context.requiredString("assistantMarkdown", "assistant", "replyText", "text", fieldName: "assistantMarkdown"),
-      sourceNoteIds: (try noteStringArray(context.value("sourceNoteIds"), fieldName: "sourceNoteIds") ?? [])
-        .map(NoteID.init)
-    )
-  ]
-}
-
-private func noteConversationTurn(_ object: JSONObject, path: String) throws -> NoteConversationTurn {
-  guard let userMarkdown = nonEmptyString(object["userMarkdown"]) ?? nonEmptyString(object["user"]) else {
-    throw noteAddonInvalidInput("\(path).userMarkdown is required")
-  }
-  guard let assistantMarkdown = nonEmptyString(object["assistantMarkdown"])
-    ?? nonEmptyString(object["assistant"])
-    ?? nonEmptyString(object["replyText"]) else {
-    throw noteAddonInvalidInput("\(path).assistantMarkdown is required")
-  }
-  return NoteConversationTurn(
-    userMarkdown: userMarkdown,
-    assistantMarkdown: assistantMarkdown,
-    sourceNoteIds: (try noteStringArray(object["sourceNoteIds"], fieldName: "\(path).sourceNoteIds") ?? [])
-      .map(NoteID.init)
+  let result = try await client.listNotes(
+    notebookId: values.string(["notebookId"]).map(KaibaNotebookID.init(rawValue:)),
+    limit: bounded(values.int("limit", default: 20), upper: 200),
+    offset: nonnegative(values.int("offset", default: 0))
   )
+  try requireAccepted(result.result)
+  return kaibaNotesPayload(result.value ?? [])
 }
 
-private func notebookIngestMetaJSON(context: NoteAddonContext, sourceDocumentRef: String?) -> String? {
-  if let metaJSON = noteMetaJSONString(context.value("notebookMeta"), context.value("notebookMetaJSON")) {
-    return metaJSON
-  }
-  guard let sourceDocumentRef else {
-    return nil
-  }
-  return JSONValue.object(["sourceDocumentRef": .string(sourceDocumentRef)]).compactJSONStringOrEmpty()
-}
-
-private func noteTagsRequired(_ value: JSONValue?) throws -> [NoteTagInput] {
-  let tags = try noteTags(value)
-  guard !tags.isEmpty else {
-    throw noteAddonInvalidInput("note tags must be a non-empty array or string")
-  }
-  return tags
-}
-
-func noteTags(_ value: JSONValue?) throws -> [NoteTagInput] {
-  guard let value else {
-    return []
-  }
-  switch value {
-  case let .string(name):
-    return name.isEmpty ? [] : [NoteTagInput(name: name)]
-  case let .array(values):
-    return try values.enumerated().compactMap { index, value in
-      switch value {
-      case let .string(name):
-        return name.isEmpty ? nil : NoteTagInput(name: name)
-      case let .object(object):
-        guard let name = nonEmptyString(object["name"]) ?? nonEmptyString(object["tag"]) else {
-          throw noteAddonInvalidInput("note tags[\(index)].name is required")
-        }
-        return NoteTagInput(
-          name: name,
-          classId: (nonEmptyString(object["classId"]) ?? nonEmptyString(object["class"]))
-            .map(TagClassID.init)
-        )
-      case .null:
-        return nil
-      case .bool, .integer, .number, .array:
-        throw noteAddonInvalidInput("note tags[\(index)] must be a string or object")
-      }
+private func search(values: KaibaAddonInputs, client: KaibaClient, tagsOnly: Bool) async throws -> JSONObject {
+  let tags = try tagNames(values.value("tagFilter") ?? values.value("tags") ?? values.value("tag"))
+  if tagsOnly {
+    guard !tags.isEmpty else {
+      throw noteAddonInvalidInput("\(values.addonName) tags must be a non-empty string or array")
     }
-  case .null:
-    return []
-  case .bool, .integer, .number, .object:
-    throw noteAddonInvalidInput("note tags must be an array or string")
+    let result = try await client.listNotes(
+      notebookId: values.string(["notebookId"]).map(KaibaNotebookID.init(rawValue:)),
+      tagFilter: tags,
+      limit: bounded(values.int("limit", default: 20), upper: 200),
+      offset: nonnegative(values.int("offset", default: 0))
+    )
+    try requireAccepted(result.result)
+    var output = kaibaCountedNotesPayload(result.value ?? [])
+    output["tagFilter"] = .array(tags.map(JSONValue.string))
+    return output
   }
+  let result = try await client.searchNotes(
+    query: try values.requiredString(["query", "text", "match"], fieldName: "query"),
+    notebookId: values.string(["notebookId"]).map(KaibaNotebookID.init(rawValue:)),
+    tagFilter: tags,
+    includeLinked: values.bool("includeLinked", default: false),
+    depth: bounded(values.int("depth", default: 1), upper: 8),
+    limit: bounded(values.int("limit", default: 20), upper: 200),
+    offset: nonnegative(values.int("offset", default: 0))
+  )
+  try requireAccepted(result.result)
+  return kaibaSearchPayload(result.value ?? [])
 }
 
-private func noteStringArray(_ value: JSONValue?, fieldName: String) throws -> [String]? {
-  guard let value else {
-    return nil
+private func neighbors(values: KaibaAddonInputs, client: KaibaClient, chain: Bool) async throws -> JSONObject {
+  let ids = try stringArray(values.value("noteIds") ?? values.value("noteId"), field: "noteIds")
+  guard !ids.isEmpty else { throw noteAddonInvalidInput("\(values.addonName) noteIds must not be empty") }
+  let result = try await client.noteGraphNeighbors(noteIds: ids.map { KaibaNoteID(rawValue: $0) }, depth: bounded(values.int("depth", default: 2), upper: 8), limit: bounded(values.int("limit", default: 20), upper: 200))
+  try requireAccepted(result.result); var output = kaibaNeighborsPayload(result.value ?? [])
+  output["seedNoteIds"] = .array(ids.map(JSONValue.string))
+  if chain {
+    output["chains"] = output["results"] ?? .array([])
+    output.removeValue(forKey: "noteIds")
+  } else {
+    let retrieved = orderedUniqueNoteIDs(ids + (result.value ?? []).map { $0.note.noteId.rawValue })
+    output["retrievalNoteIds"] = .array(retrieved.map(JSONValue.string))
   }
-  switch value {
-  case let .string(string):
-    return string.isEmpty ? [] : [string]
-  case let .array(values):
-    return try values.enumerated().map { index, value in
-      guard let string = nonEmptyString(value) else {
-        throw noteAddonInvalidInput("\(fieldName)[\(index)] must be a non-empty string")
-      }
-      return string
-    }
-  case .null:
-    return []
-  case .bool, .integer, .number, .object:
-    throw noteAddonInvalidInput("\(fieldName) must be a string or array of strings")
+  return output
+}
+
+private func applyTags(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let result = try await client.applyNoteTags(
+    noteId: .init(rawValue: try values.requiredString(["noteId"], fieldName: "noteId")),
+    tags: try tags(values.value("tags") ?? values.value("tag")),
+    provenance: values.string(["provenance"]),
+    assignedBy: values.string(["assignedBy"])
+  )
+  try requireAccepted(result.result)
+  let note = try requiredNote(result)
+  var output = kaibaSingleNotePayload(note)
+  output["tags"] = kaibaTagAssignmentsJSON(note.tags)
+  return output
+}
+
+private func attach(_ input: WorkflowAddonExecutionInput, values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let attachment = try inlineAttachment(input: input, values: values)
+  let noteID = try values.requiredString(["noteId"], fieldName: "noteId")
+  let position = nonnegative(values.int("position", default: 0))
+  let result = try await client.attachNoteFile(.init(rawValue: noteID), bytes: attachment.bytes, mediaType: attachment.mediaType, originalFilename: attachment.filename, position: position)
+  try requireAccepted(result.result)
+  guard let file = result.file else {
+    throw AdapterExecutionError(.providerError, "Kaiba HTTP operation returned no file")
   }
-}
-
-func noteGraphQLVariables(_ context: NoteAddonContext) throws -> JSONObject {
-  guard let rawVariables = context.value("variables") else {
-    return [:]
-  }
-  let rendered = renderJSONTemplates(rawVariables, variables: context.variables)
-  guard case let .object(variables) = rendered else {
-    throw noteAddonInvalidInput("\(context.input.addon.name) variables must be an object")
-  }
-  return variables
-}
-
-func noteAddonInvalidInput(_ message: String) -> AdapterExecutionError {
-  AdapterExecutionError(.invalidInput, message)
-}
-func noteIntValue(_ value: JSONValue?, variables: JSONObject) -> Int? {
-  if let int = intValue(value) {
-    return int
-  }
-  guard let template = nonEmptyString(value) else {
-    return nil
-  }
-  let rendered = renderPromptTemplate(template, variables: variables).trimmingCharacters(in: .whitespacesAndNewlines)
-  return Int(rendered)
-}
-
-func noteString(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
-  if let template = nonEmptyString(config[key]) {
-    let rendered = renderPromptTemplate(template, variables: variables).trimmingCharacters(in: .whitespacesAndNewlines)
-    return rendered.isEmpty ? nil : rendered
-  }
-  return nonEmptyString(variables[key])
-}
-
-func noteObject(_ value: JSONValue?) -> JSONObject {
-  guard case let .object(object)? = value else {
-    return [:]
-  }
-  return object
-}
-
-func noteMetaJSONString(_ values: JSONValue?...) -> String? {
-  for value in values {
-    guard let value else {
-      continue
-    }
-    if let string = nonEmptyString(value) {
-      return string
-    }
-    if case .null = value {
-      continue
-    }
-    return value.compactJSONStringOrEmpty()
-  }
-  return nil
-}
-
-private func noteProvenance(_ value: String?) -> NoteProvenance? {
-  value.flatMap(NoteProvenance.init(rawValue:))
-}
-
-private func noteAddonWorkflowActor(_ context: NoteAddonContext) -> String {
-  "workflow:\(context.input.workflowId)/\(context.input.stepId)"
-}
-
-private func noteFileRole(_ value: String?) -> NoteFileRole? {
-  value.flatMap(NoteFileRole.init(rawValue:))
-}
-
-private func noteTitleFallback(from bodyMarkdown: String) -> String {
-  NoteTitleDerivation.fallbackTitle(from: bodyMarkdown)
-}
-
-private func notebookJSON(_ notebook: Notebook) -> JSONValue {
-  .object([
-    "notebookId": .string(notebook.notebookId.rawValue),
-    "title": .string(notebook.title),
-    "createdAt": .string(notebook.createdAt),
-    "updatedAt": .string(notebook.updatedAt),
-    "metaJSON": notebook.metaJSON.map { .string($0) } ?? .null,
-    "tags": .array(notebook.tags.map(tagAssignmentJSON)),
-    "firstNotePreview": notebook.firstNotePreview.map { .string($0) } ?? .null,
-    "noteCount": notebook.noteCount.map { .number(Double($0)) } ?? .null
-  ])
-}
-
-func noteJSON(_ note: Note) -> JSONValue {
-  .object([
-    "noteId": .string(note.noteId.rawValue),
-    "notebookId": .string(note.notebookId.rawValue),
-    "noteNumber": .number(Double(note.noteNumber)),
-    "title": note.title.map { .string($0) } ?? .null,
-    "bodyMarkdown": .string(note.bodyMarkdown),
-    "readOnly": .bool(note.readOnly),
-    "createdAt": .string(note.createdAt),
-    "updatedAt": .string(note.updatedAt),
-    "metaJSON": note.metaJSON.map { .string($0) } ?? .null,
-    "tags": .array(note.tags.map(tagAssignmentJSON))
-  ])
-}
-
-private func noteSearchResultJSON(_ result: NoteSearchResult) -> JSONValue {
-  .object([
-    "note": noteJSON(result.note),
-    "noteId": .string(result.note.noteId.rawValue),
-    "notebookId": .string(result.note.notebookId.rawValue),
-    "snippet": .string(result.snippet),
-    "rank": .number(result.rank),
-    "matchedTags": .array(result.matchedTags.map(tagJSON)),
-    "isLinkedNeighbor": .bool(result.isLinkedNeighbor)
-  ])
-}
-
-func noteGraphNeighborJSON(_ result: NoteGraphNeighbor) -> JSONValue {
-  .object([
-    "seedNoteId": .string(result.seedNoteId.rawValue),
-    "note": noteJSON(result.note),
-    "noteId": .string(result.note.noteId.rawValue),
-    "edgeKind": .string(result.edgeKind.rawValue),
-    "weight": .number(result.weight),
-    "hopCount": .number(Double(result.hopCount)),
-    "pathNoteIds": .array(result.pathNoteIds.map { .string($0.rawValue) })
-  ])
-}
-
-private func tagAssignmentJSON(_ assignment: TagAssignment) -> JSONValue {
-  .object([
-    "tag": tagJSON(assignment.tag),
-    "provenance": .string(assignment.provenance.rawValue),
-    "assignedBy": assignment.assignedBy.map { .string($0) } ?? .null,
-    "deletable": .bool(assignment.deletable),
-    "createdAt": .string(assignment.createdAt)
-  ])
-}
-
-private func tagJSON(_ tag: Tag) -> JSONValue {
-  .object([
-    "tagId": .string(tag.tagId.rawValue),
-    "name": .string(tag.name),
-    "classId": tag.classId.map { .string($0.rawValue) } ?? .null,
-    "isSystem": .bool(tag.isSystem),
-    "createdAt": .string(tag.createdAt)
-  ])
-}
-
-func noteCommentJSON(_ comment: NoteComment) -> JSONValue {
-  .object([
-    "commentId": .string(comment.commentId.rawValue),
-    "noteId": comment.noteId.map { .string($0.rawValue) } ?? .null,
-    "bodyMarkdown": .string(comment.bodyMarkdown),
-    "author": .string(comment.author),
-    "createdAt": .string(comment.createdAt)
-  ])
-}
-
-private func noteLinkJSON(_ link: NoteLink) -> JSONValue {
-  .object([
-    "fromNoteId": .string(link.fromNoteId.rawValue),
-    "toNoteId": .string(link.toNoteId.rawValue),
-    "linkKind": .string(link.linkKind),
-    "provenance": .string(link.provenance.rawValue),
-    "createdAt": .string(link.createdAt)
-  ])
-}
-
-func noteFileAttachmentJSON(_ attachment: NoteFileAttachment) -> JSONValue {
-  .object([
-    "noteId": .string(attachment.noteId.rawValue),
-    "role": .string(attachment.role.rawValue),
-    "position": .number(Double(attachment.position)),
-    "file": fileRecordJSON(attachment.file)
-  ])
-}
-
-func notebookFileAttachmentJSON(_ attachment: NotebookFileAttachment) -> JSONValue {
-  .object([
-    "notebookId": .string(attachment.notebookId.rawValue),
-    "role": .string(attachment.role.rawValue),
-    "file": fileRecordJSON(attachment.file)
-  ])
-}
-
-func fileRecordJSON(_ file: FileRecord) -> JSONValue {
-  .object([
+  return [
+    "noteId": .string(noteID),
     "fileId": .string(file.fileId.rawValue),
-    "storageKind": .string(file.storageKind.rawValue),
-    "localPath": file.localPath.map { .string($0) } ?? .null,
-    "s3Profile": file.s3Profile.map { .string($0) } ?? .null,
-    "s3Bucket": file.s3Bucket.map { .string($0) } ?? .null,
-    "s3Key": file.s3Key.map { .string($0) } ?? .null,
-    "s3URL": s3Locator(for: file).map { .string($0) } ?? .null,
-    "mediaType": .string(file.mediaType),
-    "byteSize": .number(Double(file.byteSize)),
-    "sha256": .string(file.sha256),
-    "originalFilename": file.originalFilename.map { .string($0) } ?? .null,
-    "createdAt": .string(file.createdAt),
-    "migratedAt": file.migratedAt.map { .string($0) } ?? .null
+    "file": .object([
+      "noteId": .string(noteID),
+      "role": .string(values.string(["role"]) ?? "related"),
+      "position": .number(Double(position)),
+      "file": kaibaFileJSON(file)
+    ])
+  ]
+}
+
+private func attachments(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  if let noteID = values.string(["noteId"]) {
+    let result = try await client.listNoteAttachments(.init(rawValue: noteID))
+    try requireAccepted(result.result)
+    return kaibaNoteAttachmentsPayload(result.value ?? [], noteID: noteID)
+  }
+  let notebook = try values.requiredString(["notebookId"], fieldName: "noteId or notebookId")
+  let result = try await client.listNotebookAttachments(.init(rawValue: notebook))
+  try requireAccepted(result.result)
+  return kaibaNotebookAttachmentsPayload(result.value ?? [], notebookID: notebook)
+}
+
+private func memos(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let noteID = try values.requiredString(["noteId"], fieldName: "noteId")
+  let result = try await client.listNoteComments(.init(rawValue: noteID)); try requireAccepted(result.result)
+  let comments = result.value ?? []
+  let memoValues = comments.map(kaibaCommentOutput)
+  let agents = memoValues.filter(isAgentMemo)
+  var output: JSONObject = ["noteId": .string(noteID), "memos": .array(memoValues), "memoCount": .number(Double(memoValues.count))]
+  output["agentMemos"] = .array(agents)
+  output["agentMemoCount"] = .number(Double(agents.count))
+  return output
+}
+
+private func comment(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let result = try await client.addNoteComment(
+    .init(rawValue: try values.requiredString(["noteId"], fieldName: "noteId")),
+    bodyMarkdown: try values.requiredString(
+      ["bodyMarkdown", "body", "comment", "text"], fieldName: "bodyMarkdown"
+    ),
+    author: values.string(["author", "assignedBy"])
+  )
+  try requireAccepted(result.result)
+  guard let addedComment = result.comment else {
+    throw AdapterExecutionError(.providerError, "Kaiba HTTP operation returned no comment")
+  }
+  let noteID = try values.requiredString(["noteId"], fieldName: "noteId")
+  return [
+    "noteId": .string(addedComment.noteId?.rawValue ?? noteID),
+    "commentId": .string(addedComment.commentId.rawValue),
+    "comment": kaibaCommentJSON(addedComment)
+  ]
+}
+
+private func ingest(_ input: WorkflowAddonExecutionInput, values: KaibaAddonInputs, client: KaibaClient, discriminator: String) async throws -> JSONObject {
+  let pages = try ingestPages(values.value("pages"))
+  let result = try await client.ingestNotebookPages(
+    idempotencyKey: try idempotencyKey(input, values: values, discriminator: discriminator),
+    title: values.string(["notebookTitle", "title"]) ?? "Imported Material",
+    pages: pages,
+    kindTagName: values.string(["notebookKindTag", "kindTagName"]),
+    metaJSON: values.string(["metaJSON"])
+  )
+  try requireAccepted(result.result)
+  guard let notebook = result.notebook else {
+    throw AdapterExecutionError(.providerError, "Kaiba HTTP operation returned no notebook")
+  }
+  let notes = result.notes ?? []
+  var output: JSONObject = [
+    "notebookId": .string(notebook.notebookId.rawValue),
+    "notebook": kaibaNotebookJSON(notebook),
+    "notes": .array(notes.map(kaibaNoteJSON)),
+    "noteIds": .array(notes.map { .string($0.noteId.rawValue) })
+  ]
+  output["pageCount"] = .number(Double(pages.count))
+  output["sourceDocument"] = sourceDocumentAttachment(
+    result.notebookFiles,
+    notebookID: notebook.notebookId.rawValue
+  )
+  output["pageImages"] = pageImageAttachments(result.noteFiles)
+  return output
+}
+
+private func importDocument(
+  _ input: WorkflowAddonExecutionInput,
+  values: KaibaAddonInputs,
+  client: KaibaClient
+) async throws -> JSONObject {
+  let document = try documentImportInput(values)
+  let primaryKey = try idempotencyKey(input, values: values, discriminator: "document-import:primary")
+  let primary = try await client.ingestDocument(
+    idempotencyKey: primaryKey,
+    title: document.title,
+    pages: document.pages,
+    sourceDocument: document.source,
+    metaJSON: values.string(["metaJSON"])
+  )
+  try requireAccepted(primary.result)
+  guard let notebook = primary.notebook else {
+    throw AdapterExecutionError(.providerError, "Kaiba HTTP operation returned no notebook")
+  }
+  let notes = primary.notes ?? []
+  var output: JSONObject = [
+    "notebookId": .string(notebook.notebookId.rawValue),
+    "notebook": kaibaNotebookJSON(notebook),
+    "notes": .array(notes.map(kaibaNoteJSON)),
+    "noteIds": .array(notes.map { .string($0.noteId.rawValue) }),
+    "noteCount": .number(Double(notes.count))
+  ]
+  output["sourceFile"] = primary.notebookFiles?.first.map { kaibaFileJSON($0.file) } ?? .null
+  output["ocrRequested"] = .bool(values.bool("ocr", default: false))
+  output["translationRequested"] = .bool(values.bool("translate", default: false))
+  if values.bool("translate", default: false) {
+    let translatedPages = try ingestPages(values.value("translatedPages"))
+    let translated = try await client.ingestDocument(
+      idempotencyKey: try idempotencyKey(input, values: values, discriminator: "document-import:translation"),
+      title: values.string(["translationTitle"]) ?? "\(document.title) (translation)",
+      pages: translatedPages,
+      sourceDocument: document.source,
+      metaJSON: values.string(["translationMetaJSON", "metaJSON"])
+    )
+    try requireAccepted(translated.result)
+    output["translationNotebookId"] = translated.notebook.map { .string($0.notebookId.rawValue) } ?? .null
+    output["translationNotebook"] = translated.notebook.map(kaibaNotebookJSON) ?? .null
+  }
+  return output
+}
+
+private func conversation(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let result = try await client.saveConversation(
+    title: try values.requiredString(["title", "conversationTitle"], fieldName: "title"),
+    transcript: try conversationTurns(values.value("transcript") ?? values.value("turns")),
+    assignedBy: values.string(["assignedBy"])
+  )
+  try requireAccepted(result.result)
+  guard let notebook = result.notebook else {
+    throw AdapterExecutionError(.providerError, "Kaiba HTTP operation returned no notebook")
+  }
+  let notes = result.notes ?? []
+  return [
+    "notebookId": .string(notebook.notebookId.rawValue),
+    "notebook": kaibaNotebookJSON(notebook),
+    "notes": .array(notes.map(kaibaNoteJSON)),
+    "noteIds": .array(notes.map { .string($0.noteId.rawValue) })
+  ]
+}
+
+private func requiredNote(_ value: KaibaOperationPayload) throws -> KaibaNote {
+  guard let note = value.note else {
+    throw AdapterExecutionError(.providerError, "Kaiba HTTP operation returned no note")
+  }
+  return note
+}
+
+private func kaibaCommentOutput(_ value: KaibaComment) -> JSONValue {
+  .object([
+    "commentId": .string(value.commentId.rawValue),
+    "noteId": value.noteId.map { .string($0.rawValue) } ?? .null,
+    "notebookId": value.notebookId.map { .string($0.rawValue) } ?? .null,
+    "bodyMarkdown": .string(value.bodyMarkdown),
+    "author": .string(value.author),
+    "createdAt": .string(value.createdAt)
   ])
+}
+
+private func isAgentMemo(_ value: JSONValue) -> Bool {
+  guard case let .object(object) = value,
+        case let .string(author)? = object["author"] else { return false }
+  let normalized = author.lowercased()
+  return normalized.hasPrefix("agent") || normalized.hasPrefix("ai")
+    || normalized.hasPrefix("workflow:") || normalized == "assistant"
+}
+
+func addonOutput(input: WorkflowAddonExecutionInput, operation: String, payload: JSONObject, values: KaibaAddonInputs) -> AdapterExecutionOutput {
+  var body: JSONObject = ["status": .string("ok"), "addon": .string(input.addon.name), "operation": .string(operation), "stepId": .string(input.stepId)]
+  if case let .object(pass)? = values.config["passthrough"].map({ renderJSONTemplates($0, variables: values.variables) }) { body.merge(pass) { _, incoming in incoming } }
+  body.merge(payload) { _, incoming in incoming }
+  return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true, when: ["always": true], payload: body)
+}
+
+func requireAccepted(_ result: KaibaControlPlaneResult) throws { if !result.accepted { throw AdapterExecutionError(.providerError, "Kaiba HTTP operation was rejected") } }
+func bounded(_ value: Int, upper: Int) -> Int { min(max(value, 1), upper) }
+func nonnegative(_ value: Int) -> Int { max(0, value) }
+func tags(_ value: JSONValue?) throws -> [KaibaTagInput] { try tagNames(value).map { KaibaTagInput(name: $0) } }
+func tagNames(_ value: JSONValue?) throws -> [String] { try stringArray(value, field: "tags") }
+func stringArray(_ value: JSONValue?, field: String) throws -> [String] {
+  guard let value else { return [] }
+  if case let .string(item) = value, !item.isEmpty { return [item] }
+  guard case let .array(items) = value else { throw noteAddonInvalidInput("\(field) must be a string or array") }
+  return try items.map { item in guard case let .string(value) = item, !value.isEmpty else { throw noteAddonInvalidInput("\(field) must contain strings") }; return value }
+}
+
+private func orderedUniqueNoteIDs(_ values: [String]) -> [String] {
+  var seen = Set<String>()
+  return values.filter { seen.insert($0).inserted }
+}
+
+private func sourceDocumentAttachment(
+  _ attachments: [KaibaFileAttachment]?,
+  notebookID: String
+) -> JSONValue {
+  guard let attachment = attachments?.first(where: { $0.role == .sourceDocument }) else {
+    return .null
+  }
+  return .object([
+    "notebookId": .string(notebookID),
+    "role": .string(attachment.role.rawValue),
+    "file": kaibaFileJSON(attachment.file)
+  ])
+}
+
+private func pageImageAttachments(_ attachments: [KaibaFileAttachment]?) -> JSONValue {
+  .array((attachments ?? [])
+    .filter { $0.role == .sourcePageImage }
+    .map(kaibaFileAttachmentJSON))
+}
+
+private struct InlineAttachmentData {
+  let bytes: Data
+  let mediaType: String
+  let filename: String?
+}
+
+private func inlineAttachment(
+  input: WorkflowAddonExecutionInput,
+  values: KaibaAddonInputs
+) throws -> InlineAttachmentData {
+  let selectedName = values.string(["attachmentField", "attachment"])
+  let chosen = selectedName.flatMap { input.attachments[$0] }
+    ?? (input.attachments.count == 1 ? input.attachments.values.first : nil)
+  if let chosen {
+    if let base64 = chosen.contentBase64, let bytes = Data(base64Encoded: base64) {
+      return .init(bytes: bytes, mediaType: chosen.mediaType, filename: chosen.filename)
+    }
+    if let text = chosen.contentText {
+      return .init(bytes: Data(text.utf8), mediaType: chosen.mediaType, filename: chosen.filename)
+    }
+  }
+  let text = try values.requiredString(["contentText", "text", "body"], fieldName: "attachment content")
+  return .init(
+    bytes: Data(text.utf8),
+    mediaType: values.string(["mediaType", "contentType"]) ?? "text/plain",
+    filename: values.string(["filename", "fileName"])
+  )
+}
+
+func ingestPages(_ value: JSONValue?) throws -> [KaibaIngestPage] {
+  guard case let .array(pages)? = value, !pages.isEmpty else {
+    throw noteAddonInvalidInput("kaiba/notebook-ingest-pages pages must be a non-empty array")
+  }
+  return try pages.enumerated().map { index, value in
+    guard case let .object(page) = value,
+          let body = page["bodyMarkdown"].flatMap(nonEmptyString)
+            ?? page["body"].flatMap(nonEmptyString) else {
+      throw noteAddonInvalidInput("pages[\(index)].bodyMarkdown is required")
+    }
+    return .init(
+      bodyMarkdown: body,
+      readOnly: boolValue(page["readOnly"]) ?? true,
+      tags: try tags(page["tags"]),
+      metaJSON: page["metaJSON"].flatMap(nonEmptyString),
+      noteNumber: intValue(page["noteNumber"])
+    )
+  }
+}
+
+private func conversationTurns(_ value: JSONValue?) throws -> [KaibaConversationTurn] {
+  guard case let .array(turns)? = value else { throw noteAddonInvalidInput("transcript must be an array") }
+  return try turns.enumerated().map { index, value in
+    guard case let .object(turn) = value,
+          let user = turn["userMarkdown"].flatMap(nonEmptyString),
+          let assistant = turn["assistantMarkdown"].flatMap(nonEmptyString) else {
+      throw noteAddonInvalidInput("transcript[\(index)] requires userMarkdown and assistantMarkdown")
+    }
+    return .init(
+      userMarkdown: user,
+      assistantMarkdown: assistant,
+      sourceNoteIds: try stringArray(turn["sourceNoteIds"], field: "sourceNoteIds")
+        .map(KaibaNoteID.init(rawValue:))
+    )
+  }
+}
+
+func idempotencyKey(_ input: WorkflowAddonExecutionInput, values: KaibaAddonInputs, discriminator: String) throws -> String {
+  if let value = values.string(["idempotencyKey"]), !value.isEmpty { return value }
+  guard let identity = input.executionIdentity else { throw noteAddonInvalidInput("missing_idempotency_identity") }
+  let operation = try identity.validatedOperationExecutionId()
+  let fields = [identity.workflowExecutionId, operation, input.workflowId, input.stepId, input.nodeId, input.addon.name, discriminator]
+  guard !fields.contains(where: \.isEmpty) else { throw noteAddonInvalidInput("missing_idempotency_identity") }
+  let bytes = fields.reduce(into: Data()) { result, field in let value = Data(field.utf8); result.append(Data("\(value.count):".utf8)); result.append(value) }
+  return "riela-kaiba-v1-" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
 }

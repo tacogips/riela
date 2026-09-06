@@ -30,7 +30,7 @@ become real links.
 | --- | --- | --- |
 | `save-chat-event` | `riela/memory-save` | Appends the incoming chat event to the `chat-memory` short-term store. |
 | `load-recent-memories` | `riela/memory-load` | Reads the most recent 50 short-term records as `recordsText`. |
-| `summarize-memories` | agent worker | Distills the window into `memoryEntries[]` (the only mocked step). |
+| `summarize-memories` | agent worker | Distills the window into `memoryEntries[]`. |
 | `consolidate-long-term` | `kaiba/memory-consolidate` | Appends the entries as long-term notes and links their graph associations. |
 | `recall-long-term` | `kaiba/memory-recall` | Recalls `project-atlas` memories and renders prompt-ready `recallText`. |
 | `workflow-output` | output projection | Projects the consolidation counts and the recall results. |
@@ -38,6 +38,10 @@ become real links.
 `consolidate-long-term` and `recall-long-term` are consecutive steps, and an
 output projection only sees the last payload, so the recall node carries the
 consolidation counts forward through its `passthrough` config.
+
+The bundled mock scenario stubs the agent and Kaiba boundary steps. It never
+uses a local Kaiba store. For a live run, configure and select an enabled
+default named Kaiba HTTP(S) instance before running this workflow.
 
 ## Run it
 

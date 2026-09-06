@@ -355,3 +355,55 @@ in handoffs:
   feedback ambiguous; and
 - those duplicate-branch removal outcomes do not yet have complete browser
   coverage.
+
+## Kaiba Client SDK And Schema Discovery Boundary
+
+The accepted Kaiba-side work package
+`local-request:/Users/taco/gits/tacogips/kaiba:Add first-party Kaiba Swift client SDK and schema discovery CLI`
+provides the transport boundary required by Riela's planned `kaiba/*` node
+migration:
+
+- The public SwiftPM `KaibaClient` library executes arbitrary GraphQL and typed
+  note, notebook, tag, attachment, comment, ingest/document, conversation, and
+  long-term-memory operations against localhost or remote HTTP(S) `kaiba serve`
+  endpoints. It does not import Kaiba store/service modules and has no local or
+  in-process fallback.
+- Endpoint normalization, explicit bearer or unauthenticated selection,
+  secure-by-default remote transport, redirect refusal, finite request and
+  response limits, readiness classification, stable typed errors, and
+  credential-redacted diagnostics are shared by every operation.
+- Notebook/document ingest and long-term-memory append require caller-provided
+  idempotency keys. Retries are caller-owned; an identical principal/key/request
+  replays the committed result, while changed input under that principal/key is
+  rejected. Long-term-memory operations require an authenticated enabled admin,
+  except for Kaiba's explicit loopback operator mode.
+- `kaiba graphql schema --endpoint <url>` uses the same client authentication,
+  accepts an optional ICU regular expression, and returns deterministic text or
+  sorted JSON containing matching roots/types plus forward transitive type
+  closure. It never falls back to a compiled or local schema.
+- Existing local and remote `kaiba graphql` document modes remain compatible.
+  This Kaiba work package does not implement Riela instance storage, bindings,
+  readiness UI, or migration of Riela nodes; those remain downstream work.
+
+The Step 7 decision for workflow execution
+`codex-design-and-implement-review-loop-session-6` was `accepted`. Browser E2E
+was correctly skipped because the accepted diff changes no `web/` file and the
+repository has no browser E2E script or Playwright suite. Accepted verification
+included:
+
+```bash
+mise run build
+mise run test
+mise run lint
+find web -maxdepth 3 -type f \( -path '*/e2e/*' -o -name '*playwright*' -o -name '*e2e*' \) -print
+git status --short -- web
+```
+
+Keep these accepted residual risks explicit in later handoffs:
+
+- completed ingest replay JSON is retained indefinitely;
+- introspection is intentionally bounded to the SDK's canonical document;
+- the pre-existing exact-floating-point retrieval test may intermittently
+  flake;
+- SwiftLint retains three unchanged repository-baseline warnings; and
+- no browser E2E coverage was authored because no browser-facing file changed.

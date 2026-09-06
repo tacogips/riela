@@ -27,7 +27,7 @@ extension RielaApp {
       sourceIdentity: source.id,
       displayName: request.displayName,
       available: true,
-      active: request.startsImmediately,
+      active: false,
       workingDirectory: request.workingDirectory,
       environmentFilePath: request.environmentFilePath
     )
@@ -45,29 +45,19 @@ extension RielaApp {
     refreshDaemonWorkflowWindow()
     let runtimeIdentity = profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity)
     daemonWindowController?.selectCandidate(identity: runtimeIdentity)
-    guard request.startsImmediately,
-      let resolved = resolveDaemonWorkflowInstance(identity: runtimeIdentity)
-    else {
-      return
-    }
-    Task { @MainActor in
-      await daemonRuntime.start(
-        resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
-      )
-      status = "Started \(resolved.candidate.displayName)"
-      refreshDaemonWorkflowWindow()
-      daemonWindowController?.selectCandidate(identity: runtimeIdentity)
-    }
+    guard request.startsImmediately else { return }
+    startDaemonWorkflowInstance(identity: runtimeIdentity)
   }
 
   func startDaemonWorkflowInstance(identity: String) {
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance needs a workflow source"
-      refreshDaemonWorkflowWindow()
-      return
+    Task { [weak self] in
+      guard let self else { return }
+      guard let current = await self.approvedDaemonWorkflowInstance(identity: identity) else { return }
+      self.activateDaemonWorkflowInstance(resolved: current)
     }
+  }
+
+  private func activateDaemonWorkflowInstance(resolved: ResolvedDaemonWorkflowInstance) {
     var state = resolved.state
     var preference = resolved.preference
     preference.sourceIdentity = resolved.instance.instance.source.id
@@ -78,14 +68,19 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    Task { @MainActor in
+    let runtimeIdentity = resolved.runtimeIdentity
+    Task { @MainActor [weak self] in
+      guard let self,
+            let approved = await self.approvedDaemonWorkflowInstance(identity: runtimeIdentity) else {
+        return
+      }
       await daemonRuntime.start(
-        resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
+        approved.candidate,
+        configuration: self.daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
+        server: self.daemonServerConfiguration(profileName: approved.profileName)
       )
-      status = "Started \(resolved.candidate.displayName)"
-      refreshDaemonWorkflowWindow()
+      self.status = "Started \(approved.candidate.displayName)"
+      self.refreshDaemonWorkflowWindow()
     }
   }
 
@@ -113,30 +108,29 @@ extension RielaApp {
   }
 
   func restartDaemonWorkflowInstance(identity: String) {
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance needs a workflow source"
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    var state = resolved.state
-    var preference = resolved.preference
-    preference.sourceIdentity = resolved.instance.instance.source.id
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      guard let current = await self.approvedDaemonWorkflowInstance(identity: identity) else { return }
+      var state = current.state
+      var preference = current.preference
+      preference.sourceIdentity = current.instance.instance.source.id
       preference.available = true
       preference.active = true
-    state.preferences[resolved.localIdentity] = preference
-    guard saveDaemonState(state, profileName: resolved.profileName) else {
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    Task { @MainActor in
-      await daemonRuntime.stop(identity: resolved.runtimeIdentity)
-      await daemonRuntime.start(
-        resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
+      state.preferences[current.localIdentity] = preference
+      guard self.saveDaemonState(state, profileName: current.profileName) else {
+        self.refreshDaemonWorkflowWindow()
+        return
+      }
+      await self.daemonRuntime.stop(identity: current.runtimeIdentity)
+      guard let approved = await self.approvedDaemonWorkflowInstance(identity: identity),
+            approved.preference.available, approved.preference.active else { return }
+      await self.daemonRuntime.start(
+        approved.candidate,
+        configuration: self.daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
+        server: self.daemonServerConfiguration(profileName: approved.profileName)
       )
-      status = "Restarted \(resolved.candidate.displayName)"
-      refreshDaemonWorkflowWindow()
+      self.status = "Restarted \(approved.candidate.displayName)"
+      self.refreshDaemonWorkflowWindow()
     }
   }
 
@@ -307,11 +301,13 @@ extension RielaApp {
         profileName: resolved.profileName,
         identity: result.identity
       ).rawValue
-      if shouldRestart, let renamed = resolveDaemonWorkflowInstance(identity: renamedIdentity) {
-        await daemonRuntime.start(
+      if shouldRestart,
+         let renamed = await approvedDaemonWorkflowInstance(identity: renamedIdentity),
+         renamed.preference.available, renamed.preference.active {
+        await self.daemonRuntime.start(
           renamed.candidate,
-          configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: preference),
-          server: daemonServerConfiguration(profileName: resolved.profileName)
+          configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: renamed.preference),
+          server: daemonServerConfiguration(profileName: renamed.profileName)
         )
         refreshDaemonWorkflowWindow()
       }

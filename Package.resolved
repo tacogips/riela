@@ -1,5 +1,5 @@
 {
-  "originHash" : "ada9b7c2d97127400c7b2dede28e86a92a0a566e6677461ae7bc761ba281e94a",
+  "originHash" : "e3aeea3296f3b6d98aef44965bb544c69bad8a1e1be46a5006a48478da53082b",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -62,7 +62,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "31f23145d26f87803d7c10984969f937a6926ff7"
+        "revision" : "b436b91d39a5eaee8243a43096dd13f1e8ad819e"
       }
     },
     {

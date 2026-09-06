@@ -247,6 +247,9 @@ private enum ProjectedAttachmentContent {
 public struct WorkflowAddonExecutionIdentity: Codable, Equatable, Sendable {
   public var workflowExecutionId: String
   public var stepExecutionId: String
+  /// Runtime-owned identity for one logical add-on mutation. It remains stable
+  /// across resumable attempts, whose `stepExecutionId` values are distinct.
+  public var operationExecutionId: String?
   public var attempt: Int
   public var predecessorStepExecutionId: String?
   public var predecessorStepExecutionIds: [String]?
@@ -254,16 +257,76 @@ public struct WorkflowAddonExecutionIdentity: Codable, Equatable, Sendable {
   public init(
     workflowExecutionId: String,
     stepExecutionId: String,
+    operationExecutionId: String? = nil,
     attempt: Int,
     predecessorStepExecutionId: String? = nil,
     predecessorStepExecutionIds: [String]? = nil
   ) {
     self.workflowExecutionId = workflowExecutionId
     self.stepExecutionId = stepExecutionId
+    self.operationExecutionId = operationExecutionId
     self.attempt = attempt
     self.predecessorStepExecutionId = predecessorStepExecutionId
     self.predecessorStepExecutionIds = predecessorStepExecutionIds
       ?? predecessorStepExecutionId.map { [$0] }
+  }
+
+  /// Validates the retry lineage and returns the one operation identity the
+  /// runtime assigned before add-on transport. Add-on configuration and
+  /// workflow variables cannot manufacture this value.
+  public func validatedOperationExecutionId() throws -> String {
+    let derived = try Self.deriveOperationExecutionId(
+      stepExecutionId: stepExecutionId,
+      predecessorStepExecutionId: predecessorStepExecutionId,
+      predecessorStepExecutionIds: predecessorStepExecutionIds
+    )
+    guard let operationExecutionId else {
+      throw WorkflowAddonOperationIdentityError.missingOperationExecutionId
+    }
+    guard operationExecutionId == derived else {
+      throw WorkflowAddonOperationIdentityError.invalidOperationExecutionId
+    }
+    return operationExecutionId
+  }
+
+  /// The current execution starts a new operation. A resumable retry uses the
+  /// oldest member of the newest-to-oldest predecessor lineage.
+  public static func deriveOperationExecutionId(
+    stepExecutionId: String,
+    predecessorStepExecutionId: String?,
+    predecessorStepExecutionIds: [String]?
+  ) throws -> String {
+    guard !stepExecutionId.isEmpty else {
+      throw WorkflowAddonOperationIdentityError.missingOperationExecutionId
+    }
+    let predecessors = predecessorStepExecutionIds ?? []
+    guard predecessors.allSatisfy({ !$0.isEmpty }),
+          Set(predecessors).count == predecessors.count,
+          !predecessors.contains(stepExecutionId) else {
+      throw WorkflowAddonOperationIdentityError.invalidOperationExecutionId
+    }
+    if let predecessorStepExecutionId {
+      guard predecessorStepExecutionId == predecessors.first else {
+        throw WorkflowAddonOperationIdentityError.invalidOperationExecutionId
+      }
+    } else if !predecessors.isEmpty {
+      throw WorkflowAddonOperationIdentityError.invalidOperationExecutionId
+    }
+    return predecessors.last ?? stepExecutionId
+  }
+}
+
+public enum WorkflowAddonOperationIdentityError: Error, Equatable, Sendable {
+  case missingOperationExecutionId
+  case invalidOperationExecutionId
+
+  public var diagnosticCode: String {
+    switch self {
+    case .missingOperationExecutionId:
+      "missing_idempotency_identity"
+    case .invalidOperationExecutionId:
+      "invalid_idempotency_identity"
+    }
   }
 }
 

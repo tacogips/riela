@@ -76,9 +76,24 @@ extension DaemonWorkflowWindowController {
         row.preference.workingDirectory ?? "",
         String(row.preference.environmentVariables.count),
         String(row.preference.defaultVariables.count),
+        nodePatchesFingerprint(row.preference.nodePatches),
         row.candidate?.eventSourceSummary ?? ""
       ].joined(separator: "\u{1f}")
     }).joined(separator: "\u{1e}")
+  }
+
+  private func nodePatchesFingerprint(_ patches: [String: RielaAppDaemonWorkflowNodePatch]) -> String {
+    patches.keys.sorted().map { nodeID in
+      let patch = patches[nodeID] ?? RielaAppDaemonWorkflowNodePatch()
+      return [
+        nodeID,
+        patch.executionBackend?.rawValue ?? "",
+        patch.model ?? "",
+        patch.effort?.rawValue ?? "",
+        patch.kaibaInstanceId ?? "",
+        String(patch.clearsKaibaInstanceId)
+      ].joined(separator: "\u{1f}")
+    }.joined(separator: "\u{1e}")
   }
 
   private func profiledInstanceRows() -> [ConfiguredWorkflowInstanceRow] {

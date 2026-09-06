@@ -1,4 +1,43 @@
 {
+  "retrieve-notes": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-search",
+    "when": { "always": true },
+    "payload": {
+      "noteIds": ["note-agent-source"],
+      "resultCount": 1,
+      "results": [{
+        "noteId": "note-agent-source",
+        "title": "Architecture Note",
+        "snippet": "projectalpha source-backed notebooks"
+      }]
+    }
+  },
+  "walk-note-graph": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-graph-neighbors",
+    "when": { "always": true },
+    "payload": {
+      "retrievalNoteIds": ["note-agent-source"],
+      "results": [{
+        "noteId": "note-agent-source",
+        "neighbors": ["note-agent-related"]
+      }]
+    }
+  },
+  "get-source-notes": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-get",
+    "when": { "always": true },
+    "payload": {
+      "noteIds": ["note-agent-source"],
+      "results": [{
+        "noteId": "note-agent-source",
+        "title": "Architecture Note",
+        "bodyMarkdown": "source-backed notebooks"
+      }]
+    }
+  },
   "answer-with-citations": {
     "provider": "scenario-mock",
     "model": "gpt-5.5",

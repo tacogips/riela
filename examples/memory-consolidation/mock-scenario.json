@@ -20,5 +20,52 @@
         }
       ]
     }
+  },
+  "consolidate-long-term": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-consolidate",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "entriesWritten": 1,
+      "noteIds": [
+        "note-long-term-memory-fixture"
+      ],
+      "notebookId": "notebook-long-term-memory-fixture",
+      "idempotentReplay": false,
+      "associations": [],
+      "sourceMemoryRecordIds": [
+        1
+      ]
+    }
+  },
+  "recall-long-term": {
+    "provider": "scenario-mock",
+    "model": "kaiba/memory-recall",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "entriesWritten": 1,
+      "consolidatedNoteIds": [
+        "note-long-term-memory-fixture"
+      ],
+      "notebookId": "notebook-long-term-memory-fixture",
+      "idempotentReplay": false,
+      "associations": [],
+      "resultCount": 1,
+      "noteIds": [
+        "note-long-term-memory-fixture"
+      ],
+      "results": [
+        {
+          "noteId": "note-long-term-memory-fixture",
+          "snippet": "project-atlas kickoff decisions",
+          "isAssociation": false
+        }
+      ],
+      "recallText": "#note-long-term-memory-fixture [direct] project-atlas kickoff decisions"
+    }
   }
 }

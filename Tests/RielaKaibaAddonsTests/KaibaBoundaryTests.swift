@@ -1,6 +1,6 @@
 import AppCore
-import AppGraphQL
 import Foundation
+import KaibaClient
 import RielaAddons
 import RielaCore
 import XCTest
@@ -37,7 +37,7 @@ final class KaibaBoundaryTests: XCTestCase {
   /// through into some other resolver.
   func testAnUnownedKaibaNameFailsClosed() async {
     do {
-      _ = try await KaibaAddonCatalog.execute(
+      _ = try await KaibaAddonCatalog.executeForTesting(
         WorkflowAddonExecutionInput(
           workflowId: "kaiba-boundary-test",
           stepId: "unowned",
@@ -51,6 +51,27 @@ final class KaibaBoundaryTests: XCTestCase {
     } catch let error as AdapterExecutionError {
       XCTAssertEqual(error.code, .providerError)
       XCTAssertTrue(error.message.contains("missing kaiba add-on resolver"), error.message)
+    } catch {
+      XCTFail("unexpected error: \(error)")
+    }
+  }
+
+  func testKnownKaibaAddonRequiresAnExplicitExecutionSnapshot() async {
+    do {
+      _ = try await KaibaAddonCatalog.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "kaiba-boundary-test",
+          stepId: "missing-snapshot",
+          nodeId: "missing-snapshot",
+          addon: WorkflowNodeAddonRef(name: "kaiba/note-search", version: "1"),
+          variables: [:]
+        ),
+        environment: [:]
+      )
+      XCTFail("expected missing snapshot to fail closed")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "kaiba execution requires validated instance preflight")
     } catch {
       XCTFail("unexpected error: \(error)")
     }
@@ -82,79 +103,28 @@ final class KaibaBoundaryTests: XCTestCase {
     XCTAssertEqual(try kaibaJSONValue(try rielaJSONValue(kaibaSide)), kaibaSide)
   }
 
-  // MARK: - The remote node's HTTP contract
+  // MARK: - The resolved GraphQL client's HTTP contract
 
-  /// What `kaiba/note-graphql-remote` actually puts on the wire: the document
-  /// and variables in a kaiba GraphQL envelope, the bearer key in the header,
-  /// and the bare endpoint routed to /graphql. Everything a live `kaiba serve`
-  /// would key its authentication and library access decisions on.
-  func testRemoteNodeSendsTheDocumentWithItsBearerKey() async throws {
-    let transport = RecordingGraphQLTransport(response: GraphQLHTTPResponse(
+  func testRemoteNodeSendsTheDocumentWithTheResolvedClientBearerKey() async throws {
+    let transport = BoundaryKaibaTransport(response: .init(
       statusCode: 200,
       body: Data(#"{"data":{"notebooks":{"result":{"accepted":true}}}}"#.utf8)
     ))
+    let client = try boundaryClient(
+      authentication: .bearer(try KaibaBearerToken("issued-key")),
+      transport: transport
+    )
 
-    let output = try await KaibaRemoteGraphQLAddon.$transportOverride.withValue(transport) {
+    let output = try await KaibaAddonExecutionContext.withMockExecutionForTesting(client: client) {
       try await KaibaAddonCatalog.execute(
         WorkflowAddonExecutionInput(
           workflowId: "kaiba-boundary-test",
           stepId: "remote",
           nodeId: "remote",
-          addon: WorkflowNodeAddonRef(name: "kaiba/note-graphql-remote", version: "1", config: [
-            "endpoint": .string("http://kaiba.example:8787"),
+          addon: .init(name: "kaiba/note-graphql-remote", version: "1", config: [
             "query": .string("query Notebooks($limit: Int) { notebooks(limit: $limit) { result { accepted } } }"),
             "operationName": .string("Notebooks"),
             "variables": .object(["limit": .integer(2)])
-          ]),
-          variables: [:]
-        ),
-        environment: ["KAIBA_API_KEY": "issued-key"]
-      )
-    }
-
-    let request = try XCTUnwrap(transport.requests.first)
-    XCTAssertEqual(request.url.absoluteString, "http://kaiba.example:8787/graphql")
-    XCTAssertEqual(request.headers["authorization"], "Bearer issued-key")
-    let decoded = try JSONDecoder().decode(RielaCore.JSONValue.self, from: request.body)
-    guard case let .object(body) = decoded else {
-      return XCTFail("expected a JSON object request body")
-    }
-    XCTAssertEqual(
-      body["query"],
-      .string("query Notebooks($limit: Int) { notebooks(limit: $limit) { result { accepted } } }")
-    )
-    XCTAssertEqual(body["operationName"], .string("Notebooks"))
-    XCTAssertEqual(body["variables"], .object(["limit": .integer(2)]))
-
-    XCTAssertEqual(output.payload["status"], .string("ok"))
-    XCTAssertEqual(output.payload["authenticated"], .bool(true))
-    XCTAssertEqual(output.payload["endpoint"], .string("http://kaiba.example:8787"))
-    // The response body crossed the bridge back into riela's model intact.
-    XCTAssertEqual(output.payload["fieldName"], .string("notebooks"))
-    XCTAssertEqual(
-      output.payload["fieldPayload"],
-      .object(["result": .object(["accepted": .bool(true)])])
-    )
-  }
-
-  /// The keyless opt-in sends no Authorization header at all — an empty bearer
-  /// would read as a malformed credential to `kaiba serve`, not as anonymity.
-  func testKeylessOptInSendsNoAuthorizationHeader() async throws {
-    let transport = RecordingGraphQLTransport(response: GraphQLHTTPResponse(
-      statusCode: 200,
-      body: Data(#"{"data":{"notebooks":{"result":{"accepted":true}}}}"#.utf8)
-    ))
-
-    let output = try await KaibaRemoteGraphQLAddon.$transportOverride.withValue(transport) {
-      try await KaibaAddonCatalog.execute(
-        WorkflowAddonExecutionInput(
-          workflowId: "kaiba-boundary-test",
-          stepId: "remote",
-          nodeId: "remote",
-          addon: WorkflowNodeAddonRef(name: "kaiba/note-graphql-remote", version: "1", config: [
-            "endpoint": .string("http://kaiba.example:8787"),
-            "allowUnauthenticated": .bool(true),
-            "query": .string("{ notebooks(limit: 1) { result { accepted } } }")
           ]),
           variables: [:]
         ),
@@ -163,27 +133,45 @@ final class KaibaBoundaryTests: XCTestCase {
     }
 
     let request = try XCTUnwrap(transport.requests.first)
-    XCTAssertNil(request.headers["authorization"])
-    XCTAssertEqual(output.payload["authenticated"], .bool(false))
+    XCTAssertEqual(request.url.absoluteString, "http://127.0.0.1:8787/graphql")
+    XCTAssertEqual(request.headers["authorization"], "Bearer issued-key")
+    let decoded = try JSONDecoder().decode(RielaCore.JSONValue.self, from: request.body)
+    guard case let .object(body) = decoded else {
+      return XCTFail("expected a JSON object request body")
+    }
+    XCTAssertEqual(body["query"], .string("query Notebooks($limit: Int) { notebooks(limit: $limit) { result { accepted } } }"))
+    XCTAssertEqual(body["operationName"], .string("Notebooks"))
+    XCTAssertEqual(body["variables"], .object(["limit": .integer(2)]))
+    XCTAssertEqual(output.payload["status"], .string("ok"))
+    XCTAssertEqual(output.payload["fieldName"], .string("notebooks"))
   }
 }
 
-/// Records what the node sends and answers with a canned response, so the
-/// wire contract is testable without a live `kaiba serve`.
-private final class RecordingGraphQLTransport: GraphQLHTTPTransporting, @unchecked Sendable {
-  private let lock = NSLock()
-  private let response: GraphQLHTTPResponse
-  private var recorded: [GraphQLHTTPRequest] = []
+private func boundaryClient(
+  authentication: KaibaAuthentication,
+  transport: any KaibaHTTPTransporting
+) throws -> KaibaClient {
+  try KaibaClient(
+    endpoint: URL(string: "http://127.0.0.1:8787")!,
+    authentication: authentication,
+    transport: transport
+  )
+}
 
-  init(response: GraphQLHTTPResponse) {
+private final class BoundaryKaibaTransport: KaibaHTTPTransporting, @unchecked Sendable {
+  private let lock = NSLock()
+  private let response: KaibaHTTPResponse
+  private var recorded: [KaibaHTTPRequest] = []
+
+  init(response: KaibaHTTPResponse) {
     self.response = response
   }
 
-  var requests: [GraphQLHTTPRequest] {
+  var requests: [KaibaHTTPRequest] {
     lock.withLock { recorded }
   }
 
-  func send(_ request: GraphQLHTTPRequest) async throws -> GraphQLHTTPResponse {
+  func send(_ request: KaibaHTTPRequest, maximumResponseBytes: Int) async throws -> KaibaHTTPResponse {
     lock.withLock { recorded.append(request) }
     return response
   }

@@ -1,0 +1,15 @@
+{
+  "id": "workflow-output",
+  "description": "Project the retrieval-fusion benchmark report: per-stage hits with termCoverage, isLinkedNeighbor, and PageRank-ordered graph neighbours.",
+  "executionBackend": "codex-agent",
+  "model": "gpt-5.5",
+  "modelFreeze": false,
+  "promptTemplate": "Project the retrieval-fusion benchmark payload.",
+  "variables": {},
+  "output": {
+    "description": "The seeded corpus ids, the query plan, and the strict/contextual/relaxed/graph search summaries plus the graph-neighbour edges.",
+    "projection": {
+      "kind": "latest-input-payload"
+    }
+  }
+}

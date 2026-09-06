@@ -38,6 +38,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let sidebarMarketplaceButton = NSButton(title: "Install Workflow", target: nil, action: nil)
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
   let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
+  let sidebarKaibaButton = NSButton(title: "Kaiba", target: nil, action: nil)
   let sourcesSummaryLabel = NSTextField(labelWithString: "")
   let marketplaceSummaryLabel = NSTextField(labelWithString: "")
   let workflowSourceSearchField = NSSearchField()
@@ -93,6 +94,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let onStartInstance: (String) -> Void
   private let onStopInstance: (String) -> Void
   private let onRestartInstance: (String) -> Void
+  let onSaveKaibaNodeBinding: (String, String, String?, Bool) -> Bool
+  let onCheckKaibaWorkflowReadiness: (String) async -> RielaAppKaibaWorkflowReadiness
   let configuredEnvironmentValues: (RielaAppDaemonWorkflowCandidate) -> [RielaAppConfiguredEnvironmentValue]
   let onSaveAssistantAssistance: (String) -> String?
   let onSaveAssistantSettings: (RielaAppAssistantSettings) -> String?
@@ -100,6 +103,14 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
   let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
   private let onWindowWillClose: () -> Void
+  let kaibaInstanceController: RielaAppKaibaInstanceController
+  let kaibaNodeBindingsStack = NSStackView()
+  weak var kaibaNodeBindingsCaption: NSView?
+  weak var kaibaNodeBindingsSection: NSView?
+  var kaibaNodeBindingLoadRevision = 0
+  var kaibaNodeBindingLoadTask: Task<Void, Never>?
+  var kaibaWorkflowReadinessRevision = 0
+  var kaibaWorkflowReadinessTask: Task<Void, Never>?
 
   private static let allProfilesMenuTitle = "All Profiles"
 
@@ -136,6 +147,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var marketplaceWorkflowDetailView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
+  var kaibaOverviewView: NSView?
   var profilesOverviewFingerprint: String?
   var sourcesOverviewFingerprint: String?
   var marketplaceOverviewFingerprint: String?
@@ -185,6 +197,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     case marketplace
     case assistant
     case profiles
+    case kaiba
   }
 
   init(
@@ -208,6 +221,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onStartInstance: @escaping (String) -> Void,
     onStopInstance: @escaping (String) -> Void,
     onRestartInstance: @escaping (String) -> Void,
+    onSaveKaibaNodeBinding: @escaping (String, String, String?, Bool) -> Bool = { _, _, _, _ in false },
+    onCheckKaibaWorkflowReadiness: @escaping (String) async -> RielaAppKaibaWorkflowReadiness = { _ in .notApplicable },
     onSetEnvironment: @escaping (String) -> Void,
     onSetWorkingDirectory: @escaping (String) -> Void,
     onSaveEnvironmentVariables: @escaping (String, String) -> String?,
@@ -219,7 +234,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onSubmitAssistantMessage: @escaping (String, String?) -> Void = { _, _ in },
     environmentSummary: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
-    onWindowWillClose: @escaping () -> Void
+    onWindowWillClose: @escaping () -> Void,
+    kaibaInstanceController: RielaAppKaibaInstanceController = .init()
   ) {
     self.onRefresh = onRefresh
     self.onSelectProfile = onSelectProfile
@@ -241,6 +257,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onStartInstance = onStartInstance
     self.onStopInstance = onStopInstance
     self.onRestartInstance = onRestartInstance
+    self.onSaveKaibaNodeBinding = onSaveKaibaNodeBinding
+    self.onCheckKaibaWorkflowReadiness = onCheckKaibaWorkflowReadiness
     _ = onSetEnvironment
     _ = onSetWorkingDirectory
     _ = onSaveEnvironmentVariables
@@ -253,6 +271,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.environmentSummary = environmentSummary
     self.environmentColumnStatus = environmentColumnStatus
     self.onWindowWillClose = onWindowWillClose
+    self.kaibaInstanceController = kaibaInstanceController
     let window = NSWindow(
       contentRect: NSRect(origin: .zero, size: DaemonWorkflowWindowLayout.initialWindowSize),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -677,6 +696,8 @@ extension DaemonWorkflowWindowController {
     }
     updateDetailRowAccessibilityValues()
     updateDetailActions(for: row.state)
+    updateKaibaNodeBindings(for: row)
+    updateKaibaWorkflowReadiness(for: row)
   }
 
   private func stateStatusText(for row: ConfiguredWorkflowInstanceRow) -> String {

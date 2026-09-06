@@ -36,6 +36,16 @@ extension DeterministicWorkflowRunner {
         backend: nil,
         handler: request.eventHandler
       )
+      let operationExecutionId: String
+      do {
+        operationExecutionId = try WorkflowAddonExecutionIdentity.deriveOperationExecutionId(
+          stepExecutionId: startedExecution.execution.executionId,
+          predecessorStepExecutionId: predecessorExecutionIds.first,
+          predecessorStepExecutionIds: predecessorExecutionIds
+        )
+      } catch let error as WorkflowAddonOperationIdentityError {
+        throw AdapterExecutionError(.invalidInput, error.diagnosticCode)
+      }
       let addonInput = WorkflowAddonExecutionInput(
         workflowId: workflow.workflowId,
         stepId: step.id,
@@ -47,6 +57,7 @@ extension DeterministicWorkflowRunner {
         executionIdentity: WorkflowAddonExecutionIdentity(
           workflowExecutionId: sessionId,
           stepExecutionId: startedExecution.execution.executionId,
+          operationExecutionId: operationExecutionId,
           attempt: executionIndex,
           predecessorStepExecutionId: predecessorExecutionIds.first,
           predecessorStepExecutionIds: predecessorExecutionIds

@@ -35,6 +35,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   var parentSessionId: String?
   var rootSessionId: String?
   var effectiveStepBudget: Int?
+  var fanoutChangeContext: WorkflowFanoutChangeContext?
 
   public init(
     workflow: WorkflowDefinition,
@@ -142,6 +143,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var telemetry: any RielaTelemetry
   public var simulatesCrossWorkflowDispatch: Bool
   public var calleeResolver: (any WorkflowCalleeResolving)?
+  public var fanoutWorkspaceRoot: URL?
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -156,7 +158,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     loopPolicyEvaluator: any LoopPolicyEvaluating = DefaultLoopPolicyEvaluator(),
     telemetry: any RielaTelemetry = NoOpRielaTelemetry(),
     simulatesCrossWorkflowDispatch: Bool = false,
-    calleeResolver: (any WorkflowCalleeResolving)? = nil
+    calleeResolver: (any WorkflowCalleeResolving)? = nil,
+    fanoutWorkspaceRoot: URL? = nil
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -176,6 +179,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.telemetry = telemetry
     self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
     self.calleeResolver = calleeResolver
+    self.fanoutWorkspaceRoot = fanoutWorkspaceRoot
   }
 
   // The run loop keeps setup, recovery, publication, and failure finalization in one ownership scope.
@@ -232,6 +236,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         throw DeterministicWorkflowRunnerError.missingStep(stepId)
       }
       let transitions = step.transitions ?? []
+      if let changes = effectiveRequest.fanoutChangeContext {
+        let path = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, stepId: "before:\(stepId)")
+        effectiveRequest.variables["fanoutChangeEvidencePath"] = .string(path)
+      }
       let pendingExecution = session.executions.last {
         $0.stepId == stepId && $0.status == .running && $0.pendingRoutePublication != nil
       }
@@ -324,6 +332,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         }
       }
       session = publishResult.session
+      if let changes = effectiveRequest.fanoutChangeContext {
+        _ = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, stepId: "after:\(stepId)")
+      }
       await acknowledgeAcceptedFinalization(in: publishResult.stepExecution)
       try await enforceLoopConvergenceIfNeeded(
         publishResult: publishResult,

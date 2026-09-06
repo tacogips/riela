@@ -3,6 +3,50 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowGitFinalizationEvidenceTests: XCTestCase {
+  func testParallelImplementationRequiresLatestCombinedReviewAndBaseIntegration() throws {
+    var context = makeContext()
+    context.session.executions.removeAll { $0.stepId == "step6-implement" }
+    let now = Date(timeIntervalSince1970: 1_700_000_002)
+    context.session.executions.append(execution(
+      id: "combined-review", stepId: "integration-review",
+      payload: ["accepted": .bool(true), "needs_revision": .bool(false), "plans_remaining": .bool(false)],
+      now: now
+    ))
+    context.session.executions.append(execution(
+      id: "base-integration", stepId: "base-branch-integrate",
+      payload: [
+        "mergeStatus": .string("already-on-base"), "basePushStatus": .string("pushed"),
+        "implementationCommit": .string(String(repeating: "a", count: 40)),
+        "implementationBranch": .string("main"), "baseBranch": .string("main"),
+        "remote": .string("origin")
+      ], now: now
+    ))
+    context.payload["baseBranch"] = .string("main")
+    context.payload["mergeStatus"] = .string("already-on-base")
+    context.payload["basePushStatus"] = .string("pushed")
+    let policy = WorkflowGitFinalizationEvidencePolicy(
+      commitStepId: "step10-git-commit", pushStepId: "step11-git-push",
+      planningModeStepIds: ["step5-impl-plan-review"],
+      integrationStepId: "base-branch-integrate", implementationReviewStepId: "integration-review"
+    )
+    XCTAssertNoThrow(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(context: context, policy: policy))
+    var mismatch = context
+    mismatch.payload["baseBranch"] = .string("different")
+    XCTAssertThrowsError(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(context: mismatch, policy: policy))
+    for payload: JSONObject in [
+      ["accepted": .bool(true), "needs_revision": .bool(false), "plans_remaining": .bool(true)],
+      ["accepted": .bool(false), "needs_revision": .bool(true), "plans_remaining": .bool(false)]
+    ] {
+      var incomplete = context
+      incomplete.session.executions.append(execution(
+        id: "latest-review", stepId: "integration-review", payload: payload, now: now
+      ))
+      XCTAssertThrowsError(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(context: incomplete, policy: policy))
+    }
+    context.session.executions.removeAll { $0.stepId == "base-branch-integrate" }
+    XCTAssertThrowsError(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(context: context, policy: policy))
+  }
+
   func testAcceptsExactCommitAndPushEvidence() throws {
     XCTAssertNoThrow(try validate())
   }

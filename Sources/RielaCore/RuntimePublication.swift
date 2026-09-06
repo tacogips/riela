@@ -205,6 +205,8 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
   public var resultOrder: WorkflowFanoutResultOrder
   public var writeOwnership: WorkflowFanoutWriteOwnership?
   public var sourcePayload: JSONObject
+  public var dependencies: WorkflowFanoutDependencies?
+  public var changeTracking: WorkflowFanoutChangeTracking?
 
   public init(
     groupId: String,
@@ -220,7 +222,9 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
     failurePolicy: WorkflowFanoutFailurePolicy = .failFast,
     resultOrder: WorkflowFanoutResultOrder = .input,
     writeOwnership: WorkflowFanoutWriteOwnership? = nil,
-    sourcePayload: JSONObject
+    sourcePayload: JSONObject,
+    dependencies: WorkflowFanoutDependencies? = nil,
+    changeTracking: WorkflowFanoutChangeTracking? = nil
   ) {
     self.groupId = groupId
     self.workflowId = workflowId
@@ -236,6 +240,8 @@ public struct WorkflowFanoutDispatchDirective: Equatable, Sendable {
     self.resultOrder = resultOrder
     self.writeOwnership = writeOwnership
     self.sourcePayload = sourcePayload
+    self.dependencies = dependencies
+    self.changeTracking = changeTracking
   }
 }
 
@@ -941,7 +947,9 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       failurePolicy: fanout.failurePolicy ?? .failFast,
       resultOrder: fanout.resultOrder ?? .input,
       writeOwnership: fanout.writeOwnership,
-      sourcePayload: sourcePayload
+      sourcePayload: sourcePayload,
+      dependencies: fanout.dependencies,
+      changeTracking: fanout.changeTracking
     )
   }
 }

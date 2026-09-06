@@ -474,7 +474,8 @@ public struct SessionRerunCommand: Sendable {
         addonResolver: addonResolver,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
-        calleeResolver: calleeResolver
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
       )
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
         ?? persisted.runtimeVariables
@@ -735,7 +736,8 @@ public struct SessionResumeCommand: Sendable {
         addonResolver: addonResolver,
         stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
-        calleeResolver: calleeResolver
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
       )
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
       let eventHandler = await makeSessionCommandLivePersistenceHandler(

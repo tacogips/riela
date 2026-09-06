@@ -402,6 +402,8 @@ public enum WorkflowFanoutWriteOwnershipMode: String, Codable, Sendable {
   case readOnly = "read-only"
   case disjointPaths = "disjoint-paths"
   case isolatedWorkspace = "isolated-workspace"
+  /// Cooperative writers share one workspace; no isolation guarantee.
+  case sharedWorkspace = "shared-workspace"
 }
 
 public struct WorkflowFanoutWriteOwnership: Codable, Equatable, Sendable {
@@ -425,6 +427,8 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
   public var failurePolicy: WorkflowFanoutFailurePolicy?
   public var resultOrder: WorkflowFanoutResultOrder?
   public var writeOwnership: WorkflowFanoutWriteOwnership?
+  public var dependencies: WorkflowFanoutDependencies?
+  public var changeTracking: WorkflowFanoutChangeTracking?
 
   public init(
     groupId: String,
@@ -434,7 +438,9 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
     joinStepId: String,
     failurePolicy: WorkflowFanoutFailurePolicy? = nil,
     resultOrder: WorkflowFanoutResultOrder? = nil,
-    writeOwnership: WorkflowFanoutWriteOwnership? = nil
+    writeOwnership: WorkflowFanoutWriteOwnership? = nil,
+    dependencies: WorkflowFanoutDependencies? = nil,
+    changeTracking: WorkflowFanoutChangeTracking? = nil
   ) {
     self.groupId = groupId
     self.itemsFrom = itemsFrom
@@ -444,6 +450,8 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
     self.failurePolicy = failurePolicy
     self.resultOrder = resultOrder
     self.writeOwnership = writeOwnership
+    self.dependencies = dependencies
+    self.changeTracking = changeTracking
   }
 }
 

@@ -5,7 +5,8 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
   func testFanoutJoinOrdersBranchesByInputAndCapsConcurrency() async throws {
     let tracker = FanoutBranchTracker(delaysByIndex: [0: 120_000_000, 1: 20_000_000, 2: 60_000_000])
     let adapter = FanoutTestAdapter(tracker: tracker)
-    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
+    let store = InMemoryWorkflowRuntimeStore()
+    let runner = DeterministicWorkflowRunner(store: store, adapter: adapter)
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: fanoutWorkflow(concurrency: 2),
@@ -23,6 +24,14 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     }
     XCTAssertEqual(branches.compactMap(branchIndex), [0, 1, 2])
     XCTAssertEqual(branches.compactMap(branchOutputIndex), [0, 1, 2])
+    for branch in branches {
+      guard case let .object(record) = branch, case let .string(sessionId)? = record["sessionId"] else {
+        return XCTFail("missing branch session identity")
+      }
+      let child = try await store.loadSession(id: sessionId)
+      XCTAssertEqual(child?.parentSessionId, result.session.sessionId)
+      XCTAssertEqual(child?.rootSessionId, result.session.sessionId)
+    }
     XCTAssertEqual(join["fanoutGroupRunId"], .string("group:source-attempt-1-exec-1"))
     XCTAssertEqual(join["resultOrder"], .string("input"))
     let identities = await tracker.branchIdentities()

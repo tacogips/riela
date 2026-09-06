@@ -330,6 +330,21 @@ private func validateFanout(_ raw: Any, path: String, diagnostics: inout [Workfl
   validateNonEmptyString(fanout["groupId"], path: "\(path).groupId", diagnostics: &diagnostics)
   validateNonEmptyString(fanout["itemsFrom"], path: "\(path).itemsFrom", diagnostics: &diagnostics)
   validateNonEmptyString(fanout["joinStepId"], path: "\(path).joinStepId", diagnostics: &diagnostics)
+  for (key, requiredFields, optionalFields) in [
+    ("dependencies", ["branchIdFrom", "dependsOnFrom"], ["completedBranchIdsFrom"]),
+    ("changeTracking", ["pathsFrom"], [])
+  ] {
+    if let raw = fanout[key] {
+      guard let object = raw as? [String: Any] else {
+        diagnostics.append(error("\(path).\(key)", "must be an object")); continue
+      }
+      for field in requiredFields + optionalFields where requiredFields.contains(field) || object[field] != nil {
+        guard let pointer = object[field] as? String, pointer.hasPrefix("/") else {
+          diagnostics.append(error("\(path).\(key).\(field)", "must be a JSON Pointer")); continue
+        }
+      }
+    }
+  }
   if let itemsFrom = fanout["itemsFrom"] as? String, !itemsFrom.isEmpty, !itemsFrom.hasPrefix("/") {
     diagnostics.append(error("\(path).itemsFrom", "must be a JSON Pointer"))
   }

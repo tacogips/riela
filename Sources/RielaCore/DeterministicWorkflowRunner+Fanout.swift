@@ -9,13 +9,27 @@ extension DeterministicWorkflowRunner {
   ) async throws -> JSONObject {
     try validateFanoutWriteOwnership(directive)
     let items = try fanoutItems(from: directive)
+    let wave = try WorkflowFanoutWave.select(items: items, policy: directive.dependencies, source: directive.sourcePayload)
+    let changeEvidence: WorkflowFanoutChangeEvidence?
+    if directive.changeTracking != nil {
+      guard let fanoutWorkspaceRoot else {
+        throw AdapterExecutionError(.policyBlocked, "fanout changeTracking requires a host-bound fanoutWorkspaceRoot")
+      }
+      changeEvidence = try WorkflowFanoutChangeEvidence(root: fanoutWorkspaceRoot)
+    } else {
+      changeEvidence = nil
+    }
     let fanoutGroupRunId = "\(directive.groupId):\(directive.sourceStepExecutionId)"
-    if items.isEmpty {
-      let join = fanoutJoinPayload(
+    if wave.selectedIndices.isEmpty {
+      var join = fanoutJoinPayload(
         directive: directive,
         fanoutGroupRunId: fanoutGroupRunId,
         branches: []
       )
+      join["pendingBranchIds"] = .array(wave.pendingBranchIds.map(JSONValue.string))
+      join["completedBranchIds"] = .array(wave.completedBranchIds.map(JSONValue.string))
+      join["dispatchedBranchIds"] = .array([])
+      join["allBranchesCompleted"] = .bool(true)
       try await appendFanoutJoinMessage(
         join,
         directive: directive,
@@ -25,19 +39,45 @@ extension DeterministicWorkflowRunner {
       return join
     }
 
-    let bound = fanoutConcurrencyBound(itemCount: items.count, directive: directive, request: request)
+    if let changeEvidence, let tracking = directive.changeTracking {
+      for index in wave.selectedIndices {
+        guard case let .array(values)? = fanoutJSONPointer(items[index], tracking.pathsFrom) else {
+          throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.pathsFrom must resolve to an array")
+        }
+        let paths = try values.map { value -> String in
+          guard case let .string(path) = value else { throw AdapterExecutionError(.invalidOutput, "invalid tracked path") }
+          return path
+        }
+        _ = try await changeEvidence.capture(branchId: wave.branchIds[index], paths: paths, stepId: "fanout-dispatch")
+      }
+    }
+    let bound = fanoutConcurrencyBound(itemCount: wave.selectedIndices.count, directive: directive, request: request)
     let outcomes = await runFanoutBranches(
       items: items,
       directive: directive,
       request: request,
-      concurrency: bound
+      concurrency: bound,
+      indices: wave.selectedIndices,
+      changeEvidence: changeEvidence,
+      parentSessionId: parentSessionId
     )
-    let orderedBranches = outcomes.sorted { $0.index < $1.index }.map(\.record)
-    let join = fanoutJoinPayload(
+    let orderedBranches = outcomes.sorted { $0.index < $1.index }.map { outcome in
+      var record = outcome.record
+      record["branchId"] = .string(wave.branchIds[outcome.index])
+      return record
+    }
+    var join = fanoutJoinPayload(
       directive: directive,
       fanoutGroupRunId: fanoutGroupRunId,
       branches: orderedBranches
     )
+    join["pendingBranchIds"] = .array(wave.pendingBranchIds.map(JSONValue.string))
+    join["completedBranchIds"] = .array(wave.completedBranchIds.map(JSONValue.string))
+    join["dispatchedBranchIds"] = .array(wave.selectedIndices.map { .string(wave.branchIds[$0]) })
+    join["allBranchesCompleted"] = .bool(!outcomes.contains { $0.isFailure })
+    if let changeEvidence {
+      join["changeEvidence"] = .object(try await changeEvidence.reduce())
+    }
     if directive.failurePolicy == .failFast, let failed = outcomes.first(where: { $0.isFailure }) {
       throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
         groupId: directive.groupId,
@@ -84,7 +124,10 @@ extension DeterministicWorkflowRunner {
     items: [JSONValue],
     directive: WorkflowFanoutDispatchDirective,
     request: DeterministicWorkflowRunRequest,
-    concurrency: Int
+    concurrency: Int,
+    indices: [Int],
+    changeEvidence: WorkflowFanoutChangeEvidence?,
+    parentSessionId: String
   ) async -> [FanoutBranchOutcome] {
     await withTaskGroup(of: FanoutBranchOutcome.self) { group in
       var nextIndex = 0
@@ -92,19 +135,21 @@ extension DeterministicWorkflowRunner {
       var shouldScheduleMore = true
 
       func scheduleNext() {
-        let index = nextIndex
+        let index = indices[nextIndex]
         nextIndex += 1
         group.addTask {
           await self.runFanoutBranch(
             index: index,
             item: items[index],
             directive: directive,
-            request: request
+            request: request,
+            changeEvidence: changeEvidence,
+            parentSessionId: parentSessionId
           )
         }
       }
 
-      for _ in 0..<min(concurrency, items.count) {
+      for _ in 0..<min(concurrency, indices.count) {
         scheduleNext()
       }
       while let outcome = await group.next() {
@@ -113,7 +158,7 @@ extension DeterministicWorkflowRunner {
           shouldScheduleMore = false
           group.cancelAll()
         }
-        if shouldScheduleMore, nextIndex < items.count {
+        if shouldScheduleMore, nextIndex < indices.count {
           scheduleNext()
         }
       }
@@ -125,7 +170,9 @@ extension DeterministicWorkflowRunner {
     index: Int,
     item: JSONValue,
     directive: WorkflowFanoutDispatchDirective,
-    request: DeterministicWorkflowRunRequest
+    request: DeterministicWorkflowRunRequest,
+    changeEvidence: WorkflowFanoutChangeEvidence?,
+    parentSessionId: String
   ) async -> FanoutBranchOutcome {
     do {
       try Task.checkCancellation()
@@ -168,6 +215,14 @@ extension DeterministicWorkflowRunner {
       branchVariables["fanoutItem"] = item
       branchVariables["fanoutIndex"] = .integer(Int64(index))
       branchVariables["fanoutGroupId"] = .string(directive.groupId)
+      let branchId: String
+      if let dependencies = directive.dependencies,
+         case let .string(id)? = fanoutJSONPointer(item, dependencies.branchIdFrom) {
+        branchId = id
+      } else {
+        branchId = String(index)
+      }
+      branchVariables["fanoutBranchId"] = .string(branchId)
 
       var branchRequest = DeterministicWorkflowRunRequest(
         workflow: branchWorkflow,
@@ -192,6 +247,20 @@ extension DeterministicWorkflowRunner {
         stopBeforeStepId: directive.joinStepId
       )
       branchRequest.workflowRunId = request.workflowRunId
+      branchRequest.parentSessionId = parentSessionId
+      branchRequest.rootSessionId = request.rootSessionId ?? parentSessionId
+      if let changeEvidence, let tracking = directive.changeTracking {
+        guard case let .array(values)? = fanoutJSONPointer(item, tracking.pathsFrom) else {
+          throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.pathsFrom must resolve to an array")
+        }
+        let paths = try values.map { value -> String in
+          guard case let .string(path) = value else {
+            throw AdapterExecutionError(.invalidOutput, "fanout changeTracking paths must be strings")
+          }
+          return path
+        }
+        branchRequest.fanoutChangeContext = WorkflowFanoutChangeContext(evidence: changeEvidence, branchId: branchId, paths: paths)
+      }
       let result = try await run(branchRequest)
       guard result.status == .completed else {
         return .failure(
@@ -284,7 +353,7 @@ extension DeterministicWorkflowRunner {
       return
     }
     switch ownership.mode {
-    case .readOnly:
+    case .readOnly, .sharedWorkspace:
       return
     case .isolatedWorkspace:
       throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(

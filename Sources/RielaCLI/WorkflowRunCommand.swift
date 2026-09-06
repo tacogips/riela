@@ -97,7 +97,8 @@ public struct WorkflowRunCommand: Sendable {
         stdioNodeExecutor: stdioNodeExecutor,
         telemetry: telemetry,
         simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil,
-        calleeResolver: calleeResolver
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: runWorkingDirectory, isDirectory: true)
       )
       let persistedIdentity = persistenceIdentity(
         requestedResolution: resolution,

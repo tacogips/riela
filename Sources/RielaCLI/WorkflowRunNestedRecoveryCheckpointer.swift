@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import RielaCore
 
 /// Controlled only by explicit test-process environment. This is deliberately
@@ -32,7 +36,7 @@ private struct WorkflowRunNestedRecoveryCheckpointer: NestedRecoveryCheckpointin
     // uncatchable, so the next invocation must reconstruct solely from the
     // canonical SQLite journal. This seam is gated above by an explicit
     // test-only environment flag and has no CLI argument surface.
-    _ = Darwin.kill(Darwin.getpid(), SIGKILL)
+    _ = kill(getpid(), SIGKILL)
     fatalError("SIGKILL did not terminate the test process")
   }
 }

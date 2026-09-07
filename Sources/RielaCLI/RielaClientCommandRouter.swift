@@ -16,6 +16,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       InstanceRoute.self,
       DoctorRoute.self,
       GarbageCollectionRoute.self,
+      SpecialistRoute.self,
       SessionRoute.self,
       LoopRoute.self,
       GraphQLRoute.self,
@@ -82,6 +83,11 @@ struct DoctorRoute: RielaClientPassthroughRoute {
 
 struct GarbageCollectionRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("gc", abstract: "Remove expired runtime data.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct SpecialistRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("specialist", abstract: "Operate durable specialist tasks.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

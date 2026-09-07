@@ -46,7 +46,30 @@ public enum RielaCommand: Equatable, Sendable {
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
   case gc(CLICommandOptions)
+  case specialist(SpecialistCommand)
   case scoped(ScopedCommand)
+}
+
+public enum SpecialistCommandKind: String, Codable, Equatable, Sendable {
+  case catalog
+  case catalogRefresh = "catalog-refresh"
+  case serve
+  case submit
+  case status
+  case cancel
+  case execute
+  case reconcile
+  case smoke
+}
+
+public struct SpecialistCommand: Equatable, Sendable {
+  public var kind: SpecialistCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: SpecialistCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
 }
 
 public enum PackageHelpScope: String, Codable, Sendable {
@@ -319,6 +342,9 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var supervisorMode: Bool
   public var autoImprove: Bool
   public var autoImprovePolicy: WorkflowAutoImprovePolicy
+  /// Reserved canonical session identity for durable supervisors.  Ordinary
+  /// command callers leave it nil and retain normal run semantics.
+  public var resumeSessionId: String?
 
   public init(
     target: String,
@@ -348,7 +374,8 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     fromRegistry: Bool = false,
     supervisorMode: Bool = false,
     autoImprove: Bool = false,
-    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy()
+    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy(),
+    resumeSessionId: String? = nil
   ) {
     self.target = target
     self.resolution = resolution
@@ -378,6 +405,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.supervisorMode = supervisorMode
     self.autoImprove = autoImprove
     self.autoImprovePolicy = autoImprovePolicy
+    self.resumeSessionId = resumeSessionId
   }
 }
 
@@ -500,6 +528,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         allowTableOutput: false,
         defaultOutput: .text
       ))
+    case let route as SpecialistRoute:
+      return .specialist(try parseSpecialist(route.passthroughArguments))
     case let route as SessionRoute:
       return try parseSession(route.passthroughArguments)
     case let route as LoopRoute:
@@ -527,6 +557,22 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     default:
       return arguments.contains("--version") ? .version : .help
     }
+  }
+
+  private func parseSpecialist(_ arguments: [String]) throws -> SpecialistCommand {
+    guard let token = arguments.first, let kind = SpecialistCommandKind(rawValue: token) else {
+      throw CLIUsageError("usage: riela specialist catalog|catalog-refresh|serve|submit|status|cancel|execute|reconcile|smoke [target] --state-root <path>")
+    }
+    let route = try ParsedTargetAndOptions.parseCLI(Array(arguments.dropFirst()))
+    return SpecialistCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: "specialist",
+        command: kind.rawValue,
+        target: route.target,
+        arguments: route.options
+      )
+    )
   }
 
   private func parseWorkflow(_ arguments: [String]) throws -> RielaCommand {

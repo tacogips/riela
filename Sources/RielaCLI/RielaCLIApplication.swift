@@ -29,6 +29,7 @@ public struct RielaCLIApplication: Sendable {
   public var instanceCommandRunner: InstanceCommandRunner
   public var doctorCommand: DoctorCommand
   public var garbageCollectionCommand: GarbageCollectionCommand
+  public var specialistCommandRunner: SpecialistCommandRunner
   public var loopCommandRunner: LoopCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
@@ -55,6 +56,7 @@ public struct RielaCLIApplication: Sendable {
     instanceCommandRunner: InstanceCommandRunner = InstanceCommandRunner(),
     doctorCommand: DoctorCommand = DoctorCommand(),
     garbageCollectionCommand: GarbageCollectionCommand = GarbageCollectionCommand(),
+    specialistCommandRunner: SpecialistCommandRunner = SpecialistCommandRunner(),
     loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
@@ -80,6 +82,7 @@ public struct RielaCLIApplication: Sendable {
     self.instanceCommandRunner = instanceCommandRunner
     self.doctorCommand = doctorCommand
     self.garbageCollectionCommand = garbageCollectionCommand
+    self.specialistCommandRunner = specialistCommandRunner
     self.loopCommandRunner = loopCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
@@ -129,6 +132,8 @@ public struct RielaCLIApplication: Sendable {
         return await doctorCommand.run(options)
       case let .gc(options):
         return garbageCollectionCommand.run(options)
+      case let .specialist(command):
+        return await specialistCommandRunner.run(command)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -329,6 +334,11 @@ Usage:
   riela node install <addon-or-package> [--scope project|user] [--registry default] [--source <path>] [--output json|text]
   riela node run <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
   riela rrun <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
+  riela specialist catalog|catalog-refresh --state-root <path> [--working-dir <dir>] [--output json]
+  riela specialist submit <request-id> --workflow <registered-workflow> --specialist-config <path> --state-root <path> [--variables <json>] [--output json]
+  riela specialist status|cancel <task-id> --state-root <path> [--output json]
+  riela specialist execute <dispatch-id> --state-root <path> [--working-dir <dir>] [--output json]
+  riela specialist reconcile|smoke --state-root <path> [--output json]
   riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]

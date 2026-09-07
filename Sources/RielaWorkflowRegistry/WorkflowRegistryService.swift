@@ -62,6 +62,21 @@ public struct WorkflowRegistryService: Sendable {
     }
   }
 
+  /// Discovery-only inventory. Unlike `list`, this never hydrates node files,
+  /// prompts, contracts, or package workflow bundles. Callers must still use
+  /// `fetch` to authorize and validate one selected entry before execution.
+  public func compactList(
+    filter: WorkflowRegistryFilter = WorkflowRegistryFilter(),
+    workingDirectory: String = FileManager.default.currentDirectoryPath
+  ) throws -> [WorkflowCatalogEntry] {
+    try withCoordinatedRead(workingDirectory: workingDirectory) {
+      try WorkflowRegistryCatalog(registry: registry).compactList(
+        filter: filter,
+        workingDirectory: workingDirectory
+      )
+    }
+  }
+
   public func fetch(
     target: WorkflowRegistryTarget,
     workingDirectory: String = FileManager.default.currentDirectoryPath

@@ -67,6 +67,11 @@ extension DeterministicWorkflowRunner {
           step: step,
           request: request
         ),
+        preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
         carriedPayloadFields: carriedLoopGuardPayload(from: request)
       )
     )

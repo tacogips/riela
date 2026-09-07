@@ -7,6 +7,9 @@ final class SourceDeletionReadinessTests: XCTestCase {
   // the removed TypeScript runtime.
   // `.claude/` holds session-local agent state, including nested worktrees
   // with their own `.build` checkouts; nothing under it is repository source.
+  // `examples/monja-typescript-sdk/` is a deliberately retained external SDK
+  // interoperability example; its TypeScript sources are not the removed
+  // Riela runtime and are verified by the example's dedicated script.
   private static let ignoredRepositoryPathPrefixes = [
     ".git/",
     ".build/",
@@ -15,7 +18,8 @@ final class SourceDeletionReadinessTests: XCTestCase {
     ".riela/",
     "dist/",
     "tmp/",
-    "web/"
+    "web/",
+    "examples/monja-typescript-sdk/"
   ]
 
   private var temporaryDirectories: [URL] = []

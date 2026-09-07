@@ -222,7 +222,7 @@ extension WorkflowCommandTests {
   }
 
   func testAutoImproveCancellationDoesNotCreateIncidentOrRerun() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
+    let tempDir = URL(fileURLWithPath: repositoryRoot()).appendingPathComponent("tmp/specialist-supervisor/cancellation")
       .appendingPathComponent("riela-auto-improve-cancel-\(UUID().uuidString)", isDirectory: true)
     let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
     let workflowDirectory = workflowRoot.appendingPathComponent("cancelled-run", isDirectory: true)
@@ -266,6 +266,7 @@ extension WorkflowCommandTests {
 
     XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
     XCTAssertTrue(result.stderr.isEmpty, result.stderr)
+    XCTAssertTrue(result.stdout.contains("\"workflowId\""), String(result.stdout.prefix(2_000)))
     let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
     XCTAssertEqual(runResult.session.sessionId, liveRecord.session.sessionId)
     XCTAssertEqual(runResult.status, .failed)
@@ -294,7 +295,7 @@ extension WorkflowCommandTests {
   }
 
   func testAutoImproveCancellationPreservesPriorIncidentAndRemediation() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
+    let tempDir = URL(fileURLWithPath: repositoryRoot()).appendingPathComponent("tmp/specialist-supervisor/cancellation")
       .appendingPathComponent("riela-auto-improve-cancel-rerun-\(UUID().uuidString)", isDirectory: true)
     let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
     let workflowDirectory = workflowRoot.appendingPathComponent("fail-then-cancel", isDirectory: true)
@@ -351,6 +352,7 @@ extension WorkflowCommandTests {
     let result = await task.value
 
     XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
+    XCTAssertTrue(result.stdout.contains("\"workflowId\""), String(result.stdout.prefix(2_000)))
     let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
     XCTAssertEqual(runResult.session.sessionId, liveRecords.last?.session.sessionId)
     XCTAssertEqual(runResult.status, .failed)

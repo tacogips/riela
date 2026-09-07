@@ -26,6 +26,10 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Option var agentSilenceMonitorIntervalMs = 1_000
   @Option var artifactRoot: String?
   @Option var sessionStore: String?
+  /// Internal durable-supervisor handoff. It is intentionally parsed with the
+  /// normal workflow-run options so an independently monitored child can
+  /// resume the exact session reserved in canonical SQLite.
+  @Option var resumeSessionId: String?
   @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
   var workingDirectory: String?
   @Option var endpoint: String?
@@ -53,6 +57,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--mock-scenario",
     "--artifact-root",
     "--session-store",
+    "--resume-session-id",
     "--auth-token",
     "--auth-token-env",
     "--max-steps",

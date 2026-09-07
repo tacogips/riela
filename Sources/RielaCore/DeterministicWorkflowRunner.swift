@@ -36,6 +36,9 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   var rootSessionId: String?
   var effectiveStepBudget: Int?
   var fanoutChangeContext: WorkflowFanoutChangeContext?
+  /// Internal recovery-test scope for a live nested callee. This prevents a
+  /// top-level command effect from accidentally triggering the nested seam.
+  var isNestedCalleeEffectBoundary: Bool
 
   public init(
     workflow: WorkflowDefinition,
@@ -87,6 +90,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.parentSessionId = nil
     self.rootSessionId = nil
     self.effectiveStepBudget = nil
+    self.isNestedCalleeEffectBoundary = false
   }
 }
 
@@ -129,6 +133,38 @@ public protocol DeterministicWorkflowRunning: Sendable {
   func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult
 }
 
+/// Explicit recovery-boundary seam for durable nested execution. Production
+/// does not install one; tests use it either for an in-process controlled stop
+/// or, through the CLI test gate, an actual OS-process termination.
+public enum NestedRecoveryCheckpoint: String, Sendable {
+  case prepared
+  case beforeChildNodeEffect
+  /// The child node has completed its observable effect, but the nested
+  /// terminal snapshot has not yet been committed. This is the critical
+  /// uncertainty boundary: recovery must not silently relaunch a
+  /// non-idempotent child merely because its terminal record is absent.
+  case afterChildEffect
+  case afterChildNodeResult
+  case childTerminalPersisted
+  /// The parent output remains staged while the immutable nested invocation
+  /// intent is durable. A restart must commit that staged parent checkpoint
+  /// and use this exact reservation rather than resolving a new callee.
+  case parentIntentPersisted
+  case beforeParentPublication
+  case parentPublicationPersisted
+}
+
+/// An in-process controlled recovery stop. It is intentionally distinct from
+/// the CLI's SIGKILL process test and must not be described as abrupt death.
+/// It leaves the parent session runnable so unit tests can exercise resume.
+public struct NestedRecoveryInterruption: Error, Sendable {
+  public init() {}
+}
+
+public protocol NestedRecoveryCheckpointing: Sendable {
+  func reached(_ checkpoint: NestedRecoveryCheckpoint) async throws
+}
+
 public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var store: any WorkflowRuntimeStore
   public var adapter: any NodeAdapter
@@ -144,6 +180,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var simulatesCrossWorkflowDispatch: Bool
   public var calleeResolver: (any WorkflowCalleeResolving)?
   public var fanoutWorkspaceRoot: URL?
+  /// The canonical SQLite journal used by CLI/live runs to make nested child
+  /// reservations and parent arrivals recoverable across process reopen.
+  public var nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore?
+  public var nestedInvocationRecoveryCheckpointer: (any NestedRecoveryCheckpointing)?
 
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
@@ -159,7 +199,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     telemetry: any RielaTelemetry = NoOpRielaTelemetry(),
     simulatesCrossWorkflowDispatch: Bool = false,
     calleeResolver: (any WorkflowCalleeResolving)? = nil,
-    fanoutWorkspaceRoot: URL? = nil
+    fanoutWorkspaceRoot: URL? = nil,
+    nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore? = nil,
+    nestedInvocationRecoveryCheckpointer: (any NestedRecoveryCheckpointing)? = nil
   ) {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
@@ -180,6 +222,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     self.simulatesCrossWorkflowDispatch = simulatesCrossWorkflowDispatch
     self.calleeResolver = calleeResolver
     self.fanoutWorkspaceRoot = fanoutWorkspaceRoot
+    self.nestedInvocationPersistenceStore = nestedInvocationPersistenceStore
+    self.nestedInvocationRecoveryCheckpointer = nestedInvocationRecoveryCheckpointer
   }
 
   // The run loop keeps setup, recovery, publication, and failure finalization in one ownership scope.
@@ -212,6 +256,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var currentStepId = entryContext.currentStepId
     effectiveRequest.parentSessionId = session.parentSessionId
     effectiveRequest.rootSessionId = session.rootSessionId ?? session.sessionId
+    try await recoverNestedInvocationsBeforeResuming(
+      session: session,
+      request: effectiveRequest
+    )
     let recoveryLineage = entryContext.recoveryLineage
     for (key, value) in entryContext.variableOverrides {
       effectiveRequest.variables[key] = value
@@ -270,6 +318,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           successfulExecutionStatus: pending.intendedSuccessfulStatus,
           noSelectionDisposition: pending.noSelectionDisposition,
           prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+            workflow: effectiveRequest.workflow,
+            step: step,
+            request: effectiveRequest
+          ),
+          preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
             workflow: effectiveRequest.workflow,
             step: step,
             request: effectiveRequest
@@ -405,7 +458,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     return completedResult
     } catch {
       let originalError = error
-      if let interruptedSessionId {
+      if let interruptedSessionId, !(originalError is NestedRecoveryInterruption) {
         await finalizeInterruptedSessionFailed(
           sessionId: interruptedSessionId,
           request: request,
@@ -416,42 +469,6 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       }
       await finishOwnedWorkflowRun(ownedWorkflowRunId)
       throw originalError
-    }
-  }
-
-  func validateCrossWorkflowDispatchTargets(in workflow: WorkflowDefinition) async throws {
-    guard !simulatesCrossWorkflowDispatch, let calleeResolver else {
-      return
-    }
-    let callerStepIds = Set(workflow.steps.map(\.id))
-    for reference in Self.crossWorkflowDispatchReferences(in: workflow) {
-      guard callerStepIds.contains(reference.resumeStepId) else {
-        throw DeterministicWorkflowRunnerError.invalidWorkflow(
-          "\(reference.resumeStepPath): step '\(reference.stepId)' resumes at step " +
-            "'\(reference.resumeStepId)' in workflow '\(workflow.workflowId)', but that caller resume step does not exist"
-        )
-      }
-      let callee: ResolvedWorkflowCallee
-      do {
-        callee = try await calleeResolver.resolveCallee(workflowId: reference.workflowId)
-      } catch {
-        throw DeterministicWorkflowRunnerError.invalidWorkflow(
-          "\(reference.path): step '\(reference.stepId)' references cross-workflow callee " +
-            "'\(reference.workflowId)', but it could not be resolved before running: \(String(describing: error))"
-        )
-      }
-      guard callee.workflow.workflowId == reference.workflowId else {
-        throw DeterministicWorkflowRunnerError.invalidWorkflow(
-          "\(reference.path): step '\(reference.stepId)' references cross-workflow callee " +
-            "'\(reference.workflowId)', but resolver returned workflowId '\(callee.workflow.workflowId)'"
-        )
-      }
-      guard callee.workflow.steps.contains(where: { $0.id == reference.calleeEntryStepId }) else {
-        throw DeterministicWorkflowRunnerError.invalidWorkflow(
-          "\(reference.path): step '\(reference.stepId)' dispatches to step " +
-            "'\(reference.calleeEntryStepId)' in workflow '\(reference.workflowId)', but that callee step does not exist"
-        )
-      }
     }
   }
 
@@ -704,6 +721,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           step: step,
           request: request
         ),
+        preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
         carriedPayloadFields: carriedLoopGuardPayload(from: request)
       )
     )
@@ -771,6 +793,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           handler: request.eventHandler
         )
       )
+      // The external effect returned, but no node result/session terminal
+      // record has been published yet. A SIGKILL here must be recovered from
+      // canonical SQLite as an uncertain effect, never by relaunching it.
+      try await checkpointNestedEffectCompletion(request)
       let routingReconciler = workflowRoutingReconciler(
         workflow: workflow,
         step: step,
@@ -793,9 +819,16 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
             step: step,
             request: request
           ),
+          preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
+            workflow: workflow,
+            step: step,
+            request: request
+          ),
           carriedPayloadFields: carriedLoopGuardPayload(from: request)
         )
       )
+    } catch is NestedRecoveryInterruption {
+      throw NestedRecoveryInterruption()
     } catch let adapterFailure as AdapterExecutionError {
       return try await publishAdapterFailure(
         adapterFailure,
@@ -899,6 +932,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           throwing: error
         )
       }
+      try await checkpointNestedEffectCompletion(request)
       let routingReconciler = workflowRoutingReconciler(
         workflow: request.workflow,
         step: step,
@@ -918,6 +952,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
             transitions: transitions,
             publishesRootOutput: transitions.isEmpty,
             prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+              workflow: request.workflow,
+              step: step,
+              request: request
+            ),
+            preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
               workflow: request.workflow,
               step: step,
               request: request

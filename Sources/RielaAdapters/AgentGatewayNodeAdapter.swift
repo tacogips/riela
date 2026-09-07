@@ -231,17 +231,29 @@ func runGatewayTurn(
   guard let vendor = request.defaults.vendor else {
     throw AdapterExecutionError(.invalidInput, "agent-gateway requires an explicit execution backend")
   }
-  let agent = GatewayACPAgent(
-    defaults: request.defaults,
-    executor: executorFactory(request.environment)
-  )
+  var defaults = request.defaults
+  if vendor.isCLI {
+    defaults.systemPrompt = [defaults.systemPrompt, gatewayForegroundExecutionInstructions].compactMap { $0 }.joined(separator: "\n\n")
+  }
+  let executor = GatewayTurnExecutor(base: executorFactory(request.environment))
+  let agent = GatewayACPAgent(defaults: defaults, executor: executor)
   let (client, server) = await ACPClientConnection.inProcess(agent: agent)
   let collector = GatewayACPUpdateCollector(vendor: vendor.rawValue)
-  defer {
-    let server = server
-    Task { await server.connection.stop() }
-  }
+  return try await withGatewayTurnLifetime(cleanup: {
+    await executor.finish()
+    await client.stop()
+    await server.connection.stop()
+  }, operation: {
+    try await consumeGatewayTurn(request, client: client, collector: collector, backendEventHandler: backendEventHandler)
+  })
+}
 
+private func consumeGatewayTurn(
+  _ request: GatewayTurnRequest,
+  client: ACPClientConnection,
+  collector: GatewayACPUpdateCollector,
+  backendEventHandler: AdapterBackendEventHandler?
+) async throws -> GatewayACPTurn {
   do {
     _ = try await client.initialize(
       ACPInitializeRequest(
@@ -286,14 +298,9 @@ func runGatewayTurn(
     if response.stopReason == .cancelled, watchdog.deadlineExpired {
       throw AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
     }
-    await client.stop()
     return collector.turn(response: response)
   } catch let error as ACPError {
-    await client.stop()
     throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
-  } catch {
-    await client.stop()
-    throw error
   }
 }
 

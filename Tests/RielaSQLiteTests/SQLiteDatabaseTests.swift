@@ -15,7 +15,8 @@ final class SQLiteDatabaseTests: XCTestCase {
     XCTAssertEqual(journalMode, "wal")
     XCTAssertEqual(synchronous, "1")
     XCTAssertEqual(foreignKeys, "1")
-    XCTAssertEqual(busyTimeout, "3000")
+    // The default busy handler waits for the lock owner rather than timing out.
+    XCTAssertEqual(busyTimeout, "0")
     XCTAssertEqual(jsonStorage, "blob")
   }
 

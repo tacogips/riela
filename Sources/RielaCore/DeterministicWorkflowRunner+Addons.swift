@@ -107,6 +107,7 @@ extension DeterministicWorkflowRunner {
         throwing: error
       )
     }
+    try await checkpointNestedEffectCompletion(request)
     let routingReconciler = workflowRoutingReconciler(
       workflow: workflow,
       step: step,
@@ -123,6 +124,11 @@ extension DeterministicWorkflowRunner {
         transitions: transitions,
         publishesRootOutput: transitions.isEmpty,
         prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
+        preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
           workflow: workflow,
           step: step,
           request: request

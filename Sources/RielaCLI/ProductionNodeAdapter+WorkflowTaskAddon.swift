@@ -174,7 +174,7 @@ extension BuiltinWorkflowAddonResolver {
       workingDirectory: workingDirectory
     )
 
-    var payload = input.resolvedInputPayload
+    var payload = addonForwardedApplicationPayload(input.resolvedInputPayload)
     let workflowOutput = result.runResult.rootOutput ?? [:]
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)

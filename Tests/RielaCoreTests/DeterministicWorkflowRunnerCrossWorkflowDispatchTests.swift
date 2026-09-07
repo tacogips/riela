@@ -33,6 +33,7 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     let calleeSessionLoaded = await store.latestSession(workflowId: "callee")
     let calleeSession = try XCTUnwrap(calleeSessionLoaded)
     XCTAssertEqual(calleeSession.status, .completed)
+    XCTAssertTrue(calleeSession.sessionId.hasPrefix("nested-"), "live nested dispatch reserves its child identity before launch")
     XCTAssertEqual(calleeSession.executions.map(\.stepId), ["callee-entry"])
     XCTAssertEqual(calleeSession.parentSessionId, result.session.sessionId)
     XCTAssertEqual(calleeSession.rootSessionId, result.session.sessionId)
@@ -101,6 +102,7 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     XCTAssertEqual(child?.currentStepId, "callee-entry")
     XCTAssertEqual(child?.parentSessionId, parent?.sessionId)
     XCTAssertEqual(child?.rootSessionId, parent?.sessionId)
+    XCTAssertTrue(child?.sessionId.hasPrefix("nested-") == true)
     XCTAssertNotNil(child?.effectiveStepBudget)
 
     await gate.releaseCallee()

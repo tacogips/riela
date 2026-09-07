@@ -30,73 +30,39 @@ public struct WorkflowLoopGuardPublication: Equatable, Sendable {
   }
 }
 
-public struct WorkflowPrePersistenceRoutingContext: Equatable, Sendable {
-  public var session: WorkflowSession
-  public var stepExecution: WorkflowStepExecution
-  public var payload: JSONObject
-  public var when: [String: Bool]
-  public var selectedTransitions: [WorkflowStepTransition]
-  public var publishesRootOutput: Bool
-  public var completesRootWithoutOutput: Bool
-  public var intendedSuccessfulStatus: WorkflowStepExecutionStatus
+/// Runs after routing is selected but before its parent checkpoint advances.
+/// Production stores keep the accepted parent stage in memory until this hook
+/// has prepared immutable child intent, then publish all three records in one
+/// durable transaction.
+/// Immutable child intent prepared from a selected cross-workflow route. The
+/// publication owner commits it with the parent checkpoint when its runtime
+/// store provides a canonical durable transaction.
+public struct WorkflowNestedPublicationPlan: Sendable {
+  public var reservation: WorkflowNestedInvocationReservation
+  public var afterCanonicalCommit: (@Sendable () async throws -> Void)?
 
   public init(
-    session: WorkflowSession,
-    stepExecution: WorkflowStepExecution,
-    payload: JSONObject,
-    when: [String: Bool],
-    selectedTransitions: [WorkflowStepTransition],
-    publishesRootOutput: Bool,
-    completesRootWithoutOutput: Bool,
-    intendedSuccessfulStatus: WorkflowStepExecutionStatus
+    reservation: WorkflowNestedInvocationReservation,
+    afterCanonicalCommit: (@Sendable () async throws -> Void)? = nil
   ) {
-    self.session = session
-    self.stepExecution = stepExecution
-    self.payload = payload
-    self.when = when
-    self.selectedTransitions = selectedTransitions
-    self.publishesRootOutput = publishesRootOutput
-    self.completesRootWithoutOutput = completesRootWithoutOutput
-    self.intendedSuccessfulStatus = intendedSuccessfulStatus
+    self.reservation = reservation
+    self.afterCanonicalCommit = afterCanonicalCommit
   }
 }
 
-public struct WorkflowPrePersistenceRoutingDecision: Equatable, Sendable {
-  public var selectedTransitions: [WorkflowStepTransition]
-  public var routedPayload: JSONObject
-  public var publishesRootOutput: Bool
-  public var completesRootWithoutOutput: Bool
-  public var loopGuard: WorkflowLoopGuardPublication?
-
-  public init(
-    selectedTransitions: [WorkflowStepTransition],
-    routedPayload: JSONObject,
-    publishesRootOutput: Bool,
-    completesRootWithoutOutput: Bool,
-    loopGuard: WorkflowLoopGuardPublication? = nil
-  ) {
-    self.selectedTransitions = selectedTransitions
-    self.routedPayload = routedPayload
-    self.publishesRootOutput = publishesRootOutput
-    self.completesRootWithoutOutput = completesRootWithoutOutput
-    self.loopGuard = loopGuard
-  }
-
-  public static func unchanged(
-    _ context: WorkflowPrePersistenceRoutingContext
-  ) -> WorkflowPrePersistenceRoutingDecision {
-    WorkflowPrePersistenceRoutingDecision(
-      selectedTransitions: context.selectedTransitions,
-      routedPayload: context.payload,
-      publishesRootOutput: context.publishesRootOutput,
-      completesRootWithoutOutput: context.completesRootWithoutOutput
-    )
-  }
-}
-
-public typealias WorkflowPrePersistenceRoutingDecider = @Sendable (
+public typealias WorkflowPreCommitPublicationHook = @Sendable (
   WorkflowPrePersistenceRoutingContext
-) throws -> WorkflowPrePersistenceRoutingDecision
+) async throws -> WorkflowNestedPublicationPlan?
+
+/// Optional durable capability. Production CLI runs use the SQLite-backed
+/// implementation; the ordinary in-memory store intentionally does not claim
+/// that its independent mutations form a durable transaction.
+public protocol WorkflowNestedPublicationCommitting: WorkflowRuntimeStore {
+  func commitNestedWorkflowPublication(
+    _ input: WorkflowPublicationCommitInput,
+    plan: WorkflowNestedPublicationPlan
+  ) async throws -> WorkflowPublicationCommitResult
+}
 
 public struct WorkflowPublicationRequest: Sendable {
   public var sessionId: String
@@ -116,6 +82,7 @@ public struct WorkflowPublicationRequest: Sendable {
   public var transitionSelectionMode: WorkflowPublicationTransitionSelectionMode
   public var noSelectionDisposition: WorkflowPublicationNoSelectionDisposition
   public var prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider?
+  public var preCommitPublicationHook: WorkflowPreCommitPublicationHook?
   public var carriedPayloadFields: JSONObject
 
   public init(
@@ -136,6 +103,7 @@ public struct WorkflowPublicationRequest: Sendable {
     transitionSelectionMode: WorkflowPublicationTransitionSelectionMode = .rejectMultiple,
     noSelectionDisposition: WorkflowPublicationNoSelectionDisposition = .publishPayloadAsRoot,
     prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider? = nil,
+    preCommitPublicationHook: WorkflowPreCommitPublicationHook? = nil,
     carriedPayloadFields: JSONObject = [:]
   ) {
     self.sessionId = sessionId
@@ -155,6 +123,7 @@ public struct WorkflowPublicationRequest: Sendable {
     self.transitionSelectionMode = transitionSelectionMode
     self.noSelectionDisposition = noSelectionDisposition
     self.prePersistenceRoutingDecider = prePersistenceRoutingDecider
+    self.preCommitPublicationHook = preCommitPublicationHook
     self.carriedPayloadFields = carriedPayloadFields
   }
 }
@@ -548,7 +517,11 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       runtimeFinalizationToken: request.adapterOutputMetadataSource?.runtimeFinalizationToken
     )
 
-    if request.prePersistenceRoutingDecider != nil {
+    // A nested pre-commit hook needs the same durable staged route as a
+    // routing decider. Otherwise a crash after reserving its child intent
+    // would lose the source execution identity before the parent checkpoint
+    // can be committed on reopen.
+    if request.prePersistenceRoutingDecider != nil || request.preCommitPublicationHook != nil {
       let staged = try await store.stageWorkflowPublication(WorkflowPublicationStageInput(
         sessionId: request.sessionId,
         executionId: recordedExecution.executionId,
@@ -564,6 +537,20 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         )
       ))
       return try await finishStagedPublication(request: request, execution: staged.execution)
+    }
+
+    if let hook = request.preCommitPublicationHook,
+       let session = try await store.loadSession(id: request.sessionId) {
+      _ = try await hook(WorkflowPrePersistenceRoutingContext(
+        session: session,
+        stepExecution: recordedExecution,
+        payload: payload,
+        when: candidate.when,
+        selectedTransitions: publishableTransitions,
+        publishesRootOutput: ordinaryCompletion.publishesRootOutput,
+        completesRootWithoutOutput: ordinaryCompletion.completesRootWithoutOutput,
+        intendedSuccessfulStatus: request.successfulExecutionStatus
+      ))
     }
 
     return try await commitDirectPublication(
@@ -585,7 +572,6 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   ) async throws -> WorkflowPublicationResult {
     guard let pending = execution.pendingRoutePublication,
           let acceptedOutput = execution.acceptedOutput,
-          let decider = request.prePersistenceRoutingDecider,
           let session = try await store.loadSession(id: request.sessionId) else {
       throw WorkflowRuntimeStoreError.messageAppendRejected("pending publication cannot be resumed")
     }
@@ -601,7 +587,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     )
     let decision: WorkflowPrePersistenceRoutingDecision
     do {
-      decision = try decider(context)
+      decision = try request.prePersistenceRoutingDecider?(context) ?? .unchanged(context)
       if let reason = unsupportedTransitionReason(in: decision.selectedTransitions) {
         throw WorkflowPublicationError.unsupportedTransition(reason)
       }
@@ -614,6 +600,21 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       throw error
     }
     let nextStepId = self.nextStepId(from: decision.selectedTransitions)
+    let nestedPlan: WorkflowNestedPublicationPlan?
+    if let hook = request.preCommitPublicationHook {
+      nestedPlan = try await hook(WorkflowPrePersistenceRoutingContext(
+        session: session,
+        stepExecution: execution,
+        payload: decision.routedPayload,
+        when: acceptedOutput.when,
+        selectedTransitions: decision.selectedTransitions,
+        publishesRootOutput: decision.publishesRootOutput,
+        completesRootWithoutOutput: decision.completesRootWithoutOutput,
+        intendedSuccessfulStatus: pending.intendedSuccessfulStatus
+      ))
+    } else {
+      nestedPlan = nil
+    }
     let messageInputs = publicationMessageInputs(
       request: request,
       executionId: execution.executionId,
@@ -622,14 +623,21 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     )
     let committed: WorkflowPublicationCommitResult
     do {
-      committed = try await store.commitWorkflowPublication(WorkflowPublicationCommitInput(
+      let commitInput = WorkflowPublicationCommitInput(
         sessionId: request.sessionId,
         executionId: execution.executionId,
         messageInputs: messageInputs,
         currentStepId: nextStepId,
         publishesRootOutput: decision.publishesRootOutput,
         completesRootWithoutOutput: decision.completesRootWithoutOutput
-      ))
+      )
+      if let nestedPlan,
+         let nestedStore = store as? any WorkflowNestedPublicationCommitting {
+        committed = try await nestedStore.commitNestedWorkflowPublication(commitInput, plan: nestedPlan)
+        try await nestedPlan.afterCanonicalCommit?()
+      } else {
+        committed = try await store.commitWorkflowPublication(commitInput)
+      }
     } catch {
       _ = try? await store.abortWorkflowPublication(WorkflowPublicationAbortInput(
         sessionId: request.sessionId,

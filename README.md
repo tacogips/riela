@@ -27,6 +27,25 @@ adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
 resume, rerun, replay, and GraphQL/session DTO projection are runtime-owned.
 
+Local command nodes run foreground work: their process group is reclaimed when
+the command leader exits, including background children that retain its pipes.
+Foreground exit status and captured logs remain available. Commands must not
+escape that group with `setsid`, `setpgid`, or daemonization. CLI-agent turns
+also receive a foreground-only instruction and await executor/ACP cleanup, but
+the embedded agent-gateway's separate vendor process runner does not yet provide
+the same descendant-ownership guarantee. Do not detach aggregate tests inside
+AI nodes; retain tool-session handles until terminal exit and record complete
+logs. Long-lived services need an explicitly owned service/workflow lifecycle.
+
+The default SQLite session-store connections wait for another process to
+release its database lock, including during WAL initialization. Parallel runs
+can share a session store without a fixed three-second contention timeout.
+An interrupted process releases its OS locks; stop a waiting CLI process with
+Ctrl-C if you do not want to wait for a long-running owner. Library callers can
+request bounded waiting with `SQLiteOpenOptions(busyTimeoutMilliseconds: ...)`.
+Only lock acquisition and WAL initialization are retried; workflow actions and
+transaction bodies are not replayed.
+
 Installed workflow packages are local workflow sources. After
 `riela package install <name>`, package-provided workflows appear in
 `riela workflow list` and can be used with ordinary workflow commands such as

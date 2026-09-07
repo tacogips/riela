@@ -123,7 +123,7 @@ extension BuiltinWorkflowAddonResolver {
       targets: handoffTargets
     )
     let handoffs = handoffDecision.handoffs
-    var payload = personaPayload
+    var payload = addonForwardedApplicationPayload(personaPayload)
     for (key, value) in handoffs {
       payload[key] = .bool(value)
     }

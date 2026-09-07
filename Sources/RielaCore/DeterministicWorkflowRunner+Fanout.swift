@@ -52,7 +52,7 @@ extension DeterministicWorkflowRunner {
       }
     }
     let bound = fanoutConcurrencyBound(itemCount: wave.selectedIndices.count, directive: directive, request: request)
-    let outcomes = await runFanoutBranches(
+    let outcomes = try await runFanoutBranches(
       items: items,
       directive: directive,
       request: request,
@@ -128,8 +128,8 @@ extension DeterministicWorkflowRunner {
     indices: [Int],
     changeEvidence: WorkflowFanoutChangeEvidence?,
     parentSessionId: String
-  ) async -> [FanoutBranchOutcome] {
-    await withTaskGroup(of: FanoutBranchOutcome.self) { group in
+  ) async throws -> [FanoutBranchOutcome] {
+    try await withThrowingTaskGroup(of: FanoutBranchOutcome.self) { group in
       var nextIndex = 0
       var outcomes: [FanoutBranchOutcome] = []
       var shouldScheduleMore = true
@@ -138,7 +138,7 @@ extension DeterministicWorkflowRunner {
         let index = indices[nextIndex]
         nextIndex += 1
         group.addTask {
-          await self.runFanoutBranch(
+          try await self.runFanoutBranch(
             index: index,
             item: items[index],
             directive: directive,
@@ -152,7 +152,7 @@ extension DeterministicWorkflowRunner {
       for _ in 0..<min(concurrency, indices.count) {
         scheduleNext()
       }
-      while let outcome = await group.next() {
+      while let outcome = try await group.next() {
         outcomes.append(outcome)
         if directive.failurePolicy == .failFast, outcome.isFailure {
           shouldScheduleMore = false
@@ -173,7 +173,8 @@ extension DeterministicWorkflowRunner {
     request: DeterministicWorkflowRunRequest,
     changeEvidence: WorkflowFanoutChangeEvidence?,
     parentSessionId: String
-  ) async -> FanoutBranchOutcome {
+  ) async throws -> FanoutBranchOutcome {
+    var reservedChildSessionId: String?
     do {
       try Task.checkCancellation()
       var branchWorkflow = request.workflow
@@ -249,6 +250,18 @@ extension DeterministicWorkflowRunner {
       branchRequest.workflowRunId = request.workflowRunId
       branchRequest.parentSessionId = parentSessionId
       branchRequest.rootSessionId = request.rootSessionId ?? parentSessionId
+      branchRequest.resumeSessionId = try await reserveNestedSession(
+        workflow: branchWorkflow,
+        nodePayloads: branchNodePayloads,
+        entryStepId: directive.targetStepId,
+        parentSessionId: parentSessionId,
+        rootSessionId: request.rootSessionId ?? parentSessionId,
+        parentStepId: directive.sourceStepId,
+        resumeStepId: directive.joinStepId,
+        sourceExecutionId: directive.sourceStepExecutionId,
+        branchId: "fanout-\(branchId)"
+      )
+      reservedChildSessionId = branchRequest.resumeSessionId
       if let changeEvidence, let tracking = directive.changeTracking {
         guard case let .array(values)? = fanoutJSONPointer(item, tracking.pathsFrom) else {
           throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.pathsFrom must resolve to an array")
@@ -261,7 +274,20 @@ extension DeterministicWorkflowRunner {
         }
         branchRequest.fanoutChangeContext = WorkflowFanoutChangeContext(evidence: changeEvidence, branchId: branchId, paths: paths)
       }
+      // Keep fanout children on the same recoverable lifecycle boundaries as
+      // direct cross-workflow children. These checkpoints deliberately wrap
+      // the real branch runner rather than a store-only test helper.
+      try await nestedInvocationRecoveryCheckpointer?.reached(.beforeChildNodeEffect)
       let result = try await run(branchRequest)
+      if try await persistNestedTerminalIfNeeded(
+        parentSessionId: parentSessionId,
+        sourceExecutionId: directive.sourceStepExecutionId,
+        branchId: "fanout-\(branchId)",
+        terminalSession: result.session
+      ) {
+        try await nestedInvocationRecoveryCheckpointer?.reached(.childTerminalPersisted)
+      }
+      try await nestedInvocationRecoveryCheckpointer?.reached(.afterChildNodeResult)
       guard result.status == .completed else {
         return .failure(
           index: index,
@@ -277,13 +303,46 @@ extension DeterministicWorkflowRunner {
         sessionId: result.session.sessionId
       )
     } catch {
+      if error is NestedRecoveryInterruption {
+        throw error
+      }
+      // A collect-partial parent may publish its join only after every
+      // reserved child has a canonical terminal snapshot. `run` can throw
+      // after it marks a child failed, so persist that actual terminal record
+      // before returning a branch failure rather than losing it in the catch.
+      if let reservedChildSessionId,
+         let terminal = try await store.loadSession(id: reservedChildSessionId),
+         terminal.status == .completed || terminal.status == .failed {
+        // Workflow cancellation is represented by a failed terminal session
+        // with failureKind=.cancelled. Keep that distinction in the persisted
+        // snapshot: the parent join may render a cancelled branch, but must
+        // never return before its canonical child terminal is durable.
+        if try await persistNestedTerminalIfNeeded(
+          parentSessionId: parentSessionId,
+          sourceExecutionId: directive.sourceStepExecutionId,
+          branchId: "fanout-\(branchIdForOutcome(item: item, index: index, directive: directive))",
+          terminalSession: terminal
+        ) {
+          try await nestedInvocationRecoveryCheckpointer?.reached(.childTerminalPersisted)
+        }
+      }
       return .failure(
         index: index,
         item: item,
-        sessionId: nil,
+        sessionId: reservedChildSessionId,
         reason: workflowRunFailureReason(error)
       )
     }
+  }
+
+  private func branchIdForOutcome(
+    item: JSONValue, index: Int, directive: WorkflowFanoutDispatchDirective
+  ) -> String {
+    if let dependencies = directive.dependencies,
+       case let .string(id)? = fanoutJSONPointer(item, dependencies.branchIdFrom) {
+      return id
+    }
+    return String(index)
   }
 
   private func appendFanoutJoinMessage(
@@ -292,7 +351,7 @@ extension DeterministicWorkflowRunner {
     parentSessionId: String,
     parentStepId: String
   ) async throws {
-    _ = try await store.appendWorkflowMessage(WorkflowMessageAppendInput(
+    let input = WorkflowMessageAppendInput(
       workflowExecutionId: parentSessionId,
       fromStepId: parentStepId,
       toStepId: directive.joinStepId,
@@ -301,7 +360,17 @@ extension DeterministicWorkflowRunner {
       sourceStepExecutionId: directive.sourceStepExecutionId,
       transitionCondition: directive.transitionLabel,
       payload: ["fanoutJoin": .object(fanoutJoin)]
-    ))
+    )
+    if let nestedInvocationPersistenceStore {
+      try await nestedInvocationRecoveryCheckpointer?.reached(.beforeParentPublication)
+      _ = try nestedInvocationPersistenceStore.publishFanoutParentMessage(
+        parentSessionId: parentSessionId,
+        sourceStepExecutionId: directive.sourceStepExecutionId,
+        input: input
+      )
+      try await nestedInvocationRecoveryCheckpointer?.reached(.parentPublicationPersisted)
+    }
+    _ = try await store.appendWorkflowMessageOnce(input)
   }
 
   private func fanoutJoinPayload(

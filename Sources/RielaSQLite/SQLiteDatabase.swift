@@ -16,6 +16,10 @@ public struct SQLiteOpenOptions: Sendable {
   public var enableWAL: Bool
   public var enableForeignKeys: Bool
   public var busyTimeoutMilliseconds: Int32?
+  /// When true, inter-process lock contention waits until the owner releases
+  /// its lock or the calling task is cancelled. This takes precedence over
+  /// `busyTimeoutMilliseconds`.
+  public var waitForLocks: Bool
   public var requireJSONB: Bool
   public var requireFTS5: Bool
 
@@ -24,17 +28,19 @@ public struct SQLiteOpenOptions: Sendable {
     enableForeignKeys: Bool = true,
     busyTimeoutMilliseconds: Int32? = 3_000,
     requireJSONB: Bool = true,
-    requireFTS5: Bool = false
+    requireFTS5: Bool = false,
+    waitForLocks: Bool = false
   ) {
     self.enableWAL = enableWAL
     self.enableForeignKeys = enableForeignKeys
     self.busyTimeoutMilliseconds = busyTimeoutMilliseconds
+    self.waitForLocks = waitForLocks
     self.requireJSONB = requireJSONB
     self.requireFTS5 = requireFTS5
   }
 
-  public static let writableDefault = SQLiteOpenOptions()
-  public static let readOnlyDefault = SQLiteOpenOptions(enableWAL: false)
+  public static let writableDefault = SQLiteOpenOptions(waitForLocks: true)
+  public static let readOnlyDefault = SQLiteOpenOptions(enableWAL: false, waitForLocks: true)
 }
 
 public enum SQLiteErrorOperation: String, Sendable {
@@ -314,14 +320,12 @@ public final class SQLiteDatabase: @unchecked Sendable {
   }
 
   private func configure(_ options: SQLiteOpenOptions) throws {
-    if let busyTimeoutMilliseconds = options.busyTimeoutMilliseconds {
-      sqlite3_busy_timeout(handle, busyTimeoutMilliseconds)
-    }
+    configureLockWaiting(options)
     if options.enableForeignKeys {
       try execute("PRAGMA foreign_keys=ON")
     }
     if options.enableWAL {
-      _ = try query("PRAGMA journal_mode=WAL")
+      try enableWAL(options)
       // WAL's recommended durability level: the database cannot corrupt on
       // power loss and commits survive app crashes; only a last transaction
       // may roll back. FULL would fsync the WAL on every snapshot save.
@@ -332,6 +336,39 @@ public final class SQLiteDatabase: @unchecked Sendable {
     }
     if options.requireFTS5 {
       try requireFTS5Available()
+    }
+  }
+
+  private func configureLockWaiting(_ options: SQLiteOpenOptions) {
+    if options.waitForLocks {
+      sqlite3_busy_handler(handle, { _, _ in
+        guard !Task.isCancelled else { return 0 }
+        sqlite3_sleep(25)
+        return 1
+      }, nil)
+    } else {
+      sqlite3_busy_timeout(handle, max(0, options.busyTimeoutMilliseconds ?? 0))
+    }
+  }
+
+  private func enableWAL(_ options: SQLiteOpenOptions) throws {
+    let timeout = max(0, options.busyTimeoutMilliseconds ?? 0)
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .milliseconds(Int64(timeout)))
+    // Journal-mode lock upgrades can return BUSY without invoking SQLite's
+    // busy handler. Retry this idempotent initialization with the chosen policy;
+    // never replay user statements or transaction bodies after partial work.
+    sqlite3_busy_timeout(handle, 0)
+    defer { configureLockWaiting(options) }
+    while true {
+      try Task.checkCancellation()
+      do {
+        _ = try query("PRAGMA journal_mode=WAL")
+        return
+      } catch let error as SQLiteError where error.code == SQLITE_BUSY {
+        guard options.waitForLocks || clock.now < deadline else { throw error }
+        Thread.sleep(forTimeInterval: 0.01)
+      }
     }
   }
 

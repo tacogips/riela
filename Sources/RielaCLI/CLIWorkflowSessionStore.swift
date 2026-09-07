@@ -412,8 +412,13 @@ func seedRuntimeStoreFromPersistedCLIState(
 ) async throws {
   let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
   let persistenceStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot))
+  // A durable supervisor publishes a reserved child snapshot before a CLI
+  // session record exists. Seed those snapshots too: otherwise a fresh worker
+  // reports "resume session not found" even though reservation committed.
+  var seededSessionIDs = Set<String>()
   for existing in try sessionStore.loadAll() {
     await runtimeStore.seedSession(existing.session)
+    seededSessionIDs.insert(existing.session.sessionId)
     do {
       let snapshot = try persistenceStore.load(sessionId: existing.session.sessionId)
       await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
@@ -423,6 +428,10 @@ func seedRuntimeStoreFromPersistedCLIState(
       }
       throw error
     }
+  }
+  for snapshot in try persistenceStore.loadAll() where !seededSessionIDs.contains(snapshot.session.sessionId) {
+    await runtimeStore.seedSession(snapshot.session)
+    await runtimeStore.seedWorkflowMessages(snapshot.workflowMessages)
   }
 }
 

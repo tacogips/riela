@@ -96,6 +96,8 @@ public final class MonotonicWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerat
 }
 
 public struct WorkflowSessionCreateInput: Equatable, Sendable {
+  /// Runtime-owned deterministic identity for a reserved nested session.
+  public var sessionId: String?
   public var workflowId: String
   public var entryStepId: String
   public var effectiveInstance: EffectiveWorkflowInstance?
@@ -104,6 +106,7 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
   public var effectiveStepBudget: Int?
 
   public init(
+    sessionId: String? = nil,
     workflowId: String,
     entryStepId: String,
     effectiveInstance: EffectiveWorkflowInstance? = nil,
@@ -111,6 +114,7 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
     rootSessionId: String? = nil,
     effectiveStepBudget: Int? = nil
   ) {
+    self.sessionId = sessionId
     self.workflowId = workflowId
     self.entryStepId = entryStepId
     self.effectiveInstance = effectiveInstance
@@ -304,6 +308,7 @@ public struct WorkflowMessageAppendInput: Equatable, Sendable {
 
 public enum WorkflowRuntimeStoreError: Error, Equatable, Sendable {
   case sessionNotFound(String)
+  case sessionIdentityConflict(String)
   case stepExecutionNotFound(String)
   case messageAppendRejected(String)
 }
@@ -321,6 +326,11 @@ public protocol WorkflowRuntimeStore: Sendable {
   func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt
   func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord
   func appendWorkflowMessages(_ inputs: [WorkflowMessageAppendInput]) async throws -> [WorkflowMessageRecord]
+  /// Appends one message exactly once for a durable nested child publication.
+  /// The identity is the parent session, destination step, and source
+  /// execution. A replay must carry the exact original message; a changed
+  /// child result is a fence violation instead of a second parent arrival.
+  func appendWorkflowMessageOnce(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord
   func listMessages(for sessionId: String, toStepId: String?) async throws -> [WorkflowMessageRecord]
   func loadSession(id: String) async throws -> WorkflowSession?
 }
@@ -369,7 +379,14 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     for message in messages {
       idGenerator.noteExistingCommunicationId(message.communicationId)
       createdOrder = max(createdOrder, message.createdOrder)
-      messagesBySession[message.workflowExecutionId, default: []].append(message)
+      // Canonical SQLite hydration can overlap the CLI session record on
+      // reopen. Seeding must be idempotent so a recovered durable nested
+      // arrival is not duplicated and then rejected by SQLite's message key.
+      if !(messagesBySession[message.workflowExecutionId, default: []].contains {
+        $0.communicationId == message.communicationId
+      }) {
+        messagesBySession[message.workflowExecutionId, default: []].append(message)
+      }
     }
     for sessionId in Array(messagesBySession.keys) {
       messagesBySession[sessionId]?.sort { $0.createdOrder < $1.createdOrder }
@@ -386,7 +403,20 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   public func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession {
     let date = clock.now()
-    let sessionId = try idGenerator.nextSessionId(workflowId: input.workflowId)
+    if let requested = input.sessionId,
+       requested.range(of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#, options: .regularExpression) == nil {
+      throw WorkflowRuntimeStoreError.messageAppendRejected("reserved session identity is invalid")
+    }
+    let sessionId = try input.sessionId ?? idGenerator.nextSessionId(workflowId: input.workflowId)
+    if let existing = sessions[sessionId] {
+      guard existing.workflowId == input.workflowId,
+            existing.entryStepId == input.entryStepId,
+            existing.parentSessionId == input.parentSessionId,
+            existing.rootSessionId == (input.rootSessionId ?? sessionId) else {
+        throw WorkflowRuntimeStoreError.sessionIdentityConflict(sessionId)
+      }
+      return existing
+    }
     let session = WorkflowSession(
       workflowId: input.workflowId,
       sessionId: sessionId,
@@ -609,6 +639,51 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     let records = try await appendWorkflowMessages([input])
     guard let record = records.first else {
       throw WorkflowRuntimeStoreError.messageAppendRejected("empty append")
+    }
+    return record
+  }
+
+  public func appendWorkflowMessageOnce(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
+    guard sessions[input.workflowExecutionId] != nil else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(input.workflowExecutionId)
+    }
+    let existing = messagesBySession[input.workflowExecutionId, default: []]
+      .filter { $0.toStepId == input.toStepId && $0.sourceStepExecutionId == input.sourceStepExecutionId }
+      .sorted { $0.createdOrder < $1.createdOrder }
+    if let record = existing.first {
+      guard record.fromStepId == input.fromStepId,
+            record.routingScope == input.routingScope,
+            record.deliveryKind == input.deliveryKind,
+            record.transitionCondition == input.transitionCondition,
+            record.payload == input.payload,
+            record.artifactRefs == input.artifactRefs else {
+        throw WorkflowRuntimeStoreError.messageAppendRejected("nested parent publication conflicts with prior delivery")
+      }
+      return record
+    }
+    if let reason = appendFailurePredicate?(input) {
+      throw WorkflowRuntimeStoreError.messageAppendRejected(reason)
+    }
+    createdOrder += 1
+    let record = WorkflowMessageRecord(
+      communicationId: try idGenerator.nextCommunicationId(),
+      workflowExecutionId: input.workflowExecutionId,
+      fromStepId: input.fromStepId,
+      toStepId: input.toStepId,
+      routingScope: input.routingScope,
+      deliveryKind: input.deliveryKind,
+      sourceStepExecutionId: input.sourceStepExecutionId,
+      transitionCondition: input.transitionCondition,
+      payload: input.payload,
+      artifactRefs: input.artifactRefs,
+      lifecycleStatus: .delivered,
+      createdOrder: createdOrder,
+      createdAt: clock.now()
+    )
+    messagesBySession[input.workflowExecutionId, default: []].append(record)
+    if var session = sessions[input.workflowExecutionId] {
+      session.updatedAt = record.createdAt
+      sessions[input.workflowExecutionId] = session
     }
     return record
   }

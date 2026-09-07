@@ -138,6 +138,25 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
     context: AdapterExecutionContext()
   )
   #expect(output.payload == ["text": .string("in-process")])
+  #expect(executor.params()?.systemPrompt?.contains(gatewayForegroundExecutionInstructions) == true)
+}
+
+@Test func gatewayForegroundContractPreservesSystemPromptAndDoesNotChangeAPIBackends() async throws {
+  for backend: NodeExecutionBackend in [.codexAgent, .claudeCodeAgent, .cursorCliAgent, .officialOpenAISDK] {
+    let executor = GatewayStubExecutor()
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(id: "worker", executionBackend: backend, model: "fixture"),
+        promptText: "prompt", systemPromptText: "Authored instructions"
+      ), context: AdapterExecutionContext()
+    )
+    let params = try #require(executor.params())
+    if backend == .officialOpenAISDK {
+      #expect(params.systemPrompt == "Authored instructions")
+    } else {
+      #expect(params.systemPrompt == "Authored instructions\n\n" + gatewayForegroundExecutionInstructions)
+    }
+  }
 }
 
 @Test func gatewayAdapterScopesNodeEnvironmentToTheTurn() async throws {

@@ -1,11 +1,7 @@
 import Foundation
 import RielaCore
 #if canImport(Darwin)
-#if canImport(Darwin)
-  import Darwin
-#elseif canImport(Glibc)
-  import Glibc
-#endif
+import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
@@ -93,6 +89,7 @@ private final class LockedProcessData: @unchecked Sendable {
 }
 
 private final class LocalProcessPipeReader: @unchecked Sendable {
+  private let fileHandle: FileHandle
   private let fileDescriptor: Int32
   private let stream: LocalProcessOutputStream
   private let outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
@@ -102,12 +99,14 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
     stream: LocalProcessOutputStream,
     outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
   ) {
+    self.fileHandle = fileHandle
     self.fileDescriptor = fileHandle.fileDescriptor
     self.stream = stream
     self.outputEventHandler = outputEventHandler
   }
 
   func readToEnd() -> Data {
+    defer { try? fileHandle.close() }
     var output = Data()
     var pendingLine = Data()
     var buffer = [UInt8](repeating: 0, count: 4_096)
@@ -187,18 +186,32 @@ private final class LocalProcessPipes: @unchecked Sendable {
     defer { lock.unlock() }
     try? inputPipe.fileHandleForWriting.close()
     try? outputPipe.fileHandleForWriting.close()
-    try? outputPipe.fileHandleForReading.close()
     try? errorPipe.fileHandleForWriting.close()
-    try? errorPipe.fileHandleForReading.close()
+    // Each reader owns its handle through EOF. Closing its descriptor from
+    // another thread would permit fd reuse while a read is still in flight.
+    // Process-group termination closes child writers and wakes both readers.
   }
 }
 
-private struct LocalProcessStdinWriter: Sendable {
-  var fileDescriptor: Int32
-  var stdin: String
+private final class LocalProcessStdinWriter: @unchecked Sendable {
+  private let fileDescriptor: Int32
+  private let stdin: String
 
-  func writeAndClose() {
+  init(fileHandle: FileHandle, stdin: String) throws {
+    // Own a distinct descriptor before cancellation can close the Pipe's
+    // handle. Capturing only its numeric fd would still permit descriptor
+    // reuse between cancellation and the asynchronous writer starting.
+    let descriptor = fcntl(fileHandle.fileDescriptor, F_DUPFD_CLOEXEC, 0)
+    guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    fileDescriptor = descriptor
+    self.stdin = stdin
+  }
+
+  deinit { _ = close(fileDescriptor) }
+
+  func writeAndClose(onStarted: (@Sendable () -> Void)? = nil) {
     disableSigpipeForStdin(fileDescriptor)
+    onStarted?()
     let data = Data(stdin.utf8)
     data.withUnsafeBytes { buffer in
       guard let baseAddress = buffer.baseAddress else {
@@ -221,7 +234,6 @@ private struct LocalProcessStdinWriter: Sendable {
         break
       }
     }
-    _ = close(fileDescriptor)
   }
 }
 
@@ -447,58 +459,64 @@ final class LocalProcessHandle: @unchecked Sendable {
     return true
   }
 
-  func markExited(afterTimeout: Bool = false) {
+  /// Observe exit without reaping. The unreaped group leader pins its PID and
+  /// PGID until all pending signals and output readers have finished, avoiding
+  /// an ID-reuse race between waitpid and delayed descendant escalation.
+  func waitForLeaderExit() -> Bool {
+    lock.lock()
+    let ownedPID = processId
+    lock.unlock()
+    guard let ownedPID else { return false }
+    var information = siginfo_t()
+    var result: Int32
+    repeat {
+      result = waitid(P_PID, id_t(ownedPID), &information, WEXITED | WNOWAIT)
+    } while result < 0 && errno == EINTR
+    if result == 0 { return true }
+    // Someone else reaped the child: ownership cannot be inferred from the
+    // numeric ID any more, so fail closed without any subsequent signal.
     lock.lock()
     didExit = true
     processId = nil
-    let groupId = processGroupId
-    let workItem = killWorkItem
-    lock.unlock()
-
-    if afterTimeout, let groupId, processGroupIsLive(groupId) {
-      return
-    }
-
-    lock.lock()
     processGroupId = nil
+    killWorkItem?.cancel()
     killWorkItem = nil
     lock.unlock()
-    workItem?.cancel()
+    return false
+  }
+
+  func reapAfterOutput(terminateRemaining: Bool) -> Int32 {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let ownedPID = processId else { return 0 }
+    if terminateRemaining, let groupId = processGroupId {
+      _ = signalProcess(-groupId, SIGKILL)
+    }
+    // Signals execute under this same lock. Clear their authority before
+    // releasing the PID back to the OS, not after waitpid returns.
+    didExit = true
+    processId = nil
+    processGroupId = nil
+    killWorkItem?.cancel()
+    killWorkItem = nil
+    var status: Int32 = 0
+    while waitpid(ownedPID, &status, 0) < 0, errno == EINTR {}
+    return status
   }
 
   private func killScheduledProcessGroup() {
     lock.lock()
-    let groupId = processGroupId
-    lock.unlock()
-    guard let groupId else {
-      return
-    }
-    guard processGroupIsLive(groupId) else {
-      clearScheduledProcessGroup(groupId)
-      return
-    }
-    clearScheduledProcessGroup(groupId)
+    defer { lock.unlock() }
+    guard let groupId = processGroupId, processId != nil else { return }
     _ = signalProcess(-groupId, SIGKILL)
-  }
-
-  private func clearScheduledProcessGroup(_ groupId: pid_t) {
-    lock.lock()
-    if processGroupId == groupId {
-      processGroupId = nil
-      killWorkItem = nil
-    }
-    lock.unlock()
-  }
-
-  private func processGroupIsLive(_ groupId: pid_t) -> Bool {
-    signalProcess(-groupId, 0) == 0
+    killWorkItem = nil
   }
 
   private func signalGroupOrProcess(_ signal: Int32) -> Bool {
     lock.lock()
+    defer { lock.unlock() }
     let groupId = processGroupId
     let pid = didExit ? nil : processId
-    lock.unlock()
     guard let groupId else {
       return false
     }
@@ -563,10 +581,20 @@ private func spawnProcess(
   }
 
   #if canImport(Darwin)
-  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)
+  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
   #else
-  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP)
+  let spawnFlags = Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK)
   #endif
+  // The CLI uses ignored dispositions plus DispatchSource for these signals.
+  // Do not inherit SIG_IGN into command shells: an ignored-on-entry signal
+  // cannot be trapped by a non-interactive shell, preventing graceful cancel.
+  var defaultSignals = sigset_t()
+  sigemptyset(&defaultSignals)
+  for signalNumber in [SIGINT, SIGTERM, SIGPIPE] { sigaddset(&defaultSignals, signalNumber) }
+  try checkPosixSpawn(posix_spawnattr_setsigdefault(&attributes, &defaultSignals), operation: "reset child signal dispositions")
+  var signalMask = sigset_t()
+  sigemptyset(&signalMask)
+  try checkPosixSpawn(posix_spawnattr_setsigmask(&attributes, &signalMask), operation: "reset child signal mask")
   try checkPosixSpawn(posix_spawnattr_setflags(&attributes, spawnFlags), operation: "set process flags")
   try checkPosixSpawn(posix_spawnattr_setpgroup(&attributes, 0), operation: "set child process group")
 
@@ -603,6 +631,10 @@ private func terminationStatus(fromWaitStatus status: Int32) -> Int32 {
   return -(status & 0x7f)
 }
 
+/// Runs one foreground command. Its dedicated process group belongs to this
+/// invocation, including background children that remain after the leader
+/// exits. A command must not escape that group (setsid/setpgid/daemonization);
+/// detached services require a separately owned lifecycle, not this runner.
 public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEventStreaming {
   public init() {}
 
@@ -615,6 +647,24 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
     stdin: String,
     deadline: Date? = nil,
     outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
+  ) async throws -> LocalProcessResult {
+    try await run(
+      configuration: configuration,
+      stdin: stdin,
+      deadline: deadline,
+      outputEventHandler: outputEventHandler,
+      stdinWriterStartedHandler: nil
+    )
+  }
+
+  /// Testable cancellation boundary: invoked by the writer after it owns a
+  /// duplicated stdin descriptor and immediately before its first write.
+  public func run(
+    configuration: LocalProcessConfiguration,
+    stdin: String,
+    deadline: Date? = nil,
+    outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?,
+    stdinWriterStartedHandler: (@Sendable () -> Void)?
   ) async throws -> LocalProcessResult {
     let effectiveConfiguration = try seatbeltInvocation(for: configuration) ?? configuration
     let cancellationState = LocalProcessCancellationState()
@@ -655,6 +705,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
         let completion = LocalProcessCompletion(continuation: continuation)
 
         do {
+          let stdinWriter = try LocalProcessStdinWriter(fileHandle: inputPipe.fileHandleForWriting, stdin: stdin)
           let processId = try spawnProcess(
             configuration: effectiveConfiguration,
             inputReadDescriptor: inputPipe.fileHandleForReading.fileDescriptor,
@@ -665,17 +716,30 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
             errorWriteDescriptor: errorPipe.fileHandleForWriting.fileDescriptor
           )
           processHandle.store(processId: processId)
+          try? inputPipe.fileHandleForWriting.close()
           cancellationState.configure(processHandle: processHandle, pipes: pipes, completion: completion)
           try? inputPipe.fileHandleForReading.close()
           pipes.closeParentOutputWriters()
 
           DispatchQueue.global(qos: .utility).async {
-            var status: Int32 = 0
-            _ = waitpid(processId, &status, 0)
-            processHandle.markExited(afterTimeout: completion.timedOut())
-            completion.cancelDeadline()
+            let ownsExitedChild = processHandle.waitForLeaderExit()
+            if ownsExitedChild {
+              // Do this before waiting for EOF: a background child can keep
+              // the pipes open even after a successful leader exit. WNOWAIT
+              // still pins signal authority; all leader bytes remain readable.
+              processHandle.killGroupOrProcess()
+            }
             outputGroup.notify(queue: .global(qos: .utility)) {
+              let status = processHandle.reapAfterOutput(terminateRemaining: true)
+              completion.cancelDeadline()
               if completion.timedOut() {
+                cancellationState.finish()
+                completion.resume(.failure(localProcessTimeoutError()))
+                return
+              }
+              guard ownsExitedChild else {
+                cancellationState.finish()
+                completion.resume(.failure(POSIXError(.ECHILD)))
                 return
               }
               if completion.cancelled() {
@@ -707,18 +771,15 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
               if processHandle.terminateGroupOrProcess() {
                 processHandle.scheduleKillIfRunning(after: 1)
               }
-              cancellationState.finish()
-              completion.resume(.failure(localProcessTimeoutError()))
+              // A deadline requests termination; it is not proof of process
+              // completion. The exit/EOF/reap path returns the timeout only
+              // after this invocation has reclaimed its owned group.
             }
             completion.setDeadlineWorkItem(workItem)
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: workItem)
           }
-          let stdinWriter = LocalProcessStdinWriter(
-            fileDescriptor: inputPipe.fileHandleForWriting.fileDescriptor,
-            stdin: stdin
-          )
           DispatchQueue.global(qos: .utility).async {
-            stdinWriter.writeAndClose()
+            stdinWriter.writeAndClose(onStarted: stdinWriterStartedHandler)
           }
         } catch {
           pipes.closeForFailureOrTimeout()

@@ -407,8 +407,14 @@ package final class WorkflowDetachedOwnershipPinnedRoot: @unchecked Sendable {
     defer { closedir(directory) }
     var result: [String] = []
     while let entry = readdir(directory) {
-      let name = withUnsafePointer(to: entry.pointee.d_name) {
-        $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
+      let nameLength = Int(entry.pointee.d_namlen)
+      let nameOffset = MemoryLayout<dirent>.offset(of: \.d_name)!
+      let nameBytes = UnsafeRawBufferPointer(
+        start: UnsafeRawPointer(entry).advanced(by: nameOffset),
+        count: nameLength
+      )
+      guard let name = String(bytes: nameBytes, encoding: .utf8) else {
+        throw CLIUsageError("detached workflow directory contains a non-UTF-8 entry")
       }
       if name != ".", name != ".." { result.append(name) }
     }

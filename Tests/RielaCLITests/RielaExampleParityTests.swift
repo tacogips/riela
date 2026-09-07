@@ -264,11 +264,12 @@ final class RielaExampleParityTests: XCTestCase {
     )
 
     for workflowName in mockScenarioExamples {
+      FileHandle.standardError.write(Data("parity-start \(workflowName)\n".utf8))
       let scenario = examplesRoot
         .appendingPathComponent(workflowName, isDirectory: true)
         .appendingPathComponent(MockScenario.fileName)
       let sessionStore = root.appendingPathComponent("tmp/test-example-sessions-\(workflowName)-\(UUID().uuidString)", isDirectory: true)
-      addTeardownBlock {
+      defer {
         try? FileManager.default.removeItem(at: sessionStore)
       }
       var arguments = WorkflowRunCLI.workflowRunArgumentsPrefix + [
@@ -288,6 +289,10 @@ final class RielaExampleParityTests: XCTestCase {
           "--variables",
           TelegramSDKTrioChatMock.variables(memoryRoot: memoryRoot.path)
         ])
+      }
+      if workflowName.hasSuffix("-agent-trio-chat") {
+        let memoryRoot = sessionStore.appendingPathComponent("memory", isDirectory: true)
+        arguments.append(contentsOf: ["--variables", #"{"memoryRoot":"\#(memoryRoot.path)"}"#])
       }
       if workflowName.hasPrefix("enterprise-matrix-") {
         let memoryRoot = sessionStore.appendingPathComponent("memory", isDirectory: true)
@@ -336,12 +341,20 @@ final class RielaExampleParityTests: XCTestCase {
         result = await app.run(arguments)
       }
 
+      FileHandle.standardError.write(Data("parity-output \(workflowName) \(result.stdout.utf8.count) bytes\n".utf8))
+      guard result.stdout.utf8.count <= 512 * 1024 else {
+        XCTFail("\(workflowName) exceeded the bounded fixture output contract; runtime history must not be recursively forwarded")
+        return
+      }
       XCTAssertEqual(result.exitCode, .success, "\(workflowName): \(result.stderr)\n\(result.stdout)")
       let decoder = JSONDecoder()
       decoder.dateDecodingStrategy = .iso8601
       let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(payload.workflowId, workflowName)
       XCTAssertEqual(payload.status, .completed, workflowName)
+      if workflowName.hasSuffix("-agent-trio-chat") {
+        assertIsolatedPersonaMemory(payload, sessionStore: sessionStore)
+      }
       if workflowName == "enterprise-matrix-security-incident" {
         let generated = try XCTUnwrap(
           payload.session.executions.first { $0.stepId == "generate-incident-lead-workflow" }?
@@ -763,6 +776,23 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertEqual(attachment["fileId"], .string("telegram-large-photo"))
     XCTAssertEqual(attachment["width"], .number(1280))
     XCTAssertEqual(attachment["height"], .number(720))
+  }
+
+}
+
+// Catalog and fixture helpers are separate from the executable parity cases.
+extension RielaExampleParityTests {
+  private func assertIsolatedPersonaMemory(_ result: WorkflowRunResult, sessionStore: URL) {
+    let expectedRoot = sessionStore.appendingPathComponent("memory", isDirectory: true).path
+    for execution in result.session.executions {
+      guard let payload = execution.acceptedOutput?.payload else { continue }
+      if execution.stepId.hasPrefix("read-"), execution.stepId.hasSuffix("-memory") {
+        XCTAssertEqual(payload["memoryRoot"], .string(expectedRoot), "Mock examples must not read the user's persona memory")
+      }
+      if execution.stepId.hasPrefix("write-"), execution.stepId.hasSuffix("-memory") {
+        XCTAssertEqual(jsonObject(payload["memory"])?["memoryRoot"], .string(expectedRoot), "Mock examples must not write the user's persona memory")
+      }
+    }
   }
 
   private func expectedWorkflowId(for workflowName: String) -> String {

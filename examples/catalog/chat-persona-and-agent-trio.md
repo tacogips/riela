@@ -275,6 +275,16 @@ ingestion:
 - routes replies as Yui, Mika, or Rina through the provider-neutral
   `riela/chat-persona-router` add-on with the same persona specs as the
   Discord trio
+- the personas do not independently decide whether the initial message should
+  trigger them. `route-message` matches configured aliases once, emits exactly
+  one `target_<persona>` condition, and the labeled transition starts only that
+  persona's memory/read/reply path. If no alias matches, Yui is selected
+- after replying, a persona may request one internal follow-up by returning a
+  `handoff_<persona>` flag. The memory-write step normalizes multiple flags and
+  blocks self-handoffs, already-visited personas, and excess handoff turns
+- visible mentions such as `@Mika` explain the handoff in chat, but they do not
+  trigger a second Telegram event. The workflow sends the current reply first
+  and then follows the internal labeled transition to the next persona
 - each persona reads and writes only its own records in the shared
   `persona-chat-memory` SQLite database before and after replying. Set
   `workflowInput.memoryRoot` or `RIELA_MEMORY_ROOT` to choose the storage root
@@ -302,6 +312,9 @@ Minimal Telegram trio chat workflow using the SDK-backed worker add-ons:
 
 - routes normalized Telegram messages through node-level Telegram
   `inputFilters` evaluated with JavaScriptCore
+- evaluates candidates as a sequential Yui, Mika, then Rina chain. A matching
+  `mention-responder` filter runs that persona; a non-match skips the persona
+  without an LLM call and advances through `input_filter_skipped`
 - `Yui Codex SDK` and `Mika Claude SDK` use `riela/codex-sdk-worker` with
   model `gpt-5.4-mini`
 - `Rina Cursor SDK` uses `riela/codex-sdk-worker` with model `gpt-5.5`
@@ -334,6 +347,28 @@ riela workflow run telegram-sdk-trio-chat \
   --mock-scenario ./examples/telegram-sdk-trio-chat/mock-scenario.json \
   --variables '{"workflowInput":{"text":"@rinacursor0529bot explain the SDK trio setup","provider":"telegram"},"event":{"sourceId":"telegram-live","eventId":"mock-1","provider":"telegram","eventType":"chat.message","input":{"text":"@rinacursor0529bot explain the SDK trio setup","provider":"telegram","attachments":[],"imagePaths":[],"attachmentText":""},"conversation":{"id":"100","threadId":"topic-a"},"actor":{"id":"200","displayName":"Mock User"}}}'
 ```
+
+#### Choosing between the trio routing styles
+
+Both styles make at most one LLM call for a single-person reply, but their
+deterministic orchestration costs and conversation capabilities differ:
+
+| Concern | `*-agent-trio-chat` | `telegram-sdk-trio-chat` |
+| --- | --- | --- |
+| Initial trigger | One central alias router selects exactly one persona | Each persona's `mention-responder` filter is checked in sequence |
+| Cost to reach a persona | Roughly constant regardless of which persona is selected | Later personas require more memory-load and skipped-step processing, although skipped personas do not call an LLM |
+| Multi-person conversation | Supported through guarded internal `handoff_*` transitions | Not supported by the selection chain; the first matching persona replies and the run ends |
+| LLM output overhead | Structured `replyText`, handoff flags, and optional memory entries | A compact reply text result |
+| Scaling to more personas | Add router aliases and a branch; routing remains one deterministic step | The sequential skip chain grows with every persona |
+| Predictability | A handoff can add bounded LLM turns | At most one responding LLM per run |
+
+Use `telegram-sdk-trio-chat` when every incoming message must produce at most one
+short persona reply and minimal output structure matters most. Use an
+`*-agent-trio-chat` workflow when consistent routing latency, more personas, or
+an explicit multi-person discussion is required. For a general trio-chat
+default, prefer the central deterministic router and permit handoffs only when
+the user explicitly requests another persona or the product intentionally
+enables bounded autonomous discussion.
 
 ### `gemini-sdk-worker`
 

@@ -158,6 +158,191 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"])
   }
 
+  func testProductionRunnerPersistsEveryFanoutBranchAndOneJoinAcrossResume() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-production/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let tracker = FanoutBranchTracker(delaysByIndex: [:])
+    let adapter = FanoutTestAdapter(tracker: tracker)
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let runtimeStore = InMemoryWorkflowRuntimeStore()
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let runner = DeterministicWorkflowRunner(
+      store: runtimeStore,
+      adapter: adapter,
+      calleeResolver: FanoutCalleeResolver(callee: ResolvedWorkflowCallee(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      )),
+      nestedInvocationPersistenceStore: persistence
+    )
+    let request = DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads,
+      maxConcurrency: 2
+    )
+    let first = try await runner.run(request)
+    XCTAssertEqual(first.status, .completed)
+    let sourceExecutionId = "source-attempt-1-exec-1"
+    for branchId in ["fanout-0", "fanout-1", "fanout-2"] {
+      let record = try XCTUnwrap(try persistence.nestedInvocationRecord(
+        parentSessionId: first.session.sessionId,
+        sourceStepExecutionId: sourceExecutionId,
+        branchId: branchId
+      ))
+      XCTAssertEqual(record.phase, .delivered)
+      XCTAssertEqual(record.childTerminalSnapshot?.session.status, .completed)
+    }
+    let beforeResume = await tracker.branchIdentities().count
+    let resumed = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: request.workflow,
+      nodePayloads: request.nodePayloads,
+      resumeSessionId: first.session.sessionId
+    ))
+    XCTAssertEqual(resumed.status, .completed)
+    let afterResume = await tracker.branchIdentities().count
+    XCTAssertEqual(afterResume, beforeResume, "Delivered fanout branches must not relaunch on parent reopen")
+    let messages = try SQLiteWorkflowMessageLog(
+      databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    ).listMessages(workflowExecutionId: first.session.sessionId, toStepId: "join")
+    XCTAssertEqual(messages.count, 1)
+  }
+
+  func testProductionCollectPartialPersistsFailedChildBeforePublishingJoin() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-partial-persistence/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let tracker = FanoutBranchTracker(delaysByIndex: [:], failingIndexes: [1])
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(), adapter: FanoutTestAdapter(tracker: tracker),
+      calleeResolver: FanoutCalleeResolver(callee: .init(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      )), nestedInvocationPersistenceStore: persistence
+    )
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads, maxConcurrency: 2
+    ))
+    XCTAssertEqual(result.status, .completed)
+    let sourceExecutionId = "source-attempt-1-exec-1"
+    let failed = try XCTUnwrap(try persistence.nestedInvocationRecord(
+      parentSessionId: result.session.sessionId, sourceStepExecutionId: sourceExecutionId, branchId: "fanout-1"
+    ))
+    XCTAssertEqual(failed.childTerminalSnapshot?.session.status, .failed)
+    XCTAssertEqual(failed.phase, .delivered, "A partial join is published only after the failed child terminal is durable")
+    let messages = try SQLiteWorkflowMessageLog(
+      databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    ).listMessages(workflowExecutionId: result.session.sessionId, toStepId: "join")
+    XCTAssertEqual(messages.count, 1)
+  }
+
+  func testProductionCollectPartialPersistsCancelledChildBeforePublishingJoin() async throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-partial-cancellation/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let tracker = FanoutBranchTracker(delaysByIndex: [:], cancellingIndexes: [1])
+    let payloads = fanoutPayloads()
+    let branchPayload = try XCTUnwrap(payloads["branch-node"])
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(), adapter: FanoutTestAdapter(tracker: tracker),
+      calleeResolver: FanoutCalleeResolver(callee: .init(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      )), nestedInvocationPersistenceStore: persistence
+    )
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial, toWorkflowId: "fanout-callee"),
+      nodePayloads: payloads, maxConcurrency: 2
+    ))
+    XCTAssertEqual(result.status, .completed)
+    let cancelled = try XCTUnwrap(try persistence.nestedInvocationRecord(
+      parentSessionId: result.session.sessionId, sourceStepExecutionId: "source-attempt-1-exec-1", branchId: "fanout-1"
+    ))
+    XCTAssertEqual(cancelled.childTerminalSnapshot?.session.status, .failed)
+    XCTAssertEqual(cancelled.childTerminalSnapshot?.session.failureKind, .cancelled)
+    XCTAssertEqual(cancelled.phase, .delivered, "A partial join cannot outrun a cancelled child terminal snapshot")
+  }
+
+  func testFanoutCheckpointsInterruptAndResumeTheProductionParentRunner() async throws {
+    for checkpoint in [
+      NestedRecoveryCheckpoint.prepared,
+      .beforeChildNodeEffect,
+      .afterChildNodeResult,
+      .childTerminalPersisted,
+      .beforeParentPublication,
+      .parentPublicationPersisted
+    ] {
+      let repository = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      let root = repository.appendingPathComponent("tmp/specialist-supervisor/fanout-checkpoints/\(UUID().uuidString)")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+
+      let tracker = FanoutBranchTracker(delaysByIndex: [:])
+      let adapter = FanoutTestAdapter(tracker: tracker)
+      let payloads = fanoutPayloads()
+      let branchPayload = try XCTUnwrap(payloads["branch-node"])
+      let store = InMemoryWorkflowRuntimeStore()
+      let request = DeterministicWorkflowRunRequest(
+        workflow: fanoutWorkflow(concurrency: 1, toWorkflowId: "fanout-callee"),
+        nodePayloads: payloads,
+        maxConcurrency: 1
+      )
+      let resolver = FanoutCalleeResolver(callee: ResolvedWorkflowCallee(
+        workflow: fanoutCalleeWorkflow(), nodePayloads: ["branch-node": branchPayload]
+      ))
+      let interrupted = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        calleeResolver: resolver,
+        nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path),
+        nestedInvocationRecoveryCheckpointer: FanoutThrowingCheckpoint(target: checkpoint)
+      )
+      do {
+        _ = try await interrupted.run(request)
+        XCTFail("Expected checkpoint interruption at \(checkpoint.rawValue)")
+      } catch {
+        // Recreate the runner to model process restart. The parent is resumed
+        // through its production checkpoint, never by calling fanout directly.
+      }
+      let latestParent = await store.latestSession(workflowId: request.workflow.workflowId)
+      let parent = try XCTUnwrap(latestParent)
+      XCTAssertEqual(parent.status, .running)
+
+      let reopened = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        calleeResolver: resolver,
+        nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      )
+      let resumed = try await reopened.run(DeterministicWorkflowRunRequest(
+        workflow: request.workflow,
+        nodePayloads: request.nodePayloads,
+        maxConcurrency: request.maxConcurrency,
+        resumeSessionId: parent.sessionId
+      ))
+      XCTAssertEqual(resumed.status, .completed)
+      let branchEffectCount = await tracker.branchIdentities().count
+      XCTAssertEqual(branchEffectCount, 3, "\(checkpoint.rawValue) duplicated a fanout child effect")
+      let arrivals = try SQLiteWorkflowMessageLog(
+        databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+      ).listMessages(workflowExecutionId: parent.sessionId, toStepId: "join")
+      XCTAssertEqual(arrivals.count, 1, "\(checkpoint.rawValue) must publish one aggregate join")
+    }
+  }
+
   func testFanoutBranchesInheritDefaultGuardOptOut() async throws {
     let adapter = FanoutLoopOptOutAdapter()
     let runner = DeterministicWorkflowRunner(
@@ -262,9 +447,19 @@ private actor FanoutLoopOptOutAdapter: NodeAdapter {
   }
 }
 
+private struct FanoutThrowingCheckpoint: NestedRecoveryCheckpointing {
+  let target: NestedRecoveryCheckpoint
+
+  func reached(_ checkpoint: NestedRecoveryCheckpoint) async throws {
+    guard checkpoint == target else { return }
+    throw NestedRecoveryInterruption()
+  }
+}
+
 private actor FanoutBranchTracker {
   private let delaysByIndex: [Int: UInt64]
   private let failingIndexes: Set<Int>
+  private let cancellingIndexes: Set<Int>
   private var activeCount = 0
   private var maxActive = 0
   private var started: [Int] = []
@@ -272,9 +467,12 @@ private actor FanoutBranchTracker {
   private var joinFanout: JSONObject?
   private var identities: [AdapterExecutionIdentity] = []
 
-  init(delaysByIndex: [Int: UInt64], failingIndexes: Set<Int> = []) {
+  init(
+    delaysByIndex: [Int: UInt64], failingIndexes: Set<Int> = [], cancellingIndexes: Set<Int> = []
+  ) {
     self.delaysByIndex = delaysByIndex
     self.failingIndexes = failingIndexes
+    self.cancellingIndexes = cancellingIndexes
   }
 
   func begin(index: Int) -> UInt64 {
@@ -290,6 +488,10 @@ private actor FanoutBranchTracker {
 
   func shouldFail(index: Int) -> Bool {
     failingIndexes.contains(index)
+  }
+
+  func shouldCancel(index: Int) -> Bool {
+    cancellingIndexes.contains(index)
   }
 
   func recordCancellation() {
@@ -358,6 +560,9 @@ private struct FanoutTestAdapter: NodeAdapter {
         }
         if await tracker.shouldFail(index: index) {
           throw AdapterExecutionError(.providerError, "forced branch \(index) failure")
+        }
+        if await tracker.shouldCancel(index: index) {
+          throw CancellationError()
         }
         await tracker.finish()
         return AdapterExecutionOutput(

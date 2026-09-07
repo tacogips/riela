@@ -8,6 +8,7 @@
 import Glibc
 #endif
 import Foundation
+import RielaCore
 
 enum WorkflowHistoryTopologyValidator {
   static func canonicalDirectories(forFiles files: Set<String>, required: Set<String> = []) -> Set<String> {
@@ -66,9 +67,7 @@ enum WorkflowHistoryTopologyValidator {
     }
     defer { closedir(stream) }
     while let entry = readdir(stream) {
-      let name = withUnsafePointer(to: entry.pointee.d_name) {
-        $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
-      }
+      let name = try posixDirectoryEntryName(entry)
       guard name != ".", name != ".." else { continue }
       var status = stat()
       guard fstatat(descriptor, name, &status, AT_SYMLINK_NOFOLLOW) == 0 else {

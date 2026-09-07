@@ -21,7 +21,8 @@ final class CommandParsingTests: XCTestCase {
       Set(RielaClientCommandRouter.configuration.subcommands.map { $0._commandName }),
       Set([
         "workflow", "package", "node", "rrun", "setup", "memory", "instance", "doctor", "gc",
-        "session", "loop", "graphql", "gql", "hook", "events", "routine", "serve", "call-step", "workflow-call", "kaiba", "version"
+        "session", "loop", "graphql", "gql", "hook", "events", "routine", "serve", "call-step", "workflow-call", "kaiba", "version",
+        "specialist"
       ])
     )
   }

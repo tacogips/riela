@@ -105,14 +105,23 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// Bumped whenever the schema changes shape. When bumping, register an
   /// in-place upgrade step in `schemaMigrations` so existing stores are
   /// migrated instead of discarded.
-  public static let schemaGeneration: Int64 = 2
+  public static let schemaGeneration: Int64 = 4
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, and CLI session tables — they share
   /// one file). Append a `SQLiteSchemaMigration(fromGeneration:)` here for
   /// every future `schemaGeneration` bump. Stores stamped before generation 2
   /// (the migration baseline) have no path and are discarded.
-  public static let schemaMigrations: [SQLiteSchemaMigration] = []
+  public static let schemaMigrations: [SQLiteSchemaMigration] = [
+    SQLiteSchemaMigration(fromGeneration: 2) { database in
+      // Historical migrations must not call the current-schema builder:
+      // generation 4 adds recovery_reason in the next migration.
+      try createGeneration3NestedInvocationSchema(in: database)
+    },
+    SQLiteSchemaMigration(fromGeneration: 3) { database in
+      try addGeneration4NestedRecoveryReason(in: database)
+    }
+  ]
 
   /// Brings the database up to the current schema generation: stamps fresh
   /// databases, migrates older stamped generations via `schemaMigrations`,
@@ -202,6 +211,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
     }
     let db = try openDatabase(readOnly: true, strictReadOnly: strictReadOnly)
+    guard try runtimeSnapshotTableExists(db) else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
     let rows = try mapRuntimeSQLiteError {
       try db.query(
         """
@@ -227,6 +239,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
+    guard try runtimeSnapshotTableExists(db) else {
+      return []
+    }
     return try mapRuntimeSQLiteError {
       try db.query(
         """
@@ -247,6 +262,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
+    guard try runtimeSnapshotTableExists(db) else {
+      return []
+    }
     let limit = max(1, min(filter.limit, 200))
     var whereParts: [String] = []
     var bindings: [SQLiteValue] = []
@@ -562,6 +580,18 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }.isEmpty == false
   }
 
+  /// A loop-concurrency preflight deliberately creates only its lease table.
+  /// Readers that run before the first session save must treat that partial
+  /// runtime database as empty rather than failing a newly admitted run.
+  private func runtimeSnapshotTableExists(_ db: SQLiteDatabase) throws -> Bool {
+    try mapRuntimeSQLiteError {
+      try db.query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workflow_runtime_snapshots' LIMIT 1",
+        bindings: []
+      )
+    }.isEmpty == false
+  }
+
   func openDatabase(
     readOnly: Bool = false,
     strictReadOnly: Bool = false
@@ -618,7 +648,27 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_workflow_updated ON workflow_runtime_snapshots (workflow_id, updated_at DESC, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_parent ON workflow_runtime_snapshots (parent_session_id, created_at, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_root ON workflow_runtime_snapshots (root_session_id, created_at, workflow_execution_id)")
+      try Self.createNestedInvocationSchema(in: db)
     }
+  }
+
+  static func createNestedInvocationSchema(in db: SQLiteDatabase) throws {
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS workflow_nested_invocations (
+        invocation_key TEXT PRIMARY KEY,
+        reservation_json BLOB NOT NULL CHECK (json_valid(reservation_json, 8)),
+        child_terminal_json BLOB CHECK (child_terminal_json IS NULL OR json_valid(child_terminal_json, 8)),
+        parent_message_json BLOB CHECK (parent_message_json IS NULL OR json_valid(parent_message_json, 8)),
+        recovery_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
+    try db.execute(
+      "CREATE INDEX IF NOT EXISTS idx_workflow_nested_invocations_child ON workflow_nested_invocations (json_extract(reservation_json, '$.childSnapshot.session.sessionId'))"
+    )
   }
 
   private func upsertSnapshot(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
@@ -733,7 +783,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     return value.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#, options: .regularExpression) != nil
   }
 
-  private static func dateString(_ date: Date) -> String {
+  static func dateString(_ date: Date) -> String {
     dateFormatter.string(from: date)
   }
 

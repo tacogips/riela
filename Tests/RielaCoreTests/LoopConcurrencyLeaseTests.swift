@@ -101,6 +101,20 @@ final class LoopConcurrencyLeaseTests: XCTestCase {
     XCTAssertNil(try store.loadLoopConcurrencyLease(workflowId: "wf"))
   }
 
+  func testSnapshotReadsTreatLeaseOnlyPreflightDatabaseAsEmpty() throws {
+    let (store, cleanup) = try makeStore()
+    defer { cleanup() }
+    _ = try store.acquireLoopConcurrencyLease(
+      workflowId: "wf", holder: "pending:a", now: Date(timeIntervalSince1970: 1_700_000_000)
+    )
+
+    XCTAssertEqual(try store.loadAll(), [])
+    XCTAssertEqual(try store.loadSessionOverviews(.init()), [])
+    XCTAssertThrowsError(try store.load(sessionId: "session-1")) { error in
+      XCTAssertEqual(error as? WorkflowRuntimePersistenceStoreError, .notFound("runtime snapshot not found: session-1"))
+    }
+  }
+
   // MARK: - Fixtures
 
   private func makeStore() throws -> (SQLiteWorkflowRuntimePersistenceStore, () -> Void) {

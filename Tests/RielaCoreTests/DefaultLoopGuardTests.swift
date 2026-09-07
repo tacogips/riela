@@ -479,6 +479,9 @@ private struct NonTransactionalWorkflowRuntimeStore: WorkflowRuntimeStore {
   func appendWorkflowMessages(_ inputs: [WorkflowMessageAppendInput]) async throws -> [WorkflowMessageRecord] {
     throw unavailable
   }
+  func appendWorkflowMessageOnce(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
+    throw unavailable
+  }
   func listMessages(for sessionId: String, toStepId: String?) async throws -> [WorkflowMessageRecord] { [] }
   func loadSession(id: String) async throws -> WorkflowSession? { nil }
 

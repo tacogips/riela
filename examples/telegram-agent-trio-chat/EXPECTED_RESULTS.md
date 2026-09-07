@@ -6,6 +6,10 @@
   - `assets/icons/mika-claude.png`
   - `assets/icons/rina-cursor.png`
 - `route-message` uses `riela/chat-persona-router` to select exactly one initial responder without a provider-specific routing prompt.
+- Individual persona agents do not decide whether the initial event triggers
+  them. The deterministic router emits one `target_yui`, `target_mika`, or
+  `target_rina` condition, and the workflow transition invokes only that
+  persona's path.
 - Messages with no named bot route to Yui Codex.
 - Messages that call Mika Trend route only to Mika.
 - Messages that call Rina Cursor route only to Rina.
@@ -18,13 +22,19 @@
   any handoff transition runs, so multi-bot discussions produce visible Yui,
   Mika, and Rina chat messages in workflow order instead of relying on Telegram
   bot-to-bot mention delivery.
+- A visible `@Yui`, `@Mika`, or `@Rina` handoff mention is explanatory chat
+  content, not the runtime trigger. The next persona is triggered by the
+  sanitized `handoff_*` condition on an internal workflow transition.
+- The memory-write add-on normalizes multiple true handoff flags to one target
+  and disables handoffs to the current persona, an already-visited persona, or
+  beyond the configured handoff-turn limit.
 - Handoff replies include a visible provider-neutral mention such as `@Mika` or
   `@Rina` plus a concrete question, so autonomous discussion is readable in the
   chat instead of being only an internal route.
 - Requests such as `しばらく自然に雑談して` keep the trio in bounded autonomous
-  conversation for up to six persona turns across Yui, Mika, and Rina, then clear
-  all handoff flags and close the final reply so the workflow stops without a
-  dangling mention or runaway loop.
+  conversation. The current memory-write guard defaults to at most three
+  persona turns, clears all handoff flags at the limit, and closes the final
+  reply without a dangling mention or runaway loop.
 - Each persona reads only its own recent records from the declared
   `persona-chat-memory` memory database before replying, using
   `workflowInput.memoryRoot`, `RIELA_MEMORY_ROOT`, or the default Riela memory

@@ -44,6 +44,105 @@ struct WorkflowRegistryCatalog {
     }.sorted(by: catalogOrder)
   }
 
+  /// Metadata-only registry inventory used by progressive-disclosure
+  /// consumers. It reads each manifest/workflow header but intentionally never
+  /// invokes `WorkflowRegistryBundleLoader`, which hydrates executable node
+  /// payloads and prompt text for the full validation path.
+  func compactList(
+    filter: WorkflowRegistryFilter,
+    workingDirectory: String
+  ) throws -> [WorkflowCatalogEntry] {
+    try filter.validate()
+    let scope = WorkflowScope(rawValue: filter.scope?.rawValue ?? WorkflowScope.auto.rawValue) ?? .auto
+    var entries: [WorkflowCatalogEntry] = []
+    for (sourceScope, root) in workflowRoots(scope: scope, workingDirectory: workingDirectory) {
+      for name in try directoryNames(in: root) {
+        let directory = root.appendingPathComponent(name, isDirectory: true)
+        entries.append(compactEntry(name: name, directory: directory, scope: sourceScope, sourceKind: .workflow))
+      }
+    }
+    for (sourceScope, root) in packageRoots(scope: scope, workingDirectory: workingDirectory) {
+      for manifestURL in try packageManifestURLs(in: root) {
+        let packageDirectory = manifestURL.deletingLastPathComponent().standardizedFileURL
+        do {
+          let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
+          guard manifest.kind == .workflow,
+                let relative = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".") else { continue }
+          let directory = packageDirectory.appendingPathComponent(relative, isDirectory: true).standardizedFileURL
+          var entry = compactEntry(
+            name: manifest.name, directory: directory, scope: sourceScope, sourceKind: .package,
+            packageName: manifest.name, packageVersion: manifest.version, packageDirectory: packageDirectory.path
+          )
+          entry.provenance = .immutable
+          entry.mutable = false
+          entries.append(entry)
+        } catch {
+          entries.append(invalidEntry(
+            name: relativeName(packageDirectory, root: root), scope: sourceScope, sourceKind: .package,
+            directory: packageDirectory, packageDirectory: packageDirectory.path, error: error
+          ))
+        }
+      }
+    }
+    if scope != .project {
+      for candidate in try registry.snapshotCandidates() {
+        let workflowId = candidate.lastPathComponent
+        let entry: WorkflowCatalogEntry
+        do {
+          entry = try registry.withWorkflowRead(workflowId: workflowId) { snapshot in
+            compactEntry(name: workflowId, directory: snapshot, scope: .user, sourceKind: .workflow, provenance: .mutable)
+          }
+        } catch {
+          entry = invalidEntry(name: workflowId, scope: .user, sourceKind: .workflow, directory: candidate, provenance: .mutable, error: error)
+        }
+        entries.append(entry)
+      }
+    }
+    entries = try entries.map(applyingActivation)
+    return entries.filter { entry in
+      if let sourceKind = filter.sourceKind, sourceKind.rawValue != entry.sourceKind.rawValue { return false }
+      if let provenance = filter.provenance, provenance != entry.provenance { return false }
+      if let mutable = filter.mutable, mutable != entry.mutable { return false }
+      if let activation = filter.activationState, activation != entry.activationState { return false }
+      let text = "\(entry.workflowName) \(entry.workflowId) \(entry.description ?? "")".lowercased()
+      if let query = filter.query?.lowercased(), !query.isEmpty, !text.contains(query) { return false }
+      if let description = filter.description?.lowercased(), !description.isEmpty,
+         !(entry.description?.lowercased().contains(description) ?? false) { return false }
+      return true
+    }.sorted(by: catalogOrder)
+  }
+
+  private func compactEntry(
+    name: String,
+    directory: URL,
+    scope: WorkflowScope,
+    sourceKind: WorkflowSourceKind,
+    packageName: String? = nil,
+    packageVersion: String? = nil,
+    packageDirectory: String? = nil,
+    provenance: WorkflowProvenance = .immutable
+  ) -> WorkflowCatalogEntry {
+    do {
+      let data = try Data(contentsOf: directory.appendingPathComponent("workflow.json"))
+      let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+      guard let workflowId = object?["workflowId"] as? String, !workflowId.isEmpty else {
+        throw WorkflowRegistryError(code: .invalidWorkflow, message: "workflow header has no workflowId")
+      }
+      let summary = (object?["shortSummary"] as? String) ?? (object?["description"] as? String)
+      return WorkflowCatalogEntry(
+        workflowName: name, workflowId: workflowId, description: summary, scope: scope,
+        sourceKind: sourceKind, workflowDirectory: directory.path, packageName: packageName,
+        packageVersion: packageVersion, packageDirectory: packageDirectory, provenance: provenance,
+        valid: true, diagnostics: []
+      )
+    } catch {
+      return invalidEntry(
+        name: name, scope: scope, sourceKind: sourceKind, directory: directory,
+        packageDirectory: packageDirectory, provenance: provenance, error: error
+      )
+    }
+  }
+
   func originIdentities(workingDirectory: String) throws -> [WorkflowOriginIdentity] {
     try list(filter: WorkflowRegistryFilter(), workingDirectory: workingDirectory).map {
       workflowOriginIdentity(

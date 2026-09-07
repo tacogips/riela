@@ -541,7 +541,11 @@ final class WorkflowViewerTests: XCTestCase {
       at: corruptRuntimeRoot.appendingPathComponent("bad-session", isDirectory: true),
       withIntermediateDirectories: true
     )
-    try Data("{".utf8).write(to: corruptRuntimeRoot.appendingPathComponent("runtime-message-log.sqlite"))
+    // SQLite can treat a very short non-header file as an empty database.
+    // Use a full invalid page so this fixture deterministically exercises the
+    // unreadable-store fallback across SQLite versions.
+    try Data(repeating: UInt8(ascii: "{"), count: 512)
+      .write(to: corruptRuntimeRoot.appendingPathComponent("runtime-message-log.sqlite"))
     defer { try? FileManager.default.removeItem(at: temp) }
 
     let workflow = WorkflowDefinition(

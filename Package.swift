@@ -52,14 +52,14 @@ let package = Package(
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "0a28f04d91f5149cead7aa96b048bed1e3be737c"
+      revision: "6e89029ae4a210062b613b6ed9134d9fe7302255"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "b436b91d39a5eaee8243a43096dd13f1e8ad819e"
+      revision: "bdaf0ab503b59b7065f110e4c1984f0f767461bb"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",

@@ -1,12 +1,12 @@
 {
-  "originHash" : "e3aeea3296f3b6d98aef44965bb544c69bad8a1e1be46a5006a48478da53082b",
+  "originHash" : "bb7088c537f1108d604304ac990d4be823fe101082b771a296fe6e4769ee610c",
   "pins" : [
     {
       "identity" : "agent-gateway",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/agent-gateway.git",
       "state" : {
-        "revision" : "0a28f04d91f5149cead7aa96b048bed1e3be737c"
+        "revision" : "6e89029ae4a210062b613b6ed9134d9fe7302255"
       }
     },
     {
@@ -62,7 +62,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "b436b91d39a5eaee8243a43096dd13f1e8ad819e"
+        "revision" : "bdaf0ab503b59b7065f110e4c1984f0f767461bb"
       }
     },
     {

@@ -31,11 +31,15 @@ Local command nodes run foreground work: their process group is reclaimed when
 the command leader exits, including background children that retain its pipes.
 Foreground exit status and captured logs remain available. Commands must not
 escape that group with `setsid`, `setpgid`, or daemonization. CLI-agent turns
-also receive a foreground-only instruction and await executor/ACP cleanup, but
-the embedded agent-gateway's separate vendor process runner does not yet provide
-the same descendant-ownership guarantee. Do not detach aggregate tests inside
-AI nodes; retain tool-session handles until terminal exit and record complete
-logs. Long-lived services need an explicitly owned service/workflow lifecycle.
+also receive a foreground-only instruction and await executor/ACP cleanup.
+The embedded agent-gateway now exposes an injectable process runner and its
+built-in runner atomically owns and drains the foreground process group before
+publishing a terminal result. It advertises that capability explicitly and
+rejects an `allDescendants` requirement before spawn; callers needing escaped
+daemon containment must inject a runner that provides it. Do not detach
+aggregate tests inside AI nodes; retain tool-session handles until terminal
+exit and record complete logs. Long-lived services need an explicitly owned
+service/workflow lifecycle.
 
 The default SQLite session-store connections wait for another process to
 release its database lock, including during WAL initialization. Parallel runs

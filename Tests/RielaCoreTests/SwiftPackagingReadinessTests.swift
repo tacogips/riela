@@ -267,6 +267,17 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("sha256sum \"$file\""))
   }
 
+  func testProductionBuilderIsolatesBuildByVersionAndRejectsStaleCLI() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-release.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("scratch_path=\"$release_dir/build/riela-$version-$target\""))
+    XCTAssertTrue(script.contains("--scratch-path \"$scratch_path\""))
+    XCTAssertTrue(script.contains("assert_binary_version \"$binary\" \"$version\""))
+    XCTAssertTrue(script.contains("staged riela version mismatch"))
+  }
+
   func testCaskBuilderRequiresAppleCredentialsAndNotarizesDmg() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh")
@@ -298,6 +309,17 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("gh release"))
     XCTAssertFalse(script.contains("git push"))
     XCTAssertFalse(script.contains("brew tap"))
+  }
+
+  func testCaskBuilderIsolatesBuildByVersionAndRejectsStaleCLI() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("scratch_path=\"$release_dir/build/riela-$version-$target\""))
+    XCTAssertTrue(script.contains("--scratch-path \"$scratch_path\""))
+    XCTAssertTrue(script.contains("assert_binary_version \"$staged_binary\" \"$version\""))
+    XCTAssertTrue(script.contains("staged riela version mismatch"))
   }
 
   func testMenuBarAppBuilderUsesRepositoryIconAsset() throws {

@@ -192,9 +192,10 @@ package_version() {
 }
 
 swift_release_bin_path() {
-  local target product swift_bin developer_dir sdkroot triple
+  local target product scratch_path swift_bin developer_dir sdkroot triple
   target="$1"
   product="$2"
+  scratch_path="$3"
   swift_bin="${RIELA_SWIFT:-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift}"
   developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
   sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -203,10 +204,22 @@ swift_release_bin_path() {
   (
     cd "$repo_root"
     DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-      "$swift_bin" build -c release --product "$product" --triple "$triple" >/dev/null
+      "$swift_bin" build -c release --product "$product" --triple "$triple" --scratch-path "$scratch_path" >/dev/null
     DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-      "$swift_bin" build -c release --product "$product" --triple "$triple" --show-bin-path
+      "$swift_bin" build -c release --product "$product" --triple "$triple" --scratch-path "$scratch_path" --show-bin-path
   )
+}
+
+assert_binary_version() {
+  local binary expected actual
+  binary="$1"
+  expected="$2"
+  actual="$("$binary" --version)"
+
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'staged riela version mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
+    return 1
+  fi
 }
 
 assert_codesigning_identity() {
@@ -351,7 +364,7 @@ print_plan() {
 }
 
 build_target() {
-  local version target release_dir work_dir dmg_path staged_binary staged_app riela_bin_path app_bin_path notarytool stapler
+  local version target release_dir work_dir dmg_path staged_binary staged_app scratch_path riela_bin_path app_bin_path notarytool stapler
   version="$1"
   target="$2"
   release_dir="$3"
@@ -359,11 +372,13 @@ build_target() {
   dmg_path="$release_dir/riela-$version-$target.dmg"
   staged_binary="$work_dir/riela"
   staged_app="$work_dir/RielaApp.app"
+  scratch_path="$release_dir/build/riela-$version-$target"
   notarytool="${RIELA_NOTARYTOOL:-/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool}"
   stapler="${RIELA_STAPLER:-/Applications/Xcode.app/Contents/Developer/usr/bin/stapler}"
 
   assert_child_path "$release_dir" "$work_dir"
   assert_child_path "$release_dir" "$dmg_path"
+  assert_child_path "$release_dir" "$scratch_path"
 
   require_env APPLE_SIGNING_IDENTITY
   require_env APPLE_ID
@@ -380,10 +395,11 @@ build_target() {
   rm -rf "$work_dir" "$dmg_path" "$dmg_path.sha256"
   mkdir -p "$work_dir"
 
-  riela_bin_path="$(swift_release_bin_path "$target" riela | tail -n 1)"
+  riela_bin_path="$(swift_release_bin_path "$target" riela "$scratch_path" | tail -n 1)"
   cp "$riela_bin_path/riela" "$staged_binary"
   chmod 0755 "$staged_binary"
-  app_bin_path="$(swift_release_bin_path "$target" RielaApp | tail -n 1)"
+  assert_binary_version "$staged_binary" "$version"
+  app_bin_path="$(swift_release_bin_path "$target" RielaApp "$scratch_path" | tail -n 1)"
   write_riela_app_bundle "$staged_app" "$app_bin_path/RielaApp" "$version"
 
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$staged_binary"

@@ -2,6 +2,7 @@ export type JSONValue = string | number | boolean | null | JSONValue[] | { [key:
 
 export interface Bootstrap {
   apiVersion: 'v1'
+  hostKind?: 'riela-app' | 'cli-serve'
   profile: string
   csrfToken: string
   revision: number
@@ -282,6 +283,7 @@ export interface WorkflowDefinitionResponse {
       transitions: Array<{
         toStepId: string
         toStepIdTruncated: boolean
+        toWorkflowId?: string | null
         label: string | null
         labelTruncated: boolean
       }>

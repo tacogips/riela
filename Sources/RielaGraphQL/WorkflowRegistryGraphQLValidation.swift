@@ -51,11 +51,11 @@ private func validateArguments(for root: ParsedGraphQLRootField) throws {
     let input = try requiredInputObject(root, context: "RegisterMutableWorkflowInput")
     try requireKeys(
       input,
-      allowed: ["bundle", "overwrite", "activationState"],
-      required: ["bundle"],
+      allowed: ["bundle", "definition", "overwrite", "activationState"],
+      required: [],
       context: "RegisterMutableWorkflowInput"
     )
-    try validateBundle(input["bundle"], context: "RegisterMutableWorkflowInput.bundle")
+    try validateDefinitionOrBundle(input, context: "RegisterMutableWorkflowInput")
     let _: GraphQLRegisterMutableWorkflowInput = try decodeRegistryValue(
       root.arguments["input"] ?? .null,
       context: "RegisterMutableWorkflowInput"
@@ -64,16 +64,19 @@ private func validateArguments(for root: ParsedGraphQLRootField) throws {
     let input = try requiredInputObject(root, context: "UpdateMutableWorkflowInput")
     try requireKeys(
       input,
-      allowed: ["target", "bundle"],
-      required: ["target", "bundle"],
+      allowed: ["target", "bundle", "definition", "expectedDefinitionRevision"],
+      required: ["target"],
       context: "UpdateMutableWorkflowInput"
     )
     try validateTarget(input["target"], context: "UpdateMutableWorkflowInput.target")
-    try validateBundle(input["bundle"], context: "UpdateMutableWorkflowInput.bundle")
-    let _: GraphQLUpdateMutableWorkflowInput = try decodeRegistryValue(
+    try validateDefinitionOrBundle(input, context: "UpdateMutableWorkflowInput")
+    let decoded: GraphQLUpdateMutableWorkflowInput = try decodeRegistryValue(
       root.arguments["input"] ?? .null,
       context: "UpdateMutableWorkflowInput"
     )
+    guard (decoded.definition != nil) == (decoded.expectedDefinitionRevision != nil) else {
+      throw invalidInput("expectedDefinitionRevision is required with definition and unavailable with bundle")
+    }
   case "deleteMutableWorkflow":
     try validateTargetMutation(root, context: "DeleteMutableWorkflowInput")
     let _: GraphQLDeleteMutableWorkflowInput = try decodeRegistryValue(
@@ -115,7 +118,11 @@ private func validateTargetMutation(
   context: String
 ) throws {
   let input = try requiredInputObject(root, context: context)
-  try requireKeys(input, allowed: ["target"], required: ["target"], context: context)
+  var allowed: Set<String> = ["target", "expectedDefinitionRevision"]
+  if root.fieldName == "activateWorkflow" || root.fieldName == "deactivateWorkflow" {
+    allowed.insert("expectedActivationState")
+  }
+  try requireKeys(input, allowed: allowed, required: ["target"], context: context)
   try validateTarget(input["target"], context: "\(context).target")
 }
 
@@ -136,6 +143,20 @@ private func validateTarget(_ value: JSONValue?, context: String) throws {
     context: context
   )
   let _: GraphQLWorkflowTargetInput = try decodeRegistryValue(value ?? .null, context: context)
+}
+
+private func validateDefinitionOrBundle(_ input: JSONObject, context: String) throws {
+  let definition = input["definition"].flatMap { $0 == .null ? nil : $0 }
+  let bundle = input["bundle"].flatMap { $0 == .null ? nil : $0 }
+  guard (definition != nil) != (bundle != nil) else {
+    throw invalidInput("\(context) requires exactly one of bundle or definition")
+  }
+  if let definition {
+    _ = try requireObject(definition, context: "\(context).definition")
+    try WorkflowRegistryDefinitionInputPolicy.validate(definition)
+  } else {
+    try validateBundle(bundle, context: "\(context).bundle")
+  }
 }
 
 private func validateBundle(_ value: JSONValue?, context: String) throws {
@@ -252,6 +273,8 @@ private func rootSelectionShape(for fieldName: String) -> WorkflowRegistrySelect
     "valid": scalar,
     "packageName": scalar,
     "packageVersion": scalar,
+    "definition": scalar,
+    "definitionRevision": scalar,
     "diagnostics": .list(diagnostic)
   ])
   switch fieldName {

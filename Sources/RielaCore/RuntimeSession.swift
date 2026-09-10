@@ -219,6 +219,9 @@ public struct WorkflowPendingRoutePublication: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowStepExecution: Codable, Equatable, Sendable {
+  /// Actual invocation data captured before dispatch, scoped to this attempt.
+  /// Nil means an older record or a failure before invocation was prepared.
+  public var inputSnapshot: JSONObject?
   public var executionId: String
   public var stepId: String
   public var nodeId: String
@@ -248,6 +251,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     backend: NodeExecutionBackend? = nil,
     backendSessionId: String? = nil,
     backendWorkingDirectory: String? = nil,
+    inputSnapshot: JSONObject? = nil,
     status: WorkflowStepExecutionStatus = .running,
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
@@ -269,6 +273,7 @@ public struct WorkflowStepExecution: Codable, Equatable, Sendable {
     self.backend = backend
     self.backendSessionId = backendSessionId
     self.backendWorkingDirectory = backendWorkingDirectory
+    self.inputSnapshot = inputSnapshot
     self.status = status
     self.acceptedOutput = acceptedOutput
     self.adapterOutput = adapterOutput

@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 
 public struct RielaAppDaemonWorkflowLoadResult: Equatable, Sendable {
@@ -94,4 +93,3 @@ public struct RielaAppDaemonWorkflowStore: Sendable {
   }
 
 }
-#endif

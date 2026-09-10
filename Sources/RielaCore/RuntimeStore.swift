@@ -125,6 +125,7 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
 }
 
 public struct WorkflowStepExecutionRecordInput: Equatable, Sendable {
+  public var inputSnapshot: JSONObject?
   public var sessionId: String
   public var stepId: String
   public var nodeId: String
@@ -140,6 +141,7 @@ public struct WorkflowStepExecutionRecordInput: Equatable, Sendable {
     attempt: Int,
     backend: NodeExecutionBackend? = nil,
     backendWorkingDirectory: String? = nil,
+    inputSnapshot: JSONObject? = nil,
     effectiveStepBudget: Int? = nil
   ) {
     self.sessionId = sessionId
@@ -148,6 +150,7 @@ public struct WorkflowStepExecutionRecordInput: Equatable, Sendable {
     self.attempt = attempt
     self.backend = backend
     self.backendWorkingDirectory = backendWorkingDirectory
+    self.inputSnapshot = inputSnapshot
     self.effectiveStepBudget = effectiveStepBudget
   }
 }
@@ -450,6 +453,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       attempt: input.attempt,
       backend: input.backend,
       backendWorkingDirectory: input.backendWorkingDirectory,
+      inputSnapshot: input.inputSnapshot,
       status: .running,
       createdAt: date,
       updatedAt: date

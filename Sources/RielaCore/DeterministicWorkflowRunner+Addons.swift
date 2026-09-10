@@ -34,6 +34,10 @@ extension DeterministicWorkflowRunner {
         step: step,
         attempt: executionIndex,
         backend: nil,
+        inputSnapshot: [
+          "variables": .object(request.variables),
+          "resolvedInputPayload": .object(workflowAddonResolvedInputPayload(resolvedInputPayload, session: session))
+        ],
         handler: request.eventHandler
       )
       let operationExecutionId: String

@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+source "$script_dir/lib/riela-web-packaging.sh"
 
 usage() {
   cat <<'EOF'
@@ -191,7 +192,7 @@ package_version() {
   tr -d '[:space:]' < "$repo_root/VERSION"
 }
 
-swift_release_bin_path() {
+swift_release_build() {
   local target product scratch_path swift_bin developer_dir sdkroot triple
   target="$1"
   product="$2"
@@ -204,7 +205,23 @@ swift_release_bin_path() {
   (
     cd "$repo_root"
     DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-      "$swift_bin" build -c release --product "$product" --triple "$triple" --scratch-path "$scratch_path" >/dev/null
+      "$swift_bin" build -c release --product "$product" --triple "$triple" --scratch-path "$scratch_path" 1>&2
+
+  )
+}
+
+swift_release_bin_path() {
+  local target product scratch_path swift_bin developer_dir sdkroot triple
+  target="$1"
+  product="$2"
+  scratch_path="$3"
+  swift_bin="${RIELA_SWIFT:-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift}"
+  developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+  sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
+  triple="$(swift_triple_for_target "$target")"
+
+  (
+    cd "$repo_root"
     DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
       "$swift_bin" build -c release --product "$product" --triple "$triple" --scratch-path "$scratch_path" --show-bin-path
   )
@@ -283,9 +300,7 @@ write_riela_app_bundle() {
   cp "$source_executable" "$macos_dir/RielaApp"
   chmod 0755 "$macos_dir/RielaApp"
   write_app_icon "$app_icon_source" "$resources_dir" "$app_icon_name"
-  test -s "$repo_root/web/dist/index.html"
-  mkdir -p "$resources_dir/Web"
-  cp -R "$repo_root/web/dist/". "$resources_dir/Web/"
+  riela_stage_web_assets "$repo_root" "$resources_dir/Web"
 
   cat > "$contents_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -321,19 +336,6 @@ write_riela_app_bundle() {
 PLIST
 }
 
-build_web_assets() {
-  require_command bun
-  (
-    cd "$repo_root/web"
-    bun install --frozen-lockfile
-    bun run lint
-    bun run typecheck
-    bun run test
-    bun run build
-  )
-  test -s "$repo_root/web/dist/index.html"
-}
-
 print_plan() {
   local version target release_dir work_dir dmg_path staged_binary staged_app triple install_prefix
   version="$1"
@@ -357,6 +359,9 @@ print_plan() {
   printf '  cask install prefix: %s\n' "$install_prefix"
   printf '  staged signed app: %s\n' "$staged_app"
   printf '  staged signed binary: %s\n' "$staged_binary"
+  printf '  staged signed Tauri helper: %s/Contents/Helpers/RielaDesktop.app\n' "$staged_app"
+  printf '  staged CLI web assets: %s/Web\n' "$work_dir"
+  printf '  signing order: CLI, nested Tauri helper, parent app, DMG\n'
   printf '  notarized DMG: %s\n' "$dmg_path"
   printf '  checksum: %s.sha256\n' "$dmg_path"
   printf '  required Apple env: APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID\n'
@@ -364,7 +369,7 @@ print_plan() {
 }
 
 build_target() {
-  local version target release_dir work_dir dmg_path staged_binary staged_app scratch_path riela_bin_path app_bin_path notarytool stapler
+  local version target release_dir work_dir dmg_path staged_binary staged_app scratch_path riela_bin_path app_bin_path notarytool stapler rust_target desktop_app
   version="$1"
   target="$2"
   release_dir="$3"
@@ -395,15 +400,29 @@ build_target() {
   rm -rf "$work_dir" "$dmg_path" "$dmg_path.sha256"
   mkdir -p "$work_dir"
 
+  swift_release_build "$target" riela "$scratch_path"
   riela_bin_path="$(swift_release_bin_path "$target" riela "$scratch_path" | tail -n 1)"
   cp "$riela_bin_path/riela" "$staged_binary"
   chmod 0755 "$staged_binary"
   assert_binary_version "$staged_binary" "$version"
+  swift_release_build "$target" RielaApp "$scratch_path"
   app_bin_path="$(swift_release_bin_path "$target" RielaApp "$scratch_path" | tail -n 1)"
   write_riela_app_bundle "$staged_app" "$app_bin_path/RielaApp" "$version"
+  case "$target" in
+    darwin-arm64) rust_target=aarch64-apple-darwin ;;
+    darwin-x64) rust_target=x86_64-apple-darwin ;;
+  esac
+  riela_build_desktop "$repo_root" release "$rust_target"
+  desktop_app="$staged_app/Contents/Helpers/RielaDesktop.app"
+  riela_stage_desktop_bundle "$repo_root/web/src-tauri/target/$rust_target/release/riela-desktop" "$desktop_app" "$version"
+  riela_stage_web_assets "$repo_root" "$work_dir/Web"
+  riela_stage_swift_resources "$riela_bin_path" "$work_dir"
+  riela_stage_swift_resources "$app_bin_path" "$staged_app/Contents/Resources"
 
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$staged_binary"
   codesign --verify --strict --verbose=2 "$staged_binary"
+  codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$desktop_app"
+  codesign --verify --strict --verbose=2 "$desktop_app"
   codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$staged_app"
   codesign --verify --deep --strict --verbose=2 "$staged_app"
 
@@ -459,7 +478,7 @@ main() {
 
   local target
   if [[ "$dry_run" != true ]]; then
-    build_web_assets
+    riela_build_web_assets "$repo_root"
   fi
   for target in "${targets[@]}"; do
     validate_target "$target"

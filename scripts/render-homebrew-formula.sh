@@ -85,6 +85,7 @@ class Riela < Formula
 
   def install
     bin.install "bin/riela"
+    share.install "share/riela"
   end
 
   test do

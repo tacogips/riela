@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+source "$script_dir/lib/riela-web-packaging.sh"
 
 usage() {
   cat <<'EOF'
@@ -238,6 +239,7 @@ print_plan() {
     printf '  release bin path command: swift build -c release --product riela --triple %s --show-bin-path\n' "$triple"
   fi
   printf '  staged binary: %s\n' "$binary"
+  printf '  staged web assets: %s/share/riela/web\n' "$work_dir"
   printf '  archive: %s\n' "$archive"
   printf '  checksum: %s.sha256\n' "$archive"
   printf '  publish side effects: false\n'
@@ -267,6 +269,8 @@ build_target() {
   chmod 0755 "$binary"
   assert_binary_version "$binary" "$version"
   cp "$repo_root/README.md" "$work_dir/README.md"
+  riela_stage_web_assets "$repo_root" "$work_dir/share/riela/web"
+  riela_stage_swift_resources "$bin_path" "$work_dir/share/riela"
 
   tar -C "$work_dir" -czf "$archive" .
   write_sha256 "$archive" > "$archive.sha256"
@@ -303,6 +307,7 @@ main() {
   fi
 
   local target
+  if [[ "$dry_run" != true ]]; then riela_build_web_assets "$repo_root"; fi
   for target in "${targets[@]}"; do
     validate_target "$target"
     if [[ "$dry_run" == true ]]; then

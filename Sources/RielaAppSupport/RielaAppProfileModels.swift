@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 
 public struct RielaAppProfileName: Codable, Equatable, Hashable, Sendable, CustomStringConvertible {
@@ -227,4 +226,3 @@ public enum RielaAppAssistantVendor: String, Codable, CaseIterable, Equatable, H
     self == .automatic ? Self.defaultSelectableVendor : self
   }
 }
-#endif

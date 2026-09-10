@@ -92,6 +92,55 @@ Local agent backend ids remain explicit workflow compatibility contracts:
 Riela-owned executables or targets. The `official/*` backend ids are also
 compatibility selectors; every one is dispatched through `agent-gateway`.
 
+### Web workflow studio
+
+In RielaApp's web **Command deck**, choose **Create / edit workflow** to open
+the graph editor. Node positions and the camera are stored separately in
+browser-local storage, scoped by profile and workflow origin; moving a node
+does not change the executable workflow or its saved revision.
+
+Existing inline agent nodes expose prompt/model settings in the inspector.
+Other protected configuration stays opaque, and hidden prompt/model values
+are retained unless explicitly replaced. Save refreshes the canonical revision
+and protected-value handles, preserving the canvas and chat while resetting
+Undo/Redo history. If that refresh fails, use **Reload saved workflow** before
+another save or execution. A save conflict keeps the draft until you explicitly
+confirm reloading.
+
+For a saved file-backed agent node, choose **Edit file-backed node settings**.
+Its dialog loads the prompt (including a referenced prompt file) and model.
+**Save node settings** preserves other payload fields and creates a
+content-addressed node file, updating the workflow reference in the same
+registry transaction. Original node/prompt resources are retained. Both the
+workflow revision and the loaded asset digest must still match, so an external
+file edit cannot be silently overwritten. Prompt whitespace is preserved.
+
+Save the graph, activate the workflow if necessary, then enter an absolute
+execution working directory and an input JSON object under **Run saved
+workflow**. **Run workflow** executes that exact saved revision and opens its
+session in **Run logs and values** on the same page. Unsaved edits must be
+saved before execution. You can also open an existing run by session ID.
+
+Select a graph step or an execution attempt to inspect its recorded input,
+accepted output, agent response text and failure details. Attempts remain
+separate, including retries. Old sessions without input snapshots explicitly
+show “not recorded”; values are not reconstructed from today's definition.
+The inspector shows the latest 500 attempts and refuses values above 512 KiB
+with an explicit export instruction. Actual values may contain sensitive
+workflow data, although process environment credentials are not copied into
+input snapshots. Logs from another workflow remain readable without applying
+their statuses to the current graph.
+
+Agent chat applies generated edits to the canvas as drafts. It uses bounded
+incremental provider rounds so intermediate graphs appear even when a vendor
+buffers its replies, and includes recent chat context for follow-up requests.
+Stop generation and Undo remain available; publishing still requires Save.
+
+See
+[the design](design-docs/specs/design-workflow-graph-studio.md) and
+[implementation plan](impl-plans/active/workflow-graph-studio.md), with
+[acceptance evidence](design-docs/user-qa/qa-workflow-graph-studio.md).
+
 Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,
 OpenAI, Anthropic, Gemini, and OpenRouter is supplied by the sibling
 `agent-gateway` package, which speaks the Agent Client Protocol (ACP,
@@ -120,8 +169,9 @@ bundled catalog, and an already selected live model remains usable after it is
 saved.
 
 RielaApp is a resident workflow process; its HTTP listener is optional and is
-disabled by default. Opening Web Config starts the loopback listener on demand,
-and stopping that listener does not stop RielaApp or its workflow instances.
+disabled by default. **Open Riela...** opens the Tauri dashboard through native
+IPC. **Start Web Server** starts the loopback listener explicitly; stopping that
+listener does not stop RielaApp or its workflow instances.
 This is intentionally different from bare `riela serve`, whose process exists
 to host an HTTP server and stays alive until SIGINT or SIGTERM. All other
 `riela` commands remain one-shot and read or update their configuration files
@@ -649,8 +699,109 @@ curl -LO "https://github.com/tacogips/riela/releases/download/v${version}/riela-
 sha256sum -c "riela-${version}-linux-x64.tar.gz.sha256"
 tar -xzf "riela-${version}-linux-x64.tar.gz"
 sudo install -m 0755 bin/riela /usr/local/bin/riela
+sudo mkdir -p /usr/local/share/riela
+sudo cp -R share/riela/. /usr/local/share/riela/
 riela --version
 ```
+
+## Desktop window
+
+Choose **Open Riela...** from the menu bar to open the shared dashboard in
+Tauri. The Swift menu-bar process owns the profile and workflow runtime;
+the Tauri child loads bundled assets and exchanges API requests over inherited
+stdin/stdout pipes. Opening the desktop window does not start an HTTP listener.
+Closing the window leaves the menu-bar app running; opening it again creates
+a new window. Repeated open actions focus the existing window.
+
+For development:
+
+```bash
+mise install
+bun run --cwd web desktop:build:debug
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --product RielaApp
+.build/debug/RielaApp --open-desktop --no-autostart-daemons
+```
+
+In **Workflows → Discovered workflows**, selecting a workflow opens a
+dedicated definition screen with its node network and directional connections.
+Select a node for details, drag the canvas to pan, or use the zoom and fit
+controls. **Back to workflows** returns to the list; browser history and
+`#/workflows/<encoded-source-id>` links also work.
+
+The desktop executable requires a parent RielaApp IPC connection; launch it
+through RielaApp. `RIELA_DESKTOP_EXECUTABLE` can point to a specific desktop
+executable for development. `scripts/build-riela-menu-bar-app.sh` builds and
+embeds `Contents/Helpers/RielaDesktop.app` in the menu-bar app.
+
+The Cask builder includes the same helper and signs it before the parent app.
+Install the matching Rust targets before building both macOS architectures:
+`mise exec -- rustup target add aarch64-apple-darwin x86_64-apple-darwin`.
+
+The explicit **Start Web Server** and **Open in Browser** menu actions remain
+available. A saved server preference does not automatically open a listening
+port when the menu-bar app starts.
+
+## Browser server development
+
+`riela serve` discovers bundled dashboard assets in the app's `Resources/Web`,
+beside the Cask CLI in `Web`, or under the installation prefix's
+`share/riela/web`. Executable symlinks are resolved before locating assets.
+Development runs also search `web/dist` in the working directory.
+CLI archives include the dashboard and Swift resource bundles in `share/riela`;
+install this directory alongside `bin/riela`. Use `--web-root` to override the
+asset directory, and `--working-dir` to include a project's workflows:
+
+```bash
+bun run --cwd web build
+.build/debug/riela serve --host 127.0.0.1 --port 8787 --working-dir /path/to/project
+```
+
+The loopback browser backend shares definition, instance and execution
+projections with RielaApp. It reads the active profile's sources and provides
+the mutable workflow registry through the same validated GraphQL contract.
+Browser mutations require the matching Host, Origin, CSRF token and profile.
+CLI and manager GraphQL requests retain the existing authenticated route.
+
+Settings supports persisted profiles, assistant preferences, native appearance,
+workflow directories, instance environment settings and event-source registration.
+Sources refresh after configuration changes. Profile and revision conflicts reject
+stale updates. The server port is saved separately in `~/.riela/serve-web.json`;
+restart `riela serve` to apply it. An explicit `--port` overrides the saved value.
+
+Workflow studio uses the same editor runtime in the desktop and browser: copy a
+source bundle, edit definitions and file-backed node settings, generate graph
+changes with the configured assistant, save a revision, activate and run it, and
+inspect recorded inputs and outputs. Runs use `--session-store` when supplied,
+otherwise the active profile's session directory. Browser-hosted editor jobs are
+cancelled when the serve process shuts down.
+
+In server mode, select an instance to start, stop or restart it and change its
+launch enablement. Starting marks it active and enabled; stopping clears its
+active state. `riela serve` starts saved instances that are both active and
+enabled at launch. Configuration and event-source changes restart running
+instances. Switching profiles stops the previous profile's instances before
+starting the selected profile's enabled active instances; server shutdown stops
+all owned instances. Instance runs and their browser history share the profile's
+session directory, or the explicit `--session-store` override.
+
+For browser access on a public listener, set `RIELA_WEB_TOKEN` to an operator
+access token and `RIELA_WEB_ORIGIN` to the exact browser origin, including the
+scheme and non-default port, with no trailing slash. For example, with the token
+already set in the process environment:
+
+```bash
+RIELA_WEB_ORIGIN=https://riela.example riela serve --host 0.0.0.0 --port 8787
+```
+
+Use an HTTPS reverse proxy for remote connections; `riela serve` itself speaks
+HTTP. Preserve the public Host header through the proxy. The login screen asks
+for the token, which grants access to the server's profiles, configuration and
+workflow execution. It stays in page memory and must be entered again after
+reloading. API responses are not cached, and authenticated mutations still
+require the matching Origin, CSRF token and profile. Missing or invalid public
+access configuration leaves browser APIs unavailable. Explicit token/origin
+configuration also requires authentication on a loopback listener. CLI and
+manager GraphQL clients retain their separate, existing credential contract.
 
 ## RielaApp Packages And Profiles
 

@@ -131,6 +131,7 @@ let package = Package(
       name: "RielaAddons",
       dependencies: [
         "RielaCore",
+        "RielaGraphQL",
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
@@ -179,6 +180,7 @@ let package = Package(
         "RielaKaibaSupport",
         "RielaEvents",
         "RielaServer",
+        "RielaViewer",
         "RielaObservability"
       ],
       resources: [.process("Resources")]
@@ -237,6 +239,7 @@ let package = Package(
         .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
+        "RielaAppSupport",
         "RielaVersion",
         "RielaSQLite",
         .product(name: "RielaMemory", package: "RielaMemory"),
@@ -263,6 +266,7 @@ let package = Package(
     .executableTarget(
       name: "RielaApp",
       dependencies: [
+        "RielaCLI",
         "RielaAppSupport",
         "RielaKaibaSupport",
         "RielaAdapters",

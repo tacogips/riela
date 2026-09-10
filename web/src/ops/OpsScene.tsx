@@ -31,10 +31,14 @@ export function OpsScene(props: {
   bounds: OpsBounds
   fitKey: string
   label: string
+  interactive?: boolean
   children: JSX.Element
+  initialCamera?: OpsCamera
+  fitPadding?: number
+  onCameraChange?: (camera: OpsCamera) => void
 }) {
   let container: HTMLDivElement | undefined
-  const [camera, setCamera] = createSignal<OpsCamera>({ offsetX: 0, offsetY: 0, scale: 1 })
+  const [camera, setCamera] = createSignal<OpsCamera>(props.initialCamera ?? { offsetX: 0, offsetY: 0, scale: 1 })
   const [viewport, setViewport] = createSignal({ width: 0, height: 0 })
   const [dragging, setDragging] = createSignal(false)
   let lastFitKey: string | undefined
@@ -43,7 +47,7 @@ export function OpsScene(props: {
 
   const fit = () => {
     const size = viewport()
-    if (size.width > 0 && size.height > 0) setCamera(fitCamera(props.bounds, size))
+    if (size.width > 0 && size.height > 0) setCamera(fitCamera(props.bounds, size, props.fitPadding))
   }
 
   const zoomAtCenter = (factor: number) => {
@@ -67,6 +71,7 @@ export function OpsScene(props: {
     }
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
+      if ((event.target as Element).closest('[data-canvas-interactive]')) return
       pan = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY, travel: 0 }
     }
     const onPointerMove = (event: PointerEvent) => {
@@ -118,14 +123,17 @@ export function OpsScene(props: {
     const size = viewport()
     if (size.width === 0 || size.height === 0) return
     if (key !== lastFitKey) {
+      const restore = lastFitKey === undefined && props.initialCamera
       lastFitKey = key
-      fit()
+      if (!restore) fit()
     }
   })
 
+  createEffect(() => props.onCameraChange?.(camera()))
+
   return (
     <div classList={{ 'ops-canvas': true, dragging: dragging() }} ref={container}>
-      <svg role="img" aria-label={props.label}>
+      <svg role={props.interactive ? "group" : "img"} aria-label={props.label}>
         <defs>
           <filter id="ops-glow" x="-80%" y="-80%" width="260%" height="260%">
             <feGaussianBlur stdDeviation="5" result="blur" />

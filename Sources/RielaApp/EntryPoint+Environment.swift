@@ -98,6 +98,11 @@ extension RielaApp {
     RielaServerConfiguration()
   }
 
+  func daemonSessionStoreRoot(profileName: RielaAppProfileName) -> String {
+    webSessionStoreRootOverride ?? appHomeDirectory
+      .appendingPathComponent(".riela/profiles/\(profileName.rawValue)/sessions", isDirectory: true).path
+  }
+
   private struct EnvironmentStatusSummary {
     var fileDisplayName: String?
     var inlineCount: Int

@@ -35,6 +35,7 @@ describe('hash route parsing', () => {
   test('round-trips every route shape', () => {
     const routes: HashRoute[] = [
       { view: 'instances' },
+      { view: 'workflow-detail', sourceId: 'profile-workflow:/a/b:日本語' },
       { view: 'ops' },
       { view: 'run-detail', sessionId: 'session with spaces' },
       { view: 'ops-run', instanceId: 'a/b:c', sessionId: 's/1' },

@@ -6,7 +6,7 @@ extension RielaApp {
     guard let button = statusItem.button else {
       return
     }
-    button.image = RielaAppIcon.workflowTemplateImage()
+    button.image = RielaAppIcon.railTemplateImage()
     button.imagePosition = .imageOnly
     button.imageScaling = .scaleProportionallyDown
     button.toolTip = "Riela workflow instances"
@@ -15,6 +15,7 @@ extension RielaApp {
 
   func rebuildMenu() {
     let menu = NSMenu()
+    menu.addItem(menuItem("Open Riela...", action: #selector(openDesktopFromMenu)))
     menu.addItem(menuItem("Instances...", action: #selector(openDaemonInstances)))
     let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
     launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off

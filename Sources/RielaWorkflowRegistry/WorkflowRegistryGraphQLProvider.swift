@@ -9,15 +9,18 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
   public var workingDirectory: String
   private let webPrincipalId: String?
   private let retainKey: Data
+  private let authoringProjection: Bool
 
   public init(
     workingDirectory: String = FileManager.default.currentDirectoryPath,
     webPrincipalId: String? = nil,
-    retainKey: Data? = nil
+    retainKey: Data? = nil,
+    authoringProjection: Bool = false
   ) {
     self.workingDirectory = workingDirectory
     self.webPrincipalId = webPrincipalId
     self.retainKey = retainKey ?? Self.processRetainKey
+    self.authoringProjection = authoringProjection
   }
 
   public func workflows(filter: WorkflowRegistryFilter) async throws -> [GraphQLWorkflowRegistryEntry] {
@@ -324,7 +327,9 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
           )
         case .displayText:
           if case let .string(text) = child, let safe = safeDisplayText(text) {
-            result[key] = .string(safe)
+            // Authoring must preserve prompt whitespace, not persist the
+            // display policy's compact one-line summary back into the node.
+            result[key] = .string(authoringProjection ? text : safe)
           } else {
             result[key] = retainPlaceholder(
               child,
@@ -411,13 +416,52 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
       return .object(expanded)
     case let .array(values):
       return .array(try values.enumerated().map { index, child in
-        try expandRetainHandles(
+        if path.range(of: #"^/steps/[0-9]+/transitions$"#, options: .regularExpression) != nil,
+           containsRetainHandle(child), case let .object(transition) = child,
+           case let .array(original)? = jsonValue(at: path, in: currentRoot) {
+          // Protected fields remain tied to their source step and destination.
+          // Match authenticated original fields, not the shifted array index.
+          let routingKeys = ["toStepId", "toWorkflowId", "resumeStepId"]
+          var match: JSONValue?
+          for (originalIndex, candidate) in original.enumerated() {
+            guard case let .object(route) = candidate,
+                  routingKeys.allSatisfy({ route[$0] == transition[$0] }),
+                  let expanded = try? expandRetainHandles(child, currentRoot: currentRoot,
+                    originId: originId, revision: revision, principalId: principalId,
+                    path: "\(path)/\(originalIndex)") else { continue }
+            guard match == nil else {
+              throw registryError(.invalidWorkflow, "retained transition identity is ambiguous")
+            }
+            match = expanded
+          }
+          guard let match else {
+            throw registryError(.invalidWorkflow, "retained transition was moved to a different route or rebound")
+          }
+          return match
+        }
+        // Node/step identity survives deletion and reordering. Authenticate the
+        // handle at its original path, never at a different node's new index.
+        var sourceIndex = index
+        if path == "/nodes" || path == "/steps", case let .object(object) = child,
+           case let .string(identifier)? = object["id"],
+           case let .array(original)? = jsonValue(at: path, in: currentRoot) {
+          let matches = original.indices.filter {
+            guard case let .object(candidate) = original[$0] else { return false }
+            return candidate["id"] == .string(identifier)
+          }
+          if matches.count == 1 {
+            sourceIndex = matches[0]
+          } else if containsRetainHandle(child) {
+            throw registryError(.invalidWorkflow, "retained node or step identity was changed or is ambiguous")
+          }
+        }
+        return try expandRetainHandles(
           child,
           currentRoot: currentRoot,
           originId: originId,
           revision: revision,
           principalId: principalId,
-          path: "\(path)/\(index)"
+          path: "\(path)/\(sourceIndex)"
         )
       })
     default:
@@ -476,6 +520,14 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
   }
 
   private func definitionFieldExposure(at path: String) -> DefinitionFieldExposure {
+    if authoringProjection {
+      if path.range(of: #"^/nodes/[0-9]+/addon(/(name|version|config))?$"#, options: .regularExpression) != nil {
+        return .structural
+      }
+      if isEditorTextPath(path) {
+        return .displayText
+      }
+    }
     if path == "/description"
       || path.range(
         of: #"^/steps/[0-9]+/description$"#,
@@ -511,6 +563,10 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
     return structuralPatterns.contains {
       path.range(of: $0, options: .regularExpression) != nil
     } ? .structural : .sensitive
+  }
+
+  private func isEditorTextPath(_ path: String) -> Bool {
+    path.range(of: #"^/nodes/[0-9]+/addon/config/(promptTemplate|model)$"#, options: .regularExpression) != nil
   }
 
   private func requireMutableEditProjectionFits(

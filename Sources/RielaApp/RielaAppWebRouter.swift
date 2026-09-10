@@ -73,22 +73,7 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
     lock.lock()
     expectedHost = "127.0.0.1:\(configuredPort)"
     lock.unlock()
-    guard request.headers["host"] == expectedHost else {
-      return .json(status: 403, .object(["error": .string("invalid_host")]))
-    }
-    guard request.method == "POST" || request.method == "PUT" || request.method == "DELETE" else {
-      return nil
-    }
-    guard request.headers["origin"] == "http://\(expectedHost)" else {
-      return .json(status: 403, .object(["error": .string("invalid_origin")]))
-    }
-    guard request.headers["x-riela-csrf"] == csrfToken else {
-      return .json(status: 403, .object(["error": .string("invalid_csrf")]))
-    }
-    guard request.headers["content-type"]?.lowercased().hasPrefix("application/json") == true else {
-      return .json(status: 415, .object(["error": .string("json_content_type_required")]))
-    }
-    return nil
+    return RielaWebRequestSecurity(authority: expectedHost, csrfToken: csrfToken).rejection(for: request)
   }
 
   private func isFrontendNavigation(_ path: String) -> Bool {

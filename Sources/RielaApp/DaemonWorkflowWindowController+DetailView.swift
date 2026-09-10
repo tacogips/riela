@@ -10,8 +10,8 @@ extension DaemonWorkflowWindowController {
       action: #selector(relinkSelectedSource)
     )
     let openWebUIRow = actionRow(
-      title: "Configure in Web Config",
-      detail: "Edit this instance's working directory, environment, and workflow variables in the browser.",
+      title: "Configure in Riela",
+      detail: "Edit this instance's working directory, environment, and workflow variables in the Riela window.",
       action: #selector(openSelectedInstanceInWebUI)
     )
     let startRow = actionRow(

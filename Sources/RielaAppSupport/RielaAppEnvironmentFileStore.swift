@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import RielaAddons
 
@@ -78,4 +77,3 @@ public struct RielaAppEnvironmentFileStore: Sendable {
       .replacingOccurrences(of: "'\\''", with: "'")
   }
 }
-#endif

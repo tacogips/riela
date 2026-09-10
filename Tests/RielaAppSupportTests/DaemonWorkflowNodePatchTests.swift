@@ -411,7 +411,8 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
         defaultVariables: ["persona": .string("assistant-a")],
         nodePatch: ["worker": .object(["model": .string("gpt-5-mini")])]
       ),
-      server: RielaServerConfiguration(noteAPIEnabled: true, noteRoot: root.path)
+      server: RielaServerConfiguration(noteAPIEnabled: true, noteRoot: root.path),
+      sessionStoreRoot: root.appendingPathComponent("profile-sessions").path
     )
     factory.markLatestExited()
 
@@ -426,6 +427,9 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     XCTAssertEqual(factory.requests.last?.nodePatch?["worker"], .object(["model": .string("gpt-5-mini")]))
     XCTAssertEqual(factory.requests.last?.server.noteAPIEnabled, true)
     XCTAssertEqual(factory.requests.last?.server.noteRoot, root.path)
+    XCTAssertTrue(factory.requests.allSatisfy {
+      $0.sessionStoreRoot == root.appendingPathComponent("profile-sessions").path
+    })
     await runtime.stop(identity: candidate.id)
   }
 

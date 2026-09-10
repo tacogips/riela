@@ -17,6 +17,7 @@ import {
   type WorkflowHubVM,
 } from './overview'
 import { hubColor, kindStyle, statusStyle } from './palette'
+import { WorkflowStudio } from '../workflows/WorkflowStudio'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -33,6 +34,7 @@ export function OpsWorkflowsView(props: {
   profileName: string
   onOpenRun: (run: OpsRunSummary) => void
 }) {
+  const [studio, setStudio] = createSignal(false)
   const overview = createPollingResource(
     () => props.profileKey,
     async (signal) => requireExpectedProfile(
@@ -46,6 +48,7 @@ export function OpsWorkflowsView(props: {
   const [selection, setSelection] = createSignal<DeckSelection>()
 
   createEffect(on(() => props.profileKey, () => {
+    setStudio(false)
     setLens(DEFAULT_LENS)
     setQuery('')
     setFocusedSourceId('')
@@ -103,13 +106,16 @@ export function OpsWorkflowsView(props: {
   const totalLive = createMemo(() => hubs().reduce((total, hub) => total + hub.liveRunCount, 0))
 
   return (
-    <section class="ops-shell" aria-label="Workflow command deck">
+    <Show when={!studio()} fallback={<WorkflowStudio profileKey={props.profileKey}
+      source={focusedHub() ? { id: focusedHub()!.workflow.sourceId, name: focusedHub()!.workflow.name } : undefined}
+      onClose={() => setStudio(false)} />}><section class="ops-shell" aria-label="Workflow command deck">
       <header class="ops-topline">
         <div class="ops-topline-title">
           <span class="eyebrow">{'// CONTROL PLANE'}</span>
           <strong>Command deck<span class="ops-cursor" aria-hidden="true" /></strong>
         </div>
         <div class="ops-topline-meta">
+          <button onClick={() => setStudio(true)}>Create / edit workflow</button>
           <span role="status">{pollingStatusLabel(overview.status())}</span>
           <span class="status-chip">{props.profileName || 'riela'}</span>
           <button class="secondary" onClick={() => void overview.refresh()}>Refresh</button>
@@ -254,7 +260,7 @@ export function OpsWorkflowsView(props: {
           </Show>
         </Show>
       </div>
-    </section>
+    </section></Show>
   )
 }
 

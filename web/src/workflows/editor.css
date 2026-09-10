@@ -1,0 +1,39 @@
+.workflow-editor { color: #d7e5ed; background: #0b1721; border: 1px solid #294253; border-radius: 14px; overflow: hidden; }
+.editor-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 16px; border-bottom: 1px solid #294253; }
+.editor-toolbar strong { margin-right: auto; }
+.editor-body { display: grid; grid-template-columns: minmax(0, 1fr) 290px; min-height: 660px; }
+.editor-stage { position: relative; min-height: 660px; overflow: hidden; }
+.editor-stage .ops-canvas { position: absolute; inset: 0; }
+.editor-stage .ops-zoom { right: 16px; }
+.editor-inspector { background: #10212e; padding: 18px; display: flex; gap: 14px; flex-direction: column; max-height: 760px; overflow: auto; }
+.editor-inspector label, .editor-json label { display: flex; flex-direction: column; gap: 6px; }
+.editor-inspector input, .editor-inspector textarea, .editor-inspector select, .editor-json textarea { background: #07151f; color: #d7e5ed; border: 1px solid #355467; width: 100%; }
+.editor-node { fill: #112d3d; stroke: #46677b; stroke-width: 1.5; cursor: move; }
+.editor-node.selected { stroke: #7de5e5; stroke-width: 3; }
+.editor-node-title { fill: #eefaff; font: 600 15px system-ui; pointer-events: none; }
+.editor-node-caption { fill: #a6c0d0; font: 12px system-ui; pointer-events: none; }
+.editor-port { fill: #9ad1e4; stroke: #07151f; stroke-width: 3; cursor: crosshair; }
+.editor-port.output { fill: #f3c884; }
+.editor-edge { fill: none; stroke: #7fb3ca; stroke-width: 2; }
+.editor-edge-label { fill: #acc4d1; font: 11px system-ui; text-anchor: middle; }
+.editor-select { padding: 2px 10px; font-size: 11px; background: #254555; color: #e5f5fc; }
+.editor-hint { position: absolute; bottom: 14px; left: 16px; right: 90px; font-size: 12px; color: #aac3d2; pointer-events: none; }
+.editor-cancel-link { position: absolute; top: 12px; left: 12px; }
+.editor-connection { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.editor-json { padding: 18px; }
+.editor-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.editor-chat { padding: 18px; border-top: 1px solid #294253; background: #10212e; }
+.editor-chat-messages { max-height: 240px; overflow: auto; white-space: pre-wrap; }
+.editor-chat form label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.editor-chat textarea { width: 100%; color: #d7e5ed; background: #07151f; }
+.editor-chat form button { margin-right: 10px; }
+.editor-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.editor-values pre, .editor-chat pre { overflow: auto; max-height: 360px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.editor-attempts { display: flex; flex-wrap: wrap; gap: 8px; }
+.editor-node-dialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid #46677b; border-radius: 12px; background: #10212e; color: #d7e5ed; }
+.editor-node-dialog::backdrop { background: rgb(0 0 0 / 65%); }
+.editor-node-dialog label { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; }
+.editor-node-dialog input, .editor-node-dialog textarea { width: 100%; color: #d7e5ed; background: #07151f; }
+.editor-node-dialog button { margin: 8px 8px 0 0; }
+@media (max-width: 650px) { .editor-values { grid-template-columns: 1fr; } }
+@media (max-width: 850px) { .editor-body { grid-template-columns: 1fr; } .editor-stage { min-height: 470px; } .editor-inspector { max-height: none; } }

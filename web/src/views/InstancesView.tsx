@@ -47,7 +47,7 @@ export function instanceEditorIdentity(profileKey: string, instanceId: string): 
   return `${profileKey}\u{1f}${instanceId}`
 }
 
-export function InstancesView(props: { profileKey: string; profileName: string }) {
+export function InstancesView(props: { profileKey: string; profileName: string; serverHosted?: boolean }) {
   const instances = createPollingResource(
     () => props.profileKey,
     async (signal) => requireExpectedProfile(
@@ -69,7 +69,7 @@ export function InstancesView(props: { profileKey: string; profileName: string }
   return <section class="page"><PageHeader eyebrow="RUNTIME" title="Workflow instances" description="Live state and persisted configuration for this profile." actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(instances.status())}</span><button class="secondary" onClick={() => void instances.refresh()}>Refresh</button></div>} />
     <Show when={instances.loading() && !instances.data()}><LoadingState label="Loading workflow instances…" /></Show>
     <Show when={instances.error()}><ErrorBanner message={errorMessage(instances.error())} /></Show>
-    <Show when={!instances.loading() && !instances.error() && instances.data()?.items.length === 0}><EmptyState title="No instances yet" detail="Add a workflow in the native Instances window, then refresh this page." /></Show>
+    <Show when={!instances.loading() && !instances.error() && instances.data()?.items.length === 0}><EmptyState title="No instances yet" detail="Add a workflow directory from Workflows, then refresh this page." /></Show>
     <div class="instance-grid" aria-busy={instances.loading()}>
       <For each={instances.data()?.items}>{(instance) => {
         const missingCount = () => instance.requiredEnvironment.filter((requirement) => !requirement.present).length
@@ -88,6 +88,7 @@ export function InstancesView(props: { profileKey: string; profileName: string }
         <InstanceEditor
           instance={instance}
           profileName={props.profileName}
+          serverHosted={props.serverHosted}
           revision={() => instances.data()?.revision ?? 0}
           onRefresh={instances.refresh}
         />
@@ -105,6 +106,7 @@ function MissingSourceDetail(props: { instance: Instance }) {
 function InstanceEditor(props: {
   instance: () => Instance
   profileName: string
+  serverHosted?: boolean
   revision: () => number
   onRefresh: () => Promise<void>
 }) {
@@ -223,8 +225,35 @@ function InstanceEditor(props: {
     setEnvironmentToClear((current) => checked ? [...current, name] : current.filter((item) => item !== name))
   }
 
+  const controlInstance = async (action: 'start' | 'stop' | 'restart' | 'enableAtLaunch' | 'disableAtLaunch') => {
+    setSaving(true); setMessage(''); setSaveError(false)
+    try {
+      const response = await api.mutate<{ revision: number }>(
+        `/api/v1/instances/${encodeURIComponent(props.instance().id)}/actions`, 'POST',
+        { action, expectedProfile: props.profileName }, expectedRevision(),
+      )
+      setExpectedRevision(response.revision)
+      setMessage('Instance updated.')
+    } catch (error) {
+      setSaveError(true); setMessage(errorMessage(error))
+      setConflict(error instanceof APIError && error.status === 409)
+    } finally {
+      await props.onRefresh()
+      setSaving(false)
+    }
+  }
+
   return <div class="editor-panel"><div class="section-title"><div><span class="eyebrow">CONFIGURATION</span><h2>{props.instance().name}</h2></div><span class="source-label">{props.instance().source} · {props.instance().sourceKind}</span></div>
-    <div class="instance-affordance"><strong>{props.instance().active ? 'Active now' : 'Inactive now'} · {props.instance().enabledAtLaunch ? 'enabled at launch' : 'disabled at launch'}</strong><span>Start, stop, restart, and enablement are managed in the Riela menu-bar app.</span></div>
+    <div class="instance-affordance"><strong>{props.instance().active ? 'Active now' : 'Inactive now'} · {props.instance().enabledAtLaunch ? 'enabled at launch' : 'disabled at launch'}</strong>
+      <Show when={props.serverHosted} fallback={<span>Start, stop, restart, and enablement are managed in the Riela menu-bar app.</span>}>
+        <div class="save-row instance-controls">
+          <button disabled={saving() || props.instance().status === 'running'} onClick={() => void controlInstance('start')}>Start instance</button>
+          <button class="secondary" disabled={saving() || props.instance().status === 'stopped'} onClick={() => void controlInstance('stop')}>Stop instance</button>
+          <button class="secondary" disabled={saving()} onClick={() => void controlInstance('restart')}>Restart instance</button>
+          <button class="secondary" disabled={saving()} onClick={() => void controlInstance(props.instance().enabledAtLaunch ? 'disableAtLaunch' : 'enableAtLaunch')}>{props.instance().enabledAtLaunch ? 'Disable at launch' : 'Enable at launch'}</button>
+        </div>
+      </Show>
+    </div>
     <Show when={props.instance().requiredEnvironment.length > 0}><div class="requirements" aria-label="Required environment"><h3>Required environment</h3><For each={props.instance().requiredEnvironment}>{(requirement) => <div class="requirement-row"><span classList={{ 'presence-dot': true, present: requirement.present }} aria-hidden="true" /><div><strong>{requirement.name}</strong><span>{requirement.description ?? 'No description'} · {requirement.source}</span></div><span>{requirement.present ? 'Present' : 'Missing'}</span></div>}</For></div></Show>
     <div class="form-grid"><label><span>Working directory</span><input value={workingDirectory()} onInput={(event) => setWorkingDirectory(event.currentTarget.value)} /></label><label><span>Environment file</span><input value={environmentFilePath()} onInput={(event) => setEnvironmentFilePath(event.currentTarget.value)} /></label></div>
     <div class="secret-editor"><h3>Inline environment variables</h3><p>Stored values are never returned. Leave a replacement blank to keep it, or explicitly clear it.</p>

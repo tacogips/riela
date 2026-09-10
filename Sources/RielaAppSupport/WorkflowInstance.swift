@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 
 public struct WorkflowInstance: Identifiable, Equatable, Sendable {
@@ -82,4 +81,3 @@ public extension RielaAppDaemonWorkflowState {
     return configuredInstances + unconfiguredInstances
   }
 }
-#endif

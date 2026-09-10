@@ -2,6 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { profileViewTransition } from './App'
 
 describe('profile-owned view state', () => {
+  test('returns from a discovered definition to workflows on profile changes', () => {
+    expect(profileViewTransition('riela-app:first', 'riela-app:second', 'riela-app', 'workflow-detail'))
+      .toEqual({ clearSelection: true, view: 'workflows' })
+  })
+
   test('clears run selection and returns to logs after a profile change', () => {
     expect(profileViewTransition(
       'riela-app:first',

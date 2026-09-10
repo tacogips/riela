@@ -1,3 +1,4 @@
+import { rielaFetch } from './transport'
 import type { APIErrorPayload, Bootstrap } from './contracts'
 
 export class APIError extends Error {
@@ -27,7 +28,7 @@ export class RielaAPIClient {
 
   constructor(
     private readonly transport: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> =
-      (input, init) => fetch(input, init),
+      (input, init) => rielaFetch(input, init),
   ) {}
 
   async bootstrap(signal?: AbortSignal): Promise<Bootstrap> {

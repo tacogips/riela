@@ -1,3 +1,4 @@
+import { rielaFetch } from '../transport'
 import { APIError, api } from '../api'
 import type { ConfigurationRevision, RielaConfiguration } from '../contracts'
 
@@ -16,7 +17,7 @@ const configurationFields = `
 export class RielaConfigurationClient {
   constructor(
     private readonly request: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> =
-      (input, init) => fetch(input, init),
+      (input, init) => rielaFetch(input, init),
   ) {}
 
   async get(): Promise<RielaConfiguration> {

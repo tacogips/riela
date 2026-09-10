@@ -54,10 +54,14 @@ jobs:
       - name: Build Linux x64 CLI archive
         env:
           SWIFT_IMAGE: swift@sha256:4c6af6663ed2316002a3b38ff5505a1fc1f2749ec31e84936c32dd336713c569
+          BUN_VERSION: 1.4.2
+          BUN_SHA256: 36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
         run: |
           set -euo pipefail
           docker run --rm \
             --platform linux/amd64 \
+            -e BUN_VERSION \
+            -e BUN_SHA256 \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             "$SWIFT_IMAGE" \
@@ -66,7 +70,15 @@ jobs:
               test "$(uname -m)" = "x86_64"
               swift --version
               apt-get update >/dev/null
-              apt-get install -y libsqlite3-dev >/dev/null
+              apt-get install -y libsqlite3-dev curl unzip >/dev/null
+              mkdir -p tmp/linux-release-bun
+              curl --fail --location --retry 3 \
+                "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" \
+                -o tmp/linux-release-bun/bun.zip
+              printf "%s  %s\n" "$BUN_SHA256" tmp/linux-release-bun/bun.zip | sha256sum -c -
+              unzip -q tmp/linux-release-bun/bun.zip -d tmp/linux-release-bun
+              install -m 0755 tmp/linux-release-bun/bun-linux-x64/bun /usr/local/bin/bun
+              bun --version
               scripts/build-homebrew-release.sh linux-x64
             '
 

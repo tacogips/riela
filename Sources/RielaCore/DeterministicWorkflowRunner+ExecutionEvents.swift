@@ -31,6 +31,7 @@ extension DeterministicWorkflowRunner {
     attempt: Int,
     backend: NodeExecutionBackend?,
     backendWorkingDirectory: String? = nil,
+    inputSnapshot: JSONObject? = nil,
     effectiveStepBudget: Int? = nil,
     handler: WorkflowRunEventHandler?
   ) async throws -> WorkflowStepStartedExecutionRecord {
@@ -42,6 +43,7 @@ extension DeterministicWorkflowRunner {
         attempt: attempt,
         backend: backend,
         backendWorkingDirectory: backendWorkingDirectory,
+        inputSnapshot: inputSnapshot,
         effectiveStepBudget: effectiveStepBudget
       )
     )

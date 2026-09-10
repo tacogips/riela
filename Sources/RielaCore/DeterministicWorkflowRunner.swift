@@ -692,6 +692,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         backend: payload.executionBackend,
         configuredWorkingDirectory: payload.workingDirectory
       ),
+      inputSnapshot: ["resolvedInputPayload": .object(resolvedInputPayload)],
       effectiveStepBudget: request.effectiveStepBudget,
       handler: request.eventHandler
     )
@@ -764,6 +765,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           backend: payload.executionBackend,
           configuredWorkingDirectory: payload.workingDirectory
         ),
+        inputSnapshot: ["variables": .object(request.variables), "resolvedInputPayload": .object(resolvedInputPayload)],
         effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
@@ -875,6 +877,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           backend: basePayload.executionBackend,
           configuredWorkingDirectory: basePayload.workingDirectory
         ),
+        inputSnapshot: adapterInput.invocationSnapshot,
         effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )

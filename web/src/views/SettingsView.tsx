@@ -21,7 +21,7 @@ function colorSchemeLabel(option: string): string {
 }
 
 /** Mirrors the native S3 editor validation so the form fails fast before a round trip. */
-export function SettingsView(props: { profileKey: string; profileName: string; onHostChange: () => void }) {
+export function SettingsView(props: { profileKey: string; profileName: string; serverHosted?: boolean; onHostChange: () => void }) {
   const [configuration, { refetch }] = createResource(() => props.profileKey, () => configurationClient.get())
   const [messages, setMessages] = createSignal<Partial<Record<SettingsSection, string>>>({})
   const [errors, setErrors] = createSignal<Partial<Record<SettingsSection, boolean>>>({})
@@ -74,7 +74,7 @@ export function SettingsView(props: { profileKey: string; profileName: string; o
       if (!current) throw new Error('Configuration is still loading.')
       await configurationClient.updateAppearance(current, colorScheme)
       await refetch()
-    }, `Native windows switched to ${colorSchemeLabel(colorScheme)}.`)
+    }, `Native window preference saved: ${colorSchemeLabel(colorScheme)}.`)
   }
   const saveServer = async (form: HTMLFormElement) => {
     const data = new FormData(form)
@@ -89,7 +89,7 @@ export function SettingsView(props: { profileKey: string; profileName: string; o
       if (!current) throw new Error('Configuration is still loading.')
       await configurationClient.updateHTTPServer(current, port)
       setPortConfirmation(''); await refetch(); props.onHostChange()
-    }, 'Server port saved. Restart from the Riela menu to apply it.')
+    }, props.serverHosted ? 'Server port saved. Restart riela serve to apply it; an explicit --port overrides this setting.' : 'Server port saved. Restart from the Riela menu to apply it.')
   }
   const createProfile = async () => {
     await runMutation('profiles', async () => {
@@ -133,7 +133,7 @@ export function SettingsView(props: { profileKey: string; profileName: string; o
         <div class="save-row">{SectionMessage('appearance')}</div>
       </div>}</Show>
 
-      <Show when={configuration()?.server}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveServer(event.currentTarget) }}><div class="section-title"><div><h2>Web Config server</h2><p>Optional loopback listener hosted by RielaApp. The app continues running when it is stopped.</p></div><span class={`status-chip ${value().state}`}>{value().state}</span></div><div class="form-grid"><label><span>Configured port</span><input name="port" type="number" min="1" max="65535" value={value().configuredPort} /></label><label><span>Bound endpoint</span><input disabled value={value().boundPort ? `127.0.0.1:${value().boundPort}` : 'Not running'} /></label></div><div class="confirmation-box"><strong>Changing the port makes this page unreachable until you open the new address.</strong><span>Restart or recover Web Config from the Riela menu-bar app. Type CHANGE PORT before saving a different port.</span><label><span>Port-change confirmation</span><input value={portConfirmation()} onInput={(event) => setPortConfirmation(event.currentTarget.value)} placeholder="CHANGE PORT" /></label></div><Show when={value().restartRequired}><p class="restart-notice">Restart required from the Riela menu-bar app.</p></Show><div class="save-row">{SectionMessage('server')}<button disabled={saving() === 'server'}>{saving() === 'server' ? 'Saving…' : 'Save server'}</button></div></form>}</Show>
+      <Show when={configuration()?.server}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveServer(event.currentTarget) }}><div class="section-title"><div><h2>Web Config server</h2><p>{props.serverHosted ? 'Hosted by riela serve. Stop and restart the command to apply a different port.' : 'Optional loopback listener hosted by RielaApp. The app continues running when it is stopped.'}</p></div><span class={`status-chip ${value().state}`}>{value().state}</span></div><div class="form-grid"><label><span>Configured port</span><input name="port" type="number" min="1" max="65535" value={value().configuredPort} /></label><label><span>Bound endpoint</span><input disabled value={props.serverHosted ? location.host : value().boundPort ? `127.0.0.1:${value().boundPort}` : 'Not running'} /></label></div><div class="confirmation-box"><strong>Browser connections must use the new address after a port change. The desktop window stays connected.</strong><span>{props.serverHosted ? 'Restart riela serve to apply the port. An explicit --port overrides this setting.' : 'Restart or recover Web Config from the Riela menu-bar app.'} Type CHANGE PORT before saving a different port.</span><label><span>Port-change confirmation</span><input value={portConfirmation()} onInput={(event) => setPortConfirmation(event.currentTarget.value)} placeholder="CHANGE PORT" /></label></div><Show when={value().restartRequired}><p class="restart-notice">{props.serverHosted ? 'Restart riela serve to apply the saved port.' : 'Restart required from the Riela menu-bar app.'}</p></Show><div class="save-row">{SectionMessage('server')}<button disabled={saving() === 'server'}>{saving() === 'server' ? 'Saving…' : 'Save server'}</button></div></form>}</Show>
     </div>
   </section>
 }

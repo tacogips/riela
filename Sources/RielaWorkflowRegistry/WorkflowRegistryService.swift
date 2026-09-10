@@ -201,6 +201,31 @@ public struct WorkflowRegistryService: Sendable {
     }
   }
 
+  /// Bind an editor launch to one active mutable origin and the revision that
+  /// the user reviewed. Standard resolution runs under the registry read guard.
+  public func prepareEditorExecution(
+    target: WorkflowRegistryTarget,
+    expectedDefinitionRevision: String,
+    workingDirectory: String,
+    resolver: any WorkflowBundleResolving
+  ) throws -> ResolvedWorkflowBundle {
+    try withCoordinatedRead(workingDirectory: workingDirectory) {
+      let entry = try fetch(target: target, workingDirectory: workingDirectory)
+      try requireMutable(entry)
+      guard target.scope == .user, target.originId == entry.originId, entry.activationState == .active else {
+        throw WorkflowRegistryError(code: .workflowDeactivated, message: "Select an active mutable workflow before running.")
+      }
+      try requireDefinitionRevision(expectedDefinitionRevision, data: definitionData(for: entry), entry: entry)
+      let bundle = try resolver.resolve(WorkflowResolutionOptions(
+        workflowName: entry.workflowId, scope: .user, workingDirectory: workingDirectory
+      ))
+      guard bundle.originId == entry.originId else {
+        throw WorkflowRegistryError(code: .registryConflict, message: "The workflow origin changed. Reload before running.")
+      }
+      return bundle
+    }
+  }
+
   func definitionSnapshot(
     target: WorkflowRegistryTarget,
     workingDirectory: String = FileManager.default.currentDirectoryPath
@@ -227,6 +252,16 @@ public struct WorkflowRegistryService: Sendable {
     expectedDefinitionRevision: String,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
     transform: (Data, WorkflowCatalogEntry) throws -> Data
+  ) throws -> WorkflowRegistryMutationResult {
+    try updateBundleDefinition(target: target, expectedDefinitionRevision: expectedDefinitionRevision,
+      workingDirectory: workingDirectory) { data, entry, _ in try transform(data, entry) }
+  }
+
+  func updateBundleDefinition(
+    target: WorkflowRegistryTarget,
+    expectedDefinitionRevision: String,
+    workingDirectory: String,
+    transform: (Data, WorkflowCatalogEntry, URL) throws -> Data
   ) throws -> WorkflowRegistryMutationResult {
     try coordinated(workingDirectory: workingDirectory) {
       let entry = try fetch(target: target, workingDirectory: workingDirectory)
@@ -258,7 +293,7 @@ public struct WorkflowRegistryService: Sendable {
           let workspaceDefinition = workspace.appendingPathComponent("workflow.json")
           let persisted = try Data(contentsOf: workspaceDefinition)
           try requireDefinitionRevision(expectedDefinitionRevision, data: persisted, entry: entry)
-          let replacement = try transform(persisted, entry)
+          let replacement = try transform(persisted, entry, workspace)
           guard replacement.count <= 512 * 1_024 else {
             throw WorkflowRegistryError(
               code: .invalidWorkflow,

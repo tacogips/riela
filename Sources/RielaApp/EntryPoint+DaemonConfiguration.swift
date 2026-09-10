@@ -16,7 +16,8 @@ extension RielaApp {
       await daemonRuntime.start(
         approved.candidate,
         configuration: daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
-        server: daemonServerConfiguration(profileName: approved.profileName)
+        server: daemonServerConfiguration(profileName: approved.profileName),
+        sessionStoreRoot: daemonSessionStoreRoot(profileName: approved.profileName)
       )
       status = "Applied \(changeDescription) and restarted \(approved.candidate.displayName)"
       refreshDaemonWorkflowWindow()

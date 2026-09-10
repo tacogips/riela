@@ -41,6 +41,10 @@ public struct RielaAppLaunchOptions: Equatable, Sendable {
     values(flag: "--import-workflow-or-package").map { absoluteURL($0) }
   }
 
+  public var opensDesktop: Bool {
+    arguments.contains("--open-desktop")
+  }
+
   public var opensWorkflows: Bool {
     arguments.contains("--open-workflows")
   }

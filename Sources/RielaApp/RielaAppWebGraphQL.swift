@@ -47,10 +47,14 @@ extension RielaApp {
       ),
       registryWorkingDirectory: appHomeDirectory.path
     )
-    return await DeterministicServerHTTPAdapter(
-      routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
-      context: ServerRequestContext(serviceName: "riela-app")
-    ).response(for: request)
+    var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    environment["HOME"] = appHomeDirectory.path
+    return await CLIRuntimeEnvironment.$overrides.withValue(environment) {
+      await DeterministicServerHTTPAdapter(
+        routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
+        context: ServerRequestContext(serviceName: "riela-app")
+      ).response(for: request)
+    }
   }
 
   private func webGraphQLProfileConflictResponse() -> RielaHTTPResponse {

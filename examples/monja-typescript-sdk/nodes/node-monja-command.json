@@ -1,0 +1,18 @@
+{
+  "id": "monja-command",
+  "description": "Call Monja's typed current-principal REST operation and execute a caller-supplied GraphQL document through the installed @monja/client package.",
+  "nodeType": "command",
+  "variables": {},
+  "command": {
+    "scriptPath": "scripts/run-installed-command.sh",
+    "arguments": [],
+    "environment": {},
+    "workingDirectory": "scripts"
+  },
+  "input": {
+    "description": "Provide workflowInput.graphql.query as a required string, workflowInput.graphql.operationName as an optional string, and workflowInput.graphql.variables as an optional JSON object. Credentials and transport configuration are inherited from the host environment, never from workflow input or argv."
+  },
+  "output": {
+    "description": "Return exactly one JSON object record containing status, a safe rest principal summary, and caller-requested graphql data."
+  }
+}

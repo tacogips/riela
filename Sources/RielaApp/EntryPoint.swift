@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import RielaCLI
 import RielaAppSupport
 import RielaKaibaSupport
 import RielaObservability
@@ -46,8 +47,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
   var webServerController: RielaAppWebServerController?
+  var desktopController: RielaDesktopController?
   var webServerSetupError: String?
   var webRevision = 1
+  let webWorkflowRuntime = RielaWebWorkflowRuntime()
+  var workflowEditorGenerations: WorkflowEditorGenerationStore { webWorkflowRuntime.generations }
+  var webWorkflowLaunches: [String: WebWorkflowLaunch] { webWorkflowRuntime.launches }
   var webSessionStoreRootOverride: String?
   private var terminationShutdownStarted = false
 
@@ -97,6 +102,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
     openInitialWorkflowsIfRequested()
+    if launchOptions.opensDesktop { openDesktopFromMenu() }
     if shouldAutostartDaemonWorkflows() {
       autostartDaemonWorkflows()
     } else {
@@ -109,10 +115,12 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       return .terminateNow
     }
     terminationShutdownStarted = true
+    desktopController?.shutdown()
     daemonStatusRefreshTimer?.invalidate()
     daemonStatusRefreshTimer = nil
     Task {
       await webServerController?.shutdownForTermination()
+      await webWorkflowRuntime.shutdown()
       let stopped = await stopDaemonRuntimeForTermination()
       if !stopped {
         logDaemon("daemon workflow shutdown timed out during app termination")
@@ -365,7 +373,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         await daemonRuntime.start(
           resolved.candidate,
           configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference),
-          server: daemonServerConfiguration(profileName: daemonProfileName)
+          server: daemonServerConfiguration(profileName: daemonProfileName),
+          sessionStoreRoot: daemonSessionStoreRoot(profileName: resolved.profileName)
         )
       }
       refreshDaemonWorkflowWindow()
@@ -448,7 +457,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       await daemonRuntime.start(
         approved.candidate,
         configuration: daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
-        server: daemonServerConfiguration(profileName: approved.profileName)
+        server: daemonServerConfiguration(profileName: approved.profileName),
+        sessionStoreRoot: daemonSessionStoreRoot(profileName: approved.profileName)
       )
       let snapshot = daemonRuntime.snapshot(for: approved.candidate.id)
       logDaemon("start candidate=\(approved.candidate.id) status=\(snapshot.status.rawValue) detail=\(snapshot.detail)")

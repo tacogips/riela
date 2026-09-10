@@ -112,3 +112,6 @@ examples/document-inbox-notebook/inbox/*
 qemu_*.core
 core
 *.core
+
+# Tauri build products
+/web/src-tauri/target/

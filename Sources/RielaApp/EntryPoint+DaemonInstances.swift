@@ -77,7 +77,8 @@ extension RielaApp {
       await daemonRuntime.start(
         approved.candidate,
         configuration: self.daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
-        server: self.daemonServerConfiguration(profileName: approved.profileName)
+        server: self.daemonServerConfiguration(profileName: approved.profileName),
+        sessionStoreRoot: daemonSessionStoreRoot(profileName: approved.profileName)
       )
       self.status = "Started \(approved.candidate.displayName)"
       self.refreshDaemonWorkflowWindow()
@@ -127,7 +128,8 @@ extension RielaApp {
       await self.daemonRuntime.start(
         approved.candidate,
         configuration: self.daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
-        server: self.daemonServerConfiguration(profileName: approved.profileName)
+        server: self.daemonServerConfiguration(profileName: approved.profileName),
+        sessionStoreRoot: daemonSessionStoreRoot(profileName: approved.profileName)
       )
       self.status = "Restarted \(approved.candidate.displayName)"
       self.refreshDaemonWorkflowWindow()
@@ -307,7 +309,8 @@ extension RielaApp {
         await self.daemonRuntime.start(
           renamed.candidate,
           configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: renamed.preference),
-          server: daemonServerConfiguration(profileName: renamed.profileName)
+          server: daemonServerConfiguration(profileName: renamed.profileName),
+          sessionStoreRoot: daemonSessionStoreRoot(profileName: renamed.profileName)
         )
         refreshDaemonWorkflowWindow()
       }

@@ -1,5 +1,6 @@
 export type HashRoute =
   | { view: 'instances' | 'logs' | 'workflows' | 'ops' | 'settings' }
+  | { view: 'workflow-detail'; sourceId: string }
   | { view: 'run-detail'; sessionId: string }
   | { view: 'ops-run'; instanceId: string; sessionId: string }
 
@@ -20,6 +21,9 @@ export function parseViewHash(hash: string): HashRoute | undefined {
   } catch {
     return undefined
   }
+  if (segments.length === 2 && segments[0] === 'workflows' && segments[1]) {
+    return { view: 'workflow-detail', sourceId: segments[1] }
+  }
   if (segments.length === 2 && segments[0] === 'runs' && segments[1]) {
     return { view: 'run-detail', sessionId: segments[1] }
   }
@@ -33,6 +37,7 @@ export function parseViewHash(hash: string): HashRoute | undefined {
 }
 
 export function viewHash(route: HashRoute): string {
+  if (route.view === 'workflow-detail') return `#/workflows/${encodeURIComponent(route.sourceId)}`
   if (route.view === 'run-detail') {
     return `#/runs/${encodeURIComponent(route.sessionId)}`
   }

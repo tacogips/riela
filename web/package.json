@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test src",
     "test:e2e": "playwright test",
-    "build": "vite build"
+    "build": "vite build",
+    "desktop:build": "bun run build && cargo build --locked --manifest-path src-tauri/Cargo.toml --release",
+    "desktop:build:debug": "bun run build && cargo build --locked --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "solid-js": "^1.9.15"

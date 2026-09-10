@@ -1,4 +1,5 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { isDesktop, setBrowserAccessToken } from './transport'
 import { APIError, api } from './api'
 import type { Bootstrap } from './contracts'
 import { createPollingResource } from './polling'
@@ -6,13 +7,15 @@ import { InstancesView } from './views/InstancesView'
 import { LogsView } from './views/LogsView'
 import { RunDetailView } from './views/RunDetailView'
 import { SettingsView } from './views/SettingsView'
+import { WorkflowDefinitionView } from './views/WorkflowDefinitionView'
+import { ServerLoginView } from './views/ServerLoginView'
 import { WorkflowsView } from './views/WorkflowsView'
 import { OpsRunView } from './ops/OpsRunView'
 import { OpsWorkflowsView } from './ops/OpsWorkflowsView'
 import { parseViewHash, viewHash, type HashRoute } from './routes'
 
 type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'settings'
-type View = NavigationView | 'run-detail' | 'ops-run'
+type View = NavigationView | 'workflow-detail' | 'run-detail' | 'ops-run'
 
 export interface ProfileViewTransition {
   clearSelection: boolean
@@ -27,7 +30,7 @@ export function profileViewTransition(
 ): ProfileViewTransition {
   if (mode === 'cli-serve') return { clearSelection: true, view: 'instances' }
   const profileChanged = previousProfileKey !== undefined && previousProfileKey !== nextProfileKey
-  const fallbackView = currentView === 'run-detail' ? 'logs' : currentView === 'ops-run' ? 'ops' : currentView
+  const fallbackView = currentView === 'workflow-detail' ? 'workflows' : currentView === 'run-detail' ? 'logs' : currentView === 'ops-run' ? 'ops' : currentView
   return {
     clearSelection: profileChanged,
     view: profileChanged ? fallbackView : currentView,
@@ -48,10 +51,16 @@ const CLI_SERVE_HIDDEN_VIEWS = new Set<NavigationView>(['settings', 'ops'])
 
 export function App() {
   const [view, setView] = createSignal<View>('instances')
+  const [selectedSourceId, setSelectedSourceId] = createSignal('')
   const [selectedInstanceId, setSelectedInstanceId] = createSignal('')
   const [selectedRun, setSelectedRun] = createSignal<{ sessionId: string; workflowId: string }>()
   const [selectedOpsRun, setSelectedOpsRun] = createSignal<{ instanceId: string; sessionId: string; workflowId: string }>()
-  const host = createPollingResource(() => 'active-host', discoverHost)
+  const [connectionRevision, setConnectionRevision] = createSignal(0)
+  const host = createPollingResource(() => `active-host:${connectionRevision()}`, discoverHost)
+  const authenticationRequired = createMemo(() => {
+    const error = host.error()
+    return error instanceof APIError && error.status === 401
+  })
   const profileKey = createMemo(() => host.data()?.bootstrap ? `riela-app:${host.data()!.bootstrap!.profile}` : 'cli-serve')
   const visibleNavigation = createMemo(() => host.data()?.mode === 'cli-serve'
     ? navigation.filter((item) => !CLI_SERVE_HIDDEN_VIEWS.has(item.id))
@@ -62,6 +71,7 @@ export function App() {
   // apply state. Self-written hashes are ignored via the canonical-hash guard.
   const currentHashRoute = (): HashRoute | undefined => {
     const currentView = view()
+    if (currentView === 'workflow-detail') return { view: 'workflow-detail', sourceId: selectedSourceId() }
     if (currentView === 'run-detail') {
       const run = selectedRun()
       return run ? { view: 'run-detail', sessionId: run.sessionId } : undefined
@@ -78,7 +88,9 @@ export function App() {
     if (applied && viewHash(applied) === hash) return
     const route = parseViewHash(hash)
     if (!route) return
-    if (route.view === 'run-detail') {
+    if (route.view === 'workflow-detail') {
+      setSelectedSourceId(route.sourceId)
+    } else if (route.view === 'run-detail') {
       setSelectedInstanceId('')
       setSelectedRun({ sessionId: route.sessionId, workflowId: 'private workflow' })
     } else if (route.view === 'ops-run') {
@@ -111,6 +123,7 @@ export function App() {
     const nextProfileKey = profileKey()
     const transition = profileViewTransition(previousProfileKey, nextProfileKey, host.data()?.mode, view())
     if (transition.clearSelection) {
+      setSelectedSourceId('')
       setSelectedInstanceId('')
       setSelectedRun(undefined)
       setSelectedOpsRun(undefined)
@@ -129,26 +142,30 @@ export function App() {
         </div>
         <nav aria-label="Primary navigation">
           <For each={visibleNavigation()}>{(item) => (
-            <button classList={{ active: view() === item.id || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
+            <button classList={{ active: view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
               <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>{item.label}
             </button>
           )}</For>
         </nav>
         <div class="server-card" role="status" aria-live="polite">
-          <span classList={{ dot: true, live: host.data()?.mode === 'cli-serve' || host.data()?.bootstrap?.server.state === 'running' }} />
-          <div><strong>{host.data()?.mode === 'cli-serve' ? 'CLI serve' : host.data()?.bootstrap?.server.state ?? 'Connecting'}</strong><span>{host.data()?.bootstrap?.server.boundPort ? `127.0.0.1:${host.data()?.bootstrap?.server.boundPort}` : 'Local server'}</span></div>
+          <span classList={{ dot: true, live: isDesktop() || host.data()?.mode === 'cli-serve' || host.data()?.bootstrap?.server.state === 'running' }} />
+          <div><strong>{isDesktop() ? 'Desktop connected' : host.data()?.mode === 'cli-serve' ? 'CLI serve' : host.data()?.bootstrap?.server.state ?? 'Connecting'}</strong><span>{isDesktop() ? 'RielaApp' : host.data()?.bootstrap?.hostKind === 'cli-serve' ? location.host : host.data()?.bootstrap?.server.boundPort ? `127.0.0.1:${host.data()?.bootstrap?.server.boundPort}` : 'Local server'}</span></div>
         </div>
       </aside>
       <main id="main-content" tabindex="-1">
         <Show when={host.loading() && !host.data()}><div class="center-state"><span class="loader" />Connecting to Riela…</div></Show>
-        <Show when={host.error()}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(host.error())}</span><button onClick={() => void host.refresh()}>Try again</button></div></Show>
-        <Show when={host.data()}>
+        <Show when={authenticationRequired()}><ServerLoginView connecting={host.loading()} rejected={connectionRevision() > 0} onConnect={token => {
+          setBrowserAccessToken(token)
+          setConnectionRevision(value => value + 1)
+        }} /></Show>
+        <Show when={host.error() && !authenticationRequired()}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(host.error())}</span><button onClick={() => void host.refresh()}>Try again</button></div></Show>
+        <Show when={host.data() && !authenticationRequired()}>
           <header class="topbar">
             <div><span class="eyebrow">{host.data()?.mode === 'cli-serve' ? 'HOST' : 'PROFILE'}</span><strong>{host.data()?.bootstrap?.profile ?? 'riela serve'}</strong></div>
             <span class="api-pill">{host.data()?.mode === 'cli-serve' ? 'NOTE API' : `API ${host.data()?.bootstrap?.apiVersion}`}</span>
           </header>
           <Switch>
-            <Match when={view() === 'instances'}><InstancesView profileKey={profileKey()} profileName={host.data()?.bootstrap?.profile ?? ''} /></Match>
+            <Match when={view() === 'instances'}><InstancesView profileKey={profileKey()} profileName={host.data()?.bootstrap?.profile ?? ''} serverHosted={host.data()?.bootstrap?.hostKind === 'cli-serve'} /></Match>
             <Match when={view() === 'logs'}><LogsView profileKey={profileKey()} selectedInstanceId={selectedInstanceId()} onSelectInstance={setSelectedInstanceId} onOpenRun={(execution) => { setSelectedRun({ sessionId: execution.sessionId, workflowId: execution.workflowId }); setView('run-detail') }} /></Match>
             <Match when={view() === 'run-detail' && selectedRun()}><RunDetailView profileKey={profileKey()} instanceId={selectedInstanceId()} sessionId={selectedRun()!.sessionId} workflowId={selectedRun()!.workflowId} onBack={() => setView('logs')} /></Match>
             <Match when={view() === 'workflows'}>
@@ -156,8 +173,13 @@ export function App() {
                 <WorkflowsView
                   profileKey={profileKey()}
                   profileName={host.data()?.bootstrap?.profile ?? ''}
+                  onInspect={(sourceId) => { setSelectedSourceId(sourceId); setView('workflow-detail') }}
                 />
               }</Show>
+            </Match>
+            <Match when={view() === 'workflow-detail'}>
+              <WorkflowDefinitionView profileKey={profileKey()} sourceId={selectedSourceId()}
+                onBack={() => setView('workflows')} />
             </Match>
             <Match when={view() === 'ops'}>
               <Show when={profileKey()} keyed>{(_opsProfileKey) =>
@@ -183,6 +205,7 @@ export function App() {
             <Match when={view() === 'settings'}>
               <Show when={profileKey()} keyed>{(_settingsProfileKey) =>
                 <SettingsView
+                  serverHosted={host.data()?.bootstrap?.hostKind === 'cli-serve'}
                   profileKey={profileKey()}
                   profileName={host.data()?.bootstrap?.profile ?? ''}
                   onHostChange={() => void host.refresh()}

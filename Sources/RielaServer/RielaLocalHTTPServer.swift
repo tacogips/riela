@@ -343,27 +343,3 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   }
 }
 #endif
-
-public enum RielaWebAssetLocator {
-  public static func locate(
-    bundle: Bundle = .main,
-    executableURL: URL? = Bundle.main.executableURL,
-    currentDirectoryURL: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-  ) -> URL? {
-    var candidates: [URL] = []
-    if let resourceURL = bundle.resourceURL {
-      candidates.append(resourceURL.appendingPathComponent("Web", isDirectory: true))
-    }
-    if let executableURL {
-      candidates.append(
-        executableURL.deletingLastPathComponent()
-          .appendingPathComponent("../Resources/Web", isDirectory: true)
-          .standardizedFileURL
-      )
-    }
-    candidates.append(currentDirectoryURL.appendingPathComponent("web/dist", isDirectory: true))
-    return candidates.first { candidate in
-      FileManager.default.fileExists(atPath: candidate.appendingPathComponent("index.html").path)
-    }
-  }
-}

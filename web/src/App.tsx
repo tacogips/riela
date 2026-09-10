@@ -135,7 +135,7 @@ export function App() {
   return (
     <div class="app-shell">
       <a class="skip-link" href="#main-content">Skip to content</a>
-      <aside class="sidebar">
+      <header class="app-header">
         <div class="brand">
           <div class="brand-mark">R</div>
           <div><strong>Riela</strong><span>Local control plane</span></div>
@@ -147,11 +147,18 @@ export function App() {
             </button>
           )}</For>
         </nav>
+        <Show when={host.data() && !authenticationRequired()}>
+          <div class="header-profile">
+            <span class="eyebrow">{host.data()?.mode === 'cli-serve' ? 'HOST' : 'PROFILE'}</span>
+            <strong>{host.data()?.bootstrap?.profile ?? 'riela serve'}</strong>
+          </div>
+          <span class="api-pill">{host.data()?.mode === 'cli-serve' ? 'NOTE API' : `API ${host.data()?.bootstrap?.apiVersion}`}</span>
+        </Show>
         <div class="server-card" role="status" aria-live="polite">
           <span classList={{ dot: true, live: isDesktop() || host.data()?.mode === 'cli-serve' || host.data()?.bootstrap?.server.state === 'running' }} />
           <div><strong>{isDesktop() ? 'Desktop connected' : host.data()?.mode === 'cli-serve' ? 'CLI serve' : host.data()?.bootstrap?.server.state ?? 'Connecting'}</strong><span>{isDesktop() ? 'RielaApp' : host.data()?.bootstrap?.hostKind === 'cli-serve' ? location.host : host.data()?.bootstrap?.server.boundPort ? `127.0.0.1:${host.data()?.bootstrap?.server.boundPort}` : 'Local server'}</span></div>
         </div>
-      </aside>
+      </header>
       <main id="main-content" tabindex="-1">
         <Show when={host.loading() && !host.data()}><div class="center-state"><span class="loader" />Connecting to Riela…</div></Show>
         <Show when={authenticationRequired()}><ServerLoginView connecting={host.loading()} rejected={connectionRevision() > 0} onConnect={token => {
@@ -160,10 +167,6 @@ export function App() {
         }} /></Show>
         <Show when={host.error() && !authenticationRequired()}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(host.error())}</span><button onClick={() => void host.refresh()}>Try again</button></div></Show>
         <Show when={host.data() && !authenticationRequired()}>
-          <header class="topbar">
-            <div><span class="eyebrow">{host.data()?.mode === 'cli-serve' ? 'HOST' : 'PROFILE'}</span><strong>{host.data()?.bootstrap?.profile ?? 'riela serve'}</strong></div>
-            <span class="api-pill">{host.data()?.mode === 'cli-serve' ? 'NOTE API' : `API ${host.data()?.bootstrap?.apiVersion}`}</span>
-          </header>
           <Switch>
             <Match when={view() === 'instances'}><InstancesView profileKey={profileKey()} profileName={host.data()?.bootstrap?.profile ?? ''} serverHosted={host.data()?.bootstrap?.hostKind === 'cli-serve'} /></Match>
             <Match when={view() === 'logs'}><LogsView profileKey={profileKey()} selectedInstanceId={selectedInstanceId()} onSelectInstance={setSelectedInstanceId} onOpenRun={(execution) => { setSelectedRun({ sessionId: execution.sessionId, workflowId: execution.workflowId }); setView('run-detail') }} /></Match>

@@ -297,19 +297,6 @@ extension WorkflowPackageCommandRunner {
         localPath: parsed.localPath ?? registered.localPath
       )
     }
-    if let registered = config.registries.first(where: { $0.id == config.defaultRegistryId }) ?? config.registries.first {
-      return PublishRegistryResolution(
-        id: registered.id,
-        url: registered.url,
-        branch: parsed.branch ?? registered.defaultBranch,
-        localPath: parsed.localPath ?? registered.localPath
-      )
-    }
-    return PublishRegistryResolution(
-      id: defaultWorkflowPackageRegistryId,
-      url: defaultWorkflowPackageRegistryURL,
-      branch: parsed.branch ?? defaultWorkflowPackageRegistryBranch,
-      localPath: parsed.localPath
-    )
+    throw CLIUsageError("package publish requires --registry <id|github-url> or --registry-url <github-url>")
   }
 }

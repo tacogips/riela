@@ -94,6 +94,7 @@ extension WorkflowCommandTests {
     let publish = await app.run([
       "package", "publish", packageSource.path,
       "--package-name", "@scope/scoped-flow",
+      "--registry-url", "https://github.com/example/packages",
       "--working-dir", tempDir.path,
       "--yes",
       "--output", "json"

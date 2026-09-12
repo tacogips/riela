@@ -898,6 +898,22 @@ container runtime is available, and static scanning always runs regardless.
 
 ### Publishing a workflow to a registry
 
+Registries are explicit: register one with `riela package registry add`, or
+pass `--registry-url` when searching, installing, or publishing. There is no
+automatically selected registry. `riela package registry list` shows the
+configured registries; `riela package search --refresh --registry <id>` fetches
+its current index.
+
+To update an installed package directly from GitHub, run
+`riela package update https://github.com/owner/repo/tree/branch/packages/name`.
+The URL must point to a directory containing `riela-package.json`. Use
+`--dry-run` to preview changes. Set `RIELA_GIT_EXECUTABLE` to a Git executable
+path when Git is not available on `PATH`.
+Repository-root packages can use `https://github.com/owner/repo`. Updates
+validate the source even with `--dry-run` or when its version is unchanged.
+GitHub updates record the resolved commit in `riela-lock.json`, so `package ci`
+reinstalls that revision even after the branch advances.
+
 `package publish <workflow-dir>` computes a real md5 checksum over the staged
 workflow, writes a normalized `riela-package.json`, and derives backend hints
 from the workflow's node payloads. When the target registry has a local git

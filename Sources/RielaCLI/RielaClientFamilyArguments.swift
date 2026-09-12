@@ -80,7 +80,6 @@ enum LoopBaselineAction: String, ExpressibleByArgument {
 enum PackageRegistryClientAction: String, CaseIterable, ExpressibleByArgument {
   case add
   case list
-  case sync
   case index
 }
 

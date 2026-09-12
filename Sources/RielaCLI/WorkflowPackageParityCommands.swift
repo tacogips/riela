@@ -10,13 +10,8 @@ import RielaGraphQL
 import RielaHook
 import RielaServer
 
-let defaultWorkflowPackageRegistryId = "default"
-let defaultWorkflowPackageRegistryURL = "https://github.com/tacogips/riela-packages"
-let defaultWorkflowPackageRegistryBranch = "main"
-private let defaultWorkflowPackageRegistryReleaseTag = "registry-packages"
-private let defaultWorkflowPackageRegistryTimestamp = "2026-06-18T00:00:00Z"
+private let packageRegistryTimestamp = "2026-06-18T00:00:00Z"
 
-// swiftlint:disable:next type_body_length
 public struct WorkflowPackageCommandRunner: Sendable {
   struct PackageSummaryRoot {
     var url: URL
@@ -223,7 +218,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
 
   private func registryCommand(options: CLICommandOptions) async throws -> CLICommandResult {
     guard let action = options.target else {
-      throw CLIUsageError("package registry supports: add, list, sync, index")
+      throw CLIUsageError("package registry supports: add, list, index")
     }
     let registryId: String?
     let optionArguments: [String]
@@ -233,7 +228,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
       registryId = nil
       registryIndexRoot = target
       optionArguments = route.options
-    } else if ["add", "sync"].contains(action), let target = route.target {
+    } else if action == "add", let target = route.target {
       registryId = target
       registryIndexRoot = nil
       optionArguments = route.options
@@ -247,10 +242,6 @@ public struct WorkflowPackageCommandRunner: Sendable {
     case "list":
       let config = try loadRegistryConfig(parsed: parsed)
       return try renderRegistryConfig(config, output: options.output)
-    case "sync":
-      let config = try loadRegistryConfig(parsed: parsed)
-      let synced = try syncRegistry(config: config, registryId: registryId, parsed: parsed)
-      return CLICommandResult(exitCode: .success, stdout: "synced package registry: \(synced.id)\npath: \(synced.localPath ?? "")\n")
     case "index":
       return try await generateRegistryIndex(registryRoot: registryIndexRoot, parsed: parsed, output: options.output)
     case "add":
@@ -260,7 +251,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
       let config = try registerRegistry(id: registryId, url: registryURL, parsed: parsed)
       return try renderRegistryConfig(config, output: options.output, text: "registered package registry: \(registryId)\n")
     default:
-      throw CLIUsageError("package registry supports: add, list, sync, index")
+      throw CLIUsageError("package registry supports: add, list, index")
     }
   }
 
@@ -305,7 +296,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     let generator = WorkflowPackageRegistryIndexGenerator()
     let index = try await generator.generate(
       registryRoot: registryRoot,
-      registryId: parsed.registry ?? defaultWorkflowPackageRegistryId,
+      registryId: parsed.registry ?? "local",
       registryURL: parsed.registryURL
     )
     let result = try generator.write(
@@ -318,56 +309,13 @@ public struct WorkflowPackageCommandRunner: Sendable {
     return try generator.render(result, output: output)
   }
 
-  private func syncRegistry(
-    config: WorkflowPackageRegistryConfig,
-    registryId: String?,
-    parsed: ParsedParityOptions
-  ) throws -> WorkflowPackageRegistryEntry {
-    let selected = registryId.flatMap { id in
-      config.registries.first { $0.id == id }
-    } ?? config.registries.first { $0.id == config.defaultRegistryId } ?? config.registries.first
-    guard var registry = selected else {
-      throw CLIUsageError("package registry not found")
-    }
-    let destination = managedRegistryCacheRoot(id: registry.id)
-    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    if FileManager.default.fileExists(atPath: destination.appendingPathComponent(".git").path) {
-      try runRegistryGit(["-C", destination.path, "pull", "--ff-only"])
-    } else {
-      if FileManager.default.fileExists(atPath: destination.path) {
-        try FileManager.default.removeItem(at: destination)
-      }
-      try runRegistryGit(["clone", "--branch", registry.defaultBranch, registry.url, destination.path])
-    }
-    registry.localPath = destination.path
-    var updated = config
-    if let index = updated.registries.firstIndex(where: { $0.id == registry.id }) {
-      updated.registries[index].localPath = destination.path
-    }
-    try saveRegistryConfig(updated, parsed: parsed)
-    return registry
-  }
-
   func refreshRegistryIndexes(parsed: ParsedParityOptions, workingDirectory: URL) async throws {
     let registries = try selectedPackageRegistries(parsed: parsed, workingDirectory: workingDirectory)
     guard !registries.isEmpty else {
       return
     }
-    var failures: [String] = []
-    for registry in registries {
-      do {
-        try await fetchRegistryIndex(registry: registry)
-      } catch {
-        do {
-          let config = try loadRegistryConfig(parsed: parsed)
-          _ = try syncRegistry(config: config, registryId: registry.id, parsed: parsed)
-        } catch {
-          failures.append("\(registry.id): \(packageCommandErrorDescription(error))")
-        }
-      }
-    }
-    if !failures.isEmpty {
-      throw CLIUsageError("package registry refresh failed: \(failures.joined(separator: "; "))")
+    for registry in registries where !registry.url.isEmpty {
+      try await fetchRegistryIndex(registry: registry)
     }
   }
 
@@ -399,17 +347,6 @@ public struct WorkflowPackageCommandRunner: Sendable {
     guard components.count == 2 else {
       throw CLIUsageError("registry URL must be https://github.com/<owner>/<repo>")
     }
-    if registry.url == defaultWorkflowPackageRegistryURL
-      && registry.defaultBranch == defaultWorkflowPackageRegistryBranch {
-      var releaseComponents = URLComponents()
-      releaseComponents.scheme = "https"
-      releaseComponents.host = "github.com"
-      releaseComponents.path = "/\(components[0])/\(components[1])/releases/download/\(defaultWorkflowPackageRegistryReleaseTag)/registry-index.json"
-      guard let indexURL = releaseComponents.url else {
-        throw CLIUsageError("registry index URL could not be built for \(registry.url)")
-      }
-      return indexURL
-    }
     var urlComponents = URLComponents()
     urlComponents.scheme = "https"
     urlComponents.host = "raw.githubusercontent.com"
@@ -424,22 +361,6 @@ public struct WorkflowPackageCommandRunner: Sendable {
     URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
       .appendingPathComponent(".riela/registries", isDirectory: true)
       .appendingPathComponent(packageFilesystemKey(id), isDirectory: true)
-  }
-
-  private func runRegistryGit(_ arguments: [String]) throws {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["git"] + arguments
-    let output = Pipe()
-    process.standardOutput = output
-    process.standardError = output
-    try process.run()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else {
-      let data = output.fileHandleForReading.readDataToEndOfFile()
-      let message = String(data: data, encoding: .utf8) ?? "git failed"
-      throw CLIUsageError("package registry sync failed: \(message.trimmingCharacters(in: .whitespacesAndNewlines))")
-    }
   }
 
   private func packageCommandErrorDescription(_ error: Error) -> String {
@@ -592,58 +513,10 @@ public struct WorkflowPackageCommandRunner: Sendable {
   func loadRegistryConfig(parsed: ParsedParityOptions) throws -> WorkflowPackageRegistryConfig {
     let url = registryConfigURL(parsed: parsed)
     guard FileManager.default.fileExists(atPath: url.path) else {
-      return defaultRegistryConfig(parsed: parsed)
+      return WorkflowPackageRegistryConfig(registries: [])
     }
     let data = try Data(contentsOf: url)
-    return withImplicitDefaultRegistry(try JSONDecoder().decode(WorkflowPackageRegistryConfig.self, from: data), parsed: parsed)
-  }
-
-  private func defaultRegistryConfig(parsed: ParsedParityOptions) -> WorkflowPackageRegistryConfig {
-    WorkflowPackageRegistryConfig(
-      defaultRegistryId: defaultWorkflowPackageRegistryId,
-      registries: [defaultRegistryEntry(parsed: parsed)]
-    )
-  }
-
-  private func withImplicitDefaultRegistry(
-    _ config: WorkflowPackageRegistryConfig,
-    parsed: ParsedParityOptions
-  ) -> WorkflowPackageRegistryConfig {
-    var resolved = config
-    let defaultEntry = defaultRegistryEntry(parsed: parsed)
-    if let index = resolved.registries.firstIndex(where: { registry in
-      registry.id == defaultWorkflowPackageRegistryId || registry.url == defaultWorkflowPackageRegistryURL
-    }) {
-      var configured = resolved.registries[index]
-      if configured.id != defaultWorkflowPackageRegistryId {
-        configured.id = defaultWorkflowPackageRegistryId
-      }
-      if configured.defaultBranch.isEmpty {
-        configured.defaultBranch = defaultWorkflowPackageRegistryBranch
-      }
-      if configured.localPath == nil {
-        configured.localPath = defaultEntry.localPath
-      }
-      resolved.registries[index] = configured
-    } else {
-      resolved.registries.append(defaultEntry)
-    }
-    if resolved.defaultRegistryId.isEmpty
-      || !resolved.registries.contains(where: { $0.id == resolved.defaultRegistryId }) {
-      resolved.defaultRegistryId = defaultWorkflowPackageRegistryId
-    }
-    return resolved
-  }
-
-  private func defaultRegistryEntry(parsed: ParsedParityOptions) -> WorkflowPackageRegistryEntry {
-    return WorkflowPackageRegistryEntry(
-      id: defaultWorkflowPackageRegistryId,
-      url: defaultWorkflowPackageRegistryURL,
-      defaultBranch: defaultWorkflowPackageRegistryBranch,
-      localPath: managedRegistryCacheRoot(id: defaultWorkflowPackageRegistryId).path,
-      registeredAt: defaultWorkflowPackageRegistryTimestamp,
-      updatedAt: defaultWorkflowPackageRegistryTimestamp
-    )
+    return try JSONDecoder().decode(WorkflowPackageRegistryConfig.self, from: data)
   }
 
   private func saveRegistryConfig(_ config: WorkflowPackageRegistryConfig, parsed: ParsedParityOptions) throws {
@@ -670,7 +543,6 @@ public struct WorkflowPackageCommandRunner: Sendable {
       registeredAt: existing?.registeredAt ?? now,
       updatedAt: now
     )
-    config.defaultRegistryId = config.registries.isEmpty ? id : config.defaultRegistryId
     config.registries = [entry] + config.registries.filter { $0.id != id }
     try saveRegistryConfig(config, parsed: parsed)
     return config
@@ -704,7 +576,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     if options.command == PackageCommandKind.search.rawValue, existingRoots.isEmpty {
       throw CLIUsageError(
         "no package roots found; searched: \(roots.map(\.url.path).joined(separator: ", ")); "
-          + "run `riela package registry sync` or pass --local-path <registry-checkout>"
+          + "pass --registry-url <github-repo> or --local-path <registry-checkout>"
       )
     }
     for root in roots where packageSummaryRootExists(root) {
@@ -940,8 +812,8 @@ public struct WorkflowPackageCommandRunner: Sendable {
           url: explicitURL,
           defaultBranch: parsed.branch ?? registered?.defaultBranch ?? "main",
           localPath: parsed.localPath ?? registered?.localPath,
-          registeredAt: registered?.registeredAt ?? defaultWorkflowPackageRegistryTimestamp,
-          updatedAt: defaultWorkflowPackageRegistryTimestamp
+          registeredAt: registered?.registeredAt ?? packageRegistryTimestamp,
+          updatedAt: packageRegistryTimestamp
         )
       ]
     }
@@ -961,12 +833,12 @@ public struct WorkflowPackageCommandRunner: Sendable {
     if let localPath = parsed.localPath {
       return [
         WorkflowPackageRegistryEntry(
-          id: defaultWorkflowPackageRegistryId,
-          url: defaultWorkflowPackageRegistryURL,
-          defaultBranch: parsed.branch ?? defaultWorkflowPackageRegistryBranch,
+          id: "local",
+          url: "",
+          defaultBranch: parsed.branch ?? "main",
           localPath: localPath,
-          registeredAt: defaultWorkflowPackageRegistryTimestamp,
-          updatedAt: defaultWorkflowPackageRegistryTimestamp
+          registeredAt: packageRegistryTimestamp,
+          updatedAt: packageRegistryTimestamp
         )
       ]
     }

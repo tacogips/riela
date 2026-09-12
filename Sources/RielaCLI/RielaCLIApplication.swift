@@ -329,9 +329,9 @@ Usage:
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
   riela gc [--retention-days <days>] [--scope user|project|all] [--working-dir <dir>] [--dry-run] [--output json|text]
   riela package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
-  riela node search [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
-  riela node list [query] [--scope project|user|auto] [--registry default] [--refresh] [--output json|text|table]
-  riela node install <addon-or-package> [--scope project|user] [--registry default] [--source <path>] [--output json|text]
+  riela node search [query] [--scope project|user|auto] [--registry <id>] [--refresh] [--output json|text|table]
+  riela node list [query] [--scope project|user|auto] [--registry <id>] [--refresh] [--output json|text|table]
+  riela node install <addon-or-package> [--scope project|user] [--registry <id>] [--source <path>] [--output json|text]
   riela node run <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
   riela rrun <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
   riela specialist catalog|catalog-refresh --state-root <path> [--working-dir <dir>] [--output json]
@@ -393,7 +393,8 @@ func packageHelpText(scope: PackageHelpScope) -> String {
     \(commandPrefix) list|search|status [package-name] [--scope project|user|auto] [--tag <tag>] [--backend <backend>] [--limit <n>] [--output jsonl|json|text|table]
     \(commandPrefix) publish <workflow-dir> [--package-id <id>] [--registry <id|url>] [--registry-local-path <path>] [--branch <branch>] [--create-pr] [--pr-base <branch>] [--yes] [--dry-run] [--output jsonl|json|text]
     \(commandPrefix) run|temp-run <package-name|package-dir|archive.rielapkg|archive.zip> [--mock-scenario <path>] [--output jsonl|json|text]
-    \(commandPrefix) registry add|list|sync|index [options]
+    \(commandPrefix) update <package-name|https://github.com/owner/repo/tree/branch/package-path> [--dry-run] [--output jsonl|json|text]
+    \(commandPrefix) registry add|list|index [options]
 
   Package archives:
     A .rielapkg or .zip is a portable package archive containing riela-package.json
@@ -405,6 +406,12 @@ func packageHelpText(scope: PackageHelpScope) -> String {
     for GitHub-hosted distributed registry search. Use --destination <path> to
     write elsewhere, --registry <id> and --registry-url <url> to stamp metadata.
     Use --check in CI to fail when the checked-in registry-index.json is stale.
+
+  Package update:
+    update <GitHub package directory URL> checks the installed package against
+    that source and installs changed content. A repository URL also works when
+    riela-package.json is at its root. Use --dry-run to preview the result.
+    Set RIELA_GIT_EXECUTABLE to a git executable path, or use git on PATH.
 
   Lockfile installs:
     install writes riela-lock.json with package checksums, integrity metadata,

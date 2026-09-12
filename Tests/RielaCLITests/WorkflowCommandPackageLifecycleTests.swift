@@ -150,8 +150,7 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(registryAdd.exitCode, .success, registryAdd.stderr)
     let addedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryAdd.stdout)
-    XCTAssertEqual(addedRegistry.defaultRegistryId, "default")
-    XCTAssertEqual(addedRegistry.registries.map(\.id), ["local", "default"])
+    XCTAssertEqual(addedRegistry.registries.map(\.id), ["local"])
 
     let registryList = await app.run([
       "workflow", "package", "registry", "list",
@@ -160,14 +159,12 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
     let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
-    XCTAssertEqual(listedRegistry.registries.map(\.url), [
-      "https://github.com/example/registry",
-      "https://github.com/tacogips/riela-packages"
-    ])
+    XCTAssertEqual(listedRegistry.registries.map(\.url), ["https://github.com/example/registry"])
 
     let publish = await app.run([
       "workflow", "package", "publish", packageSource.path,
       "--package-name", "demo-package",
+      "--registry", "local",
       "--dry-run",
       "--working-dir", tempDir.path,
       "--output", "json"

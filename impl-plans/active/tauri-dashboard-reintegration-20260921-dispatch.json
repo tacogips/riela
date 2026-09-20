@@ -1,0 +1,92 @@
+{
+  "taskId": "tauri-dashboard-reintegration-20260921",
+  "workflowMode": "single-work-package",
+  "hasFeatureFanout": false,
+  "implementationBranch": "integrate/tauri-dashboard-app",
+  "baseBranch": "integrate/tauri-dashboard-app",
+  "remote": "origin",
+  "remoteUrl": "https://github.com/tacogips/riela.git",
+  "originalHead": "77616b5a26c7937431ba3f497ddffb3a4570b270",
+  "mergeSource": {
+    "branch": "feat/tauri-dashboard-app",
+    "commit": "d2c6991",
+    "mergeBase": "e8cd1f2"
+  },
+  "evidenceRoot": "tmp/tauri-dashboard-reintegration-20260921",
+  "designDocPaths": [
+    "design-docs/tauri-dashboard-reintegration.md"
+  ],
+  "plans": [
+    {
+      "planId": "tauri-dashboard-reintegration",
+      "planPath": "impl-plans/active/tauri-dashboard-reintegration.md",
+      "progressPath": "impl-plans/progress/tauri-dashboard-reintegration.md",
+      "evidenceDir": "tmp/tauri-dashboard-reintegration-20260921/plans/tauri-dashboard-reintegration",
+      "dependsOn": [],
+      "writePaths": [
+        ".github/workflows/linux-release.yml",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaServer/RielaLocalHTTPServer.swift",
+        "Tests/RielaServerTests/RielaWebAssetLocatorTests.swift",
+        "Tests/RielaCLITests/ServeHTTPCommandTests.swift",
+        "scripts/build-homebrew-release.sh",
+        "scripts/render-homebrew-formula.sh",
+        "web/bun.lock",
+        "web/package.json",
+        "web/vite.config.ts",
+        "web/src/api.ts",
+        "web/src/config/client.ts",
+        "web/src/index.tsx",
+        "web/src/transport.ts",
+        "web/src/transport.test.ts",
+        "web/src/workflows/client.ts",
+        "web/src/desktop/",
+        "src-tauri/",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "mise.toml",
+        ".gitignore",
+        "design-docs/tauri-dashboard-app.md",
+        "design-docs/riela-serve-web-client.md",
+        "impl-plans/completed/tauri-dashboard-app.md",
+        "impl-plans/completed/riela-serve-web-client.md",
+        "impl-plans/progress/tauri-dashboard-reintegration.md",
+        "docs/briefs/tauri-dashboard-integration-2026-09-21.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Merge commit exists on integrate/tauri-dashboard-app with feat/tauri-dashboard-app as second parent; git status clean; no conflict markers anywhere in the tree.",
+        "All 14 conflicting paths resolved per-file to main's content per design section 3.1 (no wholesale --ours/--theirs, no reverted main commit, no reinstated deleted surface).",
+        "Superseded branch artifacts absent: src-tauri/, Cargo.toml, Cargo.lock, web/src/desktop/; web/vite.config.ts, README.md, mise.toml, .gitignore, Tests/RielaCLITests/ServeHTTPCommandTests.swift identical to main.",
+        "Console reads (instance list, instance detail, ops overview) go solely through web/src/console/client.ts GraphQL; retired-surface greps for api/v1/instances, api/v1/ops/overview, riela_fetch, requestThroughHost, setHostTransport, installDesktopHost return no matches, recorded in the progress log.",
+        "arch -arm64 swift build green; RielaWebAssetLocatorTests, the five SurfaceParity gates, SurfaceCatalogTests and ServeWebHost suites green; full swift test failure set equals exactly the ten accepted environmental failures.",
+        "cd web && bun run typecheck && bun run lint && bun test src all pass.",
+        "docs/briefs/tauri-dashboard-integration-2026-09-21.md records branch contributions, the per-file resolution table, supersessions, and named residual risks including the cargo/desktop-verification outcome.",
+        "git diff --stat 77616b5 HEAD is documentation-only (the ten listed documentation paths).",
+        "Pushed to origin integrate/tauri-dashboard-app only; main untouched; no force push, reset, or branch deletion."
+      ],
+      "verification": {
+        "shell": "arch -arm64 /bin/zsh -lc (required for every Swift command)",
+        "foreground": true,
+        "logRoot": "tmp/tauri-dashboard-reintegration-20260921/plans/tauri-dashboard-reintegration/attempt-<n>",
+        "steps": [
+          { "id": "static-conflict-sweep", "command": "git diff --check && grep -rnE '^(<{7} |>{7} |\\|{7} )' --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist .", "expect": "git diff --check clean; grep exit=1 (no matches)", "log": "static-sweep.log" },
+          { "id": "retired-surface-greps", "command": "git grep -n 'api/v1/instances\\|api/v1/ops/overview' -- web/src ; git grep -n 'riela_fetch\\|requestThroughHost\\|setHostTransport\\|installDesktopHost' -- web/src Sources", "expect": "both exit=1 (no matches); outputs pasted into impl-plans/progress/tauri-dashboard-reintegration.md", "log": "retired-surface-greps.log" },
+          { "id": "removal-existence-check", "command": "test ! -e src-tauri && test ! -e Cargo.toml && test ! -e Cargo.lock && test ! -e web/src/desktop", "expect": "exit=0", "log": "removals.log" },
+          { "id": "swift-build", "command": "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela-worktrees/tauri-integration && swift build'", "expect": "exit=0", "log": "swift-build.log" },
+          { "id": "swift-targeted-suites", "command": "arch -arm64 /bin/zsh -lc 'swift test --filter RielaWebAssetLocatorTests' ; --filter SurfaceParity ; --filter SurfaceCatalogTests ; --filter ServeWebHost", "expect": "all green, exit=0 each", "log": "swift-locator.log, swift-surfaceparity.log, swift-surfacecatalog.log, swift-servewebhost.log" },
+          { "id": "swift-full-suite", "command": "arch -arm64 /bin/zsh -lc 'cd <worktree> && swift build && swift test'", "expect": "failure set equals exactly the ten accepted environmental failures (6 AppKit: RielaAppUXOnboardingControllerTests, RielaAppSettingsEditorNavigationTests, RielaAppWindowContentInsetTests; 3 unix-socket-unlink: WorkflowRound7AdversarialTests; WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario). Never tail or truncate the log; one targeted --filter re-run allowed for the known interleaved-submit timing flake.", "log": "swift-full.log" },
+          { "id": "web-checks", "command": "cd web && bun run typecheck && bun run lint && bun test src", "expect": "exit=0 for all three", "log": "web-checks.log" },
+          { "id": "cargo-best-effort", "command": "cargo build --locked --manifest-path web/src-tauri/Cargo.toml", "expect": "best effort; never install a toolchain; record the outcome either way and name it as a residual risk if it cannot be verified", "log": "cargo.log" },
+          { "id": "documentation-only-diff-audit", "command": "git diff --stat 77616b5 HEAD", "expect": "only the ten documentation paths; any Sources/, Tests/, web/, scripts/, .github/, Cargo or src-tauri path is a resolution error to fix before push", "log": "diff-audit.log" },
+          { "id": "push-evidence", "command": "git push origin integrate/tauri-dashboard-app", "expect": "branch updated on origin; main untouched; no force push", "log": "push.log" }
+        ]
+      }
+    }
+  ],
+  "reconciliationPhase": {
+    "serialOwner": "tauri-dashboard-reintegration",
+    "notes": "Single work package: lockfiles (web/bun.lock, Cargo.lock) and all shared indexes are resolved inside this one serial plan. No parallel git, no worktrees, no fanout."
+  }
+}

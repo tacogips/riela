@@ -206,3 +206,64 @@ catalog rows.
 - Every packaged skill's command block passes the token test; the
   `riela-auto-improve` skill is deleted and `riela-workflow-reference` names
   only functions that compile.
+
+## 5. Accepted deltas (2026-09-21, fable-and-improve-opus-session-132)
+
+Recorded against the tree at `ca1ce34` before implementation. Each delta
+resolves a fact the accepted text assumed but the tree does not provide; none
+changes the design's intent.
+
+- **D1 — `Resources/skills` is created, not edited.** The tree has no
+  `Resources/skills` and never had one (`git log --all -- Resources/skills`
+  is empty); the packaged skills live in the separate `riela-packages`
+  registry and at user scope. This feature creates `Resources/skills/` as the
+  canonical in-repo source the skill gate scans. Canonical set for this
+  feature: `riela-workflow-reference` (rewritten against the real
+  `RielaLibrary` facade) and `riela-workflow-run` (command block regenerated
+  from the catalog). `riela-auto-improve` is not carried into the canonical
+  set and the skill gate's allowlist rejects its name, which is what
+  "deleted" means here. Propagating the rewritten skills to the
+  `riela-packages` registry is an operator follow-up outside this feature.
+- **D2 — SDL generation scope.** The generated SDL is the control-plane
+  `schemaContract` in `GraphQLContractProjector+Schema.swift`, produced from
+  the 27 `GraphQL*DTO` types plus the catalog's `graphql` bindings. The two
+  other SDL literals (`workflowRegistryGraphQLSchemaTypes`,
+  `routineGraphQLSchemaTypes`) stay hand-written, but the GraphQL gate
+  enumerates Query and Mutation fields from every schema source, so no field
+  escapes the catalog. Extending generation to those literals is deferred.
+- **D3 — `stopSession` semantics.** No `riela session stop` CLI command
+  exists; the "stop path" is the cancellation finalization hardened in
+  `43edf93` (`DeterministicWorkflowRunner+Cancellation.swift`). `stopSession`
+  cancels a session executing in the answering process and returns only
+  after the terminal cancelled state is persisted; a session not running in
+  that process yields the typed error `session_not_running` (fail closed, no
+  cross-process kill). CLI/GraphQL lineage parity is asserted for rerun and
+  resume; stop's evidence is the persisted terminal state.
+- **D4 — Gate tooling runs under `swift test`.** The skill token scanner and
+  the library facade listing are implemented in Swift inside the test
+  targets, resolving the repository root via `#filePath`, so the gates run
+  in `swift test` with no Python or shell dependency. `scripts/surface-parity/`
+  holds only the SDL regeneration entry point.
+- **D5 — CSP-6 evidence narrowing.** Required web evidence is
+  `bun run typecheck`, `bun run lint`, `bun test src`. Playwright
+  (`test:e2e`) and a desktop debug-build launch are optional extras, not
+  gates for this feature.
+- **D6 — Work Runtime rows.** `riela task` and `riela intent` operations
+  enter the catalog as `blocked` rows citing
+  `impl-plans/active/work-runtime-p0-model-and-store.md`; no P0 behavior is
+  implemented here.
+- **D7 — Declared route tables.** `/api/v1` routing is switch- and
+  prefix-based, so each web-routing owner (`RielaWebAPIProjection`,
+  `ServeWebHost` and its instance extensions, `RielaAppWebRouter`, the
+  workflow-editor handler, worker settings, passkey auth) declares an
+  enumerable route table; the web gate asserts a bijection between the
+  declared tables and the catalog. Dispatch-versus-table drift is mitigated
+  with spot request tests against declared routes.
+- **D8 — Console reads need shared control-plane wiring.** `workflowInstances`
+  is projected in `RielaGraphQL` (`RielaGraphQL.swift`), but the desktop
+  `/graphql` composite (`RielaAppWebGraphQL.swift`) chains only
+  registry → routine → configuration executors. Moving console reads to
+  GraphQL therefore adds a shared instance/ops execution seam in
+  `RielaAppSupport` consumed by both `ServeWebHost` and the desktop
+  composite, and a new `opsOverview` query whose DTO mirrors what the ops
+  views actually consume from `/api/v1/ops/overview` today.

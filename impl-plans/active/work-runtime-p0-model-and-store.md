@@ -5,7 +5,7 @@
 **Feature Fanout**: false — one module, one work package
 **Design Reference**: `design-docs/specs/design-work-runtime-consolidation.md` sections 4, 8, 11, 13 (P0), 16
 **Created**: 2026-09-20
-**Last Updated**: 2026-09-20
+**Last Updated**: 2026-09-21
 
 ## Accepted Design And Review
 
@@ -19,6 +19,71 @@
   runtime behavior; deletions start in P1. No backward compatibility anywhere:
   no migrations, no tolerant decoding, no legacy import. A store with a
   different schema generation is discarded.
+
+## Task Checklist
+
+Check a box only after its task's completion evidence is recorded in the
+progress log with the exact command and result.
+
+- [ ] P0-1 Module and identifiers
+- [ ] P0-2 Domain model
+- [ ] P0-3 Store schema and CRUD
+- [ ] P0-4 Evidence projector
+- [ ] P0-5 Completion evaluator
+- [ ] P0-6 CLI read surface
+- [ ] P0-7 Fixture proof and docs
+
+## Accepted Deltas (2026-09-21, design step)
+
+Recorded against the accepted design after re-verifying the tree; none is a
+redesign.
+
+- **D1 checklist**: the plan gains the Task Checklist above so acceptance
+  ("every checkbox checked with evidence") has literal checkboxes. Format
+  only.
+- **D2 README drift**: `impl-plans/README.md` line 46 says
+  `riela task show|list|import-session`; `import-session` is in no plan task
+  and has no `SurfaceCatalog` row. P0-7 corrects the README row to
+  `show|list`; the command is NOT added in P0.
+- **D3 acceptance parsing**: `LoopGatePayloadParser` is `internal`
+  (`Sources/RielaCore/LoopFindingFingerprint.swift:28`). `CompletionEvaluator`
+  reads the gate step's accepted output payload's `acceptance`
+  (`{ "met": Bool, "note": String? }`) with its own decoding in `RielaWork`;
+  the parser is not modified and no visibility change is expected for it.
+- **D4 Swift spelling**: design §4 `Task` is spelled `WorkTask` in Swift
+  (avoids `_Concurrency.Task` shadowing inside an async module); its
+  `guard` field is the property `guardPolicy` with `CodingKey` `"guard"`.
+  JSON shapes are exactly the design's.
+- **D5 generation guard**: "one `PRAGMA user_version` covers both schemas"
+  is realized by bumping `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration`
+  from 4 to 5 (`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift:108`)
+  and creating the `work_*` tables inside the runtime store's prepare path
+  guard window via `WorkStore.prepareSchema`. Existing local session stores
+  are discarded on first open — accepted, matches the no-migration rule.
+- **D6 catalog gates**: flipping `task.show`/`task.list` CLI availability
+  requires updating
+  `Tests/RielaCoreTests/SurfaceCatalogTests.swift:testWorkRuntimeOperationsAreBlockedOnTheP0Plan`
+  to assert the post-P0 split (show/list CLI implemented with
+  `riela task show|list` bindings; `task.submit`, `task.serve`, `intent.*`
+  and every GraphQL/library face still `blocked` citing this plan or
+  "work-runtime P5"), and registering the commands so
+  `Tests/RielaCLITests/SurfaceParityCLITests.swift:testEveryRegisteredCommandHasACatalogRowAndViceVersa`
+  keeps its bijection. The library face stays `blocked`:
+  `testLibraryFacadeIsExactlyTheSixDesignedEntryPoints` pins the facade.
+
+## Applicable Prior Knowledge
+
+- Run every Swift command through `arch -arm64 /bin/zsh -lc '...'`; the
+  default agent shell is Rosetta and the xctest bundle refuses to dlopen.
+- Never tail `swift test` output when failure lines may be needed; keep the
+  complete log and exact exit status as evidence.
+- SurfaceCatalog changes ripple into the parity gate tests listed in D6;
+  update the gates in the same task as the row flip, never loosen them.
+- Re-read syntax-critical files directly before authoring against them; do
+  not trust summarized quotes.
+- After the D5 generation bump, any pre-existing store under a reused
+  `--session-store` root is discarded on open; live CLI checks must use a
+  fresh temporary store root.
 
 ## Scope
 
@@ -223,12 +288,26 @@ beyond the known interleaved-submit timing flake.
   `Sources/RielaWork`, `Sources/RielaCLI/Task*.swift`,
   `Sources/RielaCLI/RielaCommand.swift`, `Sources/RielaCLI/RielaCLIApplication.swift`,
   `Tests/RielaWorkTests`, `Tests/RielaCLITests/Task*.swift`,
-  `Tests/RielaCLITests/CommandParsingTests.swift`, the design doc, and the
-  two READMEs.
+  `Tests/RielaCLITests/CommandParsingTests.swift`,
+  `Sources/RielaCore/SurfaceCatalog+RowsConsole.swift` (and, only if a
+  binding helper needs it, the other `SurfaceCatalog+Row*` files),
+  `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` (the D5
+  generation constant and its migration table only),
+  `Tests/RielaCoreTests/SurfaceCatalogTests.swift`, any parity gate test in
+  D6, logged RielaCore visibility widenings, this plan, the design doc, and
+  the two READMEs. (2026-09-21: list extended for D5/D6; the original list
+  contradicted the plan's own Scope.)
 
 ## Progress Log
 
 - 2026-09-20: plan created from the accepted design; no code written.
+- 2026-09-21: design step re-verified every seam in the tree (catalog rows
+  blocked at `SurfaceCatalog+RowsConsole.swift:319-340`; runtime store
+  generation 4; `LoopFindingFingerprint` public, `LoopGatePayloadParser`
+  internal; snapshot fields; both examples' `EXPECTED_RESULTS.md`). Added
+  the Task Checklist, Accepted Deltas D1-D6, Applicable Prior Knowledge,
+  and extended the diff allow-list which contradicted Scope. No code
+  written.
 
 ## Residual Risks
 

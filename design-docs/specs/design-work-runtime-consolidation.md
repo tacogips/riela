@@ -1,6 +1,7 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
 Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. No implementation started. P0 plan: `impl-plans/active/work-runtime-p0-model-and-store.md`.
+Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
 ## 1. Purpose

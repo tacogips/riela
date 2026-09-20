@@ -27,8 +27,8 @@
   "plans": [
     {
       "planId": "control-surface-parity",
-      "planPath": "impl-plans/active/control-surface-parity.md",
-      "progressPath": "impl-plans/active/control-surface-parity.md#progress-log",
+      "planPath": "impl-plans/completed/control-surface-parity.md",
+      "progressPath": "impl-plans/completed/control-surface-parity.md#progress-log",
       "dependsOn": [],
       "tasks": [
         { "id": "CSP-1", "title": "Catalog", "dependsOn": [] },
@@ -77,7 +77,7 @@
         "Tests/RielaGraphQLTests/SurfaceParityGraphQLTests.swift",
         "Tests/RielaGraphQLTests/SingleParserTests.swift",
         "Tests/RielaGraphQLTests/SessionMutationTests.swift",
-        "impl-plans/active/control-surface-parity.md"
+        "impl-plans/completed/control-surface-parity.md"
       ],
       "deletePaths": [
         "impl-plans/progress/plans/graphql-supervision-execution-parity.json",
@@ -96,7 +96,7 @@
           "intendedEdits": "CSP-1 authors every row; CSP-5/6/7 flip specific blocked rows to implemented (session mutations, console reads, library facade). Serial edits only; regenerate the SDL after any catalog change that affects graphql bindings."
         },
         {
-          "path": "impl-plans/active/control-surface-parity.md",
+          "path": "impl-plans/completed/control-surface-parity.md",
           "touchedBy": ["CSP-1", "CSP-2", "CSP-3", "CSP-4", "CSP-5", "CSP-6", "CSP-7", "CSP-8"],
           "intendedEdits": "Every task appends its evidence entry to the Progress Log and checks its own checklist box. Append-only; never rewrite prior entries."
         },
@@ -111,7 +111,7 @@
         "scope": "Full-tree build/test, SwiftLint on changed sources, web suite, final SDL regeneration check, checklist completion, and the single push. No broad reformatting; no lockfile or shared-index rewrites are expected in this plan."
       },
       "acceptanceCriteria": [
-        "Every one of the 8 CSP task checkboxes in impl-plans/active/control-surface-parity.md is checked, each with concrete per-box evidence recorded in the plan progress log.",
+        "Every one of the 8 CSP task checkboxes in impl-plans/completed/control-surface-parity.md is checked, each with concrete per-box evidence recorded in the plan progress log.",
         "SurfaceCatalog exists in RielaCore with SurfaceOperation, SurfaceAvailability and SurfaceCatalog.all, holding one row per current CLI command, GraphQL field, /api/v1 route, library entry point and packaged skill command block, with blocked and excluded rows carrying evidence and reasons; uniqueness tests green.",
         "Five gate tests exist and pass on the final tree: CLI, skills, GraphQL, web API, library. A negative test that registers a dummy command without a catalog row makes the CLI gate fail.",
         "The GraphQL SDL is generated from the DTOs plus the catalog, checked in, and covered by a byte-identical freshness test; a single-parser test asserts riela graphql, riela serve, the desktop provider and the web router share one parser.",

@@ -13,7 +13,7 @@ import XCTest
 final class SurfaceParityExecutorCoverageTests: XCTestCase {
   /// Fields published by the schema that no document executor answers yet.
   /// Recorded 2026-09-21 while implementing control-surface parity; tracked in
-  /// `impl-plans/active/control-surface-parity.md` (CSP follow-up F1).
+  /// `impl-plans/completed/control-surface-parity.md` (CSP follow-up F1).
   static let fieldsWithoutADocumentExecutor: Set<String> = [
     // Read services exist (`GraphQLRuntimeSnapshotQueryService`,
     // `GraphQLWorkflowInstanceService`) but are not wired to a document

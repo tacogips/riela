@@ -3,7 +3,7 @@
 Status: accepted design, 2026-09-20; implemented 2026-09-21 on
 `feat/control-surface-parity` (see section 6 for the deltas taken during
 implementation and the one gap it does not close). Plan:
-`impl-plans/active/control-surface-parity.md`. Companion to the Monja design
+`impl-plans/completed/control-surface-parity.md`. Companion to the Monja design
 `design-docs/specs/design-surface-parity.md` in the sibling repository, which
 applies the same mechanism to Monja's REST, GraphQL, MCP, and SDK surfaces.
 Related: `design-work-runtime-consolidation.md` (the first feature that must
@@ -272,7 +272,7 @@ changes the design's intent.
 
 ## 6. Deltas accepted during implementation (2026-09-21)
 
-Recorded while implementing `impl-plans/active/control-surface-parity.md` from
+Recorded while implementing `impl-plans/completed/control-surface-parity.md` from
 checkpoint `f8b763a`. None changes the design's intent; each resolves a fact
 the tree did not provide. The plan's progress log carries the evidence.
 

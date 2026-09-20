@@ -43,7 +43,6 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
-| `active/control-surface-parity` | 8 | Ready for implementation; operation catalog in RielaCore + gate tests over CLI, GraphQL, web API, library, and skills (`design-docs/specs/design-control-surface-parity.md`); generated SDL, session mutations on GraphQL, console reads moved to GraphQL, skills rewritten. Work Runtime commands must register here first | Work Runtime consolidation |
 | `active/work-runtime-p0-model-and-store` | 7 | Ready for implementation; P0 of the Work Runtime consolidation (`design-docs/specs/design-work-runtime-consolidation.md`): `RielaWork` module, work_* tables in the runtime records DB, evidence/finding projection from existing sessions, completion evaluator, read-only `riela task show|list|import-session`. Later phases delete auto-improve and fold loop/routine/specialist | Work Runtime consolidation |
 | `active/loop-engineering-convergence-and-operations` | 13 | Ready for implementation; S9a default convergence, graceful terminal routing/reservation, opt-outs, child request propagation, fixture adoption, tests, and docs | Current issue-resolution work package |
 | `active/apple-mail-addons` | 3 | Implemented in Swift + `AppleMailAddonTests` (15) green; every implementation/verification box reconciled+checked with per-box evidence 2026-07-12. The 3 open boxes are the upstream `apple-gateway file download` output-contract confirmation, its contingent code change, and closing the QA note — all **DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
@@ -99,6 +98,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |
 | `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
 | `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |
 | `web-cross-tag-filter-and-fixes` | 2026-07-27 | `design-web-cross-tag-filter-and-fixes` |

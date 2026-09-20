@@ -669,6 +669,50 @@ gateway permissions before live notification runs:
 apple-gateway permissions status --json
 ```
 
+## Control Surfaces
+
+Every operation that riela exposes is declared once in `SurfaceCatalog`
+(`Sources/RielaCore/SurfaceCatalog.swift`), with one row per CLI command,
+GraphQL field, `/api/v1` route, library entry point and packaged skill command
+block. Rows that are intentionally unavailable carry an explicit reason:
+`blocked` rows cite the plan that will implement them, `excluded` rows explain
+why the surface is not offered. Five gate tests hold CLI, skills, GraphQL, web
+API and library in agreement with the catalog, so a new command cannot ship on
+one surface and silently be missing from the others.
+
+The GraphQL schema is generated from the request/response types plus the
+catalog. Regenerate it with `scripts/surface-parity/generate-sdl.sh` after
+changing a DTO or a catalog row; a freshness test requires the checked-in SDL
+to be byte-identical to the generator's output. `riela graphql`, `riela serve`,
+the desktop provider and the browser console all share one GraphQL parser.
+
+Session control is available on GraphQL as well as on the CLI. The
+`rerunSession` and `resumeSession` mutations reuse the same runner paths as
+`riela session rerun` and `riela session resume` and authenticate like
+`continueSession`, so a session driven from either surface keeps the same
+lineage; a `workflowId` that does not own the session is rejected with
+`SESSION_WORKFLOW_MISMATCH`. `stopSession` has no CLI counterpart — the command
+line cancels by signalling the running process — and it stops only sessions the
+answering process is running, addressed by the session id you entered rather
+than an id a rerun reports.
+
+Browser and desktop console reads — instance list, instance detail and the
+operations overview — go through GraphQL. The former `/api/v1/instances` read
+routes and the instance portion of `/api/v1/ops/overview` are removed with no
+compatibility shim. The surviving `/api/v1` routes — console bootstrap,
+workflow-source reads, execution reads, instance creation and instance actions,
+and the Passkey authentication routes — are declared in
+`Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` and cataloged as excluded
+with reasons.
+
+Embedding callers use the `RielaLibrary` facade in
+`Sources/RielaCLI/RielaLibrary.swift`, whose entry points are
+`executeWorkflow`, `resumeSession`, `rerunSession`,
+`inspectWorkflow`, `sessionView` and `executeGraphQLDocument`. The packaged
+skills under `Resources/skills` — `riela-workflow-reference` and
+`riela-workflow-run` — are written against those real names and against the
+cataloged CLI commands, and the skills gate fails if they drift.
+
 ## Install
 
 On macOS, install the Homebrew formula when you want only the `riela` command

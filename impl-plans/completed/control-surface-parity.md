@@ -1,6 +1,10 @@
 # Control-Surface Parity Implementation Plan
 
-**Status**: Ready for implementation
+**Status**: Complete — all 8 CSP boxes checked with evidence; accepted and
+committed as `bc3518e` on `feat/control-surface-parity`
+**Archived**: 2026-09-21 — moved from `impl-plans/active/` to
+`impl-plans/completed/` together with its dispatch manifest
+`impl-plans/completed/surface-parity-dispatch.json`
 **Workflow Mode**: feature
 **Feature Fanout**: false — one catalog, one gate, one work package
 **Design Reference**: `design-docs/specs/design-control-surface-parity.md`
@@ -10,7 +14,7 @@
 `riela task` / `riela intent` operations enter the catalog only as `blocked`
 rows citing that plan — delta D6), Monja `impl-plans/active/47-surface-parity.md`
 **Created**: 2026-09-20
-**Last Updated**: 2026-09-21
+**Last Updated**: 2026-09-21 (archived to `completed/`)
 
 ## Task Checklist
 
@@ -718,7 +722,7 @@ untouched.
     cannot ship invisible to the gate.
 
   - **R7 (low) — full out-of-`writePaths` list for the serial join.**
-    `impl-plans/active/surface-parity-dispatch.json` `writePaths` cannot be
+    `impl-plans/completed/surface-parity-dispatch.json` `writePaths` cannot be
     used for collision detection on this plan. The complete set of paths this
     plan created or modified outside it is:
     `Package.swift`; `design-docs/specs/design-control-surface-parity.md`;

@@ -1,0 +1,166 @@
+{
+  "taskId": "surface-parity",
+  "workflowMode": "feature",
+  "hasFeatureFanout": false,
+  "implementationBranch": "feat/control-surface-parity",
+  "baseBranch": "feat/control-surface-parity",
+  "remote": {
+    "name": "origin",
+    "url": "https://github.com/tacogips/riela.git",
+    "upstreamConfigured": false,
+    "firstPush": "git push -u origin feat/control-surface-parity"
+  },
+  "originalHead": "86fe704eadd6327d4d1ae5793ed726e8965901d6",
+  "worktreePath": "/Users/taco/gits/tacogips/riela-worktrees/control-surface-parity",
+  "evidenceRoot": "tmp/surface-parity",
+  "evidenceLayout": {
+    "perPlan": "tmp/surface-parity/<planId>/",
+    "perAttempt": "tmp/surface-parity/<planId>/attempt-<n>/",
+    "logs": "tmp/surface-parity/<planId>/attempt-<n>/logs/",
+    "tracked": false,
+    "ignoredBy": ".gitignore:41 (tmp/)"
+  },
+  "designDocPaths": [
+    "design-docs/specs/design-control-surface-parity.md"
+  ],
+  "manifestPolicy": "Read-only for implementers. Per-plan progress is recorded only in each plan's own progress log; no worker edits this manifest.",
+  "plans": [
+    {
+      "planId": "control-surface-parity",
+      "planPath": "impl-plans/active/control-surface-parity.md",
+      "progressPath": "impl-plans/active/control-surface-parity.md#progress-log",
+      "dependsOn": [],
+      "tasks": [
+        { "id": "CSP-1", "title": "Catalog", "dependsOn": [] },
+        { "id": "CSP-2", "title": "CLI and skills gates", "dependsOn": ["CSP-1"] },
+        { "id": "CSP-3", "title": "GraphQL gate and generated SDL", "dependsOn": ["CSP-1"] },
+        { "id": "CSP-4", "title": "Web API and library gates", "dependsOn": ["CSP-1"] },
+        { "id": "CSP-5", "title": "Session mutations on GraphQL", "dependsOn": ["CSP-3"] },
+        { "id": "CSP-6", "title": "Console reads to GraphQL", "dependsOn": ["CSP-4", "CSP-5"] },
+        { "id": "CSP-7", "title": "Library facade and skills", "dependsOn": ["CSP-2", "CSP-4"] },
+        { "id": "CSP-8", "title": "Integrated verification", "dependsOn": ["CSP-1", "CSP-2", "CSP-3", "CSP-4", "CSP-5", "CSP-6", "CSP-7"] }
+      ],
+      "waves": [
+        ["CSP-1"],
+        ["CSP-2", "CSP-3", "CSP-4"],
+        ["CSP-5"],
+        ["CSP-6"],
+        ["CSP-7"],
+        ["CSP-8"]
+      ],
+      "writePaths": [
+        "Sources/RielaCore/SurfaceCatalog.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "Sources/RielaGraphQL/GraphQLContracts.swift",
+        "Sources/RielaGraphQL/GraphQLSessionObservabilityContracts.swift",
+        "Sources/RielaGraphQL/RielaGraphQL.swift",
+        "Sources/RielaCLI/ParityCommandSupport.swift",
+        "Sources/RielaCLI/RielaLibrary.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ServeWebHost+Instances.swift",
+        "Sources/RielaCLI/ServeWebHost+InstanceCreation.swift",
+        "Sources/RielaApp/RielaAppWebGraphQL.swift",
+        "Sources/RielaApp/RielaAppInstanceAPI.swift",
+        "Sources/RielaApp/RielaAppWebRouter.swift",
+        "Sources/RielaAppSupport/RielaWebAPIProjection.swift",
+        "Sources/RielaAppSupport/",
+        "Resources/skills/",
+        "scripts/surface-parity/generate-sdl.sh",
+        "web/src/",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "Tests/RielaCLITests/SurfaceParitySkillTests.swift",
+        "Tests/RielaCLITests/SurfaceParityWebAPITests.swift",
+        "Tests/RielaCLITests/SurfaceParityLibraryTests.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityGraphQLTests.swift",
+        "Tests/RielaGraphQLTests/SingleParserTests.swift",
+        "Tests/RielaGraphQLTests/SessionMutationTests.swift",
+        "impl-plans/active/control-surface-parity.md"
+      ],
+      "deletePaths": [
+        "impl-plans/progress/plans/graphql-supervision-execution-parity.json",
+        "/api/v1/instances route implementation (ServeWebHost instance extensions, RielaWebAPIProjection, RielaAppInstanceAPI read paths)",
+        "instance portions of the /api/v1/ops/overview route"
+      ],
+      "sharedPaths": [
+        {
+          "path": "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+          "touchedBy": ["CSP-3", "CSP-5", "CSP-6"],
+          "intendedEdits": "CSP-3 converts the hand-written schemaContract literal into generated output; CSP-5 and CSP-6 add DTO/catalog fields and must re-run scripts/surface-parity/generate-sdl.sh so the byte-identical freshness test stays green. Serial edits only, fresh read before each edit."
+        },
+        {
+          "path": "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+          "touchedBy": ["CSP-1", "CSP-5", "CSP-6", "CSP-7"],
+          "intendedEdits": "CSP-1 authors every row; CSP-5/6/7 flip specific blocked rows to implemented (session mutations, console reads, library facade). Serial edits only; regenerate the SDL after any catalog change that affects graphql bindings."
+        },
+        {
+          "path": "impl-plans/active/control-surface-parity.md",
+          "touchedBy": ["CSP-1", "CSP-2", "CSP-3", "CSP-4", "CSP-5", "CSP-6", "CSP-7", "CSP-8"],
+          "intendedEdits": "Every task appends its evidence entry to the Progress Log and checks its own checklist box. Append-only; never rewrite prior entries."
+        },
+        {
+          "path": "Sources/RielaAppSupport/RielaWebAPIProjection.swift",
+          "touchedBy": ["CSP-4", "CSP-6"],
+          "intendedEdits": "CSP-4 adds the declared route table (D7); CSP-6 deletes the instance and instance-overview routes from that table and its dispatch."
+        }
+      ],
+      "serialReconciliation": {
+        "owner": "CSP-8",
+        "scope": "Full-tree build/test, SwiftLint on changed sources, web suite, final SDL regeneration check, checklist completion, and the single push. No broad reformatting; no lockfile or shared-index rewrites are expected in this plan."
+      },
+      "acceptanceCriteria": [
+        "Every one of the 8 CSP task checkboxes in impl-plans/active/control-surface-parity.md is checked, each with concrete per-box evidence recorded in the plan progress log.",
+        "SurfaceCatalog exists in RielaCore with SurfaceOperation, SurfaceAvailability and SurfaceCatalog.all, holding one row per current CLI command, GraphQL field, /api/v1 route, library entry point and packaged skill command block, with blocked and excluded rows carrying evidence and reasons; uniqueness tests green.",
+        "Five gate tests exist and pass on the final tree: CLI, skills, GraphQL, web API, library. A negative test that registers a dummy command without a catalog row makes the CLI gate fail.",
+        "The GraphQL SDL is generated from the DTOs plus the catalog, checked in, and covered by a byte-identical freshness test; a single-parser test asserts riela graphql, riela serve, the desktop provider and the web router share one parser.",
+        "rerunSession, resumeSession and stopSession GraphQL mutations exist, reuse the same runner paths as the CLI, authenticate like continueSession, and are covered by tests including CLI/GraphQL lineage parity.",
+        "Web and desktop instance list, detail and overview reads go through GraphQL; /api/v1/instances and the instance overview routes are removed; surviving /api/v1 routes are cataloged as excluded with reasons.",
+        "RielaLibrary facade exists with executeWorkflow, resumeSession, rerunSession, inspectWorkflow, sessionView and executeGraphQLDocument; the riela-workflow-reference skill is rewritten to those real names; the riela-auto-improve skill and the stale impl-plans/progress/plans/graphql-supervision-execution-parity.json record are deleted.",
+        "arch -arm64 /bin/zsh -lc 'swift build && swift test' at the worktree root reports zero failures beyond the known interleaved-submit timing flake, and SwiftLint is clean on changed sources.",
+        "cd web && bun run typecheck && bun run lint && bun test src all pass.",
+        "All work is committed on feat/control-surface-parity and pushed to that branch only; main is untouched."
+      ],
+      "verification": {
+        "iteration": [
+          "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParity'",
+          "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceCatalog'",
+          "arch -arm64 /bin/zsh -lc 'swift test --filter SessionMutation'",
+          "arch -arm64 /bin/zsh -lc 'swift test --filter SingleParser'"
+        ],
+        "acceptance": [
+          "arch -arm64 /bin/zsh -lc 'swift build && swift test'",
+          "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict <changed sources>'",
+          "cd web && bun run typecheck && bun run lint && bun test src"
+        ],
+        "redProofs": [
+          "Record the five gates failing on the unfixed tree with exactly the design section 1 gaps before closing them (design section 4 requirement).",
+          "Negative dummy-command descriptor makes the CLI gate fail.",
+          "Stale --supervisor-workflow token makes the skill gate fail."
+        ],
+        "toleratedFailures": [
+          "The known interleaved-submit timing flake only; identify it by an isolated rerun to green and record both runs (the literal string 'interleaved' does not appear under Tests/)."
+        ],
+        "evidenceRules": [
+          "Run every shell command in the foreground; no detached or background execution.",
+          "Tee long-command output to tmp/surface-parity/control-surface-parity/attempt-<n>/logs/ and record the final exit status beside the log path.",
+          "Record exact commands and result counts for each checked checkbox in the plan progress log."
+        ]
+      },
+      "constraints": [
+        "NO backward compatibility: replaced surfaces are deleted outright — no aliases, deprecation windows, legacy imports, migrations, or tolerant decoding.",
+        "Work only inside /Users/taco/gits/tacogips/riela-worktrees/control-surface-parity; never modify the primary checkout or other worktrees.",
+        "Every Swift command runs through an arm64 login shell (arch -arm64 /bin/zsh -lc '...').",
+        "Do not implement impl-plans/active/work-runtime-p0-model-and-store.md; riela task / riela intent enter the catalog only as blocked rows with evidence (delta D6).",
+        "Commit only on feat/control-surface-parity; first push uses -u; never push, merge into, reset, or force-push main.",
+        "Scratch artifacts live only under the gitignored evidenceRoot; scripts/ holds committed reusable tooling only.",
+        "The accepted design document stays the source of truth; record any new delta in the design doc and the plan progress log rather than diverging silently."
+      ],
+      "openDecisionPoints": [
+        "If byte-identical regeneration of the 348-line hand-written SDL literal proves impractical, check in the generator's canonical output in the same commit and record the normalization in the progress log (pre-authorized; design intent unchanged).",
+        "If the single-parser proof discovers a genuine second parser, add a removal task to the plan before CSP-8 rather than shipping around it (pre-authorized)."
+      ]
+    }
+  ]
+}

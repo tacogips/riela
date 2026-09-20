@@ -87,8 +87,11 @@ Check a box only with a matching evidence entry in the progress log.
 - Session runners: `SessionRerunCommand` (`SessionCommands.swift:381`),
   `SessionResumeCommand` (`SessionCommands.swift:641`), both public. No CLI
   stop command; cancellation finalization hardened in commit `43edf93`
-  (`DeterministicWorkflowRunner+Cancellation.swift`, regression in
-  `WorkflowCommandAutoImproveTests.swift`).
+  (`Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift` — note
+  the file lives in RielaCore, not RielaCLI; regression in
+  `WorkflowCommandAutoImproveTests.swift`). The typed error string
+  `session_not_running` does not exist anywhere under `Sources/` yet; CSP-5
+  introduces it.
 - Web API: `RielaWebAPIProjection.swift` serves `/api/v1/bootstrap` (:53),
   `/api/v1/instances` (:64), `/api/v1/ops/overview`,
   `/api/v1/workflows/sources` for both serve and desktop host kinds;
@@ -296,3 +299,20 @@ untouched.
   semantics, Swift-only gate tooling, CSP-6 evidence narrowing, blocked Work
   Runtime rows, declared route tables, shared console-read wiring). No
   production code written.
+- 2026-09-21: fable-design confirmation pass (fable-and-improve-opus-
+  session-2): re-verified every seam fact against HEAD `86fe704` (diff
+  `ca1ce34..86fe704` is docs-only: this plan and the design doc). Confirmed
+  absent as expected: `Sources/RielaCore/SurfaceCatalog*`,
+  `Resources/skills/`, `scripts/surface-parity/`,
+  `Sources/RielaCLI/RielaLibrary.swift`, GraphQL
+  `opsOverview`/`rerunSession`/`resumeSession`/`stopSession`. Confirmed
+  present: `schemaContract` literal (:2, `workflowInstances` :303,
+  `continueSession` :324), `SessionRerunCommand` :381 /
+  `SessionResumeCommand` :641, web routes `/api/v1/bootstrap` :53,
+  `/api/v1/instances` :64, `/api/v1/ops/overview` :89 in
+  `RielaWebAPIProjection.swift`, desktop composite chains
+  registry→routine→configuration only, stale progress record still present.
+  Corrected one seam fact: the cancellation file lives in `Sources/RielaCore`.
+  Branch has no upstream (`git rev-parse @{u}` fails): first push must be
+  `git push -u origin feat/control-surface-parity`. No design deltas beyond
+  D1–D8 required; design doc unchanged. No production code written.

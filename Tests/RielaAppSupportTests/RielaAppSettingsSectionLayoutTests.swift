@@ -179,7 +179,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     )
     XCTAssertEqual(
       listView.scrollView.frame.height,
-      table.rowHeight + DaemonWorkflowInstanceListView.listBottomPadding,
+      table.rowHeight * CGFloat(table.numberOfRows) + DaemonWorkflowInstanceListView.listBottomPadding,
       accuracy: 1
     )
     XCTAssertTrue(allSubviews(of: RielaAppSettingsRow.self, in: cell).isEmpty)
@@ -225,7 +225,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     XCTAssertEqual(contentHost.subviews.filter { !$0.isHidden }.count, 1)
-    XCTAssertTrue(contentHost.subviews.first { !$0.isHidden } === controller.instancesListView)
+    XCTAssertTrue(contentHost.subviews.first { !$0.isHidden } === controller.sourcesOverviewView)
   }
 
   func testSidebarOverviewPanesUseInstanceRightPaneLayoutAtRuntime() throws {
@@ -326,7 +326,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     let searchField = try XCTUnwrap(visibleSubviews(of: NSSearchField.self, in: root).first)
-    XCTAssertEqual(searchField.accessibilityLabel(), "Filter Workflow Sources")
+    XCTAssertEqual(searchField.accessibilityLabel(), "ワークフローを検索")
     let window = try XCTUnwrap(controller.window)
     XCTAssertTrue(window.makeFirstResponder(searchField))
     XCTAssertTrue(window.firstResponder === searchField.currentEditor())
@@ -345,7 +345,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
     XCTAssertNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains {
-      $0.stringValue == "No workflow sources match the current filter."
+      $0.stringValue == "検索条件に一致するワークフローはありません。"
     })
     XCTAssertTrue(window.firstResponder === searchField.currentEditor())
 
@@ -390,8 +390,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertTrue(graphPane.canvasView.model?.edges.contains {
       $0.from == "start" && $0.to == "review" && $0.label == "accepted"
     } ?? false)
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Source Settings" })
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Manage Source" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "ワークフロー情報" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "ワークフロー管理" })
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == workflowDirectory.path })
 
     controller.goBack()
@@ -455,7 +455,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     onRemoveProfile: @escaping (RielaAppProfileName) -> Bool = { _ in true },
     onOpenWebUI: @escaping (String) -> Void = { _ in }
   ) -> DaemonWorkflowWindowController {
-    DaemonWorkflowWindowController(
+    let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: onSelectProfile,
       onCreateProfile: { RielaAppProfileName($0) },
@@ -482,6 +482,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
       environmentColumnStatus: { _ in "Ready" },
       onWindowWillClose: {}
     )
+    controller.showInstancesList()
+    return controller
   }
 
   private func configuredInstanceDetailController(workflowDirectory: String = "workflows/daily-summary") -> DaemonWorkflowWindowController {

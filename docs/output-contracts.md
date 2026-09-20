@@ -1,0 +1,9 @@
+# Node output contracts
+
+Declare `output.jsonSchema` in the node payload. Riela appends that authored schema to the agent's system prompt after rendering workflow and persona templates. Schema strings such as `{{example}}` remain literal. Keep persona prompts focused on the task; duplicating the output shape there is unnecessary. The agent should return the JSON object directly, without prose or fences. When authored instructions require routing metadata, the existing `{ "when": { "condition": true }, "payload": {...} }` envelope remains supported: the schema validates `payload`, not the envelope.
+
+Both workflow bundle validation and runtime preflight use the same dialect checker as output publication. Invalid or unsupported contracts fail before an adapter runs, including unsupported keywords nested in properties, items, additional properties, or combinators.
+
+Supported keywords are `$schema`, `title`, `description`, `type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minLength`, `maxLength`, `pattern`, `minimum`, `maximum`, `minItems`, `maxItems`, `uniqueItems`, `anyOf`, `oneOf`, and `allOf`. `$schema` is metadata, not a dialect selector. Subschemas must be objects; boolean schemas, references, and conditional keywords (`if`, `then`, `else`) are unsupported. `additionalProperties` additionally accepts a boolean.
+
+Output payloads are always top-level JSON objects. Preflight rejects contracts excluding objects, incompatible finite const/enum candidates, required properties forbidden by `additionalProperties: false`, and combinator branches that clearly exclude objects. These are bounded static checks, not a general satisfiability solver: constraints across complex branches can still be impossible, and every produced payload is validated at publication.

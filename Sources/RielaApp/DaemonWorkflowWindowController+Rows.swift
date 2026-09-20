@@ -380,7 +380,7 @@ extension DaemonWorkflowWindowController {
       role: .button,
       accessibilityLabel: row.instanceName,
       accessibilityValue: row.state.rawValue,
-      accessibilityHelp: "Show instance details",
+      accessibilityHelp: "実行設定の詳細を表示",
       actionTarget: self,
       action: #selector(tableClicked(_:))
     )

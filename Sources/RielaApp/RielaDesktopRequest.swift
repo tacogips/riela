@@ -33,6 +33,14 @@ extension RielaApp {
     guard let apiRequest = request.apiRequest else {
       return .text(status: 400, "Invalid desktop API request")
     }
+    if apiRequest.path == "/api/v1/settings/worker-credentials", apiRequest.method == "POST" {
+      guard let input = try? JSONDecoder().decode([String: String].self, from: apiRequest.body),
+            input["expectedProfile"] == daemonProfileName.rawValue else {
+        return .text(status: 409, "The active profile changed. Refresh settings.")
+      }
+      openDistributedCredentials(beside: distributedControllerConfigurationURL)
+      return .text(status: 200, "Credentials editor requested.")
+    }
     if apiRequest.path == "/graphql" {
       return await webGraphQLResponse(for: apiRequest)
     }

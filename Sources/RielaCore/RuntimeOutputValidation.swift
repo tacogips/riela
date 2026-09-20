@@ -50,13 +50,19 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
   private func validate(_ payload: JSONObject, against schema: JSONObject) -> String? {
     let schemaValue = JSONValue.object(schema)
     let payloadValue = JSONValue.object(payload)
-    if let reason = validateSchemaDefinition(schema) {
+    if let reason = validateContractSchema(schema) {
       return reason
     }
+    return validateValue(payloadValue, against: schemaValue, path: "$")
+  }
+
+  /// The same supported dialect is checked before execution and at publication.
+  public func validateContractSchema(_ schema: JSONObject) -> String? {
+    if let reason = validateSchemaDefinition(schema) { return reason }
     if !canPossiblyAcceptObject(schema) {
       return "output contract $schema must allow object because node output payloads are always top-level JSON objects"
     }
-    return validateValue(payloadValue, against: schemaValue, path: "$")
+    return nil
   }
 
   private func validateSchemaDefinition(_ schema: JSONObject) -> String? {
@@ -392,10 +398,10 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
   }
 
   private func validateString(_ value: String, schema: JSONObject, path: String) -> String? {
-    if let minLength = schema["minLength"]?.numberValue, value.count < Int(minLength) {
+    if let minLength = schema["minLength"]?.numberValue, Double(value.count) < minLength {
       return "output contract \(path) must have length >= \(formatNumber(minLength))"
     }
-    if let maxLength = schema["maxLength"]?.numberValue, value.count > Int(maxLength) {
+    if let maxLength = schema["maxLength"]?.numberValue, Double(value.count) > maxLength {
       return "output contract \(path) must have length <= \(formatNumber(maxLength))"
     }
     if let pattern = schema["pattern"]?.stringValue,
@@ -429,10 +435,10 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
   }
 
   private func validateArray(_ value: [JSONValue], schema: JSONObject, path: String) -> String? {
-    if let minItems = schema["minItems"]?.numberValue, value.count < Int(minItems) {
+    if let minItems = schema["minItems"]?.numberValue, Double(value.count) < minItems {
       return "output contract \(path) must contain at least \(formatNumber(minItems)) items"
     }
-    if let maxItems = schema["maxItems"]?.numberValue, value.count > Int(maxItems) {
+    if let maxItems = schema["maxItems"]?.numberValue, Double(value.count) > maxItems {
       return "output contract \(path) must contain at most \(formatNumber(maxItems)) items"
     }
     if schema["uniqueItems"] == .bool(true) {
@@ -485,19 +491,23 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
       return false
     }
     if let constValue = schema["const"] {
-      return constValue.objectValue != nil
+      return constValue.objectValue != nil && validateValue(constValue, against: .object(schema), path: "$") == nil
     }
     if let enumValue = schema["enum"], case let .array(entries) = enumValue {
-      return entries.contains { $0.objectValue != nil }
+      return entries.contains { $0.objectValue != nil && validateValue($0, against: .object(schema), path: "$") == nil }
     }
-    if let allOf = schema["allOf"], case let .array(entries) = allOf {
-      return entries.allSatisfy { $0.objectValue.map(canPossiblyAcceptObject) ?? false }
+    if schema["additionalProperties"] == .bool(false),
+       case let .array(required)? = schema["required"] {
+      let properties = schema["properties"]?.objectValue ?? [:]
+      if required.contains(where: { $0.stringValue.map { properties[$0] == nil } ?? false }) { return false }
     }
-    if let anyOf = schema["anyOf"], case let .array(entries) = anyOf {
-      return entries.contains { $0.objectValue.map(canPossiblyAcceptObject) ?? false }
+    if let allOf = schema["allOf"], case let .array(entries) = allOf,
+       !entries.allSatisfy({ $0.objectValue.map(canPossiblyAcceptObject) ?? false }) {
+      return false
     }
-    if let oneOf = schema["oneOf"], case let .array(entries) = oneOf {
-      return entries.contains { $0.objectValue.map(canPossiblyAcceptObject) ?? false }
+    for key in ["anyOf", "oneOf"] {
+      if case let .array(entries)? = schema[key],
+         !entries.contains(where: { $0.objectValue.map(canPossiblyAcceptObject) ?? false }) { return false }
     }
     return true
   }
@@ -518,7 +528,7 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
   }
 
   private func formatNumber(_ value: Double) -> String {
-    value.rounded() == value ? String(Int(value)) : String(value)
+    Int(exactly: value).map(String.init) ?? String(value)
   }
 }
 

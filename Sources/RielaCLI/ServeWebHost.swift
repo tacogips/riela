@@ -23,6 +23,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
   var port: Int
   let environment: [String: String]
   let browserAccess: ServeWebAccess
+  let passkeys: RielaPasskeyService?
   var observedAppearance = RielaAppAppearanceSettings()
   var observedProfiles: [RielaAppProfileName] = []
   var revision = 1
@@ -48,6 +49,12 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     self.fallback = fallback
     self.environment = environment
     browserAccess = ServeWebAccess(host: host, environment: environment)
+    if case let .passkey(configuration) = browserAccess {
+      passkeys = RielaPasskeyService(configuration: configuration,
+        root: RielaPasskeyConfiguration.storeRoot(home: homeDirectory, environment: environment))
+    } else {
+      passkeys = nil
+    }
     let appRoot = RielaAppProfileStore.defaultAppRootURL(homeDirectory: homeDirectory)
     let profile = RielaAppProfileStore(appRootURL: appRoot).loadActiveProfileName()
     self.profile = profile
@@ -85,6 +92,9 @@ final class ServeWebHost: RielaHTTPRouteHandling {
   }
 
   private func routedResponse(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
+    if request.path.hasPrefix("/api/v1/auth/"), let passkeys {
+      return await passkeys.response(for: request)
+    }
     guard request.path.hasPrefix("/api/v1/") || request.path == "/graphql" else {
       return await fallback.response(for: request)
     }
@@ -94,7 +104,8 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       return await fallback.response(for: request)
     }
     let authority = host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
-    if let rejection = browserAccess.rejection(for: request, localAuthority: authority, csrfToken: csrfToken) {
+    let authenticated = await passkeys?.isAuthenticated(request) ?? false
+    if let rejection = browserAccess.rejection(for: request, localAuthority: authority, csrfToken: csrfToken, authenticated: authenticated) {
       return rejection
     }
     refreshConfigurationState()
@@ -110,6 +121,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       instanceOperationInProgress = false
       await startConfiguredInstances()
     }
+    if let response = instanceCreationResponse(for: request) { return response }
     if let response = await instanceActionResponse(for: request) { return response }
     if request.path == "/graphql" {
       guard request.headers["x-riela-profile"] == profile.rawValue else {

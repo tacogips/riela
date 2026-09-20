@@ -47,7 +47,7 @@ extension RielaApp {
     for (name, value) in preference.environmentVariables {
       environment[name] = value
     }
-    return environment
+    return distributedWorkflowEnvironment(environment)
   }
 
   func daemonConfiguredEnvironmentValues(

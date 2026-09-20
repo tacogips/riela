@@ -100,7 +100,7 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
 
     let sessionStore = fixture.root.appendingPathComponent("sessions", isDirectory: true)
     fixture.app.webSessionStoreRootOverride = sessionStore.path
-    let now = Date()
+    let now = Date(timeIntervalSince1970: 100.125)
     let session = WorkflowSession(
       workflowId: "review-loop",
       sessionId: "session-web-detail",
@@ -183,6 +183,8 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertEqual(json["logsTotalCount"] as? Int, 1)
     XCTAssertEqual(json["logsTruncated"] as? Bool, false)
     XCTAssertEqual(json["stepsTotalCount"] as? Int, 1)
+    let steps = try XCTUnwrap(json["steps"] as? [[String: Any]])
+    XCTAssertEqual(steps.first?["startedAt"] as? String, "1970-01-01T00:01:40.125Z")
     let logs = try XCTUnwrap(json["logs"] as? [[String: Any]])
     XCTAssertEqual(logs.first?["communicationId"] as? String, "comm-web-detail")
     XCTAssertEqual(logs.first?["communicationIdTruncated"] as? Bool, false)
@@ -237,6 +239,52 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(session.workflowId) ?? true)
   }
 
+  func testCreatesNamedConfigurationWithoutResettingLegacyPreferences() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = fixture.app
+    let source = try XCTUnwrap(app.daemonWorkflowSources.first)
+    let original = app.daemonState.preferences
+    let revision = app.webRevision
+    let body = try JSONSerialization.data(withJSONObject: [
+      "sourceId": source.id, "name": "  Additional  ",
+      "expectedProfile": app.daemonProfileName.rawValue, "expectedRevision": revision
+    ])
+    let request = RielaHTTPRequest(method: "POST", path: "/api/v1/instances", body: body)
+    let created = await app.webAPIResponse(for: request, csrfToken: "csrf")
+    XCTAssertEqual(created.status, 201)
+    let identity = try XCTUnwrap(try jsonObject(created)["identity"] as? String)
+    let preference = try XCTUnwrap(app.daemonState.preferences[identity])
+    XCTAssertEqual(preference.displayName, "Additional")
+    XCTAssertEqual(preference.sourceIdentity, source.id)
+    XCTAssertFalse(preference.active)
+    XCTAssertFalse(preference.enabledAtLaunch)
+    for (key, value) in original { XCTAssertEqual(app.daemonState.preferences[key], value) }
+    XCTAssertEqual(app.makeDaemonStore(profileName: app.daemonProfileName).load().preferences[identity], preference)
+    let stale = await app.webAPIResponse(for: request, csrfToken: "csrf")
+    XCTAssertEqual(stale.status, 409)
+  }
+
+  func testStopActionMaterializesDefaultWithoutStartingRuntime() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = fixture.app
+    let source = try XCTUnwrap(app.daemonWorkflowSources.first)
+    app.daemonState = RielaAppDaemonWorkflowState()
+    app.daemonInstances = [.unconfigured(source: source)]
+    let encoded = encodePathSegment(source.id)
+    let path = "/api/v1/instances/\(encoded)/actions"
+    let response = await app.webAPIResponse(for: RielaHTTPRequest(
+      method: "POST", path: "/api/v1/instances/\(source.id)/actions", percentEncodedPath: path,
+      body: try JSONSerialization.data(withJSONObject: [
+        "action": "stop", "expectedProfile": app.daemonProfileName.rawValue, "expectedRevision": app.webRevision
+      ])
+    ), csrfToken: "csrf")
+    XCTAssertEqual(response.status, 200)
+    XCTAssertEqual(app.daemonState.preferences[source.id]?.sourceIdentity, source.id)
+    XCTAssertEqual(app.daemonState.preferences[source.id]?.active, false)
+  }
+
   func testMissingSourceInstanceIsVisibleAndRedacted() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -258,6 +306,8 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     let missing = try XCTUnwrap(items.first(where: { $0["id"] as? String == missingIdentity }))
     XCTAssertEqual(missing["status"] as? String, "needsSource")
     XCTAssertEqual(missing["sourceKind"] as? String, "missing")
+    XCTAssertEqual(missing["sourceId"] as? String, "removed-source")
+    XCTAssertEqual(missing["isDefault"] as? Bool, false)
     XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(secret) ?? true)
   }
 

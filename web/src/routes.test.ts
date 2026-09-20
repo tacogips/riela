@@ -36,8 +36,10 @@ describe('hash route parsing', () => {
     const routes: HashRoute[] = [
       { view: 'instances' },
       { view: 'workflow-detail', sourceId: 'profile-workflow:/a/b:日本語' },
+      { view: 'workflow-detail', sourceId: 'project:/a:review', configurationId: '日本語/a', tab: 'history' },
       { view: 'ops' },
       { view: 'run-detail', sessionId: 'session with spaces' },
+      { view: 'run-detail', sourceId: 'source/a', configurationId: 'config/b', sessionId: 'run/c' },
       { view: 'ops-run', instanceId: 'a/b:c', sessionId: 's/1' },
     ]
     for (const route of routes) {

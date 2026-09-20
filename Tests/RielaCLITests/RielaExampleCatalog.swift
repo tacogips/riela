@@ -43,6 +43,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "matrix-agent-trio-chat",
     "matrix-chat-reply",
     "memory-consolidation",
+    "monja-agent-collaboration",
     "monja-typescript-sdk",
     "node-combinations-showcase",
     "note-agent",

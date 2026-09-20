@@ -11,6 +11,8 @@ export interface Bootstrap {
 }
 
 export interface Instance {
+  sourceId: string
+  isDefault: boolean
   id: string
   name: string
   workflowId: string

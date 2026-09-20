@@ -7,6 +7,7 @@ import { WorkflowAgentChat } from './WorkflowAgentChat'
 import { WorkflowRunInspector } from './WorkflowRunInspector'
 import { WorkflowRunControls } from './WorkflowRunControls'
 import { WorkflowFileNodeSettings } from './WorkflowFileNodeSettings'
+import { WorkflowPlacementSettings } from './WorkflowPlacementSettings'
 import type { RegistryWorkflow } from './types'
 
 type Point = { x: number; y: number }
@@ -165,6 +166,7 @@ export function WorkflowGraphEditor(props: {
           <label>Role<select value={String(item().role ?? 'worker')} onChange={(event) => change({ ...doc(), steps: doc().steps.map((current) => current.id === item().id ? { ...current, role: event.currentTarget.value } : current) })}>
             <option value="worker">Worker</option><option value="manager">Manager</option>
           </select></label>
+          <WorkflowPlacementSettings step={item()} onChange={updated => change({ ...doc(), steps: doc().steps.map(current => current.id === updated.id ? updated : current) })} />
           <Show when={typeof (node()?.addon as Record<string, unknown> | undefined)?.name === 'string'}>
             <p>Prompt/model edits replace only those fields. Other protected settings are retained. Saving starts a new Undo history.</p>
             <Show when={['promptTemplate', 'model'].some((field) => {

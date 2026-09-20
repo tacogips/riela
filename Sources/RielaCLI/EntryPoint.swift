@@ -28,6 +28,11 @@ public enum RielaCLIMain {
     )
     let arguments = Array(CommandLine.arguments.dropFirst())
     let runTask = Task {
+      if arguments.first == "worker" {
+        return await DistributedWorkerCommand().run(arguments: arguments) { line in
+          FileHandle.standardOutput.write(Data(line.utf8))
+        }
+      }
       if ServeHTTPCommand.isLongRunningInvocation(arguments) {
         return await ServeHTTPCommand().run(arguments: arguments) { line in
           FileHandle.standardOutput.write(Data(line.utf8))

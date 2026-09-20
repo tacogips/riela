@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 38
+    static let expectedMockScenarioCount = 39
     static let expectedNodeMockScenarioCount = 0
   }
 

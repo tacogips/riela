@@ -521,6 +521,10 @@ public struct FileWorkflowRegistryGraphQLProvider: WorkflowRegistryGraphQLProvid
 
   private func definitionFieldExposure(at path: String) -> DefinitionFieldExposure {
     if authoringProjection {
+      if path.range(
+        of: #"^/steps/[0-9]+/placement(/(workspace|target|target/(workerId|group)|exports|exports/[0-9]+))?$"#,
+        options: .regularExpression
+      ) != nil { return .structural }
       if path.range(of: #"^/nodes/[0-9]+/addon(/(name|version|config))?$"#, options: .regularExpression) != nil {
         return .structural
       }

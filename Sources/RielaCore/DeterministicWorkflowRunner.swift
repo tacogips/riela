@@ -15,6 +15,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var addonAttachmentDescriptors: [String: WorkflowAddonAttachmentDescriptor]
   public var rerunFromSessionId: String?
   public var rerunFromStepId: String?
+  public var preserveHistory: Bool
   public var resumeSessionId: String?
   /// Recovery lineage recorded on the source session's evidence manifest,
   /// supplied by callers that can read persisted manifests (the CLI). Rerun
@@ -54,6 +55,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     addonAttachmentDescriptors: [String: WorkflowAddonAttachmentDescriptor] = [:],
     rerunFromSessionId: String? = nil,
     rerunFromStepId: String? = nil,
+    preserveHistory: Bool = false,
     resumeSessionId: String? = nil,
     sourceRecoveryLineage: LoopRecoveryLineage? = nil,
     memoryRootDirectory: String? = nil,
@@ -77,6 +79,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.addonAttachmentDescriptors = addonAttachmentDescriptors
     self.rerunFromSessionId = rerunFromSessionId
     self.rerunFromStepId = rerunFromStepId
+    self.preserveHistory = preserveHistory
     self.resumeSessionId = resumeSessionId
     self.sourceRecoveryLineage = sourceRecoveryLineage
     self.memoryRootDirectory = memoryRootDirectory
@@ -121,7 +124,7 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
     self.rootOutput = rootOutput
     self.exitCode = exitCode
     self.status = session.status
-    self.nodeExecutions = session.executions.count
+    self.nodeExecutions = session.newExecutionCount
     self.transitions = transitions
     self.supervision = supervision
     self.loopEvidence = loopEvidence
@@ -167,6 +170,7 @@ public protocol NestedRecoveryCheckpointing: Sendable {
 
 public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var store: any WorkflowRuntimeStore
+  public var distributedExecutor: (any DistributedNodeExecuting)?
   public var adapter: any NodeAdapter
   public var addonResolver: (any WorkflowAddonResolving)?
   public var attachmentProjector: any WorkflowAddonAttachmentProjecting
@@ -188,6 +192,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
     adapter: any NodeAdapter = DeterministicLocalNodeAdapter(),
+    distributedExecutor: (any DistributedNodeExecuting)? = nil,
     addonResolver: (any WorkflowAddonResolving)? = nil,
     attachmentProjector: any WorkflowAddonAttachmentProjecting = InlineWorkflowAddonAttachmentProjector(),
     stdioNodeExecutor: (any WorkflowStdioNodeExecuting)? = nil,
@@ -206,6 +211,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
     self.adapter = adapter
+    self.distributedExecutor = distributedExecutor
     self.addonResolver = addonResolver
     self.attachmentProjector = attachmentProjector
     self.stdioNodeExecutor = stdioNodeExecutor
@@ -575,6 +581,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       resolvedInput: resolvedInput
     )
     if let projection = basePayload.output?.projection {
+      guard step.placement == nil else { throw AdapterExecutionError(.invalidInput, "output projection steps execute on the controller and cannot specify worker placement") }
       return try await executeOutputProjectionAndPublish(
         projection: projection,
         registryNode: registryNode,
@@ -624,10 +631,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
     let agentEnvironment: [String: String]
     do {
-      agentEnvironment = try resolveAgentEnvironment(
+      agentEnvironment = try step.placement == nil ? resolveAgentEnvironment(
         executionPayload.agentEnvironment,
         variables: mergedVariables
-      )
+      ) : [:]
     } catch let error as AgentEnvironmentResolutionError {
       throw AdapterExecutionError(.policyBlocked, error.localizedDescription)
     }
@@ -743,7 +750,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     request: DeterministicWorkflowRunRequest,
     executionIndex: Int
   ) async throws -> WorkflowPublicationResult {
-    guard let stdioNodeExecutor else {
+    guard stdioNodeExecutor != nil || (step.placement != nil && distributedExecutor != nil) else {
       let adapterFailure = AdapterExecutionError(.providerError, "missing stdio-node executor for '\(kind.rawValue)' node '\(step.nodeId)'")
       try await publishFailureAndThrow(
         adapterFailure,
@@ -771,7 +778,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       )
       let execution = startedExecution.execution
       let availableMemories = effectiveNodeMemories(workflow: workflow, step: step, payload: payload)
-      let result = try await stdioNodeExecutor.execute(
+      let result = try await executePlacedStdio(
         WorkflowStdioNodeExecutionInput(
           workflowId: workflow.workflowId,
           sessionId: sessionId,
@@ -786,6 +793,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           availableMemories: availableMemories,
           policy: stdioPolicyContext(workflow: workflow, step: step, payload: payload, request: request)
         ),
+        step: step, executionId: "\(sessionId)/\(execution.executionId)",
         context: adapterExecutionContext(
           deadline: deadline(for: step, request: request),
           workflowId: workflow.workflowId,
@@ -877,7 +885,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           backend: basePayload.executionBackend,
           configuredWorkingDirectory: basePayload.workingDirectory
         ),
-        inputSnapshot: adapterInput.invocationSnapshot,
+        inputSnapshot: try historyInvocationSnapshot(adapterInput, request: request, step: step, payload: basePayload),
         effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
@@ -907,10 +915,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         defer {
           silenceMonitor?.cancel()
         }
-        adapterOutput = try await adapter.execute(
-          attemptInput,
-          context: context
-        )
+        adapterOutput = try await executePlacedAdapter(attemptInput, step: step, executionId: "\(sessionId)/\(execution.executionId)", context: context)
       } catch let adapterFailure as AdapterExecutionError {
         return try await publishAdapterFailure(
           adapterFailure,

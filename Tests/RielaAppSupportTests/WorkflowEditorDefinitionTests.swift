@@ -10,6 +10,57 @@ import XCTest
 
 @MainActor
 final class WorkflowEditorDefinitionTests: XCTestCase {
+  func testAuthoringProjectionRoundTripsRemotePlacementAndRetainsProtectedNodeFields() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("tmp/distributed-workers/editor-roundtrip/\(UUID().uuidString)")
+    let source = root.appendingPathComponent("source")
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let raw = #"""
+    {"workflowId":"remote-editor","defaults":{"nodeTimeoutMs":10000,"maxLoopIterations":1},"entryStepId":"work",
+     "nodes":[{"id":"work","addon":{"name":"riela/codex-sdk-worker","version":"1","config":{"promptTemplate":"Test"},
+       "env":{"API_KEY":{"fromEnv":"PROTECTED_REMOTE_EDITOR_CANARY"}}}}],
+     "steps":[{"id":"work","nodeId":"work","placement":{"workspace":"project","target":{"workerId":"linux-1","group":"build"},"exports":["report.json"]}}]}
+    """#
+    try Data(raw.utf8).write(to: source.appendingPathComponent("workflow.json"))
+    try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": root.path]) {
+      let provider = FileWorkflowRegistryGraphQLProvider(
+        workingDirectory: root.path, webPrincipalId: RielaAppWebRegistryAuthorizer.principalId, authoringProjection: true
+      )
+      let registered = try await provider.registerMutableWorkflow(
+        input: GraphQLRegisterMutableWorkflowInput(definition: [:]), resolvedBundleURL: source
+      )
+      let identity = try XCTUnwrap(registered.workflow)
+      let target = WorkflowRegistryTarget(workflowId: identity.workflowId, scope: .user, originId: identity.originId)
+      let entry = try await provider.workflow(target: target)
+      var definition = try XCTUnwrap(entry.definition)
+      guard case var .array(steps)? = definition["steps"], case var .object(step) = steps[0],
+        case var .object(placement)? = step["placement"] else { return XCTFail("Remote placement was hidden from its editor") }
+      XCTAssertEqual(placement["workspace"], .string("project"))
+      XCTAssertEqual(placement["target"], .object(["workerId": .string("linux-1"), "group": .string("build")]))
+      XCTAssertEqual(placement["exports"], .array([.string("report.json")]))
+      let projectedText = try XCTUnwrap(String(data: JSONEncoder().encode(definition), encoding: .utf8))
+      XCTAssertFalse(projectedText.contains("PROTECTED_REMOTE_EDITOR_CANARY"))
+      placement["target"] = .object(["group": .string("release")])
+      step["placement"] = .object(placement)
+      steps[0] = .object(step)
+      definition["steps"] = .array(steps)
+      try JSONEncoder().encode(definition).write(to: source.appendingPathComponent("workflow.json"))
+      let updated = try await provider.updateMutableWorkflow(input: .init(
+        target: .init(workflowId: identity.workflowId, scope: .user, originId: identity.originId),
+        definition: definition, expectedDefinitionRevision: entry.definitionRevision
+      ), resolvedBundleURL: source)
+      XCTAssertTrue(updated.accepted)
+      let reopened = try await provider.workflow(target: target)
+      guard case let .array(savedSteps)? = reopened.definition?["steps"], case let .object(savedStep) = savedSteps[0] else {
+        return XCTFail("Saved steps are missing")
+      }
+      XCTAssertEqual(savedStep["placement"], .object(placement))
+      let persisted = try String(contentsOf: root.appendingPathComponent(".riela/temporary-workflows/remote-editor/workflow.json"), encoding: .utf8)
+      XCTAssertTrue(persisted.contains("PROTECTED_REMOTE_EDITOR_CANARY"), "Editing placement must retain protected node environment bindings")
+    }
+  }
+
   func testEditableCopyPreservesBundleAndRejectsDuplicateWithoutOverwriting() async throws {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
       .appendingPathComponent("tmp/workflow-graph-studio/copy-\(UUID().uuidString)")

@@ -48,6 +48,9 @@ struct ServeHTTPCommand: Sendable {
       context: serveRequestContext(parsed: parsed)
     )
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let distributedHost = try environment[DistributedControllerConfiguration.environmentKey].map {
+      try DistributedControllerHost(configurationURL: URL(fileURLWithPath: $0), environment: environment)
+    }
     let webHost = await ServeWebHost(
       homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true),
       workingDirectory: URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true),
@@ -65,6 +68,10 @@ struct ServeHTTPCommand: Sendable {
     }
     let server = RielaLocalHTTPServer(routeHandler: routeHandler)
     let boundPort = try await server.start(host: host, port: requestedPort)
+    do { try await distributedHost?.start() } catch {
+      await server.stop()
+      throw error
+    }
     await webHost.updateBoundPort(boundPort)
     await webHost.startConfiguredInstances()
     let endpoint = "http://\(host):\(boundPort)"
@@ -90,6 +97,7 @@ struct ServeHTTPCommand: Sendable {
     }
     await server.stop()
     await webHost.shutdown()
+    await distributedHost?.stop()
     try await listenerHandle.shutdown()
     return CLICommandResult(exitCode: .success)
   }

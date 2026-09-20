@@ -35,7 +35,7 @@ extension DaemonWorkflowWindowController {
       return
     }
     if isShowingAddInstanceSelection {
-      showInstancesList()
+      returnToWorkflow()
       return
     }
     if isShowingInstanceDetail, instanceDetailPane == .removalConfirmation {
@@ -43,7 +43,7 @@ extension DaemonWorkflowWindowController {
       return
     }
     if isShowingInstanceDetail {
-      showInstancesList()
+      returnToWorkflow()
       return
     }
     if isShowingWorkflowSourceDetail {
@@ -58,8 +58,7 @@ extension DaemonWorkflowWindowController {
   }
 
   @objc func showInstancesPane() {
-    activeSidebarPane = .instances
-    showInstancesList()
+    showSourcesPane()
   }
 
   @objc func showSourcesPane() {
@@ -70,7 +69,7 @@ extension DaemonWorkflowWindowController {
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(sourcesOverviewView)
-    navigationTitleLabel.stringValue = "Workflow Sources"
+    navigationTitleLabel.stringValue = "ワークフロー"
     updateNavigationState()
     updateSidebarSelection()
   }
@@ -139,11 +138,11 @@ extension DaemonWorkflowWindowController {
       || isShowingInstanceDetail
       || isShowingWorkflowSourceDetail
       || isShowingMarketplaceWorkflowDetail
-      || activeSidebarPane != .instances
+      || (activeSidebarPane != .sources && activeSidebarPane != .instances)
   }
 
   func updateSidebarSelection() {
-    updateSidebarButton(sidebarInstancesButton, selected: activeSidebarPane == .instances)
+    updateSidebarButton(sidebarInstancesButton, selected: activeSidebarPane == .instances || activeSidebarPane == .sources)
     updateSidebarButton(sidebarSourcesButton, selected: activeSidebarPane == .sources)
     updateSidebarButton(sidebarMarketplaceButton, selected: activeSidebarPane == .marketplace)
     updateSidebarButton(sidebarAssistantButton, selected: activeSidebarPane == .assistant)

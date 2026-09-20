@@ -89,7 +89,7 @@ final class ServeWebHostTests: XCTestCase {
     XCTAssertTrue((String(data: response.body, encoding: .utf8) ?? "").contains("UNAUTHENTICATED"))
   }
 
-  func testPublicBrowserRequiresTokenAndOriginBeforeConfigurationAccess() async throws {
+  func testPublicBrowserRequiresPasskeyAndRejectsLegacyOperatorToken() async throws {
     let root = try fixtureRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let host = ServeWebHost(
@@ -107,24 +107,27 @@ final class ServeWebHostTests: XCTestCase {
     let wrong = await host.response(for: request)
     XCTAssertEqual(wrong.status, 401)
     request.headers["authorization"] = "Bearer test-browser-token"
-    let bootstrap = try object(await host.response(for: request))
-    let csrf = try XCTUnwrap(bootstrap["csrfToken"] as? String)
+    let legacy = await host.response(for: request)
+    XCTAssertEqual(legacy.status, 401)
+    request = RielaHTTPRequest(method: "POST", path: "/api/v1/auth/login/options", headers: [
+      "host": "riela.example", "origin": "https://riela.example", "content-type": "application/json"
+    ], body: Data("{}".utf8))
+    let options = try object(await host.response(for: request))
+    XCTAssertNotNil(options["ceremonyID"])
+    XCTAssertEqual((options["publicKey"] as? [String: Any])?["rpId"] as? String, "riela.example")
+    let policy = ServeWebAccess(host: "0.0.0.0", environment: ["RIELA_WEB_ORIGIN": "https://riela.example"])
     request = RielaHTTPRequest(method: "POST", path: "/graphql", headers: [
-      "host": "riela.example", "authorization": "Bearer test-browser-token",
+      "host": "riela.example",
       "origin": "https://riela.example", "content-type": "application/json",
-      "x-riela-csrf": csrf, "x-riela-profile": "default"
+      "x-riela-csrf": "csrf", "x-riela-profile": "default"
     ], body: Data(#"{"query":"query { configuration { profile revision } }"}"#.utf8))
-    let accepted = try object(await host.response(for: request))
-    XCTAssertNotNil((accepted["data"] as? [String: Any])?["configuration"])
-    for header in ["authorization", "origin", "host", "x-riela-csrf"] {
+    XCTAssertNil(policy.rejection(for: request, localAuthority: "unused", csrfToken: "csrf", authenticated: true))
+    for header in ["origin", "host", "x-riela-csrf"] {
       var invalid = request
       invalid.headers[header] = "invalid"
-      let rejected = await host.response(for: invalid)
-      XCTAssertEqual(rejected.status, header == "authorization" ? 401 : 403, header)
+      let rejected = policy.rejection(for: invalid, localAuthority: "unused", csrfToken: "csrf", authenticated: true)
+      XCTAssertEqual(rejected?.status, 403, header)
     }
-    request.headers["x-riela-profile"] = "other"
-    let conflict = await host.response(for: request)
-    XCTAssertEqual(conflict.status, 409)
   }
 
   func testIncompletePublicAccessConfigurationFailsClosed() {
@@ -269,6 +272,58 @@ final class ServeWebHostTests: XCTestCase {
     } catch let error as RielaConfigurationGraphQLError {
       XCTAssertEqual(error.code, "PROFILE_CONFLICT")
     }
+  }
+
+  func testNamedCreationPreservesVirtualDefaultAndRejectsStaleWrites() async throws {
+    let root = try fixtureRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let directory = root.appendingPathComponent("project/.riela/workflows/example")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try Data("""
+      {"workflowId":"example","entryStepId":"start",
+       "nodes":[{"id":"worker","nodeFile":"worker.json"}],
+       "steps":[{"id":"start","nodeId":"worker","role":"worker"}]}
+      """.utf8).write(to: directory.appendingPathComponent("workflow.json"))
+    try Data("{}".utf8).write(to: directory.appendingPathComponent("worker.json"))
+    let host = makeHost(root: root)
+    let listing = try object(await host.response(for: get("/api/v1/instances")))
+    let initial = try XCTUnwrap((listing["items"] as? [[String: Any]])?.first)
+    let sourceId = try XCTUnwrap(initial["sourceId"] as? String)
+    XCTAssertEqual(initial["isDefault"] as? Bool, true)
+    XCTAssertTrue(host.state.preferences.isEmpty)
+    let revision = try XCTUnwrap(listing["revision"] as? Int)
+    let bootstrap = try object(await host.response(for: get("/api/v1/bootstrap")))
+    let token = try XCTUnwrap(bootstrap["csrfToken"] as? String)
+    var request = RielaHTTPRequest(method: "POST", path: "/api/v1/instances", headers: [
+      "host": "127.0.0.1:8787", "origin": "http://127.0.0.1:8787",
+      "x-riela-csrf": token, "content-type": "application/json", "x-riela-profile": "default"
+    ], body: try JSONSerialization.data(withJSONObject: [
+      "sourceId": sourceId, "name": "  Repository A  ", "expectedProfile": "default", "expectedRevision": revision
+    ]))
+    var unauthorized = request
+    unauthorized.headers["x-riela-csrf"] = "invalid"
+    let rejected = await host.response(for: unauthorized)
+    XCTAssertEqual(rejected.status, 403)
+    let created = await host.response(for: request)
+    XCTAssertEqual(created.status, 201, String(data: created.body, encoding: .utf8) ?? "")
+    let identity = try XCTUnwrap(try object(created)["identity"] as? String)
+    XCTAssertNotEqual(identity, sourceId)
+    XCTAssertEqual(host.state.preferences[identity]?.displayName, "Repository A")
+    XCTAssertEqual(host.state.preferences[identity]?.active, false)
+    XCTAssertEqual(host.state.preferences[identity]?.enabledAtLaunch, false)
+    XCTAssertNil(host.state.preferences[sourceId])
+    XCTAssertEqual(host.instances.first { $0.isDefault }?.id, sourceId)
+    XCTAssertEqual(host.instances.count, 2)
+    let stale = await host.response(for: request)
+    XCTAssertEqual(stale.status, 409)
+    request.body = try JSONSerialization.data(withJSONObject: [
+      "sourceId": sourceId, "name": "  ", "expectedProfile": "default", "expectedRevision": host.revision
+    ])
+    let blank = await host.response(for: request)
+    XCTAssertEqual(blank.status, 400)
+    let reloaded = makeHost(root: root)
+    XCTAssertEqual(reloaded.instances.first { $0.isDefault }?.id, sourceId)
+    XCTAssertEqual(reloaded.state.preferences[identity], host.state.preferences[identity])
   }
 
   private func decode<Value: Decodable>(_ type: Value.Type, _ object: [String: Any]) throws -> Value {

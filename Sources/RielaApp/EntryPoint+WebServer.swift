@@ -41,15 +41,19 @@ extension RielaApp {
     openWebUI(context: "Riela")
   }
 
+  @objc func openSettingsFromMenu() {
+    openWebUI(context: "Settings", route: .settings)
+  }
+
   /// The menu-bar host opens bundled assets over native IPC without starting HTTP.
-  func openWebUI(context: String) {
+  func openWebUI(context: String, route: RielaDesktopRoute? = nil) {
     if desktopController == nil {
       desktopController = RielaDesktopController(app: self)
     }
     Task { @MainActor [weak self] in
       guard let self else { return }
       do {
-        try await desktopController?.open()
+        try await desktopController?.open(route: route)
         status = "Opened \(context) for profile \(daemonProfileName.rawValue)."
       } catch {
         status = "Failed to open \(context): \(error.localizedDescription)"

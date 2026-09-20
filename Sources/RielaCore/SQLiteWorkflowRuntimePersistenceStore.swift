@@ -716,7 +716,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       throw WorkflowRuntimePersistenceStoreError.sqliteFailed("runtime snapshot row is missing required fields")
     }
     let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
+    decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
     let session = try decoder.decode(WorkflowSession.self, from: sessionData)
     let diagnostics = try decoder.decode([String].self, from: diagnosticsData)
     let rootOutput: JSONObject?
@@ -755,7 +755,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let summary: LoopSessionSummary?
     if let summaryText = row["loop_summary_json"], let data = summaryText.data(using: .utf8) {
       let decoder = JSONDecoder()
-      decoder.dateDecodingStrategy = .iso8601
+      decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
       summary = try decoder.decode(LoopSessionSummary.self, from: data)
     } else {
       summary = nil
@@ -772,7 +772,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
 
   private func jsonString<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
+    encoder.dateEncodingStrategy = RuntimeSnapshotDates.encoding
     return String(data: try encoder.encode(value), encoding: .utf8) ?? "{}"
   }
 

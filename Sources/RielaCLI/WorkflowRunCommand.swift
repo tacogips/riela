@@ -93,8 +93,8 @@ public struct WorkflowRunCommand: Sendable {
       let runtimeStore = durableRuntime.backingStore
       let telemetry = makeTelemetry(environment: runEnvironment)
       let runner = DeterministicWorkflowRunner(
-        store: durableRuntime.runtimeStore,
-        adapter: adapter,
+        store: durableRuntime.runtimeStore, adapter: adapter,
+        distributedExecutor: try configuredDistributedExecutor(environment: runEnvironment),
         addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,
         telemetry: telemetry,

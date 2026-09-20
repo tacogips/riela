@@ -49,6 +49,13 @@ public struct RielaAppLaunchOptions: Equatable, Sendable {
     arguments.contains("--open-workflows")
   }
 
+  public var opensWorkerSettings: Bool {
+    arguments.contains("--open-worker-settings")
+  }
+
+  public var opensWorkerStatus: Bool {
+    arguments.contains("--open-worker-status")
+  }
 
   public var autostartsDaemonWorkflows: Bool {
     !arguments.contains("--no-autostart-daemons")

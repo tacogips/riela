@@ -5,7 +5,7 @@ public enum WorkflowStdioNodeExecutionKind: String, Codable, Equatable, Sendable
   case container
 }
 
-public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
+public struct WorkflowStdioNodeExecutionInput: Codable, Equatable, Sendable {
   public var workflowId: String
   public var sessionId: String
   public var stepId: String
@@ -48,7 +48,7 @@ public struct WorkflowStdioNodeExecutionInput: Equatable, Sendable {
   }
 }
 
-public struct WorkflowStdioNodeExecutionResult: Equatable, Sendable {
+public struct WorkflowStdioNodeExecutionResult: Codable, Equatable, Sendable {
   public var payload: JSONObject?
   public var commandEvidence: LoopCommandEvidence?
 

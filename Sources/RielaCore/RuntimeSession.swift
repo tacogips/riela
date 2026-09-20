@@ -219,6 +219,7 @@ public struct WorkflowPendingRoutePublication: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowStepExecution: Codable, Equatable, Sendable {
+  public var importedFrom: WorkflowImportedExecutionSource?
   /// Actual invocation data captured before dispatch, scoped to this attempt.
   /// Nil means an older record or a failure before invocation was prepared.
   public var inputSnapshot: JSONObject?
@@ -367,6 +368,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var parentSessionId: String?
   public var rootSessionId: String?
   public var effectiveStepBudget: Int?
+  public var newExecutionCount: Int { executions.filter { $0.importedFrom == nil }.count }
 
   public var workflowExecutionId: String {
     get { sessionId }

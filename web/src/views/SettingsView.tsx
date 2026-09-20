@@ -3,6 +3,7 @@ import { APIError } from '../api'
 import { configurationClient } from '../config/client'
 import { ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 import '../settings-extra.css'
+import { WorkerSettings } from './WorkerSettings'
 
 type SettingsSection = 'profiles' | 'assistant' | 'appearance' | 'server'
 
@@ -20,7 +21,6 @@ function colorSchemeLabel(option: string): string {
   return option.charAt(0).toUpperCase() + option.slice(1)
 }
 
-/** Mirrors the native S3 editor validation so the form fails fast before a round trip. */
 export function SettingsView(props: { profileKey: string; profileName: string; serverHosted?: boolean; onHostChange: () => void }) {
   const [configuration, { refetch }] = createResource(() => props.profileKey, () => configurationClient.get())
   const [messages, setMessages] = createSignal<Partial<Record<SettingsSection, string>>>({})
@@ -121,8 +121,9 @@ export function SettingsView(props: { profileKey: string; profileName: string; s
   }
   const SectionMessage = (section: SettingsSection) => <Show when={messages()[section]}>{(message) => <MutationMessage message={message()} isError={errors()[section]} onRefresh={conflicts()[section] ? () => refresh(section) : undefined} />}</Show>
 
-  return <section class="page"><PageHeader eyebrow="PREFERENCES" title="Settings" description="The same persisted profile and application settings used by the native app." />
+  return <section class="page"><PageHeader eyebrow="PREFERENCES" title="Settings" description="Manage your Riela profiles and application preferences." />
     <div class="settings-stack">
+      <Show when={!props.serverHosted}><WorkerSettings profileKey={props.profileKey} /></Show>
       <Show when={configuration.loading}><LoadingState label="Loading configuration…" /></Show><Show when={configuration.error}><ErrorBanner message={errorMessage(configuration.error)} /></Show>
       <Show when={configuration()}>{(value) => <div class="panel settings-panel"><div class="section-title"><div><h2>Profiles</h2><p>Create, select, and remove persisted RielaApp profiles.</p></div></div><div class="requirements"><For each={value().profiles}>{(name) => <div class="requirement-row"><div><strong>{name}</strong><span>{name === value().profile ? 'Active profile' : 'Inactive profile'}</span></div><div class="refresh-actions"><Show when={name !== value().profile}><button class="secondary" disabled={saving() === 'profiles'} onClick={() => void switchProfile(name)}>Switch</button></Show><button class="secondary" disabled={saving() === 'profiles' || name === 'default' || name === value().profile} onClick={() => void removeProfile(name)}>Remove</button></div></div>}</For></div><div class="form-grid"><label><span>New profile</span><input value={profileName()} onInput={(event) => setProfileName(event.currentTarget.value)} /></label></div><div class="save-row">{SectionMessage('profiles')}<button disabled={saving() === 'profiles' || !profileName().trim()} onClick={() => void createProfile()}>Create profile</button></div></div>}</Show>
       <Show when={configuration()?.assistant}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveAssistant(event.currentTarget) }}><div class="section-title"><div><h2>Assistant</h2><p>Guidance and model selection. API model lists come from agent-gateway.</p></div></div><label><span>Assistance</span><textarea name="assistance" rows="4">{value().assistance}</textarea></label><div class="form-grid"><label><span>Vendor</span><select name="vendor" value={selectedVendor()} onChange={(event) => selectVendor(event.currentTarget.value)}><option value="openai-api">OpenAI API</option><option value="anthropic-api">Anthropic API</option><option value="cursor-api">Cursor API</option><option value="codex-cli">Codex CLI</option><option value="claude-code-cli">Claude Code CLI</option><option value="cursor-cli">Cursor CLI</option></select></label><label><span>Model</span><select name="model" value={selectedModel()} onChange={(event) => setSelectedModel(event.currentTarget.value)}><For each={selectedModels()}>{(model) => <option value={model}>{model}</option>}</For></select></label></div><div class="save-row">{SectionMessage('assistant')}<button disabled={saving() === 'assistant'}>{saving() === 'assistant' ? 'Saving…' : 'Save assistant'}</button></div></form>}</Show>

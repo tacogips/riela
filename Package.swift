@@ -55,6 +55,8 @@ let package = Package(
       revision: "6e89029ae4a210062b613b6ed9134d9fe7302255"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
+    .package(url: "https://github.com/swift-server/swift-webauthn.git", exact: "1.0.0-beta.1"),
+    .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
@@ -161,7 +163,12 @@ let package = Package(
     ),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
-    .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL", "RielaObservability"]),
+    .target(name: "RielaServer", dependencies: [
+      "RielaCore", "RielaGraphQL", "RielaObservability",
+      .product(name: "WebAuthn", package: "swift-webauthn"),
+      .product(name: "SwiftCBOR", package: "SwiftCBOR"),
+      .product(name: "Crypto", package: "swift-crypto")
+    ]),
     .target(name: "RielaViewer", dependencies: ["RielaCore"]),
     .target(
       name: "RielaHook",
@@ -289,7 +296,7 @@ let package = Package(
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
-    .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
+    .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons", .product(name: "Crypto", package: "swift-crypto")]),
     .testTarget(
       name: "RielaAdaptersTests",
       dependencies: [

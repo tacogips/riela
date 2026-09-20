@@ -317,6 +317,7 @@ public enum WorkflowRuntimeStoreError: Error, Equatable, Sendable {
 }
 
 public protocol WorkflowRuntimeStore: Sendable {
+  func importAcceptedHistory(_ input: WorkflowHistoryImportInput) async throws -> WorkflowSession
   func createSession(_ input: WorkflowSessionCreateInput) async throws -> WorkflowSession
   func recordStepExecution(_ input: WorkflowStepExecutionRecordInput) async throws -> WorkflowStepExecution
   func updateStepExecution(_ input: WorkflowStepExecutionUpdateInput) async throws -> WorkflowStepExecution
@@ -339,6 +340,9 @@ public protocol WorkflowRuntimeStore: Sendable {
 }
 
 public extension WorkflowRuntimeStore {
+  func importAcceptedHistory(_ input: WorkflowHistoryImportInput) async throws -> WorkflowSession {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("store does not support accepted-history import")
+  }
   func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt {
     let execution = try await recordStepBackendEvent(input)
     return WorkflowBackendEventReceipt(

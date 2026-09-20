@@ -1,5 +1,10 @@
 # Implementation Plans
 
+Completed: [Monja multi-agent collaboration](completed/monja-agent-collaboration.md).
+
+Completed: [Monja project task orchestrator](completed/monja-project-task-orchestrator.md)
+and [workflow cancellation finalization](completed/workflow-cancellation-finalization.md).
+
 This directory contains implementation plans that translate design documents into actionable implementation specifications.
 
 ## Purpose

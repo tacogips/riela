@@ -15,9 +15,11 @@ final class RielaDesktopController {
     self.app = app
   }
 
-  func open() async throws {
+  func open(route: RielaDesktopRoute? = nil) async throws {
     if let process, process.isRunning {
-      try await send(Data("{\"action\":\"show\"}\n".utf8))
+      var message = try JSONEncoder().encode(DesktopShowFrame(action: "show", route: route))
+      message.append(0x0A)
+      try await send(message)
       return
     }
     let executable = try executableURL()
@@ -25,6 +27,7 @@ final class RielaDesktopController {
     child.executableURL = executable
     var environment = ProcessInfo.processInfo.environment
     environment["RIELA_DESKTOP_IPC"] = "stdio"
+    environment["RIELA_DESKTOP_ROUTE"] = route?.rawValue
     child.environment = environment
     let requests = Pipe()
     let responses = Pipe()
@@ -126,6 +129,17 @@ final class RielaDesktopController {
     }
     return executable
   }
+}
+
+enum RielaDesktopRoute: String, Encodable {
+  case instances
+  case workflows
+  case settings
+}
+
+private struct DesktopShowFrame: Encodable {
+  let action: String
+  let route: RielaDesktopRoute?
 }
 
 private struct DesktopRequestFrame: Decodable {

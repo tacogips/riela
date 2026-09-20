@@ -27,6 +27,14 @@ adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
 resume, rerun, replay, and GraphQL/session DTO projection are runtime-owned.
 
+Authored [node output contracts](docs/output-contracts.md) are checked before
+execution and included in agent instructions. The guide describes the supported
+JSON Schema dialect and how payload contracts interact with routing envelopes.
+
+For failed sequential agent workflows, [history-preserving recovery](docs/preserved-history-recovery.md)
+reuses accepted discussion without rerunning earlier agents and records explicit
+source lineage in the new session.
+
 Local command nodes run foreground work: their process group is reclaimed when
 the command leader exits, including background children that retain its pipes.
 Foreground exit status and captured logs remain available. Commands must not
@@ -707,7 +715,19 @@ riela --version
 ## Desktop window
 
 Choose **Open Riela...** from the menu bar to open the shared dashboard in
-Tauri. The Swift menu-bar process owns the profile and workflow runtime;
+Tauri. In the desktop header, **Connection** selects **Local** (the default,
+no login or HTTP listener required) or **Web mode**. Web mode accepts a remote
+Riela server origin such as `https://riela.example` and uses Passkey sign-in
+through the system browser. Confirm the matching code in both windows; after
+sign-in the desktop connects automatically. The bundled console sends remote API requests through Tauri's HTTP
+client; the remote server does not need to allow the Tauri webview origin via CORS.
+The URL must be an origin without a path, query, or credentials. Changing mode
+reloads the console and clears authentication and loaded profile data; save edits
+first. The selected origin lasts for the window session, and tokens stay only in
+page memory. Returning to Local requires no authentication. Browser users open
+the same server URL to use the web console hosted by `riela serve`.
+
+The Swift menu-bar process owns the profile and workflow runtime;
 the Tauri child loads bundled assets and exchanges API requests over inherited
 stdin/stdout pipes. Opening the desktop window does not start an HTTP listener.
 Closing the window leaves the menu-bar app running; opening it again creates
@@ -764,6 +784,11 @@ CLI and manager GraphQL requests retain the existing authenticated route.
 
 Settings supports persisted profiles, assistant preferences, native appearance,
 workflow directories, instance environment settings and event-source registration.
+RielaApp's **Settings...**, **Worker Controller Settings...**, and **ワークフロー...**
+menu items open the Tauri dashboard. Worker controller configuration is edited
+in Settings, including authorized workers and save/restart; there is no separate
+Swift settings window. The desktop uses native IPC and does not require starting
+the optional HTTP server.
 Sources refresh after configuration changes. Profile and revision conflicts reject
 stale updates. The server port is saved separately in `~/.riela/serve-web.json`;
 restart `riela serve` to apply it. An explicit `--port` overrides the saved value.
@@ -775,8 +800,17 @@ inspect recorded inputs and outputs. Runs use `--session-store` when supplied,
 otherwise the active profile's session directory. Browser-hosted editor jobs are
 cancelled when the serve process shuts down.
 
-In server mode, select an instance to start, stop or restart it and change its
-launch enablement. Starting marks it active and enabled; stopping clears its
+In the desktop and server dashboard, open **ワークフロー** (Workflows), select a
+workflow, then choose its **実行設定** (run configuration). **標準設定** (Default)
+is available immediately after discovery without a separate creation step. Use
+**実行設定を追加** only when another named configuration is needed. The selected
+configuration provides settings, start/stop/restart controls, and **履歴** (history).
+Adding a workflow or configuration does not start execution. Required environment
+values must still be supplied before running. Workflow definitions and instance
+identities remain separate internally; configurations are grouped by source
+identity so workflows with matching names or IDs do not share settings.
+
+Select a configuration to change its launch enablement. Starting marks it active and enabled; stopping clears its
 active state. `riela serve` starts saved instances that are both active and
 enabled at launch. Configuration and event-source changes restart running
 instances. Switching profiles stops the previous profile's instances before
@@ -784,24 +818,58 @@ starting the selected profile's enabled active instances; server shutdown stops
 all owned instances. Instance runs and their browser history share the profile's
 session directory, or the explicit `--session-store` override.
 
-For browser access on a public listener, set `RIELA_WEB_TOKEN` to an operator
-access token and `RIELA_WEB_ORIGIN` to the exact browser origin, including the
-scheme and non-default port, with no trailing slash. For example, with the token
-already set in the process environment:
+Remote browser and Tauri console access uses Passkeys (WebAuthn). Set
+`RIELA_WEB_ORIGIN` to the exact public HTTPS origin, including a non-default port
+when applicable, without a trailing slash. Run these commands on the server
+with the same OS user and environment:
 
 ```bash
-RIELA_WEB_ORIGIN=https://riela.example riela serve --host 0.0.0.0 --port 8787
+export RIELA_WEB_ORIGIN=https://riela.example
+riela auth invite operator
+riela serve --host 0.0.0.0 --port 8787
 ```
 
 Use an HTTPS reverse proxy for remote connections; `riela serve` itself speaks
-HTTP. Preserve the public Host header through the proxy. The login screen asks
-for the token, which grants access to the server's profiles, configuration and
-workflow execution. It stays in page memory and must be entered again after
-reloading. API responses are not cached, and authenticated mutations still
-require the matching Origin, CSRF token and profile. Missing or invalid public
-access configuration leaves browser APIs unavailable. Explicit token/origin
-configuration also requires authentication on a loopback listener. CLI and
-manager GraphQL clients retain their separate, existing credential contract.
+HTTP. Preserve the public Host header through the proxy. The invitation command
+prints a private, one-use registration URL that expires in 15 minutes. Open it
+in a browser to create a Passkey. No email address or password is required.
+**Every registered user has full console operator access**, including profiles,
+configuration and workflow execution. Registration is invitation-only; do not
+publish invitation links. Private keys remain with the user's authenticator.
+
+Browser users open the server URL and choose **Sign in with Passkey**. In Tauri,
+select **Connection → Web mode**, enter the same server origin, and choose
+**Sign in using browser**. Compare the displayed codes before approving. The
+browser never receives the desktop session; only the initiating desktop window
+can redeem the result, once, within five minutes. Cancel stops desktop polling
+and cancels the pending grant. No local callback HTTP server is started.
+
+Sessions expire after eight hours, and **Sign out** revokes the current session.
+Reloading or closing the console drops its in-memory session token. Restarting
+the server invalidates all sessions and pending logins. API responses are not
+cached; authenticated mutations retain Host, Origin, CSRF and profile checks.
+`RIELA_WEB_TOKEN` no longer grants console access. CLI and manager GraphQL clients
+retain their separate, existing credential contract.
+
+Use `riela auth users` to list usernames and public credential IDs. Run
+`riela auth invite operator` again to add a backup Passkey for the same user.
+`riela auth revoke-key <credential-id>` revokes a lost key and its sessions;
+issue another invitation to recover access. `riela auth revoke-user operator`
+disables that user, all their sessions and outstanding invitations. Disabled
+users cannot receive new invitations; use a new username when intentionally
+replacing a disabled account.
+
+Keys and invitation hashes are stored under `~/.riela/web-auth`, independently of
+workflow profiles. `RIELA_WEB_AUTH_ROOT` overrides this directory for both CLI
+and server. Keep a secure backup; the store is bound to its configured origin.
+Changing the origin requires a separate store and new Passkey registrations.
+Passkeys need a browser with WebAuthn support and HTTPS. For local development,
+`http://localhost:<port>` is supported. Explicit `RIELA_WEB_ORIGIN` enables
+Passkey authentication even on a loopback listener. Without it, loopback browser
+access and Tauri Local mode remain registration-free and authentication-free.
+An unconfigured public listener fails closed.
+
+Implementation and test details are in [Passkey authentication](docs/passkey-authentication.md).
 
 ## RielaApp Packages And Profiles
 
@@ -809,7 +877,7 @@ RielaApp imports workflow folders, package folders, and `.rielapkg` archives
 from the menu bar item:
 
 ```text
-Instances... > Add Workflow/Package...
+Install Workflow...
 ```
 
 The picker accepts multiple selections, so several package archives or workflow
@@ -826,31 +894,25 @@ RIELA_APP_ROOT="$PWD/tmp/rielaapp-root" \
   --open-workflows
 ```
 
-Imported packages are stored under the selected RielaApp profile. The Instances
-window separates workflow/package sources from workflow instances. An instance is
-the configured run unit RielaApp starts: a workflow source plus the saved
-environment file, inline environment values, default variables, working
-directory, enabled state, and active state. The source column shows `profile`,
-`user`, or `project` so profile-scoped imports can be separated from user-level
-or project-level workflow sources that are visible in every profile.
+Imported packages are stored under the selected RielaApp profile. The dashboard
+opens the workflow list; each workflow contains its default and named run
+configurations. A run configuration saves its environment, variables, working
+directory, model overrides, and launch preferences. Opening or importing a
+workflow makes its default configuration available without starting it. Existing
+saved configurations and their histories remain attached to the same source.
+
 On a fresh install, the default profile is seeded with inactive starter
 packages for a Discord Yuki chat bot, a Telegram Yuki chat bot, a Slack chat
-bot, and a gmail-gateway latest-mail digest. They appear in the Instances window
-with auto-start off, so new users can inspect required credentials in Web
-Config and activate only the instance they want to try.
-The Instances table uses `Active` for the saved profile preference that starts
-an instance when RielaApp launches or when the profile is started; `Status`
-shows the current runtime state. Toggling `Active` starts or stops that instance
-immediately. Selecting an instance shows its source path, event sources, profile
-scope, active preference, instance variables, and runtime detail below the
-toolbar.
-The search fields in Instances, Workflow Sources, Add Instance, and Marketplace
-filter their already-loaded lists as you type; matching is case- and
-diacritic-insensitive, and clearing a search restores the full list. The Back
-control appears only when the current pane has a real back destination, so it is
-hidden at the Instances overview root and available throughout supported detail
-panes. Configuration rows are read-only and route to Web Config; native
-instance, Assistant, and Profile panes do not expose configuration editors.
+bot, and a gmail-gateway latest-mail digest. Choose a workflow and its run
+configuration to inspect required credentials, then start it explicitly.
+Selecting a workflow opens a canvas in the center and **実行設定** in the right
+pane, with no left pane. The graph stays visible while selecting configurations
+or switching between **設定・実行** and **履歴**. Drag nodes to arrange the
+view, drag the canvas to pan, zoom, and select nodes to inspect connections.
+Node arrangement affects the current view; workflow definitions remain unchanged.
+Browser Back and configuration URLs restore the workflow and selected
+configuration. A missing source remains visible for recovery.
+
 Use `Add Project...` to attach one or more project folders containing
 `.riela/workflows` or `.riela/packages` without copying them into the profile.
 Use `Open Profile Folder` from the menu bar item or Instances window to inspect
@@ -1052,3 +1114,10 @@ parent and a reusable `history-YYYY-MM-DD` child, for example
 Private here means isolation from Riela workflow registry, discovery, imports,
 catalogs, and reuse. It is not a security boundary against arbitrary processes
 running under the same OS account.
+
+## Distributed workers
+
+RielaApp and `riela serve` can host a worker controller, with outbound
+`riela worker --config` processes and step-level worker ID/group selection.
+See [controller and worker setup](docs/distributed-workers.md) for configuration,
+workspace mapping, verified platform coverage and operational limits.

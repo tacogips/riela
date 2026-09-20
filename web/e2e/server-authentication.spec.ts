@@ -1,27 +1,38 @@
 import { expect, test } from '@playwright/test'
+import { addVirtualPasskey, startPasskeyServer } from './passkey-fixture'
 
-test('connects with a token, rejects a bad token and requires login after reload', async ({ page }) => {
-  await page.route('**/api/v1/**', async route => {
-    if (route.request().headers().authorization !== 'Bearer fixture-access-token') {
-      return route.fulfill({ status: 401, json: { error: { code: 'web_authentication_required', message: 'Enter the server access token to connect.' } } })
-    }
-    if (new URL(route.request().url()).pathname === '/api/v1/bootstrap') {
-      return route.fulfill({ json: {
-        profile: 'default', revision: 1, csrfToken: 'fixture-csrf', apiVersion: 'v1', hostKind: 'cli-serve',
-        capabilities: [], server: { state: 'running', boundPort: 4174 },
-      } })
-    }
-    return route.fulfill({ json: { profile: 'default', revision: 1, items: [] } })
-  })
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Connect to Riela', exact: true })).toBeVisible()
-  await page.getByLabel('Server access token', { exact: true }).fill('bad-token')
-  await page.getByRole('button', { name: 'Connect', exact: true }).click()
-  await expect(page.getByRole('alert')).toHaveText('Access token was not accepted. Try again.')
-  await page.getByLabel('Server access token', { exact: true }).fill('fixture-access-token')
-  await page.getByRole('button', { name: 'Connect', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Workflow instances', exact: true })).toBeVisible()
-  expect(await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }))).not.toContain('fixture-access-token')
-  await page.reload()
-  await expect(page.getByRole('heading', { name: 'Connect to Riela', exact: true })).toBeVisible()
+test('real server registers and authenticates Passkeys, clears sessions and applies revocation', async ({ page }) => {
+  const server = await startPasskeyServer()
+  try {
+    await addVirtualPasskey(page)
+    const invitation = await server.cli('invite', 'operator')
+    await page.goto(invitation)
+    await expect(page.getByRole('heading', { name: 'Register a Passkey' })).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('passkey-registration.png') })
+    expect(page.url()).not.toBe(invitation)
+    await page.getByRole('button', { name: 'Create Passkey', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'ワークフロー', exact: true, level: 1 })).toBeVisible()
+    const users = JSON.parse(await server.cli('users'))
+    expect(users[0].credentials).toHaveLength(1)
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+    await page.getByRole('combobox', { name: 'Native window appearance', exact: true }).selectOption('light')
+    await expect(page.getByText('Native window preference saved: Light.', { exact: true })).toBeVisible()
+    expect(await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }))).not.toMatch(/token|invitation/i)
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'Connect to Riela', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Sign in with Passkey', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Connect to Riela', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Sign in with Passkey', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible()
+    await server.cli('revoke-key', users[0].credentials[0].id)
+    await expect(page.getByRole('heading', { name: 'Connect to Riela', exact: true })).toBeVisible({ timeout: 10_000 })
+    await page.getByRole('button', { name: 'Sign in with Passkey', exact: true }).click()
+    await expect(page.getByRole('alert')).toBeVisible()
+    await page.goto(invitation)
+    await page.getByRole('button', { name: 'Create Passkey', exact: true }).click()
+    await expect(page.getByRole('alert')).toContainText('expired')
+  } finally { await server.stop() }
 })

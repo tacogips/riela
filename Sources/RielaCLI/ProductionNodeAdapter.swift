@@ -96,6 +96,16 @@ func makeProductionAddonResolver(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
   mockScenarioPath: String? = nil
 ) async throws -> any WorkflowAddonResolving {
+  try await makeProductionAddonResolver(workingDirectory: workingDirectory, environment: environment,
+    mockScenarioPath: mockScenarioPath, processRunner: FoundationLocalProcessRunner())
+}
+
+func makeProductionAddonResolver(
+  workingDirectory: URL,
+  environment: [String: String],
+  mockScenarioPath: String?,
+  processRunner: any LocalProcessRunning
+) async throws -> any WorkflowAddonResolving {
   let workflowTaskExecutor = DefaultGeneratedWorkflowTaskExecutor(
     runner: CommandGeneratedWorkflowTaskRunner(mockScenarioPath: mockScenarioPath)
   )
@@ -111,7 +121,8 @@ func makeProductionAddonResolver(
   let container = ContainerWorkflowAddonResolver(
     registrations: registrations,
     workingDirectory: workingDirectory,
-    environment: environment
+    environment: environment,
+    runner: processRunner
   )
   return CompositeWorkflowAddonResolver(primary: builtin, fallback: container)
 }

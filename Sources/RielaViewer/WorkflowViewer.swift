@@ -482,14 +482,14 @@ public struct WorkflowViewerLoader: Sendable {
   }
 
   private func timelineEntries(from session: WorkflowSession) -> [WorkflowViewerTimelineEntry] {
-    session.executions
+    session.executions.enumerated()
       .sorted { lhs, rhs in
-        if lhs.createdAt == rhs.createdAt {
-          return lhs.executionId < rhs.executionId
+        if lhs.element.createdAt == rhs.element.createdAt {
+          return lhs.offset < rhs.offset
         }
-        return lhs.createdAt < rhs.createdAt
+        return lhs.element.createdAt < rhs.element.createdAt
       }
-      .map { execution in
+      .map { _, execution in
         WorkflowViewerTimelineEntry(
           id: execution.executionId,
           stepId: execution.stepId,

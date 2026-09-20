@@ -480,8 +480,8 @@ function DeckDetailPanel(props: {
             <div><dt>manager</dt><dd>{hub().workflow.managerStepId ?? '—'}</dd></div>
             <div><dt>steps</dt><dd>{hub().workflow.steps.length}{hub().workflow.stepsTruncated ? '+' : ''}</dd></div>
           </dl>
-          <h3>Instances</h3>
-          <Show when={hub().instances.length === 0}><p>No configured instances.</p></Show>
+          <h3>実行設定</h3>
+          <Show when={hub().instances.length === 0}><p>実行設定がありません。</p></Show>
           <For each={hub().instances}>{(instance) => (
             <div class="ops-route-row">
               <span class="ops-route-glyph" style={{ color: statusStyle(instance.status === 'running' ? 'running' : undefined).color }}>●</span>

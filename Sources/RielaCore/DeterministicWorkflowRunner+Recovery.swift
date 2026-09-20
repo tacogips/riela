@@ -105,17 +105,23 @@ extension DeterministicWorkflowRunner {
     } catch let error as WorkflowSessionEntryValidationError {
       throw DeterministicWorkflowRunnerError.rerunValidation(errorMessage(error))
     }
+    let history = try await request.preserveHistory
+      ? preservedHistory(request, source: sourceSession, target: entryStepId) : nil
     try await validateCrossWorkflowDispatchTargets(in: request.workflow)
-    let session = try await store.createSession(
+    var session = try await store.createSession(
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
         effectiveInstance: request.effectiveInstance,
-        parentSessionId: request.parentSessionId,
-        rootSessionId: request.rootSessionId,
+        parentSessionId: request.preserveHistory ? sourceSession.sessionId : request.parentSessionId,
+        rootSessionId: request.preserveHistory ? (sourceSession.rootSessionId ?? sourceSession.sessionId) : request.rootSessionId,
         effectiveStepBudget: request.effectiveStepBudget
       )
     )
+    if var history {
+      history.sessionId = session.sessionId
+      session = try await store.importAcceptedHistory(history)
+    }
     return .proceed(SessionEntryContext(
       session: session,
       currentStepId: entryStepId,

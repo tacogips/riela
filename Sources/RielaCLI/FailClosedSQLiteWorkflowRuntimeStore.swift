@@ -48,6 +48,12 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
     return result
   }
 
+  public func importAcceptedHistory(_ input: WorkflowHistoryImportInput) async throws -> WorkflowSession {
+    let result = try await backing.importAcceptedHistory(input)
+    try await persist(sessionId: result.sessionId)
+    return result
+  }
+
   public func recordStepExecution(_ input: WorkflowStepExecutionRecordInput) async throws -> WorkflowStepExecution {
     let result = try await backing.recordStepExecution(input)
     try await persist(sessionId: input.sessionId)

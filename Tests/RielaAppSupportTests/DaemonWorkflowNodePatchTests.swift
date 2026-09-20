@@ -149,10 +149,11 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
 
     let candidates = state.managedCandidates(from: [source])
 
-    XCTAssertEqual(candidates.map(\.id), ["persona-a", "persona-b"])
-    XCTAssertEqual(candidates.map(\.sourceIdentity), [source.id, source.id])
-    XCTAssertEqual(candidates.map(\.displayName), ["Persona A", "Persona B"])
-    XCTAssertTrue(candidates.allSatisfy(\.isManagedInstance))
+    XCTAssertEqual(candidates.map(\.id), ["persona-a", "persona-b", source.id])
+    XCTAssertEqual(candidates.prefix(2).map(\.sourceIdentity), [source.id, source.id])
+    XCTAssertEqual(candidates.map(\.displayName), ["Persona A", "Persona B", source.displayName])
+    XCTAssertTrue(candidates.prefix(2).allSatisfy(\.isManagedInstance))
+    XCTAssertEqual(candidates.last, source)
   }
 
   func testStateProjectsWorkflowInstancesWithSourceAndPreference() {
@@ -182,7 +183,12 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
     let instances = state.workflowInstances(from: [source])
     let instance = instances.first
 
-    XCTAssertEqual(instances.count, 1)
+    XCTAssertEqual(instances.count, 2)
+    let defaultConfiguration = instances.first(where: \.isDefault)
+    XCTAssertEqual(defaultConfiguration?.identity, source.id)
+    XCTAssertEqual(defaultConfiguration?.isConfigured, false)
+    XCTAssertEqual(defaultConfiguration?.preference.active, false)
+    XCTAssertNil(state.preferences[source.id])
     XCTAssertEqual(instance?.id, "persona-a")
     XCTAssertEqual(instance?.source.id, source.id)
     XCTAssertEqual(instance?.sourceIdentity, source.id)
@@ -210,7 +216,7 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
 
     XCTAssertEqual(instance?.id, source.id)
     XCTAssertEqual(instance?.source.id, source.id)
-    XCTAssertEqual(instance?.displayName, "Mail Digest")
+    XCTAssertEqual(instance?.displayName, "標準設定")
     XCTAssertEqual(instance?.preference.available, false)
     XCTAssertEqual(instance?.isConfigured, false)
     XCTAssertEqual(instance?.candidate, source)

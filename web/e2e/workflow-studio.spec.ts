@@ -59,6 +59,32 @@ async function installStudio(page: Page, existing?: Record<string, unknown>) {
   return { savedDefinitions, generationPolls: () => generationPolls, generationRequests, workflow }
 }
 
+test('selects a remote worker, preserves placement on save and can return to local execution', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const state = await installStudio(page)
+  await page.getByLabel('Workflow ID', { exact: true }).fill('studio')
+  await page.getByRole('button', { name: 'Add agent step', exact: true }).click()
+  await page.getByLabel('Run on', { exact: true }).selectOption('remote')
+  await expect(page.getByRole('button', { name: 'Save workflow', exact: true })).toBeDisabled()
+  await page.getByLabel('Worker workspace', { exact: true }).fill('project')
+  await page.getByLabel('Worker ID (optional)', { exact: true }).fill('linux-1')
+  await page.getByLabel('Worker group (optional)', { exact: true }).fill('build')
+  await page.getByLabel('Export files (one per line)', { exact: true }).fill('build/report.json')
+  await page.getByLabel('Worker workspace', { exact: true }).click()
+  await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
+  await expect(page.getByText('Workflow saved.', { exact: true })).toBeVisible()
+  expect(state.savedDefinitions[0]).toMatchObject({ steps: [{ placement: {
+    workspace: 'project', target: { workerId: 'linux-1', group: 'build' }, exports: ['build/report.json'],
+  } }] })
+  await page.screenshot({ path: '../tmp/distributed-workers/workflow-placement.png' })
+  await page.getByLabel('Export files (one per line)', { exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: '../tmp/distributed-workers/workflow-placement-exports.png' })
+  await page.getByLabel('Run on', { exact: true }).selectOption('local')
+  await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
+  await expect.poll(() => state.savedDefinitions.length).toBe(2)
+  expect((state.savedDefinitions[1] as { steps: unknown[] }).steps[0]).not.toHaveProperty('placement')
+})
+
 test('creates and connects steps, saves, and reopens separate layout', async ({ page }) => {
   const state = await installStudio(page)
   await page.getByLabel('Workflow ID', { exact: true }).fill('studio')

@@ -514,7 +514,7 @@ public struct SessionObservabilityService: Sendable {
       previousStatus: previousStatus,
       currentStepId: session.currentStepId,
       currentStage: Self.stageDescription(for: session.currentStepId),
-      executionCount: session.executions.count,
+      executionCount: session.newExecutionCount,
       effectiveStepBudget: session.stepBudgetDiagnostic?.stepBudget ?? session.effectiveStepBudget,
       gateVisitCounts: gateVisitCounts,
       lastBackendEventType: lastBackendExecution?.lastBackendEventType,

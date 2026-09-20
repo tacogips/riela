@@ -9,20 +9,27 @@ extension RielaApp {
     button.image = RielaAppIcon.railTemplateImage()
     button.imagePosition = .imageOnly
     button.imageScaling = .scaleProportionallyDown
-    button.toolTip = "Riela workflow instances"
-    button.setAccessibilityLabel("Riela workflow instances")
+    button.toolTip = "Riela ワークフロー"
+    button.setAccessibilityLabel("Riela ワークフロー")
   }
 
   func rebuildMenu() {
     let menu = NSMenu()
     menu.addItem(menuItem("Open Riela...", action: #selector(openDesktopFromMenu)))
-    menu.addItem(menuItem("Instances...", action: #selector(openDaemonInstances)))
+    menu.addItem(menuItem("Settings...", action: #selector(openSettingsFromMenu)))
+    menu.addItem(menuItem("ワークフロー...", action: #selector(openDaemonInstances)))
     let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
     launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
     menu.addItem(launchAtLoginItem)
     if let launchAtLoginDetail = launchAtLogin.menuSupplementaryStatusDescription {
       menu.addItem(supplementaryMenuItem(launchAtLoginDetail))
     }
+    menu.addItem(.separator())
+    menu.addItem(menuItem("Start Worker Controller", action: #selector(startDistributedControllerFromMenu), enabled: distributedController == nil))
+    menu.addItem(menuItem("Stop Worker Controller", action: #selector(stopDistributedControllerFromMenu), enabled: distributedController != nil))
+    menu.addItem(menuItem("Worker Controller Settings...", action: #selector(showDistributedControllerSettings)))
+    menu.addItem(menuItem("Worker Status...", action: #selector(showDistributedWorkerStatus), enabled: distributedController != nil))
+    menu.addItem(supplementaryMenuItem(distributedControllerStatus))
     menu.addItem(.separator())
     let webState = webServerController?.state ?? .stopped
     let startWebServerItem = menuItem(
@@ -50,7 +57,7 @@ extension RielaApp {
     }
     menu.addItem(.separator())
     menu.addItem(supplementaryMenuItem(
-      rielaAppMetadataText(["Instances \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
+      rielaAppMetadataText(["実行設定 \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
     ))
     for line in failedDaemonInstanceMenuLines() {
       menu.addItem(supplementaryMenuItem(line))

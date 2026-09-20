@@ -70,7 +70,8 @@ extension RielaArgumentParser {
 
   private func parseSessionRerun(_ arguments: [String]) throws -> RielaCommand {
     let route = try ParsedSessionRerunArguments.parseCLI(arguments)
-    let parsed = try ParsedWorkflowOptions(route.options, allowRunOptions: true)
+    let preserveHistory = route.options.contains("--preserve-history")
+    let parsed = try ParsedWorkflowOptions(route.options.filter { $0 != "--preserve-history" }, allowRunOptions: true)
     try rejectRemoteSessionOptions(parsed)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     return .session(.rerun(SessionRerunOptions(
@@ -82,7 +83,8 @@ extension RielaArgumentParser {
       workingDirectory: workingDirectory,
       mockScenarioPath: parsed.mockScenarioPath,
       sessionStore: parsed.sessionStore,
-      nestedSuperviser: parsed.nestedSuperviser
+      nestedSuperviser: parsed.nestedSuperviser,
+      preserveHistory: preserveHistory
     )))
   }
 

@@ -47,6 +47,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonStatusRefreshTimer: Timer?
   var daemonWindowController: DaemonWorkflowWindowController?
   var webServerController: RielaAppWebServerController?
+  var distributedController: DistributedControllerHost?
+  var distributedControllerGeneration = 0
+  var distributedControllerStatus = "Worker controller: stopped"
+  let distributedControllerOperations = RielaAppOperationQueue()
   var desktopController: RielaDesktopController?
   var webServerSetupError: String?
   var webRevision = 1
@@ -54,7 +58,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var workflowEditorGenerations: WorkflowEditorGenerationStore { webWorkflowRuntime.generations }
   var webWorkflowLaunches: [String: WebWorkflowLaunch] { webWorkflowRuntime.launches }
   var webSessionStoreRootOverride: String?
-  private var terminationShutdownStarted = false
+  private(set) var terminationShutdownStarted = false
 
   var appearanceSettingsStore: RielaAppAppearanceSettingsStore {
     RielaAppAppearanceSettingsStore(appRootURL: profileStore.appRootURL)
@@ -98,10 +102,16 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     logDaemon("profile=\(daemonProfileName.rawValue) discovered \(daemonInstances.count) workflow instance(s)")
     configureStatusItem()
     configureWebServer()
+    Task {
+      await startDistributedController()
+      logDaemon("\(distributedControllerStatus); open worker status: \(launchOptions.opensWorkerStatus)")
+      if launchOptions.opensWorkerStatus { showDistributedWorkerStatus() }
+    }
     rebuildMenu()
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
     openInitialWorkflowsIfRequested()
+    if launchOptions.opensWorkerSettings { showDistributedControllerSettings() }
     if launchOptions.opensDesktop { openDesktopFromMenu() }
     if shouldAutostartDaemonWorkflows() {
       autostartDaemonWorkflows()
@@ -122,6 +132,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       await webServerController?.shutdownForTermination()
       await webWorkflowRuntime.shutdown()
       let stopped = await stopDaemonRuntimeForTermination()
+      await stopDistributedController()
       if !stopped {
         logDaemon("daemon workflow shutdown timed out during app termination")
       }
@@ -137,141 +148,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   @objc func openDaemonInstances() {
-    logDaemon("opening instances window for profile=\(daemonProfileName.rawValue)")
-    if daemonWindowController == nil {
-      daemonWindowController = DaemonWorkflowWindowController(
-        onRefresh: { [weak self] in
-          self?.refreshDaemonWorkflowWindow()
-          self?.status = "Refreshed."
-          self?.refreshDaemonWorkflowWindow(refreshesInstanceCache: false)
-        },
-        onSelectProfile: { [weak self] profileName in
-          self?.switchDaemonProfile(to: profileName)
-        },
-        onCreateProfile: { [weak self] profileName in
-          self?.createDaemonProfile(rawProfileName: profileName)
-        },
-        onRemoveProfile: { [weak self] profileName in
-          self?.removeDaemonProfile(profileName) ?? false
-        },
-        onAddDirectory: { [weak self] in
-          self?.addDaemonWorkflowSourceOnlyDirectory()
-        },
-        onAddURL: { [weak self] rawURL in
-          self?.addDaemonWorkflowSourceOnlyURL(rawURL)
-        },
-        onAddWorkflowRepository: { [weak self] rawValue in
-          self?.addWorkflowRepository(rawValue: rawValue)
-        },
-        onRemoveWorkflowRepository: { [weak self] repositoryId in
-          self?.removeWorkflowRepository(id: repositoryId)
-        },
-        onRefreshWorkflowRepositories: { [weak self] forceRefresh in
-          self?.refreshWorkflowRepositoryCatalogs(forceRefresh: forceRefresh)
-        },
-        onInstallMarketplaceWorkflow: { [weak self] repositoryId, relativePath in
-          self?.installMarketplaceWorkflow(repositoryId: repositoryId, relativePath: relativePath)
-        },
-        onAddInstance: { [weak self] request in
-          self?.addDaemonWorkflowInstance(request)
-        },
-        onRevealSelectedSource: { [weak self] identity in
-          self?.revealDaemonWorkflowSource(identity: identity)
-        },
-        onRelinkInstance: { [weak self] identity, sourceIdentity in
-          self?.relinkDaemonWorkflowInstance(identity: identity, sourceIdentity: sourceIdentity)
-        },
-        onRenameWorkflow: { [weak self] identity in
-          self?.renameDaemonWorkflowInstance(identity: identity)
-        },
-        onRemoveInstance: { [weak self] identity in
-          self?.removeDaemonWorkflowInstance(identity: identity)
-        },
-        onOpenWebUI: { [weak self] context in
-          self?.openWebUI(context: context)
-        },
-        defaultInstanceId: { [weak self] sourceIdentity in
-          guard let self,
-            let source = self.daemonWorkflowSources.first(where: { $0.id == sourceIdentity })
-          else {
-            return ""
-          }
-          return self.uniqueDaemonInstanceId(for: source)
-        },
-        onStartInstance: { [weak self] identity in
-          self?.startDaemonWorkflowInstance(identity: identity)
-        },
-        onStopInstance: { [weak self] identity in
-          self?.stopDaemonWorkflowInstance(identity: identity)
-        },
-        onRestartInstance: { [weak self] identity in
-          self?.restartDaemonWorkflowInstance(identity: identity)
-        },
-        onSaveKaibaNodeBinding: { [weak self] identity, nodeId, instanceID, hasAuthoredBinding in
-          self?.saveDaemonKaibaNodeBinding(
-            identity: identity,
-            nodeId: nodeId,
-            instanceID: instanceID,
-            hasAuthoredBinding: hasAuthoredBinding
-          ) ?? false
-        },
-        onCheckKaibaWorkflowReadiness: { [weak self] identity in
-          await self?.daemonKaibaWorkflowReadiness(identity: identity) ?? .notApplicable
-        },
-        onSetEnvironment: { [weak self] identity in
-          self?.setDaemonWorkflowEnvironment(identity: identity)
-        },
-        onSetWorkingDirectory: { [weak self] identity in
-          self?.setDaemonWorkflowWorkingDirectory(identity: identity)
-        },
-        onSaveEnvironmentVariables: { [weak self] identity, text in
-          self?.saveDaemonWorkflowEnvironmentVariables(identity: identity, text: text) ?? "RielaApp is not available"
-        },
-        onSaveWorkflowVariables: { [weak self] identity, text in
-          self?.saveDaemonWorkflowDefaultVariables(identity: identity, text: text) ?? "RielaApp is not available"
-        },
-        onRegisterEventSource: { [weak self] identity, sourceJSON, bindingJSON in
-          self?.registerDaemonWorkflowEventSource(
-            identity: identity,
-            sourceJSON: sourceJSON,
-            bindingJSON: bindingJSON
-          ) ?? "RielaApp is not available"
-        },
-        configuredEnvironmentValues: { [weak self] candidate in
-          self?.daemonConfiguredEnvironmentValues(for: candidate) ?? []
-        },
-        onSaveAssistantAssistance: { [weak self] assistance in
-          self?.saveAssistantAssistance(assistance) ?? "RielaApp is not available"
-        },
-        onSaveAssistantSettings: { [weak self] settings in
-          self?.saveAssistantSettings(settings) ?? "RielaApp is not available"
-        },
-        onSubmitAssistantMessage: { [weak self] message, workingDirectory in
-          self?.submitAssistantMessage(message, workingDirectory: workingDirectory)
-        },
-        environmentSummary: { [weak self] candidate in
-          self?.daemonEnvironmentSummary(for: candidate) ?? "unknown"
-        },
-        environmentColumnStatus: { [weak self] candidate in
-          self?.daemonEnvironmentColumnStatus(for: candidate) ?? "Unknown"
-        },
-        onWindowWillClose: { [weak self] in
-          self?.restoreAccessoryActivationPolicyIfNoAppWindows()
-        },
-        kaibaInstanceController: RielaAppKaibaInstanceController(
-          homeURL: appHomeDirectory,
-          bindingScanRoots: KaibaBindingScanRoots(
-            projectRootURL: launchOptions.projectRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
-            homeURL: appHomeDirectory,
-            appRootURL: profileStore.appRootURL
-          )
-        )
-      )
-    }
-    refreshDaemonWorkflowWindow()
-    promoteToRegularApplication()
-    daemonWindowController?.showWindow(nil)
-    NSApp.activate(ignoringOtherApps: true)
+    openWebUI(context: "ワークフロー", route: .workflows)
   }
 
   private func importDaemonSourcesIfRequested() {
@@ -498,6 +375,13 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   func switchDaemonProfileAndWait(to rawProfileName: String) async {
+    await distributedControllerOperations.run { [self] in
+      guard !terminationShutdownStarted else { return }
+      await performDaemonProfileSwitch(to: rawProfileName)
+    }
+  }
+
+  private func performDaemonProfileSwitch(to rawProfileName: String) async {
     let profileName = RielaAppProfileName(rawProfileName)
     guard profileName != daemonProfileName else {
       status = daemonProfileStatus(rawProfileName: rawProfileName, profileName: profileName)
@@ -511,7 +395,9 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       refreshDaemonWorkflowWindow()
       return
     }
+    await performDistributedControllerStop()
     daemonProfileName = profileName
+    await performDistributedControllerStart()
     webRevision += 1
     daemonStore = makeDaemonStore(profileName: profileName)
     daemonState = loadDaemonStateReportingCorruption(
@@ -712,7 +598,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       let instances = state.workflowInstances(from: sources)
       daemonProfileStates[profileName] = state
       daemonProfileWorkflowSources[profileName] = sources
-      daemonProfileInstances.append(contentsOf: instances.filter(\.isConfigured).map {
+      daemonProfileInstances.append(contentsOf: instances.map {
         RielaAppProfiledWorkflowInstance(profileName: profileName, instance: $0)
       })
       guard profileName == daemonProfileName else {

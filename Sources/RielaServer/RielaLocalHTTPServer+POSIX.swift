@@ -48,18 +48,30 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   public typealias StateHandler = @Sendable (RielaLocalHTTPServerState) -> Void
 
   private let routeHandler: any RielaHTTPRouteHandling
+  private let connectionLimits: RielaHTTPConnectionLimits
   private let queue: DispatchQueue
   private let lock = NSLock()
   private var listenerSocket: Int32 = -1
   private var generation: UInt64 = 0
   private var state = RielaLocalHTTPServerState.stopped
   private var stateHandler: StateHandler?
+  private var connections: [Int32: UInt64] = [:]
+  private var routeTasks: [UUID: Task<Void, Never>] = [:]
 
-  public init(
+  public convenience init(
     routeHandler: any RielaHTTPRouteHandling,
     queue: DispatchQueue = DispatchQueue(label: "dev.riela.local-http-server", qos: .userInitiated)
   ) {
+    self.init(routeHandler: routeHandler, queue: queue, connectionLimits: .init())
+  }
+
+  public init(
+    routeHandler: any RielaHTTPRouteHandling,
+    queue: DispatchQueue = DispatchQueue(label: "dev.riela.local-http-server", qos: .userInitiated),
+    connectionLimits: RielaHTTPConnectionLimits
+  ) {
     self.routeHandler = routeHandler
+    self.connectionLimits = connectionLimits
     self.queue = queue
   }
 
@@ -94,23 +106,28 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   }
 
   public func stop() async {
-    let socketToClose = lock.withLock { () -> Int32 in
+    let (socketToClose, tasks) = lock.withLock { () -> (Int32, [Task<Void, Never>]) in
       let activeSocket = listenerSocket
       guard activeSocket >= 0 else {
         updateStateLocked(.stopped)
-        return -1
+        return (-1, Array(routeTasks.values))
       }
       listenerSocket = -1
       generation &+= 1
       updateStateLocked(.stopping(port: state.boundPort))
-      return activeSocket
+      for connection in connections.keys { _ = shutdown(connection, Int32(SHUT_RDWR)) }
+      let tasks = Array(routeTasks.values)
+      tasks.forEach { $0.cancel() }
+      return (activeSocket, tasks)
     }
     guard socketToClose >= 0 else {
+      for task in tasks { await task.value }
       return
     }
 
     _ = shutdown(socketToClose, Int32(SHUT_RDWR))
     _ = close(socketToClose)
+    for task in tasks { await task.value }
 
     lock.withLock {
       updateStateLocked(.stopped)
@@ -214,19 +231,35 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
         }
         return
       }
+      let accepted = lock.withLock {
+        guard listenerSocket == socketDescriptor, generation == sourceGeneration,
+          connections.count < connectionLimits.maximumConnections else { return false }
+        connections[connection] = sourceGeneration
+        return true
+      }
+      guard accepted else { _ = close(connection); continue }
+      let deadline = DispatchTime.now() + connectionLimits.requestReadTimeout
       DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-        self?.receive(from: connection)
+        self?.receive(from: connection, deadline: deadline)
       }
     }
   }
 
-  private func receive(from connection: Int32) {
+  private func receive(from connection: Int32, deadline: DispatchTime) {
     var data = Data()
     var buffer = [UInt8](repeating: 0, count: 64 * 1_024)
     while true {
+      let now = DispatchTime.now().uptimeNanoseconds
+      guard now < deadline.uptimeNanoseconds else { closeConnection(connection); return }
+      let remainingMilliseconds = Int32((deadline.uptimeNanoseconds - now + 999_999) / 1_000_000)
+      var descriptor = pollfd(fd: connection, events: Int16(POLLIN), revents: 0)
+      let ready = poll(&descriptor, 1, remainingMilliseconds)
+      if ready < 0, errno == EINTR { continue }
+      guard ready > 0 else { closeConnection(connection); return }
       let received = buffer.withUnsafeMutableBytes { bytes in
-        recv(connection, bytes.baseAddress, bytes.count, 0)
+        recv(connection, bytes.baseAddress, bytes.count, Int32(MSG_DONTWAIT))
       }
+      if received < 0, errno == EINTR || errno == EAGAIN { continue }
       guard received > 0 else {
         send(.text(status: 400, "Incomplete HTTP request"), method: "GET", through: connection)
         return
@@ -237,10 +270,7 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
         case .incomplete:
           continue
         case let .complete(request):
-          Task { [self] in
-            let response = await self.routeHandler.response(for: request)
-            self.send(response, method: request.method, through: connection)
-          }
+          dispatch(request, through: connection)
           return
         }
       } catch let parserError as RielaHTTPRequestParserError {
@@ -255,6 +285,26 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
         return
       }
     }
+  }
+
+  private func dispatch(_ request: RielaHTTPRequest, through connection: Int32) {
+    lock.lock()
+    guard listenerSocket >= 0, connections[connection] == generation else {
+      lock.unlock()
+      send(.text(status: 503, "Server stopping"), method: request.method, through: connection)
+      return
+    }
+    let id = UUID()
+    routeTasks[id] = Task { [self] in
+      if !Task.isCancelled {
+        let response = await routeHandler.response(for: request)
+        send(response, method: request.method, through: connection)
+      } else {
+        send(.text(status: 503, "Server stopping"), method: request.method, through: connection)
+      }
+      _ = lock.withLock { routeTasks.removeValue(forKey: id) }
+    }
+    lock.unlock()
   }
 
   private func send(_ response: RielaHTTPResponse, method: String, through connection: Int32) {
@@ -282,8 +332,15 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
         sentBytes += result
       }
     }
-    _ = shutdown(connection, Int32(SHUT_RDWR))
-    _ = close(connection)
+    closeConnection(connection)
+  }
+
+  private func closeConnection(_ connection: Int32) {
+    lock.withLock {
+      connections.removeValue(forKey: connection)
+      _ = shutdown(connection, Int32(SHUT_RDWR))
+      _ = close(connection)
+    }
   }
 
   private func isActive(socket socketDescriptor: Int32, generation sourceGeneration: UInt64) -> Bool {

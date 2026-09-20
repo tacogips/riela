@@ -176,7 +176,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       throw WorkflowRuntimePersistenceStoreError.notFound(sessionId)
     }
     let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
+    decoder.dateDecodingStrategy = RuntimeSnapshotDates.decoding
     guard let sessionValue = row["session_json"],
           let diagnosticsValue = row["diagnostics_json"],
           let sessionData = sessionValue.data(using: .utf8),

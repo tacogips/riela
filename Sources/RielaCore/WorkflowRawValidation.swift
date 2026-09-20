@@ -139,6 +139,7 @@ private func validateSteps(
     "stallTimeoutMs",
     "failurePolicy",
     "sessionPolicy",
+    "placement",
     "transitions",
     "loop"
   ]
@@ -192,6 +193,9 @@ private func validateSteps(
     }
     if let stallTimeoutMs = entry["stallTimeoutMs"] {
       validateNumberField(stallTimeoutMs, path: "\(path).stallTimeoutMs", diagnostics: &diagnostics)
+    }
+    if let placement = entry["placement"] {
+      validateDistributedPlacement(placement, path: "\(path).placement", diagnostics: &diagnostics)
     }
     if let failurePolicy = entry["failurePolicy"] {
       guard let value = failurePolicy as? String, ["fail", "advisory"].contains(value) else {

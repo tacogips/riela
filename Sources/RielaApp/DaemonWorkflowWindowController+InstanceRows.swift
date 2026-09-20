@@ -29,7 +29,7 @@ extension DaemonWorkflowWindowController {
       allCandidates.map { ($0.sourceIdentity, $0) },
       uniquingKeysWith: { first, _ in first }
     )
-    return state.preferences
+    let configuredRows = state.preferences
       .sorted { lhs, rhs in lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending }
       .map { identity, preference in
         let storedIdentity = preference.identity.isEmpty ? identity : preference.identity
@@ -42,7 +42,7 @@ extension DaemonWorkflowWindowController {
         )
         let instanceName = preference.displayName?.isEmpty == false
           ? preference.displayName ?? storedIdentity
-          : candidate?.displayName ?? storedIdentity
+          : storedIdentity == sourceIdentity ? "標準設定" : candidate?.displayName ?? storedIdentity
         let state = instanceState(identity: storedIdentity, hasSource: candidate != nil)
         return ConfiguredWorkflowInstanceRow(
           id: storedIdentity,
@@ -58,6 +58,22 @@ extension DaemonWorkflowWindowController {
           stateDetail: snapshots[storedIdentity]?.detail ?? ""
         )
       }
+    let defaults = state.workflowInstances(from: workflowSources).filter { !$0.isConfigured }.map { instance in
+      ConfiguredWorkflowInstanceRow(
+        id: instance.identity,
+        profileName: profileName,
+        localIdentity: instance.identity,
+        preference: instance.preference,
+        candidate: instance.candidate,
+        sourceIdentity: instance.sourceIdentity,
+        instanceName: instance.displayName,
+        workflowName: instance.source.displayName,
+        hasMissingRequiredEnvironment: hasMissingRequiredEnvironment(instance.candidate),
+        state: instanceState(identity: instance.identity, hasSource: true),
+        stateDetail: snapshots[instance.identity]?.detail ?? ""
+      )
+    }
+    return configuredRows + defaults
   }
 
   private func instanceRowsFingerprint(for rows: [ConfiguredWorkflowInstanceRow]) -> String {

@@ -21,7 +21,7 @@ extension DeterministicWorkflowRunner {
         step: step,
         request: request
       )
-      guard let addonResolver else {
+      guard addonResolver != nil || (step.placement != nil && distributedExecutor != nil) else {
         throw AdapterExecutionError(.providerError, "missing add-on resolver for '\(addon.name)'")
       }
       let predecessorExecutionIds = retryPredecessorExecutionIds(
@@ -67,9 +67,13 @@ extension DeterministicWorkflowRunner {
           predecessorStepExecutionIds: predecessorExecutionIds
         )
       )
-      adapterOutput = try await addonResolver.execute(
-        addonInput,
-        context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
+      adapterOutput = try await executePlacedAddon(
+        addonInput, step: step, executionId: "\(sessionId)/\(startedExecution.execution.executionId)",
+        context: adapterExecutionContext(
+          deadline: deadline(for: step, request: request), workflowId: workflow.workflowId,
+          step: step, execution: startedExecution.execution,
+          eventContext: startedExecution.backendEventContext, handler: request.eventHandler
+        )
       )
     } catch let adapterFailure as AdapterExecutionError {
       if step.failurePolicy == .advisory {

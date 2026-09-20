@@ -5,16 +5,6 @@ import RielaGraphQL
 import RielaServer
 
 extension ServeWebHost {
-  enum InstanceAction: String, Decodable {
-    case start, stop, restart, enableAtLaunch, disableAtLaunch
-  }
-
-  private struct InstanceActionInput: Decodable {
-    let action: InstanceAction
-    let expectedRevision: Int
-    let expectedProfile: String
-  }
-
   func requireIdleInstanceOperation() throws {
     guard !instanceOperationInProgress, !isShuttingDown else {
       throw RielaConfigurationGraphQLError(code: "INSTANCE_BUSY", message: "An instance operation is in progress. Try again.")
@@ -35,7 +25,7 @@ extension ServeWebHost {
     guard parts.count == 5, Array(parts.prefix(3)) == ["api", "v1", "instances"], parts[4] == "actions" else { return nil }
     guard request.method == "POST" else { return instanceError("method_not_allowed", "Use POST.", status: 405) }
     guard let identity = parts[3].removingPercentEncoding,
-          let input = try? JSONDecoder().decode(InstanceActionInput.self, from: request.body) else {
+          let input = try? JSONDecoder().decode(WorkflowInstanceActionInput.self, from: request.body) else {
       return instanceError("invalid_request", "Provide an action, profile and revision.", status: 400)
     }
     do {
@@ -49,14 +39,7 @@ extension ServeWebHost {
       let selectedProfile = profile
       var preference = instance.preference
       preference.sourceIdentity = instance.sourceIdentity
-      switch input.action {
-      case .start, .restart:
-        preference.available = true
-        preference.active = true
-      case .stop: preference.active = false
-      case .enableAtLaunch: preference.available = true
-      case .disableAtLaunch: preference.available = false
-      }
+      preference = input.action.applying(to: preference)
       var updated = state
       updated.preferences[identity] = preference
       try stateStore.save(updated)
@@ -119,7 +102,7 @@ extension ServeWebHost {
     }
   }
 
-  private func instanceError(_ code: String, _ message: String, status: Int) -> RielaHTTPResponse {
+  func instanceError(_ code: String, _ message: String, status: Int) -> RielaHTTPResponse {
     .json(status: status, .object(["error": .object(["code": .string(code), "message": .string(message)])]))
   }
 }

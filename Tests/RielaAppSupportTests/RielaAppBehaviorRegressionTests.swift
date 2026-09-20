@@ -444,7 +444,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     app.rebuildMenu()
 
     let menu = app.statusItem.menu
-    XCTAssertEqual(menu?.items.first?.title, "Instances...")
+    XCTAssertEqual(menu?.items.first?.title, "Open Riela...")
     XCTAssertEqual(menu?.items.first?.target as? RielaApp, app)
     XCTAssertTrue(menu?.items.contains { $0.title == "Launch on Login" } == true)
     let aboutItem = try XCTUnwrap(menu?.items.first { $0.title == "About Riela" })
@@ -454,7 +454,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Instances:") } == true)
 
     let summaryItem = try XCTUnwrap(menu?.items.first { item in
-      item.title.contains("Instances ") && item.title.contains("Profile work")
+      item.title.contains("実行設定 ") && item.title.contains("Profile work")
     })
     XCTAssertEqual(summaryItem.isEnabled, false)
     XCTAssertEqual(summaryItem.toolTip, summaryItem.title)
@@ -484,7 +484,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
     addButton.performClick(nil)
     controller.window?.layoutIfNeeded()
 
@@ -497,8 +497,8 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
 
     controller.goBack()
     controller.window?.layoutIfNeeded()
-    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "Instances")
-    XCTAssertEqual(controller.instancesListView?.isHidden, false)
+    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "ワークフロー")
+    XCTAssertEqual(controller.sourcesOverviewView?.isHidden, false)
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, true)
   }
 
@@ -569,7 +569,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
   private func makeDaemonController(
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String = { _ in "Ready" }
   ) -> DaemonWorkflowWindowController {
-    DaemonWorkflowWindowController(
+    let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
@@ -595,6 +595,8 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
       environmentColumnStatus: environmentColumnStatus,
       onWindowWillClose: {}
     )
+    controller.showInstancesList()
+    return controller
   }
 
   private func writeWorkflow(id: String, to workflowDirectory: URL) throws {

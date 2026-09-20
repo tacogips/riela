@@ -1,5 +1,9 @@
 import Crypto
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import Foundation
 import XCTest
 import RielaCore
@@ -641,8 +645,26 @@ final class SpecialistServiceResponsivenessTests: XCTestCase {
     } while Date() < deadline
     guard descriptor >= 0 else { throw processError("child barrier has no live reader") }
     defer { close(descriptor) }
+    #if canImport(Darwin)
     _ = fcntl(descriptor, F_SETNOSIGPIPE, 1)
     XCTAssertEqual("release\n".withCString { write(descriptor, $0, 8) }, 8)
+    #else
+    var blocked = sigset_t()
+    var previous = sigset_t()
+    var pending = sigset_t()
+    sigemptyset(&blocked)
+    sigaddset(&blocked, SIGPIPE)
+    pthread_sigmask(SIG_BLOCK, &blocked, &previous)
+    defer { pthread_sigmask(SIG_SETMASK, &previous, nil) }
+    sigpending(&pending)
+    let alreadyPending = sigismember(&pending, SIGPIPE) == 1
+    let count = "release\n".withCString { write(descriptor, $0, 8) }
+    if count < 0, errno == EPIPE, !alreadyPending {
+      var noWait = timespec(tv_sec: 0, tv_nsec: 0)
+      _ = sigtimedwait(&blocked, nil, &noWait)
+    }
+    XCTAssertEqual(count, 8)
+    #endif
   }
 
   private func waitForCanonicalTerminalChild(stateRoot: URL, sessionId: String) throws {

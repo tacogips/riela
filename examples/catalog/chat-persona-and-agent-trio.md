@@ -25,6 +25,15 @@ tests may still construct legacy fixtures under explicit non-strict validation.
 
 ## Available Examples
 
+### `monja-agent-collaboration`
+
+Three fresh-session Riela personas solve one Monja task while projecting their
+ordered, schema-validated discussion into a single linked Monja chat thread.
+The example includes an API-only coordinator, exact cumulative handoff,
+idempotent recovery, a fake Monja integration fixture, and an actual Riela CLI
+mock-scenario verifier. See
+`examples/monja-agent-collaboration/README.md` for setup and commands.
+
 ### Enterprise Matrix agent trios
 
 Three Matrix room examples apply the same generic runtime policy to different

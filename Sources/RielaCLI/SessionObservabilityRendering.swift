@@ -38,7 +38,7 @@ extension SessionInspectionCommand {
       activeBackendEventType: activeExecution?.lastBackendEventType,
       backendSilentForMs: activeExecution.flatMap(backendSilentForMs),
       activeSilentForMs: activeExecution.flatMap(activeSilentForMs),
-      executionCount: snapshot.session.executions.count,
+      executionCount: snapshot.session.newExecutionCount,
       executions: executionRows(for: command, allExecutions: snapshot.session.executions, runningExecutions: runningExecutions),
       reviewFindingCount: snapshot.session.reviewFindings.count,
       reviewFindings: snapshot.session.reviewFindings,

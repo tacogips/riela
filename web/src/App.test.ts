@@ -13,7 +13,7 @@ describe('profile-owned view state', () => {
       'riela-app:second',
       'riela-app',
       'run-detail',
-    )).toEqual({ clearSelection: true, view: 'logs' })
+    )).toEqual({ clearSelection: true, view: 'workflows' })
   })
 
   test('preserves selection and navigation for the same profile', () => {
@@ -43,12 +43,12 @@ describe('profile-owned view state', () => {
     )).toEqual({ clearSelection: false, view: 'ops' })
   })
 
-  test('clears profile state and lands on instances for CLI serve', () => {
+  test('clears profile state and lands on workflows for CLI serve', () => {
     expect(profileViewTransition(
       'riela-app:first',
       'cli-serve',
       'cli-serve',
       'workflows',
-    )).toEqual({ clearSelection: true, view: 'instances' })
+    )).toEqual({ clearSelection: true, view: 'workflows' })
   })
 })

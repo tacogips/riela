@@ -102,6 +102,12 @@ public struct RielaCLIApplication: Sendable {
   }
 
   private func runParsed(_ arguments: [String]) async -> CLICommandResult {
+    if arguments.first == "auth" {
+      return PasskeyCommand().run(arguments: Array(arguments.dropFirst()))
+    }
+    if arguments.first == "worker" {
+      return await DistributedWorkerCommand().run(arguments: arguments) { _ in }
+    }
     do {
       switch try parser.parse(arguments) {
       case .help:
@@ -345,7 +351,9 @@ Usage:
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
   riela serve [--host <host>] [--port <port>]
-  riela session rerun <session-id> <step-id> [--scope project|user|auto] [--output jsonl|json|text]
+  riela auth invite <user> | users | revoke-user <user> | revoke-key <credential-id>
+  riela worker --config <worker.json>
+  riela session rerun <session-id> <step-id> [--preserve-history] [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]

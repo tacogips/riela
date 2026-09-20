@@ -164,6 +164,8 @@ public struct RielaWebAPIProjection {
       let snapshot = runtimeSnapshot(instance.identity)
       return .object([
         "id": .string(instance.identity),
+        "sourceId": .string(instance.sourceIdentity),
+        "isDefault": .bool(instance.isDefault),
         "name": .string(projection.displayText(instance.displayName).value),
         "workflowId": .string(projection.identifier(instance.source.workflowId).value),
         "status": .string(snapshot.status.rawValue),
@@ -329,6 +331,7 @@ public struct RielaWebAPIProjection {
       }
       let projection = WorkflowWebProjectionPolicy()
       let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
       let steps = Array(state.timeline.prefix(256))
       let messages = Array(state.messages.suffix(200))
       let messageTotalCount = state.messageTotalCount ?? state.messages.count
@@ -662,6 +665,8 @@ public struct RielaWebAPIProjection {
     let effectiveEnvironment = environment(instance)
     return .object([
       "id": .string(instance.identity),
+      "sourceId": .string(instance.sourceIdentity),
+      "isDefault": .bool(instance.isDefault),
       "name": .string(instance.displayName),
       "workflowId": .string(instance.source.workflowId),
       "source": .string(instance.source.sourceDescription),
@@ -716,9 +721,12 @@ public struct RielaWebAPIProjection {
     preference: RielaAppDaemonWorkflowPreference
   ) -> JSONValue {
     let sourceIdentity = preference.sourceIdentity ?? identity
-    let name = preference.displayName?.isEmpty == false ? preference.displayName ?? identity : identity
+    let fallbackName = identity == sourceIdentity ? "標準設定" : identity
+    let name = preference.displayName?.isEmpty == false ? preference.displayName ?? fallbackName : fallbackName
     return .object([
       "id": .string(identity),
+      "sourceId": .string(sourceIdentity),
+      "isDefault": .bool(identity == sourceIdentity),
       "name": .string(name),
       "workflowId": .string(sourceIdentity),
       "source": .string("Missing source: \(sourceIdentity)"),

@@ -1,3 +1,5 @@
+import { placementProblems } from './placement'
+
 /** Lossless editing: retain fields the visual editor does not understand. */
 export type Document = Record<string, unknown>
 export interface Transition extends Document { toStepId: string }
@@ -78,6 +80,7 @@ export function graphProblems(doc: GraphDocument): string[] {
   if (!doc.workflowId.trim()) problems.push('Enter a workflow ID.')
   if (!doc.steps.some((step) => step.id === doc.entryStepId)) problems.push('Choose an entry step.')
   for (const step of doc.steps) {
+    problems.push(...placementProblems(step.placement).map(problem => `${step.id}: ${problem}`))
     if (!doc.nodes.some((node) => node.id === step.nodeId)) problems.push(`${step.id}: missing node ${step.nodeId}.`)
     for (const edge of step.transitions ?? []) {
       if (isLocalTransition(doc, edge) && !doc.steps.some((target) => target.id === edge.toStepId)) problems.push(`${step.id}: missing target ${edge.toStepId}.`)

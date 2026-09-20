@@ -45,21 +45,33 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   public typealias StateHandler = @Sendable (RielaLocalHTTPServerState) -> Void
 
   private let routeHandler: any RielaHTTPRouteHandling
+  private let connectionLimits: RielaHTTPConnectionLimits
   private let queue: DispatchQueue
   private let lock = NSLock()
   private var listener: NWListener?
   private var connections: [UUID: NWConnection] = [:]
+  private var readingConnections: Set<UUID> = []
+  private var routeTasks: [UUID: Task<Void, Never>] = [:]
   private var generation: UInt64 = 0
   private var state = RielaLocalHTTPServerState.stopped
   private var stateHandler: StateHandler?
   private var startContinuation: CheckedContinuation<Int, Error>?
   private var stopContinuations: [CheckedContinuation<Void, Never>] = []
 
-  public init(
+  public convenience init(
     routeHandler: any RielaHTTPRouteHandling,
     queue: DispatchQueue = DispatchQueue(label: "dev.riela.local-http-server", qos: .userInitiated)
   ) {
+    self.init(routeHandler: routeHandler, queue: queue, connectionLimits: .init())
+  }
+
+  public init(
+    routeHandler: any RielaHTTPRouteHandling,
+    queue: DispatchQueue = DispatchQueue(label: "dev.riela.local-http-server", qos: .userInitiated),
+    connectionLimits: RielaHTTPConnectionLimits
+  ) {
     self.routeHandler = routeHandler
+    self.connectionLimits = connectionLimits
     self.queue = queue
   }
 
@@ -145,10 +157,13 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   }
 
   public func stop() async {
+    var tasksToDrain: [Task<Void, Never>] = []
     await withCheckedContinuation { continuation in
       let listenerToCancel: NWListener?
       let connectionsToCancel: [NWConnection]
       lock.lock()
+      tasksToDrain = Array(routeTasks.values)
+      tasksToDrain.forEach { $0.cancel() }
       guard let activeListener = listener else {
         updateStateLocked(.stopped)
         lock.unlock()
@@ -163,6 +178,7 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
       connectionsToCancel.forEach { $0.cancel() }
       listenerToCancel?.cancel()
     }
+    for task in tasksToDrain { await task.value }
   }
 
   private func handleListenerState(
@@ -225,6 +241,7 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
     }
     listener = nil
     connections.removeAll()
+    readingConnections.removeAll()
     pendingStart = startContinuation
     startContinuation = nil
     pendingStops = stopContinuations
@@ -254,13 +271,19 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   private func accept(_ connection: NWConnection, generation sourceGeneration: UInt64) {
     let connectionID = UUID()
     lock.lock()
-    guard generation == sourceGeneration, listener != nil else {
+    guard generation == sourceGeneration, listener != nil, connections.count < connectionLimits.maximumConnections else {
       lock.unlock()
       connection.cancel()
       return
     }
     connections[connectionID] = connection
+    readingConnections.insert(connectionID)
     lock.unlock()
+    queue.asyncAfter(deadline: .now() + connectionLimits.requestReadTimeout) { [weak self, weak connection] in
+      guard let self, let connection else { return }
+      let expired = self.lock.withLock { self.readingConnections.remove(connectionID) != nil }
+      if expired { connection.cancel(); self.removeConnection(id: connectionID) }
+    }
     connection.stateUpdateHandler = { [weak self, weak connection] connectionState in
       guard let self, let connection else { return }
       switch connectionState {
@@ -291,10 +314,7 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
             self.receive(from: connection, id: id, buffer: nextBuffer)
           }
         case let .complete(request):
-          Task {
-            let response = await self.routeHandler.response(for: request)
-            self.send(response, method: request.method, through: connection, id: id)
-          }
+          self.dispatch(request, through: connection, id: id)
         }
       } catch let parserError as RielaHTTPRequestParserError {
         self.send(
@@ -307,6 +327,23 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
         self.send(.text(status: 400, "Bad Request"), method: "GET", through: connection, id: id)
       }
     }
+  }
+
+  private func dispatch(_ request: RielaHTTPRequest, through connection: NWConnection, id: UUID) {
+    lock.lock()
+    guard case .running = state, connections[id] === connection, readingConnections.remove(id) != nil else {
+      lock.unlock()
+      connection.cancel()
+      return
+    }
+    routeTasks[id] = Task { [self] in
+      if !Task.isCancelled {
+        let response = await routeHandler.response(for: request)
+        send(response, method: request.method, through: connection, id: id)
+      }
+      _ = lock.withLock { routeTasks.removeValue(forKey: id) }
+    }
+    lock.unlock()
   }
 
   private func send(
@@ -324,6 +361,7 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   private func removeConnection(id: UUID) {
     lock.lock()
     connections[id] = nil
+    readingConnections.remove(id)
     lock.unlock()
   }
 

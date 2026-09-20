@@ -6,6 +6,24 @@ import FoundationNetworking
 import XCTest
 
 final class RielaLocalHTTPServerTests: XCTestCase {
+  func testStopWaitsForCancelledRouteHandlers() async throws {
+    let entered = expectation(description: "request entered handler")
+    let finished = HTTPShutdownTestState()
+    let server = RielaLocalHTTPServer(routeHandler: AnyRielaHTTPRouteHandler { _ in
+      entered.fulfill()
+      do { try await Task.sleep(for: .seconds(10)) } catch { }
+      await finished.markFinished()
+      return .json(.object([:]))
+    })
+    let port = try await server.startForTesting()
+    let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/test"))
+    let request = Task { try await URLSession.shared.data(from: url) }
+    await fulfillment(of: [entered], timeout: 3)
+    await server.stop()
+    let isFinished = await finished.finished
+    XCTAssertTrue(isFinished, "stop must drain route tasks before storage can be removed or switched")
+    _ = try? await request.value
+  }
   func testLiveHealthRequestStopAndImmediateRebind() async throws {
     let handler = AnyRielaHTTPRouteHandler { request in
       await DeterministicServerHTTPAdapter().response(for: request)
@@ -43,4 +61,9 @@ final class RielaLocalHTTPServerTests: XCTestCase {
     XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
     await server.stop()
   }
+}
+
+private actor HTTPShutdownTestState {
+  var finished = false
+  func markFinished() { finished = true }
 }

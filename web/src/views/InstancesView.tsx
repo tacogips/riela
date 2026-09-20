@@ -1,18 +1,14 @@
-import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
+import { For, Show, createMemo, createSignal } from 'solid-js'
 import { APIError, api, requireExpectedProfile } from '../api'
 import { configurationClient } from '../config/client'
-import type { Instance, InstanceResponse, InstancesResponse } from '../contracts'
-import { EmptyState, ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
-import { createPollingResource, pollingStatusLabel } from '../polling'
+import type { Instance, InstanceResponse } from '../contracts'
+import { MutationMessage } from '../components/Primitives'
 import { validateJSONObject } from '../workflows/validation'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function statusLabel(status: Instance['status']): string {
-  return status === 'needsSource' ? 'Needs source' : status
-}
 
 export function instanceSelectionForProfile(
   previousProfileKey: string | undefined,
@@ -47,66 +43,15 @@ export function instanceEditorIdentity(profileKey: string, instanceId: string): 
   return `${profileKey}\u{1f}${instanceId}`
 }
 
-export function InstancesView(props: { profileKey: string; profileName: string; serverHosted?: boolean }) {
-  const instances = createPollingResource(
-    () => props.profileKey,
-    async (signal) => requireExpectedProfile(
-      await api.get<InstancesResponse>('/api/v1/instances', signal),
-      props.profileName,
-    ),
-  )
-  const [selectedId, setSelectedId] = createSignal<string>()
-  const selectedEditorIdentity = createMemo(() => selectedId()
-    ? instanceEditorIdentity(props.profileKey, selectedId()!)
-    : undefined)
-  let previousProfileKey: string | undefined
-  createEffect(() => {
-    const nextProfileKey = props.profileKey
-    setSelectedId((current) => instanceSelectionForProfile(previousProfileKey, nextProfileKey, current))
-    previousProfileKey = nextProfileKey
-  })
-
-  return <section class="page"><PageHeader eyebrow="RUNTIME" title="Workflow instances" description="Live state and persisted configuration for this profile." actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(instances.status())}</span><button class="secondary" onClick={() => void instances.refresh()}>Refresh</button></div>} />
-    <Show when={instances.loading() && !instances.data()}><LoadingState label="Loading workflow instances…" /></Show>
-    <Show when={instances.error()}><ErrorBanner message={errorMessage(instances.error())} /></Show>
-    <Show when={!instances.loading() && !instances.error() && instances.data()?.items.length === 0}><EmptyState title="No instances yet" detail="Add a workflow directory from Workflows, then refresh this page." /></Show>
-    <div class="instance-grid" aria-busy={instances.loading()}>
-      <For each={instances.data()?.items}>{(instance) => {
-        const missingCount = () => instance.requiredEnvironment.filter((requirement) => !requirement.present).length
-        return <button classList={{ 'instance-card': true, selected: selectedId() === instance.id }} aria-pressed={selectedId() === instance.id} onClick={() => setSelectedId(instance.id)}>
-          <div class="card-heading"><span class={`status-dot ${instance.status}`} aria-hidden="true" /><div><strong>{instance.name}</strong><span>{instance.workflowId}</span></div><span class={`status-chip ${instance.status}`}>{statusLabel(instance.status)}</span></div>
-          <p>{instance.statusDetail}</p>
-          <div class="card-badges"><span>{instance.sourceKind}</span><span>{instance.enabledAtLaunch ? 'Enabled at launch' : 'Disabled at launch'}</span><Show when={missingCount() > 0}><span class="warning-badge">Missing env: {missingCount()}</span></Show></div>
-          <div class="card-meta"><span>{instance.eventSources.length} event sources</span><span>{instance.nodePatchCount} node patches</span></div>
-        </button>
-      }}</For>
-    </div>
-    <Show when={selectedEditorIdentity()} keyed>{(_editorIdentity) => <Show
-      when={instances.data()?.items.find((item) => item.id === selectedId())}
-    >{(instance) =>
-      <Show when={instance().status !== 'needsSource'} fallback={<MissingSourceDetail instance={instance()} />}>
-        <InstanceEditor
-          instance={instance}
-          profileName={props.profileName}
-          serverHosted={props.serverHosted}
-          revision={() => instances.data()?.revision ?? 0}
-          onRefresh={instances.refresh}
-        />
-      </Show>
-    }</Show>}</Show>
-  </section>
-}
-
-function MissingSourceDetail(props: { instance: Instance }) {
+export function MissingSourceDetail(props: { instance: Instance }) {
   return <div class="editor-panel" role="status"><div class="section-title"><div><span class="eyebrow">SOURCE REQUIRED</span><h2>{props.instance.name}</h2></div><span class="status-chip needsSource">Needs source</span></div>
-    <div class="instance-affordance"><strong>This configured instance cannot find its workflow source.</strong><span>{props.instance.source}</span><span>Relink or remove it in the native Riela Instances window. Configuration and run history are unavailable until then.</span></div>
+    <div class="instance-affordance"><strong>This run configuration cannot find its workflow source.</strong><span>{props.instance.source}</span><span>Relink or remove it in the native ワークフロー画面. Configuration and run history are unavailable until then.</span></div>
   </div>
 }
 
-function InstanceEditor(props: {
+export function InstanceEditor(props: {
   instance: () => Instance
   profileName: string
-  serverHosted?: boolean
   revision: () => number
   onRefresh: () => Promise<void>
 }) {
@@ -186,7 +131,7 @@ function InstanceEditor(props: {
         workflowVariables: validation.value,
       })
       setExpectedRevision(response.revision)
-      setMessage('Saved. Active instances restart with the new configuration.')
+      setMessage('Saved. Running configurations restart with the new configuration.')
       await props.onRefresh()
     } catch (error) {
       const isConflict = error instanceof APIError
@@ -211,7 +156,7 @@ function InstanceEditor(props: {
         revision: expectedRevision(),
       }, { identity: props.instance().id, source: source.value, binding: binding.value })
       setExpectedRevision(response.revision)
-      setMessage('Event source registered. Active instances restart automatically.')
+      setMessage('Event source registered. Running configurations restart automatically.')
       await props.onRefresh()
     } catch (error) {
       const isConflict = error instanceof APIError
@@ -233,7 +178,7 @@ function InstanceEditor(props: {
         { action, expectedProfile: props.profileName }, expectedRevision(),
       )
       setExpectedRevision(response.revision)
-      setMessage('Instance updated.')
+      setMessage('実行設定を更新しました。')
     } catch (error) {
       setSaveError(true); setMessage(errorMessage(error))
       setConflict(error instanceof APIError && error.status === 409)
@@ -245,14 +190,12 @@ function InstanceEditor(props: {
 
   return <div class="editor-panel"><div class="section-title"><div><span class="eyebrow">CONFIGURATION</span><h2>{props.instance().name}</h2></div><span class="source-label">{props.instance().source} · {props.instance().sourceKind}</span></div>
     <div class="instance-affordance"><strong>{props.instance().active ? 'Active now' : 'Inactive now'} · {props.instance().enabledAtLaunch ? 'enabled at launch' : 'disabled at launch'}</strong>
-      <Show when={props.serverHosted} fallback={<span>Start, stop, restart, and enablement are managed in the Riela menu-bar app.</span>}>
         <div class="save-row instance-controls">
-          <button disabled={saving() || props.instance().status === 'running'} onClick={() => void controlInstance('start')}>Start instance</button>
-          <button class="secondary" disabled={saving() || props.instance().status === 'stopped'} onClick={() => void controlInstance('stop')}>Stop instance</button>
-          <button class="secondary" disabled={saving()} onClick={() => void controlInstance('restart')}>Restart instance</button>
+          <button disabled={saving() || props.instance().status === 'running'} onClick={() => void controlInstance('start')}>実行</button>
+          <button class="secondary" disabled={saving() || props.instance().status === 'stopped'} onClick={() => void controlInstance('stop')}>停止</button>
+          <button class="secondary" disabled={saving()} onClick={() => void controlInstance('restart')}>再実行</button>
           <button class="secondary" disabled={saving()} onClick={() => void controlInstance(props.instance().enabledAtLaunch ? 'disableAtLaunch' : 'enableAtLaunch')}>{props.instance().enabledAtLaunch ? 'Disable at launch' : 'Enable at launch'}</button>
         </div>
-      </Show>
     </div>
     <Show when={props.instance().requiredEnvironment.length > 0}><div class="requirements" aria-label="Required environment"><h3>Required environment</h3><For each={props.instance().requiredEnvironment}>{(requirement) => <div class="requirement-row"><span classList={{ 'presence-dot': true, present: requirement.present }} aria-hidden="true" /><div><strong>{requirement.name}</strong><span>{requirement.description ?? 'No description'} · {requirement.source}</span></div><span>{requirement.present ? 'Present' : 'Missing'}</span></div>}</For></div></Show>
     <div class="form-grid"><label><span>Working directory</span><input value={workingDirectory()} onInput={(event) => setWorkingDirectory(event.currentTarget.value)} /></label><label><span>Environment file</span><input value={environmentFilePath()} onInput={(event) => setEnvironmentFilePath(event.currentTarget.value)} /></label></div>

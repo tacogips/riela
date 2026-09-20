@@ -7,6 +7,8 @@ import RielaServer
 
 extension RielaApp {
   func webAPIResponse(for request: RielaHTTPRequest, csrfToken: String) async -> RielaHTTPResponse {
+    if let response = await webInstanceResponse(for: request) { return response }
+    if let response = await workerSettingsResponse(for: request) { return response }
     if let response = await webWorkflowHandler.response(for: request) { return response }
     return RielaWebAPIProjection(
       profile: daemonProfileName,
@@ -28,6 +30,7 @@ extension RielaApp {
   var webWorkflowHandler: RielaWebWorkflowRequestHandler {
     var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     environment["HOME"] = appHomeDirectory.path
+    environment = distributedWorkflowEnvironment(environment)
     return webWorkflowRuntime.handler(context: RielaWebWorkflowContext(
       profile: daemonProfileName, assistant: daemonState.assistant, sources: daemonWorkflowSources,
       workingDirectory: appHomeDirectory, appRoot: profileStore.appRootURL,

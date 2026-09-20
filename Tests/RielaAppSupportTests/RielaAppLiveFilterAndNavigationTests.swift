@@ -10,8 +10,8 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
     let controller = makeControllerWithInstances()
     let window = try XCTUnwrap(controller.window)
 
-    XCTAssertEqual(controller.instanceRows.count, 2)
-    XCTAssertEqual(controller.instanceTable.numberOfRows, 2)
+    XCTAssertEqual(controller.instanceRows.count, 4)
+    XCTAssertEqual(controller.instanceTable.numberOfRows, 4)
     XCTAssertEqual(controller.instanceSearchField.action, #selector(DaemonWorkflowWindowController.instanceSearchChanged))
     XCTAssertNil(controller.instanceSearchField.delegate)
 
@@ -33,36 +33,34 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
       controller.instanceSearchField.action,
       to: controller.instanceSearchField.target
     ))
-    XCTAssertEqual(controller.instanceRows.count, 2)
-    XCTAssertEqual(controller.instanceTable.numberOfRows, 2)
+    XCTAssertEqual(controller.instanceRows.count, 4)
+    XCTAssertEqual(controller.instanceTable.numberOfRows, 4)
     XCTAssertEqual(controller.selectedRow()?.instanceName, "Morning Summary")
     XCTAssertTrue(window.firstResponder === controller.instanceSearchField.currentEditor())
   }
 
   func testBackAvailabilityMatchesEveryNavigationState() {
     let controller = makeControllerWithInstances()
-    controller.showInstancesList()
-    assertBackState(controller, available: false, state: "instances root")
+    controller.showSourcesPane()
+    assertBackState(controller, available: false, state: "workflow root")
     controller.goBack()
-    assertBackDestination(controller, expected: .instancesRoot, state: "instances root")
+    assertBackDestination(controller, expected: .sourcesRoot, state: "workflow root")
 
     let availableStates: [BackStateCase] = [
-      BackStateCase("add instance", .instancesRoot) { $0.isShowingAddInstanceSelection = true },
-      BackStateCase("instance overview", .instancesRoot) { $0.isShowingInstanceDetail = true },
-      BackStateCase("instance removal", .instanceOverview) {
+      BackStateCase("add configuration", .sourcesRoot) { $0.isShowingAddInstanceSelection = true },
+      BackStateCase("configuration overview", .sourcesRoot) { $0.isShowingInstanceDetail = true },
+      BackStateCase("configuration removal", .instanceOverview) {
         $0.isShowingInstanceDetail = true
         $0.instanceDetailPane = .removalConfirmation
       },
-      BackStateCase("workflow source detail", .sourcesRoot) { $0.isShowingWorkflowSourceDetail = true },
+      BackStateCase("workflow detail", .sourcesRoot) { $0.isShowingWorkflowSourceDetail = true },
       BackStateCase("marketplace detail", .marketplaceRoot) { $0.isShowingMarketplaceWorkflowDetail = true },
-      BackStateCase("sources root", .instancesRoot) { $0.activeSidebarPane = .sources },
-      BackStateCase("marketplace root", .instancesRoot) { $0.activeSidebarPane = .marketplace },
-      BackStateCase("profiles root", .instancesRoot) { $0.activeSidebarPane = .profiles },
-      BackStateCase("assistant root", .instancesRoot) { $0.activeSidebarPane = .assistant }
+      BackStateCase("marketplace root", .sourcesRoot) { $0.activeSidebarPane = .marketplace },
+      BackStateCase("profiles root", .sourcesRoot) { $0.activeSidebarPane = .profiles },
+      BackStateCase("assistant root", .sourcesRoot) { $0.activeSidebarPane = .assistant }
     ]
-
     for testCase in availableStates {
-      controller.showInstancesList()
+      controller.showSourcesPane()
       testCase.configure(controller)
       controller.updateNavigationState()
       assertBackState(controller, available: true, state: testCase.name)
@@ -73,7 +71,7 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
 
   func testBackButtonUsesProportionalSquareLayout() {
     let controller = makeController()
-    controller.showSourcesPane()
+    controller.showProfilesPane()
     controller.window?.layoutIfNeeded()
     let button = controller.navigationBackButton
 
@@ -187,7 +185,7 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
   }
 
   private func makeController() -> DaemonWorkflowWindowController {
-    DaemonWorkflowWindowController(
+    let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
@@ -213,6 +211,8 @@ final class RielaAppLiveFilterAndNavigationTests: XCTestCase {
       environmentColumnStatus: { _ in "Ready" },
       onWindowWillClose: {}
     )
+    controller.showInstancesList()
+    return controller
   }
 
   private enum BackDestination {

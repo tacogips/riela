@@ -1,3 +1,5 @@
+mod passkey_login;
+mod remote;
 mod startup_window;
 
 use serde::{Deserialize, Serialize};
@@ -84,9 +86,16 @@ fn main() {
     let reader_bridge = bridge.clone();
     tauri::Builder::default()
         .manage(bridge)
-        .invoke_handler(tauri::generate_handler![riela_request])
+        .invoke_handler(tauri::generate_handler![
+            riela_request,
+            remote::riela_remote_request,
+            passkey_login::riela_open_passkey_login
+        ])
         .setup(move |app| {
             if let Some(window) = app.get_webview_window("main") {
+                if let Ok(route) = std::env::var("RIELA_DESKTOP_ROUTE") {
+                    navigate_to_section(&window, &route);
+                }
                 tauri::async_runtime::spawn_blocking(move || {
                     if let Err(error) = startup_window::clamp_main_window_to_work_area(&window) {
                         eprintln!("Could not fit the Riela window: {error}");
@@ -120,6 +129,9 @@ fn main() {
                     } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
                         if value["action"] == "show" {
                             if let Some(window) = handle.get_webview_window("main") {
+                                if let Some(route) = value["route"].as_str() {
+                                    navigate_to_section(&window, route);
+                                }
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
@@ -133,4 +145,16 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("Riela desktop runtime failed");
+}
+
+fn navigate_to_section(window: &tauri::WebviewWindow, route: &str) {
+    if !matches!(route, "settings" | "instances" | "workflows") {
+        return;
+    }
+    if let Ok(mut url) = window.url() {
+        url.set_fragment(Some(&format!("/{route}")));
+        if let Err(error) = window.navigate(url) {
+            eprintln!("Could not open Riela section: {error}");
+        }
+    }
 }

@@ -1,5 +1,31 @@
 import { describe, expect, test } from 'bun:test'
-import { createBrowserTransport, createDesktopTransport, type NativeResponse } from './transport'
+import { createBrowserTransport, createDesktopTransport, normalizeServerOrigin, type NativeResponse } from './transport'
+
+test('remote desktop routes API and credentials only to the selected HTTP server', async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> }> = []
+  const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+    calls.push({ command, args })
+    return { status: 200, headers: {}, body: btoa('{}') } as T
+  }
+  await createDesktopTransport(invoke, 'https://riela.example', () => 'remote-token')('/graphql', {
+    method: 'POST', headers: { 'X-Riela-CSRF': 'csrf' }, body: '{}',
+  })
+  expect(calls[0]).toEqual({ command: 'riela_remote_request', args: {
+    endpoint: 'https://riela.example', request: { method: 'POST', path: '/graphql',
+      headers: { authorization: 'Bearer remote-token', 'x-riela-csrf': 'csrf' }, body: '{}' },
+  } })
+  await createDesktopTransport(invoke, '', () => 'remote-token')('/api/v1/bootstrap')
+  expect(calls[1]?.command).toBe('riela_request')
+  expect(calls[1]?.args).toEqual({ request: { method: 'GET', path: '/api/v1/bootstrap', headers: {}, body: '' } })
+})
+
+test('server origins reject paths and embedded credentials', () => {
+  expect(normalizeServerOrigin(' https://riela.example/ ')).toBe('https://riela.example')
+  expect(normalizeServerOrigin('http://localhost:8787')).toBe('http://localhost:8787')
+  for (const url of ['file:///tmp', 'https://user:secret@example.com', 'https://example.com/path', 'https://example.com?token=secret']) {
+    expect(() => normalizeServerOrigin(url)).toThrow()
+  }
+})
 
 test('browser credentials stay on local API calls and forbid redirects', async () => {
   const requests: Request[] = []

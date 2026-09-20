@@ -11,6 +11,7 @@ public struct SessionRerunOptions: Equatable, Sendable {
   public var mockScenarioPath: String?
   public var sessionStore: String?
   public var nestedSuperviser: Bool
+  public var preserveHistory: Bool
 
   public init(
     sessionId: String,
@@ -21,7 +22,8 @@ public struct SessionRerunOptions: Equatable, Sendable {
     workingDirectory: String = FileManager.default.currentDirectoryPath,
     mockScenarioPath: String? = nil,
     sessionStore: String? = nil,
-    nestedSuperviser: Bool = false
+    nestedSuperviser: Bool = false,
+    preserveHistory: Bool = false
   ) {
     self.sessionId = sessionId
     self.stepId = stepId
@@ -32,6 +34,7 @@ public struct SessionRerunOptions: Equatable, Sendable {
     self.mockScenarioPath = mockScenarioPath
     self.sessionStore = sessionStore
     self.nestedSuperviser = nestedSuperviser
+    self.preserveHistory = preserveHistory
   }
 }
 
@@ -115,7 +118,7 @@ public struct SessionDiscoveryRow: Codable, Equatable, Sendable {
     self.status = record.session.status
     self.failureKind = record.session.failureKind
     self.currentStepId = record.session.currentStepId
-    self.executionCount = record.session.executions.count
+    self.executionCount = record.session.newExecutionCount
     self.updatedAt = record.session.updatedAt
     self.sessionStore = sessionStore
   }

@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js'
 import { api, requireExpectedProfile } from '../api'
-import type { Execution, InstancesResponse, WorkflowSources } from '../contracts'
+import { listConsoleInstances } from '../console/client'
+import type { Execution, WorkflowSources } from '../contracts'
 import { ErrorBanner, LoadingState, PageHeader } from '../components/Primitives'
 import { createPollingResource } from '../polling'
 import { InstanceEditor, MissingSourceDetail } from './InstancesView'
@@ -23,7 +24,7 @@ export function WorkflowRunConfigurationsView(props: {
   onOpenRun: (run: Execution) => void
 }) {
   const instances = createPollingResource(() => `${props.profileKey}:${props.sourceId}`, async signal =>
-    requireExpectedProfile(await api.get<InstancesResponse>('/api/v1/instances', signal), props.profileName))
+    requireExpectedProfile(await listConsoleInstances(signal), props.profileName))
   const sources = createPollingResource(() => props.profileKey, async signal =>
     requireExpectedProfile(await api.get<WorkflowSources>('/api/v1/workflows/sources', signal), props.profileName))
   const source = createMemo(() => sources.data()?.discovered.find(item => item.id === props.sourceId))

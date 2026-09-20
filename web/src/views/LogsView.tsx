@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js'
 import { api } from '../api'
-import type { Execution, ExecutionsResponse, InstancesResponse } from '../contracts'
+import { listConsoleInstances } from '../console/client'
+import type { Execution, ExecutionsResponse } from '../contracts'
 import { EmptyState, ErrorBanner, LoadingState, PageHeader } from '../components/Primitives'
 import { createPollingResource, pollingStatusLabel } from '../polling'
 
@@ -17,7 +18,7 @@ export function LogsView(props: {
 }) {
   const instances = createPollingResource(
     () => props.profileKey,
-    (signal) => api.get<InstancesResponse>('/api/v1/instances', signal),
+    (signal) => listConsoleInstances(signal),
   )
   const executions = createPollingResource(
     () => props.selectedInstanceId ? `${props.profileKey}:${props.selectedInstanceId}` : undefined,

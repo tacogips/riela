@@ -50,7 +50,7 @@ struct DistributedWorkerCommand: Sendable {
   }
 
   func run(arguments: [String], onReady: @escaping @Sendable (String) -> Void) async -> CLICommandResult {
-    if arguments.count == 4, arguments[0...2] == ["worker", "status", "--config"] {
+    if arguments.count == 4, arguments[0...2] == ["worker", DistributedWorkerClientAction.status.rawValue, "--config"] {
       do {
         let url = URL(fileURLWithPath: arguments[3])
         let config = try DistributedControllerConfiguration.load(from: url)

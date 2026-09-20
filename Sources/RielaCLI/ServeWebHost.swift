@@ -83,6 +83,21 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     self.port = port
   }
 
+  /// The shared console read seam (design delta D8); the desktop host builds
+  /// the same provider from its own daemon state.
+  func consoleGraphQLProvider() -> RielaConsoleGraphQLProvider {
+    RielaConsoleGraphQLProvider(
+      profile: profile,
+      state: state,
+      instances: instances,
+      sources: sources,
+      revision: revision,
+      sessionStoreRoot: sessionStoreRoot,
+      runtimeSnapshot: { [self] identity in runtime.snapshot(for: identity) },
+      environment: { [self] instance in instanceEnvironment(instance) }
+    )
+  }
+
   func response(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
     var response = await routedResponse(for: request)
     if request.path.hasPrefix("/api/v1/") || request.path == "/graphql" {
@@ -127,7 +142,12 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       guard request.headers["x-riela-profile"] == profile.rawValue else {
         return .json(status: 409, .object(["error": .string("profile_conflict")]))
       }
-      let executor = ServeWebRegistryExecutor(workingDirectory: workingDirectory.path, configurationProvider: self)
+      let executor = ServeWebRegistryExecutor(
+        workingDirectory: workingDirectory.path,
+        sessionStoreRoot: sessionStoreRoot,
+        configurationProvider: self,
+        consoleProvider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() }
+      )
       return await CLIRuntimeEnvironment.$overrides.withValue(environment) {
         await DeterministicServerHTTPAdapter(
           routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
@@ -153,15 +173,6 @@ final class ServeWebHost: RielaHTTPRouteHandling {
         "configuredPort": .number(Double(configuredPort)), "boundPort": .number(Double(port)),
         "restartRequired": .bool(configuredPort != port), "state": .string("running")
       ],
-      runtimeSnapshot: { [self] identity in runtime.snapshot(for: identity) },
-      environment: { [self] instance in
-        var values = RielaAppEnvironmentFileStore(
-          environmentFileURL: instance.preference.environmentFilePath.map { URL(fileURLWithPath: $0) },
-          processEnvironment: environment
-        ).mergedEnvironment()
-        values.merge(instance.preference.environmentVariables) { _, configured in configured }
-        return values
-      },
       hostKind: .server
     ).response(for: request, csrfToken: csrfToken)
   }
@@ -169,7 +180,9 @@ final class ServeWebHost: RielaHTTPRouteHandling {
 
 private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
   let workingDirectory: String
+  let sessionStoreRoot: String?
   let configurationProvider: any RielaConfigurationGraphQLProviding
+  let consoleProvider: any GraphQLConsoleProviding
 
   func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
     var trusted = request
@@ -182,7 +195,16 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
       ),
       localManagedReferenceResolver: ServeWebManagedReferenceResolver()
       ),
-      fallback: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+      fallback: SessionControlGraphQLDocumentExecutor(
+        provider: RielaSessionControlProvider(
+          workingDirectory: workingDirectory,
+          sessionStore: sessionStoreRoot
+        ),
+        next: ConsoleGraphQLDocumentExecutor(
+          provider: consoleProvider,
+          next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+        )
+      )
     ).execute(trusted)
   }
 }

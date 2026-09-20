@@ -20,8 +20,6 @@ public struct RielaWebAPIProjection {
   private let webRevision: Int
   private let webSessionStoreRootPath: String
   private let serverSettings: JSONObject
-  private let runtimeSnapshot: (String) -> RielaAppDaemonWorkflowRuntime.RuntimeSnapshot
-  private let environment: (WorkflowInstance) -> [String: String]
 
   public init(
     profile: RielaAppProfileName,
@@ -31,8 +29,6 @@ public struct RielaWebAPIProjection {
     revision: Int,
     sessionStoreRoot: String,
     serverSettings: JSONObject,
-    runtimeSnapshot: @escaping (String) -> RielaAppDaemonWorkflowRuntime.RuntimeSnapshot,
-    environment: @escaping (WorkflowInstance) -> [String: String],
     hostKind: RielaWebHostKind = .app
   ) {
     self.hostKind = hostKind
@@ -43,8 +39,6 @@ public struct RielaWebAPIProjection {
     webRevision = revision
     webSessionStoreRootPath = sessionStoreRoot
     self.serverSettings = serverSettings
-    self.runtimeSnapshot = runtimeSnapshot
-    self.environment = environment
   }
 
   public func response(for request: RielaHTTPRequest, csrfToken: String) -> RielaHTTPResponse {
@@ -60,12 +54,6 @@ public struct RielaWebAPIProjection {
         "capabilities": .array(["instances", "executions", "workflows", "assistant", "web-server"]
           .map(JSONValue.string)),
         "server": .object(serverSettings)
-      ])
-    case ("GET", "/api/v1/instances"):
-      return webJSON([
-        "profile": .string(daemonProfileName.rawValue),
-        "revision": .number(Double(webRevision)),
-        "items": .array(webInstancesJSON())
       ])
     case ("GET", "/api/v1/workflows/sources"):
       return webJSON([
@@ -86,133 +74,9 @@ public struct RielaWebAPIProjection {
           ])
         })
       ])
-    case ("GET", "/api/v1/ops/overview"):
-      return webOpsOverview()
     default:
       return webParameterizedResponse(components: components, request: request)
     }
-  }
-
-  /// Aggregated projection for the command-deck dashboard: every discovered
-  /// workflow graph, instance runtime status, and recent runs in one payload
-  /// so the dashboard polls a single endpoint.
-  private func webOpsOverview() -> RielaHTTPResponse {
-    let projection = WorkflowWebProjectionPolicy()
-    let formatter = ISO8601DateFormatter()
-    var diagnostics: [String] = []
-    let sources = Array(daemonWorkflowSources.prefix(60))
-    var workflows: [JSONValue] = []
-    for source in sources {
-      let workflowURL = URL(fileURLWithPath: source.workflowDirectory, isDirectory: true)
-        .appendingPathComponent("workflow.json")
-      guard let data = try? Data(contentsOf: workflowURL),
-            data.count <= WorkflowWebProjectionPolicy.definitionResponseLimit,
-            let workflow = validateAuthoredWorkflowData(data).workflow else {
-        diagnostics.append(projection.persistedSummary(
-          "Workflow definition unavailable for source \(projection.safeIdentifier(source.id))",
-          context: .diagnostic
-        ).value)
-        continue
-      }
-      let steps = Array(workflow.steps.prefix(120))
-      let nodes = Array(workflow.nodes.prefix(120))
-      var transitionBudget = 240
-      let description = projection.displayText(workflow.description)
-      let displayName = projection.displayText(source.displayName)
-      workflows.append(.object([
-        "sourceId": .string(projection.identifier(source.id).value),
-        "name": .string(displayName.value),
-        "workflowId": .string(projection.identifier(workflow.workflowId).value),
-        "scope": .string(source.sourceScope.rawValue),
-        "sourceKind": .string(source.packageDirectory == nil ? "directory" : "package"),
-        "description": .string(description.value),
-        "entryStepId": .string(projection.identifier(workflow.entryStepId).value),
-        "managerStepId": workflow.managerStepId.map { .string(projection.identifier($0).value) } ?? .null,
-        "steps": .array(steps.map { step in
-          let availableTransitions = min(step.transitions?.count ?? 0, transitionBudget)
-          let transitions = Array((step.transitions ?? []).prefix(availableTransitions))
-          transitionBudget -= transitions.count
-          let stepDescription = step.description.map(projection.displayText)
-          return .object([
-            "id": .string(projection.identifier(step.id).value),
-            "nodeId": .string(projection.identifier(step.nodeId).value),
-            "role": step.role.map { .string($0.rawValue) } ?? .null,
-            "description": stepDescription.map { .string($0.value) } ?? .null,
-            "transitions": .array(transitions.map { transition in
-              .object([
-                "toStepId": .string(projection.identifier(transition.toStepId).value),
-                "label": transition.label.map { .string(projection.displayText($0).value) } ?? .null,
-                "fanoutJoinStepId": transition.fanout.map {
-                  .string(projection.identifier($0.joinStepId).value)
-                } ?? .null
-              ])
-            })
-          ])
-        }),
-        "nodes": .array(nodes.map { node in
-          .object([
-            "id": .string(projection.identifier(node.id).value),
-            "kind": node.kind.map { .string($0.rawValue) } ?? .null,
-            "role": node.role.map { .string($0.rawValue) } ?? .null,
-            "addon": node.addon.map { .string(projection.identifier($0.name).value) } ?? .null
-          ])
-        }),
-        "stepsTruncated": .bool(workflow.steps.count > steps.count || workflow.nodes.count > nodes.count)
-      ]))
-    }
-    let instances: [JSONValue] = daemonInstances.map { instance in
-      let snapshot = runtimeSnapshot(instance.identity)
-      return .object([
-        "id": .string(instance.identity),
-        "sourceId": .string(instance.sourceIdentity),
-        "isDefault": .bool(instance.isDefault),
-        "name": .string(projection.displayText(instance.displayName).value),
-        "workflowId": .string(projection.identifier(instance.source.workflowId).value),
-        "status": .string(snapshot.status.rawValue),
-        "active": .bool(instance.preference.active)
-      ])
-    }
-    var runRecords: [(updatedAt: Date, json: JSONValue)] = []
-    for instance in daemonInstances {
-      guard let state = try? WorkflowViewerLoader().loadBounded(
-        WorkflowViewerLoadRequest(
-          workflowDirectory: instance.source.workflowDirectory,
-          sessionStoreRoot: webSessionStoreRootPath
-        ),
-        maximumSessionCount: 21
-      ) else {
-        diagnostics.append(projection.persistedSummary(
-          "Runs unavailable for instance \(projection.safeIdentifier(instance.identity))",
-          context: .diagnostic
-        ).value)
-        continue
-      }
-      for session in state.sessions.prefix(20) {
-        runRecords.append((session.updatedAt, .object([
-          "instanceId": .string(projection.identifier(instance.identity).value),
-          "sessionId": .string(projection.identifier(session.sessionId).value),
-          "workflowId": .string(projection.identifier(session.workflowId).value),
-          "status": .string(session.status.rawValue),
-          "currentStepId": session.currentStepId.map { .string(projection.identifier($0).value) } ?? .null,
-          "activeStepIds": .array(session.activeStepIds.prefix(20).map {
-            .string(projection.identifier($0).value)
-          }),
-          "updatedAt": .string(formatter.string(from: session.updatedAt))
-        ])))
-      }
-    }
-    runRecords.sort { $0.updatedAt > $1.updatedAt }
-    let runs = Array(runRecords.prefix(60))
-    return webJSON([
-      "profile": .string(daemonProfileName.rawValue),
-      "revision": .number(Double(webRevision)),
-      "workflows": .array(workflows),
-      "workflowsTruncated": .bool(daemonWorkflowSources.count > sources.count),
-      "instances": .array(instances),
-      "runs": .array(runs.map(\.json)),
-      "runsTruncated": .bool(runRecords.count > runs.count),
-      "diagnostics": .array(diagnostics.prefix(20).map(JSONValue.string))
-    ])
   }
 
   private func webParameterizedResponse(
@@ -237,9 +101,6 @@ public struct RielaWebAPIProjection {
           let identity = components[3].removingPercentEncoding else {
       return webError(status: 404, code: "not_found", message: "Unknown API route")
     }
-    if components.count == 4, request.method == "GET" {
-      return webInstanceDetail(identity: identity)
-    }
     if components.count == 5, components[4] == "executions", request.method == "GET" {
       return webExecutions(identity: identity)
     }
@@ -250,23 +111,6 @@ public struct RielaWebAPIProjection {
       return webExecutionDetail(identity: identity, sessionId: sessionId)
     }
     return webError(status: 404, code: "not_found", message: "Unknown API route")
-  }
-
-  private func webInstanceDetail(identity: String) -> RielaHTTPResponse {
-    if let instance = daemonInstances.first(where: { $0.identity == identity }) {
-      return webJSON([
-        "profile": .string(daemonProfileName.rawValue),
-        "revision": .number(Double(webRevision)),
-        "item": webInstanceJSON(instance)
-      ])
-    }
-    if let preference = daemonState.preferences[identity] {
-      return webJSON([
-        "revision": .number(Double(webRevision)),
-        "item": webMissingSourceInstanceJSON(identity: identity, preference: preference)
-      ])
-    }
-    return webError(status: 404, code: "instance_not_found", message: "Workflow instance was not found")
   }
 
   private func webExecutions(identity: String) -> RielaHTTPResponse {
@@ -657,99 +501,6 @@ public struct RielaWebAPIProjection {
     } catch {
       return webError(status: 404, code: "workflow_definition_unavailable", message: "Workflow definition was not found")
     }
-  }
-
-  private func webInstanceJSON(_ instance: WorkflowInstance) -> JSONValue {
-    let snapshot = runtimeSnapshot(instance.identity)
-    let preference = instance.preference
-    let effectiveEnvironment = environment(instance)
-    return .object([
-      "id": .string(instance.identity),
-      "sourceId": .string(instance.sourceIdentity),
-      "isDefault": .bool(instance.isDefault),
-      "name": .string(instance.displayName),
-      "workflowId": .string(instance.source.workflowId),
-      "source": .string(instance.source.sourceDescription),
-      "sourceKind": .string(instance.source.packageDirectory == nil ? "directory" : "package"),
-      "status": .string(snapshot.status.rawValue),
-      "statusDetail": .string(snapshot.detail),
-      "active": .bool(preference.active),
-      "enabledAtLaunch": .bool(preference.enabledAtLaunch),
-      "workingDirectory": preference.workingDirectory.map(JSONValue.string) ?? .null,
-      "environmentFilePath": preference.environmentFilePath.map(JSONValue.string) ?? .null,
-      "environmentVariables": .array(preference.environmentVariables.keys.sorted().map { name in
-        .object([
-          "name": .string(name),
-          "isSet": .bool(true),
-          "masked": .string("••••••••")
-        ])
-      }),
-      "requiredEnvironment": .array(instance.candidate.requiredEnvironment.map { requirement in
-        let value = effectiveEnvironment[requirement.name]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .object([
-          "name": .string(requirement.name),
-          "description": requirement.description.map(JSONValue.string) ?? .null,
-          "required": .bool(true),
-          "secret": .bool(requirement.secret),
-          "source": .string("workflow"),
-          "present": .bool(value?.isEmpty == false)
-        ])
-      }),
-      "workflowVariables": .object(preference.defaultVariables),
-      "nodePatchCount": .number(Double(preference.nodePatches.count)),
-      "nodePatches": .object(preference.nodePatches.mapValues { .object($0.jsonObject) }),
-      "eventSources": .array(instance.source.eventSources.map { eventSource in
-        .object(["id": .string(eventSource.id), "kind": .string(eventSource.kind)])
-      })
-    ])
-  }
-
-  private func webInstancesJSON() -> [JSONValue] {
-    let availableIdentities = Set(daemonInstances.map(\.identity))
-    let availableItems = daemonInstances.map(webInstanceJSON)
-    let missingSourceItems = daemonState.preferences
-      .filter { !availableIdentities.contains($0.key) }
-      .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-      .map { identity, preference in
-        webMissingSourceInstanceJSON(identity: identity, preference: preference)
-      }
-    return availableItems + missingSourceItems
-  }
-
-  private func webMissingSourceInstanceJSON(
-    identity: String,
-    preference: RielaAppDaemonWorkflowPreference
-  ) -> JSONValue {
-    let sourceIdentity = preference.sourceIdentity ?? identity
-    let fallbackName = identity == sourceIdentity ? "標準設定" : identity
-    let name = preference.displayName?.isEmpty == false ? preference.displayName ?? fallbackName : fallbackName
-    return .object([
-      "id": .string(identity),
-      "sourceId": .string(sourceIdentity),
-      "isDefault": .bool(identity == sourceIdentity),
-      "name": .string(name),
-      "workflowId": .string(sourceIdentity),
-      "source": .string("Missing source: \(sourceIdentity)"),
-      "sourceKind": .string("missing"),
-      "status": .string("needsSource"),
-      "statusDetail": .string("The configured workflow source is unavailable. Relink it in the native app."),
-      "active": .bool(preference.active),
-      "enabledAtLaunch": .bool(preference.enabledAtLaunch),
-      "workingDirectory": preference.workingDirectory.map(JSONValue.string) ?? .null,
-      "environmentFilePath": preference.environmentFilePath.map(JSONValue.string) ?? .null,
-      "environmentVariables": .array(preference.environmentVariables.keys.sorted().map { name in
-        .object([
-          "name": .string(name),
-          "isSet": .bool(true),
-          "masked": .string("••••••••")
-        ])
-      }),
-      "requiredEnvironment": .array([]),
-      "workflowVariables": .object(preference.defaultVariables),
-      "nodePatchCount": .number(Double(preference.nodePatches.count)),
-      "nodePatches": .object(preference.nodePatches.mapValues { .object($0.jsonObject) }),
-      "eventSources": .array([])
-    ])
   }
 
   private func webJSON(_ object: JSONObject, status: Int = 200) -> RielaHTTPResponse {

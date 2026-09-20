@@ -27,6 +27,11 @@ async function installStudio(page: Page, existing?: Record<string, unknown>) {
           accepted: true, workflow: { ...workflow(), definition: null, definitionRevision: null }, errors: [],
         } })
       }
+      // Console reads moved off /api/v1 onto the control plane (design 2.4).
+      case 'WebConsoleInstances': return result({ consoleInstances: { profile: 'studio', revision: 1, items: [] } })
+      case 'WebConsoleInstance': return result({ consoleInstance: { profile: 'studio', revision: 1, item: null } })
+      case 'WebOpsOverview': return result({ opsOverview: { profile: 'studio', revision: 1, workflows: [],
+        workflowsTruncated: false, instances: [], runs: [], runsTruncated: false, diagnostics: [] } })
       default: return route.fulfill({ status: 418, body: body.operationName })
     }
   })
@@ -34,8 +39,6 @@ async function installStudio(page: Page, existing?: Record<string, unknown>) {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/v1/bootstrap') return route.fulfill({ json: { apiVersion: 'v1', profile: 'studio', csrfToken: 'csrf', revision: 1,
       capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, state: 'running' } } })
-    if (path === '/api/v1/instances') return route.fulfill({ json: { profile: 'studio', revision: 1, items: [] } })
-    if (path === '/api/v1/ops/overview') return route.fulfill({ json: { profile: 'studio', revision: 1, workflows: [], instances: [], runs: [], diagnostics: [] } })
     if (path === '/api/v1/workflow-editor/definition') return route.fulfill({ json: workflow() })
     if (path === '/api/v1/workflow-editor/generations') {
       generationRequests.push(route.request().postDataJSON())

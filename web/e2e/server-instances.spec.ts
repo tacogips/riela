@@ -5,9 +5,24 @@ test('server instance controls start, restart, disable at launch and stop', asyn
   let running = false
   let enabled = false
   const actions: string[] = []
-  await page.route('**/graphql', route => route.fulfill({
-    json: { data: { workflows: { workflows: [], errors: [] } } },
-  }))
+  const consoleInstance = () => ({
+    id: 'test-instance', sourceId: 'test-source', isDefault: true, name: 'Test instance', workflowId: 'test-workflow', source: 'project', sourceKind: 'directory',
+    status: running ? 'running' : 'stopped', statusDetail: running ? 'Running' : 'Inactive',
+    active: running, enabledAtLaunch: enabled, workingDirectory: null, environmentFilePath: null,
+    environmentVariables: [], requiredEnvironment: [], workflowVariables: {}, nodePatchCount: 0,
+    nodePatches: {}, eventSources: [],
+  })
+  // Console reads moved off /api/v1 onto the control plane (design 2.4).
+  await page.route('**/graphql', route => {
+    const body = route.request().postDataJSON() as { operationName?: string }
+    if (body.operationName === 'WebConsoleInstances') {
+      return route.fulfill({ json: { data: { consoleInstances: { profile: 'default', revision, items: [consoleInstance()] } } } })
+    }
+    if (body.operationName === 'WebConsoleInstance') {
+      return route.fulfill({ json: { data: { consoleInstance: { profile: 'default', revision, item: consoleInstance() } } } })
+    }
+    return route.fulfill({ json: { data: { workflows: { workflows: [], errors: [] } } } })
+  })
   await page.route('**/api/v1/**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path.endsWith('/actions')) {
@@ -41,13 +56,7 @@ test('server instance controls start, restart, disable at launch and stop', asyn
       },
       diagnostics: [], diagnosticsTotalCount: 0, diagnosticsTruncated: false, truncated: false,
     } })
-    return route.fulfill({ json: { profile: 'default', revision, items: [{
-      id: 'test-instance', sourceId: 'test-source', isDefault: true, name: 'Test instance', workflowId: 'test-workflow', source: 'project', sourceKind: 'directory',
-      status: running ? 'running' : 'stopped', statusDetail: running ? 'Running' : 'Inactive',
-      active: running, enabledAtLaunch: enabled, workingDirectory: null, environmentFilePath: null,
-      environmentVariables: [], requiredEnvironment: [], workflowVariables: {}, nodePatchCount: 0,
-      nodePatches: {}, eventSources: [],
-    }] } })
+    return route.fulfill({ json: { profile: 'default', revision, items: [], diagnostics: [], truncated: false } })
   })
   await page.goto('/')
   await page.getByRole('button', { name: 'ワークフローを開く Test workflow', exact: true }).click()

@@ -5,20 +5,20 @@ import RielaServer
 
 extension ScopedParityCommandRunner {
   func serverResponse(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> ServerResponseDescriptor {
-    let action = options.command ?? "status"
+    let action = options.command ?? ServeClientAction.status.rawValue
     let handler = DeterministicServerRouteHandler()
     switch action {
-    case "status", "health":
+    case ServeClientAction.status.rawValue, ServeClientAction.health.rawValue:
       return await handler.route(
         ServerRequestEnvelope(method: "GET", path: "/healthz"),
         context: serveRequestContext(parsed: parsed)
       )
-    case "overview":
+    case ServeClientAction.overview.rawValue:
       return await handler.route(
         ServerRequestEnvelope(method: "GET", path: "/overview"),
         context: serveRequestContext(parsed: parsed)
       )
-    case "graphql":
+    case ServeClientAction.graphql.rawValue:
       let bodyObject: JSONObject
       if let target = options.target {
         bodyObject = try JSONReferenceLoader().object(

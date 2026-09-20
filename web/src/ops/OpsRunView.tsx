@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
+import { getOpsOverview } from '../console/client'
 import type {
-  OpsOverviewResponse,
   RunDetailGate,
   RunDetailLog,
   RunDetailResponse,
@@ -36,7 +36,7 @@ export function OpsRunView(props: {
   )
   const [overview] = createResource(
     () => props.profileKey,
-    () => api.get<OpsOverviewResponse>('/api/v1/ops/overview'),
+    () => getOpsOverview(),
   )
   const definition = createMemo(() => {
     const workflowId = detail.data()?.session.workflowId ?? props.workflowId

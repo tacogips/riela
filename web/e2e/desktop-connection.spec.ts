@@ -24,7 +24,16 @@ test('local needs no login; web mode authenticates remotely and returning local 
       else if (args.request.path === '/api/v1/workflows/sources') body = {
         profile, revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [],
       }
-      else if (args.request.path === '/graphql') body = { data: { workflows: { workflows: [], errors: [] } } }
+      else if (args.request.path === '/graphql') {
+        // Console reads moved off /api/v1 onto the control plane (design 2.4).
+        const operation = (JSON.parse(args.request.body || '{}') as { operationName?: string }).operationName
+        if (operation === 'WebConsoleInstances') body = { data: { consoleInstances: { profile, revision: 1, items: [] } } }
+        else if (operation === 'WebConsoleInstance') body = { data: { consoleInstance: { profile, revision: 1, item: null } } }
+        else if (operation === 'WebOpsOverview') {
+          body = { data: { opsOverview: { profile, revision: 1, workflows: [], workflowsTruncated: false,
+            instances: [], runs: [], runsTruncated: false, diagnostics: [] } } }
+        } else body = { data: { workflows: { workflows: [], errors: [] } } }
+      }
       return { status: authenticated ? 200 : 401, headers: {}, body: btoa(JSON.stringify(body)) }
     } } } })
   })

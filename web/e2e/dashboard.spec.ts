@@ -295,6 +295,19 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     if (operation === 'WebMutableWorkflows') {
       return result({ workflows: { workflows: [], errors: [] } })
     }
+    // Console reads moved off /api/v1 onto the control plane (design 2.4).
+    if (operation === 'WebConsoleInstances') {
+      if (options.instancesDelay) await new Promise((resolve) => setTimeout(resolve, options.instancesDelay))
+      return result({ consoleInstances: { profile: 'e2e', revision: 1, items: [instance, missingSourceInstance] } })
+    }
+    if (operation === 'WebConsoleInstance') {
+      const identity = (body.variables as { identity?: string } | undefined)?.identity
+      const item = [instance, missingSourceInstance].find((candidate) => candidate.id === identity) ?? null
+      return result({ consoleInstance: { profile: 'e2e', revision: 2, item } })
+    }
+    if (operation === 'WebOpsOverview') {
+      return result({ opsOverview: opsOverview })
+    }
     unexpectedRequests.push(`POST /graphql:${operation}`)
     return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected GraphQL operation' }) })
   })
@@ -317,13 +330,6 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
         ] }, status: 'Worker controller: stopped', credentialsPath: '/profiles/e2e/controller.env' })
     }
     if (url.pathname === '/api/v1/bootstrap') return json({ apiVersion: 'v1', profile: 'e2e', csrfToken: 'csrf', revision: 1, capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, boundPort: 19091, restartRequired: false, state: 'running' } })
-    if (url.pathname === '/api/v1/instances' && request.method() === 'GET') {
-      if (options.instancesDelay) await new Promise((resolve) => setTimeout(resolve, options.instancesDelay))
-      return json({ profile: 'e2e', revision: 1, items: [instance, missingSourceInstance] })
-    }
-    if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}` && request.method() === 'GET') {
-      return json({ profile: 'e2e', revision: 2, item: instance })
-    }
     if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}/executions`) {
       return json({ revision: 1, instanceId: compositeId, items: [], diagnostics: [], truncated: false })
     }
@@ -355,7 +361,6 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
         diagnostics: [], diagnosticsTotalCount: 0, diagnosticsTruncated: false, truncated: false,
       })
     }
-    if (url.pathname === '/api/v1/ops/overview') return json(opsOverview)
     unexpectedRequests.push(`${request.method()} ${url.pathname}`)
     return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unexpected_request', message: `${request.method()} ${url.pathname}` }, revision: 1 }) })
   })

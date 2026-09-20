@@ -289,7 +289,15 @@ final class GraphQLContractsTests: XCTestCase {
       "type WorkflowInstanceQueryPayload",
       "type WorkflowInstancesQueryPayload",
       "type WorkflowInstanceMutationPayload",
-      "input WorkflowInstanceInput { identity: String!, workflowId: String!, sourceIdentity: String, displayName: String, configuration: JSONObject }",
+      """
+      input WorkflowInstanceInput {
+        identity: String!
+        workflowId: String!
+        sourceIdentity: String
+        displayName: String
+        configuration: JSONObject
+      }
+      """,
       "workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!",
       "workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!",
       "createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!",
@@ -299,10 +307,45 @@ final class GraphQLContractsTests: XCTestCase {
       "workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!",
       "createdOrder: Int!",
       "failureReason: String",
-      "input ContinueSessionInput { workflowId: String!, sessionId: String!, input: JSONObject! }",
-      "input SendManagerMessageInput { workflowId: String!, workflowExecutionId: String!, message: String, actions: JSON, attachments: JSON, idempotencyKey: String, managerSessionId: String, managerNodeExecId: String }",
-      "input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }",
-      "input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }",
+      """
+      input ContinueSessionInput {
+        workflowId: String!
+        sessionId: String!
+        input: JSONObject!
+      }
+      """,
+      """
+      input SendManagerMessageInput {
+        workflowId: String!
+        workflowExecutionId: String!
+        message: String
+        actions: JSON
+        attachments: JSON
+        idempotencyKey: String
+        managerSessionId: String
+        managerNodeExecId: String
+      }
+      """,
+      """
+      input ReplayCommunicationInput {
+        workflowId: String!
+        workflowExecutionId: String!
+        communicationId: String!
+        reason: String
+        idempotencyKey: String
+        managerSessionId: String
+      }
+      """,
+      """
+      input RetryCommunicationDeliveryInput {
+        workflowId: String!
+        workflowExecutionId: String!
+        communicationId: String!
+        reason: String
+        idempotencyKey: String
+        managerSessionId: String
+      }
+      """,
       "managerSession(managerSessionId: String): ManagerSessionView",
       "continueSession(input: ContinueSessionInput!): ControlPlaneResult!",
       "sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!",
@@ -398,7 +441,6 @@ final class GraphQLContractsTests: XCTestCase {
     XCTAssertNoThrow(try JSONEncoder().encode(statsDTO))
     XCTAssertNoThrow(try JSONEncoder().encode(diffDTO))
   }
-
 
   func testSchemaContractFieldSetsMatchEncodedDTOs() throws {
     let date = Date(timeIntervalSince1970: 2_000)

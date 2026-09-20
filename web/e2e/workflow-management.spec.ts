@@ -134,6 +134,31 @@ async function installWorkflowAPI(page: Page, options: {
       }
       return result({ updateWorkflowInstanceConfiguration: { profile: 'e2e', revision: 2 } })
     }
+    // Console reads moved off /api/v1 onto the control plane (design 2.4).
+    if (operation === 'WebConsoleInstances') {
+      instanceFetches += 1
+      const changed = options.externalInstanceChange && instanceFetches > 2
+      return result({
+        consoleInstances: {
+          profile: 'e2e',
+          revision: changed ? 2 : 1,
+          items: options.staleSelection
+            ? [instance, secondInstance]
+            : [{ ...instance, workingDirectory: changed ? '/tmp/external-change' : null }, ...(options.staleSourceSelection ? [{ ...instance, id: 'second-source-default', sourceId: 'source-second', isDefault: true, workflowId: 'second-loop' }] : [])],
+        },
+      })
+    }
+    if (operation === 'WebConsoleInstance') {
+      return result({
+        consoleInstance: {
+          profile: 'e2e',
+          revision: options.externalInstanceChange ? 2 : 1,
+          item: options.externalInstanceChange
+            ? { ...instance, workingDirectory: '/tmp/external-change' }
+            : instance,
+        },
+      })
+    }
     return route.fulfill({ status: 418, body: 'unexpected operation' })
   })
   await page.route('**/api/v1/**', async (route: Route) => {
@@ -145,26 +170,6 @@ async function installWorkflowAPI(page: Page, options: {
       body: JSON.stringify(value),
     })
     if (path === '/api/v1/bootstrap') return json({ apiVersion: 'v1', profile: 'e2e', csrfToken: 'csrf', revision: 1, capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, boundPort: 19091, restartRequired: false, state: 'running' } })
-    if (path === '/api/v1/instances' && request.method() === 'GET') {
-      instanceFetches += 1
-      const changed = options.externalInstanceChange && instanceFetches > 2
-      return json({
-        profile: 'e2e',
-        revision: changed ? 2 : 1,
-        items: options.staleSelection
-          ? [instance, secondInstance]
-          : [{ ...instance, workingDirectory: changed ? '/tmp/external-change' : null }, ...(options.staleSourceSelection ? [{ ...instance, id: 'second-source-default', sourceId: 'source-second', isDefault: true, workflowId: 'second-loop' }] : [])],
-      })
-    }
-    if (path === `/api/v1/instances/${encodeURIComponent(instanceId)}` && request.method() === 'GET') {
-      return json({
-        profile: 'e2e',
-        revision: options.externalInstanceChange ? 2 : 1,
-        item: options.externalInstanceChange
-          ? { ...instance, workingDirectory: '/tmp/external-change' }
-          : instance,
-      })
-    }
     if (path === `/api/v1/instances/${encodeURIComponent(instanceId)}/executions`) {
       if (options.staleSelection) await new Promise((resolve) => setTimeout(resolve, 150))
       return json({ revision: 1, instanceId, diagnostics: [], truncated: false, items: [{ sessionId, workflowId: 'review-loop', status: 'completed', currentStepId: null, activeStepIds: [], updatedAt: '2026-07-29T01:00:00Z' }] })

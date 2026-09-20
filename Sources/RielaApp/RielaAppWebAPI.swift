@@ -17,14 +17,27 @@ extension RielaApp {
       sources: daemonWorkflowSources,
       revision: webRevision,
       sessionStoreRoot: daemonSessionStoreRoot(profileName: daemonProfileName),
-      serverSettings: webServerSettingsJSON(),
+      serverSettings: webServerSettingsJSON()
+    ).response(for: request, csrfToken: csrfToken)
+  }
+
+  /// The shared console read seam (design delta D8); `riela serve` builds the
+  /// same provider from its own daemon state.
+  func consoleGraphQLProvider() -> RielaConsoleGraphQLProvider {
+    RielaConsoleGraphQLProvider(
+      profile: daemonProfileName,
+      state: daemonState,
+      instances: daemonInstances,
+      sources: daemonWorkflowSources,
+      revision: webRevision,
+      sessionStoreRoot: daemonSessionStoreRoot(profileName: daemonProfileName),
       runtimeSnapshot: { [self] identity in
         daemonRuntime.snapshot(for: profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity))
       },
       environment: { [self] instance in
         daemonEnvironment(for: instance.candidate, preference: instance.preference)
       }
-    ).response(for: request, csrfToken: csrfToken)
+    )
   }
 
   var webWorkflowHandler: RielaWebWorkflowRequestHandler {

@@ -1,6 +1,8 @@
 # Control-surface parity: one operation catalog for CLI, GraphQL, web API, library, and skills
 
-Status: accepted design, 2026-09-20. Not implemented. Plan:
+Status: accepted design, 2026-09-20; implemented 2026-09-21 on
+`feat/control-surface-parity` (see section 6 for the deltas taken during
+implementation and the one gap it does not close). Plan:
 `impl-plans/active/control-surface-parity.md`. Companion to the Monja design
 `design-docs/specs/design-surface-parity.md` in the sibling repository, which
 applies the same mechanism to Monja's REST, GraphQL, MCP, and SDK surfaces.
@@ -267,3 +269,86 @@ changes the design's intent.
   `RielaAppSupport` consumed by both `ServeWebHost` and the desktop
   composite, and a new `opsOverview` query whose DTO mirrors what the ops
   views actually consume from `/api/v1/ops/overview` today.
+
+## 6. Deltas accepted during implementation (2026-09-21)
+
+Recorded while implementing `impl-plans/active/control-surface-parity.md` from
+checkpoint `f8b763a`. None changes the design's intent; each resolves a fact
+the tree did not provide. The plan's progress log carries the evidence.
+
+- **D9 — SDL normalization.** The checked-in control-plane SDL is the
+  generator's canonical output (every type multi-line, root fields in
+  `SurfaceCatalog` order), not the previous hand-written mix of one-line and
+  multi-line declarations. This was pre-authorized by the plan's open decision
+  point. Assertions that pinned the old formatting were rewritten to pin the
+  same fields in the new formatting.
+- **D10 — executor placement.** `GraphQLDocumentDomainPreflighting` is
+  internal to `RielaGraphQL`, so an executor outside that module cannot join
+  the composite's mixed-domain preflight. The console and session-control
+  executors live in `RielaGraphQL`; the shared console *provider* lives in
+  `RielaAppSupport` as D8 requires, consumed by `ServeWebHost` and the desktop
+  composite alike.
+- **D11 — `/api/v1/ops/overview` is retired whole.** The ops views consume one
+  payload (workflows, instances and runs together); splitting the route would
+  leave the dashboard reading two sources. `Query.opsOverview` replaces it and
+  the route is deleted.
+- **D12 — `continueSession` had no executor.** Section 1 counted
+  `continueSession` as GraphQL coverage. The schema published it and
+  `GraphQLControlPlaneServicing` declared it, but no document executor
+  answered it. The session-control executor implements it on the resume path,
+  which is what the CLI's `SessionContinueCommand` does.
+
+### What the session-control mutations do and do not guarantee
+
+CSP-5 asked for manager-session authentication "identical to `continueSession`".
+D12 records why that phrase has no content: `continueSession` had no resolver,
+so there was no authentication to copy. The mutations therefore ship with these
+explicit non-guarantees, which are also stated on the Swift input types and in
+`Resources/skills/riela-workflow-reference`:
+
+- **`managerSessionId` is accepted and never read.** No manager-session
+  verifier exists anywhere in the tree. The field is carried because the
+  manager control-plane design puts it on every request DTO and a future
+  verifier will need it; today it authenticates nothing and must not be read as
+  if it did.
+- **Access control is the local trust boundary.** A session-control document is
+  answered only when `isLocallyTrusted` is set, which the hosts set for their
+  own in-process executor, behind `ServeWebHost`'s browser-provenance/Passkey
+  gate and the desktop composite's internal credential. This is the same
+  boundary the pre-existing registry mutations use.
+- **Workflow ownership is checked.** Every session-control call loads the
+  persisted session and rejects a `workflowId` that does not own it
+  (`SESSION_WORKFLOW_MISMATCH`), so a guessed session id cannot be driven under
+  an arbitrary workflow name.
+- **`stopSession` takes the entered session id.** A rerun registers its running
+  task under the session it re-enters; the new session id its payload reports
+  does not exist until the rerun has finished, so it is never a stop handle.
+
+### What "implemented on the graphql surface" means
+
+For a catalog row, `graphql: .implemented` means *the field is published by the
+control-plane schema* — that is what the schema-to-catalog bijection gate
+checks. It does not by itself mean a document executor answers the field. The
+17 fields where those two differ are the F1 follow-up below, pinned by
+`Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift` so the set
+can only shrink.
+
+### Correction to section 1
+
+Section 1 says GraphQL "covers a subset", listing queries and mutations as
+implemented coverage. That is true of the *schema*, not of the *executors*:
+17 published fields have no document executor and cannot be reached over
+`/graphql` today. They are recorded, with evidence, as follow-up F1 in the
+plan and pinned by a machine-checked allowlist in
+`Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift`. Closing
+that gap is its own piece of work; this feature does not do it.
+
+### The dual-lexer finding is closed, negative
+
+There is one GraphQL parser. `Tests/RielaGraphQLTests/SingleParserTests.swift`
+asserts the lexing primitives are declared in exactly one file, that no other
+file declares a GraphQL document parser, that all four `/graphql` entry points
+assemble the shared composite executor, and that two entry-point assemblies
+reject the same malformed document identically. `RielaServer`'s
+`parseGraphQLEnvelope` decodes the HTTP JSON envelope only and delegates
+operation-name parsing to the shared parser.

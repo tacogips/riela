@@ -1,7 +1,7 @@
 import Foundation
 import RielaMemory
 
-public enum MemoryCommandKind: String, Codable, Sendable {
+public enum MemoryCommandKind: String, Codable, CaseIterable, Sendable {
   case save
   case update
   case load

@@ -29,18 +29,18 @@ struct PasskeyCommand {
       let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true)
       let store = RielaPasskeyStore(root: RielaPasskeyConfiguration.storeRoot(home: home, environment: environment), origin: configuration.origin)
       switch arguments.first {
-      case "invite" where arguments.count == 2:
+      case PasskeyClientAction.invite.rawValue where arguments.count == 2:
         return CLICommandResult(exitCode: .success, stdout: try store.invite(name: arguments[1]) + "\n")
-      case "users" where arguments.count == 1:
+      case PasskeyClientAction.users.rawValue where arguments.count == 1:
         let users = try store.users().map { user in
           PasskeyUserListing(name: user.name, enabled: user.enabled, credentials: user.credentials.map { .init(id: $0.id, revoked: $0.revoked) })
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return CLICommandResult(exitCode: .success, stdout: (String(data: try encoder.encode(users), encoding: .utf8) ?? "[]") + "\n")
-      case "revoke-user" where arguments.count == 2:
+      case PasskeyClientAction.revokeUser.rawValue where arguments.count == 2:
         try store.revokeUser(name: arguments[1])
-      case "revoke-key" where arguments.count == 2:
+      case PasskeyClientAction.revokeKey.rawValue where arguments.count == 2:
         try store.revokeCredential(id: arguments[1])
       default:
         return CLICommandResult(exitCode: .usage, stderr: Self.help)

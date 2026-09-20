@@ -1,7 +1,8 @@
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { APIError, api, requireExpectedProfile } from '../api'
 import { configurationClient } from '../config/client'
-import type { Instance, InstanceResponse } from '../contracts'
+import { getConsoleInstance } from '../console/client'
+import type { Instance } from '../contracts'
 import { MutationMessage } from '../components/Primitives'
 import { validateJSONObject } from '../workflows/validation'
 
@@ -93,9 +94,7 @@ export function InstanceEditor(props: {
 
   const refreshAndRebase = async () => {
     try {
-      const response = await api.get<InstanceResponse>(
-        `/api/v1/instances/${encodeURIComponent(props.instance().id)}`,
-      )
+      const response = await getConsoleInstance(props.instance().id)
       const current = requireExpectedProfile(response, props.profileName)
       resetEditor(current.item, current.revision)
       await props.onRefresh()

@@ -34,7 +34,7 @@ struct ParsedRoutineOptions: ParsableArguments, Sendable {
 
 extension ScopedParityCommandRunner {
   func routineResult(options: CLICommandOptions) throws -> ScopedParityCommandResult {
-    let action = options.command ?? "list"
+    let action = options.command ?? RoutineClientAction.list.rawValue
     let parsed = try ParsedRoutineOptions(options.arguments)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     let service = RoutineService(
@@ -43,7 +43,7 @@ extension ScopedParityCommandRunner {
     )
     do {
       switch action {
-      case "create":
+      case RoutineClientAction.create.rawValue:
         guard let name = parsed.name, !name.isEmpty else {
           throw CLIUsageError("routine create requires --name")
         }
@@ -71,7 +71,7 @@ extension ScopedParityCommandRunner {
           target: result.routine.routineId,
           records: [routineSummaryLine(result.routine)] + result.diagnostics
         )
-      case "list":
+      case RoutineClientAction.list.rawValue:
         let statusFilter = try parsed.status.map { raw -> RoutineStatus in
           guard let status = RoutineStatus(rawValue: raw) else {
             throw CLIUsageError("unknown routine status '\(raw)'; expected active, disabled, or completed")
@@ -87,7 +87,7 @@ extension ScopedParityCommandRunner {
           target: options.target,
           records: routines.map(routineSummaryLine)
         )
-      case "inspect":
+      case RoutineClientAction.inspect.rawValue:
         guard let routineId = options.target else {
           throw CLIUsageError("routine inspect requires <routine-id>")
         }
@@ -97,7 +97,7 @@ extension ScopedParityCommandRunner {
           target: routineId,
           records: routineDetailLines(record)
         )
-      case "complete":
+      case RoutineClientAction.complete.rawValue:
         guard let routineId = options.target else {
           throw CLIUsageError("routine complete requires <routine-id>")
         }
@@ -111,13 +111,13 @@ extension ScopedParityCommandRunner {
           target: routineId,
           records: [routineSummaryLine(result.routine)] + result.diagnostics
         )
-      case "enable", "disable":
+      case RoutineClientAction.enable.rawValue, RoutineClientAction.disable.rawValue:
         guard let routineId = options.target else {
           throw CLIUsageError("routine \(action) requires <routine-id>")
         }
         let result = try service.setStatus(
           routineId: routineId,
-          status: action == "enable" ? .active : .disabled,
+          status: action == RoutineClientAction.enable.rawValue ? .active : .disabled,
           routineStoreRoot: parsed.routineStore
         )
         return routineCommandResult(
@@ -125,7 +125,7 @@ extension ScopedParityCommandRunner {
           target: routineId,
           records: [routineSummaryLine(result.routine)] + result.diagnostics
         )
-      case "delete":
+      case RoutineClientAction.delete.rawValue:
         guard let routineId = options.target else {
           throw CLIUsageError("routine delete requires <routine-id>")
         }

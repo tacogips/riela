@@ -1,10 +1,28 @@
+// GENERATED FILE - do not edit by hand.
+//
+// Rendered by `GraphQLSchemaGenerator.render()` from the control-plane
+// contract descriptors in `GraphQLSchemaGenerator.swift` plus the GraphQL
+// bindings in `SurfaceCatalog`. Regenerate with
+// `scripts/surface-parity/generate-sdl.sh`; `SurfaceParityGraphQLTests`
+// fails if this file and the generator disagree by a single byte.
 extension GraphQLContractProjector {
   public static let schemaContract = """
   scalar JSON
   scalar JSONObject
-  type ControlPlaneResult { accepted: Boolean!, status: String!, diagnostics: [String!]! }
-  type ManagerIntentSummary { kind: String!, targetId: String, reason: String }
-  type ManagerSessionView { session: JSON!, messages: JSON! }
+  type ControlPlaneResult {
+    accepted: Boolean!
+    status: String!
+    diagnostics: [String!]!
+  }
+  type ManagerIntentSummary {
+    kind: String!
+    targetId: String
+    reason: String
+  }
+  type ManagerSessionView {
+    session: JSON!
+    messages: JSON!
+  }
   type SendManagerMessagePayload {
     accepted: Boolean!
     managerMessageId: String!
@@ -16,8 +34,17 @@ extension GraphQLContractProjector {
     workflowExecutionId: String!
     managerSessionId: String!
   }
-  type ReplayCommunicationPayload { sourceCommunicationId: String!, workflowExecutionId: String!, replayedCommunicationId: String!, status: String! }
-  type RetryCommunicationDeliveryPayload { communicationId: String!, activeDeliveryAttemptId: String!, status: String! }
+  type ReplayCommunicationPayload {
+    sourceCommunicationId: String!
+    workflowExecutionId: String!
+    replayedCommunicationId: String!
+    status: String!
+  }
+  type RetryCommunicationDeliveryPayload {
+    communicationId: String!
+    activeDeliveryAttemptId: String!
+    status: String!
+  }
   type LoopEvidenceSummary {
     manifestId: String!
     schemaVersion: Int!
@@ -39,7 +66,12 @@ extension GraphQLContractProjector {
     redactionStatus: String!
     updatedAt: String!
   }
-  type LoopFindingSeverityCounts { high: Int!, medium: Int!, low: Int!, informational: Int! }
+  type LoopFindingSeverityCounts {
+    high: Int!
+    medium: Int!
+    low: Int!
+    informational: Int!
+  }
   type LoopBlockingFinding {
     id: String!
     severity: String!
@@ -204,18 +236,85 @@ extension GraphQLContractProjector {
     result: ControlPlaneResult!
     instance: WorkflowInstance
   }
-  type StepExecution { executionId: String!, stepId: String!, nodeId: String!, attempt: Int!, backend: String, status: String!, failureReason: String }
-  type Communication { communicationId: String!, fromStepId: String, toStepId: String, lifecycleStatus: String!, deliveryKind: String!, createdOrder: Int! }
-  type HookEvent { vendor: String!, eventName: String!, agentSessionId: String!, payloadHash: String }
-  type EventReceipt { sourceId: String!, eventId: String!, status: String! }
-  type ReplyDispatch { sourceId: String!, provider: String!, payload: JSONObject! }
-  type LogEntry { level: String!, message: String! }
-  type LLMSessionMessage { role: String!, content: String! }
-  input ContinueSessionInput { workflowId: String!, sessionId: String!, input: JSONObject! }
-  input SendManagerMessageInput { workflowId: String!, workflowExecutionId: String!, message: String, actions: JSON, attachments: JSON, idempotencyKey: String, managerSessionId: String, managerNodeExecId: String }
-  input ReplayCommunicationInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
-  input RetryCommunicationDeliveryInput { workflowId: String!, workflowExecutionId: String!, communicationId: String!, reason: String, idempotencyKey: String, managerSessionId: String }
-  input WorkflowInstanceInput { identity: String!, workflowId: String!, sourceIdentity: String, displayName: String, configuration: JSONObject }
+  type StepExecution {
+    executionId: String!
+    stepId: String!
+    nodeId: String!
+    attempt: Int!
+    backend: String
+    status: String!
+    failureReason: String
+  }
+  type Communication {
+    communicationId: String!
+    fromStepId: String
+    toStepId: String
+    lifecycleStatus: String!
+    deliveryKind: String!
+    createdOrder: Int!
+  }
+  type HookEvent {
+    vendor: String!
+    eventName: String!
+    agentSessionId: String!
+    payloadHash: String
+  }
+  type EventReceipt {
+    sourceId: String!
+    eventId: String!
+    status: String!
+  }
+  type ReplyDispatch {
+    sourceId: String!
+    provider: String!
+    payload: JSONObject!
+  }
+  type LogEntry {
+    level: String!
+    message: String!
+  }
+  type LLMSessionMessage {
+    role: String!
+    content: String!
+  }
+  input ContinueSessionInput {
+    workflowId: String!
+    sessionId: String!
+    input: JSONObject!
+  }
+  input SendManagerMessageInput {
+    workflowId: String!
+    workflowExecutionId: String!
+    message: String
+    actions: JSON
+    attachments: JSON
+    idempotencyKey: String
+    managerSessionId: String
+    managerNodeExecId: String
+  }
+  input ReplayCommunicationInput {
+    workflowId: String!
+    workflowExecutionId: String!
+    communicationId: String!
+    reason: String
+    idempotencyKey: String
+    managerSessionId: String
+  }
+  input RetryCommunicationDeliveryInput {
+    workflowId: String!
+    workflowExecutionId: String!
+    communicationId: String!
+    reason: String
+    idempotencyKey: String
+    managerSessionId: String
+  }
+  input WorkflowInstanceInput {
+    identity: String!
+    workflowId: String!
+    sourceIdentity: String
+    displayName: String
+    configuration: JSONObject
+  }
   type LoopCostSummary {
     totalInputTokens: Int
     totalOutputTokens: Int
@@ -238,7 +337,10 @@ extension GraphQLContractProjector {
     required: Boolean
     blockingFindingCount: Int!
   }
-  type LoopGateFailureCount { gateId: String!, count: Int! }
+  type LoopGateFailureCount {
+    gateId: String!
+    count: Int!
+  }
   type LoopGateChange {
     gateId: String!
     baseDecision: String
@@ -296,45 +398,188 @@ extension GraphQLContractProjector {
     costDelta: LoopCostSummaryDelta
     diagnostics: [String!]!
   }
+  input RerunSessionInput {
+    workflowId: String!
+    sessionId: String!
+    stepId: String!
+    managerSessionId: String
+  }
+  input ResumeSessionInput {
+    workflowId: String!
+    sessionId: String!
+    managerSessionId: String
+  }
+  input StopSessionInput {
+    workflowId: String!
+    sessionId: String!
+    reason: String
+    managerSessionId: String
+  }
+  type SessionLineage {
+    sessionId: String!
+    parentSessionId: String
+    rootSessionId: String!
+    entryMode: String!
+    sourceStepId: String
+  }
+  type SessionMutationPayload {
+    result: ControlPlaneResult!
+    sessionId: String
+    status: String
+    lineage: SessionLineage
+  }
+  type ConsoleInstanceEnvironmentVariable {
+    name: String!
+    isSet: Boolean!
+    masked: String!
+  }
+  type ConsoleInstanceRequiredEnvironment {
+    name: String!
+    description: String
+    required: Boolean!
+    secret: Boolean!
+    source: String!
+    present: Boolean!
+  }
+  type ConsoleInstanceEventSource {
+    id: String!
+    kind: String!
+  }
+  type ConsoleInstance {
+    id: String!
+    sourceId: String!
+    isDefault: Boolean!
+    name: String!
+    workflowId: String!
+    source: String!
+    sourceKind: String!
+    status: String!
+    statusDetail: String!
+    active: Boolean!
+    enabledAtLaunch: Boolean!
+    workingDirectory: String
+    environmentFilePath: String
+    environmentVariables: [ConsoleInstanceEnvironmentVariable!]!
+    requiredEnvironment: [ConsoleInstanceRequiredEnvironment!]!
+    workflowVariables: JSONObject!
+    nodePatchCount: Int!
+    nodePatches: JSONObject!
+    eventSources: [ConsoleInstanceEventSource!]!
+  }
+  type ConsoleInstanceListPayload {
+    profile: String!
+    revision: Int!
+    items: [ConsoleInstance!]!
+  }
+  type ConsoleInstancePayload {
+    profile: String!
+    revision: Int!
+    item: ConsoleInstance
+  }
+  type OpsOverviewTransition {
+    toStepId: String!
+    label: String
+    fanoutJoinStepId: String
+  }
+  type OpsOverviewStep {
+    id: String!
+    nodeId: String!
+    role: String
+    description: String
+    transitions: [OpsOverviewTransition!]!
+  }
+  type OpsOverviewNode {
+    id: String!
+    kind: String
+    role: String
+    addon: String
+  }
+  type OpsOverviewWorkflow {
+    sourceId: String!
+    name: String!
+    workflowId: String!
+    scope: String!
+    sourceKind: String!
+    description: String!
+    entryStepId: String!
+    managerStepId: String
+    steps: [OpsOverviewStep!]!
+    nodes: [OpsOverviewNode!]!
+    stepsTruncated: Boolean!
+  }
+  type OpsOverviewInstance {
+    id: String!
+    sourceId: String!
+    isDefault: Boolean!
+    name: String!
+    workflowId: String!
+    status: String!
+    active: Boolean!
+  }
+  type OpsOverviewRun {
+    instanceId: String!
+    sessionId: String!
+    workflowId: String!
+    status: String!
+    currentStepId: String
+    activeStepIds: [String!]!
+    updatedAt: String!
+  }
+  type OpsOverviewPayload {
+    profile: String!
+    revision: Int!
+    workflows: [OpsOverviewWorkflow!]!
+    workflowsTruncated: Boolean!
+    instances: [OpsOverviewInstance!]!
+    runs: [OpsOverviewRun!]!
+    runsTruncated: Boolean!
+    diagnostics: [String!]!
+  }
   \(workflowRegistryGraphQLSchemaTypes)
   \(configurationGraphQLSchemaTypes)
   \(routineGraphQLSchemaTypes)
   type Query {
-    workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!
-    workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!
-    workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
+    workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
+    workflows(filter: WorkflowFilter): WorkflowListPayload!
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
+    workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
     sessionProgress(sessionId: String!, includeChildren: Boolean = false): SessionObservabilityPayload!
     sessionHealth(sessionId: String!): SessionObservabilityPayload!
     loopEvidence(workflowId: String!, sessionId: String!): LoopEvidenceSummary
     loopSessions(workflowId: String, status: String, limit: Int): [LoopSessionOverview!]!
     loopWorkflowStats(workflowId: String!, limit: Int): LoopWorkflowStats
     loopEvidenceDiff(baseSessionId: String!, targetSessionId: String!): LoopEvidenceDiff
-    managerSession(managerSessionId: String): ManagerSessionView
-    workflows(filter: WorkflowFilter): WorkflowListPayload!
-    workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
+    workflowInstances(workflowId: String): WorkflowInstancesQueryPayload!
+    workflowInstance(identity: String!, workflowId: String): WorkflowInstanceQueryPayload!
     routines(filter: RoutineFilter): RoutineListPayload!
     routine(routineId: String!, routineStoreRoot: String): RoutineQueryPayload!
+    managerSession(managerSessionId: String): ManagerSessionView
+    consoleInstances: ConsoleInstanceListPayload!
+    consoleInstance(identity: String!): ConsoleInstancePayload!
+    opsOverview: OpsOverviewPayload!
     configuration: RielaConfiguration!
   }
   type Mutation {
-    createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
-    updateWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
-    deleteWorkflowInstance(identity: String!, workflowId: String): WorkflowInstanceMutationPayload!
-    continueSession(input: ContinueSessionInput!): ControlPlaneResult!
-    sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
-    replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
-    retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
     registerMutableWorkflow(input: RegisterMutableWorkflowInput!): WorkflowMutationPayload!
     updateMutableWorkflow(input: UpdateMutableWorkflowInput!): WorkflowMutationPayload!
     deleteMutableWorkflow(input: DeleteMutableWorkflowInput!): WorkflowMutationPayload!
     activateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
     deactivateWorkflow(input: SetWorkflowActivationInput!): WorkflowMutationPayload!
     consolidateWorkflows(input: ConsolidateWorkflowsInput!): WorkflowMutationPayload!
+    rerunSession(input: RerunSessionInput!): SessionMutationPayload!
+    resumeSession(input: ResumeSessionInput!): SessionMutationPayload!
+    stopSession(input: StopSessionInput!): SessionMutationPayload!
+    continueSession(input: ContinueSessionInput!): ControlPlaneResult!
+    createWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
+    updateWorkflowInstance(input: WorkflowInstanceInput!): WorkflowInstanceMutationPayload!
+    deleteWorkflowInstance(identity: String!, workflowId: String): WorkflowInstanceMutationPayload!
     createRoutine(input: CreateRoutineInput!): RoutineMutationPayload!
     completeRoutine(input: CompleteRoutineInput!): RoutineMutationPayload!
     setRoutineStatus(input: SetRoutineStatusInput!): RoutineMutationPayload!
     deleteRoutine(input: DeleteRoutineInput!): RoutineMutationPayload!
+    sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
+    replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
+    retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
     updateAssistantConfiguration(input: UpdateAssistantConfigurationInput!): RielaConfiguration!
     updateAppearanceConfiguration(input: UpdateAppearanceConfigurationInput!): RielaConfiguration!
     updateHTTPServerConfiguration(input: UpdateHTTPServerConfigurationInput!): RielaConfiguration!

@@ -37,8 +37,9 @@ final class ServeWebHostTests: XCTestCase {
     let definition = try XCTUnwrap(try object(definitionResponse)["definition"] as? [String: Any])
     XCTAssertEqual(definition["entryStepId"] as? String, "start")
     XCTAssertEqual((definition["nodes"] as? [[String: Any]])?.first?["id"] as? String, "start")
-    let instances = await host.response(for: get("/api/v1/instances"))
-    XCTAssertEqual((try object(instances)["items"] as? [[String: Any]])?.first?["workflowId"] as? String, "web-example")
+    // The instance list moved to GraphQL (`Query.consoleInstances`).
+    let instances = host.consoleGraphQLProvider().consoleInstanceList()
+    XCTAssertEqual(instances.items.first?.workflowId, "web-example")
   }
 
   func testLocalRegistryRequiresBrowserProvenanceAndProfile() async throws {
@@ -241,8 +242,11 @@ final class ServeWebHostTests: XCTestCase {
       "environmentVariableUpdates": ["TEST_SECRET": "never-project-this-value"],
       "workflowVariables": ["greeting": "hello"]
     ]))
-    let instanceResponse = await host.response(for: get("/api/v1/instances"))
-    XCTAssertFalse((String(data: instanceResponse.body, encoding: .utf8) ?? "").contains("never-project-this-value"))
+    let projected = try XCTUnwrap(String(
+      data: JSONEncoder().encode(host.consoleGraphQLProvider().consoleInstanceList()),
+      encoding: .utf8
+    ))
+    XCTAssertFalse(projected.contains("never-project-this-value"))
     let restarted = makeHost(root: root)
     let persisted = try await restarted.configuration()
     XCTAssertEqual(persisted.appearance.colorScheme, "light")
@@ -286,14 +290,16 @@ final class ServeWebHostTests: XCTestCase {
       """.utf8).write(to: directory.appendingPathComponent("workflow.json"))
     try Data("{}".utf8).write(to: directory.appendingPathComponent("worker.json"))
     let host = makeHost(root: root)
-    let listing = try object(await host.response(for: get("/api/v1/instances")))
-    let initial = try XCTUnwrap((listing["items"] as? [[String: Any]])?.first)
-    let sourceId = try XCTUnwrap(initial["sourceId"] as? String)
-    XCTAssertEqual(initial["isDefault"] as? Bool, true)
-    XCTAssertTrue(host.state.preferences.isEmpty)
-    let revision = try XCTUnwrap(listing["revision"] as? Int)
     let bootstrap = try object(await host.response(for: get("/api/v1/bootstrap")))
     let token = try XCTUnwrap(bootstrap["csrfToken"] as? String)
+    // The instance list moved to GraphQL (`Query.consoleInstances`); it is read
+    // after the bootstrap handshake, exactly as the console reads it.
+    let listing = host.consoleGraphQLProvider().consoleInstanceList()
+    let initial = try XCTUnwrap(listing.items.first)
+    let sourceId = initial.sourceId
+    XCTAssertEqual(initial.isDefault, true)
+    XCTAssertTrue(host.state.preferences.isEmpty)
+    let revision = listing.revision
     var request = RielaHTTPRequest(method: "POST", path: "/api/v1/instances", headers: [
       "host": "127.0.0.1:8787", "origin": "http://127.0.0.1:8787",
       "x-riela-csrf": token, "content-type": "application/json", "x-riela-profile": "default"
@@ -328,6 +334,156 @@ final class ServeWebHostTests: XCTestCase {
 
   private func decode<Value: Decodable>(_ type: Value.Type, _ object: [String: Any]) throws -> Value {
     try JSONDecoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
+  }
+
+  /// Transport-level coverage for the migrated console reads: the documents
+  /// `web/src/console/client.ts` actually sends, over `/graphql`, with the
+  /// browser headers the console attaches. The retired JSON GETs required no
+  /// profile header; these reads do, so the negative case is pinned too.
+  func testConsoleReadDocumentsResolveOverGraphQLWithBrowserHeaders() async throws {
+    let root = try fixtureRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let workflow = root.appendingPathComponent("project/.riela/workflows/console-example")
+    try FileManager.default.createDirectory(at: workflow, withIntermediateDirectories: true)
+    try Data("""
+      {"workflowId":"console-example","entryStepId":"start","defaults":{"maxLoopIterations":3,"nodeTimeoutMs":1000},
+       "nodes":[{"id":"worker","nodeFile":"worker.json"}],
+       "steps":[{"id":"start","nodeId":"worker","role":"worker"}]}
+      """.utf8).write(to: workflow.appendingPathComponent("workflow.json"))
+    try Data("{}".utf8).write(to: workflow.appendingPathComponent("worker.json"))
+    let host = makeHost(root: root)
+    let bootstrap = try object(await host.response(for: get("/api/v1/bootstrap")))
+    let csrf = try XCTUnwrap(bootstrap["csrfToken"] as? String)
+    let identity = try XCTUnwrap(host.instances.first?.identity)
+    let saved = try await host.updateWorkflowInstance(input: decode(GraphQLWorkflowInstanceConfigInput.self, [
+      "expectedRevision": host.revision, "expectedProfile": "default", "identity": identity,
+      "environmentVariableUpdates": ["CONSOLE_SECRET": "never-project-this-value"],
+      "workflowVariables": ["greeting": "hello"]
+    ]))
+    XCTAssertEqual(saved.profile, "default")
+
+    let list = await host.response(for: Self.consoleDocumentRequest(
+      Self.webConsoleInstancesDocument,
+      operationName: "WebConsoleInstances",
+      csrf: csrf
+    ))
+    XCTAssertEqual(list.status, 200, String(data: list.body, encoding: .utf8) ?? "")
+    let listBody = String(data: list.body, encoding: .utf8) ?? ""
+    XCTAssertFalse(listBody.contains("never-project-this-value"), "the console projection must not leak stored secrets")
+    let payload = try XCTUnwrap(
+      (try object(list)["data"] as? [String: Any])?["consoleInstances"] as? [String: Any]
+    )
+    XCTAssertEqual(payload["profile"] as? String, "default")
+    let items = try XCTUnwrap(payload["items"] as? [[String: Any]])
+    let first = try XCTUnwrap(items.first)
+    XCTAssertEqual(first["workflowId"] as? String, "console-example")
+    // The JSONObject scalars and the nested object lists must survive
+    // projection; a hand-written four-field selection would not prove this.
+    XCTAssertEqual((first["workflowVariables"] as? [String: Any])?["greeting"] as? String, "hello")
+    XCTAssertNotNil(first["nodePatches"] as? [String: Any])
+    XCTAssertNotNil(first["eventSources"] as? [[String: Any]])
+    let environmentVariables = try XCTUnwrap(first["environmentVariables"] as? [[String: Any]])
+    XCTAssertEqual(environmentVariables.first?["name"] as? String, "CONSOLE_SECRET")
+    XCTAssertEqual(environmentVariables.first?["masked"] as? String, "••••••••")
+    XCTAssertNotNil(first["requiredEnvironment"] as? [[String: Any]])
+
+    let detail = await host.response(for: Self.consoleDocumentRequest(
+      Self.webConsoleInstanceDocument,
+      operationName: "WebConsoleInstance",
+      csrf: csrf,
+      variables: ["identity": .string(identity)]
+    ))
+    XCTAssertEqual(detail.status, 200, String(data: detail.body, encoding: .utf8) ?? "")
+    let detailItem = try XCTUnwrap(
+      ((try object(detail)["data"] as? [String: Any])?["consoleInstance"] as? [String: Any])?["item"] as? [String: Any]
+    )
+    XCTAssertEqual(detailItem["id"] as? String, identity)
+
+    let overview = await host.response(for: Self.consoleDocumentRequest(
+      Self.webOpsOverviewDocument,
+      operationName: "WebOpsOverview",
+      csrf: csrf
+    ))
+    XCTAssertEqual(overview.status, 200, String(data: overview.body, encoding: .utf8) ?? "")
+    let overviewPayload = try XCTUnwrap(
+      (try object(overview)["data"] as? [String: Any])?["opsOverview"] as? [String: Any]
+    )
+    XCTAssertEqual(overviewPayload["profile"] as? String, "default")
+    let overviewWorkflows = try XCTUnwrap(overviewPayload["workflows"] as? [[String: Any]])
+    XCTAssertEqual(overviewWorkflows.first?["workflowId"] as? String, "console-example")
+    XCTAssertNotNil(overviewWorkflows.first?["steps"] as? [[String: Any]])
+    XCTAssertNotNil(overviewPayload["instances"] as? [[String: Any]])
+    XCTAssertNotNil(overviewPayload["runs"] as? [[String: Any]])
+
+    var withoutProfile = Self.consoleDocumentRequest(
+      Self.webConsoleInstancesDocument,
+      operationName: "WebConsoleInstances",
+      csrf: csrf
+    )
+    withoutProfile.headers.removeValue(forKey: "x-riela-profile")
+    let rejected = await host.response(for: withoutProfile)
+    XCTAssertEqual(rejected.status, 409, "console reads now require the profile header the JSON GET did not")
+  }
+
+  // MARK: - Console documents (copied from web/src/console/client.ts)
+
+  private static let consoleInstanceFields = """
+    id sourceId isDefault name workflowId source sourceKind status statusDetail
+    active enabledAtLaunch workingDirectory environmentFilePath
+    environmentVariables { name isSet masked }
+    requiredEnvironment { name description required secret source present }
+    workflowVariables nodePatchCount nodePatches
+    eventSources { id kind }
+  """
+
+  private static var webConsoleInstancesDocument: String {
+    "query WebConsoleInstances { consoleInstances { profile revision items { \(consoleInstanceFields) } } }"
+  }
+
+  private static var webConsoleInstanceDocument: String {
+    """
+    query WebConsoleInstance($identity: String!) {
+      consoleInstance(identity: $identity) { profile revision item { \(consoleInstanceFields) } }
+    }
+    """
+  }
+
+  private static let webOpsOverviewDocument = """
+  query WebOpsOverview { opsOverview {
+    profile revision workflowsTruncated runsTruncated diagnostics
+    workflows {
+      sourceId name workflowId scope sourceKind description entryStepId managerStepId stepsTruncated
+      steps { id nodeId role description transitions { toStepId label fanoutJoinStepId } }
+      nodes { id kind role addon }
+    }
+    instances { id sourceId isDefault name workflowId status active }
+    runs { instanceId sessionId workflowId status currentStepId activeStepIds updatedAt }
+  } }
+  """
+
+  private static func consoleDocumentRequest(
+    _ query: String,
+    operationName: String,
+    csrf: String,
+    variables: JSONObject = [:]
+  ) -> RielaHTTPRequest {
+    let body = try? JSONEncoder().encode(JSONValue.object([
+      "query": .string(query),
+      "variables": .object(variables),
+      "operationName": .string(operationName)
+    ]))
+    return RielaHTTPRequest(
+      method: "POST",
+      path: "/graphql",
+      headers: [
+        "host": "127.0.0.1:8787",
+        "origin": "http://127.0.0.1:8787",
+        "content-type": "application/json",
+        "x-riela-csrf": csrf,
+        "x-riela-profile": "default"
+      ],
+      body: body ?? Data()
+    )
   }
 
   private func makeHost(root: URL, bindHost: String = "127.0.0.1") -> ServeWebHost {

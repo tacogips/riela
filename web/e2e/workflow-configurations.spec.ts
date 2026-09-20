@@ -14,7 +14,19 @@ async function fixture(page: Page, withRun = false) {
   const items = [configuration(sourceId), configuration(otherSource, otherSource), configuration('other-named', otherSource, '別リポジトリ専用')]
   const mutations: Array<{ path: string; body: Record<string, unknown> }> = []
   let revision = 1
-  await page.route('**/graphql', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { workflows: { workflows: [], errors: [] } } }) }))
+  await page.route('**/graphql', route => {
+    const body = route.request().postDataJSON() as { operationName?: string; variables?: { identity?: string } }
+    const data = (value: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) })
+    // Console reads moved off /api/v1 onto the control plane (design 2.4).
+    if (body.operationName === 'WebConsoleInstances') return data({ consoleInstances: { profile: 'test', revision, items } })
+    if (body.operationName === 'WebConsoleInstance') {
+      return data({ consoleInstance: { profile: 'test', revision, item: items.find(item => item.id === body.variables?.identity) ?? null } })
+    }
+    if (body.operationName === 'WebOpsOverview') {
+      return data({ opsOverview: { profile: 'test', revision, workflows: [], workflowsTruncated: false, instances: [], runs: [], runsTruncated: false, diagnostics: [] } })
+    }
+    return data({ workflows: { workflows: [], errors: [] } })
+  })
   await page.route('**/api/v1/**', async route => {
     const request = route.request()
     const path = new URL(request.url()).pathname
@@ -42,7 +54,6 @@ async function fixture(page: Page, withRun = false) {
       }
       return json({ profile: 'test', revision })
     }
-    if (path === '/api/v1/instances') return json({ profile: 'test', revision, items })
     if (path.endsWith('/executions')) return json({ revision, items: withRun ? [{ sessionId: 'run-1', workflowId: 'review', status: 'completed', updatedAt: '2026-09-10T00:00:00Z', currentStepId: null, activeStepIds: [] }] : [], diagnostics: [], truncated: false })
     if (path.endsWith('/executions/run-1')) return json({ revision, session: { sessionId: 'run-1', workflowId: 'review', status: 'completed', updatedAt: '2026-09-10T00:00:00Z', currentStepId: null }, steps: [], stepsTotalCount: 0, logs: [], gates: [], gatesTotalCount: 0, recovery: null, diagnostics: [] })
     return json({ error: { message: `Unexpected ${path}` } }, 418)
@@ -164,13 +175,20 @@ test('invalid graph shows a recoverable error without breaking configuration sel
 
 test('graph does not wait for slow metadata or load the closed management registry', async ({ page }) => {
   await fixture(page)
+  const items = [configuration(sourceId)]
   let metadataReads = 0
   let registryReads = 0
   let releaseMetadata: () => void = () => {}
   const metadataGate = new Promise<void>(resolve => { releaseMetadata = resolve })
+  // /graphql now also carries the console reads, so the registry assertion
+  // counts the registry operations rather than every GraphQL request.
   await page.route('**/graphql', route => {
+    const operation = (route.request().postDataJSON() as { operationName?: string }).operationName
+    const data = (value: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: value }) })
+    if (operation === 'WebConsoleInstances') return data({ consoleInstances: { profile: 'test', revision: 1, items } })
+    if (operation === 'WebConsoleInstance') return data({ consoleInstance: { profile: 'test', revision: 1, item: items[0] ?? null } })
     registryReads += 1
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ data: { workflows: { workflows: [], errors: [] } } }) })
+    return data({ workflows: { workflows: [], errors: [] } })
   })
   await page.route('**/api/v1/workflows/sources', async route => {
     metadataReads += 1

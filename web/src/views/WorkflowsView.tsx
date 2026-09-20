@@ -2,7 +2,8 @@ import { For, Show, createEffect, createMemo, createResource, createSignal, on }
 import { createPollingResource } from '../polling'
 import { APIError, api, requireExpectedProfile } from '../api'
 import { configurationClient } from '../config/client'
-import type { WorkflowSources, InstancesResponse } from '../contracts'
+import { listConsoleInstances } from '../console/client'
+import type { WorkflowSources } from '../contracts'
 import { EmptyState, ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 import {
   deleteMutableWorkflow,
@@ -43,7 +44,7 @@ export function sourcePathForProfileTransition(
 
 export function WorkflowsView(props: { profileKey: string; profileName: string; onInspect: (sourceId: string) => void }) {
   const instances = createPollingResource(() => props.profileKey, async signal =>
-    requireExpectedProfile(await api.get<InstancesResponse>('/api/v1/instances', signal), props.profileName))
+    requireExpectedProfile(await listConsoleInstances(signal), props.profileName))
   const missingSources = createMemo(() => [...new Map((instances.data()?.items ?? [])
     .filter(item => item.status === 'needsSource').map(item => [item.sourceId, item])).values()])
   const [sources, { refetch: refetchSources }] = createResource(

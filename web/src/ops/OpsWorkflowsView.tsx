@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
-import { api, requireExpectedProfile } from '../api'
-import type { OpsOverviewResponse, OpsRunSummary, OpsWorkflowStep } from '../contracts'
+import { requireExpectedProfile } from '../api'
+import { getOpsOverview } from '../console/client'
+import type { OpsRunSummary, OpsWorkflowStep } from '../contracts'
 import { ErrorBanner, LoadingState } from '../components/Primitives'
 import { createPollingResource, pollingStatusLabel } from '../polling'
 import { backEdgePath, edgePath, layoutFan, layoutRing, ringBounds } from './layout'
@@ -37,10 +38,7 @@ export function OpsWorkflowsView(props: {
   const [studio, setStudio] = createSignal(false)
   const overview = createPollingResource(
     () => props.profileKey,
-    async (signal) => requireExpectedProfile(
-      await api.get<OpsOverviewResponse>('/api/v1/ops/overview', signal),
-      props.profileName,
-    ),
+    async (signal) => requireExpectedProfile(await getOpsOverview(signal), props.profileName),
   )
   const [lens, setLens] = createSignal(DEFAULT_LENS)
   const [query, setQuery] = createSignal('')

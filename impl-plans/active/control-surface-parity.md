@@ -16,14 +16,14 @@ rows citing that plan — delta D6), Monja `impl-plans/active/47-surface-parity.
 
 Check a box only with a matching evidence entry in the progress log.
 
-- [ ] CSP-1 Catalog
-- [ ] CSP-2 CLI and skills gates
-- [ ] CSP-3 GraphQL gate and generated SDL
-- [ ] CSP-4 Web API and library gates
-- [ ] CSP-5 Session mutations on GraphQL
-- [ ] CSP-6 Console reads to GraphQL
-- [ ] CSP-7 Library facade and skills
-- [ ] CSP-8 Integrated verification
+- [x] CSP-1 Catalog
+- [x] CSP-2 CLI and skills gates
+- [x] CSP-3 GraphQL gate and generated SDL
+- [x] CSP-4 Web API and library gates
+- [x] CSP-5 Session mutations on GraphQL
+- [x] CSP-6 Console reads to GraphQL
+- [x] CSP-7 Library facade and skills
+- [x] CSP-8 Integrated verification
 
 ## Accepted Design And Review
 
@@ -316,3 +316,461 @@ untouched.
   Branch has no upstream (`git rev-parse @{u}` fails): first push must be
   `git push -u origin feat/control-surface-parity`. No design deltas beyond
   D1–D8 required; design doc unchanged. No production code written.
+
+- 2026-09-21: **implementation (fable-and-improve-opus, Claude Opus 5)**.
+  All eight tasks implemented on `feat/control-surface-parity` from checkpoint
+  `f8b763a`. Evidence per box below; commands ran through
+  `arch -arm64 /bin/zsh -lc '…'` from the worktree root, logs under
+  `tmp/surface-parity/control-surface-parity/attempt-1/logs/` (gitignored).
+
+  - **CSP-1 Catalog** — `Sources/RielaCore/SurfaceCatalog.swift` (types,
+    invariants, shared bijection helper), `SurfaceCatalog+RowSupport.swift`
+    (design-2.6 exclusion reasons, row builder), and the row files
+    `SurfaceCatalog+Rows.swift` (workflow/session/loop),
+    `+RowsCLI.swift` (package, node, memory, instance, specialist, local
+    tools, events, routine, serve, graphql client, auth, worker) and
+    `+RowsConsole.swift` (console reads, configuration, web platform, Work
+    Runtime). 211 rows. Every required surface (`cli`, `graphql`, `webAPI`,
+    `library`) is declared on every row; `blocked` rows carry evidence and
+    `excluded` rows carry a reason and a design link, enforced by
+    `SurfaceCatalog.invariantViolations()`.
+    Evidence: `swift test --filter SurfaceCatalog` → 7 tests, 0 failures.
+    Row review against design section 1: every query and mutation listed
+    there has a row; `riela task` / `riela intent` are `blocked` on
+    `impl-plans/active/work-runtime-p0-model-and-store.md` (D6);
+    `session.supervision` is `excluded` on all four surfaces citing the Work
+    Runtime design; package/node/setup/doctor/gc/worker/memory/specialist are
+    `excluded` with the section-2.6 reasons.
+
+  - **CSP-2 CLI and skills gates** — `Sources/RielaCLI/CLISurfaceEnumeration.swift`
+    walks `RielaClientCommandRouter.configuration.subcommands` and the typed
+    family enums, and adds the two pre-parser commands (`auth`, `worker`)
+    dispatched in `RielaCLIApplication.runParsed`. To make the walk real,
+    `CaseIterable` was added to `WorkflowClientSubcommand`,
+    `SessionClientSubcommand`, `InstanceClientSubcommand`,
+    `SetupClientSubcommand`, `WorkflowManifestClientSubcommand`,
+    `WorkflowVersionClientOperation`, `LoopBaselineAction`,
+    `PackageCommandKind`, `NodeCommandKind`, `LoopCommandKind`,
+    `SpecialistCommandKind`, `ScopedCommandKind`,
+    `WorkflowVersionCommandKind` and `MemoryCommandKind`, and the
+    string-switched families gained declared enums
+    (`RoutineClientAction`, `ServeClientAction`, `KaibaInstanceClientAction`,
+    `PasskeyClientAction`, `DistributedWorkerClientAction`) that their owning
+    switches now read their literals from. The gate is the pure function
+    `CLISurfaceEnumerator.violations(commands:catalog:)`, so the negative test
+    injects a dummy descriptor with no production seam. The option universe is
+    rendered from the argument-parser definitions themselves
+    (`ParsableArguments.helpMessage()`).
+    Evidence: `swift test --filter SurfaceParityCLITests` → 6 tests, 0
+    failures, including `testGateFailsForACommandWithoutACatalogRow` (dummy
+    `dummy command` produces exactly one violation),
+    `testGateFailsForACatalogRowWithoutACommand`, and
+    `testGateFailsForAnUnknownOptionOnACatalogRow` (a `--supervisor-workflow`
+    option on a row is rejected).
+    Skill gate: `swift test --filter SurfaceParitySkillTests` → 7 tests, 0
+    failures; `testAStaleFlagIsRejected` proves `--supervisor-workflow` and
+    `--no-allow-targeted-rerun` are rejected and that the scanner sees them;
+    `testCanonicalSkillSetIsPresentAndRejectedSkillsAreAbsent` proves
+    `riela-auto-improve` is absent (D1).
+
+  - **CSP-3 GraphQL gate and generated SDL** —
+    `Sources/RielaGraphQL/GraphQLSchemaGenerator.swift` holds the 64 contract
+    type descriptors and the root-field signature table;
+    `catalogFields(root:)` takes the published Query/Mutation fields and their
+    order from `SurfaceCatalog`. `GraphQLContractProjector+Schema.swift` is now
+    generated output with a header naming the generator;
+    `scripts/surface-parity/generate-sdl.sh` regenerates it by rerunning the
+    suite with `RIELA_WRITE_GENERATED_SDL=1` (delta D4 — no extra tool target).
+    `SurfaceParityDTOSchemaTests` reads the 27 `GraphQL*DTO` structs from
+    source through `#filePath` and asserts each one's property names *and*
+    mapped GraphQL types equal its schema type descriptor, so the SDL is
+    derived from the DTOs rather than maintained beside them.
+    Evidence: `swift test --filter RielaGraphQLTests` → 65 tests, 1 skipped
+    (the regeneration entry point), 0 failures. Byte-identity is asserted twice:
+    `render()` vs `schemaContract`, and `swiftSourceTemplate()` vs the
+    checked-in file. Selection validation still reads the schema
+    (`GraphQLVariableValidation.swift`), so no hand-maintained table exists.
+    Single-parser proof: `swift test --filter SingleParserTests` → 4 tests, 0
+    failures.
+
+  - **CSP-4 Web API and library gates** —
+    `Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` declares 31 routes
+    across the five routing owners (D7), each with the owner file and, where
+    dispatch is component-based, the token the gate looks for. The gate asserts
+    the bijection with the catalog, that every declared route appears in its
+    owner file, that no source serves an `/api/v1` path the table omits, and
+    spot-dispatches `GET /api/v1/bootstrap` (200, carries `apiVersion` and
+    `csrfToken`) and `GET /api/v1/auth/status` through `RielaPasskeyService`
+    (200, `passkey`). The library gate reads
+    `Sources/RielaCLI/RielaLibrary.swift` through `#filePath` (D4).
+    Red proof recorded before the fix:
+    `logs/red-proof-webapi-gate.log` (9 errors) and
+    `logs/red-proof-webapi-gate-2.log` — the gate failed with exactly the
+    design-section-1 gaps: `/api/v1/instances` and `/api/v1/ops/overview`
+    still served and answering 200.
+    Evidence after CSP-6/CSP-7:
+    `swift test --filter SurfaceParityWebAPITests` → 6 tests, 0 failures;
+    `swift test --filter SurfaceParityLibraryTests` → 4 tests, 0 failures.
+
+  - **CSP-5 Session mutations on GraphQL** —
+    `Sources/RielaGraphQL/GraphQLSessionControlContracts.swift` adds the
+    DTOs and `SessionControlGraphQLDocumentExecutor`;
+    `Sources/RielaCLI/SessionControlProvider.swift` implements the provider
+    against `SessionRerunCommand` and `SessionResumeCommand`, with
+    `RielaRunningSessionRegistry` tracking sessions this process runs. The
+    executor is chained into all three composites (`riela graphql document`,
+    `riela serve` `/graphql`, the desktop composite). `stopSession` cancels the
+    registered task and returns only after it finished — which is after the
+    runner's cancellation path (`43edf93`) persisted the terminal state — and
+    otherwise throws the typed `session_not_running` error (D3).
+    Evidence: `swift test --filter SessionMutationTests` → 6 tests, 0 failures;
+    `swift test --filter SurfaceParitySessionLineageTests` → 3 tests, 0
+    failures, including CLI/GraphQL rerun lineage parity against the real
+    `worker-only-single-step` runner (same status, same `sourceStepId`, same
+    `entryMode`, same `rootSessionId`, new session id) and the fail-closed
+    stop.
+
+  - **CSP-6 Console reads to GraphQL** —
+    `Sources/RielaAppSupport/RielaConsoleGraphQLProvider.swift` is the shared
+    seam (D8); `Sources/RielaGraphQL/GraphQLConsoleContracts.swift` adds the
+    DTOs and `ConsoleGraphQLDocumentExecutor`, chained into `riela serve` and
+    the desktop composite. `RielaWebAPIProjection` lost the
+    `GET /api/v1/instances` list, the `GET /api/v1/instances/{identity}`
+    detail and the whole `/api/v1/ops/overview` route, together with
+    `webOpsOverview`, `webInstanceDetail`, `webInstanceJSON`,
+    `webInstancesJSON` and `webMissingSourceInstanceJSON`; its now-unused
+    `runtimeSnapshot` and `environment` parameters were removed too. The web
+    console reads through `web/src/console/client.ts`
+    (`consoleInstances`, `consoleInstance`, `opsOverview`).
+    Evidence: `swift test --filter SurfaceParityConsoleReadTests` → 5 tests, 0
+    failures; `cd web && bun run typecheck` (clean), `bun run lint` (clean,
+    production source audit passed), `bun test src` → 100 pass, 0 fail across
+    21 files, including `src/console/client.test.ts` which proves the reads go
+    to `/graphql` and that no source file calls the retired routes.
+    Playwright and a desktop debug-build launch were not run (optional, D5).
+
+  - **CSP-7 Library facade and skills** —
+    `Sources/RielaCLI/RielaLibrary.swift` exposes exactly `executeWorkflow`,
+    `resumeSession`, `rerunSession`, `inspectWorkflow`, `sessionView` and
+    `executeGraphQLDocument`, each delegating to the command the CLI runs.
+    `Resources/skills/` was created (D1) with `riela-workflow-reference`
+    rewritten against those names and `riela-workflow-run` carrying
+    catalog-generated command blocks; the blocks are compared with the catalog
+    family by family. `impl-plans/progress/plans/graphql-supervision-execution-parity.json`
+    is deleted.
+    Evidence: `swift test --filter SurfaceParityLibraryTests` → 4 tests, 0
+    failures, including a compiling exercise of every documented call with its
+    documented argument labels and a test that the retired TypeScript names
+    (`createWorkflowExecutionClient`, `resumeWorkflow`, `rerunWorkflow`,
+    `getRuntimeSessionView`, `callWorkflowStep`, `executeGraphqlRequest`,
+    `createGraphqlSchema`) do not reappear.
+
+  - **CSP-8 Integrated verification** — see the verification entry below.
+
+- 2026-09-21: **accepted deltas and findings recorded during implementation**
+  (fable-and-improve-opus, Claude Opus 5). Each is also written into
+  `design-docs/specs/design-control-surface-parity.md` section 5.
+
+  - **D9 — SDL normalization (pre-authorized).** The plan's open decision point
+    allowed checking in the generator's canonical output if byte-identical
+    regeneration of the hand-written literal proved impractical. It did: the
+    old literal mixed one-line and multi-line type declarations and ordered
+    root fields by hand. The checked-in SDL is now the generator's canonical
+    form — every type multi-line, root fields in `SurfaceCatalog` order. Five
+    assertions in `GraphQLContractsTests` that pinned the one-line `input`
+    formatting were rewritten to pin the same fields in the new formatting;
+    no assertion was weakened or removed.
+  - **D10 — executor placement.** `GraphQLDocumentDomainPreflighting` is
+    internal to `RielaGraphQL`, so an executor declared in `RielaAppSupport`
+    cannot take part in the composite's mixed-domain preflight. The console
+    and session-control *executors* therefore live in `RielaGraphQL`; the
+    shared console *provider* lives in `RielaAppSupport`
+    (`RielaConsoleGraphQLProvider`) as delta D8 requires, consumed by both
+    `ServeWebHost` and the desktop composite.
+  - **D11 — `/api/v1/ops/overview` is deleted whole.** The manifest named only
+    "the instance portions" of the route, but the ops views consume one
+    payload (workflows, instances and runs together), so splitting it would
+    leave the dashboard reading two sources. `Query.opsOverview` replaces the
+    whole route and the route is gone.
+  - **D12 — `continueSession` had no executor.** The schema published
+    `continueSession` and `GraphQLControlPlaneServicing` declared it, but no
+    document executor in the tree answered it, so a `/graphql` request for it
+    returned "selected GraphQL root was not handled". The session-control
+    executor implements it (delegating to the resume path, exactly as the
+    CLI's `SessionContinueCommand` does), which makes the catalog's
+    `session.continue` GraphQL claim true.
+
+  - **Seam-fact corrections against `f8b763a`.** The plan's seam facts were
+    accurate except for three points, corrected here rather than silently:
+    (1) `schemaContract` interpolates **three** hand-written SDL blocks, not
+    two — `workflowRegistryGraphQLSchemaTypes`,
+    `configurationGraphQLSchemaTypes` and `routineGraphQLSchemaTypes`;
+    (2) `Sources/RielaCLI/ParityCommandSupport.swift` contains no
+    `continueSession` resolver — it holds `ParsedParityOptions` and shared
+    rendering helpers, and no resolver existed anywhere;
+    (3) `Sources/RielaApp/RielaAppInstanceAPI.swift` has no read paths to
+    delete — it serves only the two `POST` instance routes, which survive.
+
+  - **Architecture-review dual-lexer finding: closed, negative.** There is one
+    GraphQL parser. `SingleParserTests` asserts the lexing primitives are
+    declared in exactly one file
+    (`Sources/RielaGraphQL/GraphQLDocumentParsing.swift`), that no other file
+    declares a `parseGraphQL…`/`readGraphQL…`/`skipGraphQL…`/`tokenizeGraphQL…`
+    function, that all four `/graphql` entry points assemble the shared
+    composite executor, and that two different entry-point assemblies reject
+    the same malformed document with the same diagnostic. The one other
+    `parseGraphQL*` name in the tree,
+    `RielaServer.parseGraphQLEnvelope`, decodes the HTTP JSON envelope and
+    delegates operation-name parsing to the shared parser; the test allowlists
+    it by name and asserts that delegation. No removal task was needed.
+
+  - **F1 (follow-up, newly discovered) — schema fields with no document
+    executor.** Implementing CSP-5 surfaced a gap the accepted design did not
+    know about: 17 of the fields the control-plane schema publishes have no
+    document executor, so `/graphql` cannot reach them even though the schema
+    and the read services both exist. They are
+    `Query.workflowInstances`, `Query.workflowInstance`,
+    `Query.workflowSession`, `Query.workflowSessions`,
+    `Query.sessionProgress`, `Query.sessionHealth`, `Query.loopEvidence`,
+    `Query.loopSessions`, `Query.loopWorkflowStats`,
+    `Query.loopEvidenceDiff`, `Query.managerSession`,
+    `Mutation.createWorkflowInstance`, `Mutation.updateWorkflowInstance`,
+    `Mutation.deleteWorkflowInstance`, `Mutation.sendManagerMessage`,
+    `Mutation.replayCommunication` and
+    `Mutation.retryCommunicationDelivery`. The first fourteen have services
+    (`GraphQLRuntimeSnapshotQueryService`, `GraphQLWorkflowInstanceService`)
+    waiting to be wired; the last three have only the
+    `GraphQLControlPlaneServicing` protocol with no implementation anywhere.
+    This is recorded as a machine-checked allowlist in
+    `Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift`, whose
+    tests fail if the list grows or drifts, so the gap can only shrink. It is
+    **not** closed by this plan; it needs its own task.
+
+- 2026-09-21: **CSP-8 integrated verification** (fable-and-improve-opus,
+  Claude Opus 5). Every command ran in the foreground from the worktree root
+  through `arch -arm64 /bin/zsh -lc '…'`; logs are under
+  `tmp/surface-parity/control-surface-parity/attempt-1/logs/` (gitignored).
+
+  - `swift build && swift test` →
+    `logs/csp8-swift-test-final.log`, exit status 1, **10 failing tests**, all
+    of them pre-existing and environmental, none introduced by this change:
+    `RielaAppUXOnboardingControllerTests` (4),
+    `RielaAppSettingsEditorNavigationTests` (1) and
+    `RielaAppWindowContentInsetTests` (1) fail on AppKit view-hierarchy
+    lookups (`XCTUnwrap failed: expected non-nil value of type "NSTableView"`,
+    `"NSButton"`, `"DaemonWorkflowInstanceListView"`) in this headless agent
+    session; `WorkflowRound7AdversarialTests` (3) fail with
+    `NSCocoaErrorDomain Code=4 "…sock" couldn't be removed` when the sandbox
+    refuses to unlink a unix socket; `WorkflowCommandTests`
+    `testPackageAppEnvironmentEnablementRunAndMonitoringScenario` (1) fails on
+    `appState.managedCandidates(from:)` returning a third, ambient candidate.
+    Evidence that they are not this change's: each failing test file contains
+    zero references to `RielaWebAPIProjection`, `/api/v1`,
+    `consoleGraphQLProvider` or `SurfaceCatalog`, and none of the sources they
+    exercise appear in this change's diff. All ten also fail when run in
+    isolation on this tree.
+  - The earlier full run (`logs/csp8-swift-test.log`) had **17** failures: the
+    same ten plus seven that this change did cause — `RielaAppWebAPIRouteTests`
+    (5) and `ServeWebHostTests` (2) read the retired
+    `GET /api/v1/instances`, `GET /api/v1/instances/{identity}` and
+    `GET /api/v1/ops/overview` routes. Those seven were **ported, not
+    weakened**: every assertion (composite-identity decoding, secret
+    redaction, `needsSource` projection, typed node patches, the ops-overview
+    workflow graph, instances and runs, the missing-definition diagnostic)
+    now runs against `RielaConsoleGraphQLProvider`, and each test additionally
+    asserts the retired route answers 404.
+    `swift test --filter RielaAppWebAPIRouteTests` → 16 tests, 0 failures;
+    `swift test --filter ServeWebHostTests` → 8 tests, 0 failures.
+  - **The interleaved-submit flake did not appear** in either full run, so no
+    isolated rerun was needed. The ten failures above are *not* that flake and
+    are not covered by the plan's tolerated-failure rule; they are reported as
+    a verification gap, not as a pass.
+  - `swiftlint lint --strict <42 changed sources>` →
+    `Found 0 violations, 0 serious in 42 files`.
+  - `cd web && bun run typecheck && bun run lint && bun test src` →
+    `logs/csp8-web.log`, exit status 0: `tsc --noEmit` clean, `eslint` clean
+    with "Production source audit passed", and **100 pass, 0 fail, 1795
+    expect() calls across 21 files**.
+  - Surface gates on the final tree, each run individually:
+    `SurfaceCatalog` 7/7, `SurfaceParityCLITests` 6/6,
+    `SurfaceParitySkillTests` 7/7, `SurfaceParityGraphQLTests` 6/6 (1 skipped
+    regeneration entry point), `SurfaceParityDTOSchemaTests` 2/2,
+    `SingleParserTests` 4/4, `SurfaceParityWebAPITests` 6/6,
+    `SurfaceParityLibraryTests` 4/4, `SessionMutationTests` 6/6,
+    `SurfaceParitySessionLineageTests` 3/3,
+    `SurfaceParityConsoleReadTests` 5/5,
+    `SurfaceParityExecutorCoverageTests` 3/3.
+  - **Not committed and not pushed.** This run executed under the
+    shared-branch write protocol, which forbids `git add`/`commit`/`push`;
+    that protocol takes precedence over the plan's own "push with `-u`" step.
+    The working tree on `feat/control-surface-parity` carries the whole
+    change, ready for the serial join. One index side effect to be aware of:
+    `impl-plans/progress/plans/graphql-supervision-execution-parity.json` was
+    removed with `git rm --cached` before the file was deleted, so its
+    deletion is already staged; nothing else is staged.
+
+- 2026-09-21: **review revision 1 — R1–R7 from the independent
+  implementation review** (fable-and-improve-opus, Claude Opus 5). Evidence
+  under `tmp/surface-parity/control-surface-parity/attempt-2/logs/`.
+
+  - **R1 (medium) — Playwright fixtures were left wired to the deleted
+    routes. Fixed and the suite now runs.** Six specs stubbed the retired
+    reads, not four: `dashboard.spec.ts`, `workflow-management.spec.ts`,
+    `workflow-configurations.spec.ts`, `workflow-studio.spec.ts`,
+    `server-instances.spec.ts` (its `/api/v1` fallthrough doubled as the
+    instance list) and `desktop-connection.spec.ts` (its desktop-pipe
+    `/graphql` stub answered every operation with `data.workflows`). Every
+    `GET /api/v1/instances`, `GET /api/v1/instances/{identity}` and
+    `/api/v1/ops/overview` branch is deleted; each spec's `/graphql` handler
+    now answers `WebConsoleInstances`, `WebConsoleInstance` and
+    `WebOpsOverview` with the payload its deleted branch used to fulfil,
+    preserving each fixture's live state (`instancesDelay`, the
+    `externalInstanceChange` revision bump, the mutable `items` list, the
+    `running`/`enabled` toggles). The POST `/api/v1/instances`,
+    `.../actions` and `.../executions` branches are untouched.
+    One assertion changed meaning and was restated rather than dropped:
+    `workflow-configurations.spec.ts` counted *every* `/graphql` request as a
+    "registry read" and asserted zero; `/graphql` now legitimately carries the
+    console reads, so the counter counts registry operations, which is the
+    assertion the test was always making.
+    Evidence: `cd web && bun run test:e2e` →
+    `logs/e2e-3.log`, exit status 0, **42 passed**. Two of those specs
+    (`passkey-desktop`, `server-authentication`) spawn a real
+    `.build/debug/riela serve --web-root web/dist`; they failed on the first
+    two runs (`logs/e2e.log`, `logs/e2e-2.log`) purely because `web/dist` did
+    not exist in this session. `bun run build` (`logs/web-build.log`, exit 0)
+    produced it and all 42 pass.
+
+  - **R2 (medium) — the console migration had no transport-level coverage.
+    Added, one per host.**
+    `ServeWebHostTests.testConsoleReadDocumentsResolveOverGraphQLWithBrowserHeaders`
+    POSTs the literal `WebConsoleInstances`, `WebConsoleInstance` and
+    `WebOpsOverview` documents copied from `web/src/console/client.ts` — full
+    selection set — to `/graphql` on `ServeWebHost`, with the headers the
+    console attaches (`host`, `origin`, `content-type`, `x-riela-csrf` taken
+    from the bootstrap response, `x-riela-profile`). It asserts 200, that the
+    `JSONObject` scalars survive projection (`workflowVariables.greeting ==
+    "hello"`, `nodePatches`, `eventSources`), that the nested
+    `environmentVariables`/`requiredEnvironment` lists resolve with the
+    `••••••••` mask, that the stored secret does not appear in the response
+    body, and — the contract the retired JSON GET never had — that dropping
+    `x-riela-profile` yields 409.
+    `RielaAppWebAPIRouteTests.testConsoleInstancesDocumentResolvesThroughTheDesktopRouter`
+    sends the same document through `RielaAppWebRouter` with the router's CSRF
+    token and asserts the same projection and redaction.
+    Evidence: both filters green, 1 test each, 0 failures.
+
+  - **R3 (medium) — baseline produced; the ten failures are pre-existing.**
+    `git archive HEAD | tar -x -C $(mktemp -d)` then
+    `arch -arm64 /bin/zsh -lc 'swift build && swift test'` in that copy, per
+    the reviewer's non-mutating recipe: `logs/baseline-swift-test.log`.
+    The XCTest phase completed — `Executed 2218 tests, with 1 test skipped and
+    172 failures` in 930s — and **all ten** of the failures seen on the
+    working tree fail at pristine HEAD as well (grep-confirmed, one occurrence
+    each): the six AppKit view-hierarchy cases, the three
+    `NSCocoaErrorDomain Code=4` socket-unlink cases, and
+    `testPackageAppEnvironmentEnablementRunAndMonitoringScenario`.
+    Two honest caveats: the baseline's *total* is not comparable to the
+    working tree's, because an extracted copy under `/var/folders` is outside
+    a git repository and outside the install layout, so whole suites that pass
+    in place (git add-ons, packaged-CLI symlink, container) fail there — the
+    baseline is a superset, which is sufficient to establish "pre-existing"
+    but not to compare counts. And the wrapper's exit marker was lost when the
+    harness backgrounded the command after 600s, so the log ends at the XCTest
+    summary rather than an exit status; the summary line itself is complete.
+    The extracted tree and one orphaned `riela specialist serve` process it
+    left behind were cleaned up.
+    **Acceptance criterion 8 is therefore met modulo a named environmental
+    set**: ten tests fail in this headless agent session, all ten fail
+    identically at `f8b763a`, none of them touches any file in this change.
+
+  - **R4 (low) — the stop-by-id rule is now stated and pinned.** A rerun
+    registers under the session it re-enters, because the id its payload
+    reports does not exist until the rerun has already finished — so that id
+    can never be a stop handle. The rule is documented on
+    `GraphQLStopSessionInput`, on `RielaSessionControlProvider.stopSession`,
+    and in `Resources/skills/riela-workflow-reference`. It is pinned by
+    `SurfaceParitySessionLineageTests.testStopUsesTheEnteredSessionIdNotTheIdTheRerunReports`,
+    which reruns a real session and asserts the reported id yields
+    `SESSION_NOT_RUNNING`.
+
+  - **R5 (low) — `managerSessionId` documented as inert; workflow ownership
+    is now actually enforced.** The reviewer offered documentation or
+    deletion; the field is kept (the manager control-plane design puts it on
+    every request DTO and a future verifier needs it) and is documented as a
+    non-authenticator on all three input types, in the skill, and in design
+    section 6, together with the real trust boundary. The second half of the
+    finding was fixed in code rather than documented:
+    `requireSessionBelongsToWorkflow` loads the persisted session and rejects
+    a `workflowId` that does not own it with `SESSION_WORKFLOW_MISMATCH`, so a
+    guessed session id can no longer be driven under an arbitrary workflow
+    name. `stopSession` keeps its fail-closed ordering — registry check first,
+    then ownership, then cancel — so delta D3 is unchanged. Pinned by
+    `testSessionControlRejectsAWorkflowThatDoesNotOwnTheSession`.
+
+  - **R6 (low) — the CLI enumerator's blind default branch is closed.**
+    `CLISurfaceEnumerator` now declares `leafRoutes` (deliberately
+    subcommand-free) and `expandedRoutes` (walked into subcommands), and
+    `unclassifiedRoutes()` returns any router subcommand in neither.
+    `SurfaceParityCLITests.testEveryRouterRouteIsClassifiedAsALeafOrExpanded`
+    requires that to be empty, so registering `riela task` forces an explicit
+    classification and, if it is nested, an expansion case — its subcommands
+    cannot ship invisible to the gate.
+
+  - **R7 (low) — full out-of-`writePaths` list for the serial join.**
+    `impl-plans/active/surface-parity-dispatch.json` `writePaths` cannot be
+    used for collision detection on this plan. The complete set of paths this
+    plan created or modified outside it is:
+    `Package.swift`; `design-docs/specs/design-control-surface-parity.md`;
+    `Sources/RielaApp/RielaAppWebAPI.swift`;
+    `Sources/RielaAppSupport/RielaConsoleGraphQLProvider.swift`,
+    `Sources/RielaAppSupport/RielaWebAPIRouteTable.swift`;
+    `Sources/RielaCLI/CLISurfaceEnumeration.swift`,
+    `Sources/RielaCLI/SessionControlProvider.swift`,
+    `Sources/RielaCLI/DistributedWorkerCommand.swift`,
+    `Sources/RielaCLI/MemoryCommandModels.swift`,
+    `Sources/RielaCLI/PasskeyCommand.swift`,
+    `Sources/RielaCLI/RielaClientFamilyArguments.swift`,
+    `Sources/RielaCLI/RielaCommand.swift`,
+    `Sources/RielaCLI/RoutineCommands.swift`,
+    `Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift`,
+    `Sources/RielaCLI/ScopedParityCommands+Serve.swift`;
+    `Sources/RielaCore/SurfaceCatalog+RowSupport.swift`,
+    `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift`,
+    `Sources/RielaCore/SurfaceCatalog+RowsConsole.swift`;
+    `Sources/RielaGraphQL/GraphQLConsoleContracts.swift`,
+    `Sources/RielaGraphQL/GraphQLSessionControlContracts.swift`;
+    `Tests/RielaAppSupportTests/RielaAppWebAPIRouteTests.swift`,
+    `Tests/RielaCLITests/ServeWebHostTests.swift`,
+    `Tests/RielaCLITests/SurfaceParityConsoleReadTests.swift`,
+    `Tests/RielaCLITests/SurfaceParitySessionLineageTests.swift`,
+    `Tests/RielaGraphQLTests/GraphQLContractsTests.swift`,
+    `Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift`,
+    `Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift`;
+    `web/src/console/client.ts`, `web/src/console/client.test.ts`;
+    `web/e2e/dashboard.spec.ts`, `web/e2e/workflow-management.spec.ts`,
+    `web/e2e/workflow-configurations.spec.ts`,
+    `web/e2e/workflow-studio.spec.ts`, `web/e2e/server-instances.spec.ts`,
+    `web/e2e/desktop-connection.spec.ts`.
+    Every one belongs to this plan; no other worker's edits were touched.
+
+- 2026-09-21: **revision-1 verification** (fable-and-improve-opus, Claude Opus
+  5). Logs under `tmp/surface-parity/control-surface-parity/attempt-2/logs/`.
+
+  - `arch -arm64 /bin/zsh -lc 'swift build && swift test'` →
+    `logs/final-swift-test.log`, `SWIFT_EXIT=1`, **the same ten failures and no
+    others** — byte-for-byte the environmental set R3 confirmed at pristine
+    HEAD. No failure was introduced by the R1–R7 work.
+  - `arch -arm64 /bin/zsh -lc 'swiftlint lint --strict <42 changed sources>'`
+    → `Found 0 violations, 0 serious in 42 files`.
+  - `cd web && bun run typecheck && bun run lint && bun test src` →
+    `logs/web.log`, `WEB_EXIT=0`, 100 pass / 0 fail / 1795 expect() across 21
+    files.
+  - `cd web && bun run test:e2e` → `logs/e2e-3.log`, exit 0, **42 passed**
+    (Playwright now actually runs; R1).
+  - Surface gates on the final tree:
+    `swift test --filter "SurfaceParity|SurfaceCatalog|SingleParser|SessionMutation"`
+    → 63 tests, 1 skipped (the SDL regeneration entry point), 0 failures.
+  - Still not committed and not pushed: the shared-branch write protocol
+    forbids `git add`/`commit`/`push`. The only staged entry remains the
+    deletion of `impl-plans/progress/plans/graphql-supervision-execution-parity.json`.

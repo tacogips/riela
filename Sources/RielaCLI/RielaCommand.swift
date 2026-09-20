@@ -50,7 +50,7 @@ public enum RielaCommand: Equatable, Sendable {
   case scoped(ScopedCommand)
 }
 
-public enum SpecialistCommandKind: String, Codable, Equatable, Sendable {
+public enum SpecialistCommandKind: String, Codable, CaseIterable, Equatable, Sendable {
   case catalog
   case catalogRefresh = "catalog-refresh"
   case serve
@@ -110,7 +110,7 @@ public enum WorkflowCommand: Equatable, Sendable {
   case package(PackageCommand)
 }
 
-public enum WorkflowVersionCommandKind: String, Codable, Equatable, Sendable {
+public enum WorkflowVersionCommandKind: String, Codable, CaseIterable, Equatable, Sendable {
   case list
   case show
   case diff
@@ -139,7 +139,7 @@ public struct WorkflowVersionCommandOptions: Equatable, Sendable {
   }
 }
 
-public enum LoopCommandKind: String, Codable, Sendable {
+public enum LoopCommandKind: String, Codable, CaseIterable, Sendable {
   case status
   case evidence
   case gates
@@ -184,7 +184,7 @@ public struct WorkflowManifestValidateOptions: Equatable, Sendable {
   }
 }
 
-public enum PackageCommandKind: String, Codable, Sendable {
+public enum PackageCommandKind: String, Codable, CaseIterable, Sendable {
   case search
   case list
   case status
@@ -212,7 +212,7 @@ public struct PackageCommand: Equatable, Sendable {
   }
 }
 
-public enum NodeCommandKind: String, Codable, Sendable {
+public enum NodeCommandKind: String, Codable, CaseIterable, Sendable {
   case search
   case list
   case install
@@ -229,7 +229,7 @@ public struct NodeCommand: Equatable, Sendable {
   }
 }
 
-public enum ScopedCommandKind: String, Codable, Sendable {
+public enum ScopedCommandKind: String, Codable, CaseIterable, Sendable {
   case graphql
   case gql
   case hook
@@ -900,7 +900,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     guard let command = remainder.first, !["--help", "-h", "help"].contains(command) else {
       return CLICommandOptions(scope: "kaiba", command: "help", output: .text)
     }
-    let allowed = Set(["list", "show", "add", "update", "remove", "test", "set-default"])
+    let allowed = Set(KaibaInstanceClientAction.allRawValues)
     guard allowed.contains(command) else {
       return CLICommandOptions(scope: "kaiba", command: "invalid", arguments: remainder, output: .text)
     }

@@ -2,10 +2,10 @@
 
 **Status**: Planning
 **Workflow Mode**: feature
-**Feature Fanout**: true — eight phases; E0 and E1 are compatibility breaks and run in order, E2–E7 are additive and partly parallel
+**Feature Fanout**: true — eight internal milestones, not releasable states; every removed field ships in the milestone that ships its replacement (design §15); E0 and E1 first, then E3 before E2's bootstrap goals, E4 and E5 in parallel with E2/E3, then E6, E7
 **Design Reference**: `design-docs/specs/design-execution-environment-consolidation.md` (all sections); intake `design-docs/specs/design-ax-substrate-inspired-capabilities.md` §5 A, C, D, F, G
 **Created**: 2026-09-21
-**Last Updated**: 2026-09-21 (plan authored against the two seam inventories; no code written)
+**Last Updated**: 2026-09-21 (revised after the Codex `gpt-6-astra` review; design §21 lists the accepted findings; no code written)
 
 ## Accepted Design
 
@@ -25,9 +25,15 @@
   `RielaCLI`/`RielaAdapters`; Work Runtime binding in `RielaWork`.
   `RielaCore` never imports `RielaWork`; `RielaWork` never imports
   `RielaCLI` (instance provider injected through a `RielaCore` protocol).
-- Ordering relative to the Work Runtime: E0–E1 independent of P1; E2's
-  task binding lands with P4 and hands it the base tree; E3 ceilings serve
-  P7. `WorkflowStepExecution.environment` and session `conditions` are
+- Ordering relative to the Work Runtime: E0's store, writer, search, and
+  import/export are independent of P1; E0's planner integration and
+  `task promote-plan` depend on P1; E2's task binding lands with P4, which
+  co-specifies branch creation and publication; E3 ceilings serve P7.
+- Agent CLI processes are spawned by the gateway package's
+  `POSIXGatewayProcessRunner` (`AgentGatewayNodeAdapter.swift:41` →
+  `ProductionGatewayExecutor`), not by `LocalProcess.swift`; E3 injects a
+  policy-aware `GatewayProcessRunning` there and tests through the
+  production adapter. `WorkflowStepExecution.environment` and session `conditions` are
   additive fields; the schema generation is bumped once in E0 for the
   definition tables.
 
@@ -36,13 +42,13 @@
 Check a box only after its task's completion evidence is recorded in the
 progress log with the exact command and result.
 
-- [ ] E0 Definition store (tables, blobs, writer, import/export/history/activate/fork/consolidate, ephemeral run, package install as import, file registry deleted; user store and project store stay two databases — user decision 2026-09-21)
-- [ ] E1 Environment model and validation (types, node/workflow fields, removals with diagnostics, resolved environment, ad-hoc local workspace, examples and skills rewritten)
+- [ ] E0 Definition store (tables, assets, writer, pins and cross-store closure snapshot, integer head revision, explicit activation, retention graph, submissions, import/export/history/activate/fork/consolidate, search and similarity, ephemeral run, package install as import, quarantine on generation mismatch, file registry deleted; user store and project store stay two databases — user decision 2026-09-21)
+- [ ] E1 Environment model and validation (types, node/workflow fields, resolved environment with `DefinitionPin` list, ad-hoc local workspace, definition-assets mount, removal of the location fields only, workflow-level `policy` defaults added to every example, skills rewritten)
 - [ ] E2 Workspace runtime (materializer, templates, instances, clone, change snapshots, fanout and task bindings)
-- [ ] E3 Policy engine (four renderers, Seatbelt wired and `auto` default — user decision 2026-09-21, container mounts and resources, egress enforcement point, capability requirements)
-- [ ] E4 Model profiles (loader, credential sources, `default/<backend>`, adapter wiring, redactor)
-- [ ] E5 Placement and workers (bindings, ceilings, capability table, resolver, artifact return)
-- [ ] E6 Runner contract and conditions (metadata file, system mounts, `riela-runner`, `session exec`, conditions)
+- [ ] E3 Policy engine (policy-aware gateway process runner + Seatbelt for command nodes, `auto` default — user decision 2026-09-21, intersection invariants and reserved-key rejection, `policy.environment`, container mounts and resources, egress enforcement point, capability requirements; removes `agentSandbox`, `AgentToolPolicy`, `<vendor>AdditionalArgs`, `RIELA_SANDBOX_SEATBELT` here)
+- [ ] E4 Model profiles (deterministic literal/profile rule, insert-if-absent `default/<backend>`, `trusted` flag via `riela model trust`, credential sources, adapter wiring, redactor; removes node `baseURL`/`apiKeyEnvironment`/`provider`/`providerProxy` here)
+- [ ] E5 Placement and workers (bindings, ceilings with `environment.forbid` for the transport token, capability table, resolver, artifact return, controller-side finalization of remote change sets; removes `placement.workspace/exports`, `allowedAddons`, `allowedEnvironment`, `controllerPath` here)
+- [ ] E6 Runner contract and conditions (metadata file, system mounts incl. `RIELA_DEFINITION_ROOT`, `riela-runner`, `session exec` with verified host-principal authorization and denial tests, hook events, conditions)
 - [ ] E7 Surfaces and packages (remaining CLI/GraphQL rows, doctor, Studio rows, skill docs, `riela-packages` follow-up)
 
 ## Applicable Prior Knowledge
@@ -117,14 +123,28 @@ provider queries; process snapshots.
   `definition_blobs(digest PK, bytes BLOB, size)`; indexes on
   `(kind, name, scope)`, `digest`, `parent_version_id`; schema generation
   bumped once; `discardIncompatibleStoreIfNeeded` handles old stores.
-- `DefinitionWriter` (design §4.3): lenient JSON parser (comments, trailing
-  commas, BOM; CRLF in text blobs), strict validation through the existing
-  validators plus `validateExecutionEnvironment` (E1 supplies it; E0 wires
-  a hook), canonical normalizer (`JSONCanonical.swift`: sorted keys, compact,
-  shortest numbers, NFC strings, default-valued fields dropped per a table
-  in the same file; text blobs LF, trailing whitespace stripped, single
-  trailing newline, BOM removed), digest, dedupe (`unchanged`,
-  re-activation of an equal older version), one transaction.
+- `DefinitionWriter` (design §4.4): lenient JSON parser (comments, trailing
+  commas, BOM), strict validation through the existing validators plus
+  `validateExecutionEnvironment` (E1 supplies it; E0 wires a hook),
+  meaning-preserving normalizer (`JSONCanonical.swift`: sorted keys,
+  compact, shortest numbers, default-valued fields dropped per a table in
+  the same file, **string values byte-preserved**; text assets CRLF→LF,
+  BOM, single trailing newline, trailing-whitespace strip only for
+  non-executable, non-fenced text; scripts and binaries byte-preserved
+  with `AssetRef { digest, size, executable, kind }`), versioned
+  length-prefixed digest framing, dedupe (`unchanged` against
+  `latestVersion`, `duplicateOf` otherwise, never activation), explicit
+  activation with `expectedRevision` (integer, `WorkStore` pattern),
+  `DefinitionSubmission` rows for rejected writes, one transaction.
+- Pins: `WorkflowSession.pins: [DefinitionPin]`; before session creation
+  the resolver snapshots the dependency closure of user-store and
+  bundle-embedded definitions into the session-owning store (no local
+  heads); retention GC honors head pointers, pins, task plans, proposals,
+  `parent` links, dependency pins.
+- Quarantine: on schema-generation mismatch the store is renamed
+  `runtime-records.incompatible-<generation>/`; `riela store reset
+  --confirm` and `riela store export-definitions <dir>` added; the
+  discard helper is no longer used for stores that hold definitions.
 - Bundle import in today's directory layout (`workflow.json`, `nodes/`,
   `prompts/`, scripts, embedded `workspaces/`, `policies/`, `models/`);
   export in three formats (directory bundle, single-file JSON with inlined
@@ -192,11 +212,14 @@ example parity green; `grep -rn "temporary-workflows\|workflow-history\|\.regist
 **Deliverables**:
 
 - Types from design §5 in `Sources/RielaCore/ExecutionEnvironment*.swift`.
-- `AgentNodePayload`: add `workspace`, `cwd`, `policy`, `placement`;
-  remove `workingDirectory`, `agentSandbox`, `agentToolPolicy`, `baseURL`,
-  `apiKeyEnvironment`, `provider`, `providerProxy`; reject the three
-  `<vendor>AdditionalArgs` variables and the legacy decode keys with
-  replacement messages; payload documents reject unknown keys.
+- `AgentNodePayload`: add `workspace` (one binding), `cwd`, `policy`;
+  remove `workingDirectory` and the legacy decode keys with replacement
+  messages; payload documents reject unknown keys. Placement stays on
+  `WorkflowStepRef`. (`agentSandbox`, `agentToolPolicy`, provider fields,
+  and the `<vendor>AdditionalArgs` variables are removed in E3/E4.)
+- Definition-assets mount: `RIELA_DEFINITION_ROOT` materialized read-only
+  from the pinned version and `nodeRef` closure with executable bits;
+  `definition://` typed references for scripts; containment checks.
 - `WorkflowCommandExecution` / `WorkflowContainerExecution` lose
   `workingDirectory` and legacy keys; container gains `debug`.
 - `workflow.json` top-level `workspace`, `policy`, `model`; fanout
@@ -220,11 +243,17 @@ example parity green; `grep -rn "temporary-workflows\|workflow-history\|\.regist
   `LocalProcess` child cwd is the resolved `cwd`; `WorkflowStepExecution.environment`
   persisted.
 - Examples: the 7 `workingDirectory` files → `cwd` (the two container
-  workers → `workspace.mount: "/workspace"`), 4 `agentSandbox` → `policy`,
-  4 `<vendor>AdditionalArgs` → `policy.agent.extraArguments`, 1
-  `providerProxy` → a `models/` document in the bundle, 2 `placement`
-  files → `placement.host`, 1 `writeOwnership` → fanout `workspace`;
-  `EXPECTED_RESULTS.md` updated where evidence changes.
+  workers → `workspace.mount: "/workspace"`); every example `workflow.json`
+  gains a top-level `policy` default (153 CLI-backend node payloads exist,
+  149 without `agentSandbox`, so the policy requirement is satisfied at the
+  workflow level, with per-node overrides only where the 4 `agentSandbox`
+  declarations differ); 4 `<vendor>AdditionalArgs` →
+  `policy.agent.extraArguments`; 1 `providerProxy` → a `models/` document
+  in the bundle; 2 step `placement` files keep `placement.host`; 1
+  `writeOwnership` → fanout `workspace`; `EXPECTED_RESULTS.md` updated
+  where evidence changes. The field *removals* for sandbox, tool policy,
+  provider, and placement happen in E3/E4/E5 (design §15); E1 only adds
+  the replacements and removes the location fields.
 - Packaged skills rewritten for the new fields.
 
 **Completion evidence**: model round-trip and rejection tests for every
@@ -254,11 +283,16 @@ Work Runtime adapter test with `taskGeneration` reuse across two attempts.
 
 ### E3 Policy Engine
 
-**Deliverables**: `PolicyResolver` (ceiling intersection, capability
-requirements from add-on manifests); local renderer wiring
-`localSandboxPolicy` into `LocalProcessConfiguration.sandboxPolicy` at the
-spawn choke point with SBPL localhost exemption for the enforcement point
-and `auto` default; codex renderer (`--sandbox`, `-c sandbox_permissions`,
+**Deliverables**: `PolicyResolver` (per-field intersection per design §7,
+`policy.environment`, reserved renderer-owned argv/env keys rejected at
+validation, capability requirements from add-on manifests); agent CLI
+renderer as a policy-aware `GatewayProcessRunning` injected into
+`ProductionGatewayExecutor` (Seatbelt wrap of the vendor executable,
+proxy env, labels per constraint); command-node renderer wiring
+`localSandboxPolicy` into `LocalProcessConfiguration.sandboxPolicy` at
+`LocalProcess.swift:669` with the SBPL localhost exemption for the
+enforcement point and `auto` default; in-process add-ons and SDK backends
+labeled `advisory` for filesystem; codex renderer (`--sandbox`, `-c sandbox_permissions`,
 proxy env, `advisory`); container renderer (bind mounts from bindings and
 `extraWrite`, `--read-only`, `--tmpfs`, `--cpus`, `--memory`,
 `--pids-limit`, `--network none` / internal network + proxy); worker
@@ -269,19 +303,25 @@ per-attempt bearer, allowlist by CONNECT authority, `egress` evidence,
 resolved environment.
 
 **Completion evidence**: renderer fixture tests per class (argv, SBPL text,
-container args); a live Seatbelt test on macOS asserting a write outside
+container args); a live Seatbelt test on macOS **through the production
+gateway adapter with a stub vendor executable** asserting a write outside
 the instance root fails under `workspace` and succeeds under
-`unrestricted`; proxy tests (allowed host dials, denied host 403 with
+`unrestricted`, plus the same for a command node; rejection tests for
+reserved keys in `extraArguments`, `agentEnvironment`, and MCP `env`; proxy tests (allowed host dials, denied host 403 with
 evidence, missing bearer 407); add-on requirement rejection at validation.
 
 ### E4 Model Profiles
 
-**Deliverables**: `ModelProfileResolver` over the definition store;
-implicit creation of a missing `default/<backend>` as a real `global` head
-(`origin: implicit`, literal model, conventional credential env var or
-`nil`, `implicitProfileCreated` recorded on the session — design §8, user
-decision 2026-09-21); credential sources with the user-scope rule for
-`command`; adapter wiring (the per-call environment
+**Deliverables**: `ModelProfileResolver` over the definition store with the
+deterministic rule (exact head name → profile, else literal + `default/
+<backend>`; profile backend must equal the node backend; `effort`
+overrides parameters; workers use the pinned profile version); implicit
+creation of a missing `default/<backend>` as a real `global` head with
+insert-if-absent semantics (`origin: implicit`, literal model, conventional
+credential env var or `nil`, `implicitProfileCreated` recorded on the
+session — design §8, user decision 2026-09-21); credential sources with
+`trusted` set only by `riela model trust` and cleared on import/fork/
+copy/install; adapter wiring (the per-call environment
 carries the resolved secret exactly where `apiKeyEnvironment` used to),
 `RielaTelemetryRedactor` gains `credential`, `riela model list|show|
 validate`, doctor rows, `placement` evidence records the profile name.
@@ -300,7 +340,10 @@ worker `policy` ceiling and `models`, capability table registration and
 `backend-unavailable` reasons (Work Runtime §5a), job payload without
 secrets or host paths, `artifacts` return as bounded `artifact` evidence,
 `hostCapabilities(host:)` GraphQL, `docs/distributed-workers.md`
-rewritten.
+rewritten; workers keep `capabilities.finalization: false` and the
+finalization-token exclusion, and the controller finalizes a returned
+change set against its own instance of the same template through the
+existing journaled store (design §9).
 
 **Completion evidence**: worker configuration tests; controller/worker
 round trip over the HTTP protocol with a `definition` workspace prepared
@@ -314,8 +357,11 @@ mounts declared and the memory-root special case removed;
 producing static binaries; container `runnerKind: riela-runner` mounting
 and using it (readiness marker, process group, 10 s grace, exit code in
 the result envelope, `debug` keep-alive with TTL); `riela session exec`
-and `execInSession` (manager auth, `command` evidence with
-`producedBy: human`); `ExecutionCondition` on sessions and attempts
+and `execInSession` (verified host principal owning the session's store,
+session-ownership check, denial tests, `command` evidence with
+`producedBy: human(principal)` and the policy digest; the catalog row stays
+`blocked` until these exist); `hook_events` persistence joined to
+executions; `ExecutionCondition` on sessions and attempts
 (`DefinitionResolved`, `WorkspaceReady`, `PolicyReady`, `BackendReady`,
 `Ready`) and the inactivity guard reading `Ready`.
 
@@ -338,6 +384,22 @@ that changes.
 tests green; full `swift test` from the repository root with zero failures
 beyond the accepted environmental set and the known interleaved-submit
 timing flake.
+
+## Alignment Map (design §20)
+
+Existing features that change, by phase; each is a deliverable of the phase
+named and a row in that phase's completion evidence.
+
+| Phase | Existing feature changes |
+| --- | --- |
+| E0 | specialist dispatch pins a version id instead of copying a snapshot directory; package install = import of immutable heads and the catalog scan is deleted; `extends` resolves through the store and stores the derived version with `parent`; session export embeds the version, preserved-history import matches head + `structure_digest`; mock scenarios are version blobs; Studio editor updates go through `DefinitionWriter`; `workflow create|consolidate|self-improve` on the store, `historyRoot` and `WorkflowDirectoryTransaction` deleted; run configurations become a stored definition kind |
+| E1 | event bindings carry `workflow: { name, scope?, version? }` + environment overrides; server workflow manifest entries reference store heads; `riela instance` and the app daemon use `--workspace`; `node run` binds a workspace; cross-workflow callees resolve through the store; memory root moves to the project store `memory/`; the agent-node policy requirement replaces mandatory `agentSandbox` |
+| E2 | `riela gc` sweeps `workspaces/`, ephemeral versions, blobs; cross-workflow callee instance rule |
+| E3 | attachments and image paths must fall inside a declared mount; `node run` capability requirements |
+| E4 | hardcoded provider credential table becomes the implicit default profile's `credential` |
+| E5 | daemon and instance placement flags; worker memory-root rule deleted |
+| E6 | hook events persisted and joined to executions; memory root as a system mount |
+| E7 | surface catalog rows lose `--workflow-definition-dir`, `--working-dir`, `--artifact-root`; web run controls and `InstancesView` on workspace pickers (`blocked` rows) |
 
 ## Module Status
 
@@ -382,6 +444,11 @@ timing flake.
   `localSandboxPolicy` has a production caller.
 - Live checks per phase recorded in the progress log on a fresh temporary
   `--session-store`.
+- Enforcement, resolution, and materialization are verified through the
+  production adapters and executors (stub vendor executables, real
+  Seatbelt on macOS, real container driver where available), never only
+  through mock-scenario parity, because the scenario factory substitutes
+  adapters (`ProductionNodeAdapter.swift:35`).
 
 ## Completion Criteria
 
@@ -414,6 +481,20 @@ timing flake.
   and the SDL script, `DoctorCommandResult` (`DoctorCommand.swift:19-27`),
   no copyfile/clonefile use, `rielaExampleWorkflowNames()`, vendor CLI
   flags on the installed binaries. No code written.
+
+- 2026-09-21 (review): Codex `gpt-6-astra` reviewed the design and plan
+  (report under `tmp/astra-review/`, not committed); 18 findings verified
+  against the tree and folded into design §21 and this plan: gateway
+  process-runner seam for agent CLIs, `managerSessionId` not an
+  authenticator, preserved-history checks retained, named instance
+  branches, cross-store pins, `DefinitionPin`/`latestVersion`/`revision`/
+  `DefinitionSubmission`, meaning-preserving normalization with
+  `AssetRef.executable`, definition-assets mount, template branch and
+  produced paths, tracked-set snapshot contract, policy invariants,
+  deterministic model resolution and `trusted`, controller-side remote
+  finalization, 153/149 example scope with workflow-level policy defaults,
+  quarantine on generation mismatch, removals moved beside replacements.
+  No code written.
 
 ## Related Plans
 

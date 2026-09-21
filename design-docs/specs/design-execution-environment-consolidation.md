@@ -1,8 +1,11 @@
 # Execution environment consolidation: definition store, Workspace, Policy, Model, Placement, and the runner contract
 
-Status: proposed 2026-09-21, zero-based. No backward compatibility: removed
-fields, flags, directories, and files are gone, validation rejects them, and
-no example, package, or store is migrated. Plan:
+Status: proposed 2026-09-21, zero-based; revised the same day after an
+adversarial review by Codex `gpt-6-astra` (verdict "not ready for
+implementation"; every accepted finding is listed in §21 and folded into
+the sections it names). No backward compatibility: removed fields, flags,
+directories, and files are gone, validation rejects them, and no example,
+package, or store is migrated. Plan:
 `impl-plans/active/execution-environment-consolidation.md`. This document
 supersedes `design-workspace-provisioning.md` (deleted) and adoptions A, C,
 D, F, and G of `design-ax-substrate-inspired-capabilities.md`. It is the
@@ -55,8 +58,10 @@ Facts were read from the tree; line numbers move.
   immutable directories with checksums. Temporary workflows
   (`--workflow-json`) are one-off bundles. `--workflow-root` does not exist
   in `Sources`; the options are `--scope` and `--workflow-definition-dir`
-  (`WorkflowRegistryBundleLoader.swift:47-66`). Runs pin a bundle digest in
-  the session snapshot.
+  (`WorkflowRegistryBundleLoader.swift:47-66`). Runs do **not** pin a bundle: a session records per-execution invocation
+  compatibility digests (`_rielaHistoryContract`: workflow, variables,
+  accepted-node payload, target input, communication) that preserved-history
+  reuse checks (`DeterministicWorkflowRunner+History.swift:52-103`).
 - **Node payload.** `AgentNodePayload` (`WorkflowModel.swift:764`) fields
   as listed in §1; payload files are decoded without unknown-key rejection
   (`WorkflowRegistryBundleLoader.swift:146`); `workingDirectory` has no
@@ -89,7 +94,13 @@ Facts were read from the tree; line numbers move.
   `LocalProcessConfiguration.sandboxPolicy` is never set, so
   `seatbeltInvocation` (`LocalProcess.swift:669`) always returns nil in
   production. `agentSandbox` reaches vendors as `--sandbox` /
-  `--permission-mode` only.
+  `--permission-mode` only. **Agent CLI processes do not go through
+  `LocalProcess.swift` at all**: `AgentGatewayNodeAdapter.swift:41` builds
+  `ProductionGatewayExecutor(environment:)`, whose default
+  `processRunner` is the gateway package's `POSIXGatewayProcessRunner`
+  (`GatewayExecution.swift:64-73, 128`); only command nodes, add-ons, and
+  git run through Riela's `LocalProcessRunning`. The gateway exposes
+  `processRunner` injection.
 - **Fanout.** Four `writeOwnership` modes; only `disjoint-paths` has a
   runtime effect (static validation); `changeTracking` snapshots
   (sha256 + content, 1…512 paths, 8 MB/file, 64 MB total) run only when
@@ -123,8 +134,15 @@ Facts were read from the tree; line numbers move.
    versioned records in the runtime records database, each version
    immutable and content-addressed, with an active pointer and lineage.
    Creating, updating, activating, rolling back, consolidating, proposing,
-   and accepting a definition are row operations in one transaction with
-   the sessions and tasks that reference them. A directory bundle, a
+   and accepting a definition are row operations in one transaction
+   **within one store**. Sessions and tasks pin definitions from their own
+   store; before a session is created, resolution snapshots the immutable
+   dependency closure of every definition it resolved from another store
+   (the user store, or a bundle-embedded document) into the session-owning
+   store as pinned copies that keep the source store identity, version id,
+   digest, and trust provenance and create no local head. Session creation
+   and those pins commit together. No cross-database atomicity is
+   promised, and consolidation across physical stores is rejected. A directory bundle, a
    `.rielapkg`, a JSON document on stdin, or a `--workflow-json` payload is
    an **import source** that yields a version; `export` writes a version
    back to a directory. The repository's `examples/` stay directories
@@ -221,16 +239,16 @@ Facts were read from the tree; line numbers move.
 ### 4.1 Model
 
 ```swift
-public enum DefinitionKind: String { case workflow, workspace, policy, model }
+public enum DefinitionKind: String { case workflow, workspace, policy, model, runConfiguration, addon }
 
 public struct DefinitionVersion: Codable, Sendable {
   public var id: DefinitionVersionID                 // "defv-<uuid>"
   public var kind: DefinitionKind
-  public var name: String                            // unique per (scope, kind)
+  public var name: String?                           // unique per (scope, kind); nil only for ephemeral versions
   public var scope: DefinitionScope                  // global | project | workspace(name) — see §4.2
   public var digest: String                          // sha256 over the canonical document tree
   public var document: JSONObject                    // workflow.json / workspace / policy / model body
-  public var files: [String: BlobRef]                // relative path → blob digest (node payloads, prompts, scripts, containerfiles)
+  public var files: [String: AssetRef]               // relative path → { digest, size, executable, kind: json | text | binary }
   public var parent: DefinitionVersionID?            // lineage
   public var origin: DefinitionOrigin                // authored | imported(path|url) | package(id, version) | proposal(attemptId) | generated(taskId) | consolidated([ids]) | ephemeral
   public var state: DefinitionVersionState           // proposed | accepted | rejected
@@ -244,8 +262,21 @@ public struct DefinitionHead: Codable, Sendable {    // one row per (scope, kind
   public var name: String
   public var scope: DefinitionScope
   public var activeVersion: DefinitionVersionID?     // nil = deactivated
+  public var latestVersion: DefinitionVersionID      // newest accepted version, independent of activation
+  public var revision: Int                           // integer optimistic-concurrency token, as WorkStore uses (WorkStore.swift:118)
   public var mutable: Bool                           // false for package-installed heads
   public var updatedAt: Date
+}
+
+public struct DefinitionSubmission: Codable, Sendable {   // a rejected write; never an executable version
+  public var id: String; public var kind: DefinitionKind; public var name: String?; public var scope: DefinitionScope
+  public var origin: DefinitionOrigin; public var diagnostics: [WorkflowValidationDiagnostic]; public var createdAt: Date
+}
+
+public struct DefinitionPin: Codable, Sendable {      // a session's or task's reference to a resolved definition
+  public var kind: DefinitionKind; public var name: String?; public var versionId: DefinitionVersionID
+  public var digest: String; public var sourceStore: DefinitionStoreIdentity   // local | user | bundle(versionId)
+  public var trusted: Bool                            // credential-command authority, never conferred by import
 }
 ```
 
@@ -330,9 +361,12 @@ public enum DefinitionScope: Codable, Sendable {
   imports each packaged workflow as an immutable head (`origin: package`,
   `mutable: false`); "edit a package workflow" is `fork`, which creates a
   mutable head with `parent` set.
-- **Update** creates a version with `parent = active`; **activate** moves
-  the head; **rollback** is activate to an older version; **history** lists
-  the chain; **diff** compares two versions' documents and files;
+- **Update** creates a version with `parent = latestVersion`, bumps
+  `revision` (a stale `expectedRevision` is a conflict, as in `WorkStore`),
+  and activates only when the caller's activation policy says so;
+  **activate** moves the head to any accepted version and is always an
+  explicit operation; **rollback** is activate to an older version;
+  **history** lists the chain; **diff** compares two versions' documents and files;
   **consolidate** creates one version from several heads and deactivates
   the sources (today's consolidation flow, on rows); **delete** removes the
   head and its exclusively owned versions; **export** writes a version to
@@ -390,27 +424,45 @@ nothing reaches a row that did not pass all four steps.
    candidate. Any error-severity diagnostic rejects the write and returns
    the diagnostics; warnings are stored on the version (`diagnostics`)
    and shown by `show`. There is no "save invalid as draft": a proposal
-   from an agent that fails validation is recorded as a `rejected` version
-   with the diagnostics so the ledger shows why, and never becomes a head.
-3. **Normalize.** JSON documents are re-serialized canonically: keys
-   sorted, no insignificant whitespace, numbers in shortest round-trip
-   form, strings NFC-normalized, no comments, no trailing commas, one
-   trailing LF. Fields equal to their documented default are dropped
-   (for example `modelFreeze: false`, empty `variables`, empty
-   `agentEnvironment`), so two authors writing the same workflow produce
-   the same bytes. Text blobs (prompts, scripts, markdown) get LF line
-   endings, trailing whitespace stripped per line, a single trailing
-   newline, BOM removed, NFC. Binary blobs (images, containerfiles
-   declared binary) are stored as-is. `export` writes the canonical form
-   pretty-printed with two-space indentation for humans; the digest is
-   always computed over the canonical compact form, so exporting and
-   re-importing is a no-op version-wise.
-4. **Digest and dedupe.** `digest = sha256(kind ∥ canonical document ∥
-   sorted (path, blob digest) pairs)`. A write whose digest equals the
-   head's active version creates no row and reports `unchanged`; a write
-   whose digest equals an older version in the same head re-activates that
-   version instead of duplicating it (recorded as `rollback`). Blobs are
-   written by digest before the version row, in one transaction.
+   from an agent that fails validation is recorded as a
+   `DefinitionSubmission` (not a version) with the diagnostics so the
+   ledger shows why; submissions are never executable and never heads.
+3. **Normalize, without changing meaning.** Normalization applies to the
+   structure Riela owns and never to bytes an agent or a shell will
+   execute:
+   - JSON documents (`workflow.json`, node payloads, workspace, policy,
+     model, run configuration): keys sorted, insignificant whitespace
+     removed, numbers in shortest round-trip form, no comments, no
+     trailing commas, BOM removed, one trailing LF; fields equal to their
+     documented default dropped (`modelFreeze: false`, empty `variables`,
+     empty `agentEnvironment`). **String values are preserved byte for
+     byte**: no Unicode normalization, no trimming, because a string may
+     be a command argument or a literal an agent must reproduce.
+   - Prompt and Markdown assets (`kind: text`): CRLF → LF, BOM removed, a
+     single trailing newline. Trailing whitespace is stripped only when
+     the asset is not referenced by a `command` or `container` node and
+     is not fenced code; otherwise bytes are preserved. No NFC.
+   - Scripts, containerfiles, and everything else (`kind: binary`): stored
+     byte for byte, with `size` and the executable bit recorded so
+     materialization restores `+x`. Symlinks are rejected on import, as the
+     registry rejects them today.
+   `riela workflow fmt` is the only operation that rewrites authored
+   assets more aggressively (trailing whitespace in any text asset), and it
+   is explicit, never an import side effect. `export` writes JSON
+   pretty-printed with two-space indentation; the digest is computed over
+   the canonical compact form, so export → import reports `unchanged`.
+4. **Digest and dedupe.** `digest = sha256(v1 ∥ kind ∥ len(document) ∥
+   canonical document ∥ for each sorted path: len(path) ∥ path ∥ asset
+   digest ∥ executable bit)`, a versioned, length-prefixed framing so no
+   two inputs share an encoding. A write whose digest equals the head's
+   `latestVersion` creates no row and reports `unchanged`; a write whose
+   digest equals an older version reports `duplicateOf(versionId)` and
+   creates nothing, and **never activates anything by itself**. Content
+   identity, activation, and retention are three separate concerns:
+   activation is explicit (above), and retention is a graph: GC removes a
+   version only when no head pointer, session pin, task plan, proposal,
+   `parent` link of a retained version, or dependency pin references it.
+   Assets are written by digest before the version row, in one transaction.
 
 `riela workflow validate <dir|file>` keeps working on files by running
 steps 1–3 without step 4 and printing the diagnostics and, with
@@ -451,6 +503,10 @@ contract, expected output, step overview), lineage (`parent`, forks,
 consolidations), and usage counts (sessions and tasks that pinned any
 version of the head, from the runtime records). `--similar-to` ranks by
 `structure_digest` equality first, then sketch similarity, then FTS score.
+Similarity is discovery metadata: it ranks candidates and gates *creation*
+(below); it never authorizes reusing a workflow for execution or reusing
+preserved history on its own, because two single-agent graphs with equal
+shape can carry opposite instructions.
 `workflow usage` and `workflow list` become views over the same index.
 
 **Finding a workflow to use, before making one.** Search is also the
@@ -466,9 +522,10 @@ rate from the runtime records. Every agent-facing path uses it first:
 - the Work Runtime planner receives the top hits as a variable and must
   answer `reuse(head@version)`, `fork(head)`, or `new` with a reason; the
   runtime records the answer as a `Decision` with the hits as `causedBy`
-  evidence, and `new` is rejected by the writer when a hit is above the
-  similarity threshold unless the reason names a concrete difference the
-  fork mechanism cannot express;
+  evidence, and when a hit is above the similarity threshold `new` is refused by the
+  writer in favour of `fork(hit)` unless the planner passes `--force`
+  with its reason, which the runtime records; the writer does not judge
+  the reason, the ledger shows it;
 - the `riela` routing skill and the `riela-workflow` authoring skill call
   `find` before `import` or `create`, and their parity gates check that
   the instruction is documented;
@@ -595,9 +652,9 @@ public struct PlacementRequest: Codable, Sendable {
   public var require: PlacementRequirements                  // enforcement level, warm template preferred
 }
 
-public struct ResolvedExecutionEnvironment: Codable, Sendable {   // on WorkflowStepExecution and Attempt; written to the metadata file
-  public var definitions: [DefinitionKind: DefinitionVersionID]
-  public var workspace: WorkspaceInstanceRef
+public struct ResolvedExecutionEnvironment: Codable, Sendable {   // owned by RielaCore; on WorkflowStepExecution; projected onto Attempt by RielaWork
+  public var definitions: [DefinitionPin]                     // one pin per resolved definition, keyed by (kind, binding id); several policies (ceilings) and several workspaces are representable
+  public var workspace: WorkspaceInstanceRef                  // the cwd binding's instance (first release: the only binding, §19)
   public var cwd: String                                     // absolute, inside the instance
   public var mounts: [ResolvedMount]                         // bindings + system mounts
   public var policy: ResolvedPolicy                          // effective sections + per-rendering enforcement labels
@@ -613,9 +670,11 @@ Node payload after the change:
   `modelFreeze`, `effort`, `command`, `container`, `sleep`,
   `agentEnvironment`, prompts, `sessionPolicy`, `promptVariants`,
   `memories`, `variables`, `input`, `output`;
-- added: `workspace: WorkspaceBinding | [WorkspaceBinding]` (first = cwd
-  root), `cwd: String?` (relative), `policy: String | ExecutionPolicy`,
-  `placement: PlacementRequest?`;
+- added: `workspace: WorkspaceBinding` (one binding per node in the first
+  release; the array form with binding ids is a §19 decision), `cwd:
+  String?` (relative), `policy: String | ExecutionPolicy`. Placement stays
+  a **step** property (`WorkflowStepRef.placement`, as today) and is not
+  added to node payloads;
 - removed: `workingDirectory`, `agentSandbox`, `agentToolPolicy`,
   `baseURL`, `apiKeyEnvironment`, `provider`, `providerProxy`; variables
   `codexAdditionalArgs`, `claudeAdditionalArgs`, `cursorAdditionalArgs`;
@@ -666,9 +725,24 @@ cwd, run `bootstrap.verify`, write `prepared.json` atomically; any failure
 writes `failed.json` and the template is never reused silently; a
 relocatability scan downgrades `relocatable`; `prepare.lock` serializes.
 
-Instances: `git worktree add --detach` per repository, `files/` cloned
-copy-on-write (`copyfile(3)` `COPYFILE_CLONE`, `FICLONE`, plain copy
-fallback; method recorded), verify-on-first-use with in-place fallback.
+Instances: for each repository the materializer, after bootstrap, commits
+any tracked changes bootstrap made onto a template-local branch
+`riela/template/<digest>` and records the untracked and ignored paths
+bootstrap produced (`resolved.json: producedPaths`); an instance is `git
+worktree add -b riela/<owner-id> <path> riela/template/<digest>` (a
+**named** branch, because `riela/git-commit` requires `symbolic-ref HEAD`
+to resolve, `ProductionNodeAdapter+GitCommit.swift:413`), plus a
+copy-on-write clone of every produced path and of `files/` (`copyfile(3)`
+`COPYFILE_CLONE`, `FICLONE`, plain copy fallback; method recorded; symlinks
+and submodule checkouts reproduced explicitly). Two instances of one
+template therefore start with identical content while their writes stay
+independent. Every execution also receives a read-only **definition-assets
+mount** (`RIELA_DEFINITION_ROOT`) materialized from its pinned workflow
+version and pinned `nodeRef` dependencies, with executable bits restored,
+so bundle scripts run from there while `cwd` stays workspace-relative;
+asset references (`definition://scripts/foo.sh`) and workspace paths are
+distinct typed references. Verify-on-first-use with the in-place fallback
+as above.
 Owner ids: session id; `<taskId>-g<generation>` shared by every attempt of
 a generation (rerun and recover continue on the edited tree; replan bumps
 it); fanout branch execution id. Removal on owner completion unless
@@ -680,10 +754,17 @@ local workspace is `method: adHoc`, no template, never removed.
 
 `shared`: one instance per owner tree. `isolated`: one per branch or task
 generation, merged by the join step or `ChangeRuntime`. For every instance
-the runtime snapshots `track` paths (or the whole tree when `track` is
-empty and the tree is under the existing 64 MB bound) at creation and
-after each execution; diffs are `changedFile` evidence, feed the fanout
-conflict check, and are the base P4 finalizes from. The ad-hoc workspace
+the runtime snapshots the tracked set at creation and after each
+execution: `track` entries are exact regular-file paths or directory
+globs that expand to at most 512 regular files and 64 MB in total (the
+existing engine's bounds, `WorkflowFanoutChangeEvidence.swift:58`); when
+`track` is empty the snapshot is `git status --porcelain` plus content
+digests of changed tracked files, which needs no bound. New files under a
+tracked directory are included by the glob expansion; concurrent writers
+are not serialized (this is observation, not a lock). Diffs are
+`changedFile` evidence and feed the fanout join's conflict *report*; merge
+and conflict *resolution* belong to P4's `ChangeRuntime`, which consumes
+the recorded base revision and change set. The ad-hoc workspace
 snapshots only when `track` is given.
 
 ### 6.4 Projections at spawn
@@ -707,7 +788,7 @@ capability the effective policy denies fails validation.
 
 | Section | Local agent CLI (Seatbelt) | Codex | Container node / add-on | Distributed worker |
 | --- | --- | --- | --- | --- |
-| `filesystem.write` | SBPL writable subpaths = instance root (+`extraWrite`), artifact root, temp; wired at `LocalProcess.swift:669` | `--sandbox` mapping (`advisory`) | RW bind mounts only for bindings and `extraWrite`; `--read-only`, `--tmpfs /tmp` | rendered locally |
+| `filesystem.write` | SBPL writable subpaths = instance root (+`extraWrite`), artifact root, temp; applied by the policy-aware gateway process runner for agent CLIs and at `LocalProcess.swift:669` for command nodes | `--sandbox` mapping (`advisory`) | RW bind mounts only for bindings and `extraWrite`; `--read-only`, `--tmpfs /tmp` | rendered locally |
 | `network` | `(deny network*)` + loopback allow for the per-session enforcement point (CONNECT proxy, per-attempt bearer, allowlist by CONNECT authority, `egress` evidence); `HTTPS_PROXY` set | proxy env (`advisory`) | `--network none` for `deny`; internal network + proxy for allowlists where the driver allows, else `advisory` | worker-local enforcement point |
 | `resources` | diagnostic only (no cgroups on macOS) | same | `--cpus`, `--memory`, `--pids-limit` | as local |
 | `agent` | `--permission-mode`, `extraArguments[claude]` | `--sandbox`, `extraArguments[codex]` | n/a | forwarded |
@@ -715,17 +796,62 @@ capability the effective policy denies fails validation.
 
 `enforcement: off | auto | required` (default `auto`); `required` fails
 loudly where a rendering would be `advisory`. Labels live on the resolved
-environment record.
+environment record, **per constraint and per execution path**: in-process
+add-ons and official SDK calls run inside the riela process and are never
+described as Seatbelt-enforced; their filesystem and network sections are
+`advisory` unless the egress point applies (network) and are reported as
+such.
+
+Invariants of intersection and rendering:
+
+- Intersection is defined per field: an omitted section means "no
+  constraint from this level", `enforcement` takes the strictest level,
+  `filesystem.write` takes the narrowest mode and the intersection of
+  `extraWrite`, `network` takes `deny` over `allowlist` over
+  `unrestricted` and intersects allowlists, `resources` takes the minimum,
+  `capabilities` intersects allow lists and unions deny lists,
+  `agent.permission` takes the narrowest. A ceiling can never be widened
+  by a workflow default, a node, a run configuration, workflow input, or a
+  variable.
+- `policy.environment { inherit: [names], forbid: [names] }` replaces the
+  worker's `allowedEnvironment`; the worker transport token variable is
+  always forbidden (`DistributedWorkerCommand.swift:20` survives as the
+  worker ceiling's `forbid`).
+- Renderer-owned argv and environment keys (`--sandbox`,
+  `--permission-mode`, `-c sandbox_permissions`, `--mcp-config`,
+  `--approve-mcps`, `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`/`NO_PROXY`,
+  credential variables, `RIELA_*`) cannot be set by `extraArguments`,
+  `agentEnvironment`, or workspace MCP `env`; validation rejects them.
+- Agent CLIs are rendered through a policy-aware `GatewayProcessRunning`
+  injected into `ProductionGatewayExecutor` (the gateway's own runner
+  seam), not through `LocalProcess.swift`; command nodes, add-ons, and git
+  use Riela's `LocalProcessRunning`. A renderer is labeled `enforced`
+  only after its actual launch path applied the policy, and E3's tests
+  exercise the production gateway adapter, not only shell commands.
 
 ## 8. Model profiles
 
 `credential.kind`: `env`, `file` (under
-`${XDG_STATE_HOME:-~/.local/state}/riela/credentials`), `command` (user
-scope only). Secrets are resolved at spawn, never persisted, never in
+`${XDG_STATE_HOME:-~/.local/state}/riela/credentials`), `command`. A
+`command` credential executes only when the head carries `trusted: true`,
+which is set solely by `riela model trust <name>` on the host (an
+explicit operator action recorded with the principal) and is cleared by
+any import, fork, copy, or package install; scope alone never confers it. Secrets are resolved at spawn, never persisted, never in
 evidence or telemetry; the redactor gains `credential`. Workers resolve
 profiles from their own store by name; the controller ships names.
+Resolution of a node's `model` is deterministic: if a `Model` head named
+exactly that string is visible in the scope chain it is a profile
+reference; otherwise the string is a literal model id, the node's
+`executionBackend` is required, and credentials and routing come from
+`default/<backend>` while the literal stays the selected model (so literal
+B after literal A runs B). Profile `backend` must equal the node's
+`executionBackend` or validation fails; profile `parameters` are defaults
+the node's `effort` overrides; `modelFreeze` continues to block run-
+configuration patches. Workers execute the controller-pinned profile
+version (sent in the job's pins) and resolve only its credential locally.
 When a node names a literal model and no `default/<backend>` head exists in
-any visible scope, riela **creates** one: a `global` head in the user
+any visible scope, riela **creates** one with insert-if-absent semantics
+(concurrent creators reload the winning row): a `global` head in the user
 store with `origin: implicit`, `backend`, `model` set to the literal, no
 `parameters`, and `credential` set to the backend's conventional
 environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY`,
@@ -751,9 +877,16 @@ first use and registers backends, enforcement levels, template digests, and
 resolvable profiles. The resolver (Work Runtime §5a extended) picks the
 host; explicit `placement.host` never falls back. The job payload carries
 the resolved environment minus secrets and host paths; results return as
-`artifact` evidence and change snapshots. `controllerPath` is gone because
-no authored path is absolute; `agentEnvironment` resolution stays on the
-worker.
+`artifact` evidence and change snapshots. **Finalization never runs on a
+worker**: the worker's ceiling has `capabilities.finalization: false`
+permanently, finalization tokens stay excluded from serialized adapter
+output (`AdapterContracts.swift:244`), and a remote change set is
+finalized by the controller through the existing journaled store against
+the controller's own instance of the same template (base revision + change
+set from the snapshot), so the trust protocol of
+`design-distributed-workers.md` is unchanged. `controllerPath` is gone
+because no authored path is absolute; `agentEnvironment` resolution stays
+on the worker.
 
 ## 10. Runner contract
 
@@ -768,8 +901,13 @@ worker.
   10 s `SIGTERM` grace, exit code in the result envelope, `debug`
   keep-alive.
 - `riela session exec <id> [--step <id>] -- <cmd>`: same effective policy,
-  recorded as `command` evidence with `producedBy: human`,
-  manager-authenticated.
+  recorded as `command` evidence with `producedBy: human(principal)` and
+  the policy digest. Authorization is a **verified host principal** that
+  owns the session's store (local trust plus the host's Passkey gate for
+  remote callers); `managerSessionId` is not an authenticator and is not
+  used (`GraphQLSessionControlContracts.swift:46`). The surface stays
+  `blocked` in the catalog until E6 ships the ownership check and denial
+  tests.
 
 ## 11. What is removed
 
@@ -848,10 +986,24 @@ Catalog rows first; CLI and GraphQL ship together or declare `blocked`.
 ## 14. Storage and layout
 
 Session store root: `runtime-records/` (sessions, work tables, definition
-tables), `workspaces/` (templates, instances), `artifacts/`, `logs/`. The
+tables), `workspaces/` (templates, instances), `artifacts/`, `logs/`.
+`WorkflowStepExecution.environment: ResolvedExecutionEnvironment?`,
+`WorkflowSession.pins: [DefinitionPin]`, and `WorkflowSession.conditions`
+are `RielaCore`-owned execution records written for every run, task or
+not; `RielaWork` projects them into task evidence when a task exists
+(`contextSnapshot` for the environment, `changedFile` for snapshots,
+`command` for bootstrap and exec) and adds the closed kinds `egress` and
+`placement` to its own enum; `RielaCore` does not import `RielaWork`. The
 runtime store schema generation is bumped once for the definition tables
-and the new session fields; per repository convention, a mismatched store
-is discarded. `.riela/` in a project keeps `sessions/`, `packages/`,
+and the new session fields. Because the database now holds authored
+definitions, the "regenerable history, discard on mismatch" rule
+(`SQLiteWorkflowRuntimePersistenceStore.swift:160-170`) no longer applies
+to it: on a generation mismatch the store is **quarantined** (renamed
+`runtime-records.incompatible-<generation>/`), riela refuses to run until
+`riela store reset --confirm` or `riela store export-definitions
+<quarantined>` (best-effort export of the definition tables to bundles)
+has been run, and nothing is deleted silently. This is still no migration
+path. `.riela/` in a project keeps `sessions/`, `packages/`,
 `package-cache/`, `package-locks/`, `events/`, `kaiba/`, `note/`, `memory/`,
 `profiles/`, `config.json`; every other subpath in §1's list is deleted
 with its feature.
@@ -867,9 +1019,17 @@ Each phase ends with `swift test` green, every example's mock run matching
   imported by tests, GraphQL and web on rows. The first compatibility break.
 - **E1 Environment model and validation.** New types, node and workflow
   fields, resource loaders over the store, `ResolvedExecutionEnvironment`,
-  every removal in §11 with replacement diagnostics, examples and skills
-  rewritten, ad-hoc local workspace as the only runtime behavior. The
-  second compatibility break; everything after is additive.
+  the ad-hoc local workspace as the runtime behavior, the definition-asset
+  mount, and the removal of the *location* fields (`workingDirectory`,
+  `--working-dir`, `--artifact-root`, run-configuration
+  `workingDirectory`, `controllerPath`) with replacement diagnostics. The
+  second compatibility break. Every other removal in §11 ships **in the
+  phase that ships its replacement**, never earlier: `agentSandbox`,
+  `AgentToolPolicy`, `<vendor>AdditionalArgs`, `RIELA_SANDBOX_SEATBELT` go
+  in E3; node credential fields in E4; `placement.workspace/exports`,
+  worker `allowedAddons/allowedEnvironment` in E5. E0–E7 are internal
+  milestones, not releasable states; a release cut between them must
+  contain no field that was removed without its replacement.
 - **E2 Workspace runtime.** Materializer, templates, instances,
   copy-on-write clone, change snapshots for every instance, fanout and
   Work Runtime bindings.
@@ -885,8 +1045,12 @@ Each phase ends with `swift test` green, every example's mock run matching
 - **E7 Surfaces and packages.** Remaining CLI/GraphQL rows, doctor, Studio,
   skill docs, `riela-packages` follow-up.
 
-E0 and E1 are independent of Work Runtime P1; E2's task binding lands with
-P4 and hands it the base tree; E3's ceilings serve P7.
+E0's store, writer, search, and import/export are independent of Work
+Runtime P1; E0's planner integration and `task promote-plan` depend on P1
+and are listed under it; E2's task binding lands with P4 and hands it the
+base tree (branch creation and publication are specified jointly by E2 and
+P4); E3's ceilings serve P7. Bootstrap goals (E2) run only after E3's
+policy renderer exists, so E2 and E3 land in that order or together.
 
 ## 16. Rejected alternatives
 
@@ -916,8 +1080,9 @@ P4 and hands it the base tree; E3's ceilings serve P7.
 - **Vendor flag drift; secrets transiting files** (Claude Code, Cursor MCP
   config): temp 0600 copies, per-vendor renderers with fixture tests.
 - **Codex stays advisory** for filesystem and network; labeled, not hidden.
-- **Worktrees and agents that run git**: the instance repository path is a
-  repository root, so `riela/git-commit|push` keep their rule.
+- **Worktrees and agents that run git**: an instance is a worktree on a
+  named branch (§6.2), so `riela/git-commit`'s `symbolic-ref HEAD` rule
+  and the repository-root rule both hold; a detached instance would not.
 - **Blob growth**: content addressing dedupes prompts; `gc` removes blobs
   no version references.
 
@@ -945,6 +1110,20 @@ not reopen it without new facts.
 
 ## 19. Open questions (with recommendations)
 
+- Should a plain `workflow run` with no placement ever leave the local
+  machine? Options: local by default; automatic placement only for tasks;
+  automatic for every run. Recommendation: local by default for plain
+  runs, automatic placement only when a task or an explicit
+  `--placement auto` asks for it; this decides where workspace content and
+  prompts may travel.
+- One workspace binding per node in the first release, or several from
+  the start? Recommendation: one; if several are required, commit now to
+  binding ids, one designated cwd binding, per-binding policy roots, and
+  binding-keyed pins (the `DefinitionPin` list already allows it).
+- What happens to authored definitions on a schema-generation mismatch?
+  Options: discard (today's rule); refuse to open; quarantine and require
+  an explicit reset. §14 specifies quarantine; confirm.
+
 - Several workspaces per node? Recommendation: yes (array), first is cwd.
 - Refuse file-backed MCP secrets under `required`? Recommendation: allow,
   show the file lifetime in `policy render`.
@@ -952,3 +1131,65 @@ not reopen it without new facts.
 - Should package-installed workflows be forkable in place or only by
   `fork`? Recommendation: only by `fork`, so package heads stay
   reproducible and the lineage is explicit.
+
+## 20. Existing features to align
+
+Facts verified 2026-09-21 by a subsystem survey; each row names what the
+feature references today, what changes, and the phase that owns it. No
+compatibility shims anywhere: removed flags and files fail with the
+replacement named.
+
+| Feature | Today (evidence) | Change | Phase |
+| --- | --- | --- | --- |
+| Event bindings and `events serve` | `EventBindingContract.workflowName` is a bare string; scope and definition dir come from `events serve` flags and cwd (`EventContracts.swift:627-657`, `EventLiveServe.swift:705-722`); attachments are written under the event root as absolute paths and injected as `attachments` / `imagePaths` (`EventLiveServe.swift:560-577`) | `workflow: { name, scope?, version? }` plus optional `workspace`, `policy`, `model` overrides on the binding; `events serve` resolves through the store; inbound attachments land under the session store `artifacts/inbound/<sourceId>/…` and are exposed as the read-only `attachments` system mount, so Seatbelt and containers can read them and paths are inside a declared mount | E1, E3 |
+| Routines | `RoutineRecord.workflowName`, `eventRoot` path, `.riela/routines` store (`RoutineStore.swift:13-153`) | Already folded into Work Runtime P3 as scheduled tasks; the task carries a `workspace` binding; `eventRoot` becomes the event source id | Work Runtime P3 |
+| Specialist dispatch | Copies the bundle into `<stateRoot>/workflow-snapshots/<dispatchId>/` and launches with `--scope direct --workflow-definition-dir … --working-dir …` (`SpecialistCommands.swift:406-486, 647-651`) | Pins a definition version id; no directory copy; launches with `--version` and a workspace binding; the fold into `task serve` (Work Runtime P3) inherits this | E0, then P3 |
+| Run configurations (workflow instances) | `instances.json` per scope root, `WorkflowInstanceConfiguration.workingDirectory`, node patches limited to `executionBackend`, `model`, `effort`, `kaibaInstanceId` (`WorkflowInstanceModel.swift:95, 168-273`, `FileWorkflowInstanceStore.swift:18-34`); app daemon preferences mirror the same fields | A definition kind `runConfiguration` in the store (versioned like the others, scopes apply); `workingDirectory` → `workspace` binding; patches gain `policy` and `workspace`; the app daemon preference stores a run-configuration name, not fields | E0, E1, E7 |
+| Package manager | Install copies a directory into `.riela/packages/<name>`, resolution is a scan for `riela-package.json` (`WorkflowResolution.swift:522-576`, `WorkflowPackageCommandRunner+Install.swift:208-275`); lockfile keyed by package name; skills projected into `~`/cwd vendor dirs (`WorkflowPackageSupport.swift:186-215`); `requiredEnvironment` checked by doctor and `node run` | Install = import of immutable heads (`origin: package`) for workflows, workspaces, policies, models, and add-on manifests; `.riela/packages` keeps only the archive cache and the lockfile; the catalog scan is deleted; `requiredEnvironment` is checked against Model profiles and the policy environment section; skill projection is user-scope only, project skills come from workspaces; native add-on digests unchanged | E0 |
+| `extends` inheritance | Base resolved by `baseWorkflowId` through a user-scope-only directory probe (`WorkflowResolution.swift:275-346`, commit `0a9042e`); derived bundle computed at load | Base resolved through the store by `(workflow, name)` in the normal scope order or by a pinned version id; the derived workflow is a stored version with `parent` = the base version and `origin: derived(base)`, so lineage is explicit; a base update produces a `proposed` re-derivation instead of silent drift; `installedUserWorkflowName` and the hardcoded search roots are deleted | E0 |
+| Cross-workflow transitions | Callee resolved with the caller's `(scope, definitionDir, workingDirectory)` then `scope: .auto` (`WorkflowCalleeResolution.swift:40-57`); nested request inherits the parent's memory root | Callee resolved through the store in the caller's scope chain; the callee runs in the caller's workspace instance unless its own workflow default binding names a different workspace, in which case it gets its own instance; recorded on the nested session's environment | E1, E2 |
+| Session export and preserved history | Export renders executions; import requires equal `workflowId` and clears `backendWorkingDirectory` (`RuntimeHistoryImport.swift:29-60`); no definition digest or bundle in the archive | Export embeds the pinned definitions and their dependency closure (single-file form) and the resolved environment; preserved-history reuse keeps every existing check (workflow, variables, accepted-node payload, target input, communication) and extends the accepted-node digest to executable assets and the resolved environment definitions; `structure_digest` is discovery metadata only | E0 |
+| Hooks | `riela hook` parses vendor payloads (`agentSessionId`, `cwd`, `transcriptPath`) and echoes them; nothing persists or joins them to sessions (`RielaHook.swift:9-48`, `ScopedParityCommands.swift:91-107`) | Hook events are persisted in `hook_events` and joined to executions by `backendSessionId` and by `cwd` falling under an instance root; the inactivity guard and typed conditions read them as liveness evidence | E6 |
+| Riela memory root | `<workingDirectory>/.riela/memory/<memoryId>.sqlite`, cwd-relative default (`RielaMemory.swift:11-20`, `+Memory.swift:78-91`); workers force `<workspace>/.riela/memory` (`DistributedWorkerNodeExecutor.swift:104`) | Memory never lives inside a workspace instance (instances are transient); the root is the project store's `memory/` directory, delivered as the `RIELA_MEMORY_ROOT` system mount; the worker rule is deleted with `controllerPath` | E1, E6 |
+| Kaiba and note add-ons | Instances by name and endpoint under `~/.riela/kaiba/instances.json`; local path inputs already rejected as legacy (`KaibaLegacyInputCompatibility.swift:12-34`) | Unchanged; `kaibaInstanceId` remains a run-configuration patch field. Optional later: move the instance list into the user definition store as a kind | none |
+| `riela gc` | Sweeps `sessions/runtime-records/runtime-message-log.sqlite`, `workflow-history/`, `events/receipts/`, `artifacts/`, `logs/` (`RielaDataGarbageCollector.swift:186-221`) | Adds `workspaces/` (orphan instances, templates beyond `maxTemplates`), ephemeral versions with no live session, unreferenced blobs, and `hook_events` by age; drops `workflow-history/` | E2 |
+| Mock scenarios and staged verification | Scenario path resolved against the run working directory (`ProductionNodeAdapter.swift:40-56`); staged verification copies the bundle to a staging root and discovers `mock-scenario*.json` by filename (`WorkflowStagedVerification.swift:57-110`) | Scenario files are blobs of the workflow version (`files/mock-scenario*.json`); `--mock-scenario <name>` selects a blob, `--mock-scenario <path>` imports one ad hoc; a scenario's `workingDirectory` field is removed; staged verification runs the version in an ephemeral instance instead of copying a directory | E0, E1 |
+| Attachments and images | Paths harvested verbatim from merged variables and arguments (`AdapterUtilities.swift:33-50`) | Every path must fall inside a declared mount (instance, attachments, artifacts) or the step fails `policyBlocked`; the container renderer mounts only those | E3 |
+| Workflow Studio and editor | `updateEditorNodeSettings` writes copy-on-write `editor-node-<sha256>.json` files into the mutable bundle (`WorkflowEditorNodeSettings.swift:25-59`); editable fields are `prompt` and `model` only; web run controls gate on an absolute directory string (`WorkflowRunControls.tsx:46-62`) | Editor updates go through `DefinitionWriter` and create versions; editable fields gain `policy`, `workspace`, `model` pickers; the run control selects a workspace or a run configuration; `InstancesView` loses the free-text path | E0, E7 (web rows `blocked` until the web package lands) |
+| Server workflow manifest | Entries `{ id, workflowDirectory, cwd, autoImprove, defaultVariables }` with `RIELA_WORKFLOW_MANIFEST_ROOT` (`design-server-workflow-manifest.md:24-79`, `WorkflowServingContracts.swift:62-63`) | Entries `{ id, workflow: { name, scope, version? }, runConfiguration?, workspace?, policy?, model? }`; `workflowDirectory`, `cwd`, `autoImprove`, and the root variable are deleted; `manifest validate` resolves through the store | E1 |
+| `workflow create`, `consolidate`, `self-improve`, `loop.selfEvolution.historyRoot`, directory transactions | Scaffold writes files under the scoped root (`ParityCommands.swift:234-257`); consolidate takes `--replacement <path>`; self-improve resolves a bundle by directory and writes audits and transactions under `historyRoot` (`WorkflowDirectoryTransaction.swift:155, 267`, `LoopEngineeringModels.swift:131-148`) | `create` writes a head through the writer (optionally `--export-to <dir>`); `consolidate --replacement <name | dir>`; self-improve writes `proposed` versions and the review gate accepts them; `historyRoot`, `WorkflowDirectoryTransaction`, and the audit/transaction directories are deleted | E0 |
+| `riela node run` and the add-on catalog | Working directory from `--working-dir`; preflight scans package roots for manifests (`NodeCommandRunner.swift:106-299`); capability vocabulary `network.egress`, `filesystem.*`, `process.spawn`, `container.*`, `device.gpu`, `env.read`, `attachment.read` | `--workspace` / ad-hoc binding; preflight reads add-on manifests from the store; the vocabulary is kept as requirements matched against the effective policy (`capabilities` section); mounts derive from bindings | E1, E3 |
+| `riela instance` CLI and the app daemon | `--cwd` plus a working-directory override; daemon argv `events serve --workflow-definition-dir … --working-directory … --artifact-root …` with `workflow.id` taken from the directory name (`DaemonWorkflowEventServeProcess.swift:109-144, 233`); candidate discovery scans `.riela/workflows` and `.riela/packages` | `--workspace` replaces both directory flags; the daemon launches `events serve --workflow <name>@<version> --scope … --workspace …`; workflow identity comes from the store; discovery lists heads | E1, E5 |
+| Surface catalog rows | `workflow.validate|inspect|usage|run|register`, `session.rerun|resume|continue`, `serve.host`, and the console shared options declare `--workflow-definition-dir`, `--working-dir`, `--artifact-root`, `--scope` (`SurfaceCatalog+Rows.swift:34-232`, `+RowsCLI.swift:341`, `+RowsConsole.swift:346`) | Options become `--scope global|project|workspace:<name>|auto`, `--version`, `--workspace`, `--workspace-path`, `--policy`, `--model`, `--placement`; the three removed flags disappear from every row in the same task as the code | E7 |
+| Agent-node output contract (`design-agent-node-output-contract.md`) | Makes `agentSandbox` mandatory at validation for sandbox-consuming backends | The requirement survives as "an agent node must resolve a policy"; the rest of that design (output contracts, retry, template errors) is untouched | E1 |
+| Provider default credentials | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `CURSOR_API_KEY` hardcoded in `ProductionNodeAdapter.swift:620-636`; `apiKeyEnvironment` requires `baseURL` (`WorkflowNodeValidation.swift:11-23`) | The hardcoded table becomes the `credential` of the implicitly created `default/<backend>` profile (§8); the validation rule is deleted with the fields | E4 |
+
+## 21. Revisions after review (2026-09-21, Codex `gpt-6-astra`)
+
+The review (kept under `tmp/astra-review/`, not committed) found the design
+"not ready for implementation". Each finding below was checked against the
+tree before being accepted; the section it changed is named.
+
+| # | Finding (severity) | Verified | Change |
+| --- | --- | --- | --- |
+| 1 | Wiring `LocalProcess.swift:669` does not sandbox agent CLIs; they are spawned by the gateway's `POSIXGatewayProcessRunner` (blocker) | `AgentGatewayNodeAdapter.swift:41`, `GatewayExecution.swift:64-73, 128` | §2, §7: policy-aware `GatewayProcessRunning` injected into `ProductionGatewayExecutor`; tests on the production adapter |
+| 2 | "Manager-authenticated" is not an authentication mechanism; `managerSessionId` is unverified (blocker) | `GraphQLSessionControlContracts.swift:46` | §10: verified host principal owning the store; surface `blocked` until E6 ships checks |
+| 3 | Preserved-history reuse already checks variables, accepted node, target input, communication; `structure_digest` cannot replace them; sessions do not pin a bundle (major) | `DeterministicWorkflowRunner+History.swift:52-103`, `RuntimeSession.swift:325` | §2, §4.5, §20: fingerprint is discovery only; export embeds closure; history checks kept and extended |
+| 4 | Detached worktrees break `riela/git-commit` (`symbolic-ref HEAD`) (major) | `ProductionNodeAdapter+GitCommit.swift:413` | §6.2, §17: instances on named branches `riela/<owner-id>` from `riela/template/<digest>` |
+| 5 | Two stores versus "one transaction" promise; cross-store pins undefined (blocker) | `CLIWorkflowSessionStore.swift:147` | §3.1, §4.1: `DefinitionPin` closure snapshot into the session-owning store; no cross-db atomicity claimed |
+| 6 | Schema cannot represent multiple workspaces/policies; missing kinds; ephemeral needs no name; node-level placement conflicts with step placement (major) | `WorkflowStepRef.swift:3` | §4.1, §5, §19: `DefinitionPin` list, kinds `runConfiguration`/`addon`, `name?`, placement stays on steps, one binding per node pending decision |
+| 7 | "E2–E7 additive" is false; removals precede replacements; E0 depends on P1 for planner work (major) | `AgentGatewayNodeAdapter.swift:73, 601` | §15: removals move to the phase that ships the replacement; E2 after E3; P1 dependency named |
+| 8 | Instance ownership per task generation versus Work Runtime per attempt; evidence enum closed; evidence needs a task (major) | `WorkModels.swift:82`, `WorkEvidence.swift:10` | §14: RielaCore-owned execution records, RielaWork projection; §6.2 ownership stated; Work Runtime §9 to be amended in P4 |
+| 9 | Lifetime, proposal state, dedupe-reactivation, deactivated heads, `updatedAt` concurrency underspecified (blocker) | `WorkStore.swift:118` | §4.1, §4.3, §4.4: `latestVersion`, integer `revision`, explicit activation, retention graph, `DefinitionSubmission` |
+| 10 | Canonicalization (NFC, whitespace) changes executable content; executable bit lost (major) | `WorkflowMutableRegistry.swift:246` | §4.4: string values byte-preserved, scripts/binaries untouched, `AssetRef.executable`, versioned digest framing, `fmt` explicit |
+| 11 | No bridge from database to executable files during a run (major) | `WorkflowRegistryBundleLoader.swift:135, 205` | §6.2: read-only definition-assets mount with `+x` restored; typed asset references; `nodeRef` closure pinned |
+| 12 | Warm template does not imply warm instance; snapshot engine takes exact paths (major) | `WorkflowFanoutChangeEvidence.swift:58` | §6.2, §6.3: template branch + produced paths; tracked-set contract with bounds; merge left to P4 |
+| 13 | Policy intersection rules, environment section, reserved keys, `extraArguments` bypass, in-process labeling missing (blocker) | `AgentGatewayNodeAdapter.swift:99, 617`, `DistributedWorkerCommand.swift:20` | §7: invariants list |
+| 14 | Literal versus profile ambiguity, default inheritance, concurrent creation, worker profile source, `command` trust by scope (major) | — | §8: deterministic rule, insert-if-absent, pinned profile on workers, `trusted` flag by explicit host action |
+| 15 | Remote finalization needs a protocol, not a capability bit (major) | `DistributedWorkerNodeExecutor.swift:108`, `AdapterContracts.swift:244` | §9: workers never finalize; controller finalizes the returned change set |
+| 16 | Example scope understated: 153 CLI-backend payloads, 149 without `agentSandbox` (major) | counted 2026-09-21 | plan E1/E3: workflow-level `policy` default for every example plus per-node overrides; production-path enforcement tests beside mock parity |
+| 17 | Database becomes authoritative user data; discard-on-mismatch is wrong (major) | `SQLiteWorkflowRuntimePersistenceStore.swift:160-170` | §14, §19: quarantine + explicit reset |
+| 18 | Three product questions (placement default, multi-workspace, mismatch handling) | — | §19 |
+
+Not accepted: none. Deferred to Work Runtime P4: the joint branch/publication
+specification (finding 8) and merge semantics (finding 12).

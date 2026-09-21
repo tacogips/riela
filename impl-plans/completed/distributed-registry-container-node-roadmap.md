@@ -1,6 +1,7 @@
 # Distributed Registry And Container Node Roadmap Implementation Plan
 
-**Status**: Implemented foundation; release publication pending external CI.
+**Status**: Implemented foundation, locally verified, and archived 2026-09-21;
+release publication remains an accepted external deferral.
 **Remaining items are explicitly accepted external deferrals** (2026-07-12):
 release publication and cask update require external CI/release credentials —
 owner: repository maintainer with release access; trigger: next release
@@ -10,7 +11,7 @@ this plan.
 **Design Reference**:
 `design-docs/specs/design-distributed-registry-container-node-roadmap.md`
 **Created**: 2026-07-07
-**Last Updated**: 2026-07-07
+**Last Updated**: 2026-09-21
 
 ## Summary
 
@@ -114,6 +115,15 @@ credential storage, and broad RielaApp UI flows beyond readiness prompts.
       for every non-mock single-node execution path.
 
 ## Progress Log
+
+### Session: 2026-09-21
+
+Reconciled this zero-checkbox plan against the current tree. The plan already
+states that no local engineering work remains and retains the release/cask
+publication as an accepted external deferral owned by a maintainer with release
+access at the next release window. The current container/registry/setup/manifest
+aggregate passed 50 tests with zero failures. The plan is archived without
+claiming that external publication occurred.
 
 ### Session: 2026-08-12
 

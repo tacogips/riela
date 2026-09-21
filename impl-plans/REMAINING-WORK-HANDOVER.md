@@ -70,6 +70,12 @@
   `UNEXPECTED_ERROR` / `Clock UI automation failed`; permission status is
   `clockAutomation=UNKNOWN` and System Events returned `-600`. No permission
   prompt or real-alarm mutation was initiated without explicit authorization.
+- `distributed-registry-container-node-roadmap` is archived because its own
+  accepted contract says no local engineering work remains. A current
+  container/registry/setup/manifest aggregate passed 50 tests with zero
+  failures. The Homebrew/release publication remains explicitly deferred to a
+  maintainer with release access at the next release window; archival does not
+  claim that external publication occurred.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

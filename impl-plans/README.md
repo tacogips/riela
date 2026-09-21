@@ -94,6 +94,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `specialist-task-supervisor` | 2026-09-21 | `specialist-task-supervisor` (durable ownership, process/recovery fencing, Matrix/Wrike boundaries, independent acceptance) |
 | `distributed-registry-container-node-roadmap` | 2026-09-21 | `design-distributed-registry-container-node-roadmap` (local scope complete; external release deferral retained) |
 | `apple-mail-addons` | 2026-09-21 | `gateway-built-ins#built-in-rielaapple-mail-` and confirmed apple-gateway `file download` JSON-manifest contract |
 | `issue-94-inheritance-minimal` | 2026-09-21 | `design-workflow-json#swift-inheritance-resolution-issue-94` |

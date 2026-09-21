@@ -174,10 +174,7 @@ public struct SpecialistCommandRunner: Sendable {
       // A service-owned continuation lane consumes this persisted request.
       // Do not recurse here: a crash after the durable write must resume the
       // same routing pass on restart, rather than depending on this turn.
-      return SpecialistCommandResult(
-        accepted: true, task: continuation.task, dispatch: nil,
-        message: "clarification_routing_queued"
-      )
+      return SpecialistCommandResult(accepted: true, task: continuation.task, dispatch: nil, message: "clarification_routing_queued")
     }
     guard request.route == .work else { throw CLIUsageError("unsupported specialist request route") }
     if let existing = try store.taskForRoutingRequest(requestId: requestId, principal: request.principal),

@@ -76,6 +76,15 @@
   failures. The Homebrew/release publication remains explicitly deferred to a
   maintainer with release access at the next release window; archival does not
   claim that external publication occurred.
+- `specialist-task-supervisor` completed its post-`comm-000118` verification and
+  independent acceptance. Specialist tests passed 106/106 before and after a
+  responsibility-only source split; compact-catalog/cross-workflow/fanout
+  boundaries passed 22/22, including the production SIGKILL/reopen matrix; the
+  real-runner smoke accepted. Strict lint exposed and then cleared the only two
+  structural findings by extracting delivery/query persistence, leaving the
+  affected files below 1,000 lines. Review found no high/medium finding. Live
+  Matrix, classifier, and Wrike writes remain deliberately unperformed rather
+  than being misreported as verified.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

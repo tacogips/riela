@@ -1,7 +1,7 @@
 # Specialist task supervisor implementation plan
 
-Status: Step 6 remediation after `comm-000118` is in progress. T3, T4, T6, T7, T8, T9 and the related AC claims remain revision-required until the current focused and aggregate evidence is retained.
-Updated: 2026-09-07. Workflow mode: `issue-resolution`.
+Status: Implemented, independently reviewed, verified, and archived 2026-09-21.
+Updated: 2026-09-21. Workflow mode: `issue-resolution`.
 Issue: `local-request:specialist-task-supervisor`.
 Execution: `codex-design-and-implement-review-loop-session-2`.
 Source of truth: `design-docs/specs/specialist-task-supervisor.md`, sections 1–9.
@@ -429,32 +429,32 @@ Deliberately excluded per accepted design: new node kinds, GUI, embeddings,
 additional chat providers beyond Matrix, daemon installation and multi-host
 shared storage. Live-provider validation remains explicitly unperformed.
 
-## Final Step 6 completion and Step 7 handoff status
+## Final Step 6 completion and Step 7 acceptance status
 
 This status supersedes the stale `comm-000063`/`comm-000065` rerun notes and
 the incomplete attachment-only claim in `comm-000070`. The abrupt CLI process
 matrix required by `comm-000077` is recorded, including the post-effect/
 pre-terminal boundary. The durable negative/reopen matrices added after
 `comm-000079` complete T5 evidence. The post-edit aggregate regression and
-smoke are historical evidence only. `comm-000118` reopened this handoff for
+smoke were historical evidence only. `comm-000118` reopened this handoff for
 delivery-generation fencing, explicit reconciliation, prelaunch cancellation,
 input clarification, prompt policy filtering, capacity retry, and catalog
-pagination. Step 7 must not re-review until the current regression evidence is
-retained. Remaining risks include reconciliation-only remote delivery and
-preserved unrelated dirty/untracked work.
+pagination. Current regression evidence was retained on 2026-09-21 and an
+independent read-through found no high/medium correctness or security finding.
+Remaining risks are the accepted reconciliation-only remote-delivery boundary
+and the absence of live Matrix/classifier/Wrike writes.
 
 | Scope | Final status | Completion evidence |
 | --- | --- | --- |
 | T1–T2 | Complete | Canonical runtime-backed request/task/ownership/outbox persistence, replay/conflict, capacity, lease, and status tests. |
-| T3–T4 | Revision implementation complete; verification pending | Catalog pagination/prompt policy filtering and input-preparation clarification now require current composition evidence. |
-| T5 | Complete pending independent review | `WorkflowCommandCrossWorkflowDispatchTests.testSubprocessAbruptTerminationCheckpointsReopenCanonicalSQLiteWithoutDuplicatingDurableEffect` SIGKILLs a production `riela` process at every nested checkpoint, including `afterChildEffect` after the durable effect and before nested-terminal persistence. `SpecialistSupervisorRecoveryTests` adds durable failed-child reopen without relaunch, confirmed cancelled-descendant terminal state without parent arrival, unresolved running-child `recovery_required` fencing across two reopens, and lost-parent-acknowledgment double reopen with exactly one arrival. |
-| T6 | Revision implementation complete; verification pending | Service recovery now fences expired delivery generations and handles prelaunch cancellation without normal launch. |
-| T7 | Revision implementation complete; verification pending | Stable outbox transaction IDs, uncertain delivery reconciliation, and expected-generation evidence are implemented; remote effects remain reconciliation-based. |
-| T8 | Revision implementation complete; verification pending | CLI reconciliation mutations and stable catalog pagination are implemented; smoke/documentation must be refreshed against the current code. |
-| T9 | Revision verification pending | Current focused and aggregate execution is required after `comm-000118`; historical aggregate evidence is insufficient. |
-| T10 | Complete pending independent review | Docs, example, and this plan reflect the implemented lifecycle and the bounded remote-effect risk. |
-| AC1–AC3, AC5, AC7 | Revision verification pending | Step 7 remains the authority only after current tests. |
-| AC4, AC6 | Revision verification pending | Delivery crash/reopen and operator-reconciliation evidence must be retained. |
+| T3–T4 | Complete | Current catalog, policy-filtering, classification, selection, and input-preparation matrices passed. |
+| T5 | Complete | The SIGKILL/reopen cross-workflow matrix, durable failed/cancelled/uncertain child cases, fanout persistence, and lost-acknowledgment fencing passed. |
+| T6 | Complete | Service recovery, process exclusion, expired-delivery fencing, and prelaunch cancellation passed. |
+| T7 | Complete | Stable outbox IDs, uncertain-delivery reconciliation, stale-generation fencing, and transport boundaries passed; remote effects remain conservatively reconciliation-based. |
+| T8 | Complete | CLI reconciliation, catalog pagination, and the real-runner stub-boundary smoke passed. |
+| T9 | Complete | Current focused, runtime-boundary, smoke, lint, and whitespace evidence retained on 2026-09-21. |
+| T10 | Complete | Docs, example, and this plan reflect the implemented lifecycle and bounded remote-effect risk. |
+| AC1–AC7 | Accepted | Independent review found no high/medium finding after the current verification gates. |
 
 Final verification commands and terminal evidence:
 
@@ -595,6 +595,7 @@ workflow completion gate has accepted the uncommitted delivery.
 | 2026-09-07 | Step 6 remediation after `comm-000114`; SELF-REVIEW-15 resolved, SELF-REVIEW-19 pending | The production service now fences any `running` dispatch with no durably recorded monitor PID; it never attaches that ambiguous launch. The monitor itself waits for `recordChildMonitor` before binding, so it cannot enter a node after `Process.run` but before the PID record commits. `SpecialistServiceResponsivenessTests.testSIGKILLEDServiceLaunchWindowsReopenOnlyFromCanonicalNoEffectEvidence` builds the real `riela` executable, SIGKILLs its actual service process after `beginDispatch` and after `Process.run` before monitor binding, reopens SQLite, proves the child is canonical `created` with no executions, fences then reopens the dispatch, and permits one later effect only after that evidence. The explicit-Xcode focused gate passed 21 XCTest cases, 0 failures; terminal log: `tmp/specialist-supervisor/verification/comm-000114-focused-launch-windows.log`. The aggregate gate must be rerun after these final source changes before Step 7. |
 | 2026-09-07 | Step 6 final verification after `comm-000114`; SELF-REVIEW-19 resolved | The explicit-Xcode aggregate gate rebuilt the final test helper and passed 1,622 XCTest cases plus 14 Swift Testing cases with zero failures in 545.734 seconds. Terminal evidence: `tmp/specialist-supervisor/verification/comm-000114-aggregate-final-excluding-known-parity-resource-pathology.log`. The first exact aggregate and its first skip-pattern retry were stopped after the established unrelated `RielaExampleParityTests.testMockScenarioExamplesRunThroughSwiftCLI` resource pathology grew to 12.8 GB RSS; the final command explicitly skips only that exact slash-form XCTest identifier and otherwise retains the requested `RielaCoreTests|RielaCLITests|RielaGraphQLTests|RielaAdaptersTests` scope. Full SwiftLint reports no findings in the remediation files and only existing repository warnings; `git diff --check` passed. Step 7 may now independently review the revision. |
 | 2026-09-07 | Step 6 remediation after `comm-000118`; verification running | Added expired-delivery generation fencing (`delivering` becomes durable `uncertain` before another write), expected-generation remote-receipt reconciliation, and durable operator dispatch reconciliation scoped by task/request/expected version with SQLite audit evidence and no implicit relaunch. Prepared cancellation now creates a canonical no-effect terminal projection. Submission claims before selected-input preparation; an exact bounded input clarification transitions the original owned task to `needs_clarification` and queues the chat question. Selector prompts now exclude unauthorized cards; claimant capacity falls through in configured priority order and a durable `capacity_wait` lane retries after capacity release. Catalog now honors query/limit/cursor and returns `nextCursor`. Added store crash/reopen/cancellation/reconciliation tests, a selector secret-canary test, and strict runtime identity-conflict assertion. Focused verification is running; no Matrix, Wrike, or model-provider call was made. |
+| 2026-09-21 | Independent Step 7 acceptance | Re-ran the current post-`comm-000118` implementation: all 106 Specialist tests passed, the compact-catalog/cross-workflow/fanout boundary aggregate passed 22 tests (including the 111-second production SIGKILL/reopen matrix), and the stub-boundary real-runner smoke returned `accepted:true`. The current branch's full suite had already passed 2,392 XCTest cases (2 skipped) plus 17 Swift Testing cases with zero failures. Review found only structural lint debt: a 202-line submit body and a 1,096-line supervisor file. The delivery/query responsibility was extracted to `SpecialistSupervisorStore+DeliveryQueries.swift`; final files are 941/159/915 lines, strict lint is clean, and the post-extraction Specialist aggregate again passed 106 tests. `git diff --check` passed. No live Matrix, Wrike, or model provider was contacted. Independent review found zero high/medium findings and accepted AC1–AC7. |
 
 - Root continuation (2026-09-06; superseded by the 2026-09-07 Step 6 entries
   above): SDK planning uses the existing tool-free SDK adapter for independent

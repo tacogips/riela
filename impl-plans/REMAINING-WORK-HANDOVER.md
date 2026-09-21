@@ -85,6 +85,12 @@
   affected files below 1,000 lines. Review found no high/medium finding. Live
   Matrix, classifier, and Wrike writes remain deliberately unperformed rather
   than being misreported as verified.
+- `swift-cli-runtime-parity-gap-closure` is archived as stale metadata over
+  already accepted and executed work. The current gate is deletion-ready with
+  13/13 accepted domains and severity `none`; commits `7b50572a` and
+  `e6282429` contain source deletion/readiness and final parity. Current gate,
+  source-deletion, and packaging suites passed 60/60, and all readiness JSON
+  parsed. The reconciliation did not alter or manufacture review evidence.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

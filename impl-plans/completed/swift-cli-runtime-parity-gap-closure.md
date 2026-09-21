@@ -1,13 +1,12 @@
 # Swift CLI And Runtime Parity Gap Closure Implementation Plan
 
-**Status**: Active; deletion gate blocked pending accepted review metadata.
-**Explicit deferral record (2026-07-12)**: the accepted implementation is
-present; the only remaining task is the legacy-TypeScript deletion gate, which
-requires a fresh independent adversarial review to be truthfully recorded in
-the readiness metadata before deletion — owner: next independent-review
-session; trigger: an adversarial review run that reports zero high/medium
-findings against the current tree. Do not delete legacy TypeScript before
-that acceptance is recorded.
+**Status**: Implemented, deletion gate accepted and executed, independently
+reconciled, and archived 2026-09-21.
+**Closure record (2026-09-21)**: the former review deferral is resolved. The
+tracked readiness gate is `deletion_ready`, all 13 required domains retain
+accepted review metadata with severity `none`, and source-deletion tests prove
+the blocking TypeScript family no longer exists. No new metadata was fabricated
+during reconciliation.
 **Design Reference**: `design-docs/specs/design-swift-cli-runtime-parity-gap-closure.md`
 **Workflow Mode**: issue-resolution
 **Issue Reference**: Complete Riela Swift migration parity with Rielflow main and agent backends
@@ -35,7 +34,7 @@ remains a separate reviewed implementation step.
 
 ## TASK-001: Parity Inventory And Deletion Gate Wiring
 
-**Status**: Review pending; deletion gate blocked until current Step 7 and adversarial review acceptance
+**Status**: Complete; accepted gate metadata and source deletion verified
 **Deliverables**:
 
 - `packaging/swift-deletion-readiness.json`
@@ -64,7 +63,7 @@ remains a separate reviewed implementation step.
 
 ## TASK-002: CLI Command And Option Parity
 
-**Status**: Review pending; deletion gate blocked until current Step 7 and adversarial review acceptance
+**Status**: Complete; accepted gate metadata and source deletion verified
 **Deliverables**:
 
 - `Sources/RielaCLI/RielaCommand.swift`
@@ -141,7 +140,7 @@ Progress logging expectations:
 
 ## TASK-003: Runtime Engine, Message Store, And SQLite Parity
 
-**Status**: Implemented; accepted review complete, deletion gate evidence pending
+**Status**: Complete; accepted review and deletion gate evidence retained
 **Deliverables**:
 
 - `Sources/RielaCore/*Runtime*`
@@ -243,7 +242,7 @@ Progress logging expectations:
 
 ## TASK-004: Local Agent And Official Adapter Parity
 
-**Status**: Implemented; accepted review complete, deletion gate evidence pending
+**Status**: Complete; accepted review and deletion gate evidence retained
 **Deliverables**:
 
 - `Sources/CodexAgent/*`
@@ -306,7 +305,7 @@ Progress logging expectations:
 
 ## TASK-005: Packages, Add-ons, And Native Execution Parity
 
-**Status**: Implemented; accepted review complete, deletion gate evidence pending
+**Status**: Complete; accepted review and deletion gate evidence retained
 **Deliverables**:
 
 - `Sources/RielaAddons/*`
@@ -430,7 +429,7 @@ Progress logging expectations:
 
 ## TASK-006: Events, Hooks, GraphQL, Server, And Call-Step Parity
 
-**Status**: Implemented; accepted review complete, deletion gate evidence pending
+**Status**: Complete; accepted review and deletion gate evidence retained
 **Deliverables**:
 
 - `Sources/RielaEvents/*`
@@ -540,7 +539,7 @@ Progress logging expectations:
 
 ## TASK-007: Auto-Improve, Supervision, Workflow Calls, And Self-Improve
 
-**Status**: Implemented; accepted review complete, deletion gate evidence pending
+**Status**: Complete; accepted review and deletion gate evidence retained
 **Deliverables**:
 
 - `Sources/RielaCore/*`
@@ -669,7 +668,7 @@ Progress logging expectations:
 
 ## TASK-008: Documentation, Release, And TypeScript Deletion Handoff
 
-**Status**: Active; deletion gate blocked pending accepted review metadata
+**Status**: Complete; deletion gate accepted and source deletion executed
 **Deliverables**:
 
 - `README.md`
@@ -779,6 +778,17 @@ Progress logging expectations:
   `migrationStatus=incomplete`, `allowsTypeScriptDeletion=false`,
   `typeScriptSourceDeletionReady=false`, zero accepted review node ids, and
   `reviewDecision=blocked`.
+- **Progress 2026-09-21**: reconciled the stale plan with the later accepted
+  commits `7b50572a` (TypeScript deletion readiness/source removal) and
+  `e6282429` (Swift migration parity). The tracked gate reports
+  `migrationStatus=deletion_ready`, both deletion booleans are true, and all 13
+  required domains carry `reviewDecision=accepted`, the expected review
+  workflow/node, and severity `none`. Current
+  `SwiftDeletionReadinessTests|SourceDeletionReadinessTests|SwiftPackagingReadinessTests`
+  passed 60 tests with zero failures, including tracked-evidence binding,
+  high/mid rejection, and absence of deletion-blocking TypeScript files. All
+  three JSON manifests parse successfully. Independent reconciliation found no
+  high/medium issue and did not rewrite readiness evidence.
 
 ## Dependencies And Parallelization
 
@@ -838,7 +848,8 @@ Step 4 author self-review decision: accepted. The plan maps each accepted
 design domain to concrete Swift targets, test targets, completion criteria,
 dependencies, progress-log expectations, and verification commands.
 
-Independent Step 5 implementation-plan review: pending.
+Independent implementation-plan/reconciliation review: accepted 2026-09-21;
+zero high/medium findings against the current retained gate and source tree.
 
 ## Risks
 

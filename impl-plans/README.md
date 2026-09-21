@@ -44,7 +44,6 @@ only the W13 read-through/move to `completed/`.
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
 | `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); installed gateway live QA now reaches the provider but is blocked by Clock UI automation/permission (`UNEXPECTED_ERROR`, System Events `-600`). No permission prompt or real-alarm mutation was initiated without explicit authorization | W4 |
-| `active/rielaapp-instance-execution-timeline` | 5 | Implemented + unit-tested (RielaViewer data/layout; RielaApp pane/popover/integration/entry-point compile); RielaViewerTests 16/0. Interactive UI-visual verification **DEFERRED** to a RielaApp session with the rielaapp-ui-verification workflow | W6 |
 | `active/riela-note-new-features` | 33 | Planning; Anywhere Capture, Entity Pages, Scoped Ask (2026-07-12 persona ideation + judge panel); no code written | W8 |
 
 **Prose/decision/external plans (kept active, no open checkboxes or non-checkbox scope):**
@@ -92,6 +91,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rielaapp-instance-execution-timeline` | 2026-09-21 | Historical AppKit design superseded by Web UI in `684eeca7`; retained viewer/trace contract verified with Swift, Web unit/typecheck, and Playwright evidence |
 | `workflow-runtime-fanout-capabilities` | 2026-09-21 | `design-bounded-fanout-join-workflow-execution` plus cross-workflow/recovery and child-session observability |
 | `swift-cli-runtime-parity-gap-closure` | 2026-09-21 | `design-swift-cli-runtime-parity-gap-closure` (accepted deletion gate and completed TypeScript source removal) |
 | `specialist-task-supervisor` | 2026-09-21 | `specialist-task-supervisor` (durable ownership, process/recovery fencing, Matrix/Wrike boundaries, independent acceptance) |

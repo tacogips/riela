@@ -103,6 +103,11 @@
   reconciled, continue with a fresh audit of unimplemented features recorded in
   design documents, general docs, and implementation plans, then implement the
   actionable Riela-owned gaps in this same dedicated worktree/branch.
+- `rielaapp-instance-execution-timeline` is archived through explicit Web UI
+  supersession, not by recreating deleted AppKit code. Commit `684eeca7`
+  intentionally removed the native viewer. Current retained behavior passed
+  18 RielaViewer tests, four Web trace-layout tests, Web typecheck, and the
+  Playwright trace-drilldown scenario with inspected screenshot evidence.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

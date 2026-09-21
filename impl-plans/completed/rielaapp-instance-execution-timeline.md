@@ -1,9 +1,16 @@
 # RielaApp Instance Execution Timeline — Implementation Plan
 
-**Status**: Implemented (visual verification deferred to interactive RielaApp session)
+**Status**: Complete via Web UI supersession (2026-09-21)
 **Design Reference**: `design-docs/specs/design-rielaapp-instance-execution-timeline.md`
 **Created**: 2026-07-06
-**Last Updated**: 2026-07-12
+**Last Updated**: 2026-09-21
+
+> Historical implementation note: modules 3–6 below describe the native
+> AppKit viewer shipped in the original slice. Commit `684eeca7` deliberately
+> removed that viewer after the operator experience moved to the Web UI. The
+> retained contract is now `Web/src/views/RunTrace.tsx` plus the pure
+> `RielaViewer` loader/layout layer; the removed AppKit surface is not pending
+> work.
 
 ## Design Document Reference
 
@@ -183,11 +190,18 @@ Modules 1–2 are library-only and can land independently of app UI work.
 
 - [x] All acceptance criteria in `design-rielaapp-instance-execution-timeline.md` checked off (with per-criterion evidence; UI-visual portions annotated DEFERRED to an interactive session).
 - [x] `swift build` (per-target: `RielaViewer`, `RielaApp`) and `swift test --filter RielaViewerTests` pass — RielaViewerTests: 16 tests, 0 failures (2026-07-12). NOTE: whole-package `swift build`/`swift test` is intermittently blocked by concurrent in-progress CLI work in `Sources/RielaCLI/*` (unrelated to this feature); the RielaViewer + RielaApp targets and RielaViewerTests build and pass in isolation. Re-run full `swift test` once the CLI work lands.
-- [ ] Manual verification on: (a) completed multi-node session, (b) live running session, (c) loop-heavy session (performance), (d) legacy session without message log (degradation), (e) never-run instance (empty state). DEFERRED (accepted): visual verification requires an interactive RielaApp session; owner: next interactive session; trigger: RielaApp launched with the rielaapp-ui-verification workflow. Degradation (d) and empty-state (e) logic is unit-tested at the loader/pane layer.
+- [x] The native AppKit manual-verification obligation is superseded by the accepted Web UI migration in `684eeca7`. Current retained behavior was verified on 2026-09-21 with 18/18 `RielaViewerTests`, 4/4 `traceLayout` tests, Web typecheck, and the Playwright trace-drilldown scenario (1/1) plus screenshot inspection. The apparent blue band in the evidence image is the deliberate light-theme `::selection` highlight produced by the test's text selection, not selected-row contrast failure.
 - [x] No direct SQLite access from RielaApp for timeline data (all through `WorkflowViewerLoader`). Verified: timeline data flows through `WorkflowViewerState`; the only `SQLiteWorkflowRuntimePersistenceStore` use in RielaApp is the pre-existing manager-message write in `EntryPoint+Viewer.swift`.
-- [ ] `impl-plans/README.md` Active Plans row kept up to date; plan moved to `completed/` when done. (Plan remains in `active/` pending the deferred interactive visual verification; README row updated to reflect Implemented status.)
+- [x] `impl-plans/README.md` updated and this plan moved to `completed/` after the Web UI supersession verification.
 
 ## Progress Log
+
+### Session: 2026-09-21
+
+- Tasks Completed: Reconciled the plan with commit `684eeca7`, which intentionally replaced the native AppKit workflow viewer with the Web UI. Verified the retained `RielaViewer` loader/layout layer (18 tests), Web trace geometry (4 tests), TypeScript typecheck, and the real trace drilldown in Playwright (1 scenario) with screenshot inspection. Archived the plan; no deleted AppKit UI was recreated.
+- Tasks In Progress: —
+- Blockers: —
+- Notes: The historical module descriptions remain as implementation provenance. Current product behavior is owned by `Web/src/views/RunTrace.tsx`, `Web/src/views/traceLayout.ts`, and the viewer-backed HTTP API.
 
 ### Session: 2026-07-12
 

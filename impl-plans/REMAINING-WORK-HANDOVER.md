@@ -54,6 +54,9 @@
   extraction; the unimplemented “new features” proposal now requires a
   Kaiba-owned plan and must not recreate the deleted Riela subsystem. No Kaiba
   repository or `note-hub-improve` worktree was modified.
+- `rielaapp-workflow-marketplace` was already complete and remains present in
+  the current tree; 18 focused repository/catalog/layout tests passed, so its
+  stale active plan is archived.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

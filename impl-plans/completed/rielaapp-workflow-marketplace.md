@@ -1,9 +1,9 @@
 # Implementation Plan: RielaApp Workflow Marketplace
 
-- Status: Completed
+- Status: Completed, re-audited, and archived 2026-09-21
 - Design Reference: `design-docs/specs/design-rielaapp-workflow-marketplace.md`
 - Created: 2026-07-15
-- Last Updated: 2026-07-15
+- Last Updated: 2026-09-21
 
 ## Design Document Reference
 
@@ -151,3 +151,7 @@
   (`swift test`: 2042 tests, 0 failures, 4 skipped); swiftlint clean on changed files
   (moved `removeDaemonWorkflowDirectory` into a same-file extension to stay under the
   800-line type-body limit).
+- 2026-09-21: Re-audited the retained implementation on the current tree.
+  Repository parsing/state, catalog containment/scanning, and AppKit marketplace
+  layout tests passed 18/18; the implementation commits `b279029a` and
+  `8cefd1ad` are contained by `main`. No open task or verification gap remains.

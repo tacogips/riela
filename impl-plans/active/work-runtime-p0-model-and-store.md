@@ -745,6 +745,19 @@ Resume analysis evidence templates (2026-09-21, logs under `/tmp`):
     the push result are appended immediately below in a second, docs-only
     commit; the feature commit itself is the single commit holding the whole
     P0 implementation.
+  - **Result (recorded by that second commit).** Feature commit
+    **`da10377bc2f2de0e0381ecf5e1d99b2ee16ed7a0`** (`da10377`),
+    "feat: work runtime P0 — RielaWork model, store, projection, and
+    read-only task surface", parent `e2f8eaf`, **40 files changed, 6124
+    insertions(+), 59 deletions(-)**, 26 `create mode` entries and 14
+    modifications — exactly the re-derived commit set. The `gitleaks staged
+    secret scan` pre-commit hook **passed**. `git push -u origin
+    feat/work-runtime-p0` `EXIT=0`, `* [new branch]`, tracking set; `git
+    ls-remote --heads origin feat/work-runtime-p0` now reports
+    `da10377bc2f2de0e0381ecf5e1d99b2ee16ed7a0`. This trailing entry and the
+    `R4` tick above ship in the docs-only follow-up commit on the same branch;
+    `git status --porcelain --untracked-files=all` is then empty apart from
+    the gitignored `tmp/` evidence tree.
 
 ## Residual Risks
 

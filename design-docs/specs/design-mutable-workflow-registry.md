@@ -2,6 +2,9 @@
 
 ## Status and issue contract
 
+Implemented and independently accepted. Implementation plan:
+`impl-plans/completed/mutable-workflow-registry.md`.
+
 This design is the accepted behavior for one issue-resolution work package on
 `feat/mutable-workflow-registry`, based on `main` commit `6d27ff6`.
 

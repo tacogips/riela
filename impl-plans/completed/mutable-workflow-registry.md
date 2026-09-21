@@ -1,6 +1,6 @@
 # Mutable Workflow Registry Implementation Plan
 
-**Status**: Implementation complete; T10 independent adversarial review pending  
+**Status**: Implemented, independently reviewed, and archived 2026-09-21  
 **Workflow Mode**: `issue-resolution`  
 **Branch**: `feat/mutable-workflow-registry`  
 **Base**: `main` at `6d27ff6`  
@@ -8,7 +8,7 @@
 **Superseded Design Reference**: `design-docs/specs/design-temporary-workflow-registry.md`  
 **Accepted Design Review**: `comm-000955`, `accepted-for-implementation-planning`  
 **Created**: 2026-07-23  
-**Last Updated**: 2026-07-23
+**Last Updated**: 2026-09-21
 
 ---
 
@@ -433,7 +433,7 @@ Riela skills
 
 ### T10. Build, focused suites, isolated smoke, and implementation handoff
 
-**Status**: IN_PROGRESS — implementation verification passed; independent adversarial review pending  
+**Status**: COMPLETED — implementation verification and independent adversarial review passed  
 **Write scope**: progress log and `tmp/mutable-workflow-registry/` evidence only  
 **Depends on**: T2-T9
 
@@ -532,9 +532,9 @@ parallelizable with feature writes.
   `ephemeral` without identity drift.
 - [x] Documentation, help, skills, and package digests are refreshed where
   directly affected.
-- [ ] `swift build`, all focused suites, isolated smoke, `git diff --check`, and
+- [x] `swift build`, all focused suites, isolated smoke, `git diff --check`, and
   adversarial review pass, apart from explicitly evidenced baseline failures.
-- [ ] Final handoff records changed file paths, findings, review decision,
+- [x] Final handoff records changed file paths, findings, review decision,
   verification commands/results/gaps, residual risks, and commit/push status.
 
 ## Progress-log expectations
@@ -1169,3 +1169,38 @@ verification pass. Do not put scratch logs in the repository root or
   deprecated flag aliases and compatibility decoders require explicit tests.
 - New paths must preserve the existing registry's containment, pinned-root,
   symlink rejection, digest, durability, and publication recovery guarantees.
+
+### 2026-09-21 - Independent adversarial acceptance and archival
+
+- **Decision**: accepted. No high- or medium-severity findings remain. The
+  implementation merge `01f63d19` is contained by `main`; this review did not
+  reopen the shipped feature contract.
+- **Review coverage**: traced exact-origin resolution and mutable-write gates,
+  coordinated catalog/activation/sorted-origin lock acquisition, activation
+  checks before top-level and shared-node payload materialization, complete
+  GraphQL domain preflight and capability checks, request credential removal,
+  journal/backup digest recovery, pinned-root containment, and legacy
+  `~/.riela/temporary-workflows/` compatibility.
+- **Verification**: `swift build` passed; the focused registry/catalog/
+  resolution/activation/consolidation/shared-node/GraphQL/server aggregate ran
+  68 tests with zero failures; the dedicated resolver materialization and
+  deactivated-origin aggregate ran 10 tests with zero failures;
+  `git diff --check` passed. The current-tree full suite also passed 2,392
+  XCTest cases (2 skipped) and 17 Swift Testing cases with zero failures.
+- **Smoke evidence**: retained implementation evidence covers isolated mutable
+  registration, partial-description listing, GraphQL update, deactivation,
+  inspectability, rejected execution, GraphQL deletion, and consolidation with
+  both deactivate and delete retirement.
+- **Files changed by this review**: this plan, its design status, the remaining
+  work handover, and a redundant conditional-import wrapper in
+  `WorkflowRegistryCoordinator.swift`; no workflow/package/skill digest is
+  affected.
+- **Residual risks**: externally owned immutable origins can move and leave
+  orphan activation audit records; the legacy physical root remains by design;
+  remote registry control remains unavailable unless an embedding supplies the
+  complete provider/authorizer/managed-reference configuration.
+- **Verification gaps**: none for the accepted contract. No external service or
+  credential is required by this feature.
+- **Repository state**: review changes are committed only on
+  `feat/remaining-impl-plans`; no push, merge, or direct `main` mutation was
+  performed.

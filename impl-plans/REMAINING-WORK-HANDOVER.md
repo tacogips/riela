@@ -34,6 +34,11 @@
   `Ready`/`NOT_STARTED` metadata to the implementation already shipped in
   `3e0a0d57`; 63 focused tests and the current full/mock/validation gates are
   green.
+- `mutable-workflow-registry` completed its pending independent adversarial
+  review with no high/medium findings. The current implementation passed a
+  68-test focused registry/GraphQL/server aggregate plus 10 resolver tests and
+  `swift build`; its shipped implementation merge `01f63d19` is contained by
+  `main`, and the stale active plan is archived.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

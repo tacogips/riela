@@ -31,6 +31,7 @@ public struct RielaCLIApplication: Sendable {
   public var garbageCollectionCommand: GarbageCollectionCommand
   public var specialistCommandRunner: SpecialistCommandRunner
   public var loopCommandRunner: LoopCommandRunner
+  public var taskCommandRunner: TaskCommandRunner
   public var sessionContinueCommand: SessionContinueCommand
   public var scopedCommandRunner: ScopedParityCommandRunner
 
@@ -58,6 +59,7 @@ public struct RielaCLIApplication: Sendable {
     garbageCollectionCommand: GarbageCollectionCommand = GarbageCollectionCommand(),
     specialistCommandRunner: SpecialistCommandRunner = SpecialistCommandRunner(),
     loopCommandRunner: LoopCommandRunner = LoopCommandRunner(),
+    taskCommandRunner: TaskCommandRunner = TaskCommandRunner(),
     sessionContinueCommand: SessionContinueCommand = SessionContinueCommand(),
     scopedCommandRunner: ScopedParityCommandRunner = ScopedParityCommandRunner()
   ) {
@@ -84,6 +86,7 @@ public struct RielaCLIApplication: Sendable {
     self.garbageCollectionCommand = garbageCollectionCommand
     self.specialistCommandRunner = specialistCommandRunner
     self.loopCommandRunner = loopCommandRunner
+    self.taskCommandRunner = taskCommandRunner
     self.sessionContinueCommand = sessionContinueCommand
     self.scopedCommandRunner = scopedCommandRunner
   }
@@ -140,6 +143,8 @@ public struct RielaCLIApplication: Sendable {
         return garbageCollectionCommand.run(options)
       case let .specialist(command):
         return await specialistCommandRunner.run(command)
+      case let .task(command):
+        return taskCommandRunner.run(command)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -366,6 +371,8 @@ Usage:
   riela loop recover <session-id> --from-step <step-id>|--from-gate <gate-id> [--session-store <dir>] [--output jsonl|json|text]
   riela loop start <workflow> [--var k=v ...] [workflow run options] [--output jsonl|json|text]
   riela loop promote <workflow> [--scope project|user|auto] [--workflow-definition-dir <dir>] [--output jsonl|json|text]
+  riela task show <task-id> [--scope project|user|auto] [--session-store <dir>] [--output jsonl|json|text]
+  riela task list [--state <task-state>] [--intent <intent-id>] [--workflow <name>] [--limit <n>] [--scope project|user|auto] [--session-store <dir>] [--output jsonl|json|text]
   riela graphql|gql|hook|events|serve|call-step|workflow-call [command] [target] [options]
 
 Output defaults to JSONL for machine-readable commands. Prefer --output jsonl

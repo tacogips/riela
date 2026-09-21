@@ -47,7 +47,25 @@ public enum RielaCommand: Equatable, Sendable {
   case doctor(CLICommandOptions)
   case gc(CLICommandOptions)
   case specialist(SpecialistCommand)
+  case task(TaskCommand)
   case scoped(ScopedCommand)
+}
+
+/// Work Runtime read surface. P0 ships `show` and `list` only; `submit`,
+/// `serve`, and `decide` arrive with the dispatcher in P1.
+public enum TaskCommandKind: String, Codable, CaseIterable, Sendable {
+  case show
+  case list
+}
+
+public struct TaskCommand: Equatable, Sendable {
+  public var kind: TaskCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: TaskCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
 }
 
 public enum SpecialistCommandKind: String, Codable, CaseIterable, Equatable, Sendable {
@@ -534,6 +552,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return try parseSession(route.passthroughArguments)
     case let route as LoopRoute:
       return .loop(try parseLoop(route.passthroughArguments))
+    case let route as TaskRoute:
+      return .task(try parseTask(route.passthroughArguments))
     case let route as GraphQLRoute:
       return .scoped(try parseScoped(kind: .graphql, arguments: route.passthroughArguments))
     case let route as GQLRoute:
@@ -785,6 +805,36 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         target: route.target,
         arguments: route.options,
         allowTableOutput: kind == .history
+      )
+    )
+  }
+
+  /// `riela task show <task-id>` and `riela task list`. The shared flags are
+  /// `LoopCommand`'s, so P2 can reuse this parsing when `riela loop` is
+  /// deleted and its inspections become task reads.
+  private func parseTask(_ arguments: [String]) throws -> TaskCommand {
+    let family = try ParsedTaskFamily.parseCLI(arguments)
+    let kind = family.subcommand
+    if kind == .list {
+      return TaskCommand(
+        kind: kind,
+        options: try parseGeneric(scope: "task", command: kind.rawValue, arguments: family.remainder)
+      )
+    }
+    guard !family.remainder.isEmpty else {
+      throw CLIUsageError("task show requires a task id")
+    }
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    guard let target = route.target else {
+      throw CLIUsageError("task show requires a task id")
+    }
+    return TaskCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: "task",
+        command: kind.rawValue,
+        target: target,
+        arguments: route.options
       )
     )
   }

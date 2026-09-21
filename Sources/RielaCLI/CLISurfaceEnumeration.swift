@@ -76,6 +76,8 @@ public enum CLISurfaceEnumerator {
       return nested(SessionClientSubcommand.allRawValues)
     case "loop":
       return nested(LoopCommandKind.allRawValues)
+    case "task":
+      return nested(TaskCommandKind.allRawValues)
     case "graphql":
       return nested(GraphQLClientAction.allRawValues)
     case "hook":
@@ -98,8 +100,8 @@ public enum CLISurfaceEnumerator {
     default:
       // A route reaches here only if it was registered on the router without
       // being classified. `unclassifiedRoutes()` fails the CLI gate for it, so
-      // a new family with nested actions (the Work Runtime's `riela task` is
-      // the next one) cannot ship with its subcommands invisible to the gate.
+      // a new family with nested actions cannot ship with its subcommands
+      // invisible to the gate.
       return [CLICommandDescriptor([route])]
     }
   }
@@ -118,7 +120,7 @@ public enum CLISurfaceEnumerator {
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = [
     "workflow", "package", "node", "setup", "kaiba", "memory", "instance",
-    "specialist", "session", "loop", "graphql", "hook", "events", "routine", "serve"
+    "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve"
   ]
 
   /// Every `--option` token any `riela` parser accepts, rendered from the
@@ -134,7 +136,9 @@ public enum CLISurfaceEnumerator {
       ParsedRoutineOptions.helpMessage(),
       ParsedWorkflowManifestOptions.helpMessage(),
       ParsedWorkflowRegisterArguments.helpMessage(),
-      ParsedLoopBaselineDiffRoute.helpMessage()
+      ParsedLoopBaselineDiffRoute.helpMessage(),
+      ParsedTaskShowOptions.helpMessage(),
+      ParsedTaskListOptions.helpMessage()
     ] {
       names.formUnion(longOptionTokens(in: message))
     }

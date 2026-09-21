@@ -669,6 +669,38 @@ gateway permissions before live notification runs:
 apple-gateway permissions status --json
 ```
 
+## Work Runtime (`RielaWork`)
+
+`Sources/RielaWork` is the Work Runtime module: one lifecycle for the work
+that a single workflow run is not enough to finish. An `Intent` states what is
+wanted, a `WorkTask` carries the completion contract, guard policy and
+director policy, and each `Attempt` is one ordinary workflow session. Whether
+the work is done is decided by `CompletionEvaluator` against the task's
+contract — required gates accepted, verification passing, no open blocking
+finding, and, when the task states natural-language acceptance criteria, an
+explicit `acceptance.met` in the gate payload — never by the session's own
+status. `WorkEvidenceProjector` turns a terminal session snapshot into the
+task's evidence ledger and findings, with `causedBy` edges linking findings to
+the gates that raised them. `RielaWork` depends on `RielaCore`; the runner
+never imports it, so plain runs, tests and library callers are unaffected.
+
+`WorkStore` keeps `work_intents`, `work_tasks`, `work_attempts`,
+`work_decisions`, `work_evidence` and `work_findings` in the same runtime
+records database as the workflow snapshots, behind that store's single schema
+generation. There is no migration: a session store from an older generation is
+discarded and recreated.
+
+Two read-only commands are available today:
+
+```bash
+riela task list [--state <task-state>] [--intent <intent-id>] [--workflow <name>] [--limit <n>]
+riela task show <task-id> [--scope project|user|auto] [--session-store <dir>] [--output jsonl|json|text]
+```
+
+The dispatcher, the guard detectors, the directors and `riela task run|decide`
+land in the next phase; their `SurfaceCatalog` rows are `blocked` and name it.
+The design is `design-docs/specs/design-work-runtime-consolidation.md`.
+
 ## Control Surfaces
 
 Every operation that riela exposes is declared once in `SurfaceCatalog`

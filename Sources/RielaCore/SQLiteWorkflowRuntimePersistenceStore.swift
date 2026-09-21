@@ -105,13 +105,22 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// Bumped whenever the schema changes shape. When bumping, register an
   /// in-place upgrade step in `schemaMigrations` so existing stores are
   /// migrated instead of discarded.
-  public static let schemaGeneration: Int64 = 4
+  ///
+  /// Generation 5 adds the Work Runtime's `work_*` tables to this same
+  /// database file (`WorkStore` in `RielaWork` creates them behind this one
+  /// guard). No `fromGeneration: 4` migration is registered on purpose: the
+  /// Work Runtime design forbids backward compatibility, so a generation-4
+  /// session store has no path forward and `discardIncompatibleStoreIfNeeded`
+  /// deletes and recreates it.
+  public static let schemaGeneration: Int64 = 5
 
   /// Ordered `from → from+1` upgrade steps for the session store database
-  /// (covers the snapshot, message-log, and CLI session tables — they share
-  /// one file). Append a `SQLiteSchemaMigration(fromGeneration:)` here for
-  /// every future `schemaGeneration` bump. Stores stamped before generation 2
-  /// (the migration baseline) have no path and are discarded.
+  /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
+  /// they share one file). Append a `SQLiteSchemaMigration(fromGeneration:)`
+  /// here for every future `schemaGeneration` bump that is allowed to migrate.
+  /// Stores stamped before generation 2 (the migration baseline), and stores
+  /// stamped at generation 4 (the last pre-Work-Runtime shape), have no path
+  /// and are discarded.
   public static let schemaMigrations: [SQLiteSchemaMigration] = [
     SQLiteSchemaMigration(fromGeneration: 2) { database in
       // Historical migrations must not call the current-schema builder:

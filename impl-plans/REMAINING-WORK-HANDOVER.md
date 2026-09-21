@@ -22,6 +22,11 @@
 - The work stayed in the dedicated worktree
   `/Users/taco/gits/tacogips/riela-worktrees/remaining-impl-plans`; the original
   `main` checkout and the separate Monja work were not modified.
+- `work-runtime-p0-model-and-store` and
+  `session-follow-rollup-backend-liveness` were reconciled as already
+  implemented, verified work whose feature commits are contained by `main`;
+  their stale active plans were archived without reopening later Work Runtime
+  phases.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

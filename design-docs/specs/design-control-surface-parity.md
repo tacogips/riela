@@ -252,7 +252,7 @@ changes the design's intent.
   gates for this feature.
 - **D6 — Work Runtime rows.** `riela task` and `riela intent` operations
   enter the catalog as `blocked` rows citing
-  `impl-plans/active/work-runtime-p0-model-and-store.md`; no P0 behavior is
+  `impl-plans/completed/work-runtime-p0-model-and-store.md`; no P0 behavior is
   implemented here.
 - **D7 — Declared route tables.** `/api/v1` routing is switch- and
   prefix-based, so each web-routing owner (`RielaWebAPIProjection`,

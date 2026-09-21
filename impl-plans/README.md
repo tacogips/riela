@@ -43,7 +43,6 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
-| `active/work-runtime-p0-model-and-store` | 0 | Implemented 2026-09-21 (archive candidate); P0 of the Work Runtime consolidation (`design-docs/specs/design-work-runtime-consolidation.md`): `RielaWork` module, work_* tables in the runtime records DB, evidence/finding projection from existing sessions, completion evaluator, read-only `riela task show|list` (delta D2: `import-session` was never in the plan's task table and is not built). Later phases delete auto-improve and fold loop/routine/specialist | Work Runtime consolidation |
 | `active/apple-mail-addons` | 3 | Implemented in Swift + `AppleMailAddonTests` (15) green; every implementation/verification box reconciled+checked with per-box evidence 2026-07-12. The 3 open boxes are the upstream `apple-gateway file download` output-contract confirmation, its contingent code change, and closing the QA note — all **DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
 | `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); all 4 open boxes are TASK-001 **live envelope/time-format QA DEFERRED (accepted): blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
 | `active/rielaapp-instance-execution-timeline` | 5 | Implemented + unit-tested (RielaViewer data/layout; RielaApp pane/popover/integration/entry-point compile); RielaViewerTests 16/0. Interactive UI-visual verification **DEFERRED** to a RielaApp session with the rielaapp-ui-verification workflow | W6 |
@@ -97,6 +96,8 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `work-runtime-p0-model-and-store` | 2026-09-21 | `design-work-runtime-consolidation` P0 (model/store/projection/completion evaluator and read-only task surface) |
+| `session-follow-rollup-backend-liveness` | 2026-07-24 | `design-workflow-progress-observability#session-follow-rollup-and-backend-liveness-extension-2026-07-23` |
 | `agent-node-output-contract` | 2026-09-21 | `design-agent-node-output-contract` (explicit CLI sandbox, producer-schema validation, strict addon payload templates, output-contract retry defaults) |
 | `loop-engineering-default-guardrails-and-terminal-preservation` | 2026-09-21 | `design-loop-engineering-convergence-and-operations` S9/S9a |
 | `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |

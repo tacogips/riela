@@ -316,25 +316,56 @@ extension SurfaceCatalog {
     ]
   }
 
-  /// Work Runtime operations enter the catalog before their commands exist
-  /// (design delta D6). They are `blocked` on the P0 plan, not excluded.
+  /// Work Runtime operations entered the catalog before their commands
+  /// existed (design delta D6), and each row flips surface by surface as its
+  /// phase lands.
+  ///
+  /// P0 shipped the read surface: `task show` and `task list` are implemented
+  /// on the CLI. Everything else stays `blocked` on the plan or phase that
+  /// owns it — the writes and the daemon on P1, every GraphQL and library
+  /// face on P5 — never loosened to `excluded`.
   static let workRuntimeRows: [SurfaceOperation] = {
-    let evidence = "not implemented here; \(SurfaceCatalog.workRuntimeP0Plan) ships the model and store first"
+    let p0Evidence = "not implemented here; \(SurfaceCatalog.workRuntimeP0Plan) ships the model and store first"
+    let dispatcherEvidence = "the dispatcher, directors, and task serve land in work-runtime P1; "
+      + "P0 ships the model, the store, and the read commands only"
+    let surfacesEvidence = "the GraphQL task API and the task board land in work-runtime P5"
     let defaults = SurfaceRowDefaults(
-      cli: .blocked(evidence: evidence),
-      graphql: .blocked(evidence: evidence),
+      cli: .blocked(evidence: p0Evidence),
+      graphql: .blocked(evidence: surfacesEvidence),
       webAPI: SurfaceExclusion.notAConsoleOperation("a Work Runtime operation"),
-      library: .blocked(evidence: evidence),
+      library: .blocked(evidence: surfacesEvidence),
       design: SurfaceCatalog.workRuntimeDesign
     )
+    let notYetBuilt = SurfaceRowDefaults(
+      cli: .blocked(evidence: dispatcherEvidence),
+      graphql: defaults.graphql,
+      webAPI: defaults.webAPI,
+      library: defaults.library,
+      design: defaults.design
+    )
+    let sharedReadOptions = ["--scope", "--session-store", "--working-dir", "--output"]
     return [
-      surfaceRow(defaults, id: "task.submit", family: "task", kind: .mutation),
-      surfaceRow(defaults, id: "task.list", family: "task", kind: .query),
-      surfaceRow(defaults, id: "task.show", family: "task", kind: .query),
-      surfaceRow(defaults, id: "task.serve", family: "task", kind: .stream),
-      surfaceRow(defaults, id: "intent.create", family: "intent", kind: .mutation),
-      surfaceRow(defaults, id: "intent.list", family: "intent", kind: .query),
-      surfaceRow(defaults, id: "intent.show", family: "intent", kind: .query)
+      surfaceRow(notYetBuilt, id: "task.submit", family: "task", kind: .mutation),
+      surfaceRow(
+        defaults,
+        id: "task.list",
+        family: "task",
+        kind: .query,
+        cli: "task list",
+        cliOptions: sharedReadOptions + ["--state", "--intent", "--workflow", "--limit"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.show",
+        family: "task",
+        kind: .query,
+        cli: "task show",
+        cliOptions: sharedReadOptions
+      ),
+      surfaceRow(notYetBuilt, id: "task.serve", family: "task", kind: .stream),
+      surfaceRow(notYetBuilt, id: "intent.create", family: "intent", kind: .mutation),
+      surfaceRow(notYetBuilt, id: "intent.list", family: "intent", kind: .query),
+      surfaceRow(notYetBuilt, id: "intent.show", family: "intent", kind: .query)
     ]
   }()
 }

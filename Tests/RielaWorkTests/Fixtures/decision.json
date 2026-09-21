@@ -1,0 +1,18 @@
+{
+  "attemptId" : "attempt-4e9c2a77-1d5b-4a3e-8c2f-6b0d9e1a3f45",
+  "causedBy" : [
+    "evidence-9c1f0b2e-5a44-4c6f-9a0e-2d3b8c7e1f50"
+  ],
+  "createdAt" : "2026-09-21T03:04:05Z",
+  "id" : "decision-7b3e1c90-2f6a-4d18-9e5c-0a4b7d2e6c31",
+  "kind" : {
+    "fromGateId" : "implementation-review",
+    "kind" : "recover"
+  },
+  "producer" : {
+    "kind" : "policy",
+    "rule" : "gate-rejected-with-open-findings"
+  },
+  "reason" : "required gate rejected with 2 blocking findings",
+  "taskId" : "task-0f0d0d48-2b3e-4c1d-9f0a-5a9a3b1e7c22"
+}

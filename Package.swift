@@ -34,6 +34,7 @@ let package = Package(
   ],
   products: [
     .library(name: "RielaCore", targets: ["RielaCore"]),
+    .library(name: "RielaWork", targets: ["RielaWork"]),
     .library(name: "RielaSQLite", targets: ["RielaSQLite"]),
     .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
@@ -113,6 +114,16 @@ let package = Package(
         "RielaJavaScript",
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "RielaMemory", package: "RielaMemory")
+      ]
+    ),
+    // The Work Runtime lifecycle (intents, tasks, attempts, decisions,
+    // evidence). It depends on RielaCore and never the reverse: the runner
+    // must stay usable without the task layer (design section 16).
+    .target(
+      name: "RielaWork",
+      dependencies: [
+        "RielaCore",
+        "RielaSQLite"
       ]
     ),
     .target(
@@ -246,6 +257,7 @@ let package = Package(
         .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
+        "RielaWork",
         "RielaAppSupport",
         "RielaVersion",
         "RielaSQLite",
@@ -293,6 +305,11 @@ let package = Package(
         "RielaObservability",
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
+    ),
+    .testTarget(
+      name: "RielaWorkTests",
+      dependencies: ["RielaWork", "RielaCore"],
+      resources: [.copy("Fixtures")]
     ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),

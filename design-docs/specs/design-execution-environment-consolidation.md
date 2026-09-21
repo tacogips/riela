@@ -1144,7 +1144,7 @@ replacement named.
 | Event bindings and `events serve` | `EventBindingContract.workflowName` is a bare string; scope and definition dir come from `events serve` flags and cwd (`EventContracts.swift:627-657`, `EventLiveServe.swift:705-722`); attachments are written under the event root as absolute paths and injected as `attachments` / `imagePaths` (`EventLiveServe.swift:560-577`) | `workflow: { name, scope?, version? }` plus optional `workspace`, `policy`, `model` overrides on the binding; `events serve` resolves through the store; inbound attachments land under the session store `artifacts/inbound/<sourceId>/…` and are exposed as the read-only `attachments` system mount, so Seatbelt and containers can read them and paths are inside a declared mount | E1, E3 |
 | Routines | `RoutineRecord.workflowName`, `eventRoot` path, `.riela/routines` store (`RoutineStore.swift:13-153`) | Already folded into Work Runtime P3 as scheduled tasks; the task carries a `workspace` binding; `eventRoot` becomes the event source id | Work Runtime P3 |
 | Specialist dispatch | Copies the bundle into `<stateRoot>/workflow-snapshots/<dispatchId>/` and launches with `--scope direct --workflow-definition-dir … --working-dir …` (`SpecialistCommands.swift:406-486, 647-651`) | Pins a definition version id; no directory copy; launches with `--version` and a workspace binding; the fold into `task serve` (Work Runtime P3) inherits this | E0, then P3 |
-| Run configurations (workflow instances) | `instances.json` per scope root, `WorkflowInstanceConfiguration.workingDirectory`, node patches limited to `executionBackend`, `model`, `effort`, `kaibaInstanceId` (`WorkflowInstanceModel.swift:95, 168-273`, `FileWorkflowInstanceStore.swift:18-34`); app daemon preferences mirror the same fields | A definition kind `runConfiguration` in the store (versioned like the others, scopes apply); `workingDirectory` → `workspace` binding; patches gain `policy` and `workspace`; the app daemon preference stores a run-configuration name, not fields | E0, E1, E7 |
+| Run configurations (workflow instances) | `instances.json` per scope root, `WorkflowInstanceConfiguration.workingDirectory`, node patches limited to `executionBackend`, `model`, `effort`, `kaibaInstanceId` by exact node id (`WorkflowInstanceModel.swift:95, 168-273`, `FileWorkflowInstanceStore.swift:18-34`); app daemon preferences mirror the same fields | Redesigned in §22: a `runConfiguration` definition kind with selector-based node overlays, layered resolution recorded per step, `riela config` and `workflow models`, `--model-for` flags, A/B compare; `workingDirectory` → `workspace` binding; the app daemon preference stores a run-configuration name | E0, E1, E7 |
 | Package manager | Install copies a directory into `.riela/packages/<name>`, resolution is a scan for `riela-package.json` (`WorkflowResolution.swift:522-576`, `WorkflowPackageCommandRunner+Install.swift:208-275`); lockfile keyed by package name; skills projected into `~`/cwd vendor dirs (`WorkflowPackageSupport.swift:186-215`); `requiredEnvironment` checked by doctor and `node run` | Install = import of immutable heads (`origin: package`) for workflows, workspaces, policies, models, and add-on manifests; `.riela/packages` keeps only the archive cache and the lockfile; the catalog scan is deleted; `requiredEnvironment` is checked against Model profiles and the policy environment section; skill projection is user-scope only, project skills come from workspaces; native add-on digests unchanged | E0 |
 | `extends` inheritance | Base resolved by `baseWorkflowId` through a user-scope-only directory probe (`WorkflowResolution.swift:275-346`, commit `0a9042e`); derived bundle computed at load | Base resolved through the store by `(workflow, name)` in the normal scope order or by a pinned version id; the derived workflow is a stored version with `parent` = the base version and `origin: derived(base)`, so lineage is explicit; a base update produces a `proposed` re-derivation instead of silent drift; `installedUserWorkflowName` and the hardcoded search roots are deleted | E0 |
 | Cross-workflow transitions | Callee resolved with the caller's `(scope, definitionDir, workingDirectory)` then `scope: .auto` (`WorkflowCalleeResolution.swift:40-57`); nested request inherits the parent's memory root | Callee resolved through the store in the caller's scope chain; the callee runs in the caller's workspace instance unless its own workflow default binding names a different workspace, in which case it gets its own instance; recorded on the nested session's environment | E1, E2 |
@@ -1193,3 +1193,140 @@ tree before being accepted; the section it changed is named.
 
 Not accepted: none. Deferred to Work Runtime P4: the joint branch/publication
 specification (finding 8) and merge semantics (finding 12).
+
+## 22. Run configurations and node overlays (model patching)
+
+Requirements source: user direction 2026-09-21 — make it easy to patch each
+node's model on a workflow and run it; the mechanism exists today but must
+be redesigned for the SQLite-stored workflow.
+
+### 22.1 Today
+
+`WorkflowInstanceNodePatch { executionBackend, model, effort,
+kaibaInstanceId }` keyed by exact node id (`WorkflowInstanceModel.swift:3-95`,
+`supportedFields`), sourced from a scoped `instances.json`
+(`FileWorkflowInstanceStore.swift:18-34`) or from `--node-patch <json>`
+(`ParsedWorkflowOptions.swift:12`, `WorkflowRunCommand.swift:302, 384-402`).
+`WorkflowInstanceResolver.resolve` mutates the payload dictionary in place
+(`WorkflowInstanceResolver.swift:53-107`), throws on an unknown node id or a
+`modelFreeze` conflict (`:147`), and names the result
+`<instance>+overrides` (`:160`). Nothing records per node which source set
+its model, there is no selector other than the exact id, no listing of the
+effective model matrix, and the patch cannot name a policy or a profile.
+
+### 22.2 Decisions
+
+1. **Overlays never create workflow versions.** A model change is a run
+   configuration change, not a workflow edit; the workflow version stays
+   shared and search-visible, which is the anti-duplication rule of §4.5
+   applied to models. Resolution is a layered view computed when a run is
+   prepared: workflow version ⊕ run configuration version ⊕ command-line
+   overlay → effective node payloads. The per-node effective payload digest
+   is what `_rielaHistoryContract` hashes, so preserved history stays
+   correct across overlays.
+2. **A run configuration is a definition** (`DefinitionKind.runConfiguration`,
+   §4.1): named, versioned, scoped, searchable, importable, exportable,
+   subject to the same writer. It replaces `WorkflowInstanceDefinition`,
+   `WorkflowInstanceConfiguration`, `instances.json`, and the app daemon
+   preference fields (the preference stores a run configuration name).
+3. **Selectors, not only ids.** An overlay targets `node(id)`, `step(id)`,
+   `tag(name)` (node payload `tags: [String]`, new), `backend(<backend>)`,
+   `nodeType(agent | addon)`, or `all`. Precedence is fixed and total:
+   command line > run configuration > workflow, and within a layer node >
+   step > tag > backend > nodeType > all. Two overlays of equal specificity
+   setting the same field on one node are a validation error, so
+   resolution is deterministic.
+4. **Fields.** `model` (profile name or literal, §8), `executionBackend`,
+   `effort`, `policy` (name or inline; intersected, never widened, §7),
+   `kaibaInstanceId` (nullable, projected into the add-on config exactly as
+   today's `applyKaibaInstancePatches`), and `agentEnvironment` (add-only
+   bindings, reserved keys rejected). Nothing else: prompts, contracts,
+   transitions, and workspaces are workflow or environment concerns.
+5. **`modelFreeze` is authored intent and wins.** A frozen node ignores
+   `model` and `executionBackend` overlays; the resolver records the skip
+   as a `frozen` diagnostic on the effective matrix and `--strict-overlay`
+   turns it into an error. No overlay flag can override a freeze.
+6. **Every run records its matrix.** The session pins the run
+   configuration version (a command-line overlay becomes an ephemeral
+   `runConfiguration` version with `origin: cli`, no head, GC'd with the
+   session); each step execution's `environment.model` carries
+   `{ profile, model, backend, effort, source: workflow | config(name@v) |
+   cli }`. `riela session show` and the run trace render the matrix.
+7. **Validation at resolution, not at first failure.** Before the session
+   is created the resolver checks every effective node: backend available
+   on the target host (§5a), profile resolvable and backend-compatible
+   (§8), policy intersection non-empty, `node`/`step` selectors naming
+   existing targets (error) and `tag`/`backend` selectors matching at
+   least one node (warning). `--dry-run` prints the matrix and stops.
+
+### 22.3 Model
+
+```swift
+public struct RunConfiguration: Codable, Sendable {           // kind: runConfiguration
+  public var name: String
+  public var workflow: DefinitionRef?                          // { name, scope?, version? }; nil = usable with any workflow
+  public var workspace: WorkspaceBinding?
+  public var policy: PolicyRef?
+  public var model: String?                                    // workflow-wide default profile; same as an `all` overlay on `model`
+  public var environmentFile: String?                          // relative to the instance root
+  public var environmentVariables: [String: String]
+  public var defaultVariables: JSONObject
+  public var overlays: [NodeOverlay]
+}
+
+public struct NodeOverlay: Codable, Sendable {
+  public var select: OverlaySelector                           // node(id) | step(id) | tag(name) | backend(b) | nodeType(t) | all
+  public var set: OverlayFields                                // model?, executionBackend?, effort?, policy?, kaibaInstanceId? (null clears), agentEnvironment?
+  public var note: String?
+}
+
+public struct EffectiveNodeModel: Codable, Sendable {         // on WorkflowStepExecution.environment.model and in the matrix
+  public var nodeId: String; public var stepId: String?
+  public var backend: NodeExecutionBackend; public var model: String; public var profile: String?
+  public var effort: NodeReasoningEffort?; public var policy: String?
+  public var source: OverlaySource                             // workflow | config(name, versionId) | cli
+  public var diagnostics: [String]                             // e.g. "frozen: model overlay skipped"
+}
+```
+
+### 22.4 Surfaces
+
+- `riela workflow run <wf> [--config <name>[@<version>]] [--model <profile>]
+  [--model-for <selector>=<profile>] [--backend-for <selector>=<backend>]
+  [--effort-for <selector>=<effort>] [--policy-for <selector>=<policy>]
+  [--overlay-json <file|json|->] [--dry-run] [--strict-overlay]`.
+  Selector syntax: `node:<id>`, `step:<id>`, `tag:<name>`,
+  `backend:<backend>`, `type:agent|addon`, `all`. Repeated flags compose;
+  the whole command line is one ephemeral run configuration version.
+- `riela workflow models <wf> [--config <name>] [--output table|json]`:
+  the effective matrix (node, step, backend, model, profile, effort,
+  policy, source, diagnostics) without running.
+- `riela config list|show|create|update|diff|delete|import|export`,
+  `riela config create <name> --from-session <id>` (persist the effective
+  overlay of a run that worked), `riela config compare <a> <b> --workflow
+  <wf>` (sessions and tasks that ran each, success rate, tokens, wall
+  clock, from the runtime records) for A/B between model matrices.
+- GraphQL: `runConfigurations`, `runConfiguration`, `effectiveNodeModels
+  (workflow:, config:, overlay:)`, `upsertRunConfiguration`,
+  `compareRunConfigurations`; sessions expose `pins` and the matrix.
+- Studio: a matrix editor over `effectiveNodeModels` with per-cell source
+  badges, "save as run configuration", and "run with this matrix"; declared
+  `blocked` until the web package lands.
+- Work Runtime: `TaskPlan` gains `runConfiguration: DefinitionRef?`; a
+  director's model-only improvement is `proposeRunConfigurationChange`
+  (a `proposed` run-configuration version), cheaper than a workflow
+  proposal and visible in `config compare`; the planner may pick the
+  best-performing configuration from usage statistics.
+- Search: `workflow find` and `search` results list the run configurations
+  a head has run with and their success rates, so "use workflow X with the
+  Opus review matrix" is one selection.
+
+### 22.5 What this replaces
+
+`WorkflowInstanceDefinition`, `WorkflowInstanceConfiguration`,
+`WorkflowInstanceNodePatch`, `WorkflowInstanceResolver` (payload mutation,
+`+overrides` identity), `FileWorkflowInstanceStore` and `instances.json`,
+`--node-patch`, `riela instance` as a separate family (its always-on daemon
+semantics move to the app preference referencing a run configuration; the
+CLI family becomes `riela config`), the `InstancesView` free-text fields.
+Kaiba instance ids stay a field; `modelFreeze` stays a node field.

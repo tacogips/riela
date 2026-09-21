@@ -141,6 +141,11 @@ provider queries; process snapshots.
   bundle-embedded definitions into the session-owning store (no local
   heads); retention GC honors head pointers, pins, task plans, proposals,
   `parent` links, dependency pins.
+- Run configurations (design §22): `RunConfiguration`, `NodeOverlay`,
+  `OverlaySelector`, `OverlayFields` as a stored definition kind with the
+  same writer; `FileWorkflowInstanceStore`, `instances.json`,
+  `WorkflowInstanceDefinition/Configuration/NodePatch` deleted; package
+  install may import packaged run configurations.
 - Quarantine: on schema-generation mismatch the store is renamed
   `runtime-records.incompatible-<generation>/`; `riela store reset
   --confirm` and `riela store export-definitions <dir>` added; the
@@ -217,6 +222,17 @@ example parity green; `grep -rn "temporary-workflows\|workflow-history\|\.regist
   messages; payload documents reject unknown keys. Placement stays on
   `WorkflowStepRef`. (`agentSandbox`, `agentToolPolicy`, provider fields,
   and the `<vendor>AdditionalArgs` variables are removed in E3/E4.)
+- Overlay resolver (design §22): `RunConfigurationResolver` computes the
+  effective node payloads from workflow version ⊕ run configuration ⊕
+  command-line overlay with the fixed precedence, `modelFreeze` skips
+  recorded as diagnostics (`--strict-overlay` errors), selector
+  validation, host/profile/policy checks before session creation,
+  `EffectiveNodeModel` on `WorkflowStepExecution.environment.model`, the
+  session pin of an ephemeral `origin: cli` run-configuration version,
+  the effective payload digest feeding `_rielaHistoryContract`; run flags
+  `--config`, `--model`, `--model-for`, `--backend-for`, `--effort-for`,
+  `--policy-for`, `--overlay-json`, `--dry-run`, `--strict-overlay`;
+  `--node-patch` deleted; node payload `tags: [String]` added.
 - Definition-assets mount: `RIELA_DEFINITION_ROOT` materialized read-only
   from the pinned version and `nodeRef` closure with executable bits;
   `definition://` typed references for scripts; containment checks.
@@ -374,6 +390,13 @@ recorded, auth required); conditions tests.
 
 **Deliverables**: every remaining catalog row, `riela apply|get|describe`
 for the three environment kinds, GraphQL views and history/diff/fork,
+run configuration surfaces (design §22.4: `riela config
+list|show|create|update|diff|delete|import|export|create --from-session|
+compare`, `riela workflow models`, GraphQL `runConfigurations`,
+`runConfiguration`, `effectiveNodeModels`, `upsertRunConfiguration`,
+`compareRunConfigurations`; the `riela instance` family deleted and the
+app daemon preference referencing a run configuration name; Studio
+matrix editor `blocked`),
 doctor sections for definitions, workspaces, policies, models, hosts,
 Studio rows declared `blocked`, skill documents rewritten (two deleted),
 `README.md` and `impl-plans/README.md`, design status line, and a
@@ -495,6 +518,11 @@ named and a row in that phase's completion evidence.
   finalization, 153/149 example scope with workflow-level policy defaults,
   quarantine on generation mismatch, removals moved beside replacements.
   No code written.
+- 2026-09-21 (model patching): design §22 added on user request; run
+  configurations become a stored definition kind with selector overlays,
+  layered resolution, per-step `EffectiveNodeModel`, `riela config` and
+  `workflow models`, `--model-for` flags, A/B compare; E0/E1/E7 tasks
+  extended accordingly. No code written.
 
 ## Related Plans
 

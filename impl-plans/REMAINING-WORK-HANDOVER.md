@@ -27,6 +27,9 @@
   implemented, verified work whose feature commits are contained by `main`;
   their stale active plans were archived without reopening later Work Runtime
   phases.
+- `workflow-graph-studio` and `issue-94-inheritance-minimal` were likewise
+  archived after confirming their implementation commits are contained by
+  `main` and their plans record completed acceptance evidence.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

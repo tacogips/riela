@@ -96,6 +96,8 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `issue-94-inheritance-minimal` | 2026-09-21 | `design-workflow-json#swift-inheritance-resolution-issue-94` |
+| `workflow-graph-studio` | 2026-09-10 | `design-workflow-graph-studio` |
 | `work-runtime-p0-model-and-store` | 2026-09-21 | `design-work-runtime-consolidation` P0 (model/store/projection/completion evaluator and read-only task surface) |
 | `session-follow-rollup-backend-liveness` | 2026-07-24 | `design-workflow-progress-observability#session-follow-rollup-and-backend-liveness-extension-2026-07-23` |
 | `agent-node-output-contract` | 2026-09-21 | `design-agent-node-output-contract` (explicit CLI sandbox, producer-schema validation, strict addon payload templates, output-contract retry defaults) |

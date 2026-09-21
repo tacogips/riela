@@ -146,7 +146,7 @@ Stop generation and Undo remain available; publishing still requires Save.
 
 See
 [the design](design-docs/specs/design-workflow-graph-studio.md) and
-[implementation plan](impl-plans/active/workflow-graph-studio.md), with
+[implementation plan](impl-plans/completed/workflow-graph-studio.md), with
 [acceptance evidence](design-docs/user-qa/qa-workflow-graph-studio.md).
 
 Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,

@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 implementation started 2026-09-21** under `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; P2 onward remains deferred until its dependency phase is complete.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; current Step 2 design update pending independent review, 2026-09-21**, under `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines this execution's P1 boundary over the broader roadmap below.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -859,9 +859,273 @@ domain model or moving work from P2-P7 into P1.
   state wins. A pin never falls back. A policy chooses the first preferred,
   then allowed, available backend in authored order. No matching host records
   a capacity wait decision and consumes no attempt budget.
+- **Authoring and placement use the same reachable-node requirements.**
+  `workflow usage` emits a stable, deduplicated requirement set for nodes that
+  are reachable from the selected entry only; unreachable nodes do not block a
+  run. `workflow validate --host` compares that set with one merged capability
+  snapshot and reports unavailable, unauthenticated, unverified, and stale
+  capabilities without changing workflow or host state. Host gaps are warnings
+  unless `--strict-host` is present, when they are validation failures. Dispatch
+  rechecks freshness and placement against one snapshot before reservation so a
+  validation result cannot authorize a later stale launch.
+- **Task mutation is explicit and replay-safe.** `task run` resolves the stored
+  task, workflow definition, dependencies, and placement before reserving; its
+  dry-run form performs the same resolution but writes no task, attempt,
+  session, decision, lease, or evidence row. A successful run links exactly one
+  reserved attempt to exactly one workflow session. Interrupt cancellation is
+  routed through the shared decision applier and runner cancellation path.
+  `task decide` requires exactly one authored action and a human principal;
+  duplicate delivery of an already-applied decision is idempotent, while a
+  conflicting replay or stale task version fails closed.
 - **CLI migration is one cut.** `task run` and `task decide` become available
   only after the dispatcher path is usable. In that same change the
   auto-improve flags and implementation are removed from `workflow run`; plain
   workflow runs remain task-free as decided in section 16. Host-aware
   validation and usage output ship with the placement types, before dispatch
   depends on them.
+- **Canonical authoring nodes own their writes.** The checked-in
+  `codex-design-and-implement-review-loop` node definitions for Step 6
+  implementation and Step 8 documentation refresh run `codex-agent` with
+  workspace-write access. Their prompts retain the accepted-plan and
+  accepted-review boundaries, and runtime workspace ownership still limits
+  writes to the selected worktree. Read-only intake and review nodes remain
+  read-only. This is a permanent workflow-definition correction; launchers do
+  not patch node payloads per run.
+- **P1 closes only on recorded evidence.** Auto-improve removal follows, rather
+  than precedes, equivalent dispatcher coverage. P1-0 through P1-8 remain open
+  until the active plan records the exact passing command, exit status, and
+  complete log path for each gate, including independent adversarial review
+  with no unresolved high- or mid-severity finding. P0 behavior remains
+  preserved and P2-P7 remain deferred throughout this rollout.
+
+### 17.1 Current intake, ownership, and phase boundary
+
+The authoritative issue is
+`workflow-input:Complete Work Runtime P1 using the accepted dispatcher, guard, and director design`,
+from Step 1 communication `comm-000002` in
+`codex-design-and-implement-review-loop-session-1`, mode `issue-resolution`.
+Agent references are `riela-manager`, `step1-issue-intake`, and
+`step2-design-doc-update`. No GitHub issue locator or Codex-reference repository
+was supplied. Earlier `comm-000005`/`comm-000007` references in the retained
+plan describe the stopped workflow, not acceptance of this revision.
+
+Execution remains owned by the installed user-scope package at
+`/Users/taco/.riela/packages/codex-design-and-implement-review-loop/`.
+The canonical `.riela/workflows/codex-design-and-implement-review-loop/`
+Step 6 and Step 8 sandbox changes are deliverables to inspect and validate;
+they are not a dependency or permission to execute the project-scope workflow.
+Preserve correct stopped-workflow edits and unrelated work. Do not push,
+integrate, or modify Monja-owned or separate Tauri worktrees.
+
+The wider sections 3-12 describe the eventual consolidation. P1 adds only
+reservation/leases, guards, director/application, capability placement and its
+authoring inputs, task run/decide, and auto-improve replacement. Existing loop,
+routine, specialist, event dispatch, and their stores remain until P2/P3;
+repository-context worktrees and finalization remain P4; GraphQL task/host APIs,
+Studio pickers and Task boards remain P5; proposals and capability ceilings
+remain P6/P7. Surface catalog entries explicitly mark those counterparts
+deferred rather than expanding this phase to satisfy the general parity rule
+in section 10. `task serve` is P3: P1 refreshes local capabilities on `doctor`
+and task dispatch. The bounded agent-director path needed by the replacement
+example is in P1; specialist classification and long-lived supervision are not.
+
+### 17.2 Reservation, reconciliation, and decision causality
+
+- Resolve the stored plan, selected entry, dependency satisfaction, and host
+  requirements before reservation. Missing plans, invalid entries, invalid
+  policies, and missing dependency IDs are errors; unmet existing dependencies
+  yield `wait(.dependency)`. Capacity gaps yield `wait(.capacity)`. Neither wait
+  creates a session, launch lease, or attempt. Recheck the task version and
+  dependency satisfaction at the reservation commit point.
+- Attempt, unique session identity, lease, dispatch decision, placement
+  evidence, and task-version advancement commit together on the shared SQLite
+  connection. Duplicate attempt/session identities reject rather than update
+  an existing runtime snapshot. Any failure rolls everything back. Prepared,
+  running, and terminal-but-unreconciled attempts hold the one-live-attempt
+  fence. The runner must execute the reserved session ID, never create a second
+  independent session for the same attempt.
+- Launch authorization consumes the opaque token once, bound to the exact
+  attempt/session. Persist only its digest, never include the token in evidence
+  or diagnostics. Fence a provably unauthorized reservation before explicitly
+  replacing it. Authorization or node-start uncertainty retains the fence and
+  requires reconciliation; lease expiry or missing heartbeat is not proof of
+  non-execution. A stale launcher cannot write terminal state for a replacement.
+- The dispatcher projects terminal evidence before evaluating completion. For
+  every decision, `causedBy` identifies existing evidence from this task and
+  the relevant attempt: guard records, failure/terminal records, rejected gate
+  and findings, or completion evidence. Missing, foreign, or stale evidence
+  cannot authorize a decision. Store-side application checks the current task
+  version and relevant attempt; a caller-supplied completion verdict alone is
+  not authority to accept.
+- Acceptance uses the latest accepting attempt's required gates and passing
+  verification, applicable unresolved blocking findings, and affirmative
+  acceptance payload when criteria exist. Old passing evidence cannot mask a
+  newer failure. Human acceptance satisfies only `requiresHumanAccept`; it
+  cannot waive failed gates, missing verification, or open blocking findings.
+- Decision identity is a caller-stable `decisionId`. An identical replay
+  returns its recorded application outcome without advancing versions, emitting
+  evidence again, or scheduling another attempt. Reuse with changed action,
+  task/attempt, principal, reason, or causal payload is a conflict; a fresh
+  decision with a stale expected task version is rejected. Server timestamps
+  are retained from first application, not regenerated as user intent.
+- A rerun/recover application durably records one pending reservation request.
+  Reservation consumes that request once and links the existing decision to its
+  new attempt; it must not insert a conflicting duplicate decision or silently
+  lose the request between application and launch. A replay may reconcile the
+  same pending request, never create a second request. Start/resume use the same
+  reservation fence and decision identity rules.
+- Cancel, stop, reject, and inactivity-triggered rerun first request runner
+  cancellation when execution is live. Persist the request, retain the fence,
+  and wait for durable terminal acknowledgment before reconciliation, terminal
+  task state, or a replacement launch. If acknowledgment is uncertain, expose
+  that state for an explicit decision; do not merely mark an active attempt
+  reconciled in the store. Process interruption follows this same path.
+
+### 17.3 Guard and director evaluation boundary
+
+Persist the complete guard batch before either policy or human application;
+persistence failure prevents the dependent decision. Snapshot replay must not
+duplicate observations or charge cumulative token totals twice. Gate visits
+violate at `visits > limit`; repeated findings, token/wall-clock budgets, and
+inactivity violate at `used >= limit`, matching the retained detectors. Attempt
+budget limits admission of another attempt; reserving the last permitted
+attempt must not cancel it solely because the count now equals the limit.
+Completion of that attempt is still evaluated; a next reservation is refused.
+Repeated-finding identity uses the existing fingerprint. Inactivity applies
+only to configured heartbeat-capable backends; `official/*-sdk` stays exempt.
+
+For actionable violations, use budget, convergence, inactivity, recoverable
+terminal failure/gate rejection, completion, then `wait(.human)` priority.
+Within a category use stable budget-dimension and gate/step identity ordering.
+Every rerun or gate recovery must have remaining attempt budget. Budget limits
+cannot be bypassed by `warn`, human action, or agent output. For other guard
+violations, `warn` records evidence without a forced guard action; `fail`
+records stop; `askDirector` uses the ordered policy table, with one bounded
+agent round for an escalation when configured, otherwise `wait(.human)`.
+
+The agent-director example uses an ordinary child workflow and typed output
+validation. Reconcile the work attempt before reserving `entry: .director`, so
+the same task never has two live attempts. Record the child session and charge
+its cost/attempt budget once. Its `TaskView` retains the work attempt being
+judged, not the director child's own successful status. Restrict output to the
+task's allowed decision kinds and the P1 actions the applier supports; route it
+through the same causality, completion, and version checks. Invalid, forbidden,
+failed, or budget-blocked output records evidence and requires human decision.
+Do not recursively invoke a director to repair a director failure. P1 does not
+implement workflow-change proposals, replanning machinery, or specialist chat
+classification just to support this example.
+
+### 17.4 Reachability, capabilities, and deterministic placement
+
+- Requirements start at the selected start/resume/rerun/recovery entry. Follow
+  every statically possible transition and called-workflow entry; visit cycles
+  once. Reused prefix results are inputs, not newly executed requirements.
+  Unreachable nodes contribute nothing. An unresolved executable target is a
+  resolution diagnostic, not silently omitted. Stable output retains node/step
+  provenance while deduplicating backend, add-on executable, and required
+  environment requirements. Environment evidence records names/presence only.
+- A node declares a pin or a policy, never both. `allowed` is nonempty and
+  duplicate-free; `preferred` is an ordered subset, and `modelByBackend` keys
+  must be allowed. Reject unknown backends and ambiguous model declarations.
+  Try preferred entries in authored order, then remaining allowed entries in
+  authored order. A pin never falls back; a selected model must match a known
+  nonempty model list. An absent model list is unknown, not proof that every
+  model is supported; report it as unverified for an explicit model request.
+- Use the existing placement topology: explicit worker/step assignments and
+  worker-group constraints are authoritative. Unassigned execution prefers a
+  matching local host, then matching registered workers sorted by worker ID;
+  group candidates use that same stable order and must have available capacity.
+  For each candidate require all nodes assigned to it to fit; do not bypass an
+  explicit assignment by selecting another host. Record per-node host/backend
+  choices, capability source, observation time, and snapshot freshness.
+- Section 5a's declaration merge is intentional: disable always wins; explicit
+  enable without a successful probe remains usable but unverified, including a
+  failed auth probe. Preserve that failure in diagnostics, never relabel it
+  authenticated. Without explicit enable, absent, unauthenticated, or unknown
+  capability cannot satisfy dispatch. Declared models override observed lists.
+  A declaration does not prove worker liveness or create worker capacity.
+  Backend enablement also does not waive a missing required add-on executable
+  or environment name on its assigned host.
+- Use one merged snapshot per placement evaluation, with a finite configured
+  freshness bound and bounded probe timeout. Equality with the freshness bound
+  is stale. Refresh stale observations before real reservation; failed refresh
+  cannot reuse stale observed success. Explicit declarations remain labelled
+  unverified when observations cannot establish availability. Adapter-owned
+  version/auth probes perform no login, credential mutation, or model inference;
+  unsupported auth probes return unknown. SDK backends use their existing
+  adapter configuration/credential checks, not invented CLI auth commands.
+- `workflow validate --host` and `workflow usage` share this projection. Host
+  absence, auth failure, stale or unverified capability are warnings by default;
+  `--strict-host` turns them into validation failures and requires `--host`.
+  Structural workflow/policy errors always fail. Group validation succeeds only
+  if a complete legal placement exists. Validation is read-only and does not
+  refresh persisted host state. Dispatch makes its own freshness check; prior
+  validation never acts as a launch token. Planner variables carry the intended
+  host snapshot and generated plans undergo the same requirement resolution.
+
+### 17.5 Command, rollout, and review acceptance
+
+`task run <task-id>` uses canonical store/definition resolution and exposes its
+attempt/session IDs or dependency/capacity wait reason. `--dry-run` performs the
+same resolution and returns prospective per-node placement without creating,
+migrating, resetting, checkpointing, or writing runtime databases or host cache.
+It opens existing state read-only; missing or incompatible state is a diagnostic.
+Fresh probes, if needed, stay in memory. Verification compares database bytes
+and all affected rows before/after, including `work_hosts`, and checks that an
+absent store remains absent.
+
+`task decide <task-id>` requires exactly one of `--accept`, `--reject <reason>`,
+`--rerun [step]`, or `--cancel`, an explicit human principal, expected task
+version, and stable decision ID (`--principal`, `--expected-version`, and
+`--decision-id`). Local CLI ownership is the existing local
+access boundary; a principal labels the audit actor, not remote authentication.
+Any existing remote manager path retains its authentication. New GraphQL
+mutation exposure remains P5. Plain `workflow run` stays task-free; no implicit
+task creation or additional general task-management commands are required here.
+
+Replace auto-improve only after dispatcher tests cover its actual inactivity,
+bounded retry, failure recovery, cancellation, and replay behavior. Preserve
+unrelated specialist/event supervisor behavior. `examples/task-repair-loop`
+must cover acceptance, gate recovery, guard stop, and capacity wait;
+`examples/task-agent-director` must cover allowed output, child accounting, and
+invalid-output escalation. Mock `workflow run` alone is not evidence that task
+dispatch works: `TaskRuntimeExampleTests` must drive the task lifecycle against
+both fixtures and compare their `EXPECTED_RESULTS.md` outcomes.
+
+The issue maps to existing sections and P1 deliverables as follows:
+
+| Intake requirement | Design contract | Implementation-plan gate |
+| --- | --- | --- |
+| Canonical sandbox ownership, installed-only execution | §17.1 | P1-0 |
+| Atomic reservation and launch fencing | §17.2 | P1-1 |
+| Durable guard evidence before decisions | §17.2-17.3 | P1-2 |
+| Completion, causality, replay, cancellation | §17.2-17.3 | P1-3, P1-6 |
+| Capability placement, host validation, usage | §5a, §17.4 | P1-4, P1-5 |
+| Task run, read-only dry-run, human decide | §17.5 | P1-6 |
+| Covered auto-improve removal, examples, documentation | §17.5 | P1-7, P1-8 |
+| P0 preservation, P2-P7 deferral, adversarial closure | §17.1, §17.5 | P1-8 |
+
+Retain every verification command, final exit status, and complete log under
+`tmp/work-runtime-p1/`; poll every yielded foreground process through exit.
+Use the active plan's exact build, focused/full test, dry-run, doctor, example,
+removed-option, and diff gates. Canonical workflow validation is inspection of
+the deliverable, not execution of that workflow. Only independent review with
+no open high/mid findings can close P1. This author check closes design findings
+only and does not certify retained code or mark plan tasks complete.
+
+No repository `riela-package.json` was found in the Step 2 audit. This turn
+changes design documentation only, so no package digest changes are required.
+The installed package has its own manifest and is not edited. Implementation
+must repeat the ownership audit for any workflow/prompt/script/skill edit and
+refresh an applicable owning manifest rather than inventing one.
+
+**Reference mapping and questions.** `../../codex-agent` is absent (recorded
+inspection exit 1); intake supplies no alternative and is not reference-driven.
+There is therefore no external Codex behavior parity claim or required external
+comparison. Cursor CLI remains one backend behind the existing adapter boundary
+in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; backend-specific probe,
+auth, invocation, and heartbeat details must stay there or in its adapter helpers,
+not enter the neutral task state machine. Selecting another allowed backend
+does not translate prompts or promise Codex/Cursor equivalence. No unresolved
+user decision is required for this P1 design; implementation correctness,
+host-probe results, and independent review remain verification work.

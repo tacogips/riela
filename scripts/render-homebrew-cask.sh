@@ -17,7 +17,7 @@ Environment:
   RIELA_CASK_RELEASE_BASE_URL  Release URL base. Defaults to GitHub v<version>.
 
 Example:
-  scripts/build-homebrew-cask-release.sh darwin-arm64 darwin-x64
+  scripts/build-homebrew-cask-release.sh darwin-arm64
   scripts/render-homebrew-cask.sh 0.1.0 ../homebrew-tap/Casks/riela.rb
 
 This renderer expects signed, notarized, and stapled macOS .dmg artifacts.
@@ -56,18 +56,16 @@ main() {
   release_dir="${RIELA_CASK_RELEASE_DIR:-$repo_root/dist/homebrew-cask}"
   release_base_url="${RIELA_CASK_RELEASE_BASE_URL:-https://github.com/tacogips/riela/releases/download/v$version}"
 
-  local darwin_arm64_sha darwin_x64_sha
+  local darwin_arm64_sha
   darwin_arm64_sha="$(sha_for_target "$version" darwin-arm64 "$release_dir")"
-  darwin_x64_sha="$(sha_for_target "$version" darwin-x64 "$release_dir")"
 
   mkdir -p "$(dirname "$output")"
   cat > "$output" <<EOF
 cask "riela" do
-  arch arm: "darwin-arm64", intel: "darwin-x64"
+  arch arm: "darwin-arm64"
 
   version "$version"
-  sha256 arm:   "$darwin_arm64_sha",
-         intel: "$darwin_x64_sha"
+  sha256 "$darwin_arm64_sha"
 
   url "$release_base_url/riela-#{version}-#{arch}.dmg"
   name "riela"

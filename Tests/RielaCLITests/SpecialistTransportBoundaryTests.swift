@@ -59,7 +59,12 @@ final class SpecialistTransportBoundaryTests: XCTestCase {
     """#
     try Data(definition.utf8)
       .write(to: workflow.appendingPathComponent("workflow.json"))
-    try Data(#"{"id":"work","executionBackend":"codex-agent","model":"gpt-5.4-mini","modelFreeze":false,"promptTemplateFile":"prompts/work.md","variables":{},"output":{"description":"stub"}}"#.utf8)
+    let node = #"""
+    {"id":"work","executionBackend":"codex-agent","agentSandbox":"read-only",
+    "model":"gpt-5.4-mini","modelFreeze":false,"promptTemplateFile":"prompts/work.md",
+    "variables":{},"output":{"description":"stub"}}
+    """#
+    try Data(node.utf8)
       .write(to: workflow.appendingPathComponent("nodes/work.json"))
     try Data("return stub JSON".utf8).write(to: workflow.appendingPathComponent("prompts/work.md"))
     let scenario = work.appendingPathComponent("scenario.json")

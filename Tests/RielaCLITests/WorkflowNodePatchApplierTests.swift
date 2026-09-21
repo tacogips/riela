@@ -10,7 +10,7 @@ final class WorkflowNodePatchApplierTests: XCTestCase {
         id: "worker",
         executionBackend: .codexAgent,
         model: "gpt-5",
-        modelFreeze: true
+        modelFreeze: true, agentSandbox: .readOnly
       )
     ]
 

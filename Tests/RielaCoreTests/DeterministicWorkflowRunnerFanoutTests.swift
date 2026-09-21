@@ -746,16 +746,22 @@ private func fanoutLoopWorkflow() -> WorkflowDefinition {
 
 private func fanoutPayloads() -> [String: AgentNodePayload] {
   [
-    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5")
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
   ]
 }
 
 private func fanoutLoopPayloads() -> [String: AgentNodePayload] {
   [
-    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5")
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "review-node": AgentNodePayload(
+      id: "review-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      agentSandbox: .readOnly,
+      output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+    ),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
   ]
 }

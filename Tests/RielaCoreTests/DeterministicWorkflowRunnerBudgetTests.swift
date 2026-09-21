@@ -61,7 +61,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
     do {
       _ = try await runner.run(DeterministicWorkflowRunRequest(
         workflow: Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxTotalTokens: 1_000)),
-        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))],
         maxSteps: 4
       ))
       XCTFail("expected loop budget failure")
@@ -90,7 +90,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxTotalTokens: 1_000, onExceeded: "warn")),
-      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))],
       maxSteps: 4
     ))
 
@@ -108,7 +108,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: Self.budgetWorkflow(budget: nil),
-      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))],
       maxSteps: 4
     ))
 
@@ -131,7 +131,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
     do {
       _ = try await runner.run(DeterministicWorkflowRunRequest(
         workflow: Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxWallClockMs: 1)),
-        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))],
         maxSteps: 4
       ))
       XCTFail("expected wall-clock budget failure")
@@ -160,7 +160,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxTotalTokens: 1_000, onExceeded: "warn")),
-      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))],
       maxSteps: 6,
       eventHandler: { await recorder.record($0) }
     ))
@@ -198,7 +198,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
   func testRerunIncrementsAttemptNumberAndRecordsRoot() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let workflow = Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxSessionAttempts: 3))
-    let payloads = ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")]
+    let payloads = ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))]
 
     let first = try await DeterministicWorkflowRunner(
       store: store,
@@ -224,7 +224,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
   func testMaxSessionAttemptsFailsRerunEntry() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let workflow = Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxSessionAttempts: 2))
-    let payloads = ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")]
+    let payloads = ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))]
 
     let first = try await DeterministicWorkflowRunner(
       store: store,
@@ -260,7 +260,7 @@ final class DeterministicWorkflowRunnerBudgetTests: XCTestCase {
   func testLegacyLineageWithoutAttemptNumberDoesNotFailRerun() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let workflow = Self.budgetWorkflow(budget: LoopBudgetDeclaration(maxSessionAttempts: 2))
-    let payloads = ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")]
+    let payloads = ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: NodeOutputContract(jsonSchema: ["type": .string("object")]))]
 
     let first = try await DeterministicWorkflowRunner(
       store: store,

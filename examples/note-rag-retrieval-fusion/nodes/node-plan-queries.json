@@ -2,11 +2,35 @@
   "id": "plan-queries",
   "description": "Derive the four retrieval probe queries that exercise each retrieval-fusion technique against the seeded corpus.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/plan-queries.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with strictQuery, contextQuery, relaxedQuery, and graphQuery strings that probe the seeded Atlas Retrieval Playbook corpus."
+    "description": "Return JSON with strictQuery, contextQuery, relaxedQuery, and graphQuery strings that probe the seeded Atlas Retrieval Playbook corpus.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "strictQuery": { "type": "string" },
+        "contextQuery": { "type": "string" },
+        "relaxedQuery": { "type": "string" },
+        "graphQuery": { "type": "string" },
+        "queryPlan": {},
+        "noteRoot": {},
+        "notebookId": {},
+        "noteIds": {},
+        "pageCount": {},
+        "seededNotebookId": {},
+        "seededNoteIds": {},
+        "seededPageCount": {},
+        "resultCount": {},
+        "results": {},
+        "strictSearch": {},
+        "contextualSearch": {},
+        "relaxedSearch": {}
+      },
+      "required": ["strictQuery", "contextQuery", "relaxedQuery", "graphQuery"]
+    }
   }
 }

@@ -1,6 +1,6 @@
 # Agent-node output contract: sandbox declaration, payload validation, and template resolution failures
 
-Status: accepted design, 2026-09-21; revised the same day after independent
+Status: implemented and verified 2026-09-21; accepted design revised the same day after independent
 review, twice (D2a extended to bare payload references; D3 rescoped from
 surface to path class; the classifier's exclusions made per surface after the
 node-`variables` escape proved unreachable on the addon path; then `config`
@@ -9,9 +9,9 @@ node-`variables` scan dropped; then, after a third review, the output contract
 restated as the runtime's three states rather than two, D2a's one-transition
 scan replaced by a producer walk through forwarding addon nodes, and §6's
 single-seam claim retracted in favour of an enumerated 16-site conversion —
-see the plan's progress log). Not implemented.
+see the plan's progress log).
 Plan:
-`impl-plans/active/agent-node-output-contract.md`. This design closes the
+`impl-plans/completed/agent-node-output-contract.md`. This design closes the
 execution-contract gap that made two real `fable-and-improve-opus` runs
 (riela 0.1.38, package 0.4.0, observed 2026-09-21) die several steps away
 from their causes. Related: `design-docs/specs/design-work-runtime-consolidation.md`
@@ -545,7 +545,7 @@ addon's own `policyError` domain) and must carry:
 - the **consuming step / node / addon** (`stepId`, `nodeId`, `addonName` are
   already in the variables object at `WorkflowAddonSupport.swift:36-38`).
 
-Shape: `templateResolutionFailed: step '<consumer>' addon '<addon>' template
+Shape: `templateResolutionFailed: step '<consumer>' node '<node>' addon '<addon>' template
 '{{<path>}}' resolved to nothing; step '<deliverer>' delivered this input
 without payload field '<field>'`.
 

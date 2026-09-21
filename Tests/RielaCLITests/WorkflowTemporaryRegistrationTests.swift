@@ -203,7 +203,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
       "steps": [{ "id": "work", "nodeId": "worker", "role": "worker" }]
     }
     """.write(to: escaping.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"worker","executionBackend":"codex-agent","model":"gpt-5.5"}"#
+    try #"{"id":"worker","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5"}"#
       .write(to: layout.inputs.appendingPathComponent("outside.json"), atomically: true, encoding: .utf8)
     let escapingResult = await app.run([
       "workflow", "register", escaping.path, "--mutable", "--output", "json"
@@ -863,7 +863,7 @@ final class WorkflowTemporaryRegistrationTests: XCTestCase {
       "steps": [{ "id": "work", "nodeId": "worker", "role": "worker" }]
     }
     """.write(to: bundle.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"worker","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
+    try #"{"id":"worker","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
       .write(to: nodes.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
     try #"{"work":{"provider":"scenario-mock","model":"gpt-5.5","when":{"always":true},"payload":{"ok":true}}}"#
       .write(to: bundle.appendingPathComponent("scenario.json"), atomically: true, encoding: .utf8)

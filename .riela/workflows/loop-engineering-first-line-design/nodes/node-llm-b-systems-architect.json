@@ -2,6 +2,7 @@
   "id": "llm-b-systems-architect",
   "description": "LLM B: runtime systems and reliability architect for Riela loop engineering.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

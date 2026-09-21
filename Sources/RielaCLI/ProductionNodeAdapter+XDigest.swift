@@ -71,22 +71,23 @@ private struct XDigestEngine {
   var currentDirectory: URL
 
   func execute(_ operation: XDigestOperation, input: WorkflowAddonExecutionInput) throws -> XDigestResult {
+    _ = try addonVariables(for: input)
     switch operation {
     case .readState:
       return try readState(input)
     case .normalizeFetchedPosts:
-      return normalizeFetchedPosts(input)
+      return try normalizeFetchedPosts(input)
     case .validateSummaryOutput:
-      return validateSummary(input)
+      return try validateSummary(input)
     case .persistState:
       return try persistState(input)
     case .noDigestOutput:
-      return noDigestOutput(input)
+      return try noDigestOutput(input)
     }
   }
 
   private func readState(_ input: WorkflowAddonExecutionInput) throws -> XDigestResult {
-    let workflowInput = workflowInput(input)
+    let workflowInput = try workflowInput(input)
     let storage = try stateStorage(from: input, workflowInput: workflowInput)
     let previousState: JSONObject
     let stateFields: JSONObject
@@ -105,7 +106,7 @@ private struct XDigestEngine {
       ?? "@tacogips"
     let lookbackMinutes = try positiveInt("RIELA_X_DIGEST_LOOKBACK_MINUTES", fallback: 60)
     let maxPosts = max(5, min(try positiveInt("RIELA_X_DIGEST_MAX_POSTS", fallback: 50), 50))
-    let now = now(from: input)
+    let now = try now(from: input)
     let windowStart = Calendar(identifier: .gregorian).date(byAdding: .minute, value: -lookbackMinutes, to: now) ?? now
     let sinceId = nonEmptyString(previousState["lastPostId"]) ?? ""
     var payload: JSONObject = [
@@ -124,7 +125,7 @@ private struct XDigestEngine {
     return XDigestResult(when: ["always": true], payload: payload)
   }
 
-  private func normalizeFetchedPosts(_ input: WorkflowAddonExecutionInput) -> XDigestResult {
+  private func normalizeFetchedPosts(_ input: WorkflowAddonExecutionInput) throws -> XDigestResult {
     let payloads = upstreamPayloads(input.resolvedInputPayload)
     let cursor = payloads.first { payload in
       nonEmptyString(payload["windowStartIso"]) != nil
@@ -143,7 +144,7 @@ private struct XDigestEngine {
       return normalizePost(post)
     }
     let windowStart = parseDate(nonEmptyString(cursor["windowStartIso"]))
-    let windowEnd = parseDate(nonEmptyString(cursor["requestedAt"])) ?? now(from: input)
+    let windowEnd = try parseDate(nonEmptyString(cursor["requestedAt"])) ?? now(from: input)
     let sinceId = nonEmptyString(cursor["sinceId"]) ?? ""
     let sinceNumeric = numericPostId(sinceId)
     let maxPosts = Int(numberValue(cursor["maxPosts"]) ?? 50)
@@ -186,7 +187,8 @@ private struct XDigestEngine {
     )
   }
 
-  private func validateSummary(_ input: WorkflowAddonExecutionInput) -> XDigestResult {
+  private func validateSummary(_ input: WorkflowAddonExecutionInput) throws -> XDigestResult {
+    _ = try addonVariables(for: input)
     let payloads = upstreamPayloads(input.resolvedInputPayload)
     let normalizePayload = payloads.first { payload in
       object(payload["fetchWindow"]) != nil
@@ -297,7 +299,7 @@ private struct XDigestEngine {
     let retainedTopics = array(payload["topicDigests"]) ?? []
     let state: JSONObject = [
       "lastPostId": .string(maxFetchedPostId),
-      "updatedAt": .string(isoString(now(from: input))),
+      "updatedAt": .string(isoString(try now(from: input))),
       "retainedTopicCount": .number(Double(retainedTopics.count))
     ]
     let stateFields: JSONObject
@@ -347,7 +349,7 @@ private struct XDigestEngine {
     )
   }
 
-  private func noDigestOutput(_ input: WorkflowAddonExecutionInput) -> XDigestResult {
+  private func noDigestOutput(_ input: WorkflowAddonExecutionInput) throws -> XDigestResult {
     let payload = upstreamPayloads(input.resolvedInputPayload).last ?? [:]
     return XDigestResult(
       when: ["always": true],
@@ -363,7 +365,7 @@ private struct XDigestEngine {
   }
 
   private func stateFile(from input: WorkflowAddonExecutionInput) throws -> String {
-    let workflowInput = workflowInput(input)
+    let workflowInput = try workflowInput(input)
     let configured = nonEmptyString(workflowInput["stateFile"])
       ?? nonEmptyEnvironment("RIELA_X_DIGEST_STATE_FILE")
       ?? Self.defaultStateFile
@@ -393,8 +395,8 @@ private struct XDigestEngine {
     return object
   }
 
-  private func workflowInput(_ input: WorkflowAddonExecutionInput) -> JSONObject {
-    let variables = addonVariables(for: input)
+  private func workflowInput(_ input: WorkflowAddonExecutionInput) throws -> JSONObject {
+    let variables = addonBaseVariables(for: input)
     return object(variables["workflowInput"]) ?? object(variables["runtimeVariables"]?.value(at: ["workflowInput"])) ?? [:]
   }
 
@@ -415,8 +417,8 @@ private struct XDigestEngine {
     return value
   }
 
-  private func now(from input: WorkflowAddonExecutionInput) -> Date {
-    let variables = addonVariables(for: input)
+  private func now(from input: WorkflowAddonExecutionInput) throws -> Date {
+    let variables = addonBaseVariables(for: input)
     if let configured = nonEmptyString(input.addon.config?["nowIso"]) ?? nonEmptyString(variables["nowIso"]),
       let date = parseDate(configured) {
       return date

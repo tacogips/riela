@@ -127,7 +127,7 @@ final class WorkflowSharedNodeVersioningTests: XCTestCase {
     "nodes":[{"id":"mika","nodeFile":"nodes/mika.json"}],"steps":[{"id":"mika","nodeId":"mika","role":"worker"}]}
     """.utf8).write(to: shared.appendingPathComponent("workflow.json"))
     try Data("""
-    {"id":"mika","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"systemPromptTemplateFile":"prompts/mika-system.md","promptTemplate":"shared","variables":{}}
+    {"id":"mika","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","modelFreeze":false,"systemPromptTemplateFile":"prompts/mika-system.md","promptTemplate":"shared","variables":{}}
     """.utf8).write(to: shared.appendingPathComponent("nodes/mika.json"))
     let prompt = shared.appendingPathComponent("prompts/mika-system.md")
     try Data("shared persona".utf8).write(to: prompt)
@@ -192,7 +192,7 @@ final class WorkflowSharedNodeVersioningTests: XCTestCase {
     "nodes":[{"id":"mika","nodeFile":"nodes/mika.json"}],"steps":[{"id":"mika","nodeId":"mika","role":"worker"}]}
     """.utf8).write(to: leaf.appendingPathComponent("workflow.json"))
     try Data("""
-    {"id":"mika","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,
+    {"id":"mika","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","modelFreeze":false,
     "systemPromptTemplateFile":"prompts/mika-system.md","promptTemplate":"nested","variables":{}}
     """.utf8).write(to: leaf.appendingPathComponent("nodes/mika.json"))
     try Data("nested persona".utf8).write(to: leaf.appendingPathComponent("prompts/mika-system.md"))

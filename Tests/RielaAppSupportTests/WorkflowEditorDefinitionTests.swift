@@ -72,7 +72,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       {"workflowId":"editor-copy","defaults":{"nodeTimeoutMs":120000,"maxLoopIterations":3},"entryStepId":"work",
        "nodes":[{"id":"work","nodeFile":"nodes/work.json"}],"steps":[{"id":"work","nodeId":"work","role":"worker"}]}
       """#
-    let node = #"{"id":"work","executionBackend":"codex-agent","promptTemplateFile":"prompts/work.md","variables":{}}"#
+    let node = #"{"id":"work","executionBackend":"codex-agent","agentSandbox":"read-only","promptTemplateFile":"prompts/work.md","variables":{}}"#
     let prompt = "Preserve this prompt and its formatting.\n\nSecond paragraph.\n"
     try Data(definition.utf8).write(to: source.appendingPathComponent("workflow.json"))
     try Data(node.utf8).write(to: source.appendingPathComponent("nodes/work.json"))

@@ -46,7 +46,7 @@ final class WorkflowInheritanceValidationTests: XCTestCase {
       nodeType: .agent,
       executionBackend: .codexAgent,
       model: "gpt-5",
-      promptTemplate: "codexAgentReferences codex-agent codex",
+      agentSandbox: .readOnly, promptTemplate: "codexAgentReferences codex-agent codex",
       promptTemplateFile: "prompts/codex.md"
     )
     let declaration = WorkflowInheritanceDeclaration(
@@ -102,7 +102,7 @@ final class WorkflowInheritanceValidationTests: XCTestCase {
       id: "worker",
       executionBackend: .codexAgent,
       model: "model",
-      provider: provider,
+      agentSandbox: .readOnly, provider: provider,
       providerProxy: .codex
     )
 

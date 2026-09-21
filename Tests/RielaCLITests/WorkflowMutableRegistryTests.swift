@@ -736,6 +736,7 @@ final class WorkflowMutableRegistryTests: XCTestCase {
     {
       "id": "main-worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.3-codex-spark",
       "promptTemplateFile": "prompts/main-worker.md",
       "variables": {}

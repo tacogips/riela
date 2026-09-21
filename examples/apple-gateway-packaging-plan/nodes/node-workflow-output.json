@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Project the packaging dry-run command payload as the workflow root output.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplate": "Project the latest Apple Gateway packaging dry-run payload.",

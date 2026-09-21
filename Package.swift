@@ -359,6 +359,7 @@ let package = Package(
       name: "RielaCLITests",
       dependencies: [
         "RielaCore",
+        "RielaAddonSupport",
         "RielaEvents",
         "RielaAdapters",
         "RielaAppSupport",

@@ -15,7 +15,7 @@ public func addonForwardedApplicationPayload(_ resolvedInput: JSONObject) -> JSO
   return payload
 }
 
-public func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
+public func addonBaseVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   var variables = input.variables
   for (key, value) in input.resolvedInputPayload {
     variables[key] = value
@@ -36,29 +36,87 @@ public func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject
   variables["stepId"] = .string(input.stepId)
   variables["nodeId"] = .string(input.nodeId)
   variables["addonName"] = .string(input.addon.name)
-  for (key, value) in renderAddonInputs(input.addon.inputs, variables: variables) {
+  return variables
+}
+
+public func addonVariables(
+  for input: WorkflowAddonExecutionInput,
+  additionalVariables: JSONObject = [:]
+) throws -> JSONObject {
+  var variables = addonBaseVariables(for: input)
+  for (key, value) in try renderAddonInputs(input.addon.inputs, variables: variables) {
     variables[key] = value
+  }
+  for (key, value) in additionalVariables {
+    variables[key] = value
+  }
+  if let config = input.addon.config {
+    _ = try renderAddonConfig(.object(config), variables: variables)
   }
   return variables
 }
 
-public func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObject {
+public func renderAddonInputs(_ inputs: JSONObject?, variables: JSONObject) throws -> JSONObject {
   guard let inputs else { return [:] }
-  return inputs.mapValues { renderJSONTemplates($0, variables: variables) }
+  return try inputs.mapValues {
+    try renderAddonTemplates($0, variables: variables, surface: .addonInputs)
+  }
 }
 
-public func renderJSONTemplates(_ value: JSONValue, variables: JSONObject) -> JSONValue {
+public func renderAddonConfig(_ value: JSONValue, variables: JSONObject) throws -> JSONValue {
+  try renderAddonTemplates(value, variables: variables, surface: .addonConfig(addonInputKeys: []))
+}
+
+private func renderAddonTemplates(
+  _ value: JSONValue,
+  variables: JSONObject,
+  surface: TemplateSurface
+) throws -> JSONValue {
   switch value {
   case let .string(template):
     if let exactValue = exactTemplateValue(template, variables: variables) { return exactValue }
+    try rejectUnresolvedPayloadReferences(in: template, variables: variables, surface: surface)
     return .string(renderPromptTemplate(template, variables: variables))
   case let .array(values):
-    return .array(values.map { renderJSONTemplates($0, variables: variables) })
+    return .array(try values.map { try renderAddonTemplates($0, variables: variables, surface: surface) })
   case let .object(object):
-    return .object(object.mapValues { renderJSONTemplates($0, variables: variables) })
+    return .object(try object.mapValues { try renderAddonTemplates($0, variables: variables, surface: surface) })
   case .null, .bool, .integer, .number:
     return value
   }
+}
+
+private func rejectUnresolvedPayloadReferences(
+  in template: String,
+  variables: JSONObject,
+  surface: TemplateSurface
+) throws {
+  for path in templateReferencePaths(in: .string(template))
+  where classifyTemplateReference(path, surface: surface) == .payload
+    && lookupTemplatePath(path, in: variables) == nil {
+    let consumerStep = nonEmptyString(variables["stepId"]) ?? "an unknown step"
+    let consumerNode = nonEmptyString(variables["nodeId"]) ?? "an unknown node"
+    let addon = nonEmptyString(variables["addonName"]) ?? "an unknown addon"
+    let producer = deliveringStep(in: variables)
+    let field = payloadField(inTemplatePath: path, surface: surface) ?? path
+    throw AdapterExecutionError(
+      .templateResolutionFailed,
+      "templateResolutionFailed: step '\(consumerStep)' node '\(consumerNode)' addon '\(addon)' template '{{\(path)}}' resolved to nothing; step '\(producer)' delivered this input without payload field '\(field)'"
+    )
+  }
+}
+
+private func deliveringStep(in variables: JSONObject) -> String {
+  guard case let .object(metadata)? = variables["_rielaInput"] else { return "an upstream step" }
+  if case let .object(latest)? = metadata["latest"],
+     let fromStepId = nonEmptyString(latest["fromStepId"]) {
+    return fromStepId
+  }
+  if case let .array(sourceStepIds)? = metadata["sourceStepIds"] {
+    let ids = sourceStepIds.compactMap(nonEmptyString)
+    if ids.count == 1 { return ids[0] }
+  }
+  return "an upstream step"
 }
 
 private func exactTemplateValue(_ template: String, variables: JSONObject) -> JSONValue? {

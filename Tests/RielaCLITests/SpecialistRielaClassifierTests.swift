@@ -25,7 +25,7 @@ final class SpecialistRielaClassifierTests: XCTestCase {
   func testCodingAgentBackendIsRejectedBeforeInvocation() async {
     let adapter = ClassifierCaptureAdapter()
     let provider = SpecialistRielaClassifier(
-      node: AgentNodePayload(id: "classifier", executionBackend: .codexAgent, model: "fixture"),
+      node: AgentNodePayload(id: "classifier", executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly),
       cards: [], adapter: adapter
     )
     do {

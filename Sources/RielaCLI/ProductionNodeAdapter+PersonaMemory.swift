@@ -9,7 +9,7 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    let context = personaMemoryContext(input)
+    let context = try personaMemoryContext(input)
     let store = RielaMemoryStore(rootDirectory: context.memoryRoot)
     let records = try store.search(
       memoryId: context.memoryId,
@@ -61,8 +61,8 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    let context = personaMemoryContext(input)
-    let variables = addonVariables(for: input)
+    let context = try personaMemoryContext(input)
+    let variables = try addonVariables(for: input)
     let files = try memoryFileReferences(config: input.addon.config ?? [:], variables: variables)
     let personaPayload = latestPersonaPayload(input.resolvedInputPayload)
     let entries = personaMemoryEntries(from: personaPayload["memoryEntries"])
@@ -243,9 +243,9 @@ private let personaHandoffContinuationCues = [
 
 private let personaHandoffTargetsById = Dictionary(uniqueKeysWithValues: personaHandoffTargets.map { ($0.id, $0) })
 
-private func personaMemoryContext(_ input: WorkflowAddonExecutionInput) -> PersonaMemoryContext {
+private func personaMemoryContext(_ input: WorkflowAddonExecutionInput) throws -> PersonaMemoryContext {
   let config = input.addon.config ?? [:]
-  let variables = addonVariables(for: input)
+  let variables = try addonVariables(for: input)
   let personaId = safePersonaMemorySegment(
     nonEmptyString(config["personaId"]) ?? nonEmptyString(variables["personaId"]) ?? "persona",
     fallback: "persona"

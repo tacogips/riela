@@ -2,6 +2,7 @@
   "id": "work",
   "description": "Implement additive CLI loop projection.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/work.md",

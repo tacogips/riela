@@ -723,12 +723,11 @@ private func normalizeGatewayOutput(
 ) throws -> OutputContractEnvelopeNormalization {
   let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
   if requiresOutputContract {
-    return try normalizeOutputContractEnvelope(try parseJSONObjectCandidate(trimmed, source: source), source: source)
-  }
-  if trimmed.hasPrefix("{"),
-     let object = try? parseJSONObjectCandidate(trimmed, source: source),
-     let normalized = try? normalizeOutputContractEnvelope(object, source: source) {
-    return normalized
+    do {
+      return try normalizeOutputContractEnvelope(try parseJSONObjectCandidate(trimmed, source: source), source: source)
+    } catch let failure as AdapterExecutionError {
+      throw WorkflowPublicationError.validationRejected(failure.message)
+    }
   }
   return OutputContractEnvelopeNormalization(
     completionPassed: true,

@@ -2,6 +2,7 @@
   "id": "work",
   "description": "Implement the runtime evidence projection and persistence slice.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "medium",

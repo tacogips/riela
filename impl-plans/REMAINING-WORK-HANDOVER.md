@@ -8,6 +8,21 @@
 
 **Status**: handover inventory complete; implementation workflows intentionally stopped at the user's request
 
+## Progress update — 2026-09-21 remaining-plan continuation
+
+- `agent-node-output-contract` is implemented and verified on
+  `feat/remaining-impl-plans`. D1–D3 landed in the runtime; every in-repo
+  workflow/fixture was reconciled. The excluded D4 `riela-packages` bundle
+  migration remains a separate repository work package.
+- Final evidence on the implementation tree: `swift test` executed 2,392
+  XCTest cases with 2 skips and zero failures plus 17 Swift Testing cases with
+  zero failures; all 39 mock-scenario examples passed; all 102 top-level
+  workflow definitions validated; changed-file SwiftLint had zero serious
+  findings.
+- The work stayed in the dedicated worktree
+  `/Users/taco/gits/tacogips/riela-worktrees/remaining-impl-plans`; the original
+  `main` checkout and the separate Monja work were not modified.
+
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 
 A second working session (Claude Fable 5 directly, per the user's directive to

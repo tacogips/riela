@@ -40,7 +40,7 @@ private struct AppleMailAddonEngine {
     }
 
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
     let query = try graphQLQuery(for: input, config: config, variables: variables)
     let processOutput: AppleGatewayProcessOutput

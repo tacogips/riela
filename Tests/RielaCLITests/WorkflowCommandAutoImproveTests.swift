@@ -17,7 +17,7 @@ extension WorkflowCommandTests {
       "review-node": AgentNodePayload(
         id: "review-node",
         executionBackend: .codexAgent,
-        model: "gpt-5.5"
+        model: "gpt-5.5", agentSandbox: .readOnly
       )
     ]
     let options = WorkflowRunOptions(

@@ -567,7 +567,13 @@ private extension DefaultLoopGuardTests {
   }
 
   func nodePayload(_ id: String) -> AgentNodePayload {
-    AgentNodePayload(id: id, executionBackend: .codexAgent, model: "gpt-5.5")
+    AgentNodePayload(
+      id: id,
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      agentSandbox: .readOnly,
+      output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+    )
   }
 
   func gateOutput(decision: String = "needs_work", findingId: String) -> AdapterExecutionOutput {

@@ -762,14 +762,17 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
     XCTAssertThrowsError(try reopened.publishNestedResult(invocation, resultHash: "sha256:changed"))
   }
 
-  private func taskDirectory() throws -> URL {
+}
+
+private extension SpecialistSupervisorRecoveryTests {
+  func taskDirectory() throws -> URL {
     let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let root = repository.appendingPathComponent("tmp/specialist-supervisor/recovery-tests/\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     return root
   }
 
-  private func runtimeSnapshot(
+  func runtimeSnapshot(
     workflowId: String,
     sessionId: String,
     status: WorkflowSessionStatus,
@@ -789,7 +792,7 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
     ))
   }
 
-  private func productionNestedCaller() -> WorkflowDefinition {
+  func productionNestedCaller() -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "production-parent",
       defaults: WorkflowDefaults(nodeTimeoutMs: 30_000, maxLoopIterations: 2),
@@ -814,14 +817,18 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
     )
   }
 
-  private func productionNestedPayloads() -> [String: AgentNodePayload] {
+  func productionNestedPayloads() -> [String: AgentNodePayload] {
     [
-      "dispatch-node": AgentNodePayload(id: "dispatch-node", executionBackend: .codexAgent, model: "fixture"),
-      "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "fixture")
+      "dispatch-node": AgentNodePayload(
+        id: "dispatch-node", executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly
+      ),
+      "resume-node": AgentNodePayload(
+        id: "resume-node", executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly
+      )
     ]
   }
 
-  private func loopThenNestedCaller() -> WorkflowDefinition {
+  func loopThenNestedCaller() -> WorkflowDefinition {
     WorkflowDefinition(
       workflowId: "loop-then-nested-parent",
       defaults: WorkflowDefaults(nodeTimeoutMs: 30_000, maxLoopIterations: 3),
@@ -858,128 +865,21 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
     )
   }
 
-  private func loopThenNestedPayloads() -> [String: AgentNodePayload] {
+  func loopThenNestedPayloads() -> [String: AgentNodePayload] {
     [
-      "gate-node": AgentNodePayload(id: "gate-node", executionBackend: .codexAgent, model: "fixture"),
-      "dispatch-node": AgentNodePayload(id: "dispatch-node", executionBackend: .codexAgent, model: "fixture"),
-      "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "fixture")
+      "gate-node": AgentNodePayload(
+        id: "gate-node",
+        executionBackend: .codexAgent,
+        model: "fixture",
+        agentSandbox: .readOnly,
+        output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+      ),
+      "dispatch-node": AgentNodePayload(
+        id: "dispatch-node", executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly
+      ),
+      "resume-node": AgentNodePayload(
+        id: "resume-node", executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly
+      )
     ]
   }
-}
-
-private struct ProductionNestedCalleeResolver: WorkflowCalleeResolving {
-  func resolveCallee(workflowId: String) async throws -> ResolvedWorkflowCallee {
-    XCTAssertEqual(workflowId, "production-child")
-    return ResolvedWorkflowCallee(
-      workflow: WorkflowDefinition(
-        workflowId: workflowId,
-        defaults: WorkflowDefaults(nodeTimeoutMs: 30_000, maxLoopIterations: 2),
-        entryStepId: "child",
-        nodeRegistry: [WorkflowNodeRegistryRef(id: "child-node", nodeFile: "nodes/child.json")],
-        steps: [WorkflowStepRef(id: "child", nodeId: "child-node")],
-        nodes: [WorkflowNodeRef(id: "child-node", nodeFile: "nodes/child.json")]
-      ),
-      nodePayloads: ["child-node": AgentNodePayload(id: "child-node", executionBackend: .codexAgent, model: "fixture")]
-    )
-  }
-}
-
-private actor ProductionNestedAdapter: NodeAdapter {
-  private var childExecutionCount = 0
-
-  func execute(_ input: AdapterExecutionInput, context _: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    if input.node.id == "child" { childExecutionCount += 1 }
-    let payload: JSONObject = input.node.id == "dispatch-node"
-      ? ["handoff": .string("fixture")]
-      : ["result": .string(input.node.id)]
-    return AdapterExecutionOutput(
-      provider: "fixture", model: "fixture", promptText: "fixture", completionPassed: true,
-      payload: payload
-    )
-  }
-
-  func calleeExecutions() -> Int { childExecutionCount }
-}
-
-private actor LoopThenNestedAdapter: NodeAdapter {
-  private var gateCount = 0
-  private var childCount = 0
-
-  func execute(_ input: AdapterExecutionInput, context _: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    switch input.node.id {
-    case "gate":
-      gateCount += 1
-      return AdapterExecutionOutput(
-        provider: "fixture", model: "fixture", promptText: "fixture", completionPassed: true,
-        when: ["needs_work": gateCount == 1], payload: ["gate": .integer(Int64(gateCount))]
-      )
-    case "child":
-      childCount += 1
-      return AdapterExecutionOutput(
-        provider: "fixture", model: "fixture", promptText: "fixture", completionPassed: true,
-        payload: ["result": .string("child")]
-      )
-    default:
-      return AdapterExecutionOutput(
-        provider: "fixture", model: "fixture", promptText: "fixture", completionPassed: true,
-        payload: ["result": .string(input.node.id)]
-      )
-    }
-  }
-
-  func gateExecutions() -> Int { gateCount }
-  func childExecutions() -> Int { childCount }
-}
-
-private actor NestedCheckpointRecorder: NestedRecoveryCheckpointing {
-  private var checkpoints: [NestedRecoveryCheckpoint] = []
-
-  func reached(_ checkpoint: NestedRecoveryCheckpoint) async throws {
-    checkpoints.append(checkpoint)
-  }
-
-  func observed() -> [NestedRecoveryCheckpoint] { checkpoints }
-}
-
-private struct ThrowingNestedCheckpoint: NestedRecoveryCheckpointing {
-  let target: NestedRecoveryCheckpoint
-
-  func reached(_ checkpoint: NestedRecoveryCheckpoint) async throws {
-    guard checkpoint == target else { return }
-    throw NestedRecoveryInterruption()
-  }
-}
-
-private actor CancellingNestedAdapter: NodeAdapter {
-  private var childExecutionCount = 0
-
-  func execute(_ input: AdapterExecutionInput, context _: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    if input.node.id == "child" {
-      childExecutionCount += 1
-      throw CancellationError()
-    }
-    return AdapterExecutionOutput(
-      provider: "fixture", model: "fixture", promptText: "fixture", completionPassed: true,
-      payload: ["result": .string(input.node.id)]
-    )
-  }
-
-  func calleeExecutions() -> Int { childExecutionCount }
-}
-
-private actor FailingNestedAdapter: NodeAdapter {
-  private var childExecutionCount = 0
-
-  func execute(_ input: AdapterExecutionInput, context _: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    if input.node.id == "child" {
-      childExecutionCount += 1
-      throw AdapterExecutionError(.providerError, "fixture child failure")
-    }
-    return AdapterExecutionOutput(
-      provider: "fixture", model: "fixture", promptText: "fixture", completionPassed: true,
-      payload: ["result": .string(input.node.id)]
-    )
-  }
-
-  func calleeExecutions() -> Int { childExecutionCount }
 }

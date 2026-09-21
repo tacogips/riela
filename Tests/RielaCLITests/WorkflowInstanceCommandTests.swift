@@ -458,6 +458,7 @@ final class WorkflowInstanceCommandTests: XCTestCase {
       {
         "id": "\(nodeId)",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.3-codex-spark",
         "promptTemplateFile": "prompts/worker.md",
         "variables": {},

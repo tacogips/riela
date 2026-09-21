@@ -423,7 +423,11 @@ private extension WorkflowRound7AdversarialTests {
     let scratch = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("tmp")
     try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     let socketURL = scratch.appendingPathComponent("r7-\(UUID().uuidString.lowercased()).sock")
-    defer { try? FileManager.default.removeItem(at: socketURL) }
+    defer {
+      if FileManager.default.fileExists(atPath: socketURL.path) {
+        try? FileManager.default.removeItem(at: socketURL)
+      }
+    }
     #if canImport(Darwin)
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
     #else
@@ -432,7 +436,11 @@ private extension WorkflowRound7AdversarialTests {
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { _ = close(descriptor) }
     var address = sockaddr_un()
-    let path = Array(socketURL.path.utf8) + [0]
+    let currentDirectory = FileManager.default.currentDirectoryPath
+    let socketBindingPath = socketURL.path.hasPrefix(currentDirectory + "/")
+      ? String(socketURL.path.dropFirst(currentDirectory.count + 1))
+      : socketURL.path
+    let path = Array(socketBindingPath.utf8) + [0]
     guard path.count <= MemoryLayout.size(ofValue: address.sun_path) else { throw POSIXError(.ENAMETOOLONG) }
     address.sun_family = sa_family_t(AF_UNIX)
     withUnsafeMutableBytes(of: &address.sun_path) { buffer in buffer.copyBytes(from: path) }
@@ -450,7 +458,12 @@ private extension WorkflowRound7AdversarialTests {
       }
     }
     guard result == 0 else { throw POSIXError(.EIO) }
-    try FileManager.default.moveItem(at: socketURL, to: url)
+    #if canImport(Darwin)
+    let renameResult = Darwin.rename(socketURL.path, url.path)
+    #else
+    let renameResult = Glibc.rename(socketURL.path, url.path)
+    #endif
+    guard renameResult == 0 else { throw POSIXError(.EIO) }
   }
 
   func loadAttempts(historyRoot: URL) throws -> [WorkflowPreflightAttemptRecord] {

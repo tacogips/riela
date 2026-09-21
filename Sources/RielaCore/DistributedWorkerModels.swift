@@ -78,6 +78,8 @@ public struct DistributedJobFailure: Codable, Equatable, Sendable {
       message = "Worker execution exceeded its deadline."
     case .invalidOutput:
       message = "Worker returned an invalid node output."
+    case .templateResolutionFailed:
+      message = "Worker could not resolve a required upstream payload template."
     case .providerError:
       message = "Worker node execution failed; check the worker's executable and provider configuration."
     }

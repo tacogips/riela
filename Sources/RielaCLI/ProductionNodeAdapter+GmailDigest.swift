@@ -86,6 +86,7 @@ private struct GmailDigestEngine {
   var currentDirectory: URL
 
   func execute(_ operation: GmailDigestOperation, input: WorkflowAddonExecutionInput) async throws -> GmailDigestResult {
+    _ = try addonVariables(for: input)
     switch operation {
     case .readState:
       return try readState(input)
@@ -411,7 +412,7 @@ private struct GmailDigestEngine {
   }
 
   private func workflowInput(_ input: WorkflowAddonExecutionInput) -> JSONObject {
-    let variables = addonVariables(for: input)
+    let variables = addonBaseVariables(for: input)
     return gmailObject(variables["workflowInput"])
       ?? gmailObject(variables["runtimeVariables"]?.gmailValue(at: ["workflowInput"]))
       ?? [:]
@@ -858,7 +859,7 @@ private struct GmailDigestEngine {
   }
 
   private func now(from input: WorkflowAddonExecutionInput) -> Date {
-    let variables = addonVariables(for: input)
+    let variables = addonBaseVariables(for: input)
     if let configured = gmailNonEmptyString(input.addon.config?["nowIso"]) ?? gmailNonEmptyString(variables["nowIso"]),
       let date = gmailParseDate(configured) {
       return date

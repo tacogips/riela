@@ -62,6 +62,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "systemPromptTemplateFile": "prompts/system.md",
@@ -177,6 +178,7 @@ extension WorkflowCommandTests {
     {
       "id": "implement",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "implement",
@@ -187,6 +189,7 @@ extension WorkflowCommandTests {
     {
       "id": "review",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "review",
@@ -293,6 +296,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "dispatch through codex",
@@ -402,9 +406,14 @@ extension WorkflowCommandTests {
       "--output", "json"
     ])
 
-    XCTAssertEqual(result.exitCode, CLIExitCode.failure)
+    XCTAssertEqual(result.exitCode, CLIExitCode.failure, result.stderr + result.stdout)
+    let intakePromptURL = promptDirectory.appendingPathComponent("prompt-2.txt")
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: intakePromptURL.path),
+      "expected intake prompt after manager execution: \(result.stderr)\(result.stdout)"
+    )
     let intakePrompt = try String(
-      contentsOf: promptDirectory.appendingPathComponent("prompt-2.txt"),
+      contentsOf: intakePromptURL,
       encoding: .utf8
     )
     XCTAssertTrue(intakePrompt.contains("Runtime variables are available under `runtimeVariables`"))

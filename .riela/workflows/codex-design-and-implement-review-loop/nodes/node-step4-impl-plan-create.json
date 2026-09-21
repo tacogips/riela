@@ -2,6 +2,7 @@
   "id": "step4-impl-plan-create",
   "description": "Create or revise the implementation plan that executes the accepted design, including Codex-reference traceability when relevant.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "effort": "high",
@@ -16,6 +17,7 @@
   },
   "variables": {},
   "output": {
-    "description": "Return JSON with implementation-plan paths, design and Codex references, task breakdown, verification plan, and addressed feedback."
+    "description": "Return JSON with implementation-plan paths, design and Codex references, task breakdown, verification plan, and addressed feedback.",
+    "jsonSchema": { "type": "object" }
   }
 }

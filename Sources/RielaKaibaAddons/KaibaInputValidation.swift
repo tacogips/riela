@@ -6,13 +6,12 @@ func noteAddonInvalidInput(_ message: String) -> AdapterExecutionError {
 }
 
 func noteString(_ key: String, config: JSONObject, variables: JSONObject) -> String? {
-  nonEmptyString(config[key].map { renderJSONTemplates($0, variables: variables) })
+  nonEmptyString(config[key])
     ?? nonEmptyString(variables[key])
 }
 
 func noteIntValue(_ value: JSONValue?, variables: JSONObject) -> Int? {
-  let rendered = value.map { renderJSONTemplates($0, variables: variables) }
-  switch rendered {
+  switch value {
   case let .integer(integer): return Int(integer)
   case let .number(number): return Int(exactly: number)
   case let .string(string): return Int(string)

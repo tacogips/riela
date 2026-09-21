@@ -142,6 +142,12 @@ public enum WorkflowInstanceResolver {
     var patched = payload
     if let executionBackend = patch.executionBackend {
       patched.executionBackend = executionBackend
+      if executionBackend.cliAgentBackend == nil, patch.agentSandbox == nil {
+        patched.agentSandbox = nil
+      }
+    }
+    if let agentSandbox = patch.agentSandbox {
+      patched.agentSandbox = agentSandbox
     }
     if let model = normalizedModel(patch.model) {
       guard !patched.modelFreeze || model == patched.model else {

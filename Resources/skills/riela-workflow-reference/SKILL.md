@@ -85,6 +85,19 @@ Two rules are easy to get wrong:
   control call does check that the session belongs to the `workflowId` you
   supply.
 
+## Agent-node authoring contract
+
+CLI agent nodes (`codex-agent`, `claude-code-agent`, `cursor-cli-agent`) must
+declare `agentSandbox`; API-backed nodes must omit it. Add
+`output.jsonSchema` when an add-on template consumes the agent payload or a
+step drives labeled transitions. Payload references in add-on config/inputs
+are strict and fail before the add-on side effect when absent, while optional
+`event.*`, `workflowInput.*`, `runtime.*`, `upstream.*`, and `_rielaInput.*`
+context remains lenient. Nodes with any `output` block default to two output
+validation attempts; nodes without one publish the complete answer as a
+`text` payload. See `docs/output-contracts.md` for the exact envelope,
+classifier, and diagnostic contract.
+
 ## Command reference
 
 <!-- surface-catalog:begin graphql -->

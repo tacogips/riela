@@ -556,7 +556,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.promptTemplate is required")
     }
 
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let promptText = renderPromptTemplate(promptTemplate, variables: variables)
     let systemPromptText = nonEmptyString(config["systemPromptTemplate"]).map {
       renderPromptTemplate($0, variables: variables)
@@ -768,7 +768,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       throw AdapterExecutionError(.policyBlocked, "riela/chat-reply-worker config.textTemplate is required")
     }
 
-    var variables = addonVariables(for: input)
+    var variables = try addonVariables(for: input)
     variables["inbox"] = .object([
       "latest": .object([
         "output": .object([
@@ -846,7 +846,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       throw AdapterExecutionError(.policyBlocked, "riela/gemini-sdk-worker requires addon.env.GEMINI_API_KEY or addon.env.GOOGLE_API_KEY")
     }
 
-    var variables = addonVariables(for: input)
+    var variables = try addonVariables(for: input)
     if let inlineDataParts = config["inlineDataParts"] {
       variables["geminiInlineDataParts"] = inlineDataParts
     }

@@ -2,6 +2,7 @@
   "id": "intake-or-plan",
   "description": "Analyze the accepted loop engineering proposal and define the detailed-design/implementation-plan scope.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

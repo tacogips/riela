@@ -104,7 +104,7 @@ private struct AppleClockAlarmEngine {
     }
 
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let request = try graphQLRequest(operation: operation, input: input, config: config, variables: variables)
     var arguments = ["graphql", "--query", request.document]
     if let requestVariables = request.variables {

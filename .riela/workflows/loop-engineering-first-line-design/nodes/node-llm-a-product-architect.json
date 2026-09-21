@@ -2,6 +2,7 @@
   "id": "llm-a-product-architect",
   "description": "LLM A: product and workflow experience architect for Riela loop engineering.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

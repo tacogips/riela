@@ -57,7 +57,10 @@ private struct AppleGatewayNotificationsEngine {
     }
 
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
+    let dismissMode = operation == .dismiss
+      ? try dismissDocument(input: input, config: config, variables: variables).mode
+      : nil
     let document = try graphQLDocument(operation: operation, input: input, config: config, variables: variables)
     let processOutput: AppleGatewayProcessOutput
     do {
@@ -84,7 +87,7 @@ private struct AppleGatewayNotificationsEngine {
     case .post:
       return try postOutput(input: input, envelope: envelope)
     case .dismiss:
-      return try dismissOutput(input: input, envelope: envelope)
+      return try dismissOutput(input: input, envelope: envelope, mode: dismissMode ?? "ids")
     }
   }
 
@@ -273,11 +276,10 @@ private struct AppleGatewayNotificationsEngine {
 
   private func dismissOutput(
     input: WorkflowAddonExecutionInput,
-    envelope: AppleGatewayGraphQLEnvelope
+    envelope: AppleGatewayGraphQLEnvelope,
+    mode: String
   ) throws -> AdapterExecutionOutput {
-    let config = input.addon.config ?? [:]
-    let dismissDocument = try dismissDocument(input: input, config: config, variables: addonVariables(for: input))
-    let fieldName = dismissDocument.mode == "all" ? "dismissAllGatewayNotifications" : "dismissNotifications"
+    let fieldName = mode == "all" ? "dismissAllGatewayNotifications" : "dismissNotifications"
     let result = try envelope.mutationField(fieldName, addonName: input.addon.name)
     let dismissedCount = try appleGatewayRequiredNumber(
       result["dismissedCount"],
@@ -286,7 +288,7 @@ private struct AppleGatewayNotificationsEngine {
     let requestId = envelope.requestId ?? ""
     let appleNotifications: JSONObject = [
       "dismissedCount": dismissedCount,
-      "mode": .string(dismissDocument.mode),
+      "mode": .string(mode),
       "requestId": .string(requestId)
     ]
     var payload = commonPayload(input: input, envelope: envelope)

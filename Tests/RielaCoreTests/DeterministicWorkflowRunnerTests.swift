@@ -50,7 +50,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     await XCTAssertThrowsErrorAsync(try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: [
-        "node": payload(),
+        "node": payload(output: NodeOutputContract(jsonSchema: ["type": .string("object")])),
         "left-node": payload(),
         "right-node": payload()
       ]
@@ -98,7 +98,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: [
-        "node": payload(),
+        "node": payload(output: NodeOutputContract(jsonSchema: ["type": .string("object")])),
         "next-node": payload()
       ]
     ))
@@ -148,7 +148,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
     await XCTAssertThrowsErrorAsync(try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: [
-        "node": payload(),
+        "node": payload(output: NodeOutputContract(jsonSchema: ["type": .string("object")])),
         "left-node": payload(),
         "right-node": payload()
       ]
@@ -306,7 +306,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       id: "node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      systemPromptTemplate: "base system {{topic}}",
+      agentSandbox: .readOnly, systemPromptTemplate: "base system {{topic}}",
       promptTemplate: "base prompt {{topic}}",
       sessionStartPromptTemplate: "base start {{topic}}",
       promptVariants: [
@@ -362,7 +362,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       id: "node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      promptTemplate: "{{ missing.path }}"
+      agentSandbox: .readOnly, promptTemplate: "{{ missing.path }}"
     )
     let runner = DeterministicWorkflowRunner(adapter: adapter)
 
@@ -710,7 +710,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
 
     _ = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
-      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")]
+      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini", agentSandbox: .readOnly)]
     ))
 
     let capturedInput = await adapter.capturedInput()
@@ -761,7 +761,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
 
     _ = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
-      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini")],
+      nodePayloads: ["persona-node": AgentNodePayload(id: "persona-node", executionBackend: .codexAgent, model: "gpt-5.4-mini", agentSandbox: .readOnly)],
       memoryRootDirectory: root
     ))
 
@@ -794,7 +794,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
         "verify-node": AgentNodePayload(
           id: "verify-node",
           executionBackend: .codexAgent,
-          model: "gpt-5.5"
+          model: "gpt-5.5", agentSandbox: .readOnly
         )
       ]
     ))
@@ -825,7 +825,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       id: "worker-node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "worker")
+      agentSandbox: .readOnly, sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "worker")
     )
     let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
 
@@ -854,7 +854,7 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
       id: "worker-node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "worker")
+      agentSandbox: .readOnly, sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "worker")
     )
     let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter)
 

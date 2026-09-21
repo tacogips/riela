@@ -1,6 +1,6 @@
 # Agent-Node Output Contract Implementation Plan
 
-**Status**: Planned — design accepted, no code written (this plan authored in a planning-only run)
+**Status**: Implemented and verified 2026-09-21
 **Workflow Mode**: feature
 **Feature Fanout**: false — one feature, one work package
 **Design Reference**: `design-docs/specs/design-agent-node-output-contract.md` (all sections)
@@ -87,10 +87,10 @@ reference, so one implementation serves both.
 Record evidence per box when implementation runs; all boxes unchecked at
 authoring time (planning-only run — no code written).
 
-- [ ] T1: validation tests cover omitted-sandbox error per backend and
+- [x] T1: validation tests cover omitted-sandbox error per backend and
       declared-sandbox-on-API-backend error; full `swift test` green (arm64
       shell); evidence = test names + run output.
-- [ ] T2: validation tests cover the three D2a error shapes for each of the
+- [x] T2: validation tests cover the three D2a error shapes for each of the
       three reference forms, including the **bare** `{{field}}` case modelled
       on `examples/note-rag-retrieval-fusion/workflow.json:117-120`, plus
       classifier tests proving reserved roots are excluded on both surfaces,
@@ -106,7 +106,7 @@ authoring time (planning-only run — no code written).
       addon-node predecessor alone yields no diagnostic; a path with no agent
       node yields none; a cyclic workflow terminates. Evidence = test names +
       run output.
-- [ ] T3: adapter test proves a `{`-prefixed malformed answer on a node with
+- [x] T3: adapter test proves a `{`-prefixed malformed answer on a node with
       NO `output` block yields `{text}` with no envelope; a second adapter
       test is the state-2 regression guard — a node with `output.description`
       and no `jsonSchema` still REJECTS a prose answer and never reaches the
@@ -117,7 +117,7 @@ authoring time (planning-only run — no code written).
       wins, and that an extraction/envelope failure on a contract-bearing
       node is retried rather than surfacing as a terminal `.invalidOutput`;
       evidence = test names + run output.
-- [ ] T4: addon-support test proves a missing **payload reference** in config
+- [x] T4: addon-support test proves a missing **payload reference** in config
       fails with producer/path/consumer in the message and the addon body
       never ran; a second proves the producer fallback when
       `latest.fromStepId` is absent; a third proves an absent **context**
@@ -140,7 +140,7 @@ authoring time (planning-only run — no code written).
       `+AppleGatewayNotifications` fails BEFORE the gateway mutation rather
       than after it (`:279` today, reached from `:87` after `:72`). Evidence =
       test names + run output + the grep result.
-- [ ] T5: full `swift test` from repo root green, including `RielaCLITests`
+- [x] T5: full `swift test` from repo root green, including `RielaCLITests`
       example suites, AND a mock-scenario execution pass —
       `riela workflow run examples/note-rag-retrieval-fusion --mock-scenario
       examples/note-rag-retrieval-fusion/mock-scenario.json` and the same for
@@ -148,7 +148,7 @@ authoring time (planning-only run — no code written).
       telegram `memory-save` record still written when the event carries no
       `threadId`/`attachments`; evidence = summary counts **and** the two run
       outcomes with their session ids.
-- [ ] T6: docs text states the contract (answer shape, retry budget,
+- [x] T6: docs text states the contract (answer shape, retry budget,
       operator-visible failures, validate rules); evidence = file paths.
 
 ## Verification Plan
@@ -805,3 +805,36 @@ $ git diff --name-only ca1ce34..HEAD | grep -cE '^(Sources|Tests)/'
 Two documentation paths, zero `Sources/` and zero `Tests/`. Unchecked-box
 count stays 6, matching `impl-plans/README.md:46`. Nothing was built or tested:
 a planning-only package has no code to compile.
+
+### 2026-09-21 — Implementation and verification complete
+
+T1–T6 are complete. The runtime now validates CLI-agent sandbox declarations,
+requires producer schemas for payload-consuming templates and conditional
+routing, keeps contract-less agent answers on a pure text path, defaults every
+output-bearing node to two validation attempts, and rejects unresolved addon
+payload templates before addon side effects. The shared template-reference
+classifier is used by both validate-time and render-time enforcement. All old
+public `renderJSONTemplates` call sites were converted; the lenient renderer is
+private to `RielaAddonSupport`.
+
+Verification on the final implementation tree:
+
+- `arch -arm64 /bin/zsh -lc 'swift test'`: 2,392 XCTest cases, 2 skipped,
+  0 failures; 17 Swift Testing cases, 0 failures (860.100 seconds).
+- `RielaExampleParityTests.testMockScenarioExamplesRunThroughSwiftCLI`: all
+  39 registered mock-scenario workflows passed.
+- Top-level `.riela/workflows` and `examples` validation: 102 definitions,
+  `FAILURES=0`.
+- Direct required scenarios completed as
+  `note-rag-retrieval-fusion-session-1` (8 executions) and
+  `telegram-sdk-trio-chat-session-2` (10 executions); the latter persisted the
+  `memory-save` record with absent optional event fields.
+- Focused output-contract/addon suites passed; `renderJSONTemplates` has zero
+  call sites outside its support target; JSON parsing, sandbox-declaration and
+  conditional-schema sweeps are clean; `git diff --check` is clean.
+- SwiftLint over 106 changed Swift paths reported zero serious findings (one
+  pre-existing long embedded-shell fixture warning remains). No changed Swift
+  file exceeds 1,000 lines.
+
+T7/D4 remains intentionally excluded: the sibling `riela-packages` bundle
+migration is not part of this repository work package.

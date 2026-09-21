@@ -117,7 +117,7 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
     _ input: WorkflowAddonExecutionInput,
     registration: ContainerAddonRegistration
   ) throws -> AddonExecutionInput {
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     var nodePayload: JSONObject = [
       "workflowId": .string(input.workflowId),
       "stepId": .string(input.stepId),
@@ -125,9 +125,9 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
       "input": .object(input.resolvedInputPayload)
     ]
     if let config = input.addon.config {
-      nodePayload["config"] = .object(config.mapValues { renderJSONTemplates($0, variables: variables) })
+      nodePayload["config"] = .object(try config.mapValues { try renderAddonConfig($0, variables: variables) })
     }
-    nodePayload["inputs"] = .object(renderAddonInputs(input.addon.inputs, variables: variables))
+    nodePayload["inputs"] = .object(try renderAddonInputs(input.addon.inputs, variables: variables))
     if let env = input.addon.env {
       nodePayload["env"] = .object(env)
     }

@@ -107,6 +107,24 @@ final class WorkflowOutputContractPreflightTests: XCTestCase {
     XCTAssertTrue(input.systemPromptText?.contains("{{literal}}") == true)
     XCTAssertTrue(input.systemPromptText?.contains("the schema applies to payload, not the routing envelope") == true)
   }
+
+  func testOutputBearingNodesDefaultToTwoAttemptsAndRetryEnvelopeRejection() async throws {
+    let runner = DeterministicWorkflowRunner(adapter: RejectionThenSuccessAdapter())
+    XCTAssertEqual(runner.maxValidationAttempts(from: nil), 1)
+    XCTAssertEqual(runner.maxValidationAttempts(from: NodeOutputContract(description: "envelope")), 2)
+    XCTAssertEqual(runner.maxValidationAttempts(from: NodeOutputContract(jsonSchema: ["type": .string("object")])), 2)
+    XCTAssertEqual(runner.maxValidationAttempts(from: NodeOutputContract(maxValidationAttempts: 4)), 4)
+
+    let node = AgentNodePayload(
+      id: "node", model: "model", output: NodeOutputContract(description: "envelope")
+    )
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow, nodePayloads: ["node": node]
+    ))
+    XCTAssertEqual(result.session.executions.count, 2)
+    XCTAssertEqual(result.session.executions.map(\.status), [.failed, .completed])
+    XCTAssertEqual(result.rootOutput?["answer"], .string("ok"))
+  }
 }
 
 private actor ContractCapturingAdapter: NodeAdapter {
@@ -115,5 +133,20 @@ private actor ContractCapturingAdapter: NodeAdapter {
     inputs.append(input)
     return AdapterExecutionOutput(provider: "test", model: input.node.model, promptText: input.promptText,
       completionPassed: true, payload: [:])
+  }
+}
+
+private actor RejectionThenSuccessAdapter: NodeAdapter {
+  private var calls = 0
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    calls += 1
+    if calls == 1 {
+      throw WorkflowPublicationError.validationRejected("agent output did not contain an extractable JSON envelope")
+    }
+    return AdapterExecutionOutput(
+      provider: "test", model: input.node.model, promptText: input.promptText,
+      completionPassed: true, payload: ["answer": .string("ok")]
+    )
   }
 }

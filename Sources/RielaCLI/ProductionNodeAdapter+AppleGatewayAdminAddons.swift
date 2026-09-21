@@ -26,7 +26,7 @@ extension BuiltinWorkflowAddonResolver {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support addon.env")
     }
 
-    let adminContext = AppleGatewayAdminContext(
+    let adminContext = try AppleGatewayAdminContext(
       input: input,
       currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     )
@@ -52,10 +52,9 @@ private struct AppleGatewayAdminContext {
   var variables: JSONObject
   var currentDirectory: URL
 
-  init(input: WorkflowAddonExecutionInput, currentDirectory: URL) {
+  init(input: WorkflowAddonExecutionInput, currentDirectory: URL) throws {
     self.input = input
     self.currentDirectory = currentDirectory
-    self.config = input.addon.config ?? [:]
     var base = input.variables
     for (key, value) in input.resolvedInputPayload {
       base[key] = value
@@ -66,12 +65,15 @@ private struct AppleGatewayAdminContext {
     base["nodeId"] = .string(input.nodeId)
     base["addonName"] = .string(input.addon.name)
     self.baseVariables = base
-    let inputs = renderAddonInputs(input.addon.inputs, variables: base)
+    let inputs = try renderAddonInputs(input.addon.inputs, variables: base)
     self.renderedInputs = inputs
     for (key, value) in inputs {
       base[key] = value
     }
     self.variables = base
+    self.config = try (input.addon.config ?? [:]).mapValues { value in
+      try renderAddonConfig(value, variables: base)
+    }
   }
 
   func arguments(for operation: BuiltinAppleGatewayAdminAddon) throws -> [String] {
@@ -317,7 +319,7 @@ private struct AppleGatewayAdminContext {
     guard key != "binaryPath" else {
       return configValue
     }
-    return renderJSONTemplates(configValue, variables: variables)
+    return configValue
   }
 
   private func boolValueForKey(_ key: String, defaultValue: Bool) throws -> Bool {

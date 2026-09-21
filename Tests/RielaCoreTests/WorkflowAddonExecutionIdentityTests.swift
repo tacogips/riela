@@ -363,7 +363,7 @@ final class WorkflowAddonExecutionIdentityTests: XCTestCase {
     let resumed = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: [
-        "done": AgentNodePayload(id: "done", executionBackend: .codexAgent, model: "test")
+        "done": AgentNodePayload(id: "done", executionBackend: .codexAgent, model: "test", agentSandbox: .readOnly)
       ],
       maxSteps: 3,
       resumeSessionId: session.sessionId
@@ -378,7 +378,7 @@ final class WorkflowAddonExecutionIdentityTests: XCTestCase {
     let terminalResume = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: [
-        "done": AgentNodePayload(id: "done", executionBackend: .codexAgent, model: "test")
+        "done": AgentNodePayload(id: "done", executionBackend: .codexAgent, model: "test", agentSandbox: .readOnly)
       ],
       resumeSessionId: session.sessionId
     ))

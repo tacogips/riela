@@ -549,6 +549,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5",
         "modelFreeze": false,
         "agentEnvironment": {
@@ -574,8 +575,8 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "output",
         "executionBackend": "codex-agent",
-        "model": "gpt-5",
         "agentSandbox": "read-only",
+        "model": "gpt-5",
         "agentToolPolicy": {
           "mode": "backend-arguments",
           "additionalArguments": ["--disable", "shell"],
@@ -601,6 +602,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5",
         "modelFreeze": true
       }
@@ -609,6 +611,7 @@ final class WorkflowModelTests: XCTestCase {
       {
         "id": "planner",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5"
       }
       """.utf8)

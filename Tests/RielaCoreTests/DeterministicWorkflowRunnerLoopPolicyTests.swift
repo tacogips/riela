@@ -26,7 +26,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     do {
       _ = try await runner.run(DeterministicWorkflowRunRequest(
         workflow: workflow,
-        nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .claudeCodeAgent, model: "claude-sonnet")]
+        nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .claudeCodeAgent, model: "claude-sonnet", agentSandbox: .readOnly)]
       ))
       XCTFail("expected required loop policy denial")
     } catch let error as AdapterExecutionError {
@@ -61,7 +61,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
 
     _ = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
-      nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .claudeCodeAgent, model: "claude-sonnet")]
+      nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .claudeCodeAgent, model: "claude-sonnet", agentSandbox: .readOnly)]
     ))
 
     let executionCount = await adapter.executionCount()
@@ -155,7 +155,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
-      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")]
+      nodePayloads: ["review-node": Self.conditionalReviewPayload()]
     ))
 
     XCTAssertEqual(result.session.executions.first?.acceptedOutput?.when, ["needs_replan": false, "needs_work": true])
@@ -176,7 +176,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     do {
       _ = try await runner.run(DeterministicWorkflowRunRequest(
         workflow: workflow,
-        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+        nodePayloads: ["review-node": Self.conditionalReviewPayload()],
         maxSteps: 4
       ))
       XCTFail("expected loop convergence failure")
@@ -208,7 +208,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
-      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+      nodePayloads: ["review-node": Self.conditionalReviewPayload()],
       maxSteps: 5,
       eventHandler: { event in await recorder.append(event) }
     ))
@@ -230,7 +230,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
 
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: Self.convergenceWorkflow(convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2)),
-      nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+      nodePayloads: ["review-node": Self.conditionalReviewPayload()],
       maxSteps: 4
     ))
 
@@ -292,9 +292,9 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
     let result = try await runner.run(DeterministicWorkflowRunRequest(
       workflow: workflow,
       nodePayloads: [
-        "review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-        "filtered-node": AgentNodePayload(id: "filtered-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-        "done-node": AgentNodePayload(id: "done-node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "review-node": Self.conditionalReviewPayload(),
+        "filtered-node": AgentNodePayload(id: "filtered-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+        "done-node": AgentNodePayload(id: "done-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ],
       variables: ["telegram": .object(["message": .object(["text": .string("skip this gate")])])],
       maxSteps: 5
@@ -357,7 +357,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
           convergence: LoopConvergenceDeclaration(maxRepeatedFindingRounds: 2),
           gateRequired: true
         ),
-        nodePayloads: ["review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5")],
+        nodePayloads: ["review-node": Self.conditionalReviewPayload()],
         maxSteps: 4
       ))
       XCTFail("expected loop convergence failure")
@@ -420,6 +420,16 @@ private actor SequenceAdapter: NodeAdapter {
 }
 
 private extension WorkflowRunnerLoopPolicyTests {
+  static func conditionalReviewPayload() -> AgentNodePayload {
+    AgentNodePayload(
+      id: "review-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      agentSandbox: .readOnly,
+      output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+    )
+  }
+
   static func gateOutput(decision: String, findingId: String) -> AdapterExecutionOutput {
     AdapterExecutionOutput(
       provider: "test",

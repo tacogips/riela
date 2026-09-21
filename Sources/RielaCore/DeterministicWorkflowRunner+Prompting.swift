@@ -7,6 +7,19 @@ struct ComposedAdapterPrompts {
 }
 
 extension DeterministicWorkflowRunner {
+  func recordAdapterValidationRejection(
+    _ execution: WorkflowStepExecution,
+    sessionId: String,
+    reason: String
+  ) async throws {
+    _ = try await store.updateStepExecution(WorkflowStepExecutionUpdateInput(
+      sessionId: sessionId,
+      executionId: execution.executionId,
+      status: .failed,
+      failureReason: reason
+    ))
+  }
+
   func workflowOutputContract(from output: NodeOutputContract?) -> WorkflowOutputContract? {
     guard let output else {
       return nil
@@ -15,7 +28,7 @@ extension DeterministicWorkflowRunner {
   }
 
   func maxValidationAttempts(from output: NodeOutputContract?) -> Int {
-    max(1, output?.maxValidationAttempts ?? 1)
+    max(1, output?.maxValidationAttempts ?? (output == nil ? 1 : 2))
   }
 
   func payload(_ basePayload: AgentNodePayload, applyingPromptVariantFrom step: WorkflowStepRef) throws -> AgentNodePayload {

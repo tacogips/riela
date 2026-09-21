@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Summarize the accepted loop engineer result.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/workflow-output.md",

@@ -2,6 +2,7 @@
   "id": "archive-brief",
   "description": "Re-emit the archive part of the merge decision so the archive step can apply it after the merge write.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.3-codex",
   "sessionPolicy": { "mode": "reuse" },
   "promptTemplateFile": "prompts/archive-brief.md",

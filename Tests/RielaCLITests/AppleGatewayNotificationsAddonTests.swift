@@ -127,6 +127,26 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
     XCTAssertEqual(allPayload["mode"], .string("all"))
   }
 
+  func testDismissRejectsMissingTemplateBeforeGatewayMutation() async throws {
+    let fake = try NotificationsFakeAppleGateway(requestId: "req-never-run", mode: "dismiss-success")
+    defer { fake.cleanup() }
+
+    do {
+      _ = try await runNotificationAddon(
+        "riela/apple-notifications-dismiss",
+        config: ["binaryPath": .string(fake.executableURL.path)],
+        inputs: ["ids": .array([.string("{{missingNotificationId}}")])]
+      )
+      XCTFail("expected strict template resolution to reject the add-on")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .templateResolutionFailed)
+      XCTAssertTrue(error.message.contains("missingNotificationId"), error.message)
+    }
+
+    XCTAssertFalse(FileManager.default.fileExists(atPath: fake.queryLogURL.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: fake.argumentLogURL.path))
+  }
+
   /// The example bundle's two add-on nodes, driven with the configs the bundle
   /// declares. The end-to-end CLI form of this test drove a stand-in through
   /// `APPLE_GATEWAY_BIN`; the gateway is linked now, so the add-ons are driven
@@ -438,7 +458,6 @@ final class AppleGatewayNotificationsAddonTests: XCTestCase {
       XCTAssertTrue(error.message.contains(messageContains), error.message)
     }
   }
-
 
   private func requestId(_ output: AdapterExecutionOutput) -> String? {
     notificationTestObject(output.payload["appleNotifications"]).flatMap { notificationTestString($0["requestId"]) }

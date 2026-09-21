@@ -2,6 +2,7 @@
   "id": "summarize-posts",
   "description": "Sanitizes untrusted X post data, filters non-AI/non-business chatter, and produces a Telegram-ready digest sorted by view count.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.4-mini",
   "modelFreeze": true,
   "promptTemplateFile": "prompts/summarize-posts.md",
@@ -12,6 +13,7 @@
     ]
   },
   "output": {
-    "description": "Return JSON with when.should_send_telegram, payload.replyText, payload.maxFetchedPostId, and payload.topicDigests."
+    "description": "Return JSON with when.should_send_telegram, payload.replyText, payload.maxFetchedPostId, and payload.topicDigests.",
+    "jsonSchema": {"type": "object", "properties": {"replyText": {"type": "string"}}}
   }
 }

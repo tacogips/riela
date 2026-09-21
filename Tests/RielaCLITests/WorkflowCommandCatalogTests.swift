@@ -298,6 +298,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "model",
       "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "missing" }
     }

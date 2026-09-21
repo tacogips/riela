@@ -2,6 +2,7 @@
   "id": "step2-design-doc-update",
   "description": "Create or revise feature-local design documentation for one fanout branch.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "sessionPolicy": {
@@ -15,6 +16,7 @@
   },
   "variables": {},
   "output": {
-    "description": "Return JSON with feature-local design document paths, feature id, design summary, decisions, addressed feedback, and risks."
+    "description": "Return JSON with feature-local design document paths, feature id, design summary, decisions, addressed feedback, and risks.",
+    "jsonSchema": {"type": "object"}
   }
 }

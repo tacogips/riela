@@ -5,7 +5,11 @@ review, twice (D2a extended to bare payload references; D3 rescoped from
 surface to path class; the classifier's exclusions made per surface after the
 node-`variables` escape proved unreachable on the addon path; then `config`
 and `inputs` split into separate classifier surfaces and the inert
-node-`variables` scan dropped — see the plan's progress log). Not implemented.
+node-`variables` scan dropped; then, after a third review, the output contract
+restated as the runtime's three states rather than two, D2a's one-transition
+scan replaced by a producer walk through forwarding addon nodes, and §6's
+single-seam claim retracted in favour of an enumerated 16-site conversion —
+see the plan's progress log). Not implemented.
 Plan:
 `impl-plans/active/agent-node-output-contract.md`. This design closes the
 execution-contract gap that made two real `fable-and-improve-opus` runs
@@ -34,8 +38,25 @@ Three defects, each verified in this tree at `ca1ce34`:
    `agentSandbox`; `nodes/node-plan-checkpoint.json` — the node that blocked —
    declares neither `agentSandbox` nor any `output` contract.
 
-2. **Schema-less answers become `{text: …}` with no validation and no
-   retry.** `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift:719`
+2. **Contract-less answers become `{text: …}` with no validation and no
+   retry.** The switch is `requiresOutputContract`, and it keys on the
+   **`output` block, not on `output.jsonSchema`**:
+   `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift:125` passes
+   `requiresOutputContract: input.node.output != nil`, and
+   `workflowOutputContract(from:)`
+   (`Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift:10-15`)
+   returns a non-nil `WorkflowOutputContract(schema: output.jsonSchema,
+   requiredObject: true)` whenever `output` is non-nil — with a `nil` schema
+   inside it when none was declared. So the runtime has **three** states, not
+   two (see §4):
+   (1) `output == nil` → text wrap, no enforcement;
+   (2) `output != nil, jsonSchema == nil` → strict envelope **is** enforced
+   (`normalizeGatewayOutput:725` takes the `parseJSONObjectCandidate` +
+   `normalizeOutputContractEnvelope` branch and throws `.invalidOutput` on
+   prose), business payload unconstrained;
+   (3) both → strict envelope **and** schema validation.
+   State 1 is the one that produced the observed failure:
+   `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift:719`
    (`normalizeGatewayOutput`): when the node has no output contract and the
    trimmed answer does not start with `{`, the whole answer is wrapped by
    `normalizeTextBusinessPayload` (`Sources/RielaCore/AdapterContracts.swift:295`,
@@ -48,11 +69,17 @@ Three defects, each verified in this tree at `ca1ce34`:
    (`Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift:17`)
    defaults to 1, and the attempt loop
    (`Sources/RielaCore/DeterministicWorkflowRunner.swift:875`) retries only on
-   `.validationRejected` — which can never fire without a schema. In the
+   `.validationRejected` — which can never fire without a schema, and which
+   also never fires for a **state-2 or state-3 envelope failure**, because
+   that failure is thrown as `AdapterExecutionError(.invalidOutput, …)` from
+   `normalizeGatewayOutput` rather than as a publication rejection. In the
    bundle, only 4 of 16 agent nodes declare `output.jsonSchema` (the same 4
    declare `maxValidationAttempts`); `nodes/node-step9-commit-message.json`
    has an `output.description` asking for `commitMessage` but no schema, so
-   nothing enforces it.
+   it sits in state 2: the envelope **is** enforced and only the
+   `commitMessage` field shape is not. That node is still the observed
+   defect's carrier, because an envelope with no `commitMessage` key passes
+   state 2 untouched.
 
 3. **A missing template path silently renders `""` and surfaces as the
    consumer's domain error.** `Sources/RielaCore/PromptTemplate.swift:20`:
@@ -76,6 +103,18 @@ inside `renderedCommitMessage(_:variables:)`; `ProductionNodeAdapter+GitCommit.s
 is its caller. Everything else in the brief matched the source exactly,
 including the permission-mode mapping and the 5-of-16 / 4-of-16 bundle counts.
 
+**Self-correction (recorded per the same mandate; raised as review F10).** An
+earlier revision of this document asserted, in defect 2 above and in §7, that
+a node with `output.description` and no `jsonSchema` has *nothing* enforcing
+its answer — "so nothing enforces it" and "the description alone enforces
+nothing". Source contradicts both: `requiresOutputContract` is
+`input.node.output != nil` (`AgentGatewayNodeAdapter.swift:125`), so such a
+node is on the strict path and a prose answer throws. Both claims are
+retracted and replaced by the three-state statement above; §4 and §7 are
+rewritten around it. The mistake mattered — it would have licensed an
+implementer to re-key the switch to `jsonSchema != nil` and thereby *loosen*
+every description-only node into the text wrap.
+
 A second discovered fact the brief did not know: tolerant extraction already
 exists. `parseJSONObjectCandidate` (`Sources/RielaCore/RuntimeOutputExtraction.swift:3`)
 extracts complete JSON, a balanced `{…}` prefix, a fenced block (json-tagged
@@ -93,7 +132,7 @@ defect splits accordingly:
 | - | -------- | ----- |
 | D1 | `workflow validate` **error** when a node on a sandbox-consuming agent backend omits `agentSandbox` (and when a node on a non-sandbox backend declares it) | riela runtime |
 | D2a | `workflow validate` **error** when a node's payload is referenced by a downstream template — dotted (`inbox.latest.output.payload.*`, `input.*`) **or bare** (`{{field}}`, the dominant in-repo idiom) — or its step has conditional transition labels, and the node declares no `output.jsonSchema` | riela runtime |
-| D2b | With a contract: keep tolerant extraction + strict envelope + schema validation + retry; default validation attempts become **2** when a schema is present. Without a contract (now provably inconsequential): pure `{text: …}` wrap; the opportunistic `try?` envelope sniffing at `AgentGatewayNodeAdapter.swift:728-731` is deleted | riela runtime |
+| D2b | With an `output` block (the runtime's real switch, `AgentGatewayNodeAdapter.swift:125`): keep tolerant extraction + strict envelope, schema validation when a `jsonSchema` is declared, and a default of **2** validation attempts — with the extraction/envelope failure raised as a retryable rejection so the budget is reachable. Without an `output` block (now provably inconsequential): pure `{text: …}` wrap; the opportunistic `try?` envelope sniffing at `AgentGatewayNodeAdapter.swift:728-731` is deleted | riela runtime |
 | D3 | Addon `config`/`inputs` rendering of a **payload reference** that resolves to nothing fails with a typed template-resolution error naming producing step, field path, and consuming step; the addon never executes. Context namespaces (`event.*`, `workflowInput.*`, `runtime.*`, `_rielaInput.*`, and those same roots spelled under `input.`) stay lenient, as does all prompt-template rendering | riela runtime |
 | D4 | Add `agentSandbox` to all 16 agent nodes; add `output.jsonSchema` + `maxValidationAttempts` to every payload-referenced or label-driving node | riela-packages bundle (separate follow-up work package; that repo is read-only in this run) |
 
@@ -171,14 +210,40 @@ field.
   the schema-example prompt injection at
   `DeterministicWorkflowRunner+Prompting.swift:153` already tells the agent
   what shape was expected.
+- **The description-only state (state 2), stated because the runtime has it.**
+  A node with an `output` block and no `jsonSchema` is on the same strict path
+  as state 3: the answer must still be one extractable JSON object that
+  normalizes as an envelope, and prose still fails. The only difference is
+  that no schema constrains the business payload, so *any* envelope passes.
+  This state is **preserved verbatim** — see the rejected alternative below —
+  and it is a real contract, not an absence of one. What it does **not** give
+  you is a guarantee about fields, which is why D2a's predicate is
+  `jsonSchema` and not `output`.
 - **How many attempts a node gets.** `max(1, declared maxValidationAttempts)`
-  when declared. Undeclared **with** a schema: **2** (one retry) — the retry
-  is the point of declaring a schema, and a runtime default repairs every
-  package at once. Undeclared without a schema: 1, unchanged and irrelevant
-  (no rejection can occur). This changes `maxValidationAttempts(from:)` at
-  `DeterministicWorkflowRunner+Prompting.swift:17`. Behavior change stated:
-  schema-bearing nodes that previously failed on the first malformed answer
-  now retry once; runs get slower on the failure path and succeed more often.
+  when declared. Undeclared with **any** `output` block — states 2 and 3
+  alike: **2** (one retry). The predicate is `output != nil`, matching the
+  envelope switch at `AgentGatewayNodeAdapter.swift:125`, not
+  `jsonSchema != nil`: a state-2 node can fail the envelope exactly as a
+  state-3 node can, so budgeting them differently would leave the strict path
+  half-retried. `output == nil`: 1, unchanged and irrelevant (no rejection can
+  occur). This changes `maxValidationAttempts(from:)` at
+  `DeterministicWorkflowRunner+Prompting.swift:17`.
+- **Making that retry reachable (a second, required change).** Today the
+  budget alone would not help either strict state, because the attempt loop
+  retries only `WorkflowPublicationError.validationRejected`
+  (`DeterministicWorkflowRunner.swift:976` — `guard case .validationRejected =
+  error, attempt < maxAttempts`), while an extraction or envelope failure
+  leaves the adapter as `AdapterExecutionError(.invalidOutput, …)` from
+  `normalizeGatewayOutput` (`AgentGatewayNodeAdapter.swift:725`) and is never
+  retried. So on the contract path (`output != nil`) the extraction/envelope
+  failure is raised as a validation rejection carrying the same reason text,
+  and the existing loop handles it. The `.invalidOutput` classification is
+  kept for every other adapter failure and for every other adapter. Behavior
+  change stated, migration-free: a contract-bearing node that today dies on
+  its first malformed answer now gets a second attempt with
+  `AdapterOutputAttemptContext`; runs are slower on the failure path and
+  succeed more often. No flag, no way to restore the single-attempt behavior
+  other than declaring `maxValidationAttempts: 1`.
 - **What the operator sees when a node breaks the contract.** The producing
   step itself fails with `validationRejected`, carrying node id, attempt
   count (`attempt/maxAttempts`), and the schema-path reason (e.g.
@@ -192,10 +257,51 @@ New rule in `WorkflowValidation.validate(_:nodePayloads:)`, **error** when
 either holds for a node N and it declares no `output.jsonSchema`:
 
 1. **Payload referenced downstream.** Some step S is reachable from a step of
-   N by one transition, and S's addon `config` or `inputs` contain a template
-   that is a **payload reference** (defined below). Those two are the whole
-   scanned set. A node's declared `variables` are deliberately **not** scanned:
-   their values are never template-rendered. `promptVariables` seeds them as
+   N by the **producer walk defined below**, and S's addon `config` or
+   `inputs` contain a template that is a **payload reference** (defined
+   below). Those two are the whole scanned set.
+
+   **The producer walk (one transition is not enough).** Addon nodes
+   *republish their whole upstream payload*: `addonForwardedApplicationPayload`
+   (`Sources/RielaAddonSupport/WorkflowAddonSupport.swift:12-16`) removes only
+   `_rielaInput`, `upstream` and `runtime`, and the result becomes the
+   published payload at `Sources/RielaCLI/ProductionNodeAdapter.swift:790`,
+   `ProductionNodeAdapter+WorkflowTaskAddon.swift:177` and
+   `ProductionNodeAdapter+PersonaMemory.swift:126`. A field therefore survives
+   an arbitrary number of addon hops, so a rule that looked back exactly one
+   transition would leave the real producer schema-less whenever an addon step
+   sits between it and the consumer — and would then let D3 fail at run time
+   blaming the relay. The walk is instead: from consuming step S, follow
+   incoming transitions backwards; a step whose node is an **agent node**
+   (i.e. the node has a payload in `nodePayloads`) terminates that path and is
+   a **required producer**; a step whose node is an **addon node** is a relay
+   and the walk continues through it; a visited set bounds the walk, which
+   matters because workflows may loop (`WorkflowLoopMetadata`,
+   `WorkflowModel.swift:593`). Every required producer found on every path must
+   carry the schema and the referenced field.
+
+   **An addon-node predecessor is never itself the target of this rule.** It
+   structurally cannot satisfy it: `output` lives on `AgentNodePayload`
+   (`WorkflowModel.swift:765`, `:777`) while `addon` lives on
+   `WorkflowNodeRegistryRef` (`:336`) and `WorkflowNodeRef` (`:536`), and
+   `WorkflowValidation.validate(_:nodePayloads:)` (`:102-113`) iterates
+   `nodePayloads` only, so an addon node has nowhere to put a `jsonSchema`.
+   Erroring on one would emit a diagnostic no author could clear. Rejected
+   alternatives: **stop at one transition** (the rule would guarantee nothing
+   across the relay pattern the repository actually uses, and would hand D3 the
+   wrong node to name); **error on the addon-node predecessor** (unsatisfiable
+   diagnostic); **require addon nodes to gain an `output` declaration**
+   (a model change, a feature, and far wider than a contract fix).
+
+   **A path with no agent node at all** — S is reachable only from the entry
+   step or from an event-fed step — requires no schema from anyone, because
+   there is no producer that could publish one. D3 remains the backstop there:
+   the reference still renders strictly at run time and fails naming the step
+   that delivered the input. Stated so the guarantee is not overclaimed: D2a
+   moves *most* of this class of failure to validate time, not all of it.
+
+   A node's declared `variables` are deliberately **not** scanned: their
+   values are never template-rendered. `promptVariables` seeds them as
    substitution *values* (`DeterministicWorkflowRunner+Prompting.swift:52`),
    the adapters read them as configuration knobs
    (`AgentGatewayNodeAdapter.swift:93`, `:575`, `:593`,
@@ -203,10 +309,12 @@ either holds for a node N and it declares no `output.jsonSchema`:
    (`PromptTemplate.swift:3-24`) makes one non-recursive pass over the prompt
    *text* only — so `{{commitMessage}}` written inside a variable value is
    emitted literally. Erroring on such a string would demand a producer schema
-   for a reference that adding the schema cannot make resolve. The validator additionally checks that each referenced
-   first-segment `<field>` appears in N's `schema.properties`; a referenced
-   field absent from the schema is its own error (the schema would validate
-   the wrong shape). All template strings are already present in
+   for a reference that adding the schema cannot make resolve.
+
+   The validator additionally checks that each referenced first-segment
+   `<field>` appears in N's `schema.properties`; a referenced field absent
+   from the schema is its own error (the schema would validate the wrong
+   shape). All template strings are already present in
    `workflow.json`/node payloads at validate time — no new inputs needed.
 
    **Payload reference, defined.** Three forms, not one:
@@ -313,18 +421,54 @@ uses and would ship a rule that quietly guarantees nothing;
 the run; validate-time is strictly earlier and names the node while the
 operator is still at the terminal).
 
-### D2b — the no-contract path becomes honest
+### D2b — the contract-less path becomes honest, and the three predicates stay apart
 
-After D2a, a schema-less node is provably one whose payload nobody reads and
-whose routing is unconditional. Its answer is wrapped as
-`{text: <full answer>}` with `completionPassed: true` — unchanged. The
-opportunistic envelope sniffing for `{`-prefixed answers
-(`AgentGatewayNodeAdapter.swift:728-731`, including its `try?` silent
-fallback) is **deleted**: with D2a in force, any node that needs the envelope
-has a schema, and a half-tolerant path whose parse failures silently degrade
-to a text wrap is exactly the contract this design replaces. Consequence: a
-schema-less node that today emits a JSON envelope to drive `when` routing
-loses that ability — validation now directs its author to declare a schema.
+**The switch does not move.** `requiresOutputContract` stays
+`input.node.output != nil` (`AgentGatewayNodeAdapter.swift:125`). Three
+predicates, deliberately different, each stated so no implementer collapses
+them:
+
+| Concern | Predicate | Seam |
+| ------- | --------- | ---- |
+| Strict envelope required | `output != nil` | `AgentGatewayNodeAdapter.swift:125` (unchanged) |
+| Business payload validated | `output.jsonSchema != nil` | `RuntimeOutputValidation.swift:41-45` (unchanged) |
+| Retry budget defaults to 2 | `output != nil` | `…+Prompting.swift:17` (changed) |
+| D2a demands a producer contract | `output.jsonSchema != nil` | new rule (§4 D2a) |
+
+Re-keying the first row to `jsonSchema != nil` is **forbidden**: it would move
+every description-only node (state 2) off the strict path and into the text
+wrap — a loosening, in a design whose entire purpose is to tighten, and one
+that would silently convert a today-failing prose answer into an accepted
+`{text: …}` payload.
+
+**What changes in the `output == nil` branch.** After D2a, a node with no
+`output` block is provably one whose payload nobody reads and whose routing is
+unconditional. Its answer is wrapped as `{text: <full answer>}` with
+`completionPassed: true` — unchanged. The opportunistic envelope sniffing for
+`{`-prefixed answers (`AgentGatewayNodeAdapter.swift:728-731`, including its
+`try?` silent fallback) is **deleted**: with D2a in force, any node that needs
+the envelope declares a contract, and a half-tolerant path whose parse
+failures silently degrade to a text wrap is exactly the contract this design
+replaces. Consequence: a contract-less node that today emits a JSON envelope
+to drive `when` routing loses that ability — validation now directs its author
+to declare a schema.
+
+**Rejected: deleting state 2 by making an `output` block without `jsonSchema`
+a validation error.** This is the tidier reading of the no-back-compat mandate
+— after it, `output != nil` and `jsonSchema != nil` would coincide and the
+predicate table above would collapse to one row. It is rejected on measured
+cost and on direction. Cost: 88 of the 125 agent-node `output` blocks in
+`examples/` declare a description and no schema, as do 6 of the 10 in
+`fable-and-improve-opus` (`node-fable-design`, `node-fable-goal-review`,
+`node-final-output`, `node-opus-implementation`, `node-opus-review`,
+`node-step9-commit-message`) — an 88-file sweep in this tree alone. Direction:
+the mandate forbids keeping a contract this design *replaces*; state 2 is not
+replaced by anything here, it is a coherent stricter-than-nothing declaration
+("give me the envelope; I do not constrain the payload"), and an author who
+answered the error by deleting the `output` block instead of adding a schema
+would end up *looser* than before. D2a already reaches every state-2 node that
+matters — any one whose payload is referenced or whose step drives labels —
+and errors there on the `jsonSchema` predicate.
 
 ## 5. D3 — template resolution failure contract
 
@@ -384,7 +528,7 @@ asserted it was, and the repository contradicts that.
 The error is a new category (template-resolution failure, distinct from the
 addon's own `policyError` domain) and must carry:
 
-- the **producing step**: `_rielaInput.latest.fromStepId`, written by
+- the **delivering step**: `_rielaInput.latest.fromStepId`, written by
   `resolvedInputMessageMetadata`
   (`Sources/RielaCore/RuntimeMessageInputResolver.swift:107`) into the
   `_rielaInput` metadata that `addonVariables` already receives (`latest` is
@@ -402,9 +546,43 @@ addon's own `policyError` domain) and must carry:
   already in the variables object at `WorkflowAddonSupport.swift:36-38`).
 
 Shape: `templateResolutionFailed: step '<consumer>' addon '<addon>' template
-'{{<path>}}' resolved to nothing; the producing step '<producer>' did not
-publish payload field '<field>'`. The addon body never executes — the failure
-is raised during variable/config rendering, before any side effect. The step
+'{{<path>}}' resolved to nothing; step '<deliverer>' delivered this input
+without payload field '<field>'`.
+
+**Delivering, not necessarily authoring — a stated limit.** The renderer
+cannot walk the graph the way D2a does: `WorkflowAddonExecutionInput`
+(`WorkflowAddonExecution.swift:341-349`) carries `workflowId`, `stepId`,
+`nodeId`, `addon`, `variables`, `resolvedInputPayload`, `attachments` and
+`executionIdentity` — and no workflow definition. So when the delivering
+step is a **forwarding addon relay** (§4's producer walk), D3 names the
+relay, which is not the node that owed the field. The design does not
+pretend otherwise and does not widen that wire type to fix it (§11 rejects
+the same widening for node `variables`). Two mitigations, both stated:
+D2a's producer walk is what guarantees the node that *does* owe the field
+was made to declare it, so this case should mean a schema that lied rather
+than a missing contract; and the message says which relationship it is
+asserting — `'<deliverer>' delivered this input without payload field
+'<field>'` — so an operator reading it is not told that a `kv-set` step
+failed to produce a `commitMessage` it was never asked for. Naming the
+authoring node at render time is possible only by threading the producer
+chain into the addon wire type, which is a feature, not a contract fix.
+
+**The addon body must not execute — which is work, not a property of the
+seam.** The intent is that the failure is raised during variable/config
+rendering, before any side effect. Most addons already render their config up
+front, but this is not universal today and the design must not claim it is:
+`ProductionNodeAdapter+AppleGatewayNotifications.swift:279` renders the
+dismiss document *inside* `dismissOutput(input:envelope:)`, which is reached
+from `:87` only after `:72` has built the envelope from the gateway process
+output — that is, after the gateway mutation has already run. Converting that
+call site to a strict render without moving it would turn a resolution failure
+into a failure *after* the side effect, which is worse than today. T4
+therefore owns hoisting late renders ahead of their side effects at the sites
+where they occur, and the guarantee is stated as: after T4, every strict
+render happens before its addon's first side effect, with
+`+AppleGatewayNotifications.swift:279` named as the known case to hoist.
+
+The step
 fails with this error; it is not the consumer's domain error, and with D2a in
 force it indicates a schema that lied (the field was in `properties` but the
 producer omitted it and the schema didn't `require` it) — the message says
@@ -449,7 +627,15 @@ wrong actor and every addon would need its own guard).
 - `AgentGatewayNodeAdapter.normalizeGatewayOutput` — no-contract branch
   reduced to the text wrap (D2b). Contract branch unchanged.
 - `DeterministicWorkflowRunner+Prompting.maxValidationAttempts(from:)` —
-  default 2 when `output.jsonSchema != nil` (D2b).
+  default 2 when `output != nil` (D2b; **not** `jsonSchema != nil` — the
+  budget must cover the description-only state, which is on the same strict
+  path).
+- `AgentGatewayNodeAdapter.normalizeGatewayOutput` / the runner's attempt loop
+  — on the contract path, extraction and envelope failures are raised as
+  `WorkflowPublicationError.validationRejected` rather than
+  `AdapterExecutionError(.invalidOutput, …)`, so the loop's existing guard
+  (`DeterministicWorkflowRunner.swift:976`) retries them (D2b). Every other
+  adapter and every other failure keeps `.invalidOutput`.
 - **Shared template classifier** — one function in RielaCore, used by both D2a
   and D3, returning per `{{path}}` whether it is a payload reference or a
   context reference (the rule in section 4). Its signature must be expressible
@@ -489,10 +675,29 @@ wrong actor and every addon would need its own guard).
 - `RielaAddonSupport` — strict rendering entry points for addon config and
   inputs returning either rendered JSON or the typed resolution failure, strict
   only for classifier-payload paths, with `config` classified under
-  `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`; `addonVariables` additionally surfaces the
-  producer step id for the error (D3). All addon families route through this
-  one seam, so every builtin addon (git, kv, kaiba, gateway addons) gains the
-  contract at once.
+  `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`;
+  `addonVariables` additionally surfaces the producer step id for the
+  error (D3).
+
+  **Corrected (review F12): addon families do *not* route through one seam
+  today.** `renderJSONTemplates` is a free function called from **16 sites in
+  12 files across two targets beyond `RielaAddonSupport`** — `RielaCLI`
+  (`ContainerWorkflowAddonResolver.swift:128`,
+  `ProductionNodeAdapter+AppleGatewayAdminAddons.swift:320`,
+  `+LocalGatewaySupport.swift:178`/`:260`/`:313`, `+GitAddons.swift:67`/`:82`,
+  `+GitPush.swift:118`, `+AppleReminderAddons.swift:100`,
+  `+GoogleDocumentsGatewayAddons.swift:295`, `+MemoryAddonCore.swift:26`,
+  `+KeyValueStoreAddon.swift:15`) and `RielaKaibaAddons`
+  (`KaibaRemoteGraphQLAddon.swift:58`, `KaibaNoteAddons.swift:366`,
+  `KaibaInputValidation.swift:9`/`:14`). Each renders its own config ad hoc.
+  Adding a strict function *beside* the lenient one would therefore convert
+  only the sites someone remembered, and D2a would error at validate time on
+  references D3 does not enforce at render time — the two disagreeing on
+  exactly the surfaces §4 works to keep in agreement. So the strict,
+  surface-aware, throwing function becomes the **only public render entry
+  point** and the lenient `renderJSONTemplates` is privatized to
+  `RielaAddonSupport`, making every unconverted site a compile error rather
+  than a review omission. T4 of the plan carries the full site list.
 - Error surfacing: the new failure appears in session status/progress/logs as
   the consuming step's failure with category `templateResolutionFailed`,
   reusing the existing `AdapterExecutionError`-style publication path so
@@ -502,7 +707,7 @@ Data flow after the change, for the observed scenario: `plan-checkpoint`
 (now with `agentSandbox: workspaceWrite` and a schema requiring
 `commitMessage` on acceptance) either publishes a valid payload, retries
 once, or fails **at plan-checkpoint** with the schema reason. If a field
-still goes missing, `step9-commit` fails with `templateResolutionFailed`
+still goes missing, `plan-git-commit` fails with `templateResolutionFailed`
 naming `plan-checkpoint` — never with `commit message is empty or invalid`.
 
 ## 7. Edge cases
@@ -510,8 +715,19 @@ naming `plan-checkpoint` — never with `commit message is empty or invalid`.
 - Node with schema whose `when` labels are consumed but payload is not:
   covered by D2a rule 2.
 - Fan-in steps (multiple producers): `inbox.latest` is the most recent;
-  the D2a check applies to **every** one-transition predecessor whose edge
-  can be the latest — all predecessors need the schema-declared field.
+  the D2a check applies to **every** required producer the walk reaches on
+  every path — all of them need the schema-declared field.
+- Producer separated from consumer by a forwarding addon step (agent →
+  `riela/kv-set` → `riela/git-commit` reading `{{commitMessage}}`): the walk
+  passes through the addon step and requires the schema on the agent node
+  (§4 rule 1). Without the walk, D2a would raise nothing and D3 would fail at
+  run time naming `kv-set` — an addon node that was never asked for
+  `commitMessage` and structurally cannot be given a schema. If the field is
+  nevertheless absent at run time, D3 names `kv-set` as the *deliverer*, with
+  the wording chosen so it does not read as an accusation (§5).
+- A cycle in the producer walk (loop workflows, `WorkflowLoopMetadata`):
+  the visited set terminates it; every distinct agent node reached is a
+  required producer.
 - `{{input.<field>}}` templates resolve against the merged resolved input and
   are a payload reference, so addon config/inputs render them strictly — except
   `input._rielaInput.*`, `input.upstream.*` and `input.runtime.*`, which are the
@@ -549,8 +765,13 @@ naming `plan-checkpoint` — never with `commit message is empty or invalid`.
 - An answer with two fences: json-tagged fence wins (existing extractor
   order); two json-tagged fences: first wins — documented, not an error.
 - `output` block with `description` but no `jsonSchema` (today's
-  `step9-commit-message`): D2a treats it as schema-less; the description
-  alone enforces nothing.
+  `step9-commit-message`) — **corrected, was stated wrongly**: this is state 2
+  (§1, §4 D2b). The description enforces nothing *about fields*, but the
+  `output` block itself puts the node on the strict envelope path
+  (`AgentGatewayNodeAdapter.swift:125`), so a prose answer already fails
+  today. D2a still errors on it whenever its payload is referenced or its step
+  drives labels, because D2a's predicate is `jsonSchema`; and its attempt
+  budget becomes 2, because D2b's budget predicate is `output`.
 - Empty string vs missing: a producer that publishes `commitMessage: ""`
   passes template resolution; the schema must say `minLength: 1` (the
   supported dialect includes it) — the bundle follow-up (D4) does so.
@@ -559,8 +780,9 @@ naming `plan-checkpoint` — never with `commit message is empty or invalid`.
 
 D1 makes permission grants explicit and reviewable in the bundle; no node can
 gain `bypassPermissions` implicitly, and validation rejects sandbox
-declarations on backends that would silently drop them. D3 fails before addon
-side effects, so a half-resolved config can never reach `git commit`.
+declarations on backends that would silently drop them. After T4, D3 fails
+before addon side effects, so a half-resolved config can never reach
+`git commit`.
 
 ## 9. Tests
 
@@ -576,18 +798,30 @@ Runtime (all in existing suites, same targets as the seams):
   classified as a payload reference under `.addonInputs`, that a declared node
   `variables` key is neither scanned nor excluded, and that
   `input._rielaInput.*` / `input.upstream.*` / `input.runtime.*` are context;
-  green fixtures for compliant workflows.
-- Adapter tests: no-contract prose answer → `{text}` unchanged; no-contract
-  `{`-prefixed malformed answer → `{text}` (sniffing removed, no silent
-  envelope); contract + fenced answer → extracted and validated.
-- Runner tests: schema without declared attempts retries exactly once;
-  declared attempts still win; final rejection surfaces node id + reason.
+  producer-walk tests — the schema is demanded of the agent node **across** a
+  forwarding addon step, an addon-node predecessor never receives the
+  diagnostic itself, a path with no agent node raises nothing, and a cyclic
+  workflow terminates; green fixtures for compliant workflows.
+- Adapter tests: `output == nil` prose answer → `{text}` unchanged;
+  `output == nil` `{`-prefixed malformed answer → `{text}` (sniffing removed,
+  no silent envelope); contract + fenced answer → extracted and validated;
+  and the state-2 regression guard — **a node with `output.description` and no
+  `jsonSchema` still rejects a prose answer** and never reaches the text wrap.
+- Runner tests: a contract without declared attempts retries exactly once, for
+  a schema-bearing node **and** for a description-only one; declared attempts
+  still win; an extraction/envelope failure on a contract-bearing node is
+  retried (not surfaced as a terminal `.invalidOutput`); final rejection
+  surfaces node id + reason.
 - Addon-support tests: missing **payload reference** in config → typed error
   naming producer/path/consumer; addon body not executed; producer fallback
   when `_rielaInput.latest.fromStepId` is absent; missing **context**
   reference (`event.*`) in config → still renders `""`, addon executes, with
   `telegram-sdk-trio-chat`'s `memory-save` payloadTemplate as the fixture
-  shape; prompt rendering lenient for every class; `{{input.…}}` strictness.
+  shape; prompt rendering lenient for every class; `{{input.…}}` strictness;
+  and a **coverage** test over the converted call sites — with the lenient
+  function privatized, a `grep -rn` assertion that no addon outside
+  `RielaAddonSupport` renders config through a lenient path, so the 16 sites
+  of §6 cannot silently regress.
 - Mock-scenario regression, two layers: every `rielaExampleWorkflowNames()`
   example and packaged fixture must (a) **validate** under the new rules and
   (b) **execute** green under its `mock-scenario.json` for the examples that
@@ -609,7 +843,15 @@ the errors name the node, field, and rule — and that a bare `{{name}}` in
 addon config which the classifier cannot attribute to a run variable is now
 read as a payload reference, so such references must be namespaced
 (`{{workflowInput.name}}`) — declaring the key in the node's `variables` is not
-an escape on that surface, because addon rendering never sees node variables. The D4 bundle release ships with
+an escape on that surface, because addon rendering never sees node variables.
+Two further behavior changes belong in the same notes, both migration-free and
+neither reversible by a flag: every node with an `output` block — including a
+description-only one — now gets **two** validation attempts instead of one,
+and an extraction or envelope failure on such a node is retried rather than
+failing the step immediately; and a producer separated from its consumer by
+forwarding addon steps is now required to declare the schema, so workflows
+that relay payloads through `riela/kv-set` and friends will surface D2a errors
+on the *agent* node behind the relay. The D4 bundle release ships with
 or before the runtime release so the flagship package validates on day one.
 
 ## 11. Rejected-alternative index
@@ -617,6 +859,27 @@ or before the runtime release so the flagship package validates on day one.
 - D1: default `workspaceWrite` (implicit permission grant), default
   `readOnly` (perpetuates the trap), warning (run proceeds to die far from
   cause).
+- D2b: deleting the description-only state by erroring on an `output` block
+  without `jsonSchema` — rejected on measured cost (88 of 125 in-repo example
+  output blocks and 6 of 10 bundle ones are description-only) and on
+  direction (the state is a coherent stricter-than-nothing contract this
+  design does not replace, and the natural way to clear the error — deleting
+  the `output` block — would *loosen* the node); re-keying
+  `requiresOutputContract` to `jsonSchema != nil` (same loosening, silently).
+- D2a/D3: a one-transition producer scan — rejected because addon nodes
+  republish the whole payload (`addonForwardedApplicationPayload`,
+  `WorkflowAddonSupport.swift:12-16`, used at `ProductionNodeAdapter.swift:790`,
+  `+WorkflowTaskAddon.swift:177`, `+PersonaMemory.swift:126`), so the rule
+  would guarantee nothing across a relay; erroring on an addon-node
+  predecessor (it cannot declare `output`, so the diagnostic is
+  unsatisfiable); threading the producer chain into
+  `WorkflowAddonExecutionInput` so D3 could name the authoring node across a
+  relay (same wire-widening objection as node `variables`, below).
+- D3/§6: adding a strict render function beside the lenient
+  `renderJSONTemplates` — rejected because 16 call sites in 12 files across
+  two targets render addon config ad hoc, so the unconverted remainder would
+  make validate and render disagree; the lenient function is privatized
+  instead, which makes the compiler enumerate the work.
 - D2: strict rejection of fenced answers (extractor already exists, fences
   are unambiguous), warning/allowed for missing schema (observed failure
   survives), runtime-only enforcement (later and worse than validate-time),

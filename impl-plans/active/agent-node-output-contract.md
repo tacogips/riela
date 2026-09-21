@@ -32,12 +32,18 @@
 
 - Two new validation rules in `Sources/RielaCore/WorkflowValidation.swift`
   (D1 sandbox rule, D2a schema rule).
-- No-contract path simplification and schema-default retry budget in
+- Contract-less path simplification and the retry budget in
   `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift` and
-  `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift` (D2b).
+  `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift` (D2b),
+  keeping the envelope switch keyed on `output != nil` and keying the budget
+  on the same predicate, plus making the contract path's envelope failure
+  retryable.
 - Strict addon config/inputs rendering with a typed template-resolution
   error in `Sources/RielaAddonSupport/WorkflowAddonSupport.swift` plus its
-  error type and publication classification (D3).
+  error type and publication classification (D3), **and the conversion of all
+  16 existing `renderJSONTemplates` call sites** in `Sources/RielaCLI` and
+  `Sources/RielaKaibaAddons` — the lenient function is privatized, so this is
+  compiler-enforced rather than review-enforced (T4).
 - Repairs to in-repo example workflows/fixtures that the new validation
   rules reject (they are part of this tree, hence this work package).
 - Tests for every rule and path change; docs/skills text that states the
@@ -60,9 +66,9 @@
 | Task | Deliverables | Primary write scope | Depends on | Parallelizable |
 | ---- | ------------ | ------------------- | ---------- | -------------- |
 | T1 D1 sandbox validation | Error diagnostics for omitted `agentSandbox` on codex/claudeCode/cursor backends and for declared `agentSandbox` on API backends; backend→vendor sandbox-consumption table lives beside the rule | `Sources/RielaCore/WorkflowValidation.swift`, `Tests/RielaCoreTests/` (validation suite) | — | Yes (with T3, T4) |
-| T2 D2a schema validation | Shared payload-reference classifier (new RielaCore file, reused by T4) with the explicit `classifyTemplateReference(_:surface:)` signature and `TemplateSurface = .addonConfig(addonInputKeys:) / .addonInputs` from design §6, covering all three reference forms — dotted `inbox.latest.output.payload.*`, `input.<field>`, and **bare** `{{field}}` — with per-surface exclusions (reserved roots on both; same-addon `inputs` keys excluded ONLY under `.addonConfig`, because `inputs` render before they are merged at `WorkflowAddonSupport.swift:39`/`:45-48`), the `input._rielaInput|upstream|runtime` context carve-out, and the documented errs-toward-the-error direction for run-variable ambiguity. Error diagnostics: templated payload without producer schema; referenced first-segment field missing from `schema.properties`; conditional transition labels without schema. Template scanning over addon `config`/`inputs` of one-transition successors ONLY — node `variables` are not scanned, their values being inert text (design §4 rule 1) | new `Sources/RielaCore/TemplateReferenceClassification.swift` (classifier), `Sources/RielaCore/WorkflowValidation.swift`, `Tests/RielaCoreTests/` | T1 (same file — serialize edits) | No (shares WorkflowValidation.swift with T1) |
-| T3 D2b answer path + retry default | Delete opportunistic `{`-prefix envelope sniffing in `normalizeGatewayOutput` (no-contract branch = pure text wrap); `maxValidationAttempts` default 2 when `output.jsonSchema != nil` | `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`, `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift`, adapter/runner tests | — | Yes (with T1, T4) |
-| T4 D3 template resolution error | Typed `templateResolutionFailed` error carrying producer step (`_rielaInput.latest.fromStepId`, which is written conditionally at `RuntimeMessageInputResolver.swift:118` — fall back to a sole `_rielaInput.sourceStepIds` entry, then to `an upstream step`), template path, consumer step/node/addon; strict rendering for addon `config`/`inputs` **only for classifier-payload paths** before any addon side effect, with context namespaces (`event.*`, `workflowInput.*`, `runtime.*`, `upstream.*`, `_rielaInput.*`, and those roots spelled under `input.`) still rendering `""`, `config` classified under `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`, and declared node `variables` deliberately NOT a lenient class because they never reach `addonVariables`; prompt rendering stays lenient for every class; error surfaces through the existing adapter-failure publication path | `Sources/RielaAddonSupport/WorkflowAddonSupport.swift`, new error type (RielaCore or RielaAddonSupport), `Sources/RielaCLI/ProductionNodeAdapter+GitAddons.swift` call sites only if signatures force it, addon-support tests | T2 (consumes its classifier by API only — no shared file) | Partly (error type, fallback and publication path can be built alongside T1/T3; the strict/lenient switch lands once the classifier exists) |
+| T2 D2a schema validation | Shared payload-reference classifier (new RielaCore file, reused by T4) with the explicit `classifyTemplateReference(_:surface:)` signature and `TemplateSurface = .addonConfig(addonInputKeys:) / .addonInputs` from design §6, covering all three reference forms — dotted `inbox.latest.output.payload.*`, `input.<field>`, and **bare** `{{field}}` — with per-surface exclusions (reserved roots on both; same-addon `inputs` keys excluded ONLY under `.addonConfig`, because `inputs` render before they are merged at `WorkflowAddonSupport.swift:39`/`:45-48`), the `input._rielaInput|upstream|runtime` context carve-out, and the documented errs-toward-the-error direction for run-variable ambiguity. Error diagnostics: templated payload without producer schema; referenced first-segment field missing from `schema.properties`; conditional transition labels without schema. Template scanning over addon `config`/`inputs`, with producers resolved by the **producer walk** (design §4 rule 1, review F11): walk incoming transitions backwards from the consuming step, terminate a path at an agent node (one with an entry in `nodePayloads`) which is then a required producer, continue THROUGH addon-node steps because they republish the whole payload (`addonForwardedApplicationPayload`, `WorkflowAddonSupport.swift:12-16`, republished at `ProductionNodeAdapter.swift:790`, `+WorkflowTaskAddon.swift:177`, `+PersonaMemory.swift:126`), bound the walk with a visited set for loop workflows, never emit the diagnostic against an addon node (it cannot declare `output` — `AgentNodePayload` `WorkflowModel.swift:765` vs `WorkflowNodeRegistryRef:336`/`WorkflowNodeRef:536`, and `validate(_:nodePayloads:)` iterates `nodePayloads` only), and raise nothing on a path with no agent node. Node `variables` are not scanned, their values being inert text (design §4 rule 1) | new `Sources/RielaCore/TemplateReferenceClassification.swift` (classifier), `Sources/RielaCore/WorkflowValidation.swift`, `Tests/RielaCoreTests/` | T1 (same file — serialize edits) | No (shares WorkflowValidation.swift with T1) |
+| T3 D2b answer path + retry default | Delete opportunistic `{`-prefix envelope sniffing in `normalizeGatewayOutput` (the `output == nil` branch becomes a pure text wrap). Keep `requiresOutputContract` keyed on `input.node.output != nil` (`AgentGatewayNodeAdapter.swift:125`) — do NOT re-key it to `jsonSchema != nil`, which would loosen every description-only node onto the text wrap (design §4 D2b, review F10). `maxValidationAttempts` default 2 when **`output != nil`** (both strict states, not just schema-bearing ones), and raise the contract path's extraction/envelope failure as `WorkflowPublicationError.validationRejected` so the existing loop guard (`DeterministicWorkflowRunner.swift:976`, `.validationRejected`-only) can actually retry it; `.invalidOutput` stays for every other adapter and failure | `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`, `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift`, adapter/runner tests | — | Yes (with T1, T4) |
+| T4 D3 template resolution error | Typed `templateResolutionFailed` error carrying producer step (`_rielaInput.latest.fromStepId`, which is written conditionally at `RuntimeMessageInputResolver.swift:118` — fall back to a sole `_rielaInput.sourceStepIds` entry, then to `an upstream step`), template path, consumer step/node/addon; strict rendering for addon `config`/`inputs` **only for classifier-payload paths** before any addon side effect, with context namespaces (`event.*`, `workflowInput.*`, `runtime.*`, `upstream.*`, `_rielaInput.*`, and those roots spelled under `input.`) still rendering `""`, `config` classified under `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`, and declared node `variables` deliberately NOT a lenient class because they never reach `addonVariables`; prompt rendering stays lenient for every class; error surfaces through the existing adapter-failure publication path | `Sources/RielaAddonSupport/WorkflowAddonSupport.swift` (strict surface-aware throwing render becomes the ONLY public entry point; the lenient `renderJSONTemplates` is privatized to this target so the compiler, not a reviewer, enumerates the work), new error type (RielaCore or RielaAddonSupport), and **all 16 existing call sites in 12 files across two further targets** (review F12): `RielaCLI` — `ContainerWorkflowAddonResolver.swift:128`, `ProductionNodeAdapter+AppleGatewayAdminAddons.swift:320`, `+LocalGatewaySupport.swift:178`/`:260`/`:313`, `+GitAddons.swift:67`/`:82`, `+GitPush.swift:118`, `+AppleReminderAddons.swift:100`, `+GoogleDocumentsGatewayAddons.swift:295`, `+MemoryAddonCore.swift:26`, `+KeyValueStoreAddon.swift:15`; `RielaKaibaAddons` — `KaibaRemoteGraphQLAddon.swift:58`, `KaibaNoteAddons.swift:366`, `KaibaInputValidation.swift:9`/`:14`. Plus hoisting renders that currently run after their side effect, known case `+AppleGatewayNotifications.swift:279` (reached from `:87`, after the envelope is built from gateway output at `:72`). Addon-support tests | T2 (consumes its classifier by API only — no shared file) | Partly (error type, fallback and publication path can be built alongside T1/T3; the strict/lenient switch lands once the classifier exists) |
 | T5 Example/fixture reconciliation | Every in-repo example workflow and test fixture (a) validates under T1+T2 rules and (b) **executes** green under its `mock-scenario.json` where it carries addon `config`/`inputs` — D3 is a render-time rule that validate cannot exercise. `examples/note-rag-retrieval-fusion` (bare payload references) and `examples/telegram-sdk-trio-chat` (optional `event.*` context in `riela/memory-save` payloadTemplate) are mandatory; `rielaExampleWorkflowNames()` registration + mock counts intact; `RielaCLITests` green | `Sources/`/`Tests/` example + fixture JSON, `Tests/RielaCLITests/` | T1, T2, T3, T4 | No (sweeps the whole tree after rules land) |
 | T6 Docs | Contract stated in the workflow authoring docs/skills text this repo owns (riela-workflow skill sources, design-doc cross-links) | `skills/` or `docs/` workflow-authoring text in this tree | T1–T4 | Yes (with T5) |
 | T7 (follow-up package) D4 bundle | Listed for traceability only — executed as its own work package in `tacogips/riela-packages`, per Excluded section | riela-packages (NOT this repo) | T1–T6 released | — |
@@ -94,11 +100,23 @@ authoring time (planning-only run — no code written).
       `inputs` key is a validation error, that a declared node `variables`
       key is neither scanned nor excluded, and that `input._rielaInput.*`,
       `input.upstream.*` and `input.runtime.*` classify as context, plus green
-      compliant fixtures; evidence = test names + run output.
-- [ ] T3: adapter test proves `{`-prefixed malformed no-contract answer
-      yields `{text}` with no envelope; runner test proves schema-default
-      retry of exactly 2 and declared value wins; evidence = test names +
+      compliant fixtures. Producer-walk tests (review F11): a fixture shaped
+      `agent -> riela/kv-set -> riela/git-commit` reading `{{commitMessage}}`
+      demands the schema on the AGENT node and never on the addon node; an
+      addon-node predecessor alone yields no diagnostic; a path with no agent
+      node yields none; a cyclic workflow terminates. Evidence = test names +
       run output.
+- [ ] T3: adapter test proves a `{`-prefixed malformed answer on a node with
+      NO `output` block yields `{text}` with no envelope; a second adapter
+      test is the state-2 regression guard — a node with `output.description`
+      and no `jsonSchema` still REJECTS a prose answer and never reaches the
+      text wrap, proving `requiresOutputContract` was not re-keyed
+      (`AgentGatewayNodeAdapter.swift:125`, review F10); runner tests prove
+      the default budget of 2 for a schema-bearing node AND for a
+      description-only one, that a declared `maxValidationAttempts` still
+      wins, and that an extraction/envelope failure on a contract-bearing
+      node is retried rather than surfacing as a terminal `.invalidOutput`;
+      evidence = test names + run output.
 - [ ] T4: addon-support test proves a missing **payload reference** in config
       fails with producer/path/consumer in the message and the addon body
       never ran; a second proves the producer fallback when
@@ -113,8 +131,15 @@ authoring time (planning-only run — no code written).
       `templateResolutionFailed` rather than rendering `""`, while the same
       name inside `config` resolves to the rendered input; prompt
       lenient tests unchanged (`Tests/RielaCoreTests/PromptTemplateTests.swift:8`,
-      `DeterministicWorkflowRunnerTests.swift:365`); evidence = test names +
-      run output.
+      `DeterministicWorkflowRunnerTests.swift:365`). Call-site coverage
+      (review F12): `grep -rn 'renderJSONTemplates' Sources/ | grep -v
+      RielaAddonSupport` returns ZERO lines — the lenient function is private
+      to `RielaAddonSupport` and all 16 former sites in 12 files across
+      `RielaCLI` and `RielaKaibaAddons` render through the strict entry point;
+      plus a test proving the hoisted render in
+      `+AppleGatewayNotifications` fails BEFORE the gateway mutation rather
+      than after it (`:279` today, reached from `:87` after `:72`). Evidence =
+      test names + run output + the grep result.
 - [ ] T5: full `swift test` from repo root green, including `RielaCLITests`
       example suites, AND a mock-scenario execution pass —
       `riela workflow run examples/note-rag-retrieval-fusion --mock-scenario
@@ -133,17 +158,30 @@ authoring time (planning-only run — no code written).
 2. `swift run riela workflow validate` against an in-repo example that
    deliberately violates each rule (temporary fixture) — the three error
    messages name node, field, and rule.
-3. Read-back of `normalizeGatewayOutput`: no-contract branch contains no
-   JSON parsing.
+3. Read-back of `normalizeGatewayOutput`: the `output == nil` branch contains
+   no JSON parsing, AND `requiresOutputContract` is still
+   `input.node.output != nil` at `AgentGatewayNodeAdapter.swift:125` (the
+   state-2 guard, review F10).
 3b. Mock-scenario execution of the two addon-config-bearing examples (T5),
    because D3 fails at render time and `workflow validate` cannot reach it.
+3c. `grep -rn 'renderJSONTemplates' Sources/ | grep -v RielaAddonSupport`
+   returns zero lines (review F12) — proof that no addon still renders config
+   through a lenient path.
 4. For this planning run itself: `git diff --stat` proof below — no
    `Sources/` or `Tests/` path modified.
 
 ## Completion Criteria
 
 - All D1–D3 rules implemented with the exact error shapes in the design;
-  D2b behavior changes (sniffing deleted, default 2 attempts) in place.
+  D2b behavior changes in place — sniffing deleted from the `output == nil`
+  branch, the envelope switch still keyed on `output != nil`, default 2
+  attempts for every `output`-bearing node, and the contract path's
+  extraction/envelope failure retryable.
+- D2a's producer walk traverses forwarding addon nodes and never emits a
+  diagnostic an addon node cannot satisfy.
+- Every former `renderJSONTemplates` call site outside `RielaAddonSupport`
+  renders through the strict entry point, with the lenient function private
+  and the verification-plan grep returning zero.
 - Full test suite green; in-repo examples validate.
 - Docs updated; D4 follow-up package task filed for riela-packages.
 
@@ -198,6 +236,13 @@ $ git diff --stat=200 ca1ce34..HEAD
 (`+` runs elided for width; the four paths and the 553-insertion total are
 verbatim.) Four documentation paths, zero `Sources/` and zero `Tests/`
 paths — **AC7 satisfied**.
+
+*Superseded snapshot.* The block above is the proof as of `36285f0` and is
+kept as the historical record. The resumed run's entries asked a later
+checkpoint to replace it with the final commit's numbers; the checkpoint
+commit `cf5dde4` landed without doing so, so the current AC7 proof — five
+paths, 1276 insertions, still zero `Sources/` and zero `Tests/` — is recorded
+in the final progress-log entry below instead.
 
 ### 2026-09-21 — Step 6 read-back (still planning-only; no code written)
 
@@ -540,3 +585,223 @@ after which the branch is pushed to `origin` with upstream tracking (plain
 push, never force, never `main`), `git diff --stat=200 ca1ce34..HEAD` is
 re-run, and the attempt-1 checkpoint block above is replaced so it names the
 final commit rather than `36285f0`.
+
+### 2026-09-21 — Step 6 on a planning-only package (no code written)
+
+The assigned contract (`impl-plans/active/agent-node-output-contract-r2-dispatch.json`,
+`fanoutItem.acceptanceCriteria`) is planning-only, so this implementation step
+wrote **no production code and no test code**. Its work was an independent
+re-verification of the committed design against the tree at `cf5dde4`, plus
+the AC7 proof the checkpoint left stale. Evidence:
+`tmp/agent-node-output-contract-r2/plans/agent-node-output-contract/attempt-1/`
+(`50-step6-verification.log`, `51-intended-edits.md`; the killed run's
+`tmp/agent-node-output-contract/attempt-1…4` logs are untouched).
+
+**Seams re-read from source this run, all matching the design exactly.**
+`--permission-mode` appended only when the mapping is non-nil
+(`AgentGatewayNodeAdapter.swift:608`) and `claudePermissionMode(for:)` with
+`case nil: nil` (`:660`); `normalizeGatewayOutput` (`:719`) and the
+opportunistic `try?` sniff (`:728-731`); `normalizeTextBusinessPayload`
+(`AdapterContracts.swift:295`); nil-contract acceptance
+(`RuntimeOutputValidation.swift:41`); `maxValidationAttempts` default 1
+(`…+Prompting.swift:17`) and the attempt loop head
+(`DeterministicWorkflowRunner.swift:875`); `?? ""`
+(`PromptTemplate.swift:20`); `parseJSONObjectCandidate`
+(`RuntimeOutputExtraction.swift:3`); the whole `addonVariables` ordering —
+strip list `:12-16`, `addonVariables` `:18`, flat merge `:20-22`, `inbox`
+`:23-33`, `input` `:34`, ids `:35-38`, `inputs` merged last `:39-41`,
+`renderAddonInputs` `:45-48`, `exactTemplateValue` `:64-75`
+(`WorkflowAddonSupport.swift`); the empty-commit-message guard at
+`ProductionNodeAdapter+GitAddons.swift:73` inside `renderedCommitMessage`
+(`:63`); optional `agentSandbox` at `WorkflowModel.swift:777` and
+`grep -c agentSandbox Sources/RielaCore/WorkflowValidation.swift` = 0;
+`validate(_:nodePayloads:)` at `WorkflowValidation.swift:102`; the addon
+dispatch branch passing no node payload
+(`DeterministicWorkflowRunner.swift:511-532`) and
+`WorkflowAddonExecutionInput` having no such field
+(`WorkflowAddonExecution.swift:341-349`, `CodingKeys` `:371`);
+`request.variables` threaded at `…+Addons.swift:58` and the distributed guard
+at `:24`; node `variables` read as knobs at `AgentGatewayNodeAdapter.swift:93`,
+`:575`, `:593` and `RielaAdapters/AdapterUtilities.swift:34`
+(`forwardImageAttachments`); `promptVariables` seeding at `…+Prompting.swift:52`
+and the schema-example injection at `:153`; the lenient-prompt assertions at
+`Tests/RielaCoreTests/PromptTemplateTests.swift:8` and
+`DeterministicWorkflowRunnerTests.swift:365`. Worked cases re-read verbatim:
+`examples/note-rag-retrieval-fusion/workflow.json:117-120` and `:136-145`
+(bare payload references) and `examples/telegram-sdk-trio-chat/workflow.json:31-48`
+with the five optional `event.*` paths at `:41-45`. Read-only bundle counts
+re-checked: 16 node files, all 16 `claude-code-agent`, 5 with `agentSandbox`,
+4 with `jsonSchema`, `node-plan-checkpoint.json` with neither,
+`workflow.json:127`/`:159` consuming
+`{{inbox.latest.output.payload.commitMessage}}`. One citation is a bare
+filename whose directory differs from its neighbours and is recorded here in
+full for the implementation session: `AdapterUtilities.swift` lives in
+`Sources/RielaAdapters/`, not `Sources/RielaCore/`.
+
+**AC7 proof, current (this is the run's own diff, superseding the `36285f0`
+block above).**
+
+```
+$ git rev-parse HEAD
+cf5dde46b46e07aef963ced1950aa803b3b31a63
+$ git status --porcelain=v1        # before this entry was written
+(empty)
+$ git diff --stat=200 ca1ce34..HEAD
+ design-docs/specs/design-agent-node-output-contract.md        | 652 +++
+ impl-plans/README.md                                          |   1 +
+ impl-plans/active/agent-node-output-contract-dispatch.json    |  39 +++
+ impl-plans/active/agent-node-output-contract-r2-dispatch.json |  42 +++
+ impl-plans/active/agent-node-output-contract.md               | 542 +++
+ 5 files changed, 1276 insertions(+)
+$ git diff --name-only ca1ce34..HEAD | grep -cE '^(Sources|Tests)/'
+0
+$ git status --porcelain=v1 | grep -cE '(Sources|Tests)/'
+0
+```
+
+(`+` runs elided for width; the five paths and the 1276-insertion total are
+verbatim — full log in `50-step6-verification.log`.) `ca1ce34..HEAD` is the
+correct range, not `main..HEAD`: local `main` is `c33a783` and has advanced
+past this branch's base, `git merge-base main HEAD` = `ca1ce34`. **AC7
+satisfied**, before and after this entry. `main` is untouched, never merged
+into, never reset. There was nothing to build or test: no `swift build` /
+`swift test` was run, and none is required for a planning-only package.
+
+**Read-only constraint re-checked.** `git -C /Users/taco/gits/tacogips/riela-packages
+status --porcelain=v1 -- packages/fable-and-improve-opus` returns zero paths,
+and no file under
+`packages/fable-and-improve-opus/workflows/fable-and-improve-opus` has a
+modification time from today. That repository's other dirty paths
+(`packages/codex-design-and-implement-review-loop/…`, `README.md`) pre-date
+this run and belong to the operator.
+
+**AC8 remains the single open acceptance item, and stays checkpoint-owned.**
+`git rev-parse --abbrev-ref @{u}` → *no upstream configured*;
+`git ls-remote --heads origin design/agent-node-output-contract` → empty
+(exit 0). The branch is committed but not pushed. This step does not commit or
+push: the shared-branch protocol governing it forbids `git add`/`commit`/
+`push`. The checkpoint must commit this entry and push
+`design/agent-node-output-contract` to `origin` with upstream tracking —
+plain push, never force, never `main`. Unchecked-box count stays 6, matching
+`impl-plans/README.md:46`.
+
+### 2026-09-21 — Step 6 attempt 2 of the resumed run: review F10–F12 revision (still no code written)
+
+Independent review (`opus-review`, `changes-requested`) raised F10, F11, F12
+(all medium, all against the documents) and F13 (AC8, checkpoint-owned). Every
+finding was re-verified against source **before** editing — evidence
+`tmp/agent-node-output-contract-r2/plans/agent-node-output-contract/attempt-1/`
+(`53-f10-f12-reverification.log`, `54-intended-edits.md`; the 50-/51-/52- logs
+of the first Step-6 pass and the killed run's `attempt-1..4` are untouched).
+All three findings are confirmed and addressed. No code was written; the edit
+is confined to the two documents.
+
+**F10 — the output contract has three states, not two. Confirmed.**
+`grep -rn requiresOutputContract Sources/` →
+`AgentGatewayNodeAdapter.swift:125`, `requiresOutputContract: input.node.output
+!= nil`; `workflowOutputContract(from:)`
+(`DeterministicWorkflowRunner+Prompting.swift:10-15`) returns a contract with a
+`nil` schema inside it whenever `output` is non-nil. So state 2 —
+`output != nil, jsonSchema == nil` — is on the **strict** path and already
+throws on prose. Two claims of this design were contradicted by source and are
+**retracted**: §1's "so nothing enforces it" and §7's "the description alone
+enforces nothing". Both are replaced and the retraction is recorded in §1's
+correction block, per the brief-vs-source mandate.
+
+The decision the review asked for: **state 2 is preserved verbatim**, and
+D2b's predicates are written separately (§4 D2b now carries a four-row
+predicate table). The alternative — erroring on an `output` block without a
+`jsonSchema`, which would collapse the predicates into one — was measured and
+rejected: **88 of the 125 agent-node `output` blocks under `examples/` are
+description-only**, as are **6 of the 10** in `fable-and-improve-opus`
+(`node-fable-design`, `node-fable-goal-review`, `node-final-output`,
+`node-opus-implementation`, `node-opus-review`, `node-step9-commit-message`).
+Beyond the 88-file sweep, the direction is wrong: the natural way to clear
+such an error is to delete the `output` block, which leaves the node *looser*
+than before. Re-keying `requiresOutputContract` to `jsonSchema != nil` is now
+explicitly forbidden in the design and in T3's row and evidence box.
+
+The review's second half of F10 — that state 2 sits on a strict path the
+retry loop never retries — is also confirmed
+(`DeterministicWorkflowRunner.swift:976`, `guard case .validationRejected`)
+and closed by a decision rather than a note: the retry budget keys on
+`output != nil` (both strict states), and on the contract path the
+extraction/envelope failure is raised as `validationRejected` so the existing
+loop retries it. `.invalidOutput` is kept everywhere else. The migration-free
+consequence is stated in §4 and §10.
+
+**F11 — the one-transition scan misses forwarded payloads. Confirmed.**
+`addonForwardedApplicationPayload` (`WorkflowAddonSupport.swift:12-16`) strips
+only `_rielaInput`/`upstream`/`runtime` and its result is published at
+`ProductionNodeAdapter.swift:790`, `+WorkflowTaskAddon.swift:177` and
+`+PersonaMemory.swift:126`, so a field survives arbitrarily many addon hops.
+An addon node also structurally cannot satisfy a schema demand: `output` is on
+`AgentNodePayload` (`WorkflowModel.swift:765`) while `addon` is on
+`WorkflowNodeRegistryRef:336`/`WorkflowNodeRef:536`, and
+`validate(_:nodePayloads:)` (`:102-113`) iterates `nodePayloads` only.
+D2a rule 1 now defines a **producer walk**: backwards over transitions,
+terminating each path at an agent node (the required producer), passing
+through addon-node steps, bounded by a visited set for loop workflows, and
+raising nothing on a path that reaches no agent node. New §7 edge cases and a
+T2 test fixture (`agent -> riela/kv-set -> riela/git-commit`) pin it.
+
+A limit the review's remedy implied but the source forbids fixing the same
+way: **D3 cannot mirror the walk.** `WorkflowAddonExecutionInput`
+(`WorkflowAddonExecution.swift:341-349`) carries no workflow definition, so at
+render time the only producer available is `_rielaInput.latest.fromStepId`,
+which across a relay is the addon that delivered the payload, not the agent
+that authored it. Rather than widen that public `Codable` wire type — the same
+objection §11 already records for node `variables` — §5 now states the limit
+and changes the message to assert only what it knows: `step '<deliverer>'
+delivered this input without payload field '<field>'`. D2a's walk is named as
+the guarantee that the authoring node was made to declare the field.
+
+**F12 — "all addon families route through this one seam" is false. Confirmed.**
+`grep -rn 'renderJSONTemplates' Sources/ | grep -v WorkflowAddonSupport` → **16
+sites in 12 files across two further targets**: `RielaCLI`
+(`ContainerWorkflowAddonResolver.swift:128`,
+`+AppleGatewayAdminAddons.swift:320`, `+LocalGatewaySupport.swift:178`/`:260`/
+`:313`, `+GitAddons.swift:67`/`:82`, `+GitPush.swift:118`,
+`+AppleReminderAddons.swift:100`, `+GoogleDocumentsGatewayAddons.swift:295`,
+`+MemoryAddonCore.swift:26`, `+KeyValueStoreAddon.swift:15`) and
+`RielaKaibaAddons` (`KaibaRemoteGraphQLAddon.swift:58`,
+`KaibaNoteAddons.swift:366`, `KaibaInputValidation.swift:9`/`:14`). The claim
+is retracted in §6. The migration shape is now decided rather than left to
+care: the strict surface-aware throwing function becomes the **only public
+render entry point** and the lenient `renderJSONTemplates` is privatized to
+`RielaAddonSupport`, so every unconverted site is a compile error. T4's write
+scope enumerates all 16; its evidence box requires
+`grep -rn 'renderJSONTemplates' Sources/ | grep -v RielaAddonSupport` to
+return zero, and the verification plan carries the same grep as step 3c.
+
+F12's side-effect half is confirmed and refined: the render at
+`+AppleGatewayNotifications.swift:279` is inside `dismissOutput(input:envelope:)`,
+reached from `:87`, which runs only after `:72` has built the envelope from the
+gateway process output — i.e. after the mutation. §5's "before any side effect"
+is therefore no longer asserted as a property of the seam; it is stated as work
+T4 owns, with that call site named as the known hoist.
+
+**AC status after this revision.** AC1–AC7 PASS (AC2 was the review's PARTIAL
+and is closed by F10's three-state statement in §4; AC7 re-proved below).
+**AC8 remains FAIL and remains checkpoint-owned** — `git rev-parse
+--abbrev-ref @{u}` still reports no upstream and `git ls-remote --heads origin
+design/agent-node-output-contract` is still empty. This step is forbidden by
+the shared-branch protocol from `git add`/`commit`/`push`. The checkpoint must
+commit both documents and push the branch to `origin` with upstream tracking —
+plain push, never force, never `main`.
+
+**AC7 proof for this revision (working tree, uncommitted).**
+
+```
+$ git status --porcelain=v1
+ M design-docs/specs/design-agent-node-output-contract.md
+ M impl-plans/active/agent-node-output-contract.md
+$ git status --porcelain=v1 | grep -cE '(Sources|Tests)/'
+0
+$ git diff --name-only ca1ce34..HEAD | grep -cE '^(Sources|Tests)/'
+0
+```
+
+Two documentation paths, zero `Sources/` and zero `Tests/`. Unchecked-box
+count stays 6, matching `impl-plans/README.md:46`. Nothing was built or tested:
+a planning-only package has no code to compile.

@@ -1,13 +1,10 @@
 // swift-tools-version: 6.0
 
-import Foundation
 import PackageDescription
 
-let rielaVersionFileURL = URL(fileURLWithPath: #filePath)
-  .deletingLastPathComponent()
-  .appendingPathComponent("VERSION")
-let rielaVersion = try String(contentsOf: rielaVersionFileURL, encoding: .utf8)
-  .trimmingCharacters(in: .whitespacesAndNewlines)
+// Keep this value in sync with VERSION. It must be part of Package.swift because
+// SwiftPM's manifest cache does not track files read dynamically by the manifest.
+let rielaVersion = "0.1.39"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The

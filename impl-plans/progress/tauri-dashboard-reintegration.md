@@ -81,10 +81,17 @@ being mixed into this documentation-only integration:
 - `testSessionProgressReportsActiveStepDuringLiveSecondStep`
 - `testAutoImproveCancellationDoesNotCreateIncidentOrRerun`
 
-## Remaining finalization
+## Finalization evidence
 
-- Complete the merge commit with `feat/tauri-dashboard-app` as second parent.
-- Reconcile the integration branch with the current main tip, which advanced
+- Merge commit `3cf6b91` has `feat/tauri-dashboard-app` at `d2c69918` as its
+  second parent.
+- The current main tip `d2e6aa60` was merged afterward because main advanced
   after the accepted design recorded base `77616b5`.
-- Re-run the documentation-only tree audit and push only
+- `git diff --name-only main..HEAD` lists exactly 11 documentation/plan paths.
+  The accepted plan's ten-path audit list omitted its own dispatch manifest;
+  the actual additional path is
+  `impl-plans/active/tauri-dashboard-reintegration-20260921-dispatch.json`.
+  No `Sources/`, `Tests/`, `web/`, `scripts/`, `.github/`, Cargo, or
+  `src-tauri` path differs from current main.
+- The remaining publication action is a non-force push of only
   `integrate/tauri-dashboard-app`.

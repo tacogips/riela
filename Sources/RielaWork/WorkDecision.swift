@@ -60,6 +60,7 @@ public enum DecisionProducer: Codable, Equatable, Sendable {
 public enum WaitReason: Codable, Equatable, Sendable {
   case capacity
   case dependency
+  case human
   case clarification(question: String)
   case until(Date)
 
@@ -72,6 +73,7 @@ public enum WaitReason: Codable, Equatable, Sendable {
   private enum Kind: String, Codable {
     case capacity
     case dependency
+    case human
     case clarification
     case until
   }
@@ -83,6 +85,8 @@ public enum WaitReason: Codable, Equatable, Sendable {
       self = .capacity
     case .dependency:
       self = .dependency
+    case .human:
+      self = .human
     case .clarification:
       self = .clarification(question: try container.decode(String.self, forKey: .question))
     case .until:
@@ -97,6 +101,8 @@ public enum WaitReason: Codable, Equatable, Sendable {
       try container.encode(Kind.capacity, forKey: .kind)
     case .dependency:
       try container.encode(Kind.dependency, forKey: .kind)
+    case .human:
+      try container.encode(Kind.human, forKey: .kind)
     case let .clarification(question):
       try container.encode(Kind.clarification, forKey: .kind)
       try container.encode(question, forKey: .question)

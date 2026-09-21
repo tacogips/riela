@@ -43,6 +43,7 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
+| `active/work-runtime-p1-dispatcher-guard-director` | 8 | Implementing after a live Riela design/review pass; guard, deterministic director, and shared decision-applier domain layer started | Work Runtime P1 |
 | `active/rielaapp-web-server-http-transport` | 117 | Active in the separately owned Tauri integration worktree; not modified here | external ownership |
 | `active/rielaapp-web-server-lifecycle-packaging` | 45 | Active in the separately owned Tauri app worktree; not modified here | external ownership |
 | `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); installed gateway live QA now reaches the provider but is blocked by Clock UI automation/permission (`UNEXPECTED_ERROR`, System Events `-600`). No permission prompt or real-alarm mutation was initiated without explicit authorization | W4 |

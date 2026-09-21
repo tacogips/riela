@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands); P1 onward not started. P0 plan: `impl-plans/completed/work-runtime-p0-model-and-store.md`.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 implementation started 2026-09-21** under `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; P2 onward remains deferred until its dependency phase is complete.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -813,3 +813,55 @@ moves from the CLI run command into the dispatcher, and neither needs a new
 core dependency. A reverse import would also make `RielaCore` depend on the
 task store schema, which would force every schema generation bump to rebuild
 the core test target.
+
+## 17. P1 implementation clarification
+
+Accepted 2026-09-21 after running the Riela
+`design-and-implement-review-loop-feature-plan` workflow against the current
+tree. This section fixes the executable boundary of P1 without changing the
+domain model or moving work from P2-P7 into P1.
+
+- **Reservation is the commit point.** `WorkStore.reserveAttempt` performs one
+  `BEGIN IMMEDIATE` transaction which reloads the task, checks its expected
+  version and dispatch eligibility, rejects any live attempt, inserts the
+  prepared attempt and its `.created` workflow snapshot, records the `start`,
+  `resume`, `rerun`, or `recover` decision, and advances the task to `running`.
+  It returns an opaque launch token stored only as a digest. A launcher must
+  exchange that token through `authorizeAttemptLaunch` before entering the
+  workflow runner. A process that dies before authorization may be fenced and
+  explicitly re-reserved; a process that dies after authorization is
+  uncertain and is never silently relaunched.
+- **The dispatcher owns orchestration, not execution.** `TaskDispatcher`
+  resolves dependencies and host placement, reserves through `WorkStore`, and
+  then calls the existing workflow run path. `RielaCore` remains unaware of
+  `RielaWork`. Terminal snapshots flow back through the existing persistence
+  and projection seams.
+- **Guard input is a snapshot.** The unified guard consumes attempt count,
+  accumulated cost, elapsed wall time, latest heartbeat age, gate-visit
+  counts, and repeated-finding rounds. It emits zero or more typed
+  `GuardViolation` values. Every emitted violation is persisted as evidence
+  before a director may choose `stop`, `rerun`, or escalation.
+- **The policy director is total and ordered.** Budget exhaustion wins over
+  convergence, which wins over inactivity, which wins over recoverable
+  terminal failure, which wins over completion. If no rule applies it emits
+  `wait(.human)` rather than guessing. This ordering makes one input snapshot
+  produce one stable decision.
+- **Human decisions share the same applier.** `riela task decide` creates a
+  human-produced `Decision`; it does not mutate task or attempt rows directly.
+  `DecisionApplier` validates and applies policy and human decisions with the
+  same optimistic task-version check. `accept` must pass
+  `CompletionEvaluator`; `rerun` and `recover` create a reservation request;
+  `cancel`, `reject`, and `stop` reconcile any live attempt before changing
+  the task terminal state.
+- **Placement fails before reservation.** Backend capability declarations and
+  probes merge into one host snapshot. A declared disable wins; an enabled but
+  unprobed backend is usable and marked unverified; otherwise observed probe
+  state wins. A pin never falls back. A policy chooses the first preferred,
+  then allowed, available backend in authored order. No matching host records
+  a capacity wait decision and consumes no attempt budget.
+- **CLI migration is one cut.** `task run` and `task decide` become available
+  only after the dispatcher path is usable. In that same change the
+  auto-improve flags and implementation are removed from `workflow run`; plain
+  workflow runs remain task-free as decided in section 16. Host-aware
+  validation and usage output ship with the placement types, before dispatch
+  depends on them.

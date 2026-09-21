@@ -75,13 +75,11 @@ if ! git ls-remote --exit-code --tags origin "refs/tags/$release_tag" >/dev/null
   exit 1
 fi
 
-scripts/build-homebrew-cask-release.sh darwin-arm64 darwin-x64
+scripts/build-homebrew-cask-release.sh darwin-arm64
 
 release_dir="${RIELA_CASK_RELEASE_DIR:-$repo_root/dist/homebrew-cask}"
 arm_dmg="$release_dir/riela-$version-darwin-arm64.dmg"
-x64_dmg="$release_dir/riela-$version-darwin-x64.dmg"
 test -f "$arm_dmg"
-test -f "$x64_dmg"
 
 release_notes="Signed, notarized, and stapled macOS DMG archives for the Homebrew Cask release. Each DMG contains RielaApp.app and the riela CLI."
 if ! gh release view "$release_tag" --repo tacogips/riela >/dev/null 2>&1; then
@@ -91,7 +89,7 @@ if ! gh release view "$release_tag" --repo tacogips/riela >/dev/null 2>&1; then
     --notes "$release_notes"
 fi
 
-gh release upload "$release_tag" "$arm_dmg" "$x64_dmg" --repo tacogips/riela --clobber
+gh release upload "$release_tag" "$arm_dmg" --repo tacogips/riela --clobber
 
 scripts/render-homebrew-cask.sh "$version" "$tap_cask_file"
 

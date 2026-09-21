@@ -317,7 +317,12 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   let first = GatewayStubExecutor(resultText: "first", vendorSessionId: "backend-session-1")
   _ = try await AgentGatewayNodeAdapter(executorFactory: first.factory, sessionStore: store).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "producer", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(
+        id: "producer",
+        executionBackend: .codexAgent,
+        model: "gpt-5",
+        agentSandbox: .workspaceWrite
+      ),
       promptText: "first",
       executionIdentity: AdapterExecutionIdentity(
         workflowRunId: "run-1",
@@ -333,7 +338,12 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   let second = GatewayStubExecutor(resultText: "second")
   _ = try await AgentGatewayNodeAdapter(executorFactory: second.factory, sessionStore: store).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "consumer", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(
+        id: "consumer",
+        executionBackend: .codexAgent,
+        model: "gpt-5",
+        agentSandbox: .workspaceWrite
+      ),
       promptText: "second",
       sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "producer"),
       executionIdentity: AdapterExecutionIdentity(
@@ -346,6 +356,8 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   )
   #expect(second.params()?.sessionId == "backend-session-1")
   #expect(second.params()?.sessionMode == .reuse)
+  #expect(second.params()?.arguments.contains("--sandbox") == true)
+  #expect(second.params()?.arguments.contains("workspace-write") == true)
 
   let isolatedKey = AgentGatewaySessionKey(
     workflowRunId: "run-1",

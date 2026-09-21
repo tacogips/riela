@@ -307,6 +307,146 @@ Boundaries:
   `codex-agent`, `cursor-cli-agent`, and `claude-code-agent`; the loader only
   rewrites data and applies validated node patches
 
+#### Swift inheritance resolution: issue #94
+
+Work package: `issue-resolution`,
+[tacogips/riela#94](https://github.com/tacogips/riela/issues/94).
+Authority: Step 1 `comm-001782`,
+`codex-design-and-implement-review-loop-session-142`. This bounded repair
+supersedes the interrupted session-137 issue-94 design and five-plan scope.
+It specifies intended Swift behavior, not completed implementation. The local
+reference is `/Users/taco/gits/tacogips/riela`; no codex-agent references were
+supplied. Historical TypeScript completion is not Swift verification evidence.
+
+**Boundary and flow.** Repair `WorkflowRegistryBundleLoader.loadBundle` in
+`Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift`, which now
+calls complete authored validation before recognizing sparse declarations.
+Use the existing `FileSystemWorkflowBundleResolver` in
+`Sources/RielaCLI/WorkflowResolution.swift` for installed user-scope lookup;
+pass only the base-resolution capability and active ancestry needed by the
+shared loader. Do not introduce a new catalog/context/provenance architecture.
+Core declaration parsing must not depend on CLI or filesystem discovery.
+
+Recognize and validate the sparse declaration first; resolve and recursively
+load the installed base; hydrate and validate its resources; transform the
+materialized bundle; validate the complete derived definition and payloads;
+return the existing `ResolvedWorkflowBundle`. Validate, inspect, and ordinary
+run consume this same loader result through their existing resolver paths in
+`Sources/RielaCLI/WorkflowValidateInspectCommands.swift` and
+`Sources/RielaCLI/WorkflowRunCommand.swift`. Without `extends`, retain the
+ordinary load and validation path in `Sources/RielaCore/WorkflowRawValidation.swift`.
+Never fake missing ordinary fields merely to decode a derived declaration.
+
+For the required user-scope path, resolve `extends.workflowId` against the
+existing eligible user workflow/package sources, keeping existing selection,
+activation, containment, package validation, and coordinated-read rules.
+Reuse installed-workflow lookup; if ID discovery needs headers, use the existing
+metadata-only inventory in `Sources/RielaWorkflowRegistry/WorkflowRegistryCatalog.swift`
+rather than recursively validating the catalog. Do not add project fallback or
+new ambiguity rules. A selected invalid base fails with its original diagnostic.
+Keep derived ID, source directory, scope, and package identity on the returned
+bundle. Hydrate base prompts once and preserve inherited physical resource
+paths, including command/container paths; never reload synthesized filenames
+from the sparse derived directory. Both source bundles remain unchanged.
+
+**Declaration and transformations.** A derived declaration contains only a
+safe `workflowId`, optional non-empty `description`, and object `extends`.
+`extends` contains a safe base `workflowId` plus optional `stringReplacements`,
+`agentNodePatch`, and `nodePatch`. Reject null/malformed declarations, unknown
+inheritance fields, unsupported top-level overlays, empty replacement sources,
+non-string replacement values, and invalid patch shapes with field diagnostics.
+Use the existing patch field/value rules in
+`Sources/RielaCore/WorkflowInstanceModel.swift` and
+`Sources/RielaCore/WorkflowInstanceResolver.swift`; retain model-freeze and
+unknown-node checks. Do not expand patch capabilities or deep-merge semantics.
+
+At each inheritance level, apply these operations in order:
+
+1. Apply literal global `stringReplacements` to materialized authored string
+   values, including hydrated prompt text and workflow targets, not JSON field
+   names or physical resource paths. Sort sources by descending UTF-8 byte
+   length, then ascending UTF-8 bytes; each replacement sees the previous result.
+   This preserves specific mappings such as `codexAgentReferences` before
+   generic `codex`. Keep node payload keys aligned with transformed node IDs;
+   reject collisions. Restore the authored derived ID and optional description.
+2. Expand `agentNodePatch` over inherited file-backed agent nodes only; exclude
+   shared `nodeRef`, add-on, command, and container nodes. Retain the minimal
+   original-node information needed for that distinction across inheritance.
+3. Merge explicit `extends.nodePatch` by transformed node ID and patch field
+   over that convenience map, then apply the effective patch through the
+   existing patch machinery. Omitted fields preserve inherited values.
+4. Validate the complete derived graph and payloads before returning. Caller
+   instance patches then caller run patches apply once, after inheritance,
+   through existing consumer ordering, with effective-bundle validation. They
+   do not propagate into base loading or cross-workflow callees.
+
+Track active inheritance ancestry using canonical source paths and workflow
+IDs. Reject direct or indirect cycles before recursive loading or lock reentry;
+report the chain, for example `A -> B -> A`. Pop completed ancestors so an
+independent load may reuse a base. Malformed declarations identify the offending
+`workflow.extends` field instead of missing `nodes`/`defaults`; missing-base
+errors identify the derived/base IDs, searched user roots, and installation or
+scope guidance. Invalid-base errors retain base file/field context.
+
+**Focused acceptance and rollout.** Use one core transformation/precedence
+suite and one installed-derived CLI suite, plus focused malformed, missing-base,
+and direct/indirect-cycle cases and an ordinary-workflow control. Suggested
+new suites are `Tests/RielaCoreTests/WorkflowInheritanceValidationTests.swift`
+and `Tests/RielaCLITests/WorkflowInheritanceResolutionTests.swift`. The CLI
+fixture uses isolated user-scope installed base/derived packages, validates,
+inspects inherited steps/effective payloads, and runs a deterministic mock
+scenario to terminal success with asserted output. Include inherited prompt
+loading, explicit patch precedence, and unchanged source bytes in those tests.
+
+Then verify the currently installed derived package with the newly built
+executable. Header inspection found sparse Claude and Cursor review-loop
+packages under `/Users/taco/.riela/packages/`, both extending the installed
+`codex-design-and-implement-review-loop`; Cursor includes an explicit
+`step6-implement` patch. Installed Hydra variants are
+`cursor-cli-hydra-claude-design-and-implement-review-loop` and
+`cursor-cli-hydra-codex-design-and-implement-review-loop`, also extending that
+base. Header availability is not runtime success. Use deterministic
+execution; do not execute real implementation/commit/push nodes during smoke.
+Cross-workflow machinery changes require a focused failing installed-workflow
+test proving necessity; simulated mock dispatch alone cannot verify a changed
+live callee path. If needed, add only that regression and the minimum repair.
+
+Planned gates (not executed by this documentation step):
+
+```sh
+swift build
+swift test --filter 'WorkflowInheritanceValidationTests|WorkflowInheritanceResolutionTests'
+swift test --filter 'RielaCoreTests|RielaCLITests'
+/usr/bin/xcrun swiftlint --quiet --no-cache
+.build/debug/riela workflow validate claude-code-design-and-implement-review-loop --scope user --output json
+.build/debug/riela workflow inspect claude-code-design-and-implement-review-loop --scope user --output json
+git diff --check
+```
+
+The plan author must record the exact deterministic run command, scenario path,
+terminal/output assertions, and built executable path. All verification runs
+in the foreground; retain full logs and final exit statuses under root `tmp/`.
+Missing dependencies or unfinished commands are verification gaps, not passes.
+
+**Scope and handoff.** Create one compact replacement implementation plan;
+its path is the plan author's choice. Preserve the five existing
+`impl-plans/active/issue-94-inheritance-{declaration,registry,cli,regression,finalization}.md`
+drafts as superseded history, not implementation assignments; the replacement
+plan must explicitly identify them and avoid dispatching their broad scope.
+Defer exhaustive scope matrices, detached/mutable registry inheritance,
+`--from-registry` inheritance, generalized callee redesign, ambiguity expansion,
+and provenance abstractions unless a focused blocker regression proves necessity.
+Independent design, implementation, and adversarial reviews, verification,
+commit, and push remain downstream gates. Do not perform the `0.1.39` release.
+
+No user decisions remain unresolved. Test-fixture/scenario selection and whether
+an installed callee requires a change are implementation evidence tasks, not
+permission gates. Cursor and Claude variants use the same transformation path;
+backend execution remains in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`
+and existing gateway adapters. No Cursor-specific loader behavior or intentional
+codex-agent divergence is introduced. This documentation-only edit changes no
+workflow, prompt, script, skill, or package asset; digest refresh is inapplicable.
+
 ### `defaults.selfImprove`
 
 `defaults.selfImprove` configures the dedicated retrospective self-improve

@@ -84,7 +84,9 @@ public struct WorkflowRegistryBundleLoader: Sendable {
     provenance: WorkflowProvenance = .immutable,
     expectedWorkflowId: String? = nil,
     sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated,
-    sharedNodeActivationRootDirectory: URL? = nil
+    sharedNodeActivationRootDirectory: URL? = nil,
+    inheritanceAncestry: [String] = [],
+    inheritanceBaseResolver: WorkflowInheritanceBaseResolver? = nil
   ) throws -> ResolvedWorkflowBundle {
     let workflowURL = try containedFile(
       directory.appendingPathComponent("workflow.json"),
@@ -92,7 +94,37 @@ public struct WorkflowRegistryBundleLoader: Sendable {
       scope: scope,
       label: "workflow.json"
     )
-    let validation = validateAuthoredWorkflowData(try Data(contentsOf: workflowURL))
+    let workflowData = try Data(contentsOf: workflowURL)
+    do {
+      if let declaration = try WorkflowInheritanceDeclaration.parse(data: workflowData) {
+        guard let inheritanceBaseResolver else {
+          throw WorkflowInheritanceError.missingBase(
+            derivedWorkflowId: declaration.derivedWorkflowId,
+            baseWorkflowId: declaration.baseWorkflowId,
+            searchedRoots: [rootDirectory.path]
+          )
+        }
+        return try loadInheritedBundle(
+          declaration: declaration,
+          directory: directory,
+          scope: scope,
+          providedPackageManifest: providedPackageManifest,
+          packageDirectory: packageDirectory,
+          provenance: provenance,
+          expectedWorkflowId: expectedWorkflowId,
+          ancestry: inheritanceAncestry,
+          baseResolver: inheritanceBaseResolver
+        )
+      }
+    } catch let error as WorkflowInheritanceError {
+      switch error {
+      case let .invalidDeclaration(diagnostics), let .transformation(diagnostics):
+        throw WorkflowResolutionError.invalidWorkflow(diagnostics)
+      default:
+        throw error
+      }
+    }
+    let validation = validateAuthoredWorkflowData(workflowData)
     guard var workflow = validation.workflow else {
       throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
     }

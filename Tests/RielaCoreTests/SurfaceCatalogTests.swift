@@ -48,18 +48,43 @@ final class SurfaceCatalogTests: XCTestCase {
     )
   }
 
-  /// Delta D6: the Work Runtime commands are cataloged before they exist, and
-  /// they must stay `blocked` on the P0 plan until that plan ships.
-  func testWorkRuntimeOperationsAreBlockedOnTheP0Plan() {
+  /// Delta D6, after P0: the Work Runtime read commands are implemented on
+  /// the CLI and nothing else is. Every other face stays `blocked` on the
+  /// phase that owns it, with evidence naming it — never loosened to
+  /// `excluded`, and never left claiming a binding it does not have.
+  func testOnlyTheWorkRuntimeReadCommandsAreImplementedAfterP0() {
     let rows = SurfaceCatalog.operations(inFamily: "task") + SurfaceCatalog.operations(inFamily: "intent")
-    XCTAssertFalse(rows.isEmpty)
+    XCTAssertEqual(
+      Set(rows.map(\.id)),
+      ["task.submit", "task.list", "task.show", "task.serve", "intent.create", "intent.list", "intent.show"]
+    )
+
+    let readCommands = ["task.show": "task show", "task.list": "task list"]
     for row in rows {
-      guard case let .blocked(evidence)? = row.availability(on: .cli) else {
-        return XCTFail("\(row.id) must declare the CLI surface blocked")
+      if let command = readCommands[row.id] {
+        XCTAssertEqual(row.availability(on: .cli), .implemented, "\(row.id) ships in P0")
+        XCTAssertEqual(row.cli?.command, command)
+        XCTAssertFalse(row.cli?.options.isEmpty ?? true, "\(row.id) must document its flags")
+      } else {
+        guard case let .blocked(evidence)? = row.availability(on: .cli) else {
+          return XCTFail("\(row.id) must declare the CLI surface blocked")
+        }
+        XCTAssertTrue(
+          evidence.contains("work-runtime P1"),
+          "\(row.id) must cite the phase that builds it, got '\(evidence)'"
+        )
+        XCTAssertNil(row.cli, "\(row.id) must not claim a CLI binding")
       }
-      XCTAssertTrue(evidence.contains("work-runtime-p0-model-and-store.md"), "\(row.id) must cite the P0 plan")
-      XCTAssertNil(row.cli, "\(row.id) must not claim a CLI binding")
+
+      // No Work Runtime operation has a GraphQL or library face yet.
+      for surface in [SurfaceName.graphql, .library] {
+        guard case let .blocked(evidence)? = row.availability(on: surface) else {
+          return XCTFail("\(row.id) must declare \(surface.rawValue) blocked")
+        }
+        XCTAssertTrue(evidence.contains("work-runtime P5"), "\(row.id) must cite P5 for \(surface.rawValue)")
+      }
       XCTAssertNil(row.graphql, "\(row.id) must not claim a GraphQL binding")
+      XCTAssertNil(row.library, "\(row.id) must not claim a library binding")
     }
   }
 

@@ -1,0 +1,82 @@
+{
+  "taskId": "git-commit-rename-guard-20260921",
+  "workflowMode": "single-work-package",
+  "implementationBranch": "fix/git-commit-rename-guard",
+  "baseBranch": "fix/git-commit-rename-guard",
+  "remote": "origin",
+  "originalHead": "ca1ce34235e5d2d358ea32a45e7d435d272763b4",
+  "worktreeRoot": "/Users/taco/gits/tacogips/riela-worktrees/git-commit-rename-guard",
+  "evidenceRoot": "tmp/git-commit-rename-guard-20260921",
+  "hasFeatureFanout": false,
+  "designDocPaths": [
+    "design-docs/specs/design-git-commit-rename-guard.md"
+  ],
+  "plans": [
+    {
+      "planId": "git-commit-rename-guard-plan-1",
+      "planPath": "design-docs/specs/impl-plan-git-commit-rename-guard.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift",
+        "Tests/RielaCLITests/GitWorkflowAddonContractTests.swift",
+        "Tests/RielaCLITests/GitWorkflowAddonTests.swift"
+      ],
+      "sharedPaths": [],
+      "progressPath": "impl-plans/progress/git-commit-rename-guard-20260921-git-commit-rename-guard-plan-1.json",
+      "evidenceDir": "tmp/git-commit-rename-guard-20260921/git-commit-rename-guard-plan-1",
+      "acceptanceCriteria": [
+        "AC1: testCommitSupportsStagedRenameAcrossOldAndNewPaths commits a `git mv` pair end to end — one new commit whose tree drops the old path and carries the new one (rev-parse HEAD^ == pre-rename HEAD, ls-tree --name-only HEAD == 'renamed.txt', show HEAD:renamed.txt == 'initial'; never assert on show --name-status, which may render R100).",
+        "AC2: testCommitRejectsMissingPathAbsentFromIndexAndHead keeps refusing a path tracked in neither working tree, index nor HEAD with the unchanged 'riela/git-commit missing path is not an exact tracked deletion' policy error (.policyBlocked), HEAD and index unchanged, no finalization journals.",
+        "AC3: Non-regression — existing testCommitSupportsExactTrackedDeletion (plain tracked deletion) stays green, and testCommitRejectsMissingPathOnUnbornHeadWithoutCrashing refuses on an unborn HEAD without crashing (rev-list --all --count == 0, no journals).",
+        "AC4: `arch -arm64 /bin/zsh -lc 'swift test --filter GitWorkflowAddonContractTests'` is green, and the full `arch -arm64 /bin/zsh -lc 'swift build && swift test'` reports no failure beyond the ten accepted environmental ones (6 AppKit view-hierarchy: RielaAppUXOnboardingControllerTests, RielaAppSettingsEditorNavigationTests, RielaAppWindowContentInsetTests; 3 unix-socket-unlink: WorkflowRound7AdversarialTests; WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario).",
+        "AC5: SwiftLint clean on the three changed sources.",
+        "AC6: All work committed on fix/git-commit-rename-guard and pushed to that branch only; main untouched; no force push, reset or branch deletion."
+      ],
+      "verification": {
+        "shellPrefix": "arch -arm64 /bin/zsh -lc",
+        "iterate": [
+          "arch -arm64 /bin/zsh -lc 'swift test --filter GitWorkflowAddonContractTests'"
+        ],
+        "lint": [
+          "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift Tests/RielaCLITests/GitWorkflowAddonContractTests.swift Tests/RielaCLITests/GitWorkflowAddonTests.swift'"
+        ],
+        "acceptanceGate": [
+          "arch -arm64 /bin/zsh -lc 'swift build && swift test' > tmp/git-commit-rename-guard-20260921/git-commit-rename-guard-plan-1/attempt-1/full-test.log 2>&1; echo \"exit=$?\" | tee -a tmp/git-commit-rename-guard-20260921/git-commit-rename-guard-plan-1/attempt-1/full-test.log"
+        ],
+        "fullLogPath": "tmp/git-commit-rename-guard-20260921/git-commit-rename-guard-plan-1/attempt-1/full-test.log",
+        "baselineFailures": [
+          "RielaAppUXOnboardingControllerTests (AppKit view hierarchy, headless)",
+          "RielaAppSettingsEditorNavigationTests (AppKit view hierarchy, headless)",
+          "RielaAppWindowContentInsetTests (AppKit view hierarchy, headless)",
+          "WorkflowRound7AdversarialTests (3 unix-socket-unlink cases)",
+          "WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario"
+        ],
+        "rules": [
+          "Every Swift command must run through an arm64 login shell; the default shell is Rosetta and the xctest bundle refuses to dlopen there.",
+          "Never tail the full-suite output: keep the complete log and record its final exit status. An incomplete log is not a passing check.",
+          "Run all verification in the foreground; no background, detached or daemonized commands.",
+          "Diff the observed failure set against baselineFailures and list every difference explicitly; any other failure is in scope to fix.",
+          "Confirm `git status` clean and that only fix/git-commit-rename-guard was pushed."
+        ]
+      },
+      "notes": [
+        "T1 guard fix is confined to the .missing branch of validateCommitPaths (GitRepository.swift:301-312 at ca1ce34): after `ls-files --error-unmatch` exits nonzero, probe `runRepositoryGitResult([\"cat-file\", \"-e\", \"HEAD:\\(path)\"], repository:)` and accept on exit 0; otherwise throw the unchanged policy error.",
+        "T2 is a test-only fixture change: GitTestRepository.init gains `commitInitialFile: Bool = true`; when false it still inits and `git add`s tracked.txt (the index file must exist for loadGitRepository's preflight) but skips the initial commit. Never combine commitInitialFile: false with withBareRemote.",
+        "No back-compat shim: change the check in place, no alias flag, no opt-out configuration, no message change.",
+        "Do not weaken any other validation, widen allowlist semantics, or touch the finalization journal. A HEAD-tracked directory path passes the probe but is refused downstream by requireExactStagedPaths — do not 'fix' that by weakening requireExactStagedPaths.",
+        "Documented fallback if `cat-file -e HEAD:<path>` hits an unforeseen literal-path edge: non-empty `ls-tree -z HEAD -- <path>` check.",
+        "Work only inside /Users/taco/gits/tacogips/riela-worktrees/git-commit-rename-guard; never modify the main checkout or another worktree."
+      ]
+    }
+  ],
+  "reconciliation": {
+    "serialPhase": "Not required: a single plan with exclusive ownership of three files, no shared indexes, lockfiles or broad formatting.",
+    "sharedFiles": []
+  },
+  "preservedWorkingState": {
+    "trackedModifications": [],
+    "stagedEntries": [],
+    "untrackedOutsideCheckpoint": [],
+    "note": "At checkpoint time the worktree contained only the two accepted artifacts as untracked files and no staged entries; nothing unrelated is incorporated into this checkpoint."
+  }
+}

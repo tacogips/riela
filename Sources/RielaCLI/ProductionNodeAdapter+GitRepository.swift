@@ -306,8 +306,17 @@ extension BuiltinWorkflowAddonResolver {
           ["ls-files", "--error-unmatch", "--", path],
           repository: repository
         )
-        guard tracked.exitCode == 0 else {
-          throw policyError("riela/git-commit missing path is not an exact tracked deletion")
+        if tracked.exitCode != 0 {
+          // A staged rename removes the old path from the index while HEAD still tracks it,
+          // so accept a missing path that HEAD carries. An unborn HEAD does not resolve and
+          // exits nonzero, which keeps the refusal below.
+          let committed = try runRepositoryGitResult(
+            ["cat-file", "-e", "HEAD:\(path)"],
+            repository: repository
+          )
+          guard committed.exitCode == 0 else {
+            throw policyError("riela/git-commit missing path is not an exact tracked deletion")
+          }
         }
       }
     }
@@ -336,8 +345,10 @@ extension BuiltinWorkflowAddonResolver {
     if let indexURL {
       gitEnvironment["GIT_INDEX_FILE"] = indexURL.path
     }
+    // --no-renames keeps the staged set literal: rename detection would collapse a `git mv`
+    // pair into the destination path alone and hide the allowlisted deletion of the old path.
     return try nulSeparatedPaths(runRepositoryGit(
-      ["diff", "--cached", "--name-only", "-z", "--"],
+      ["diff", "--cached", "--name-only", "--no-renames", "-z", "--"],
       repository: repository,
       environment: gitEnvironment
     ).output)

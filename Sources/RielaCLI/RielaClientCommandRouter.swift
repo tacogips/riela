@@ -19,6 +19,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       SpecialistRoute.self,
       SessionRoute.self,
       LoopRoute.self,
+      TaskRoute.self,
       GraphQLRoute.self,
       GQLRoute.self,
       HookRoute.self,
@@ -98,6 +99,11 @@ struct SessionRoute: RielaClientPassthroughRoute {
 
 struct LoopRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("loop", abstract: "Inspect and control workflow loops.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct TaskRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("task", abstract: "Inspect Work Runtime tasks.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

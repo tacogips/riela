@@ -1,0 +1,179 @@
+# Implementation plan: git-commit rename guard
+
+planId: git-commit-rename-guard-plan-1
+planPath: design-docs/specs/impl-plan-git-commit-rename-guard.md
+dependsOn: [] (single plan, single work package, has_feature_fanout=false)
+design: design-docs/specs/design-git-commit-rename-guard.md
+
+writePaths:
+- Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift (validateCommitPaths + stagedPaths --no-renames only)
+- Tests/RielaCLITests/GitWorkflowAddonContractTests.swift (new tests)
+- Tests/RielaCLITests/GitWorkflowAddonTests.swift (GitTestRepository init parameter only)
+- design-docs/specs/design-git-commit-rename-guard.md and this file (doc revisions)
+
+sharedPaths: none (no lockfiles, no generated indexes; no other plan exists)
+
+## Resumed-run state (fable-and-improve-opus-session-2, 2026-09-21)
+
+The prior attempt was killed by host OOM after implementing T1–T3; its output
+sits UNCOMMITTED on disk in the three code/test files above and was audited
+line-by-line against this plan on resume: correct and complete — KEEP IT, do
+not re-implement or revert. Two facts discovered by that implementation are now
+part of the accepted design:
+
+- T1 additionally requires `--no-renames` in `stagedPaths` (see the design's
+  "Companion change" section): default rename detection collapses the staged
+  `git mv` pair in `diff --cached --name-only` and would make
+  `requireExactStagedPaths` refuse the pair the guard now accepts. Both callers
+  (GitCommit.swift:67 and :84) want the literal set. DONE on disk.
+- T2's fixture guards `withBareRemote` + unborn HEAD with a precondition. DONE
+  on disk, as are all three T3 tests (class
+  `GitWorkflowAddonContractTestsRenameGuard`).
+
+Remaining on resume at dispatch time: T4 (lint + contract filter), T5 (full
+suite vs the 10-failure baseline), T6 (commit + push). All three are now DONE —
+see "Progress log" below. The audited T1–T3 diff was kept byte-for-byte; no
+defect was found by verification, so nothing was re-implemented or reverted.
+
+## Applicable prior knowledge
+
+Knowledge-base recall for "git-commit addon rename guard" returned 0 results.
+Session-verified facts to apply anyway:
+- Run every Swift command through an arm64 login shell:
+  `arch -arm64 /bin/zsh -lc '...'` (Rosetta shells cannot dlopen the xctest bundle).
+- Never tail full-suite test output; keep complete logs and diff the failure
+  set against the 10 accepted environmental failures.
+
+## Ordered tasks
+
+T1. Guard fix — Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift,
+    `.missing` branch of validateCommitPaths (lines 301-312 at HEAD ca1ce34):
+    after `ls-files --error-unmatch` exits nonzero, probe
+    `runRepositoryGitResult(["cat-file", "-e", "HEAD:\(path)"], repository:)`;
+    accept on exit 0, otherwise throw the UNCHANGED policy error
+    "riela/git-commit missing path is not an exact tracked deletion".
+    Do not touch any other validation, message, or the finalization journal.
+    ALSO (same file, discovered during implementation, accepted into the
+    design): add `--no-renames` to the `stagedPaths` `diff --cached` argument
+    list so the staged set stays literal ({old:D, new:A}) for both the
+    pre-staged allowlist check and requireExactStagedPaths. [DONE on disk]
+
+T2. Fixture extension — Tests/RielaCLITests/GitWorkflowAddonTests.swift:
+    add `commitInitialFile: Bool = true` to GitTestRepository.init. When false:
+    still `git init -b main`, config user, write tracked.txt and
+    `git add -- tracked.txt`, but skip the initial commit (index file must
+    exist or loadGitRepository's regularPathEntryIdentity preflight fails;
+    HEAD stays unborn). All existing call sites compile unchanged
+    (default parameter). Keep `withBareRemote` behaviour guarded so it is not
+    combined with an unborn HEAD (no push of a nonexistent branch); the new
+    tests never pass both.
+
+T3. Tests — Tests/RielaCLITests/GitWorkflowAddonContractTests.swift, following
+    existing helper patterns (makeGitCommitInput, gitPayload,
+    XCTAssertGitCommitEvidence, XCTAssertThrowsErrorAsync):
+    a. testCommitSupportsStagedRenameAcrossOldAndNewPaths — commit fixture,
+       `repository.git(["mv", "tracked.txt", "renamed.txt"])`, execute with
+       files ["tracked.txt", "renamed.txt"], assert committed status +
+       evidence, `rev-parse HEAD^` == pre-rename HEAD,
+       `ls-tree --name-only HEAD` == "renamed.txt",
+       `show HEAD:renamed.txt` == "initial". (Do not assert on
+       `show --name-status`; git may render R100 rename detection.)
+    b. testCommitRejectsMissingPathAbsentFromIndexAndHead — files
+       ["ghost.txt"], assert .policyBlocked, HEAD unchanged, indexData()
+       unchanged, finalizationArtifacts("journals") == [].
+    c. testCommitRejectsMissingPathOnUnbornHeadWithoutCrashing —
+       GitTestRepository(commitInitialFile: false), files ["ghost.txt"],
+       assert .policyBlocked, `rev-list --all --count` == "0", no journals.
+
+T4. Lint + targeted tests (iterate):
+    `arch -arm64 /bin/zsh -lc 'swift test --filter GitWorkflowAddonContractTests'`
+    and `arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift Tests/RielaCLITests/GitWorkflowAddonContractTests.swift Tests/RielaCLITests/GitWorkflowAddonTests.swift'`
+    (drop --strict only if the repo's lint baseline is not strict-clean for
+    untouched rules; changed sources must be warning-free).
+
+T5. Full verification from the worktree root, complete log kept:
+    `arch -arm64 /bin/zsh -lc 'swift build && swift test' > /tmp/git-commit-rename-guard-full-test.log 2>&1`
+    then diff the failure set against exactly the 10 accepted environmental
+    failures (6 AppKit view-hierarchy: RielaAppUXOnboardingControllerTests,
+    RielaAppSettingsEditorNavigationTests, RielaAppWindowContentInsetTests;
+    3 unix-socket-unlink: WorkflowRound7AdversarialTests;
+    WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario).
+    List any difference explicitly; any other failure is in scope to fix.
+
+T2/T3 status on resume: DONE on disk (audited); do not re-implement.
+
+T6. Commit everything (source, tests, this plan, the design doc) on
+    fix/git-commit-rename-guard and push ONLY that branch. Never touch main,
+    no force push. End the commit message with
+    "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>".
+
+## Dependencies
+
+T1 independent. T3a/T3b depend on T1. T3c depends on T1+T2. T4 after T1-T3.
+T5 after T4. T6 last. Parallelizable: T1 and T2 (disjoint files); everything
+else serial. Single implementer, no worktrees, no parallel git.
+
+## Acceptance criteria (traceable)
+
+- AC1 rename end-to-end committed → T3a.
+- AC2 nowhere-tracked path still refused with the same policy error → T1+T3b.
+- AC3 plain tracked deletion + unborn HEAD non-regression →
+  existing testCommitSupportsExactTrackedDeletion stays green + T3c.
+- AC4 contract filter green; full suite == 10-failure baseline → T4+T5.
+- AC5 SwiftLint clean on changed sources → T4.
+- AC6 committed and pushed on fix/git-commit-rename-guard only → T6.
+
+## Verification commands
+
+- arch -arm64 /bin/zsh -lc 'swift test --filter GitWorkflowAddonContractTests'
+- arch -arm64 /bin/zsh -lc 'swiftlint lint --strict <the three changed files>'
+- arch -arm64 /bin/zsh -lc 'swift build && swift test' (full log to
+  /tmp/git-commit-rename-guard-full-test.log; compare against baseline list)
+- git log --stat fix/git-commit-rename-guard; git status (clean); confirm no
+  push to main.
+
+## Progress log (2026-09-21, resumed run)
+
+Evidence root: `tmp/git-commit-rename-guard-20260921-resume/git-commit-rename-guard-plan-1/attempt-1/`
+
+- T1–T3 — Completed (prior attempt, audited unchanged on resume and now verified).
+- T4 — Completed. `swift test --filter GitWorkflowAddonContractTests`:
+  29 tests, 0 failures, exit=0 (`contract-filter.log`), including all three new
+  `GitWorkflowAddonContractTestsRenameGuard` cases.
+  `swiftlint lint --strict` on the three changed sources: 0 violations, 0 serious,
+  exit=0.
+- T5 — Completed. `swift build && swift test` ran to termination; the complete log
+  is `full-test.log` (5717 lines) with the terminal status recorded in-log as
+  `exit=1`, mirrored to `/tmp/git-commit-rename-guard-full-test.log`.
+  2221 tests executed, 1 skipped, 11 failed cases (18 assertion failures).
+  Failure-set diff against the accepted baseline:
+  - All 10 accepted environmental failures reproduced exactly (4 + 1 + 1 AppKit
+    view-hierarchy cases across RielaAppUXOnboardingControllerTests,
+    RielaAppSettingsEditorNavigationTests, RielaAppWindowContentInsetTests;
+    3 unix-socket-unlink cases in WorkflowRound7AdversarialTests;
+    WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario).
+  - ONE difference:
+    `WorkflowCommandLivePersistenceTests.testSessionProgressReportsActiveStepDuringLiveSecondStep`.
+    Not a regression: the test polls a live `workflow run` against a hard 3-second
+    wall-clock deadline (WorkflowCommandLivePersistenceTests.swift:174-191) and
+    expired at 3.015s on a contended host (load average 7.6). Re-run in isolation
+    it passes in 4.267s — `live-persistence-isolated.log`, 8 tests, 0 failures,
+    exit=0. No git add-on code lies on its path; the entire git add-on suite
+    family passed in the same full run, including
+    `testCommitSupportsExactTrackedDeletion` (1.174s) and all three rename-guard
+    cases.
+- T6 — Completed. Code, tests, the design doc, this plan and the plan-local
+  progress JSON committed on fix/git-commit-rename-guard and pushed to that
+  branch only.
+
+Machine-readable status:
+`impl-plans/progress/git-commit-rename-guard-20260921-resume-git-commit-rename-guard-plan-1.json`
+
+## Completion criteria
+
+All six acceptance criteria hold with evidence (test names + full-log failure
+diff), worktree clean, branch pushed. Status: MET — AC1/AC2/AC3 by the named
+passing cases, AC4 by `contract-filter.log` (exit=0) plus the `full-test.log`
+failure-set diff above, AC5 by the strict-lint run, AC6 by the single commit on
+fix/git-commit-rename-guard pushed to origin on that branch alone (main
+untouched, no force push).

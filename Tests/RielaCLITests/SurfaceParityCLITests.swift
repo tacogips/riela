@@ -88,6 +88,7 @@ final class SurfaceParityCLITests: XCTestCase {
       "workflow run", "workflow manifest validate", "session rerun", "session continue",
       "loop gates", "package install", "node run", "memory save", "instance list",
       "specialist submit", "graphql schema", "events schedules cancel", "routine create",
+      "task show", "task list",
       "serve", "serve status", "hook codex", "kaiba instance list", "auth invite",
       "worker", "worker status", "call-step", "workflow-call", "rrun", "gql", "version"
     ] {
@@ -109,9 +110,11 @@ final class SurfaceParityCLITests: XCTestCase {
 
   func testAnUnclassifiedRouteWouldHideItsSubcommands() {
     // The classification sets are the gate: a family absent from both is the
-    // failure mode this test names.
-    XCTAssertFalse(CLISurfaceEnumerator.leafRoutes.contains("task"))
-    XCTAssertFalse(CLISurfaceEnumerator.expandedRoutes.contains("task"))
+    // failure mode this test names. `task` is the family that motivated it
+    // and is now classified as expanded, so its subcommands are enumerated.
+    XCTAssertFalse(CLISurfaceEnumerator.leafRoutes.contains("unregistered-family"))
+    XCTAssertFalse(CLISurfaceEnumerator.expandedRoutes.contains("unregistered-family"))
+    XCTAssertTrue(CLISurfaceEnumerator.expandedRoutes.contains("task"))
     let classified = CLISurfaceEnumerator.leafRoutes.union(CLISurfaceEnumerator.expandedRoutes)
     XCTAssertTrue(
       Set(CLISurfaceEnumerator.routerCommandNames()).isSubset(of: classified),

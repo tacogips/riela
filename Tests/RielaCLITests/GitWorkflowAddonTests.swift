@@ -732,7 +732,13 @@ final class GitTestRepository {
   let remoteRoot: URL?
   let finalizationRoot: URL
 
-  init(withBareRemote: Bool = false, objectFormat: GitObjectFormat = .sha1) throws {
+  init(
+    withBareRemote: Bool = false,
+    objectFormat: GitObjectFormat = .sha1,
+    commitInitialFile: Bool = true
+  ) throws {
+    // An unborn HEAD has no branch to publish, so the bare remote always needs the initial commit.
+    precondition(commitInitialFile || !withBareRemote, "withBareRemote requires an initial commit")
     let fixtureRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
       .appendingPathComponent("tmp/git-addon-tests/\(UUID().uuidString)", isDirectory: true)
     root = fixtureRoot.appendingPathComponent("repository", isDirectory: true)
@@ -750,7 +756,9 @@ final class GitTestRepository {
     _ = try git(["config", "user.email", "riela-test@example.invalid"])
     try write("initial", to: "tracked.txt")
     _ = try git(["add", "--", "tracked.txt"])
-    _ = try git(["commit", "-m", "test: initial"])
+    if commitInitialFile {
+      _ = try git(["commit", "-m", "test: initial"])
+    }
 
     if let remoteRoot {
       try FileManager.default.createDirectory(at: remoteRoot.deletingLastPathComponent(), withIntermediateDirectories: true)

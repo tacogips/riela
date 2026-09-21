@@ -1,0 +1,67 @@
+{
+  "planId": "git-commit-rename-guard-plan-1",
+  "taskId": "git-commit-rename-guard-20260921-resume",
+  "planPath": "design-docs/specs/impl-plan-git-commit-rename-guard.md",
+  "designPath": "design-docs/specs/design-git-commit-rename-guard.md",
+  "implementationBranch": "fix/git-commit-rename-guard",
+  "baseBranch": "fix/git-commit-rename-guard",
+  "checkpointCommit": "6df953418062c221bba922169e4d60b191f7d562",
+  "status": "Completed",
+  "lastUpdated": "2026-09-21T10:25:00Z",
+  "evidenceRoot": "tmp/git-commit-rename-guard-20260921-resume/git-commit-rename-guard-plan-1/attempt-1",
+  "tasks": {
+    "T1": {
+      "title": "validateCommitPaths HEAD probe + stagedPaths --no-renames",
+      "status": "Completed",
+      "deps": [],
+      "note": "Implemented by the OOM-killed prior attempt, audited unchanged on resume and verified by T4/T5."
+    },
+    "T2": {
+      "title": "GitTestRepository.init(commitInitialFile:) unborn-HEAD fixture",
+      "status": "Completed",
+      "deps": [],
+      "note": "Implemented by the prior attempt, audited unchanged on resume; precondition blocks withBareRemote + unborn HEAD."
+    },
+    "T3": {
+      "title": "Three GitWorkflowAddonContractTestsRenameGuard tests",
+      "status": "Completed",
+      "deps": ["T1", "T2"],
+      "note": "Implemented by the prior attempt, audited unchanged on resume; all three pass."
+    },
+    "T4": {
+      "title": "Contract-test filter + SwiftLint",
+      "status": "Completed",
+      "deps": ["T1", "T2", "T3"],
+      "evidence": {
+        "contractFilter": "contract-filter.log (29 tests, 0 failures, exit=0)",
+        "swiftlint": "swiftlint --strict on the three changed sources: 0 violations, 0 serious, exit=0"
+      }
+    },
+    "T5": {
+      "title": "Full swift build && swift test vs the 10-failure environmental baseline",
+      "status": "Completed",
+      "deps": ["T4"],
+      "evidence": {
+        "log": "full-test.log (5717 lines, complete, terminal exit=1 recorded in-log)",
+        "operatorMirror": "/tmp/git-commit-rename-guard-full-test.log",
+        "executed": "2221 tests, 1 skipped, 11 failed test cases (18 assertion failures)",
+        "baselineDiff": "10 accepted environmental failures reproduced exactly; 1 extra: WorkflowCommandLivePersistenceTests.testSessionProgressReportsActiveStepDuringLiveSecondStep",
+        "extraFailureDisposition": "Load-induced flake, not a regression: the test polls a live run against a 3s wall-clock deadline and failed at 3.015s under a loaded host (load avg 7.6). Re-run in isolation green in 4.267s - live-persistence-isolated.log, 8 tests, 0 failures, exit=0. No git add-on code is on its path.",
+        "gitAddonSuites": "GitWorkflowAddonTests, GitWorkflowAddonContractTests, GitWorkflowAddonContractTestsRenameGuard, Adversarial, Recovery, ReviewRegression, Nonblocking, StoreRead all passed"
+      }
+    },
+    "T6": {
+      "title": "Commit code + tests + design artifacts on fix/git-commit-rename-guard and push only that branch",
+      "status": "Completed",
+      "deps": ["T5"]
+    }
+  },
+  "acceptanceCriteria": {
+    "AC1": {"status": "Met", "evidence": "testCommitSupportsStagedRenameAcrossOldAndNewPaths passed (1.300s in the full run)"},
+    "AC2": {"status": "Met", "evidence": "testCommitRejectsMissingPathAbsentFromIndexAndHead passed (0.476s); unchanged policy error asserted verbatim"},
+    "AC3": {"status": "Met", "evidence": "testCommitSupportsExactTrackedDeletion passed (1.174s); testCommitRejectsMissingPathOnUnbornHeadWithoutCrashing passed (0.385s)"},
+    "AC4": {"status": "Met", "evidence": "contract-filter.log exit=0; full-test.log failure set == baseline + one proven flake, re-verified green in isolation"},
+    "AC5": {"status": "Met", "evidence": "swiftlint --strict: 0 violations in 3 files"},
+    "AC6": {"status": "Met", "evidence": "single commit on fix/git-commit-rename-guard, pushed to origin/fix/git-commit-rename-guard only; main untouched; no force push"}
+  }
+}

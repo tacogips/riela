@@ -287,8 +287,8 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   )
   let arguments = vendorArguments(try #require(executor.params()))
   #expect(arguments.contains(#"model_reasoning_effort="high""#))
-  #expect(arguments.contains("--sandbox"))
-  #expect(arguments.contains("workspace-write"))
+  #expect(arguments.contains(#"sandbox_mode="workspace-write""#))
+  #expect(!arguments.contains("--sandbox"))
   #expect(arguments.contains("--search"))
   #expect(arguments.contains("--ephemeral"))
   #expect(pairedValue(arguments, "--disable") == "multi_agent")
@@ -346,6 +346,9 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   )
   #expect(second.params()?.sessionId == "backend-session-1")
   #expect(second.params()?.sessionMode == .reuse)
+  let resumedArguments = vendorArguments(try #require(second.params()))
+  #expect(resumedArguments.contains(#"sandbox_mode="read-only""#))
+  #expect(!resumedArguments.contains("--sandbox"))
 
   let isolatedKey = AgentGatewaySessionKey(
     workflowRunId: "run-1",

@@ -48,6 +48,12 @@
   extraction `d4268c34` deliberately removed Riela Note and its Notes SPA.
   Current retained surfaces pass Web audit/lint/typecheck, 100 unit tests,
   42 Playwright scenarios, and 24 focused Swift security/hosting tests.
+- All six remaining Riela Note-owned active plans are archived against the
+  explicit ownership transition in `d4268c34`: graph-RAG, configurable Kanban,
+  notebook expansion, system memory, and hierarchical tags shipped before the
+  extraction; the unimplemented “new features” proposal now requires a
+  Kaiba-owned plan and must not recreate the deleted Riela subsystem. No Kaiba
+  repository or `note-hub-improve` worktree was modified.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

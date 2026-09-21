@@ -1,6 +1,6 @@
 # Riela Note Bounded Graph-RAG Retrieval
 
-- Status: Revised for session-612 design review
+- Status: Historically implemented; Riela ownership superseded by Kaiba extraction
 - Date: 2026-07-21
 - Workflow mode: `issue-resolution`
 - Workflow session: `codex-design-and-implement-review-loop-session-612`

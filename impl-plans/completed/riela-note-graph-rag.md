@@ -1,13 +1,17 @@
 # Riela Note Bounded Graph-RAG Implementation Plan
 
-- Status: Ready for implementation
+- Status: Historically implemented, migrated to Kaiba, and archived 2026-09-21
 - Created: 2026-07-21
-- Last updated: 2026-07-21
+- Last updated: 2026-09-21
 - Workflow mode: `issue-resolution`
 - Workflow session: `codex-design-and-implement-review-loop-session-612`
 - Issue-reference communication: `comm-001388`
 - Accepted-design communication: `comm-001393`
 - Codex-agent references: none supplied
+
+> Closure: bounded graph-RAG shipped in `ef43924e`; `d4268c34` then
+> intentionally extracted Note ownership to Kaiba, and `cb01478b` restored the
+> examples over `kaiba/*` add-ons. No Riela implementation task remains.
 - Design source: `design-docs/specs/design-riela-note-graph-rag.md`, especially
   [`#public-behavior`](../../design-docs/specs/design-riela-note-graph-rag.md#public-behavior),
   [`#graph-substrate-and-weights`](../../design-docs/specs/design-riela-note-graph-rag.md#graph-substrate-and-weights),

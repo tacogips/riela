@@ -1,6 +1,6 @@
 # Riela Note System Memory and Standalone-Memory Removal — Implementation Plan
 
-**Status**: Step 6 remediation after `comm-000346` complete; ready for implementation self-review; pre-browser artifact gate pending
+**Status**: Historically implemented and reviewed; superseded by Kaiba extraction and archived 2026-09-21
 **Workflow Mode**: `issue-resolution`
 **Issue Reference**: `codex-design-and-implement-review-loop-session-21`
 **Communications**: intake `comm-000270`; accepted revision `comm-000274`;
@@ -22,6 +22,10 @@ Step 7 revision request `comm-000335`; test-integrity remediation through
 `comm-000346`
 **Branch / Base**: `feat/note-system-memory` / `c967229`
 **Design Reference**: `design-docs/specs/design-note-system-memory.md`
+
+> Closure: implementation and review corrections landed through `81542b5a`.
+> The remaining browser-artifact gate targeted UI deliberately removed by
+> `d4268c34`, so it is non-applicable to current Riela.
 **User-QA Reference**:
 `design-docs/user-qa/qa-note-system-memory-telegram-sdk-example.md`
 **Intake Reference**: `docs/briefs/note-system-memory-2026-08-01.md`

@@ -1,5 +1,8 @@
 # Riela Note system memory and standalone-memory removal
 
+Status: historically implemented; Riela ownership superseded by Kaiba extraction.
+Archived plan: `impl-plans/completed/riela-note-system-memory.md`.
+
 Status: accepted after Step 3 review `comm-000285`; the confirmed Telegram SDK
 decision is incorporated during Step 6 remediation after `comm-000322`
 

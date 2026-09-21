@@ -1,10 +1,13 @@
 # Riela Note Implementation Plan
 
-**Status**: ACTIVE — the hierarchical-tags/folder-class/notebook-progress
-implementation is complete and accepted, but its current git-landing follow-up
-remains open until the authorized worktree is safety-checked, committed, pushed,
-and independently verified. The three owner-and-trigger deferrals under “Prior
-Riela Note Baseline and Accepted Deferrals” remain outside this work package.
+**Status**: Historically implemented, merged, then superseded by the Kaiba
+extraction; archived 2026-09-21. Prior Riela-owned deferrals are no longer
+actionable in this repository.
+
+> Closure: hierarchical tags and notebook progress shipped in `6d7329a2` and
+> `de2361e1` and merged via `56fb9b24`. Commit `d4268c34` later moved the Note
+> domain to Kaiba and removed the in-repo service/UI.
+
 **Workflow Mode**: `issue-resolution` (exactly one feature/work package;
 `has_feature_fanout = false`)
 **Issue Reference**: No GitHub issue was provided. Runtime issue title:
@@ -22,7 +25,7 @@ Acceptance Traceability, Verification)
 and no revision requested. The accepted feature design remains
 `design-docs/specs/design-riela-note.md`; this follow-up does not reopen it.
 **Created**: 2026-07-04
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-09-21
 
 ## Current Issue-Resolution Work Package
 

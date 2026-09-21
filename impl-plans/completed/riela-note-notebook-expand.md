@@ -1,6 +1,10 @@
 # Riela Note Notebook Expansion Implementation Plan
 
-**Status**: Implemented; `comm-001444` adversarial revisions addressed and verified
+**Status**: Historically implemented and verified; migrated to Kaiba and archived 2026-09-21
+
+> Closure: the accepted implementation landed through `40ec3428` and merge
+> `b15a359a`. Commit `d4268c34` later removed the in-repo Note UI/service as
+> part of the intentional Kaiba extraction, so no Riela task remains.
 **Workflow mode**: `issue-resolution` — one feature / one work package; no fan-out
 **Issue reference**: `codex-design-and-implement-review-loop-session-614`
 (communications `comm-001401`, `comm-001402`, `comm-001403`, `comm-001404`,

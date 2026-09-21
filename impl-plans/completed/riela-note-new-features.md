@@ -1,11 +1,16 @@
 # Riela Note New Features Implementation Plan
 
-**Status**: Planning
+**Status**: Superseded by Kaiba ownership; archived 2026-09-21 with historical unchecked scope retained
 **Design Reference**: design-docs/specs/design-riela-note-new-features-2026-07-12.md
 **Created**: 2026-07-12
-**Last Updated**: 2026-07-12
+**Last Updated**: 2026-09-21
 
 ---
+
+> Closure: this plan targets the removed in-repo Riela Note service, GraphQL,
+> server, and UI modules. Commit `d4268c34` moved Note ownership to Kaiba and
+> removed those targets. The unchecked proposals below are historical product
+> input; any revival requires a Kaiba-owned plan.
 
 ## Design Document Reference
 

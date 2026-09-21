@@ -27,6 +27,9 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var agentSilenceMonitorIntervalMs: Int
   public var effectiveInstance: EffectiveWorkflowInstance?
   public var eventHandler: WorkflowRunEventHandler?
+  /// Optional process-level admission boundary invoked after the session
+  /// identity is resolved and before any workflow event or node effect.
+  public var sessionExecutionAdmission: (@Sendable (String) throws -> Void)?
   /// Nesting depth of live cross-workflow dispatch. Top-level runs are 0;
   /// each dispatched callee run increments it so runaway workflow-call cycles
   /// fail loudly instead of recursing without bound.
@@ -63,6 +66,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     agentSilenceMonitorIntervalMs: Int = 1_000,
     effectiveInstance: EffectiveWorkflowInstance? = nil,
     eventHandler: WorkflowRunEventHandler? = nil,
+    sessionExecutionAdmission: (@Sendable (String) throws -> Void)? = nil,
     crossWorkflowDispatchDepth: Int = 0,
     stopBeforeStepId: String? = nil
   ) {
@@ -87,6 +91,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
     self.effectiveInstance = effectiveInstance
     self.eventHandler = eventHandler
+    self.sessionExecutionAdmission = sessionExecutionAdmission
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
     self.workflowRunId = nil
@@ -258,6 +263,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       entryContext = context
     }
     var session = entryContext.session
+    try effectiveRequest.sessionExecutionAdmission?(session.sessionId)
     await reconcileAcceptedFinalizations(in: session)
     var currentStepId = entryContext.currentStepId
     effectiveRequest.parentSessionId = session.parentSessionId

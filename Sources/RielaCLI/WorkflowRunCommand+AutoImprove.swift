@@ -419,7 +419,8 @@ extension WorkflowRunCommand {
       memoryRootDirectory: base.memoryRootDirectory,
       agentSilenceWarningMs: options.agentSilenceWarningMs,
       agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
-      eventHandler: base.eventHandler
+      eventHandler: base.eventHandler,
+      sessionExecutionAdmission: base.sessionExecutionAdmission
     )
   }
 }

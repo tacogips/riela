@@ -58,6 +58,14 @@ request bounded waiting with `SQLiteOpenOptions(busyTimeoutMilliseconds: ...)`.
 Only lock acquisition and WAL initialization are retried; workflow actions and
 transaction bodies are not replayed.
 
+Every workflow session entered through the production local CLI, library, or
+GraphQL surfaces also holds a session-store-scoped advisory lock for its full
+execution lifetime. A concurrent `session resume` or `session continue` for
+that session fails before any node effect starts. The operating system
+releases the lock when its owner exits, so an interrupted session can be
+resumed without waiting for a stale heartbeat timeout. Different session IDs
+remain independently executable.
+
 Installed workflow packages are local workflow sources. After
 `riela package install <name>`, package-provided workflows appear in
 `riela workflow list` and can be used with ordinary workflow commands such as

@@ -455,7 +455,8 @@ fileprivate extension ScopedParityCommandRunner {
           variables: variables,
           maxSteps: 1,
           timeoutMs: parsed.timeoutMs,
-          resumeSessionId: seededSession.sessionId
+          resumeSessionId: seededSession.sessionId,
+          sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
         )
       )
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)

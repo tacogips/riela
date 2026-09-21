@@ -91,6 +91,18 @@
   `e6282429` contain source deletion/readiness and final parity. Current gate,
   source-deletion, and packaging suites passed 60/60, and all readiness JSON
   parsed. The reconciliation did not alter or manufacture review evidence.
+- `workflow-runtime-fanout-capabilities` is no longer a planning deferral.
+  F1/F2 were shipped by bounded fanout plus later cross-workflow/recovery work;
+  F3 uses durable parent/root-linked child sessions and the inherited standard
+  run-event stream. A new regression explicitly proves three branch
+  start/completion event pairs and inspectable terminal child sessions. The
+  current fanout/cross-workflow aggregate passed 14 tests (including production
+  SIGKILL/reopen), four capability diagnostics passed, and review found no
+  high/medium finding.
+- Per the user's expanded goal, once the remaining active-plan inventory is
+  reconciled, continue with a fresh audit of unimplemented features recorded in
+  design documents, general docs, and implementation plans, then implement the
+  actionable Riela-owned gaps in this same dedicated worktree/branch.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

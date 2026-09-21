@@ -1,12 +1,8 @@
 # Workflow Runtime Fanout Capabilities Implementation Plan
 
-**Status**: PLANNING — authoritative owner plan for the W10 runtime capability
-gaps (created 2026-07-12 per `REMAINING-WORK-HANDOVER.md` §5/W10, which
-required these items to gain an owning plan instead of hiding under the
-loop-engineering workstreams). No implementation has started; each phase below
-is an explicitly accepted deferral — owner: next runtime-capabilities session;
-trigger: a workflow author needs live fanout (today mock scenarios are the
-only way to exercise fanout-shaped workflows).
+**Status**: Implemented, independently reconciled, verified, and archived
+2026-09-21. The former planning-only description was superseded by bounded
+fanout commit `3e0a0d57` and later cross-workflow/recovery hardening.
 **Design Reference**: `design-docs/specs/design-incomplete-work-inventory.md`
 §1; `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift`
 **Created**: 2026-07-12
@@ -51,6 +47,28 @@ fanout.
 - **F3 — Observability.** Fanout branch progress records and session
   inspection surfaces, consistent with the existing `WorkflowRunEvent`
   contract (additive event types only).
+
+## Closure evidence (2026-09-21)
+
+- **F1 complete**: `DeterministicWorkflowRunner+Fanout.swift` executes local
+  and cross-workflow fanout with bounded concurrency, deterministic input-order
+  joins, declared ownership checks, dependency waves, and all three failure
+  policies. `run.maxConcurrency` is an active cap rather than a capability gap.
+- **F2 complete**: CLI validation resolves reachable cross-workflow callees and
+  caller resume steps, while live library execution fails with a typed
+  resolver-specific diagnostic when no callee resolver is wired. Unsupported
+  one-sided transition combinations remain intentionally invalid contracts,
+  not missing runtime capabilities.
+- **F3 complete**: each fanout branch is a child runtime session with durable
+  `parentSessionId`/`rootSessionId`; it forwards the existing event handler, so
+  standard session/step/backend/completion events provide branch progress and
+  the session store provides inspection. A dedicated regression now proves all
+  branch start/completion events and inspectable terminal child sessions.
+- Current verification passed 11 fanout tests, the three-test live
+  cross-workflow suite (including production SIGKILL/reopen), and four focused
+  capability-diagnostic tests, all with zero failures. Strict lint for the
+  changed test and `git diff --check` are clean. Independent reconciliation
+  found no high/medium issue.
 
 ## Verification contract
 

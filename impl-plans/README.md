@@ -53,7 +53,6 @@ only the W13 read-through/move to `completed/`.
 | ---- | ------ | ---------- |
 | `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
 | `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
-| `active/workflow-runtime-fanout-capabilities` | Planning; owns the runtime fanout / `run.maxConcurrency` / cross-workflow-resume capability gaps (created 2026-07-12); explicitly deferred (owner: next runtime-capabilities session; trigger: a workflow author needs live fanout) | W10 |
 
 **W5 package plans — superseded by the Swift migration (reconciled 2026-07-12):**
 
@@ -93,6 +92,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow-runtime-fanout-capabilities` | 2026-09-21 | `design-bounded-fanout-join-workflow-execution` plus cross-workflow/recovery and child-session observability |
 | `swift-cli-runtime-parity-gap-closure` | 2026-09-21 | `design-swift-cli-runtime-parity-gap-closure` (accepted deletion gate and completed TypeScript source removal) |
 | `specialist-task-supervisor` | 2026-09-21 | `specialist-task-supervisor` (durable ownership, process/recovery fencing, Matrix/Wrike boundaries, independent acceptance) |
 | `distributed-registry-container-node-roadmap` | 2026-09-21 | `design-distributed-registry-container-node-roadmap` (local scope complete; external release deferral retained) |

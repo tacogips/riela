@@ -39,6 +39,10 @@
   68-test focused registry/GraphQL/server aggregate plus 10 resolver tests and
   `swift build`; its shipped implementation merge `01f63d19` is contained by
   `main`, and the stale active plan is archived.
+- Its historical predecessor `temporary-workflow-registry` is also archived as
+  superseded: every completion criterion was already satisfied, and the
+  current legacy compatibility/recovery aggregate passed 83 tests with zero
+  failures. `mutable-workflow-registry` remains the canonical contract.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

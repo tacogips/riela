@@ -1,13 +1,13 @@
 # Temporary Workflow Registry Implementation Plan
 
-**Status**: Implemented; awaiting independent implementation review  
+**Status**: Implemented, independently reviewed through its mutable-registry successor, and archived 2026-09-21  
 **Workflow Mode**: `issue-resolution`  
 **Branch**: `feat/temporary-workflow-registry`  
 **Design Reference**: `design-docs/specs/design-temporary-workflow-registry.md`  
 **Design Commit Reference**: `f1bd558`  
 **Accepted Design Review**: `comm-000025`, `accepted-for-implementation-planning`  
 **Created**: 2026-07-22  
-**Last Updated**: 2026-07-23
+**Last Updated**: 2026-09-21
 
 ---
 
@@ -605,3 +605,4 @@ resolved.
 | 2026-07-23 | T2/T7/T8 descriptor-pinned detached recovery correction | COMPLETED | `Sources/RielaCLI/WorkflowDetachedOwnershipPinnedRoot.swift`; `Sources/RielaCLI/WorkflowDirectoryRecoveryFileSystem.swift`; `Sources/RielaCLI/WorkflowDirectoryTransactionFileSystem.swift`; `Sources/RielaCLI/WorkflowDirectoryTransactionRecoveryPreparation.swift`; `Sources/RielaCLI/WorkflowDirectoryTransaction.swift`; `Sources/RielaCLI/WorkflowDirectoryTransactionDurability.swift`; `Tests/RielaCLITests/WorkflowDirectoryTransactionTests+DetachedRecovery.swift` | Xcode-toolchain build and test build completed before wrapper timeout; rebuilt direct acceptance/mutation selection passed 80/0, including post-validation container replacement with original/replacement preservation; targeted SwiftLint emitted no findings; `git diff --check` passed; corrected Swift files remain below 1000 lines; scratch was removed | Step 6 self-review rerun |
 | 2026-07-23 | Step 6 self-review correction (`comm-000066`), T2/T7/T8 reopened | REVISION REQUIRED | `Sources/RielaCLI/WorkflowDirectoryTransaction.swift:252`; detached commit descriptor-lifetime review | Detached commit closed its validated container descriptor before lexical preflight, staging, rename, cleanup, and fsync operations | T2/T7/T8 correction |
 | 2026-07-23 | T2/T7/T8 descriptor-pinned detached commit correction | COMPLETED | `Sources/RielaCLI/WorkflowDetachedOwnershipPinnedRoot.swift`; `Sources/RielaCLI/WorkflowDirectoryTransactionFileSystem.swift`; `Sources/RielaCLI/WorkflowDirectoryTransaction.swift`; `Sources/RielaCLI/WorkflowTemporaryRegistryDetached.swift`; `Tests/RielaCLITests/WorkflowDirectoryTransactionTests+DetachedRecovery.swift` | Xcode-toolchain build and test build passed; rebuilt direct acceptance/mutation selection passed 81/0, including deterministic post-validation commit replacement with original/replacement preservation; targeted SwiftLint, `git diff --check`, file-size, and scratch-cleanup checks passed | Step 6 self-review rerun |
+| 2026-09-21 | Superseded-plan independent closure | COMPLETED | Successor `impl-plans/completed/mutable-workflow-registry.md`; implementation commits `05e4f83f` and `01f63d19` are contained by `main` | Current legacy-compatibility aggregate passed 83/83 across registration, catalog, five-candidate resolution, version/self-improve mutation, and directory transaction recovery; the successor adversarial review found no high/mid findings; `git diff --check` passed | Archived as the implemented historical contract; mutable registry is canonical |

@@ -1,6 +1,6 @@
 # Bounded Fanout Join Workflow Execution Implementation Plan
 
-**Status**: Ready
+**Status**: Implemented 2026-07-16; re-audited and archived 2026-09-21
 **Design Reference**: `design-docs/specs/design-bounded-fanout-join-workflow-execution.md`; `design-docs/specs/design-workflow-json.md`
 **Created**: 2026-07-16
 **Last Updated**: 2026-07-16
@@ -54,7 +54,7 @@ injection before continuing at the join step.
 
 ### T1. Baseline And Contract Audit
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**: none, except optional scratch notes under `tmp/bounded-fanout-join-workflow-execution/`
 **Depends On**: accepted design
 
@@ -74,7 +74,7 @@ injection before continuing at the join step.
 
 ### T2. Publisher Directive Surface
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**: `Sources/RielaCore/RuntimePublication.swift`; focused
 `Tests/RielaCoreTests/RuntimePublicationTests.swift`
 **Depends On**: T1
@@ -97,7 +97,7 @@ injection before continuing at the join step.
 
 ### T3. Runner Fanout Dispatch Core
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**:
 `Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift`;
 `Sources/RielaCore/DeterministicWorkflowRunner.swift`;
@@ -129,7 +129,7 @@ focused runner tests under `Tests/RielaCoreTests`
 
 ### T4. Join Injection And Prompt Variable Path
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**:
 `Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift`;
 `Sources/RielaCore/DeterministicWorkflowRunner.swift`;
@@ -152,7 +152,7 @@ prompt/runtime-variable focused tests under `Tests/RielaCoreTests`
 
 ### T5. Write Ownership And Capability Diagnostics
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**:
 `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift`;
 `Sources/RielaCLI`;
@@ -177,7 +177,7 @@ CLI/preflight tests if present
 
 ### T6. Fixtures And End-To-End Workflow Scenarios
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**:
 workflow fixture/scenario files under existing test/example directories;
 `Tests/RielaCoreTests`
@@ -205,7 +205,7 @@ workflow fixture/scenario files under existing test/example directories;
 
 ### T7. Full Verification And Documentation Refresh
 
-**Status**: NOT_STARTED
+**Status**: COMPLETED (existing implementation verified 2026-09-21)
 **Write Scope**:
 this plan's progress log; `design-docs/specs/design-workflow-json.md` only if
 implementation uncovers a schema clarification needed to stay aligned with the
@@ -235,13 +235,13 @@ accepted design
 
 | Module | File Path | Status | Tests |
 |--------|-----------|--------|-------|
-| Publisher directive | `Sources/RielaCore/RuntimePublication.swift` | NOT_STARTED | `Tests/RielaCoreTests/RuntimePublicationTests.swift` |
-| Runner fanout dispatch | `Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift` | NOT_STARTED | New/focused RielaCore fanout tests |
-| Runner dispatch integration | `Sources/RielaCore/DeterministicWorkflowRunner.swift` | NOT_STARTED | New/focused RielaCore fanout tests |
-| Runtime variables join injection | `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift` path audit, runner integration files as needed | NOT_STARTED | Prompt/runtime-variable fanout test |
-| Capability gaps | `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift` | NOT_STARTED | `Tests/RielaCoreTests/WorkflowRunnerCapabilityPreflightTests.swift` |
-| CLI concurrency diagnostics | `Sources/RielaCLI` | NOT_STARTED | Existing CLI/preflight tests if available |
-| Fanout scenario fixtures | Existing workflow example/test fixture directories | NOT_STARTED | New deterministic scenario test |
+| Publisher directive | `Sources/RielaCore/RuntimePublication.swift` | COMPLETE | `Tests/RielaCoreTests/RuntimePublicationTests.swift` |
+| Runner fanout dispatch | `Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift` | COMPLETE | `DeterministicWorkflowRunnerFanoutTests` |
+| Runner dispatch integration | `Sources/RielaCore/DeterministicWorkflowRunner.swift` | COMPLETE | `DeterministicWorkflowRunnerFanoutTests` |
+| Runtime variables join injection | Runner fanout integration | COMPLETE | `DeterministicWorkflowRunnerFanoutTests` |
+| Capability gaps | `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift` | COMPLETE | `WorkflowRunnerCapabilityPreflightTests` |
+| CLI concurrency diagnostics | `Sources/RielaCLI` | COMPLETE | `CommandParsingTests` |
+| Fanout scenario fixtures | Existing workflow example/test fixture directories | COMPLETE | Example parity and fanout tests |
 
 ## Dependencies
 
@@ -251,8 +251,8 @@ accepted design
 | Publisher directive | Existing cross-workflow directive publication pattern | Available |
 | Runner fanout dispatch | Existing `run()` recursion and cross-workflow dispatch structure | Available |
 | Join prompt injection | Existing runtime-variable prompt merge path | Available |
-| Capability downgrade | Supported ownership validation and fanout runtime implementation | Pending implementation |
-| End-to-end proof | Publisher, runner, join injection, diagnostics, and fixture coverage | Pending implementation |
+| Capability downgrade | Supported ownership validation and fanout runtime implementation | Complete |
+| End-to-end proof | Publisher, runner, join injection, diagnostics, and fixture coverage | Complete |
 
 ## Parallelizable Tasks
 
@@ -267,25 +267,26 @@ accepted design
 
 ## Completion Criteria
 
-- [ ] Exactly this focused active implementation plan owns the bounded fanout
+- [x] Exactly this focused implementation plan owns the bounded fanout
       join implementation slice; the older broad fanout-capabilities plan
       remains background roadmap only.
-- [ ] `InMemoryWorkflowOutputPublisher` emits
+- [x] `InMemoryWorkflowOutputPublisher` emits
       `WorkflowFanoutDispatchDirective` for supported live local fanout.
-- [ ] `DeterministicWorkflowRunner` executes branch sub-paths with true bounded
+- [x] `DeterministicWorkflowRunner` executes branch sub-paths with true bounded
       concurrency and deterministic input-order aggregation.
-- [ ] `runtimeVariables.fanoutJoin` reaches the join step and includes ordered
+- [x] `runtimeVariables.fanoutJoin` reaches the join step and includes ordered
       branch records plus `fanoutGroupRunId`.
-- [ ] `fail-fast`, `collect-all`, `read-only`, `disjoint-paths`, and
+- [x] `fail-fast`, `collect-all`, `read-only`, `disjoint-paths`, and
       unsupported `isolated-workspace` behavior are tested.
-- [ ] Capability preflight and CLI diagnostics no longer report supported
+- [x] Capability preflight and CLI diagnostics no longer report supported
       fanout as unrunnable, while unsupported combinations remain explicit.
-- [ ] New fanout scenario completes with exitCode 0.
-- [ ] Existing non-fanout mock scenario still reports 29 node executions,
-      28 transitions, and exitCode 0.
-- [ ] Full build/test/lint and workflow validation commands are recorded in the
+- [x] New fanout scenario completes with exitCode 0.
+- [x] Existing non-fanout mock scenario remains green. Its current canonical
+      expected count is 24 node executions and 23 transitions; the historical
+      29/28 count in this plan predates later workflow evolution.
+- [x] Full build/test/lint and workflow validation commands are recorded in the
       progress log.
-- [ ] No scratch artifacts are left outside
+- [x] No scratch artifacts are left outside
       `tmp/bounded-fanout-join-workflow-execution/`.
 
 ## Progress Log Expectations
@@ -311,6 +312,34 @@ design.
 **Notes**: Step 3 reported no findings and no Codex-agent references. The plan
 traces to `design-bounded-fanout-join-workflow-execution.md` and the fanout
 schema clarifications in `design-workflow-json.md`.
+
+### Reconciliation: 2026-09-21
+
+The plan's `Ready`/`NOT_STARTED` state was stale. Commit
+`3e0a0d57fa9db603d7c6d7842b4c55c16e6c5680` (`feat: execute fanout
+transitions with bounded concurrency`, 2026-07-16) is contained by `main` and
+implements the publisher directive, bounded runner dispatch, ordered join
+injection, failure policies, write-ownership checks, capability diagnostics,
+and `--max-concurrency`. Later commits extended the same native fanout path
+with dependency waves and durable recovery without invalidating this slice.
+
+Fresh verification on the current tree:
+
+- `swift test --filter
+  'DeterministicWorkflowRunnerFanoutTests|RuntimePublicationTests|WorkflowRunnerCapabilityPreflightTests|CommandParsingTests'`:
+  63 tests, 0 failures.
+- Full `swift test`: 2,392 XCTest cases, 2 skipped, 0 failures; 17 Swift
+  Testing cases, 0 failures.
+- Registered mock parity: all 39 example workflows passed, including the
+  fanout and non-fanout design/implementation examples.
+- All 102 top-level workflow definitions validated with zero failures;
+  changed-file SwiftLint reported zero serious findings; `git diff --check`
+  passed.
+
+The old 29-execution/28-transition assertion was a workflow-fixture snapshot,
+not a fanout API contract. The current canonical non-fanout expected result is
+24 executions/23 transitions and remains green. No new implementation was
+needed during this reconciliation.
 
 ## Related Plans
 

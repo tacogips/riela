@@ -12,17 +12,17 @@
     ],
     "issueUrl": null
   },
-  "status": "Ready",
-  "phase": "implementation-plan",
+  "status": "COMPLETED",
+  "phase": "archived",
   "designReferences": [
     "design-docs/specs/design-bounded-fanout-join-workflow-execution.md",
     "design-docs/specs/design-workflow-json.md"
   ],
-  "activePlanPath": "impl-plans/active/bounded-fanout-join-workflow-execution.md",
+  "activePlanPath": "impl-plans/completed/bounded-fanout-join-workflow-execution.md",
   "tasks": {
     "T1": {
       "title": "Baseline And Contract Audit",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "accepted-design"
       ],
@@ -41,7 +41,7 @@
     },
     "T2": {
       "title": "Publisher Directive Surface",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "T1"
       ],
@@ -62,7 +62,7 @@
     },
     "T3": {
       "title": "Runner Fanout Dispatch Core",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "T1",
         "T2"
@@ -87,7 +87,7 @@
     },
     "T4": {
       "title": "Join Injection And Prompt Variable Path",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "T3"
       ],
@@ -110,7 +110,7 @@
     },
     "T5": {
       "title": "Write Ownership And Capability Diagnostics",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "T2",
         "T3"
@@ -134,7 +134,7 @@
     },
     "T6": {
       "title": "Fixtures And End-To-End Workflow Scenarios",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "T3",
         "T4",
@@ -159,7 +159,7 @@
     },
     "T7": {
       "title": "Full Verification And Documentation Refresh",
-      "status": "NOT_STARTED",
+      "status": "COMPLETED",
       "deps": [
         "T2",
         "T3",
@@ -169,7 +169,7 @@
       ],
       "parallelizable": false,
       "writeScope": [
-        "impl-plans/active/bounded-fanout-join-workflow-execution.md",
+        "impl-plans/completed/bounded-fanout-join-workflow-execution.md",
         "impl-plans/progress/plans/bounded-fanout-join-workflow-execution.json",
         "design-docs/specs/design-workflow-json.md"
       ],

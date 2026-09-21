@@ -375,4 +375,4 @@ DaemonWorkflowNodePatch event-source-restart flake).
 ## Related Plans
 
 - **Depends On**: impl-plans/active/riela-note.md (baseline),
-  impl-plans/active/bounded-fanout-join-workflow-execution.md (runtime fan-out)
+  impl-plans/completed/bounded-fanout-join-workflow-execution.md (runtime fan-out)

@@ -30,6 +30,10 @@
 - `workflow-graph-studio` and `issue-94-inheritance-minimal` were likewise
   archived after confirming their implementation commits are contained by
   `main` and their plans record completed acceptance evidence.
+- `bounded-fanout-join-workflow-execution` was reconciled from stale
+  `Ready`/`NOT_STARTED` metadata to the implementation already shipped in
+  `3e0a0d57`; 63 focused tests and the current full/mock/validation gates are
+  green.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

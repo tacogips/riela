@@ -354,7 +354,7 @@ Run only after W0 establishes a stable overlapping worktree:
 
 **State**: LA1a implemented; LA1b and later phases not started.
 
-Primary deliverables:
+Archived deliverables include:
 
 - `loop start` policy-panel/delegation behavior and `loop promote` readiness.
 - Cost value types, usage accumulation, duration/evidence projection, and legacy decoding.
@@ -364,11 +364,16 @@ Primary deliverables:
 
 Order: LA1b → cost model/accumulator → budget → diff/stats → CLI/GraphQL → CI/SARIF. W3 consumes the diff/stat types; publish stable typed contracts before W3 integration.
 
-### W3 — Loop convergence and operations — 30 unchecked
+### W3 — Loop convergence and operations — repository work complete
 
-**Plan**: `impl-plans/active/loop-engineering-convergence-and-operations.md`
+**Plans**: `impl-plans/completed/loop-engineering-convergence-and-operations.md`
+(historical LB1-LB4) and
+`impl-plans/completed/loop-engineering-default-guardrails-and-terminal-preservation.md`
+(S9a default guardrails)
 
-**State**: LB1 implemented; LB2–LB6 remain.
+**State**: The accepted LB1-LB4 repository work and the later S9a default
+guardrail work are implemented, verified, and archived. LB5-LB6 remain design
+roadmap material without an active implementation plan.
 
 Primary deliverables:
 
@@ -378,7 +383,9 @@ Primary deliverables:
 - Busy fail/skip behavior, stale takeover diagnostics, and advisory limitations.
 - Terminal-outcome notification metadata, dispatch, env indirection, retries, diagnostics, and package warnings.
 
-Dependencies: tolerant failure decoding from W2 budget work; `LoopEvidenceDiffer` and stats from W2. Avoid implementing duplicate diff/stat types in W3.
+Historical dependency: tolerant failure decoding, `LoopEvidenceDiffer`, and
+statistics types came from W2. Do not recreate those shared types if future
+LB5-LB6 work receives a new accepted implementation plan.
 
 ### W4 — Apple local-gateway add-on completion/hardening — 79 unchecked
 
@@ -491,7 +498,7 @@ Every active plan has exactly one primary owner below. Cross-cutting dependencie
 | `hermes-inspired-capabilities` | W11 | adoption decision required |
 | `installed-package-workflow-resolution` | W13 | completion/archive audit |
 | `loop-engineering-application-gap-closure` | W2 | 62 checks remain |
-| `loop-engineering-convergence-and-operations` | W3 | 30 checks remain |
+| `loop-engineering-default-guardrails-and-terminal-preservation` | W3 | completed and archived; full-suite failures precisely classified outside feature scope |
 | `loop-engineering-first-line-tool-progress` | W0 | preserve as W0 evidence log |
 | `loop-engineering-first-line-tool` | W0 | round-eight acceptance outstanding |
 | `macos-workflow-viewer` | W13 | completion/archive audit |

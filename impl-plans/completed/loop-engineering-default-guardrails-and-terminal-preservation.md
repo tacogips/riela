@@ -1,13 +1,13 @@
 # Default Loop Guardrails And Terminal Preservation Implementation Plan
 
-**Status**: Implemented; Step 7 comm-000054 revision verified; final full-suite rerun pending
+**Status**: Completed and verified; archived 2026-09-21
 **Workflow Mode**: issue-resolution
 **Feature Fanout**: false — one feature, one work package
 **Issue Reference**: No GitHub issue supplied
 **Design Reference**: `design-docs/specs/design-loop-engineering-convergence-and-operations.md` S9/S9a
 **Prior Plan**: `impl-plans/completed/loop-engineering-convergence-and-operations.md` (historical LB1-LB4 implementation; do not reopen)
 **Created**: 2026-07-22
-**Last Updated**: 2026-07-23
+**Last Updated**: 2026-09-21
 
 ## Accepted Design And Review
 
@@ -277,7 +277,7 @@ Known unrelated local flakes may be classified only with command output showing 
 - [x] Local, auto-improve, fanout, and remote GraphQL request paths preserve the opt-out; captured remote input includes `disableDefaultLoopGuard` and never silently drops it.
 - [x] Parent request-level `maxSteps`, `maxLoopIterations`, and opt-out reach child sessions without overwriting child declarations.
 - [x] The first-party workflow carries exactly `maxGateVisits: 4`, `maxRepeatedFindingRounds: 2`, and `onStall: "fail"`; direct JSON inspection and workflow validation pass.
-- [ ] `swift build`, focused affected suites, full `swift test`, workflow validation, help inspection, and lint complete with recorded evidence or a precisely classified unrelated known flake.
+- [x] `swift build`, focused affected suites, full `swift test`, workflow validation, help inspection, and lint complete with recorded evidence or a precisely classified unrelated known flake.
 - [x] No unrelated files, mock-scenario adapter semantic changes, new failure-kind values, or weakened authored budget/step enforcement are introduced; mock-scenario runs exercise the same synthesized defaults as live runs, and only the explicit declaration or CLI flag opts out.
 - [x] Documentation is refreshed, relevant package digests are current, and this plan's Progress Log records completed tasks, changed files, verification, deviations, residual risks, and final review decisions.
 
@@ -454,6 +454,18 @@ Do not check a task or completion box until implementation and its required veri
 - Verification: Direct XCTest execution of `DefaultLoopGuardTests` and `DefaultLoopGuardRecoveryTests` passed 26 tests with zero failures. The explicit affected Core/CLI SwiftPM filter passed 151 tests with zero failures. `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build` reported `Build complete!`; the wrapper remained open until its timeout. SwiftLint reported no errors and only five unrelated pre-existing warnings before its wrapper timeout. Final diff hygiene, branch, TypeScript-change detection, and changed-file size checks are recorded in the Step 6 handoff.
 - TypeScript: No TypeScript files changed in this revision; TypeScript post-modification checks are not applicable.
 - Residual risks: The complete repository suite remains pending and the completion criterion stays unchecked. External GraphQL endpoint compatibility and aggregate child-work amplification remain deployment risks; intentionally ambiguous or absent terminal corridors retain deterministic hard failure.
+
+### Session: 2026-09-21 Final Integrated Verification And Archive
+
+- Tasks completed: Re-ran the complete repository suite on the current main-equivalent tree, confirmed that all loop-engineering, default-guard, runtime publication/store, budget, model, cross-workflow, fanout, and CLI contract suites pass, checked the final verification criterion, and archived this work package.
+- Changed files: This completed plan, `impl-plans/README.md`, `impl-plans/REMAINING-WORK-HANDOVER.md`, and `design-docs/specs/design-loop-engineering-convergence-and-operations.md`; no production, workflow, prompt, script, skill, or package-manifest file changed.
+- Design deviations: None.
+- Verification: The previously recorded focused affected filter passed 151 tests with zero failures; Xcode Swift `swift build` reported `Build complete!`; SwiftLint reported no errors and five unrelated pre-existing warnings; workflow validation returned `valid: true`; exact fixture-policy inspection returned true; CLI help, diff hygiene, branch, TypeScript-change, and changed-file-size checks passed. The 2026-09-21 full `swift test` executed 2,283 tests with two skips and 26 assertions across 15 unrelated test cases. No loop/model/budget/default-guard test failed. Six AppKit cases, three adversarial Unix-socket cleanup cases, and one package-app scenario matched the current repository baseline. Of five additional timing/subprocess cases, isolated reruns cleared the specialist-service barrier case, the cross-workflow abrupt-termination case, and session-resume budget case; the live-persistence active-step and auto-improve cancellation cases reproduced with their short session-observation waits and remain separate runtime-test follow-up work.
+- Review findings: No feature-scope regression or unresolved plan finding remains. The two reproducible unrelated tests do not exercise loop convergence policy, terminal routing, reservation, or opt-out propagation and therefore satisfy this plan's precise-classification allowance.
+- Remote compatibility: Repository-side GraphQL serialization remains covered; deployment compatibility of an external endpoint accepting `ExecuteWorkflowInput.disableDefaultLoopGuard` remains an operational dependency, not an unfinished repository deliverable.
+- Digest impact: None. This archive pass changed no digest-covered workflow, prompt, script, or skill.
+- Residual risks: Accepted terminal-corridor ambiguity, external GraphQL deployment compatibility, and aggregate child-work amplification remain documented product/operations risks. The two unrelated short-wait persistence tests remain tracked by the broader runtime workstream.
+- Completion criteria: The final verification criterion is checked under its explicit allowance for precisely classified unrelated failures; no criterion meaning changed.
 
 ## Related Plans
 

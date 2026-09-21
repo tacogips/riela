@@ -960,7 +960,8 @@ slip.
 
 ## Implementation Plan
 
-`impl-plans/active/loop-engineering-convergence-and-operations.md` tracks the
-S9a default-guard and terminal-preservation work. The completed historical
-plan at `impl-plans/completed/loop-engineering-convergence-and-operations.md`
-records LB1–LB4; LB5–LB6 remain roadmap material in this design.
+`impl-plans/completed/loop-engineering-default-guardrails-and-terminal-preservation.md`
+records the completed S9a default-guard and terminal-preservation work. The
+historical plan at
+`impl-plans/completed/loop-engineering-convergence-and-operations.md` records
+LB1–LB4; LB5–LB6 remain roadmap material in this design.

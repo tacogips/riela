@@ -30,9 +30,10 @@ part of the accepted design:
   on disk, as are all three T3 tests (class
   `GitWorkflowAddonContractTestsRenameGuard`).
 
-Remaining on resume: T4 (lint + contract filter), T5 (full suite vs the
-10-failure baseline), T6 (commit + push). Verification has NOT yet run in any
-session — the OOM predates T4.
+Remaining on resume at dispatch time: T4 (lint + contract filter), T5 (full
+suite vs the 10-failure baseline), T6 (commit + push). All three are now DONE —
+see "Progress log" below. The audited T1–T3 diff was kept byte-for-byte; no
+defect was found by verification, so nothing was re-implemented or reverted.
 
 ## Applicable prior knowledge
 
@@ -131,7 +132,48 @@ else serial. Single implementer, no worktrees, no parallel git.
 - git log --stat fix/git-commit-rename-guard; git status (clean); confirm no
   push to main.
 
+## Progress log (2026-09-21, resumed run)
+
+Evidence root: `tmp/git-commit-rename-guard-20260921-resume/git-commit-rename-guard-plan-1/attempt-1/`
+
+- T1–T3 — Completed (prior attempt, audited unchanged on resume and now verified).
+- T4 — Completed. `swift test --filter GitWorkflowAddonContractTests`:
+  29 tests, 0 failures, exit=0 (`contract-filter.log`), including all three new
+  `GitWorkflowAddonContractTestsRenameGuard` cases.
+  `swiftlint lint --strict` on the three changed sources: 0 violations, 0 serious,
+  exit=0.
+- T5 — Completed. `swift build && swift test` ran to termination; the complete log
+  is `full-test.log` (5717 lines) with the terminal status recorded in-log as
+  `exit=1`, mirrored to `/tmp/git-commit-rename-guard-full-test.log`.
+  2221 tests executed, 1 skipped, 11 failed cases (18 assertion failures).
+  Failure-set diff against the accepted baseline:
+  - All 10 accepted environmental failures reproduced exactly (4 + 1 + 1 AppKit
+    view-hierarchy cases across RielaAppUXOnboardingControllerTests,
+    RielaAppSettingsEditorNavigationTests, RielaAppWindowContentInsetTests;
+    3 unix-socket-unlink cases in WorkflowRound7AdversarialTests;
+    WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario).
+  - ONE difference:
+    `WorkflowCommandLivePersistenceTests.testSessionProgressReportsActiveStepDuringLiveSecondStep`.
+    Not a regression: the test polls a live `workflow run` against a hard 3-second
+    wall-clock deadline (WorkflowCommandLivePersistenceTests.swift:174-191) and
+    expired at 3.015s on a contended host (load average 7.6). Re-run in isolation
+    it passes in 4.267s — `live-persistence-isolated.log`, 8 tests, 0 failures,
+    exit=0. No git add-on code lies on its path; the entire git add-on suite
+    family passed in the same full run, including
+    `testCommitSupportsExactTrackedDeletion` (1.174s) and all three rename-guard
+    cases.
+- T6 — Completed. Code, tests, the design doc, this plan and the plan-local
+  progress JSON committed on fix/git-commit-rename-guard and pushed to that
+  branch only.
+
+Machine-readable status:
+`impl-plans/progress/git-commit-rename-guard-20260921-resume-git-commit-rename-guard-plan-1.json`
+
 ## Completion criteria
 
 All six acceptance criteria hold with evidence (test names + full-log failure
-diff), worktree clean, branch pushed.
+diff), worktree clean, branch pushed. Status: MET — AC1/AC2/AC3 by the named
+passing cases, AC4 by `contract-filter.log` (exit=0) plus the `full-test.log`
+failure-set diff above, AC5 by the strict-lint run, AC6 by the single commit on
+fix/git-commit-rename-guard pushed to origin on that branch alone (main
+untouched, no force push).

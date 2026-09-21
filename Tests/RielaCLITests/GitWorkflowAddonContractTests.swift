@@ -828,6 +828,75 @@ final class GitWorkflowAddonContractTests: XCTestCase {
   }
 }
 
+final class GitWorkflowAddonContractTestsRenameGuard: XCTestCase {
+  func testCommitSupportsStagedRenameAcrossOldAndNewPaths() async throws {
+    let repository = try GitTestRepository()
+    let headBefore = try repository.git(["rev-parse", "HEAD"]).trimmed
+    _ = try repository.git(["mv", "tracked.txt", "renamed.txt"])
+
+    let output = try await repository.resolver.execute(
+      makeGitCommitInput(message: "test: staged rename", files: ["tracked.txt", "renamed.txt"]),
+      context: AdapterExecutionContext()
+    )
+    let revision = try XCTUnwrap(gitPayload(output.payload)["commitHash"]?.stringValue)
+
+    XCTAssertGitCommitEvidence(
+      output.payload,
+      status: "committed",
+      revision: revision,
+      message: "test: staged rename",
+      files: ["tracked.txt", "renamed.txt"]
+    )
+    XCTAssertEqual(try repository.git(["rev-parse", "HEAD"]).trimmed, revision)
+    XCTAssertEqual(try repository.git(["rev-parse", "HEAD^"]).trimmed, headBefore)
+    XCTAssertEqual(try repository.git(["ls-tree", "--name-only", "HEAD"]).trimmed, "renamed.txt")
+    XCTAssertEqual(try repository.git(["show", "HEAD:renamed.txt"]).trimmed, "initial")
+  }
+
+  func testCommitRejectsMissingPathAbsentFromIndexAndHead() async throws {
+    let repository = try GitTestRepository()
+    let headBefore = try repository.git(["rev-parse", "HEAD"]).trimmed
+    let indexBefore = try repository.indexData()
+
+    await XCTAssertThrowsErrorAsync(
+      try await repository.resolver.execute(
+        makeGitCommitInput(message: "test: untracked ghost", files: ["ghost.txt"]),
+        context: AdapterExecutionContext()
+      )
+    ) { error in
+      XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked)
+      XCTAssertEqual(
+        (error as? AdapterExecutionError)?.message,
+        "riela/git-commit missing path is not an exact tracked deletion"
+      )
+    }
+
+    XCTAssertEqual(try repository.git(["rev-parse", "HEAD"]).trimmed, headBefore)
+    XCTAssertEqual(try repository.indexData(), indexBefore)
+    XCTAssertEqual(try repository.finalizationArtifacts(in: "journals"), [])
+  }
+
+  func testCommitRejectsMissingPathOnUnbornHeadWithoutCrashing() async throws {
+    let repository = try GitTestRepository(commitInitialFile: false)
+
+    await XCTAssertThrowsErrorAsync(
+      try await repository.resolver.execute(
+        makeGitCommitInput(message: "test: unborn head ghost", files: ["ghost.txt"]),
+        context: AdapterExecutionContext()
+      )
+    ) { error in
+      XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked)
+      XCTAssertEqual(
+        (error as? AdapterExecutionError)?.message,
+        "riela/git-commit missing path is not an exact tracked deletion"
+      )
+    }
+
+    XCTAssertEqual(try repository.git(["rev-list", "--all", "--count"]).trimmed, "0")
+    XCTAssertEqual(try repository.finalizationArtifacts(in: "journals"), [])
+  }
+}
+
 private final class ContractGitFinalizationFailureInjector:
   GitFinalizationFailureInjecting,
   @unchecked Sendable {

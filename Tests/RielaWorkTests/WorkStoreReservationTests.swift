@@ -59,6 +59,52 @@ final class WorkStoreReservationTests: XCTestCase {
     ).first?["token_digest"]).contains("one-time-secret"))
   }
 
+  func testReservationRejectsRuntimeOnlyDuplicateSessionAndRollsBackEveryWrite() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let existingSession = WorkflowSession(
+      workflowId: "existing-workflow",
+      sessionId: "session-1",
+      status: .completed,
+      entryStepId: "existing-start",
+      currentStepId: "existing-finish",
+      createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+      updatedAt: Date(timeIntervalSince1970: 1_700_000_001)
+    )
+    let existingMessage = WorkflowMessageRecord(
+      communicationId: "comm-existing",
+      workflowExecutionId: existingSession.sessionId,
+      fromStepId: "existing-start",
+      toStepId: "existing-finish",
+      sourceStepExecutionId: "exec-existing",
+      payload: ["owner": .string("existing-session")],
+      lifecycleStatus: .delivered,
+      createdOrder: 1,
+      createdAt: existingSession.createdAt
+    )
+    let existingSnapshot = WorkflowRuntimePersistenceSnapshot(
+      session: existingSession,
+      workflowMessages: [existingMessage],
+      rootOutput: ["result": .string("preserve-me")],
+      diagnostics: ["preserve-diagnostic"]
+    )
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try persistence.save(existingSnapshot)
+
+    XCTAssertThrowsError(try store.reserveAttempt(request())) { error in
+      XCTAssertTrue(String(describing: error).contains("already exists"))
+    }
+
+    XCTAssertEqual(try store.loadTask(id: task.id), task)
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [])
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+    XCTAssertEqual(try store.listEvidence(taskId: task.id), [])
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases"), [])
+    XCTAssertEqual(try persistence.load(sessionId: existingSession.sessionId), existingSnapshot)
+  }
+
   func testReservationRejectsStaleVersionAndOneLiveAttempt() throws {
     let store = WorkStore(rootDirectory: root.path)
     try store.saveTask(sampleTask())

@@ -122,6 +122,16 @@ public extension WorkStore {
         }
       }
 
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+      try persistence.prepareSchema(in: database)
+      let existingSession = try database.query(
+        "SELECT workflow_execution_id FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
+        bindings: [.text(request.sessionId)]
+      )
+      guard existingSession.isEmpty else {
+        throw WorkStoreError("workflow session '\(request.sessionId)' already exists")
+      }
+
       let token = request.launchToken ?? UUID().uuidString.lowercased()
       let digest = Self.launchTokenDigest(token)
       let launch = AttemptLaunchMetadata(
@@ -206,8 +216,6 @@ public extension WorkStore {
         updatedAt: request.now,
         rootSessionId: request.sessionId
       )
-      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
-      try persistence.prepareSchema(in: database)
       try persistence.save(WorkflowRuntimePersistenceSnapshot(session: session), in: database)
       try failIfRequested(.session, request: request)
       return AttemptReservation(task: updatedTask, attempt: attempt, decision: decision, launchToken: token)
@@ -315,7 +323,7 @@ public extension WorkStore {
     let database = try openWritable()
     return try database.transaction { database in
       let cancellation = try database.query(
-        "SELECT acknowledged_at FROM work_cancellations WHERE attempt_id = ?",
+        "SELECT decision_id, acknowledged_at FROM work_cancellations WHERE attempt_id = ?",
         bindings: [.text(attemptId.rawValue)]
       ).first
       guard cancellation != nil, cancellation?["acknowledged_at"] == nil else {
@@ -335,6 +343,17 @@ public extension WorkStore {
         bindings: [.text(Self.timestamp(now)), .text(outcome.sessionStatus.rawValue), .text(attempt.id.rawValue)]
       )
       try database.execute("DELETE FROM work_leases WHERE attempt_id = ?", bindings: [.text(attempt.id.rawValue)])
+      if let decisionId = cancellation?["decision_id"],
+         let decision = try storedDecision(DecisionID(decisionId), in: database),
+         case .cancel = decision.kind {
+        var task = try requiredTask(attempt.taskId, in: database)
+        if !task.state.isTerminal {
+          let expectedVersion = task.version
+          task.state = .cancelled
+          task.version += 1
+          try updateTask(task, expectedVersion: expectedVersion, in: database)
+        }
+      }
       return attempt
     }
   }

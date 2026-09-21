@@ -32,10 +32,18 @@ public extension WorkStore {
       }
       let attempt = try decision.attemptId.map { try requiredAttempt($0, in: database) }
       var application: DecisionApplication
-      do {
-        application = try DecisionApplier.apply(decision, to: task, attempt: attempt, completion: completion)
-      } catch {
-        throw WorkStoreError("decision '\(decision.id.rawValue)' was rejected: \(error)")
+      let requestsLiveCancellation: Bool
+      if case .cancel = decision.kind, let attempt,
+         attempt.state == .prepared || attempt.state == .running || attempt.state == .terminal {
+        application = DecisionApplication(task: task, attempt: attempt)
+        requestsLiveCancellation = true
+      } else {
+        do {
+          application = try DecisionApplier.apply(decision, to: task, attempt: attempt, completion: completion)
+        } catch {
+          throw WorkStoreError("decision '\(decision.id.rawValue)' was rejected: \(error)")
+        }
+        requestsLiveCancellation = false
       }
       application.task.version = task.version + 1
       try updateTask(application.task, expectedVersion: task.version, in: database)
@@ -49,6 +57,15 @@ public extension WorkStore {
         }
       }
       try insertDecision(decision, in: database)
+      if requestsLiveCancellation, let attempt {
+        try database.execute(
+          "INSERT INTO work_cancellations (attempt_id, task_id, decision_id, requested_at) VALUES (?, ?, ?, ?)",
+          bindings: [
+            .text(attempt.id.rawValue), .text(task.id.rawValue),
+            .text(decision.id.rawValue), .text(Self.timestamp(decision.createdAt))
+          ]
+        )
+      }
       let evidence = Evidence(
         id: decisionEvidenceId,
         taskId: decision.taskId,

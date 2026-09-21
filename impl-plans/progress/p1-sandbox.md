@@ -5,6 +5,8 @@
 - Plan: `impl-plans/active/work-runtime-p1-sandbox.md`
 - Plan review decision: `accepted_for_step6_implementation`
 - Integration review decision: `needs_revision_selective_redispatch`
+- Latest Step 7 review decision: `needs_revision` (`comm-000063`, `step7-review-attempt-1-exec-9`)
+- Latest test-integrity decisions: `needs_revision` (`comm-000067`, `step6-test-integrity-check-attempt-1-exec-13`; `comm-000070`, `step6-test-integrity-check-attempt-1-exec-16`)
 - Selective redispatch communication: `comm-000065`
 - Source step execution: `integration-review-attempt-1-exec-12`
 - Codex-agent references: `riela-manager`, `step1-issue-intake`, `step2-design-doc-update`, `step3-design-review`, `step4-impl-plan-create`, `step5-impl-plan-review`, `step6-implement:p1-sandbox`, `step6-implement:p1-reservation`, `step6-test-integrity-check:p1-reservation`, `reconcile-implementations`, `integration-review`
@@ -70,6 +72,23 @@ P1-0 implementation is present and its behavioral regression passes, but this br
 | Strict touched-file SwiftLint, attempt 14 | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-14/logs/touched-swiftlint.log` |
 | Shared-tree diff check before attempt-14 progress update | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-14/logs/diff-check.log` |
 | Shared-tree diff check after attempt-14 progress update | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-14/logs/diff-check-after-progress.log` |
+| Required build, attempt 15 | exit 1; exact command cannot write the default clang module cache | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/build.log` |
+| Accommodated build, attempt 15 | exit 1; the moving shared tree now requires dependency commit `c7f269753ec36aca92d429ec13316ba033128967`, unavailable in the plan-local offline checkout | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/build-accommodated-clean.log` |
+| Required focused tests, attempt 15 | exit 1; exact command cannot write the default clang module cache | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/sandbox-tests.log` |
+| Focused prebuilt XCTest bundle, attempt 15 | exit 0; 2 selected tests, 2 passed, 0 failures; source hashes match the prior successful build | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/sandbox-tests-xctest.log` |
+| Required canonical workflow artifact validation, attempt 15 | exit 1; exact command cannot write the default clang module cache | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/workflow-validate.log` |
+| Canonical workflow artifact validation through the prebuilt CLI with isolated `HOME` and `TMPDIR`, attempt 15 | exit 2; blocked before node validation by the hard-coded denied `/var/tmp` canonical target lock | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/workflow-validate-direct.log` |
+| Strict touched-file SwiftLint, attempt 15 | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/touched-swiftlint.log` |
+| Installed owning-package manifest audit, attempt 15 | exit 0; version `0.3.3`, SHA-256 integrity digest `1c9e8d0cee5e942d6819c6cc475ebdb51170ed16fb5a2fe271983ef174fdc61f`; installed package unchanged | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/manifest-audit.log` |
+| Shared-tree diff check after final attempt-15 progress update | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-15/logs/diff-check-after-final-progress.log` |
+| Required build with writable plan-local caches, attempt 16 | exit 1; complete log; nested SwiftPM `sandbox-exec` application denied by the managed environment | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-16/logs/build.log` |
+| Required focused tests with writable plan-local caches, attempt 16 | exit 1; complete log; failed before test selection because nested SwiftPM `sandbox-exec` application was denied | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-16/logs/sandbox-tests.log` |
+| Required canonical workflow artifact validation with writable plan-local caches, attempt 16 | exit 1; complete log; failed before executable launch because nested SwiftPM `sandbox-exec` application was denied | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-16/logs/workflow-validate.log` |
+| Strict touched-file SwiftLint, attempt 16 | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-16/logs/touched-swiftlint.log` |
+| Shared-tree diff check after final attempt-16 progress update | exit 0 | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-16/logs/diff-check-after-final-progress.log` |
+| Required exact build, attempt 17 | exit 1; complete log; default clang module cache is outside writable roots | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-17/logs/build.log` |
+| Required exact focused tests, attempt 17 | exit 1; complete log; failed before test selection because the default clang module cache is outside writable roots | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-17/logs/sandbox-tests.log` |
+| Required exact canonical workflow artifact validation, attempt 17 | exit 1; complete log; failed before executable launch because the default clang module cache is outside writable roots | `tmp/work-runtime-p1-20260921/p1-sandbox/attempt-17/logs/workflow-validate.log` |
 
 Selected tests:
 
@@ -83,4 +102,4 @@ The successful build/test commands add `--disable-sandbox --skip-update`, redire
 - Current SHA-256 values for both node payloads and the regression test remain `7d2acf47a1c382c9d66055e4666c96983645ee4157fc5a86e0138adf716831fa`, `6977cb794f588bc04d7f0338d2e67504161fb8d40178c43ea684b6003cd9042c`, and `25db94758e90fce9da1425610f8c3091908899c4ca81c0925f9017fe24110185`; no within-node overwrite was detected.
 - The changes remain bounded to P1-0 ownership. No Package.swift, lockfile, shared index, digest, installed package, or other worker progress file was edited.
 - No high or mid correctness, security, data-integrity, required-functionality, or severe maintainability finding was found in the retained hunks.
-- Verification gap: the CLI artifact-validation command remains blocked with exit 2 and must be rerun by serial reconciliation in an environment that permits the required `/var/tmp` canonical target lock.
+- Unresolved `comm-000063`/`comm-000067`/`comm-000070` mid finding: current-tree build, focused tests, and canonical artifact validation still require rerun in a permissive environment. Attempt-17 exact invocations have complete logs but exit 1 before build, test selection, or executable launch because the default clang module cache is outside writable roots; attempt 16 additionally proves writable plan-local caches still encounter denied nested SwiftPM sandboxing, and earlier direct validation reaches the CLI but exits 2 before node validation on the canonical `/var/tmp` lock. Attempt 18 did not repeat the unchanged commands because the current execution has the same managed permission profile and cannot provide the explicitly requested permissive environment.

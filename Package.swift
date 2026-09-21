@@ -364,6 +364,7 @@ let package = Package(
         "RielaAdapters",
         "RielaAppSupport",
         "RielaCLI",
+        "RielaKaibaSupport",
         "RielaServer",
         "RielaWorkflowRegistry",
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway")

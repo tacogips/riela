@@ -1,8 +1,156 @@
 import Foundation
 import XCTest
 @testable import RielaCLI
+@testable import RielaKaibaSupport
 
 final class KaibaInstanceCommandTests: XCTestCase {
+  func testFixedFailureMatrixAndDefaultLifecycleContracts() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let environment = ["HOME": home.path]
+    let app = RielaCLIApplication()
+
+    await assertFailureCode("kaiba_instance_not_found", app, ["kaiba", "instance", "show", "missing"], environment)
+    await assertFailureCode(
+      "invalid_kaiba_instance_name",
+      app,
+      ["kaiba", "instance", "add", "bad\nname", "--endpoint", "https://localhost", "--allow-unauthenticated"],
+      environment
+    )
+    await assertFailureCode(
+      "invalid_endpoint",
+      app,
+      ["kaiba", "instance", "add", "Bad endpoint", "--endpoint", "ftp://localhost", "--allow-unauthenticated"],
+      environment
+    )
+    await assertFailureCode(
+      "invalid_authentication_policy",
+      app,
+      ["kaiba", "instance", "add", "Bad auth", "--endpoint", "https://localhost", "--api-key-env", "TOKEN", "--allow-unauthenticated"],
+      environment
+    )
+
+    let firstID = try await addInstance(named: "Alpha", app: app, environment: environment)
+    let secondID = try await addInstance(named: "Beta", app: app, environment: environment)
+    await assertFailureCode(
+      "duplicate_kaiba_instance_name",
+      app,
+      ["kaiba", "instance", "add", "alpha", "--endpoint", "https://localhost", "--allow-unauthenticated"],
+      environment
+    )
+    await assertFailureCode(
+      "default_replacement_required",
+      app,
+      ["kaiba", "instance", "remove", firstID],
+      environment
+    )
+
+    let selected = await app.run(
+      ["kaiba", "instance", "set-default", secondID, "--output", "json"],
+      environment: environment
+    )
+    XCTAssertEqual(selected.exitCode, .success, selected.stderr)
+    let disabled = await app.run(
+      ["kaiba", "instance", "update", firstID, "--disable", "--output", "json"],
+      environment: environment
+    )
+    XCTAssertEqual(disabled.exitCode, .success, disabled.stderr)
+    await assertFailureCode(
+      "disabled_kaiba_instance",
+      app,
+      ["kaiba", "instance", "set-default", firstID],
+      environment
+    )
+
+    let project = root.appendingPathComponent("project", isDirectory: true)
+    let malformed = project.appendingPathComponent(".riela/workflows/broken/workflow.json")
+    try FileManager.default.createDirectory(
+      at: malformed.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("{".utf8).write(to: malformed)
+    await assertFailureCode(
+      "kaiba_binding_scan_failed",
+      app,
+      ["kaiba", "instance", "remove", firstID, "--working-dir", project.path],
+      environment
+    )
+
+    let invalidHome = root.appendingPathComponent("invalid-home", isDirectory: true)
+    let catalogURL = invalidHome.appendingPathComponent(".riela/kaiba/instances.json")
+    try FileManager.default.createDirectory(
+      at: catalogURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("{}".utf8).write(to: catalogURL)
+    await assertFailureCode(
+      "invalid_kaiba_instance_store",
+      app,
+      ["kaiba", "instance", "list"],
+      ["HOME": invalidHome.path]
+    )
+    await assertFailureCode(
+      "kaiba_instance_store_unavailable",
+      app,
+      ["kaiba", "instance", "add", "Unavailable", "--endpoint", "https://localhost", "--allow-unauthenticated"],
+      ["HOME": "/dev/null"]
+    )
+  }
+
+  func testReadinessFailureMatrixAndStaleCompletion() async throws {
+    for expectation in [
+      (KaibaInstanceLastTestStatus.authFailed, "auth_failed"),
+      (.connectionFailed, "connection_failed"),
+      (.incompatible, "incompatible_kaiba_instance")
+    ] {
+      let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: home) }
+      let environment = ["HOME": home.path]
+      let app = RielaCLIApplication(
+        kaibaInstanceCommandRunner: KaibaInstanceCommandRunner { _, _ in
+          KaibaInstanceLastTest(status: expectation.0, code: expectation.1, attemptedAt: Date())
+        }
+      )
+      let id = try await addInstance(named: "Probe", app: app, environment: environment)
+      await assertFailureCode(
+        expectation.1,
+        app,
+        ["kaiba", "instance", "test", id],
+        environment
+      )
+    }
+
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: home) }
+    let environment = ["HOME": home.path]
+    let staleApp = RielaCLIApplication(
+      kaibaInstanceCommandRunner: KaibaInstanceCommandRunner { instance, _ in
+        let store = KaibaInstanceStore(homeURL: home)
+        _ = try store.mutate { catalog in
+          var updated = catalog
+          let index = try XCTUnwrap(
+            updated.instances.firstIndex { $0.id == instance.id }
+          )
+          updated.instances[index].endpoint = "https://localhost:8443/graphql"
+          return updated
+        }
+        return KaibaInstanceLastTest(status: .ready, attemptedAt: Date())
+      }
+    )
+    let staleID = try await addInstance(
+      named: "Stale",
+      app: staleApp,
+      environment: environment
+    )
+    await assertFailureCode(
+      "kaiba_instance_changed",
+      staleApp,
+      ["kaiba", "instance", "test", staleID],
+      environment
+    )
+  }
+
   func testRemoveScansBindingsAndForceReportsAffectedReferences() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -236,5 +384,49 @@ final class KaibaInstanceCommandTests: XCTestCase {
     let missingLastTest = try XCTUnwrap(missingShownInstance["lastTest"] as? [String: Any])
     XCTAssertEqual(missingLastTest["status"] as? String, "missing_credential")
     XCTAssertEqual(missingLastTest["code"] as? String, "missing_kaiba_credential")
+  }
+
+  private func addInstance(
+    named name: String,
+    app: RielaCLIApplication,
+    environment: [String: String]
+  ) async throws -> String {
+    let result = await app.run([
+      "kaiba", "instance", "add", name, "--endpoint", "https://localhost",
+      "--allow-unauthenticated", "--output", "json"
+    ], environment: environment)
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let payload = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any]
+    )
+    let instance = try XCTUnwrap(payload["instance"] as? [String: Any])
+    return try XCTUnwrap(instance["id"] as? String)
+  }
+
+  private func failureCode(
+    _ app: RielaCLIApplication,
+    _ arguments: [String],
+    _ environment: [String: String]
+  ) async -> String? {
+    let result = await app.run(arguments + ["--output", "json"], environment: environment)
+    XCTAssertNotEqual(result.exitCode, .success, "stdout=\(result.stdout)")
+    XCTAssertTrue(result.stdout.isEmpty)
+    guard let payload = try? JSONSerialization.jsonObject(
+      with: Data(result.stderr.utf8)
+    ) as? [String: Any] else {
+      XCTFail("expected JSON error, got: \(result.stderr)")
+      return nil
+    }
+    return payload["code"] as? String
+  }
+
+  private func assertFailureCode(
+    _ expected: String,
+    _ app: RielaCLIApplication,
+    _ arguments: [String],
+    _ environment: [String: String]
+  ) async {
+    let actual = await failureCode(app, arguments, environment)
+    XCTAssertEqual(actual, expected)
   }
 }

@@ -1,6 +1,6 @@
 # Named Kaiba API Instances And KaibaClient Migration
 
-**Status**: Proposed for adversarial review
+**Status**: Accepted and implemented; automated verification current 2026-09-21
 **Workflow**: `codex-design-and-implement-review-loop-session-111`
 **Issue**: `local-request:/Users/taco/gits/tacogips/riela:Add named Kaiba API instances and migrate every kaiba node to KaibaClient`
 

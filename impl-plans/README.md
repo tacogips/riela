@@ -43,15 +43,17 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
+| `active/rielaapp-web-server-http-transport` | 117 | Active in the separately owned Tauri integration worktree; not modified here | external ownership |
+| `active/rielaapp-web-server-lifecycle-packaging` | 45 | Active in the separately owned Tauri app worktree; not modified here | external ownership |
 | `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); installed gateway live QA now reaches the provider but is blocked by Clock UI automation/permission (`UNEXPECTED_ERROR`, System Events `-600`). No permission prompt or real-alarm mutation was initiated without explicit authorization | W4 |
-| `active/riela-note-new-features` | 33 | Planning; Anywhere Capture, Entity Pages, Scoped Ask (2026-07-12 persona ideation + judge panel); no code written | W8 |
+| `active/kaiba-api-instances` | 2 | Product implementation and published-dependency/automated gates complete; two current-executable screenshots blocked by unavailable Screen Recording/CGWindow visibility | current continuation |
 
 **Prose/decision/external plans (kept active, no open checkboxes or non-checkbox scope):**
 
 | Plan | Status | Workstream |
 | ---- | ------ | ---------- |
-| `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
 | `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
+| `active/monja-typescript-sdk-command-node` | Owned by the separate Monja branch/worktree specified by the user; do not modify from this continuation | external ownership |
 
 **W5 package plans — superseded by the Swift migration (reconciled 2026-07-12):**
 

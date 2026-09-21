@@ -113,6 +113,11 @@
   an unreadable highest suffix cannot be reused. The focused collision test
   allocated `session-8` with unreadable `session-7` retained; the 22-test
   discovery/live-persistence/resolution aggregate and strict lint passed.
+- `kaiba-api-instances` no longer has a published-package blocker. The current
+  resolved revision exports `KaibaClient`; 86 focused CLI/support/add-on/App
+  tests pass, including newly completed fixed-diagnostic and stale-readiness
+  coverage. Only two manual screenshot boxes remain: the direct executable ran
+  with isolated roots, but this session could not enumerate a RielaApp CGWindow.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

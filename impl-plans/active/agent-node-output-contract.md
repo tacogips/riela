@@ -60,16 +60,21 @@
 | Task | Deliverables | Primary write scope | Depends on | Parallelizable |
 | ---- | ------------ | ------------------- | ---------- | -------------- |
 | T1 D1 sandbox validation | Error diagnostics for omitted `agentSandbox` on codex/claudeCode/cursor backends and for declared `agentSandbox` on API backends; backend→vendor sandbox-consumption table lives beside the rule | `Sources/RielaCore/WorkflowValidation.swift`, `Tests/RielaCoreTests/` (validation suite) | — | Yes (with T3, T4) |
-| T2 D2a schema validation | Error diagnostics: templated payload without producer schema; referenced first-segment field missing from `schema.properties`; conditional transition labels without schema. Template scanning over addon `config`/`inputs` and node `variables` of one-transition successors | `Sources/RielaCore/WorkflowValidation.swift`, `Tests/RielaCoreTests/` | T1 (same file — serialize edits) | No (shares WorkflowValidation.swift with T1) |
+| T2 D2a schema validation | Shared payload-reference classifier (new RielaCore file, reused by T4) with the explicit `classifyTemplateReference(_:surface:)` signature and `TemplateSurface = .addonConfig(addonInputKeys:) / .addonInputs` from design §6, covering all three reference forms — dotted `inbox.latest.output.payload.*`, `input.<field>`, and **bare** `{{field}}` — with per-surface exclusions (reserved roots on both; same-addon `inputs` keys excluded ONLY under `.addonConfig`, because `inputs` render before they are merged at `WorkflowAddonSupport.swift:39`/`:45-48`), the `input._rielaInput|upstream|runtime` context carve-out, and the documented errs-toward-the-error direction for run-variable ambiguity. Error diagnostics: templated payload without producer schema; referenced first-segment field missing from `schema.properties`; conditional transition labels without schema. Template scanning over addon `config`/`inputs` of one-transition successors ONLY — node `variables` are not scanned, their values being inert text (design §4 rule 1) | new `Sources/RielaCore/TemplateReferenceClassification.swift` (classifier), `Sources/RielaCore/WorkflowValidation.swift`, `Tests/RielaCoreTests/` | T1 (same file — serialize edits) | No (shares WorkflowValidation.swift with T1) |
 | T3 D2b answer path + retry default | Delete opportunistic `{`-prefix envelope sniffing in `normalizeGatewayOutput` (no-contract branch = pure text wrap); `maxValidationAttempts` default 2 when `output.jsonSchema != nil` | `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`, `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift`, adapter/runner tests | — | Yes (with T1, T4) |
-| T4 D3 template resolution error | Typed `templateResolutionFailed` error carrying producer step (`_rielaInput.latest.fromStepId`), template path, consumer step/node/addon; strict rendering for addon `config`/`inputs` before any addon side effect; prompt rendering stays lenient; error surfaces through the existing adapter-failure publication path | `Sources/RielaAddonSupport/WorkflowAddonSupport.swift`, new error type (RielaCore or RielaAddonSupport), `Sources/RielaCLI/ProductionNodeAdapter+GitAddons.swift` call sites only if signatures force it, addon-support tests | — | Yes (with T1, T3) |
-| T5 Example/fixture reconciliation | Every in-repo example workflow and test fixture validates under T1+T2 rules; `rielaExampleWorkflowNames()` registration + mock counts intact; `RielaCLITests` green | `Sources/`/`Tests/` example + fixture JSON, `Tests/RielaCLITests/` | T1, T2, T3, T4 | No (sweeps the whole tree after rules land) |
+| T4 D3 template resolution error | Typed `templateResolutionFailed` error carrying producer step (`_rielaInput.latest.fromStepId`, which is written conditionally at `RuntimeMessageInputResolver.swift:118` — fall back to a sole `_rielaInput.sourceStepIds` entry, then to `an upstream step`), template path, consumer step/node/addon; strict rendering for addon `config`/`inputs` **only for classifier-payload paths** before any addon side effect, with context namespaces (`event.*`, `workflowInput.*`, `runtime.*`, `upstream.*`, `_rielaInput.*`, and those roots spelled under `input.`) still rendering `""`, `config` classified under `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`, and declared node `variables` deliberately NOT a lenient class because they never reach `addonVariables`; prompt rendering stays lenient for every class; error surfaces through the existing adapter-failure publication path | `Sources/RielaAddonSupport/WorkflowAddonSupport.swift`, new error type (RielaCore or RielaAddonSupport), `Sources/RielaCLI/ProductionNodeAdapter+GitAddons.swift` call sites only if signatures force it, addon-support tests | T2 (consumes its classifier by API only — no shared file) | Partly (error type, fallback and publication path can be built alongside T1/T3; the strict/lenient switch lands once the classifier exists) |
+| T5 Example/fixture reconciliation | Every in-repo example workflow and test fixture (a) validates under T1+T2 rules and (b) **executes** green under its `mock-scenario.json` where it carries addon `config`/`inputs` — D3 is a render-time rule that validate cannot exercise. `examples/note-rag-retrieval-fusion` (bare payload references) and `examples/telegram-sdk-trio-chat` (optional `event.*` context in `riela/memory-save` payloadTemplate) are mandatory; `rielaExampleWorkflowNames()` registration + mock counts intact; `RielaCLITests` green | `Sources/`/`Tests/` example + fixture JSON, `Tests/RielaCLITests/` | T1, T2, T3, T4 | No (sweeps the whole tree after rules land) |
 | T6 Docs | Contract stated in the workflow authoring docs/skills text this repo owns (riela-workflow skill sources, design-doc cross-links) | `skills/` or `docs/` workflow-authoring text in this tree | T1–T4 | Yes (with T5) |
 | T7 (follow-up package) D4 bundle | Listed for traceability only — executed as its own work package in `tacogips/riela-packages`, per Excluded section | riela-packages (NOT this repo) | T1–T6 released | — |
 
-Dependency waves: wave 1 = T1, T3, T4 (disjoint files); wave 2 = T2 (same
-file as T1, serial); wave 3 = T5, T6; T7 external. Shared file:
-`WorkflowValidation.swift` (T1→T2 strictly ordered, fresh read before T2).
+Dependency waves: wave 1 = T1, T3, and T4's error type / producer fallback /
+publication path (disjoint files); wave 2 = T2, which shares
+`WorkflowValidation.swift` with T1 and also lands the classifier as a new
+standalone file; wave 3 = T4's strict/lenient switch over the classifier, then
+T5 and T6; T7 external. Shared file: `WorkflowValidation.swift` (T1→T2 strictly
+ordered, fresh read before T2). Shared API: the classifier — T2 owns it, T4
+consumes it, and D2a and D3 must never diverge on what counts as a payload
+reference, so one implementation serves both.
 
 ## Per-Task Completion Evidence
 
@@ -79,17 +84,45 @@ authoring time (planning-only run — no code written).
 - [ ] T1: validation tests cover omitted-sandbox error per backend and
       declared-sandbox-on-API-backend error; full `swift test` green (arm64
       shell); evidence = test names + run output.
-- [ ] T2: validation tests cover the three D2a error shapes plus green
+- [ ] T2: validation tests cover the three D2a error shapes for each of the
+      three reference forms, including the **bare** `{{field}}` case modelled
+      on `examples/note-rag-retrieval-fusion/workflow.json:117-120`, plus
+      classifier tests proving reserved roots are excluded on both surfaces,
+      that one and the same name matching a same-addon `inputs` key is
+      excluded under `.addonConfig` but classified as a payload reference
+      under `.addonInputs`, that an `inputs` entry referencing another
+      `inputs` key is a validation error, that a declared node `variables`
+      key is neither scanned nor excluded, and that `input._rielaInput.*`,
+      `input.upstream.*` and `input.runtime.*` classify as context, plus green
       compliant fixtures; evidence = test names + run output.
 - [ ] T3: adapter test proves `{`-prefixed malformed no-contract answer
       yields `{text}` with no envelope; runner test proves schema-default
       retry of exactly 2 and declared value wins; evidence = test names +
       run output.
-- [ ] T4: addon-support test proves missing config path fails with
-      producer/path/consumer in the message and the addon body never ran;
-      prompt lenient test unchanged; evidence = test names + run output.
+- [ ] T4: addon-support test proves a missing **payload reference** in config
+      fails with producer/path/consumer in the message and the addon body
+      never ran; a second proves the producer fallback when
+      `latest.fromStepId` is absent; a third proves an absent **context**
+      reference (`{{event.input.attachmentText}}`, telegram `memory-save`
+      shape) still renders `""` and the addon still executes; a fourth proves
+      the chosen F6 semantics — a key declared in the consuming node's
+      `variables` is classified identically at validate and render time on the
+      addon surface (error both places, never a run-time-only surprise) and
+      `{{workflowInput.<name>}}` is the escape that actually resolves; a fifth
+      proves a payload reference inside addon `inputs` raises
+      `templateResolutionFailed` rather than rendering `""`, while the same
+      name inside `config` resolves to the rendered input; prompt
+      lenient tests unchanged (`Tests/RielaCoreTests/PromptTemplateTests.swift:8`,
+      `DeterministicWorkflowRunnerTests.swift:365`); evidence = test names +
+      run output.
 - [ ] T5: full `swift test` from repo root green, including `RielaCLITests`
-      example suites; evidence = summary counts.
+      example suites, AND a mock-scenario execution pass —
+      `riela workflow run examples/note-rag-retrieval-fusion --mock-scenario
+      examples/note-rag-retrieval-fusion/mock-scenario.json` and the same for
+      `examples/telegram-sdk-trio-chat` — both finishing green with the
+      telegram `memory-save` record still written when the event carries no
+      `threadId`/`attachments`; evidence = summary counts **and** the two run
+      outcomes with their session ids.
 - [ ] T6: docs text states the contract (answer shape, retry budget,
       operator-visible failures, validate rules); evidence = file paths.
 
@@ -102,6 +135,8 @@ authoring time (planning-only run — no code written).
    messages name node, field, and rule.
 3. Read-back of `normalizeGatewayOutput`: no-contract branch contains no
    JSON parsing.
+3b. Mock-scenario execution of the two addon-config-bearing examples (T5),
+   because D3 fails at render time and `workflow validate` cannot reach it.
 4. For this planning run itself: `git diff --stat` proof below — no
    `Sources/` or `Tests/` path modified.
 
@@ -145,5 +180,363 @@ No `Sources/` or `Tests/` path appears. After the checkpoint commit,
 the checkpoint records that output here:
 
 ```
-<checkpoint: paste git diff --stat ca1ce34..HEAD after committing>
+$ git rev-parse HEAD
+36285f0187862a3a7d251417f96264a309a87e90
+$ git diff --stat=200 --name-status ca1ce34..HEAD
+A	design-docs/specs/design-agent-node-output-contract.md
+M	impl-plans/README.md
+A	impl-plans/active/agent-node-output-contract-dispatch.json
+A	impl-plans/active/agent-node-output-contract.md
+$ git diff --stat=200 ca1ce34..HEAD
+ design-docs/specs/design-agent-node-output-contract.md     | 364 +++++
+ impl-plans/README.md                                       |   1 +
+ impl-plans/active/agent-node-output-contract-dispatch.json |  39 +++
+ impl-plans/active/agent-node-output-contract.md            | 149 +++++
+ 4 files changed, 553 insertions(+)
 ```
+
+(`+` runs elided for width; the four paths and the 553-insertion total are
+verbatim.) Four documentation paths, zero `Sources/` and zero `Tests/`
+paths — **AC7 satisfied**.
+
+### 2026-09-21 — Step 6 read-back (still planning-only; no code written)
+
+The assigned dispatch (`impl-plans/active/agent-node-output-contract-dispatch.json`,
+`notes.planningOnly`) forbids any `Sources/` or `Tests/` change, so this step
+implemented nothing. It re-verified the design against the tree and closed the
+plan's own open checkpoint obligation. Evidence:
+`tmp/agent-node-output-contract/plans/agent-node-output-contract/attempt-1/`
+(untracked; `00-pre-edit-state.log`, `01-seam-verification.log`,
+`02-intended-edits.md`, `03-post-edit-state.log`).
+
+**Independent seam re-verification.** All 15 `file:line` citations in the
+design were re-read at `36285f0` (`01-seam-verification.log`). *Corrected by
+the 2026-09-21 review and by the attempt-2 recheck below: 13 of the 15 printed
+the cited symbol exactly; `PromptTemplate.swift:21` was off by one (the `?? ""`
+is `:20`) and `WorkflowAddonSupport.swift:35-38` was off by one at its start
+(`:35` is `workflowId`; `stepId`/`nodeId`/`addonName` are `:36-38`). The blanket
+"all 15 print the cited symbol" claim originally recorded here was wrong and is
+retracted; both citations are fixed in the design as of attempt 2.* The
+re-read list: permission-mode append at
+`AgentGatewayNodeAdapter.swift:608`, `claudePermissionMode` at `:660`,
+`normalizeGatewayOutput` at `:719`, the opportunistic `{`-sniff at `:728`,
+`WorkflowModel.swift:777`, `WorkflowValidation.swift:102`,
+`RuntimeOutputValidation.swift:41`, `RuntimeOutputExtraction.swift:3`,
+`AdapterContracts.swift:295`, `…+Prompting.swift:17`,
+`DeterministicWorkflowRunner.swift:875`, `PromptTemplate.swift:21`
+(*wrong — the correct line is `:20`*), `WorkflowAddonSupport.swift:18`,
+`ProductionNodeAdapter+GitAddons.swift:73`.
+`grep -c agentSandbox Sources/RielaCore/WorkflowValidation.swift` = 0 (D1 has
+no rule today); `minLength` is in the supported schema keyword list
+(`RuntimeOutputValidation.swift:94`), confirming the section-7 edge case.
+Bundle counts re-checked read-only: 16 node files, all 16 `claude-code-agent`,
+5 with `agentSandbox`, 4 with `jsonSchema`, `node-plan-checkpoint.json` with
+neither, `workflow.json:127` and `:159` consuming
+`{{inbox.latest.output.payload.commitMessage}}`.
+
+**Two citation defects found and fixed in the design (no decision changed).**
+
+1. D3 cited `WorkflowAddonSupport.swift:52-55` for `stepId`/`nodeId`/
+   `addonName`; the assignments are at `:35-38`. Corrected.
+2. D3 described `_rielaInput.latest.fromStepId` as simply present. It is
+   written conditionally by `resolvedInputMessageMetadata`
+   (`RuntimeMessageInputResolver.swift:107`, guard at `:118`) and is absent
+   for a message with no originating step, while D3's mandated error text
+   names the producer. The design now specifies the resolution order
+   (`latest.fromStepId` → sole `_rielaInput.sourceStepIds` entry → literal
+   `an upstream step`), and T4's deliverable and completion evidence carry it.
+
+**Acceptance criteria status.** AC1–AC7 PASS (AC7 proof pasted above; AC6 row
+present at `impl-plans/README.md:46` with unchecked count 6, matching the six
+`- [ ]` boxes here). AC8 is half-satisfied: the work is committed on
+`design/agent-node-output-contract` at `36285f0` and `main` is untouched
+(`main` = `c33a783`, unrelated), but the branch has no upstream and is not
+yet pushed (`git rev-parse --abbrev-ref @{u}` → *no upstream configured*).
+Pushing is a serial-checkpoint action and is outside this step's authority;
+it remains the single open acceptance item. This step's own document edits
+are uncommitted in the working tree and need the same checkpoint commit.
+
+### 2026-09-21 — Step 6 attempt 2: review revision (still no code written)
+
+Independent review (`opus-review`, `changes-requested`) raised F1 (high), F2,
+F3, F4 (medium) and F5 (low). Every finding was re-verified against the source
+before editing — evidence
+`tmp/agent-node-output-contract/plans/agent-node-output-contract/attempt-2/`
+(`10-finding-reverification.log`, `11-intended-edits.md`,
+`12-post-edit-state.log`; attempt-1's four logs are untouched). All four
+document findings are addressed here; F3 is the checkpoint's action.
+
+**F1 (high) — D3 over-reached from payload fields to all config paths.**
+Confirmed against the tree: `examples/telegram-sdk-trio-chat/workflow.json:37-45`
+is a `riela/memory-save` `config.payloadTemplate` over `{{event.input.text}}`,
+`{{event.conversation.threadId}}`, `{{event.input.historySource}}`,
+`{{event.input.attachments}}`, `{{event.input.imagePaths}}` and
+`{{event.input.attachmentText}}` — all optional per event, all rendering `""`
+today via `exactTemplateValue` → `renderPromptTemplate`. A surface-wide strict
+rule would have turned the ordinary plain-text message into a hard
+`memory-save` failure. Design section 5 now draws the boundary by **path
+class**, not by surface: strict for payload references
+(`inbox.latest.output.payload.*`, `input.*`, classifier-bare), lenient for
+context namespaces (`event.*`, `workflowInput.*`, `runtime.*`, `_rielaInput.*`,
+declared node `variables`), with the telegram example written in as the worked
+case and "strict over all config paths" added to the rejected alternatives in
+sections 5 and 11. The section now says plainly that the earlier framing —
+machine-consumed config is uniformly obligatory — is contradicted by this
+repository.
+
+**F2 (medium) — D2a missed the dominant idiom.** Confirmed:
+`addonVariables` merges the whole resolved input payload flat
+(`WorkflowAddonSupport.swift:20-22`), so `{{queryPlan}}` reaches what
+`{{inbox.latest.output.payload.queryPlan}}` reaches, and
+`examples/note-rag-retrieval-fusion/workflow.json:117-120` and `:136-145` use
+exactly that bare form in `kaiba/note-search` config. Design section 4 now
+defines a payload reference as three forms including the bare one, gives the
+classifier (reserved runtime roots, declared node `variables`, same-addon
+`inputs` are excluded), and states the undecidability honestly: `request.variables`
+(`DeterministicWorkflowRunner+Addons.swift:58`) is run-supplied and
+`WorkflowDefinition` (`WorkflowModel.swift:582-593`) declares no names for it,
+so a bare identifier fed by a run variable is indistinguishable at validate
+time. The rule errs toward the error, with the cost and the migration-free
+escapes (`{{workflowInput.x}}`, or a declared node `variables` key) stated.
+
+**F4 (medium) — T5 could not have caught F1.** T5's deliverable and completion
+box now require mock-scenario **execution** over the addon-config-bearing
+examples (`note-rag-retrieval-fusion`, `telegram-sdk-trio-chat`, both carry
+`mock-scenario.json`) via `riela workflow run … --mock-scenario …`, not
+validate-only, with the run outcomes and session ids as evidence. Design
+section 9 carries the same two-layer requirement, and the verification plan
+gains step 3b.
+
+**F5 (low) — citations.** `PromptTemplate.swift:21` → `:20`;
+`WorkflowAddonSupport.swift:35-38` → `:36-38`. The attempt-1 entry's blanket
+"all 15 citations print the cited symbol" claim is retracted in place above
+with the true count (13 exact, 2 off by one).
+
+**Knock-on plan changes.** The classifier is one implementation serving both
+D2a and D3, so T2 owns it as a new standalone
+`Sources/RielaCore/TemplateReferenceClassification.swift`, T4 depends on it by
+API, and the dependency waves were rewritten accordingly. T2 and T4 completion
+boxes gained the bare-reference and lenient-context cases; the unchecked-box
+count stays 6, matching `impl-plans/README.md:46`.
+
+**F3 (medium) — AC8, not actionable here.** Re-checked at attempt 2:
+`git rev-parse --abbrev-ref --symbolic-full-name @{u}` → *no upstream
+configured*, and `git ls-remote --heads origin design/agent-node-output-contract`
+returns nothing (exit 0, empty). The serial checkpoint must commit both
+modified documents and push this branch to `origin` with upstream tracking,
+never `main`, then re-run `git diff --stat=200 ca1ce34..HEAD` and replace the
+checkpoint block above so it names the final commit instead of `36285f0`.
+Committing and pushing are outside this step's authority.
+
+### 2026-09-21 — Step 6 attempt 3: second review revision (still no code written)
+
+Second independent review (`opus-review`, `changes-requested`) raised F6 (high)
+and F7 (low) plus non-blocking citation housekeeping. Both were re-verified
+against the source before editing — evidence
+`tmp/agent-node-output-contract/plans/agent-node-output-contract/attempt-3/`
+(`20-finding-reverification.log`, `21-intended-edits.md`,
+`22-post-edit-state.log`); attempt-1 and attempt-2 evidence untouched. The
+review also confirmed F1, F2, F4 and F5 genuinely resolved, and AC1–AC7 met.
+
+**F6 (high) — the prescribed escape did not exist.** Confirmed exactly as
+reported: the addon dispatch branch carries no node payload
+(`DeterministicWorkflowRunner.swift:511-532`), `WorkflowAddonExecutionInput`
+(`WorkflowAddonExecution.swift:341-349`) has no node-variables field,
+`addonVariables` (`WorkflowAddonSupport.swift:18-43`) composes without them,
+and `payload.variables` is consumed only on the agent-prompt path
+(`DeterministicWorkflowRunner+Prompting.swift:52`). The design's own remedy —
+"declare it in the node's `variables`" — would therefore have passed validate
+and then failed at render time with a `templateResolutionFailed` blaming an
+upstream producer for a field it was never asked to publish: the exact defect
+class this design exists to remove.
+
+Resolved with **option B, refined by surface** rather than option A. Option A
+(threading node `variables` into `WorkflowAddonExecutionInput`) is recorded as
+a rejected alternative in §5 and §11 with its reason: that type is public,
+`Codable` with explicit `CodingKeys` (`:341-349`, `:371`) and is serialized for
+placed/distributed addon execution (guarded at
+`DeterministicWorkflowRunner+Addons.swift:24`), so option A widens a wire
+format to grant addon nodes a capability they have never had — a feature
+request, not a contract fix. The refinement keeps the rule honest instead of
+merely deleting a class: §4 now computes the classifier's exclusions **per
+surface**, because the two namespaces genuinely differ — declared node
+`variables` are excluded on the agent-prompt surface (where `promptVariables`
+merges them) and not on the addon surface (where nothing does). §5 states the
+consequence plainly, and §7 and §10 no longer offer node `variables` as an
+escape; `{{workflowInput.<name>}}` is the sole escape on the addon surface and
+it does resolve (`WorkflowInputFilterEvaluation.swift:191-194`).
+
+**F6 second half — §6's classifier contract was unsatisfiable.** It asked for
+"a template string and the consuming node payload", which the render-time seam
+does not have. §6 now gives an explicit signature —
+`classifyTemplateReference(_ path: String, surface: TemplateSurface)` with
+`TemplateSurface = .addonConfig(addonInputKeys:) | .agentPrompt(nodeVariableKeys:)`
+(*superseded at attempt 4: the second case is now `.addonInputs`, and
+`.agentPrompt` is gone — see F9 below*)
+— states what each call site can construct (validate time: either case, from
+the node payload; render time: only `.addonConfig`, from
+`WorkflowAddonExecutionInput.addon.inputs`), and names that asymmetry as the
+mechanism behind "the two must never diverge" instead of asserting the
+invariant without one. T2's deliverable carries the signature; T4 depends on it
+by API.
+
+**F7 (low) — two spellings of one path disagreed.** Confirmed:
+`variables["input"]` is the whole `resolvedInputPayload`
+(`WorkflowAddonSupport.swift:34`), which carries `_rielaInput`, `upstream` and
+`runtime` — which is why `addonForwardedApplicationPayload` strips exactly
+those three at `:12-16`. §5 and §7 now exclude `input._rielaInput.*`,
+`input.upstream.*` and `input.runtime.*` from the strict class, and T2's
+completion box gains the case.
+
+**Housekeeping — reserved-root citation split.** §4 previously attributed all
+reserved roots to `WorkflowAddonSupport.swift:23-38`. Corrected to name each
+entry point: `inbox` at `:23-33`, `input` at `:34`, the four ids at `:35-38`,
+`event`/`workflowInput` inside `request.variables`
+(`WorkflowInputFilterEvaluation.swift:191-194`), and
+`_rielaInput`/`upstream`/`runtime` inside `resolvedInputPayload` merged flat at
+`:20-22`.
+
+**Unchanged and still open.** AC8 remains the single unmet criterion and is
+still checkpoint-owned: re-checked at attempt 3, the branch has no upstream and
+`git ls-remote --heads origin design/agent-node-output-contract` is empty. The
+checkpoint must commit all three rounds of document corrections and push this
+branch — never `main` — then re-run `git diff --stat=200 ca1ce34..HEAD` and
+replace the checkpoint block above so it names the final commit rather than
+`36285f0`. Unchecked-box count stays 6, matching `impl-plans/README.md:46`.
+
+### 2026-09-21 — Step 6 attempt 4: third review revision (still no code written)
+
+Third independent review raised F8 (medium) and F9 (low); F3/AC8 was restated
+as not actionable here. Both actionable findings were re-verified from source
+before editing — evidence
+`tmp/agent-node-output-contract/plans/agent-node-output-contract/attempt-4/`
+(`30-finding-reverification.log`, `31-intended-edits.md`,
+`32-post-edit-state.log`); attempts 1–3 untouched. The review also confirmed
+F6 and F7 resolved, every citation in the attempt-3 text correct, and AC1–AC7
+met.
+
+**F8 (medium) — one exclusion set was wrong across two different surfaces.**
+Confirmed: `addonVariables` calls `renderAddonInputs` with the *pre-*`inputs`
+namespace (`WorkflowAddonSupport.swift:39`, `:45-48`) and only then merges the
+rendered results (`:39-41`). So an addon `inputs` key is in scope while
+`config` renders and out of scope while `inputs` render. The single
+`.addonConfig(addonInputKeys:)` case therefore told an implementer to exclude
+`inputs` keys while classifying `inputs` themselves — under which
+`inputs: {"summary": "{{results}}"}` with `results` an upstream payload field
+would be called context, D2a would not require the producer's schema, and D3
+would render `""` into a machine-consumed field. That is the §1 item 3 defect
+class, reintroduced by the fix for it, and structurally identical to F6: an
+exclusion granted on a surface whose mechanism is absent.
+
+Resolved by splitting the surface: `TemplateSurface` is now
+`.addonConfig(addonInputKeys:)` | `.addonInputs` (reserved roots only). §4
+explains the ordering that makes them differ and states the shadowing
+consequence; §5 names which entry point each rendering surface uses; §6 gives
+the two-case signature and — importantly — restates the invariant **per
+surface**, since `{{results}}` may legitimately be context in `config` and a
+payload reference in `inputs` on the same node; §7 gains two edge cases (an
+`inputs` entry referencing another `inputs` key can never resolve and is a
+validation error; a payload field colliding with an `inputs` key is protected
+in `inputs` and shadowed in `config`); §11 records the single-exclusion-set
+alternative as rejected. T2's deliverable and box carry the two-case surface
+and the config-vs-inputs test; T4's box requires a payload reference inside
+`inputs` to raise `templateResolutionFailed` rather than render `""`.
+
+**F9 (low) — rule 1 scanned a surface that is never rendered.** Confirmed by
+enumerating every read site of node payload `variables`:
+`DeterministicWorkflowRunner+Prompting.swift:52` seeds them as substitution
+*values*; `AgentGatewayNodeAdapter.swift:93`, `:575`, `:593` and
+`AdapterUtilities.swift:34` read them as adapter knobs; `renderPromptTemplate`
+(`PromptTemplate.swift:3-24`) makes one non-recursive pass over the prompt
+*text*. A `{{commitMessage}}` inside a variable value is emitted literally, so
+demanding a producer schema for it would be an error that adding the schema
+cannot fix. Resolved with the review's option (a): rule 1 now scans successor
+addon `config`/`inputs` only, and `.agentPrompt` is gone from `TemplateSurface`
+— which also leaves the classifier with exactly the two surfaces F8 requires.
+Option (c), extending rule 1 to prompt templates, is recorded as rejected in
+§11: prompts are precisely where optional context lives, so a payload-reference
+rule over prompt text would repeat the over-reach that `strict over all config
+paths` was rejected for, only before the run instead of during it. T2's
+deliverable and box mirror the change.
+
+**Still open and unchanged.** AC8: re-checked at attempt 4 — no upstream,
+`git ls-remote --heads origin design/agent-node-output-contract` empty (exit
+0). Four rounds of document corrections are uncommitted. The checkpoint must
+commit both documents and push this branch — never `main` — then re-run
+`git diff --stat=200 ca1ce34..HEAD` and replace the checkpoint block above so
+it names the final commit rather than `36285f0`. Unchecked-box count stays 6,
+matching `impl-plans/README.md:46`.
+
+### 2026-09-21 — Resumed run: re-verification after OOM kill (still no code written)
+
+The prior attempt was killed by the operator's machine running out of memory
+after the attempt-4 revision was written to disk but before the checkpoint
+commit. This resumed run started, per the resume mandate, by reading
+`git status`, `git diff` and both documents: HEAD unchanged at `36285f0`, the
+working tree holding exactly the two modified documents (+663/−56, the
+attempt-2/3/4 review revisions), nothing staged, nothing untracked, `main`
+untouched at `c33a783`. Everything on disk was judged correct and kept;
+nothing was rewritten.
+
+**Independent citation re-verification (fresh reads, not trusted from this
+log).** The resumed analysis re-read every load-bearing seam from source and
+all matched the design exactly: `claudePermissionMode(for:)` mapping with
+`nil → nil` (`AgentGatewayNodeAdapter.swift:660`) and the conditional
+`--permission-mode` append (`:608`); `normalizeGatewayOutput` (`:719`) with
+the opportunistic `try?` sniff (`:728-731`); nil-contract acceptance
+(`RuntimeOutputValidation.swift:41`); `maxValidationAttempts` default 1
+(`DeterministicWorkflowRunner+Prompting.swift:17`); missing path → `""`
+(`PromptTemplate.swift:20`); the full `addonVariables` ordering — strip list
+`:12-16`, flat merge `:20-22`, `inbox` `:23-33`, `input` `:34`, ids `:35-38`,
+`inputs` merged last `:39-41`, `renderAddonInputs` `:45-48`
+(`WorkflowAddonSupport.swift`); the empty-commit-message guard
+(`ProductionNodeAdapter+GitAddons.swift:73`); zero `agentSandbox` mentions in
+`WorkflowValidation.swift`; optional `agentSandbox` at
+`WorkflowModel.swift:777`. Bundle counts re-checked read-only: 16 node files,
+16 `claude-code-agent`, 5 with `agentSandbox`, 4 with `jsonSchema`,
+`node-plan-checkpoint.json` with neither, `workflow.json:127`/`:159`
+consuming `{{inbox.latest.output.payload.commitMessage}}`. Knowledge-base
+recall for `agent-node-output-contract` was re-issued and again returned zero
+results.
+
+**Design and plan re-accepted without change.** No fifth revision was needed;
+this entry is the only edit of the resumed run. AC1–AC7 remain PASS; AC8
+remains the single open item and stays checkpoint-owned: commit both modified
+documents on `design/agent-node-output-contract`, push that branch to
+`origin` with upstream tracking (plain push, never force, never `main`), then
+re-run `git diff --stat=200 ca1ce34..HEAD` and replace the attempt-1
+checkpoint block so it names the final commit rather than `36285f0`.
+Unchecked-box count stays 6, matching `impl-plans/README.md:46`.
+
+### 2026-09-21 — Checkpoint: dispatch manifest for the resumed run (still no code written)
+
+The resumed run's checkpoint verified that branch and HEAD still match the
+analysis context (`design/agent-node-output-contract` @
+`36285f0187862a3a7d251417f96264a309a87e90`), that the index is empty, and that
+the working tree carries only the two accepted documents. It then wrote a new
+dispatch manifest with its own unique task id rather than overwriting the
+killed run's:
+
+- manifest: `impl-plans/active/agent-node-output-contract-r2-dispatch.json`
+  (`taskId` `agent-node-output-contract-r2`, `originalHead` `36285f0`)
+- evidence root: `tmp/agent-node-output-contract-r2` (untracked via
+  `.gitignore:41`), with
+  `checkpoint/00-checkpoint-verification.log` holding the verbatim git proof
+  and `plans/agent-node-output-contract/attempt-1/` reserved for the future
+  implementation wave
+- superseded, preserved untouched: `agent-node-output-contract-dispatch.json`
+  (`originalHead` `ca1ce34`) and `tmp/agent-node-output-contract/`, which
+  holds the killed run's `attempt-1`…`attempt-4` review evidence (F1–F9)
+
+Machine-checked at checkpoint time: `git diff --name-only` and
+`git diff --name-only ca1ce34..HEAD` each match zero `Sources/` or `Tests/`
+paths; the plan's unchecked-box count is 6, matching
+`impl-plans/README.md:46`. The manifest validates as a single-plan acyclic
+dependency graph with safe repository-relative paths, all of which exist.
+
+AC8 stays the single open acceptance item: the commit created from this
+checkpoint must carry exactly the design doc, this plan and the new manifest,
+after which the branch is pushed to `origin` with upstream tracking (plain
+push, never force, never `main`), `git diff --stat=200 ca1ce34..HEAD` is
+re-run, and the attempt-1 checkpoint block above is replaced so it names the
+final commit rather than `36285f0`.

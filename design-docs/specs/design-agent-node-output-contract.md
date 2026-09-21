@@ -1,6 +1,12 @@
 # Agent-node output contract: sandbox declaration, payload validation, and template resolution failures
 
-Status: accepted design, 2026-09-21. Not implemented. Plan:
+Status: accepted design, 2026-09-21; revised the same day after independent
+review, twice (D2a extended to bare payload references; D3 rescoped from
+surface to path class; the classifier's exclusions made per surface after the
+node-`variables` escape proved unreachable on the addon path; then `config`
+and `inputs` split into separate classifier surfaces and the inert
+node-`variables` scan dropped — see the plan's progress log). Not implemented.
+Plan:
 `impl-plans/active/agent-node-output-contract.md`. This design closes the
 execution-contract gap that made two real `fable-and-improve-opus` runs
 (riela 0.1.38, package 0.4.0, observed 2026-09-21) die several steps away
@@ -49,7 +55,7 @@ Three defects, each verified in this tree at `ca1ce34`:
    nothing enforces it.
 
 3. **A missing template path silently renders `""` and surfaces as the
-   consumer's domain error.** `Sources/RielaCore/PromptTemplate.swift:21`:
+   consumer's domain error.** `Sources/RielaCore/PromptTemplate.swift:20`:
    `lookupPath(path, in: variables).map(formatTemplateValue) ?? ""` — a
    missing path becomes the empty string with no diagnostic.
    `Sources/RielaAddonSupport/WorkflowAddonSupport.swift:18`
@@ -86,9 +92,9 @@ defect splits accordingly:
 | # | Decision | Where |
 | - | -------- | ----- |
 | D1 | `workflow validate` **error** when a node on a sandbox-consuming agent backend omits `agentSandbox` (and when a node on a non-sandbox backend declares it) | riela runtime |
-| D2a | `workflow validate` **error** when a node's payload is referenced by a downstream template, or its step has conditional transition labels, and the node declares no `output.jsonSchema` | riela runtime |
+| D2a | `workflow validate` **error** when a node's payload is referenced by a downstream template — dotted (`inbox.latest.output.payload.*`, `input.*`) **or bare** (`{{field}}`, the dominant in-repo idiom) — or its step has conditional transition labels, and the node declares no `output.jsonSchema` | riela runtime |
 | D2b | With a contract: keep tolerant extraction + strict envelope + schema validation + retry; default validation attempts become **2** when a schema is present. Without a contract (now provably inconsequential): pure `{text: …}` wrap; the opportunistic `try?` envelope sniffing at `AgentGatewayNodeAdapter.swift:728-731` is deleted | riela runtime |
-| D3 | Addon `config`/`inputs` template rendering fails with a typed template-resolution error naming producing step, field path, and consuming step; the addon never executes. Prompt-template rendering stays lenient | riela runtime |
+| D3 | Addon `config`/`inputs` rendering of a **payload reference** that resolves to nothing fails with a typed template-resolution error naming producing step, field path, and consuming step; the addon never executes. Context namespaces (`event.*`, `workflowInput.*`, `runtime.*`, `_rielaInput.*`, and those same roots spelled under `input.`) stay lenient, as does all prompt-template rendering | riela runtime |
 | D4 | Add `agentSandbox` to all 16 agent nodes; add `output.jsonSchema` + `maxValidationAttempts` to every payload-referenced or label-driving node | riela-packages bundle (separate follow-up work package; that repo is read-only in this run) |
 
 No backward compatibility anywhere: no warnings-instead-of-errors phase, no
@@ -186,14 +192,105 @@ New rule in `WorkflowValidation.validate(_:nodePayloads:)`, **error** when
 either holds for a node N and it declares no `output.jsonSchema`:
 
 1. **Payload referenced downstream.** Some step S is reachable from a step of
-   N by one transition, and S's addon `config` or `inputs` (or S's node
-   `variables`) contain a template referencing
-   `inbox.latest.output.payload.<field>` (or `input.<field>` sourced from the
-   inbox). The validator additionally checks that each referenced
+   N by one transition, and S's addon `config` or `inputs` contain a template
+   that is a **payload reference** (defined below). Those two are the whole
+   scanned set. A node's declared `variables` are deliberately **not** scanned:
+   their values are never template-rendered. `promptVariables` seeds them as
+   substitution *values* (`DeterministicWorkflowRunner+Prompting.swift:52`),
+   the adapters read them as configuration knobs
+   (`AgentGatewayNodeAdapter.swift:93`, `:575`, `:593`,
+   `AdapterUtilities.swift:34`), and `renderPromptTemplate`
+   (`PromptTemplate.swift:3-24`) makes one non-recursive pass over the prompt
+   *text* only — so `{{commitMessage}}` written inside a variable value is
+   emitted literally. Erroring on such a string would demand a producer schema
+   for a reference that adding the schema cannot make resolve. The validator additionally checks that each referenced
    first-segment `<field>` appears in N's `schema.properties`; a referenced
    field absent from the schema is its own error (the schema would validate
    the wrong shape). All template strings are already present in
    `workflow.json`/node payloads at validate time — no new inputs needed.
+
+   **Payload reference, defined.** Three forms, not one:
+   `inbox.latest.output.payload.<field>`, `input.<field>`, and a **bare**
+   first segment `{{<field>}}` / `{{<field>.<rest>}}`. The bare form is not a
+   nicety — `addonVariables` merges the entire resolved input payload into
+   the flat variable namespace (`WorkflowAddonSupport.swift:20-22`) before
+   adding `inbox` (`:23-33`) and `input` (`:34`), so `{{queryPlan}}` reaches
+   exactly the value `{{inbox.latest.output.payload.queryPlan}}` reaches.
+   It is also the dominant in-repo idiom:
+   `examples/note-rag-retrieval-fusion/workflow.json:117-120` passes
+   `{{queryPlan}}`, `{{notebookId}}`, `{{noteIds}}`, `{{pageCount}}` through
+   `kaiba/note-search` config, and `:136-145` passes `{{seededNotebookId}}`,
+   `{{seededNoteIds}}`, `{{seededPageCount}}`, `{{resultCount}}`,
+   `{{results}}`. A rule that scanned only the two dotted forms would leave
+   these producers schema-less and would not deliver the guarantee this
+   section claims.
+
+   **Classifier, and why its exclusions are per surface.** A bare first
+   segment is *not* a payload reference when it is a runtime-provided root.
+   Those roots reach the namespace by three different routes, and the
+   citation must say which:
+   `inbox` (`WorkflowAddonSupport.swift:23-33`), `input` (`:34`),
+   `workflowId`/`stepId`/`nodeId`/`addonName` (`:35-38`) are set by
+   `addonVariables` itself; `event` and `workflowInput` arrive inside
+   `request.variables` (`WorkflowInputFilterEvaluation.swift:191-194`);
+   `_rielaInput`, `upstream` and `runtime` arrive inside
+   `resolvedInputPayload` and are merged flat at `:20-22` — which is exactly
+   why `addonForwardedApplicationPayload` strips those three at `:12-16`.
+   Every other bare first segment **is** presumed a payload reference.
+
+   The exclusion set is **computed per surface, and the two addon surfaces are
+   not the same surface** — because `addonVariables` builds the namespace in
+   an order that makes them differ:
+
+   - **`config`**: reserved roots **+ that addon's own `inputs` keys.** By the
+     time an addon renders its `config`, `addonVariables` has already rendered
+     the addon's `inputs` and merged them into the namespace
+     (`WorkflowAddonSupport.swift:39-41`), so `{{results}}` there resolves to
+     the rendered input named `results`, not to the payload — and, if both
+     exist, the rendered input **shadows** the payload field of that name.
+   - **`inputs`**: reserved roots **only, never the `inputs` keys.**
+     `renderAddonInputs` (`:45-48`) renders every `inputs` value against the
+     *pre-`inputs`* namespace that `addonVariables` passes it at `:39`, so an
+     `inputs` key is not yet in scope while `inputs` render. Inside `inputs`,
+     `{{results}}` is a payload reference (the payload was merged flat at
+     `:20-22`) — or, if no such payload field exists, an unresolvable path.
+     Excluding `inputs` keys here would be exactly the F6 mistake again:
+     granting an exclusion on a surface where the mechanism behind it is not
+     present, which would let a real payload reference render `""` and put an
+     empty machine-consumed field into the addon.
+
+   A node's declared `variables` are excluded on **neither** surface, and are
+   not scanned at all (rule 1 above): they never reach `addonVariables`, whose
+   inputs are `input.variables` + `resolvedInputPayload` + `inbox`/`input`/ids
+   + `addon.inputs`, and the addon dispatch branch has no node payload to take
+   them from (`DeterministicWorkflowRunner.swift:511-532` passes none;
+   `WorkflowAddonExecutionInput`, `WorkflowAddonExecution.swift:341-349`, has
+   no such field).
+
+   Consequence, stated because it removes an escape a reader would expect:
+   on the addon surface, declaring `variables: {"teamName": …}` on the
+   consuming node does **not** make `{{teamName}}` legal. It is a payload
+   reference at validate time and at render time alike, so D2a errors and D3
+   would too — the two never disagree. The only escape on that surface is
+   `{{workflowInput.<name>}}`, which does resolve because `workflowInput` is
+   an ordinary key inside `request.variables`.
+
+   **This is not fully decidable, and the rule errs toward the error.**
+   `WorkflowDefinition` (`WorkflowModel.swift:582-593`) declares no names for
+   run-supplied variables, and `request.variables`
+   (`DeterministicWorkflowRunner+Addons.swift:58`) is whatever the operator
+   passed to `--variables`. A bare identifier fed by a run variable is
+   therefore indistinguishable at validate time from one fed by an upstream
+   payload, and the classifier will attribute it to the producer. The rule
+   errs that way deliberately: a false positive costs one permissive schema
+   on the producer, or one reference rewritten as `{{workflowInput.<name>}}` —
+   both visible at validate time with the node named. (Declaring the key in
+   the node's `variables` is *not* a third option on this surface; see the
+   per-surface rule below.) A false negative reproduces the original defect at
+   run time, steps from its cause. Stated migration-free consequence:
+   workflows that today reach run-level variables through bare identifiers in
+   addon config must namespace them as `{{workflowInput.<name>}}`; there is no
+   flag to opt out.
 2. **Conditional routing.** N's steps have outgoing transitions with labels
    other than `always`. Labels come from the answer envelope's `when`; without
    a contract, `normalizeGatewayOutput`'s fallback fabricates
@@ -205,7 +302,12 @@ either holds for a node N and it declares no `output.jsonSchema`:
 Costs, stated: existing workflows with templated payloads or labeled
 transitions and no schemas fail validation after upgrade until schemas are
 added (in `fable-and-improve-opus`: 12 of 16 nodes, including
-`step9-commit-message` and `plan-checkpoint`). Rejected alternatives:
+`step9-commit-message` and `plan-checkpoint`). In-repo examples pay the same
+cost — `note-rag-retrieval-fusion` is the worked case — and T5 of the plan
+reconciles them. Rejected alternatives:
+**scanning only the dotted forms** (`inbox.latest.output.payload.*` /
+`input.*`), which reads tidy but misses the idiom this repository actually
+uses and would ship a rule that quietly guarantees nothing;
 **warning** (run proceeds into the exact observed failure), **allowed**
 (status quo), **runtime-only enforcement** (fails mid-run instead of before
 the run; validate-time is strictly earlier and names the node while the
@@ -230,18 +332,74 @@ loses that ability — validation now directs its author to declare a schema.
 
 Rendering addon `config` and `inputs` (the machine-consumed surfaces —
 `renderJSONTemplates` / `renderAddonInputs` in
-`Sources/RielaAddonSupport/WorkflowAddonSupport.swift`) becomes **strict**: a
-template path that resolves to nothing raises a typed error instead of
-rendering `""`. The error is a new category (template-resolution failure,
-distinct from the addon's own `policyError` domain) and must carry:
+`Sources/RielaAddonSupport/WorkflowAddonSupport.swift`) becomes **strict for
+payload references only**: a template whose path is a payload reference and
+resolves to nothing raises a typed error instead of rendering `""`. The
+boundary is the **path class**, not the surface.
 
-- the **producing step**: `_rielaInput.latest.fromStepId` (present in the
-  resolved input payload `addonVariables` already receives; verified in live
-  payloads — `latest` carries `fromStepId` and `sourceStepExecutionId`),
+**Strict classes** (an unresolved path is an error): the three payload-
+reference forms D2a defines — `inbox.latest.output.payload.*`, `input.<field>`,
+and a bare first segment that D2a's classifier attributes to the upstream
+payload. These are exactly the paths a producing node is contractually
+obliged to publish, so an absent one is always a broken contract. The two
+rendering entry points classify with **different surfaces**: `config` renders
+under `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`
+(§4, §6), so a bare name matching one of the addon's own `inputs` keys is
+context in `config` and a payload reference in `inputs`.
+
+**Lenient classes** (an unresolved path still renders `""`, as today):
+`event.*`, `workflowInput.*`, `runtime.*`, `upstream.*`, `_rielaInput.*` — and
+the same three runtime roots spelled under the `input.` prefix, namely
+`input._rielaInput.*`, `input.upstream.*` and `input.runtime.*`. That last
+exclusion is not a nicety: `variables["input"]` is the whole
+`resolvedInputPayload` (`WorkflowAddonSupport.swift:34`), which carries those
+three runtime views — which is precisely why
+`addonForwardedApplicationPayload` strips them at `:12-16`. Without the
+exclusion, `{{input._rielaInput.latest.fromStepId}}` would be strict while the
+bare `{{_rielaInput.latest.fromStepId}}` stayed lenient, and two spellings of
+one path would disagree. These carry *context*, whose absence is legitimate
+and per-invocation.
+
+**Not a lenient class: the consuming node's declared `variables`.** They do
+not exist on this surface (section 4), so on the addon surface such a key is a
+payload reference at validate time and at render time alike — D2a errors
+before the run rather than D3 erroring during it, and the two never disagree.
+
+**Worked case that fixes the boundary.**
+`examples/telegram-sdk-trio-chat/workflow.json:31-48` is a
+`riela/memory-save` addon whose `config.payloadTemplate` reads
+`{{event.conversation.threadId}}` (`:41`), `{{event.input.historySource}}`
+(`:42`), `{{event.input.attachments}}` (`:43`), `{{event.input.imagePaths}}`
+(`:44`) and `{{event.input.attachmentText}}` (`:45`). A plain-text message in
+a non-forum chat with no attachments supplies none of them. Today
+`exactTemplateValue` (`WorkflowAddonSupport.swift:64-75`) returns nil,
+`renderJSONTemplates` (`:53-54`) falls through to `renderPromptTemplate`, and
+the record is stored with empty strings. Under a surface-wide strict rule the
+common case would become a hard failure and this shipped example would break.
+Under the path-class rule it keeps rendering `""`, because `event.*` is a
+context namespace and never a producer's obligation. Machine-consumed config
+is therefore *not* uniformly obligatory — the earlier framing of this section
+asserted it was, and the repository contradicts that.
+
+The error is a new category (template-resolution failure, distinct from the
+addon's own `policyError` domain) and must carry:
+
+- the **producing step**: `_rielaInput.latest.fromStepId`, written by
+  `resolvedInputMessageMetadata`
+  (`Sources/RielaCore/RuntimeMessageInputResolver.swift:107`) into the
+  `_rielaInput` metadata that `addonVariables` already receives (`latest` is
+  attached at `:102`, and also carries `sourceStepExecutionId`). The key is
+  **conditional** — `if let fromStepId = message.fromStepId` at `:118` — so a
+  message with no originating step (a seed or externally injected input) has
+  no `fromStepId`. The renderer therefore resolves the producer in order:
+  `_rielaInput.latest.fromStepId`, else the sole entry of
+  `_rielaInput.sourceStepIds` (`:98`) when there is exactly one, else the
+  literal `an upstream step`. The error must never fail to render because its
+  producer is unknown; an unknown producer still names path and consumer,
 - the **field path** as written in the template
   (`inbox.latest.output.payload.commitMessage`),
 - the **consuming step / node / addon** (`stepId`, `nodeId`, `addonName` are
-  already in the variables object at `WorkflowAddonSupport.swift:52-55`).
+  already in the variables object at `WorkflowAddonSupport.swift:36-38`).
 
 Shape: `templateResolutionFailed: step '<consumer>' addon '<addon>' template
 '{{<path>}}' resolved to nothing; the producing step '<producer>' did not
@@ -253,12 +411,28 @@ producer omitted it and the schema didn't `require` it) — the message says
 where to look.
 
 Prompt-template rendering (`renderPromptTemplate` used for agent prompts)
-stays lenient (missing → `""`): prose prompts legitimately reference optional
-context, and an error there would make every optional variable mandatory.
-This boundary — strict for machine-consumed JSON, lenient for model-consumed
-prose — is the deliberate line, not an oversight.
+stays lenient for **every** class, payload references included: prose prompts
+legitimately reference optional context, an error there would make every
+optional variable mandatory, and the in-repo assertions that a missing path
+renders `""` in a prompt (`Tests/RielaCoreTests/PromptTemplateTests.swift:8`,
+`DeterministicWorkflowRunnerTests.swift:365`) stay green unchanged.
 
-Rejected alternatives: **strict everywhere** (breaks every prompt that
+So there are two axes, and both matter: **surface** (addon config/inputs
+strict-capable, prompts always lenient) and **path class** (payload
+references obligatory, context namespaces optional). A path is an error only
+where the two coincide.
+
+Rejected alternatives: **making declared node `variables` a lenient class by
+threading them into `WorkflowAddonExecutionInput`** (widens a public `Codable`
+wire type serialized for placed/distributed execution, and hands addon nodes a
+capability they never had — a feature, not a contract fix; see section 11);
+**strict over all config paths** (the first draft of
+this decision — it generalizes from a missing *upstream payload* field, which
+is what actually broke the observed run, to absent *event context*, which is
+routine; it would turn the common plain-text Telegram message into a
+`memory-save` failure at `telegram-sdk-trio-chat/workflow.json:41-45`, and
+would have shipped that regression past a validate-only example check);
+**strict everywhere** (breaks every prompt that
 references optional context; prompts degrade gracefully by construction);
 **leave lenient, rely on D2a schemas alone** (a schema with a non-required
 property still lets an absent field render `""` — the observed
@@ -276,11 +450,49 @@ wrong actor and every addon would need its own guard).
   reduced to the text wrap (D2b). Contract branch unchanged.
 - `DeterministicWorkflowRunner+Prompting.maxValidationAttempts(from:)` —
   default 2 when `output.jsonSchema != nil` (D2b).
+- **Shared template classifier** — one function in RielaCore, used by both D2a
+  and D3, returning per `{{path}}` whether it is a payload reference or a
+  context reference (the rule in section 4). Its signature must be expressible
+  at both call sites, which do **not** see the same things, so the surface is
+  passed explicitly rather than inferred from a node payload the render side
+  does not have:
+
+  ```
+  enum TemplateSurface {
+    case addonConfig(addonInputKeys: Set<String>)   // inputs already merged
+    case addonInputs                               // inputs not yet in scope
+  }
+  func classifyTemplateReference(_ path: String, surface: TemplateSurface)
+    -> TemplateReferenceClass   // .payload | .context
+  ```
+
+  Two cases, not one, because `addonVariables` merges the addon's rendered
+  `inputs` at `WorkflowAddonSupport.swift:39-41` — that is, *after*
+  `renderAddonInputs` (`:45-48`) has already rendered every `inputs` value
+  against the pre-`inputs` namespace — so an `inputs` key is visible while
+  `config` renders and invisible while `inputs` render (§4).
+
+  Call-site inputs: **validate time** reads `WorkflowNodeAddonRef.inputs` off
+  the node payload; **render time** reads the same `addon.inputs` off
+  `WorkflowAddonExecutionInput` (`WorkflowAddonExecution.swift:341-349`). Both
+  sides can construct both cases from the same data, which is the mechanism
+  behind the invariant rather than an exhortation. State the invariant **per
+  surface**: for a given surface, a path D2a forced a schema for is exactly a
+  path D3 refuses to render empty. It does not hold *across* the split, and
+  must not be claimed to — `{{results}}` may legitimately be context in
+  `config` and a payload reference in `inputs` on the very same node, which is
+  why both sides must pass the surface they are actually rendering.
+
+  There is no prompt case. Node `variables` are not a scanned surface (§4
+  rule 1) and prompt rendering is never strict, so the classifier has no
+  agent-side call site at all.
 - `RielaAddonSupport` — strict rendering entry points for addon config and
-  inputs returning either rendered JSON or the typed resolution failure;
-  `addonVariables` additionally surfaces the producer step id for the error
-  (D3). All addon families route through this one seam, so every builtin
-  addon (git, kv, kaiba, gateway addons) gains the contract at once.
+  inputs returning either rendered JSON or the typed resolution failure, strict
+  only for classifier-payload paths, with `config` classified under
+  `.addonConfig(addonInputKeys:)` and `inputs` under `.addonInputs`; `addonVariables` additionally surfaces the
+  producer step id for the error (D3). All addon families route through this
+  one seam, so every builtin addon (git, kv, kaiba, gateway addons) gains the
+  contract at once.
 - Error surfacing: the new failure appears in session status/progress/logs as
   the consuming step's failure with category `templateResolutionFailed`,
   reusing the existing `AdapterExecutionError`-style publication path so
@@ -300,8 +512,40 @@ naming `plan-checkpoint` — never with `commit message is empty or invalid`.
 - Fan-in steps (multiple producers): `inbox.latest` is the most recent;
   the D2a check applies to **every** one-transition predecessor whose edge
   can be the latest — all predecessors need the schema-declared field.
-- `{{input.<field>}}` templates resolve against the merged resolved input;
-  the same missing-path strictness applies in addon config/inputs.
+- `{{input.<field>}}` templates resolve against the merged resolved input and
+  are a payload reference, so addon config/inputs render them strictly — except
+  `input._rielaInput.*`, `input.upstream.*` and `input.runtime.*`, which are the
+  runtime's own views reached through the `input` alias
+  (`WorkflowAddonSupport.swift:34`, strip list at `:12-16`) and stay lenient so
+  that the dotted and bare spellings of one path agree.
+- Bare identifier fed by a run-level `--variables` key: the classifier cannot
+  tell it from a payload reference (section 4), so D2a errors and D3 renders
+  strictly. The author namespaces it as `{{workflowInput.<name>}}`. Accepted
+  false-positive direction.
+- Declaring the key in the consuming node's `variables` is **not** an escape on
+  the addon surface: those variables never reach `addonVariables`, so the key
+  would still be unresolved at render time. The classifier therefore refuses to
+  exclude it there (section 4), which keeps the failure at validate time where
+  it names the node, instead of letting it become a run-time
+  `templateResolutionFailed` that would blame an upstream producer for a field
+  it was never asked to publish. Nor are node `variables` scanned as a source
+  of payload references — their values are inert text (section 4, rule 1).
+- An `inputs` entry referencing **another `inputs` key of the same addon**
+  (`inputs: {"a": "…", "b": "{{a}}"}`) can never resolve: `renderAddonInputs`
+  renders every entry against the pre-`inputs` namespace
+  (`WorkflowAddonSupport.swift:39`, `:45-48`), so `a` is not in scope. Under
+  `.addonInputs` the classifier calls it a payload reference and D2a raises a
+  validation error naming the node — the right outcome, since the alternative
+  is a permanently empty field. Authors chain through `config` or through the
+  producing node instead.
+- A payload field whose name **collides** with one of the addon's `inputs`
+  keys is protected on the `inputs` surface (payload reference, strict) and
+  shadowed on the `config` surface (the rendered input wins, because `inputs`
+  are merged last at `:39-41`). Same spelling, two meanings, decided by which
+  surface is rendering — documented, not an error.
+- Context path inside an otherwise payload-driven config object: classification
+  is per `{{path}}`, not per config file, so one object may hold both a strict
+  `{{commitMessage}}` and a lenient `{{event.input.attachmentText}}`.
 - An answer with two fences: json-tagged fence wins (existing extractor
   order); two json-tagged fences: first wins — documented, not an error.
 - `output` block with `description` but no `jsonSchema` (today's
@@ -324,20 +568,35 @@ Runtime (all in existing suites, same targets as the seams):
 
 - `WorkflowValidation` tests: D1 error on omitted sandbox per backend; D1
   error on declared sandbox for API backends; D2a error for templated payload
-  without schema, for referenced-field-not-in-properties, for conditional
-  labels without schema; green fixtures for compliant workflows.
+  without schema via each of the three reference forms — dotted
+  `inbox.latest.output.payload.*`, `input.*`, and **bare** `{{field}}` — for
+  referenced-field-not-in-properties, and for conditional labels without
+  schema; classifier tests proving reserved roots are excluded on both
+  surfaces, that a same-addon `inputs` key is excluded under `.addonConfig` but
+  classified as a payload reference under `.addonInputs`, that a declared node
+  `variables` key is neither scanned nor excluded, and that
+  `input._rielaInput.*` / `input.upstream.*` / `input.runtime.*` are context;
+  green fixtures for compliant workflows.
 - Adapter tests: no-contract prose answer → `{text}` unchanged; no-contract
   `{`-prefixed malformed answer → `{text}` (sniffing removed, no silent
   envelope); contract + fenced answer → extracted and validated.
 - Runner tests: schema without declared attempts retries exactly once;
   declared attempts still win; final rejection surfaces node id + reason.
-- Addon-support tests: missing path in config → typed error naming
-  producer/path/consumer; addon body not executed; prompt rendering still
-  lenient; `{{input.…}}` strictness.
-- Mock-scenario regression: `rielaExampleWorkflowNames()` examples and
-  packaged fixtures must validate under the new rules (they will need the
-  same D4-style edits in-repo where they violate them — that is part of the
-  runtime work package, since examples live in this tree).
+- Addon-support tests: missing **payload reference** in config → typed error
+  naming producer/path/consumer; addon body not executed; producer fallback
+  when `_rielaInput.latest.fromStepId` is absent; missing **context**
+  reference (`event.*`) in config → still renders `""`, addon executes, with
+  `telegram-sdk-trio-chat`'s `memory-save` payloadTemplate as the fixture
+  shape; prompt rendering lenient for every class; `{{input.…}}` strictness.
+- Mock-scenario regression, two layers: every `rielaExampleWorkflowNames()`
+  example and packaged fixture must (a) **validate** under the new rules and
+  (b) **execute** green under its `mock-scenario.json` for the examples that
+  carry addon `config`/`inputs`, because D3 is a render-time rule that
+  validate alone cannot exercise. `note-rag-retrieval-fusion` (bare payload
+  references) and `telegram-sdk-trio-chat` (optional event context) are the
+  two that pin the D2a and D3 boundaries and are mandatory. In-repo examples
+  will need D4-style edits where they violate the rules — part of the runtime
+  work package, since examples live in this tree.
 
 Bundle (D4 follow-up, riela-packages): mock-scenario run of
 `fable-and-improve-opus` green under new validation; EXPECTED_RESULTS updated.
@@ -346,7 +605,11 @@ Bundle (D4 follow-up, riela-packages): mock-scenario run of
 
 Single runtime release. No flags, no phases. The release notes must state:
 workflows failing the two new validation rules stop running until edited —
-the errors name the node, field, and rule. The D4 bundle release ships with
+the errors name the node, field, and rule — and that a bare `{{name}}` in
+addon config which the classifier cannot attribute to a run variable is now
+read as a payload reference, so such references must be namespaced
+(`{{workflowInput.name}}`) — declaring the key in the node's `variables` is not
+an escape on that surface, because addon rendering never sees node variables. The D4 bundle release ships with
 or before the runtime release so the flagship package validates on day one.
 
 ## 11. Rejected-alternative index
@@ -358,7 +621,32 @@ or before the runtime release so the flagship package validates on day one.
   are unambiguous), warning/allowed for missing schema (observed failure
   survives), runtime-only enforcement (later and worse than validate-time),
   keeping opportunistic envelope sniffing (silent `try?` degradation is the
-  replaced contract).
-- D3: strict prompts (breaks optional prose context), schemas-alone
-  (non-required fields still render `""`), per-consumer emptiness guards
-  (today's wrong-actor error).
+  replaced contract), scanning only the dotted template forms (misses the bare
+  idiom that dominates this repository, so the rule would guarantee nothing —
+  `note-rag-retrieval-fusion/workflow.json:117-120`).
+- D2a: scanning node `variables` values for payload references (their values
+  are never template-rendered — `Prompting.swift:52` seeds them as substitution
+  values, the adapters read them as knobs, and `renderPromptTemplate` makes one
+  non-recursive pass over prompt text; the error would demand a schema that
+  cannot make the reference resolve); and extending rule 1 to **prompt
+  templates** — rejected because prompts are exactly where optional context
+  lives, so a payload-reference rule over prompt text would repeat the
+  over-reach that `strict over all config paths` was rejected for, only this
+  time before the run rather than during it.
+- D2a/D3: one exclusion set across `config` and `inputs` — rejected because
+  `inputs` render before they are merged (`WorkflowAddonSupport.swift:39`,
+  `:45-48`), so excluding `inputs` keys inside `inputs` would let a real
+  payload reference render `""`.
+- D3: threading the consuming node's declared `variables` into
+  `WorkflowAddonExecutionInput` so they could serve as a lenient class and an
+  escape hatch — rejected because that type is public, `Codable` with explicit
+  `CodingKeys` (`WorkflowAddonExecution.swift:341-349`, `:371`) and is
+  serialized for placed/distributed addon execution (guarded at
+  `DeterministicWorkflowRunner+Addons.swift:24`); widening that wire format
+  would grant addon nodes a capability they have never had, which is a feature
+  request, not a contract fix. The classifier instead declines to exclude node
+  `variables` on the addon surface, so validate and render agree.
+- D3: strict over all config paths (breaks optional event context in shipped
+  examples — `telegram-sdk-trio-chat/workflow.json:41-45`), strict prompts
+  (breaks optional prose context), schemas-alone (non-required fields still
+  render `""`), per-consumer emptiness guards (today's wrong-actor error).

@@ -64,7 +64,6 @@ main() {
 class Riela < Formula
   desc "Swift-native workflow runtime for cooperative multi-agent execution"
   homepage "https://github.com/tacogips/riela"
-  version "$version"
   license "MIT"
 
   livecheck do

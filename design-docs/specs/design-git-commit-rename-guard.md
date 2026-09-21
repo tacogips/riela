@@ -1,6 +1,7 @@
 # Design: riela/git-commit rename guard (HEAD-aware tracked-deletion check)
 
-Status: accepted (fable-and-improve-opus, 2026-09-21)
+Status: accepted (fable-and-improve-opus, 2026-09-21; revised same day on the
+resumed run to record the `stagedPaths --no-renames` companion change)
 Branch: fix/git-commit-rename-guard (base == implementation branch)
 
 ## Problem
@@ -64,6 +65,32 @@ policy error. No new flags, no opt-out, no message change.
   path separator). `validateRepositoryRelativePath` (GitRepository.swift:317-329)
   already bans NUL/LF/CR, empty/`.`/`..` segments and a leading `:`; the
   `<rev>:<path>` form treats the path literally (no pathspec magic).
+
+### Companion change: `stagedPaths` must not collapse the rename pair
+
+Implementation surfaced a second blocker the original draft missed: git enables
+rename detection by default (`diff.renames`), so the attempt-index
+`diff --cached --name-only` that feeds `requireExactStagedPaths`
+(GitCommit.swift:84-85) can collapse the staged `git mv` pair into a single
+rename entry instead of reporting the literal {old:D, new:A} set. The exactness
+check would then refuse the very committedFiles pair the guard now accepts.
+
+Decision: pin the staged-set read to literal semantics —
+
+```swift
+// stagedPaths (GitRepository.swift): rename detection would collapse a
+// `git mv` pair into the destination path alone and hide the allowlisted
+// deletion of the old path.
+["diff", "--cached", "--name-only", "--no-renames", "-z", "--"]
+```
+
+Blast radius is contained by construction: `stagedPaths` has exactly two
+callers, both inside the git-commit pipeline — the pre-staged allowlist check
+(GitCommit.swift:67) and `requireExactStagedPaths` (GitCommit.swift:84). Both
+want the literal per-path set; a user-staged rename now surfaces both paths and
+both must be allowlisted, which is exactly the requested committedFiles
+semantics. No allowlist widening: the reported set can only get more explicit,
+never smaller, so every existing refusal is preserved or strengthened.
 
 ### Alternatives considered
 

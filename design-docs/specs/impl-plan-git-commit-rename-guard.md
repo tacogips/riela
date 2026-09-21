@@ -6,11 +6,33 @@ dependsOn: [] (single plan, single work package, has_feature_fanout=false)
 design: design-docs/specs/design-git-commit-rename-guard.md
 
 writePaths:
-- Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift (validateCommitPaths only)
+- Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift (validateCommitPaths + stagedPaths --no-renames only)
 - Tests/RielaCLITests/GitWorkflowAddonContractTests.swift (new tests)
 - Tests/RielaCLITests/GitWorkflowAddonTests.swift (GitTestRepository init parameter only)
+- design-docs/specs/design-git-commit-rename-guard.md and this file (doc revisions)
 
 sharedPaths: none (no lockfiles, no generated indexes; no other plan exists)
+
+## Resumed-run state (fable-and-improve-opus-session-2, 2026-09-21)
+
+The prior attempt was killed by host OOM after implementing T1–T3; its output
+sits UNCOMMITTED on disk in the three code/test files above and was audited
+line-by-line against this plan on resume: correct and complete — KEEP IT, do
+not re-implement or revert. Two facts discovered by that implementation are now
+part of the accepted design:
+
+- T1 additionally requires `--no-renames` in `stagedPaths` (see the design's
+  "Companion change" section): default rename detection collapses the staged
+  `git mv` pair in `diff --cached --name-only` and would make
+  `requireExactStagedPaths` refuse the pair the guard now accepts. Both callers
+  (GitCommit.swift:67 and :84) want the literal set. DONE on disk.
+- T2's fixture guards `withBareRemote` + unborn HEAD with a precondition. DONE
+  on disk, as are all three T3 tests (class
+  `GitWorkflowAddonContractTestsRenameGuard`).
+
+Remaining on resume: T4 (lint + contract filter), T5 (full suite vs the
+10-failure baseline), T6 (commit + push). Verification has NOT yet run in any
+session — the OOM predates T4.
 
 ## Applicable prior knowledge
 
@@ -30,6 +52,10 @@ T1. Guard fix — Sources/RielaCLI/ProductionNodeAdapter+GitRepository.swift,
     accept on exit 0, otherwise throw the UNCHANGED policy error
     "riela/git-commit missing path is not an exact tracked deletion".
     Do not touch any other validation, message, or the finalization journal.
+    ALSO (same file, discovered during implementation, accepted into the
+    design): add `--no-renames` to the `stagedPaths` `diff --cached` argument
+    list so the staged set stays literal ({old:D, new:A}) for both the
+    pre-staged allowlist check and requireExactStagedPaths. [DONE on disk]
 
 T2. Fixture extension — Tests/RielaCLITests/GitWorkflowAddonTests.swift:
     add `commitInitialFile: Bool = true` to GitTestRepository.init. When false:
@@ -72,6 +98,8 @@ T5. Full verification from the worktree root, complete log kept:
     3 unix-socket-unlink: WorkflowRound7AdversarialTests;
     WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario).
     List any difference explicitly; any other failure is in scope to fix.
+
+T2/T3 status on resume: DONE on disk (audited); do not re-implement.
 
 T6. Commit everything (source, tests, this plan, the design doc) on
     fix/git-commit-rename-guard and push ONLY that branch. Never touch main,

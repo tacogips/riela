@@ -242,6 +242,7 @@ extension DeterministicWorkflowRunner {
         agentSilenceMonitorIntervalMs: request.agentSilenceMonitorIntervalMs,
         effectiveInstance: request.effectiveInstance,
         eventHandler: request.eventHandler,
+        sessionExecutionAdmission: request.sessionExecutionAdmission,
         crossWorkflowDispatchDepth: directive.workflowId == nil
           ? request.crossWorkflowDispatchDepth
           : request.crossWorkflowDispatchDepth + 1,

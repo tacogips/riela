@@ -32,8 +32,7 @@ public struct WorkflowRunCommand: Sendable {
   }
 
   func runWithoutSpecialistMonitor(_ options: WorkflowRunOptions) async -> CLICommandResult {
-    var livePersistenceState: WorkflowRunLivePersistenceState?
-    var pendingLease: WorkflowRunPendingLease?
+    var livePersistenceState: WorkflowRunLivePersistenceState?, pendingLease: WorkflowRunPendingLease?
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       try rejectUnsupportedRunOptions(options)
@@ -169,7 +168,8 @@ public struct WorkflowRunCommand: Sendable {
         agentSilenceWarningMs: options.agentSilenceWarningMs,
         agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
         effectiveInstance: effectiveInstance,
-        eventHandler: runEventHandler
+        eventHandler: runEventHandler,
+        sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
       )
       if options.autoImprove {
         var finalResult = try await KaibaAddonExecutionContext.withSnapshot(

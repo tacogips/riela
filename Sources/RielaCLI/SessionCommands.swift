@@ -509,7 +509,8 @@ public struct SessionRerunCommand: Sendable {
               storeRoot: storeRoot
             ),
             effectiveInstance: instanceResolution.effectiveInstance,
-            eventHandler: eventHandler
+            eventHandler: eventHandler,
+            sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
           )
         )
       }
@@ -772,7 +773,8 @@ public struct SessionResumeCommand: Sendable {
                 storeRoot: storeRoot
               ),
               effectiveInstance: instanceResolution.effectiveInstance,
-              eventHandler: eventHandler
+              eventHandler: eventHandler,
+              sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
             )
           )
         }

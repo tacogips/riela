@@ -168,6 +168,7 @@ extension DeterministicWorkflowRunner {
       agentSilenceWarningMs: request.agentSilenceWarningMs,
       agentSilenceMonitorIntervalMs: request.agentSilenceMonitorIntervalMs,
       eventHandler: request.eventHandler,
+      sessionExecutionAdmission: request.sessionExecutionAdmission,
       crossWorkflowDispatchDepth: request.crossWorkflowDispatchDepth + 1
     )
     calleeRequest.workflowRunId = request.workflowRunId

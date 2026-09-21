@@ -120,7 +120,8 @@ let package = Package(
       name: "RielaWork",
       dependencies: [
         "RielaCore",
-        "RielaSQLite"
+        "RielaSQLite",
+        .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
     .target(

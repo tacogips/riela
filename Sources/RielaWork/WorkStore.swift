@@ -329,7 +329,7 @@ public struct WorkStore: Sendable {
     return formatter.string(from: date)
   }
 
-  private func openWritable() throws -> SQLiteDatabase {
+  func openWritable() throws -> SQLiteDatabase {
     try createRootDirectoryIfNeeded()
     // Session stores hold regenerable run history, so a generation without a
     // migration path is discarded and recreated rather than hard-failing.
@@ -402,7 +402,7 @@ public struct WorkStore: Sendable {
     }
   }
 
-  private func encode<T: Encodable>(_ value: T) throws -> String {
+  func encode<T: Encodable>(_ value: T) throws -> String {
     let data: Data
     do {
       data = try Self.encoder.encode(value)

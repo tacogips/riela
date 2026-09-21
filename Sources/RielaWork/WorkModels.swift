@@ -513,6 +513,41 @@ public enum AttemptState: String, Codable, CaseIterable, Sendable {
   case reconciled
 }
 
+public enum AttemptLaunchPhase: String, Codable, CaseIterable, Sendable {
+  case reserved
+  case authorized
+  case nodeStarted
+  case fenced
+  case terminal
+}
+
+/// Launch-fence state stored with the attempt. The opaque token is returned
+/// only to the reserving caller; persistence contains its SHA-256 digest.
+public struct AttemptLaunchMetadata: Codable, Equatable, Sendable {
+  public var phase: AttemptLaunchPhase
+  public var tokenDigest: String
+  public var reservedAt: Date
+  public var authorizedAt: Date?
+  public var nodeStartedAt: Date?
+  public var updatedAt: Date
+
+  public init(
+    phase: AttemptLaunchPhase,
+    tokenDigest: String,
+    reservedAt: Date,
+    authorizedAt: Date? = nil,
+    nodeStartedAt: Date? = nil,
+    updatedAt: Date
+  ) {
+    self.phase = phase
+    self.tokenDigest = tokenDigest
+    self.reservedAt = reservedAt
+    self.authorizedAt = authorizedAt
+    self.nodeStartedAt = nodeStartedAt
+    self.updatedAt = updatedAt
+  }
+}
+
 public enum AttemptEntry: Codable, Equatable, Sendable {
   case start
   case resume
@@ -613,6 +648,7 @@ public struct Attempt: Codable, Equatable, Sendable {
   public var isolation: IsolationRef?
   public var state: AttemptState
   public var outcome: AttemptOutcome?
+  public var launch: AttemptLaunchMetadata?
 
   public init(
     id: AttemptID,
@@ -623,7 +659,8 @@ public struct Attempt: Codable, Equatable, Sendable {
     lineage: LoopRecoveryLineage? = nil,
     isolation: IsolationRef? = nil,
     state: AttemptState = .prepared,
-    outcome: AttemptOutcome? = nil
+    outcome: AttemptOutcome? = nil,
+    launch: AttemptLaunchMetadata? = nil
   ) {
     self.id = id
     self.taskId = taskId
@@ -634,5 +671,6 @@ public struct Attempt: Codable, Equatable, Sendable {
     self.isolation = isolation
     self.state = state
     self.outcome = outcome
+    self.launch = launch
   }
 }

@@ -67,7 +67,8 @@ public extension WorkStore {
         task_id TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.taskId')) STORED,
         session_id TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.sessionId')) STORED,
         generation INTEGER NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.generation')) STORED,
-        state TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.state')) STORED
+        state TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.state')) STORED,
+        launch_phase TEXT GENERATED ALWAYS AS (json_extract(record, '$.launch.phase')) STORED
       )
       """
     )
@@ -76,6 +77,51 @@ public extension WorkStore {
     try db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_work_attempts_session ON work_attempts (session_id)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_attempts_task ON work_attempts (task_id, created_at, attempt_id)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_attempts_state ON work_attempts (state, created_at DESC, attempt_id)")
+    try db.execute(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_work_attempts_one_live_per_task ON work_attempts (task_id) WHERE state IN ('prepared', 'running', 'terminal')"
+    )
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_leases (
+        attempt_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        session_id TEXT NOT NULL UNIQUE,
+        token_digest TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
+    try db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_work_leases_task ON work_leases (task_id)")
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_pending_reservations (
+        request_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL UNIQUE,
+        decision_id TEXT NOT NULL UNIQUE,
+        predecessor_attempt_id TEXT,
+        entry_record JSONB NOT NULL CHECK (json_valid(entry_record, 8)),
+        created_at TEXT NOT NULL,
+        consumed_attempt_id TEXT UNIQUE,
+        consumed_at TEXT
+      )
+      """
+    )
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_cancellations (
+        attempt_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        decision_id TEXT NOT NULL UNIQUE,
+        requested_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        terminal_status TEXT
+      )
+      """
+    )
 
     try db.execute(
       """
@@ -132,6 +178,9 @@ public extension WorkStore {
     "work_intents",
     "work_tasks",
     "work_attempts",
+    "work_leases",
+    "work_pending_reservations",
+    "work_cancellations",
     "work_decisions",
     "work_evidence",
     "work_findings"

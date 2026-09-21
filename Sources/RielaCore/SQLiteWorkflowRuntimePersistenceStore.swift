@@ -112,15 +112,16 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// Work Runtime design forbids backward compatibility, so a generation-4
   /// session store has no path forward and `discardIncompatibleStoreIfNeeded`
   /// deletes and recreates it.
-  public static let schemaGeneration: Int64 = 5
+  public static let schemaGeneration: Int64 = 6
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
   /// they share one file). Append a `SQLiteSchemaMigration(fromGeneration:)`
   /// here for every future `schemaGeneration` bump that is allowed to migrate.
-  /// Stores stamped before generation 2 (the migration baseline), and stores
-  /// stamped at generation 4 (the last pre-Work-Runtime shape), have no path
-  /// and are discarded.
+  /// Stores stamped before generation 2 (the migration baseline), at generation
+  /// 4 (the last pre-Work-Runtime shape), or at generation 5 (the P0-only Work
+  /// Runtime shape) have no path and are discarded. P1 deliberately follows
+  /// the Work Runtime's no-compatibility contract.
   public static let schemaMigrations: [SQLiteSchemaMigration] = [
     SQLiteSchemaMigration(fromGeneration: 2) { database in
       // Historical migrations must not call the current-schema builder:

@@ -43,6 +43,11 @@
   superseded: every completion criterion was already satisfied, and the
   current legacy compatibility/recovery aggregate passed 83 tests with zero
   failures. `mutable-workflow-registry` remains the canonical contract.
+- `wrike-web-notebook-view` is archived as historical implementation rather
+  than reopened work. Commit `a823a90d` shipped it; the later accepted Kaiba
+  extraction `d4268c34` deliberately removed Riela Note and its Notes SPA.
+  Current retained surfaces pass Web audit/lint/typecheck, 100 unit tests,
+  42 Playwright scenarios, and 24 focused Swift security/hosting tests.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

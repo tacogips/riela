@@ -1,6 +1,6 @@
 # Wrike-Style Web Notebook View Implementation Plan
 
-**Status**: Implementation complete; independent review pending
+**Status**: Historical implementation complete; superseded by Kaiba extraction and archived 2026-09-21
 **Workflow Mode**: `issue-resolution`
 **Branch**: `feat/riela-note-web-notebook-view`
 **Issue Reference**: “Wrike-style web notebook view for Riela Note (folder tree + list/board views + dual-server Note GraphQL)”; no GitHub issue URL, repository, or number supplied
@@ -8,7 +8,7 @@
 **Research Reference**: `design-docs/research/wrike-web-notebook-view-brief.md` at `7006afa`
 **Accepted Design Review**: `comm-001595`; accepted with no high, mid, or low findings
 **Created**: 2026-07-25
-**Last Updated**: 2026-07-25
+**Last Updated**: 2026-09-21
 
 ---
 
@@ -423,7 +423,7 @@ rg -n "not shipped|note transport|--note-api|--web-root|Notes" README.md .codex/
 
 ### T8. Final verification, review handoff, and commit
 
-**Status**: IN_PROGRESS
+**Status**: COMPLETED BY SUPERSESSION
 **Write scope**: this plan's progress log, directly affected docs, and the final
 commit metadata only
 **Depends on**: T2 through T7
@@ -531,10 +531,13 @@ its completion depends on T2-T4. T6-T8 are serial integration stages.
   behavior and combined `--note-api --web-root` registration/GraphQL behavior.
 - [x] Directly affected README and Riela implementation-workflow skill content
   reflect the shipped behavior.
-- [ ] Independent implementation review has no unresolved high/mid findings.
-- [ ] All changes are committed on
-  `feat/riela-note-web-notebook-view`; the worktree is clean; nothing is pushed;
-  no pull request is opened.
+- [x] Independent closure review found no unresolved high/mid finding in the
+  retained Riela static-hosting/security surface; the Note UI itself was later
+  deliberately removed from Riela by the accepted Kaiba extraction.
+- [x] The historical implementation is committed as `a823a90d` and contained
+  by `main`. The later extraction is committed as `d4268c34` and also contained
+  by `main`; the original no-push/no-PR handoff condition is superseded by that
+  repository history.
 
 ## Progress-log expectations
 
@@ -876,3 +879,24 @@ deliverables, focused verification, and progress evidence.
 - **Unrelated flaky suites**: distinguish the known daemon event-source restart
   and agent-VM interleaved-submit flakes with exact evidence; never use them to
   waive a feature failure.
+
+### 2026-09-21 — Independent closure review and supersession
+
+- **Decision**: archive as historically implemented and intentionally
+  superseded, not as pending Riela feature work. `a823a90d` implemented the
+  accepted feature and is an ancestor of `main`; `d4268c34` later extracted the
+  Note subsystem to Kaiba and deliberately removed Riela's Note GraphQL, Notes
+  SPA, and related tests.
+- **Review findings**: no high or medium finding remains in the retained Riela
+  surface. Reintroducing the deleted Notes UI here would conflict with the
+  current Kaiba ownership boundary.
+- **Current verification**: Web production-source audit, ESLint, TypeScript,
+  100 Bun unit tests, production build, and 42 Playwright scenarios passed.
+  The retained RielaApp GraphQL security, static-SPA containment, and
+  `--web-root` command aggregate passed 24 Swift tests with zero failures.
+- **Historical verification**: the plan already records the implementation's
+  Note-specific Bun, Playwright, Swift, security, async-convergence, and
+  containment correction passes before `a823a90d` was committed.
+- **Residual boundary**: Note product behavior now belongs to Kaiba; this Riela
+  plan is evidence only. No Monja, Kaiba repository, or other worktree was
+  modified during closure.

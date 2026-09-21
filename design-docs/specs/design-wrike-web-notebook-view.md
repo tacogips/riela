@@ -1,6 +1,8 @@
 # Design: Wrike-Style Web Notebook View
 
-Status: accepted for implementation
+Status: historically implemented by `a823a90d`; superseded in Riela by the
+Kaiba extraction `d4268c34`. Archived implementation plan:
+`impl-plans/completed/wrike-web-notebook-view.md`.
 
 Workflow mode: `issue-resolution`
 

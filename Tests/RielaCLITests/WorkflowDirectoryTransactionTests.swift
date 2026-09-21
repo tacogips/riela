@@ -343,6 +343,19 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     XCTAssertEqual(try String(contentsOf: victim), "preserve-me")
   }
 
+  func testTargetLockUsesWorkspaceSandboxWritableTemporaryRoot() async throws {
+    let (root, _) = try await makeWorkflowVersioningFixture(self)
+    let resolved = try resolveMutableTransactionTarget(root: root)
+
+    let lock = workflowTargetLockURL(target: resolved.identity)
+
+    XCTAssertTrue(lock.path.hasPrefix("/tmp/riela-workflow-target-locks-\(geteuid())/"))
+    XCTAssertFalse(lock.path.hasPrefix("/var/tmp/"))
+    let descriptor = try acquireWorkflowTargetLock(target: resolved.identity, owner: "sandbox-compatible")
+    releaseWorkflowTargetLock(descriptor)
+    try FileManager.default.removeItem(at: lock.deletingLastPathComponent())
+  }
+
   func testRecoveryRejectsNoncanonicalAndDigestMismatchedTransactionBytes() async throws {
     let fixture = try await makeRecoveryFixture(phase: .committing, moveLiveToRollback: false)
     let canonical = try WorkflowHistorySecurePersistence.readPersistedBytes(

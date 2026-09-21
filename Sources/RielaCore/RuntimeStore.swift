@@ -382,6 +382,12 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     }
   }
 
+  /// Advances generated identity state without exposing an undecodable or
+  /// otherwise unavailable persisted record as a runtime session.
+  public func observeExistingSessionIdentity(sessionId: String, workflowId: String) {
+    idGenerator.noteExistingSessionId(sessionId, workflowId: workflowId)
+  }
+
   public func seedWorkflowMessages(_ messages: [WorkflowMessageRecord]) {
     for message in messages {
       idGenerator.noteExistingCommunicationId(message.communicationId)

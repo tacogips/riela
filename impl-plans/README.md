@@ -91,6 +91,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cli-session-store-decode-resilience` | 2026-09-21 | `design-cli-session-store-decode-resilience` (resilient strict decoding, aggregate warning, raw identity collision prevention) |
 | `rielaapp-instance-execution-timeline` | 2026-09-21 | Historical AppKit design superseded by Web UI in `684eeca7`; retained viewer/trace contract verified with Swift, Web unit/typecheck, and Playwright evidence |
 | `workflow-runtime-fanout-capabilities` | 2026-09-21 | `design-bounded-fanout-join-workflow-execution` plus cross-workflow/recovery and child-session observability |
 | `swift-cli-runtime-parity-gap-closure` | 2026-09-21 | `design-swift-cli-runtime-parity-gap-closure` (accepted deletion gate and completed TypeScript source removal) |

@@ -108,6 +108,11 @@
   intentionally removed the native viewer. Current retained behavior passed
   18 RielaViewer tests, four Web trace-layout tests, Web typecheck, and the
   Playwright trace-drilldown scenario with inspected screenshot evidence.
+- `cli-session-store-decode-resilience` is complete. Startup now observes raw
+  SQLite session/workflow identities before independently decoding records, so
+  an unreadable highest suffix cannot be reused. The focused collision test
+  allocated `session-8` with unreadable `session-7` retained; the 22-test
+  discovery/live-persistence/resolution aggregate and strict lint passed.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

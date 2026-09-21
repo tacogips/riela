@@ -1,6 +1,6 @@
 # CLI Session Store Decode Resilience — Implementation Plan
 
-**Status**: Blocked pending scope decision; resilient reads implemented
+**Status**: Complete (2026-09-21)
 **Workflow Mode**: `issue-resolution`
 **Issue Reference**: title-only, “Make CLIWorkflowSessionStore skip undecodable
 record_json rows instead of aborting the command”
@@ -12,7 +12,7 @@ record_json rows instead of aborting the command”
 `design-docs/user-qa/qa-cli-session-store-decode-resilience.md`
 **Codex-Agent References**: None
 **Created**: 2026-07-24
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-09-21
 
 ## Objective
 
@@ -113,7 +113,7 @@ evidence.
 
 ## Completion Criteria
 
-- [ ] The QA scope decision is recorded; an approved runtime seam is minimal,
+- [x] The QA scope decision is recorded; an approved runtime seam is minimal,
   or a declined decision is reported as a blocker.
 - [x] `loadAll()` and `list(...)` return every selected decodable record,
   preserve SQL order, and skip undecodable full records without throwing.
@@ -126,7 +126,7 @@ evidence.
 - [x] `WorkflowResolutionOptions.includeDeactivated` remains a required
   synthesized-Codable key and `Sources/RielaCLI/RielaCommand.swift` is
   unchanged.
-- [ ] Allocation observes raw identity columns and cannot reuse an undecodable
+- [x] Allocation observes raw identity columns and cannot reuse an undecodable
   highest-numbered row's `session_id`.
 - [x] Runtime startup seeds valid sessions and excludes incompatible rows as
   session objects.
@@ -148,6 +148,15 @@ For every implementation session, append a dated entry containing:
 - remaining blockers or residual risks.
 
 ## Progress Log
+
+### Session: 2026-09-21
+
+- Tasks Completed: Recorded approval of the recommended narrow Core scope; added `InMemoryWorkflowRuntimeStore.observeExistingSessionIdentity`; made CLI startup observe raw `session_id`/`workflow_id` columns before resilient full-record decoding; added the highest-unreadable-suffix collision regression.
+- Tasks In Progress: —
+- Blockers: —
+- Changed Files: `Sources/RielaCore/RuntimeStore.swift`, `Sources/RielaCLI/CLIWorkflowSessionStore.swift`, `Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift`, the QA decision, design/plan tracking documents.
+- Verification: `swift test --filter CLIWorkflowSessionStoreResilienceTests` (1/1); `swift test --filter WorkflowCommandLivePersistenceTests` (8/8); combined discovery/resolution run (13/13); strict SwiftLint on all changed Swift files; `git diff --check`; protected-file diff empty. The only `DELETE|UPDATE` match remains the pre-existing save-path upsert.
+- Notes: Raw observation advances only the ID generator. It neither inserts a placeholder session nor mutates the stored row.
 
 ### Session: 2026-07-24
 

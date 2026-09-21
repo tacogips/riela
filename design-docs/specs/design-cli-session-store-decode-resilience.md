@@ -2,6 +2,7 @@
 
 ## Status and issue
 
+- Status: implemented and verified 2026-09-21
 - Workflow mode: `issue-resolution`
 - Issue: title-only reference, “Make CLIWorkflowSessionStore skip undecodable
   record_json rows instead of aborting the command”
@@ -15,9 +16,9 @@
 
 `cli_workflow_sessions.record_json` stores the full
 `PersistedCLIWorkflowSession`. Adding a required Codable field can make an
-older row valid JSON but undecodable by the current model. Today
+older row valid JSON but undecodable by the current model. Before this change,
 `CLIWorkflowSessionStore.load(sessionId:)`, `loadAll()`, and `list(...)`
-propagate that decode error. A single incompatible row can therefore prevent
+propagated that decode error. A single incompatible row could therefore prevent
 workflow-run startup, session discovery, status, resume, and rerun from using
 otherwise valid rows.
 
@@ -94,7 +95,7 @@ future explicit migration.
 ## Session identity and numbering
 
 Session identity allocation must use raw indexed columns, not successful
-full-record decoding. The current code does not yet satisfy that boundary:
+full-record decoding. The original code did not satisfy that boundary:
 
 - `seedRuntimeStoreFromPersistedCLIState` in
   `Sources/RielaCLI/CLIWorkflowSessionStore.swift` iterates `loadAll()`.
@@ -107,7 +108,7 @@ full-record decoding. The current code does not yet satisfy that boundary:
 - `Sources/RielaCore/RielaDataGarbageCollector.swift` reads raw `session_id`,
   but only for garbage collection; that read does not seed allocation.
 
-The required allocation design is an independent raw-column identity scan of
+The implemented allocation design is an independent raw-column identity scan of
 `cli_workflow_sessions.session_id` and `workflow_id`, followed by direct
 counter observation without inserting placeholder sessions into the in-memory
 runtime store. Valid full records are then seeded through the resilient
@@ -115,12 +116,9 @@ runtime store. Valid full records are then seeded through the resilient
 observation seam; fabricating partial `WorkflowSession` values is rejected
 because it would expose incompatible rows as usable runtime sessions.
 
-The intake constraint limits edits to
-`Sources/RielaCLI/CLIWorkflowSessionStore.swift` and its tests, while the
-required direct observation seam belongs to
-`Sources/RielaCore/RuntimeStore.swift`. Implementation must not claim the
-numbering acceptance signal until the scope question in
-`design-docs/user-qa/qa-cli-session-store-decode-resilience.md` is resolved.
+The approved minimal observation seam belongs to
+`Sources/RielaCore/RuntimeStore.swift`; the scope decision is recorded in
+`design-docs/user-qa/qa-cli-session-store-decode-resilience.md`.
 
 ## Validation and regression coverage
 

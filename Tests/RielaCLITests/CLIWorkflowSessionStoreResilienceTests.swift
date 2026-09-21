@@ -80,6 +80,13 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
     )
     XCTAssertNotNil(seededValidSession)
     XCTAssertNil(skippedUnreadableSession)
+    let nextSession = try await runtimeStore.createSession(
+      WorkflowSessionCreateInput(
+        workflowId: "resilient-workflow",
+        entryStepId: "start"
+      )
+    )
+    XCTAssertEqual(nextSession.sessionId, "resilient-workflow-session-8")
     XCTAssertEqual(try rawRecordCount(rootDirectory: root.path), 2)
   }
 

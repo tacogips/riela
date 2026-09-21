@@ -216,6 +216,28 @@ public struct CLIWorkflowSessionStore: Sendable {
     return decodeRecords(rows)
   }
 
+  func loadRawSessionIdentities() throws -> [(sessionId: String, workflowId: String)] {
+    guard FileManager.default.fileExists(atPath: databasePath) else {
+      return []
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try tableExists(db, name: "cli_workflow_sessions") else {
+      return []
+    }
+    let rows = try mapSQLiteError {
+      try db.query(
+        "SELECT session_id, workflow_id FROM cli_workflow_sessions ORDER BY session_id"
+      )
+    }
+    return rows.compactMap { row in
+      guard let sessionId = row["session_id"],
+            let workflowId = row["workflow_id"] else {
+        return nil
+      }
+      return (sessionId: sessionId, workflowId: workflowId)
+    }
+  }
+
   public func list(
     workflowName: String? = nil,
     status: WorkflowSessionStatus? = nil,
@@ -416,6 +438,12 @@ func seedRuntimeStoreFromPersistedCLIState(
   // session record exists. Seed those snapshots too: otherwise a fresh worker
   // reports "resume session not found" even though reservation committed.
   var seededSessionIDs = Set<String>()
+  for identity in try sessionStore.loadRawSessionIdentities() {
+    await runtimeStore.observeExistingSessionIdentity(
+      sessionId: identity.sessionId,
+      workflowId: identity.workflowId
+    )
+  }
   for existing in try sessionStore.loadAll() {
     await runtimeStore.seedSession(existing.session)
     seededSessionIDs.insert(existing.session.sessionId)

@@ -1,31 +1,19 @@
 # Apple Mail Add-ons Implementation Plan
 
-**Status**: Implemented (Swift) + tested; 3 remaining boxes are upstream-download-contract live QA, accepted as deferred (reconciled 2026-07-12). The Mail add-ons are implemented in `Sources/RielaCLI/ProductionNodeAdapter+AppleMailAddons.swift` (+ shared `…+AppleGatewaySupport.swift`) and covered by `AppleMailAddonTests` (15 tests green in the 43-test Apple add-on run on 2026-07-12). On reconciliation, every implementation/verification box was confirmed against an existing Swift symbol and a covering test and checked with evidence. The only unchecked items are the upstream `apple-gateway file download --key` raw-stdout-vs-explicit-output contract confirmation, its contingent (and currently expected-to-be-a-no-op) code change, and closing the file-download QA note after that confirmation — all blocked on the external `apple-gateway` CLI, which is not installed here (`which apple-gateway` → not found). See the Deferred Live QA section below for owner and trigger.
+**Status**: Implemented, upstream download contract corrected, verified, and archived 2026-09-21.
 **Workflow Mode**: issue-resolution
 **Issue Reference**: Add apple-gateway Mail builtin add-ons and an example
 **Created**: 2026-07-07
-**Last Updated**: 2026-07-07
+**Last Updated**: 2026-09-21
 
 ---
 
-## Deferred Live QA
+## Resolved Live QA
 
-The remaining unchecked boxes concern the upstream `apple-gateway file download
---key <downloadKey>` transport contract (raw stdout bytes vs. explicit output
-argument) and cannot be executed without the external `apple-gateway` CLI, which
-is not installed in this environment (`which apple-gateway` → not found on
-2026-07-12). The shipped implementation follows the accepted default raw-stdout
-contract, passes only a Riela-validated `--output-dir` destination, and is
-covered deterministically by fake-executable download tests, so no code change
-is expected unless the confirmed upstream contract diverges.
-
-- **Owner**: next session run on a host with `apple-gateway` installed.
-- **Trigger**: `which apple-gateway` succeeds.
-- **Deferred boxes**: Task 1 — confirm the `apple-gateway file download` output
-  contract; Task 1 — apply the contingent implementation change only if the real
-  gateway requires explicit output; Task 8 — close/update the file-download QA
-  note (`design-docs/user-qa/qa-apple-mail-gateway-file-download.md`) after that
-  confirmation.
+On 2026-09-21 the installed CLI and the apple-gateway source contract confirmed
+that `file download` writes under its cache or `--output-dir` and returns a JSON
+`data.files[]` manifest. Riela's former raw-stdout assumption was corrected;
+the plan has no remaining unchecked item.
 
 ---
 
@@ -64,21 +52,14 @@ carried forward as a required implementation checkpoint before finalizing the
   `APPLE_GATEWAY_BIN`, then `PATH`.
   Evidence: `testAppleMailBinaryResolutionAndEnvironmentFiltering` and
   `testAppleMailDoesNotResolveBinaryPathFromInputsVariablesOrPayload`.
-- [ ] Confirm whether `apple-gateway file download --key <downloadKey>` returns
-  raw stdout bytes or requires an explicit output argument.
-  DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI in this
-  environment; owner: next session with apple-gateway installed; trigger:
-  `which apple-gateway` succeeds. The shipped implementation follows the accepted
-  default raw-stdout contract and validates its own destination paths; the
-  fake-executable download tests exercise that contract deterministically.
-- [ ] If the real gateway requires explicit output, update the implementation
-  approach to pass only a Riela-chosen validated destination and record the
-  reason in this plan's progress log and design docs.
-  DEFERRED (accepted): contingent on the upstream confirmation above; live QA
-  blocked on absent `apple-gateway` CLI; owner: next session with apple-gateway
-  installed; trigger: `which apple-gateway` succeeds. Riela already passes only a
-  validated `--output-dir` destination, so no code change is expected unless the
-  upstream contract diverges.
+- [x] Confirmed `file download` materializes under an optional explicit
+  `--output-dir` and returns a JSON `data.files[]` manifest rather than raw file
+  bytes. Evidence: installed CLI/schema/help plus apple-gateway command spec,
+  implementation, smoke tests, and file-store tests.
+- [x] Updated Riela to pass its validated private runtime root as
+  `--output-dir`, parse the exact manifest, validate the keyed path and
+  containment, inspect actual on-disk size, and publish only the sanitized
+  Riela-chosen final filename.
 
 **Deliverable**: A progress-log entry naming the confirmed GraphQL and file
 download command contracts, plus any accepted divergence from the default
@@ -327,14 +308,8 @@ operators enough setup context for read-only local Mail listing.
 - [x] Preserve the local Apple Mail versus container `gmail-gateway` distinction.
   Evidence: catalog docs keep the local vs container distinction; the add-on ids
   differ (`riela/apple-mail-*` vs `riela/gmail-gateway*`).
-- [ ] Close or update the file-download QA note after upstream contract
-  confirmation.
-  DEFERRED (accepted): depends on the upstream `apple-gateway file download`
-  contract confirmation; live QA blocked on absent `apple-gateway` CLI; owner:
-  next session with apple-gateway installed; trigger: `which apple-gateway`
-  succeeds. The QA note in
-  `design-docs/user-qa/qa-apple-mail-gateway-file-download.md` documents the
-  accepted default raw-stdout contract as the residual open item.
+- [x] Closed the file-download QA note with the confirmed JSON-manifest and
+  explicit-output-root contract.
 - [x] Record any implementation divergence explicitly in the plan progress log
   and design docs.
   Evidence: progress log documents "intentional divergences: none" and the
@@ -542,3 +517,12 @@ Each implementation session must append dated entries below with:
   remain under 1000 lines, `git diff --check` returned no whitespace errors, and
   `git status --short` showed the expected Apple Mail implementation set from
   this Step 6 sequence.
+- 2026-09-21: Resolved the final upstream contract TODO. The installed
+  apple-gateway, its command specification and implementation, and its smoke/
+  file-store tests confirm JSON manifest output with explicit `--output-dir`.
+  Riela now validates `data.files[]`, keyed path containment and regular-file
+  type, enforces `maxDownloadBytes` against the actual file, and publishes the
+  sanitized destination. `AppleMailAddonTests|AppleNotesCrudAddonTests` passed
+  34 tests with zero failures. The wider `AppleGateway|AppleMail` aggregate
+  passed 45 tests with zero failures; strict SwiftLint found zero violations in
+  all four changed Swift files, and `git diff --check` was clean.

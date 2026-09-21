@@ -57,6 +57,19 @@
 - `rielaapp-workflow-marketplace` was already complete and remains present in
   the current tree; 18 focused repository/catalog/layout tests passed, so its
   stale active plan is archived.
+- `apple-mail-addons` is now complete and archived. Live inspection of the
+  installed apple-gateway and its source contract proved that file downloads
+  materialize under `--output-dir` and return `data.files[]`, rather than raw
+  stdout bytes. Riela now parses and validates that manifest, checks the actual
+  regular file and byte size, and publishes only its sanitized destination.
+  The Mail/Notes contract aggregate passed 34 tests, the wider Apple
+  Gateway/Mail aggregate passed 45 tests, strict changed-file lint was clean,
+  and the three installed-CLI-dependent Mail TODOs are closed.
+- `apple-clock-alarm-addons` remains active for its four live QA boxes. The
+  gateway is installed, but the read-only Clock query returned
+  `UNEXPECTED_ERROR` / `Clock UI automation failed`; permission status is
+  `clockAutomation=UNKNOWN` and System Events returned `-600`. No permission
+  prompt or real-alarm mutation was initiated without explicit authorization.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 

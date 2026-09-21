@@ -337,34 +337,78 @@ private struct AppleMailAddonEngine {
       guard destination.path.hasPrefix(downloadRoot.path + "/") else {
         throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) sanitized download filename escaped download root")
       }
-      let data: AppleGatewayProcessDataOutput
+      let downloadedPath: String
       do {
-        data = try runner.runData(
-          arguments: ["file", "download", "--key", downloadKey],
-          deadline: context.deadline
+        let downloader = AppleGatewayFileDownloader(
+          runner: runner,
+          currentDirectory: currentDirectory
         )
+        guard let path = try downloader.download(
+          keys: [downloadKey],
+          outputRoot: downloadRoot.path,
+          deadline: context.deadline
+        )[downloadKey] else {
+          throw AdapterExecutionError(
+            .providerError,
+            "\(input.addon.name) file download omitted the requested key"
+          )
+        }
+        downloadedPath = path
       } catch let error as AdapterExecutionError where isFullDiskAccessText(error.message) {
         throw fullDiskAccessError(input.addon.name, detail: error.message)
       }
-      guard data.stdoutData.count <= maxBytes else {
+      let downloadedURL = URL(fileURLWithPath: downloadedPath, isDirectory: false).standardizedFileURL
+      let actualByteSize: Int
+      do {
+        let attributes = try FileManager.default.attributesOfItem(atPath: downloadedURL.path)
+        guard let size = attributes[.size] as? NSNumber else {
+          throw AdapterExecutionError(.providerError, "\(input.addon.name) could not inspect downloaded file size")
+        }
+        actualByteSize = size.intValue
+      } catch let error as AdapterExecutionError {
+        throw error
+      } catch {
+        throw AdapterExecutionError(
+          .providerError,
+          "\(input.addon.name) could not inspect downloaded file: \(error.localizedDescription)"
+        )
+      }
+      guard actualByteSize <= maxBytes else {
+        try? FileManager.default.removeItem(at: downloadedURL)
         skipped.append(skipEntry(
           descriptor,
           reason: "exceeds_maxDownloadBytes",
-          actualByteSize: data.stdoutData.count
+          actualByteSize: actualByteSize
         ))
         continue
       }
-      do {
-        try data.stdoutData.write(to: destination, options: .atomic)
-      } catch {
-        throw AdapterExecutionError(.providerError, "\(input.addon.name) could not write downloaded file: \(error.localizedDescription)")
+      if downloadedURL.path != destination.path {
+        do {
+          let bytes = try Data(contentsOf: downloadedURL, options: [.mappedIfSafe])
+          guard bytes.count <= maxBytes else {
+            try? FileManager.default.removeItem(at: downloadedURL)
+            skipped.append(skipEntry(
+              descriptor,
+              reason: "exceeds_maxDownloadBytes",
+              actualByteSize: bytes.count
+            ))
+            continue
+          }
+          try bytes.write(to: destination, options: .atomic)
+          try FileManager.default.removeItem(at: downloadedURL)
+        } catch {
+          throw AdapterExecutionError(
+            .providerError,
+            "\(input.addon.name) could not publish downloaded file: \(error.localizedDescription)"
+          )
+        }
       }
       var entry = descriptor.value
       entry["kind"] = .string(descriptor.kind)
       entry["filename"] = .string(filename)
       entry["downloadKey"] = .string(downloadKey)
       entry["localPath"] = .string(destination.path)
-      entry["materializedByteSize"] = .integer(Int64(data.stdoutData.count))
+      entry["materializedByteSize"] = .integer(Int64(actualByteSize))
       materialized.append(entry)
     }
     return AppleMailMaterializationResult(

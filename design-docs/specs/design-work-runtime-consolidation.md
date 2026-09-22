@@ -901,14 +901,15 @@ domain model or moving work from P2-P7 into P1.
 ### 17.1 Current intake, ownership, and phase boundary
 
 The authoritative issue is
-`workflow-input:Complete the Work Runtime P1 dependency DAG`,
+`workflow-input:Complete the Work Runtime P1 dependency DAG (issue URL/number unavailable)`,
 from Step 1 communication `comm-000002` in
 `codex-design-and-implement-review-loop-session-1`, mode `issue-resolution`.
 There is no GitHub URL, repository-plus-number, or external Codex-reference
 input. Preserve `comm-000002`, intake execution
 `step1-issue-intake-attempt-1-exec-2`, and design step
 `step2-design-doc-update`; downstream reviews record their actual execution IDs.
-Intake decisions are `accept-intake` and `require-adversarial-review`;
+Intake review decision is `route_to_single_design_author`, with
+`reviewMode: adversarial` and `requiresAdversarialReview: true`;
 design remains single-author. Step 3 has not
 reviewed this resumed revision. Earlier acceptance/progress references belong
 to the prior run and do not certify this revision or the checkpoint code.
@@ -916,8 +917,8 @@ No Step 3 or Step 5 revision feedback was supplied for this turn.
 
 Execution remains owned by the immutable installed user-scope package at
 `/Users/taco/.riela/packages/codex-design-and-implement-review-loop/`, version
-0.3.10, with manifest-declared SHA-256 integrity digest
-`63593bf3e7c792969302ca69d3d60b68ac04f18e206a4133e09d480356830f5d`.
+0.3.12, with manifest-declared SHA-256 integrity digest
+`92d1fc9dca83f6dd2a50165687bb52a4be0c0737206fde98bb139fc1b975063d`.
 This turn read the manifest; it does not claim a recomputed package-integrity
 gate. Earlier package versions and checkpoint-only inspection facts are historical,
 superseded by this intake and §17.6. Do not edit
@@ -1200,10 +1201,10 @@ host-probe results, and independent review remain verification work.
 
 ### 17.6 Resumption evidence and dependency readiness (2026-09-22)
 
-Current HEAD is `a9bdbbe54a373f107f6b1f39c975fdaf46978acf` on
+Current inspected HEAD is `dc968119c4056029ce3234c8d53ac9697bc5fb92` on
 `feat/remaining-impl-plans`; checkpoint `bf39f374` resolves to
 `bf39f3749894f4a01bf456c6d5178e377d5dd140` and is an ancestor (exit 0).
-The initial status matches intake: no staged or untracked changes and nine
+The initial status matches intake: no staged or untracked changes and sixteen
 pre-existing modified tracked files:
 
 - `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`
@@ -1213,12 +1214,21 @@ pre-existing modified tracked files:
 - `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`
 - `Tests/RielaWorkTests/WorkStoreReservationTests.swift`
 - `Tests/RielaWorkTests/WorkStoreTests.swift`
+- `design-docs/specs/design-work-runtime-consolidation.md`
+- `impl-plans/active/work-runtime-p1-capabilities.md`
+- `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`
+- `impl-plans/active/work-runtime-p1-finalization.md`
+- `impl-plans/active/work-runtime-p1-guard-director.md`
+- `impl-plans/active/work-runtime-p1-reservation.md`
+- `impl-plans/active/work-runtime-p1-sandbox.md`
 - `impl-plans/progress/p1-reservation.md`
 - `impl-plans/progress/p1-sandbox.md`
 
-Preserve these bytes during design authoring. Later implementation owners must
-fresh-read and attribute retained hunks before editing; a pre-existing change
-is neither disposable nor automatically accepted for the final commit.
+Preserve all retained changes. This design author updates only the existing
+design document, retaining its P1 behavior contracts; the other fifteen files
+must remain byte-identical. Later implementation owners must fresh-read and
+attribute retained hunks before editing; a pre-existing change is neither
+disposable nor automatically accepted for the final commit.
 `DecisionApplierStoreTests.swift` contains retained reservation/cancellation
 coverage despite its lifecycle-oriented name: Step 4 must assign its root-wave
 verification/repair ownership explicitly, then transfer ownership to lifecycle
@@ -1234,6 +1244,15 @@ through downstream handoff. Step 1's exit-0 inspections remain intake facts with
 their explicit missing-log limitation, not behavioral acceptance. This Step 2
 can write design and logs; downstream nodes must prove their own access.
 Source inspection is not behavioral certification and executes no tests.
+
+The six retained plans currently say Step 5 review pending. Their historical
+`comm-000004` / `step3-design-review-attempt-1-exec-4` acceptance is not a
+review of this 0.3.12 resumption. The authoritative current intake is
+`comm-000002`; its model-role assignment originates at `comm-000001` /
+`riela-manager-attempt-1-exec-1`. The retained plans describe package 0.3.11; Step 4 must reconcile this provenance
+against the installed 0.3.12 manifest and current design review without
+changing plan IDs, paths, task IDs or dependency edges. No new product behavior
+or implementation acceptance is introduced by refreshing these references.
 
 | Current-source observation | Consequence for this package |
 | --- | --- |

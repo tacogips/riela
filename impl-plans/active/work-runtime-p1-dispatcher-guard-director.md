@@ -1,11 +1,13 @@
 # Work Runtime P1: Dispatcher integration and plan contract
 
-**Status**: Step 4 revised; Step 5 review pending; implementation not certified.
+**Status**: Step 4 reconciled for user-scope package 0.3.12; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
 **Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
 **Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
+**Resumption authority**: Current runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4`, accepting design execution `step2-design-doc-update-attempt-1-exec-3` (`comm-000003`). This accepts the resumed design for package 0.3.12; identical historical communication labels alone are not current acceptance. Intake is `comm-000002`; role assignment originates at `comm-000001` / `riela-manager-attempt-1-exec-1`. No implementation predecessor is accepted by this planning turn.
+**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0312/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0312/author-self-check.json`.
 **Updated**: 2026-09-22
 
 ```json
@@ -146,22 +148,23 @@ Step 3 accepted it in `comm-000004`, `step3-design-review-attempt-1-exec-4`,
 `codex-design-and-implement-review-loop-session-1`, with no findings.
 No Step 5 feedback was supplied; Step 5 acceptance remains pending.
 
-Current HEAD is `a9bdbbe54a373f107f6b1f39c975fdaf46978acf`;
-`bf39f374` is an ancestor, not HEAD. Accepted §17.6 records nine retained
-modified files, whose bytes are preserved by this planning turn. Task CLI only exposes
+Current HEAD is `dc968119c4056029ce3234c8d53ac9697bc5fb92`;
+`bf39f374` is an ancestor, not HEAD. Accepted §17.6 records sixteen retained modified files: six plans, the
+accepted design, seven source/test files and two progress logs. This planning
+turn edits only the six plans; the other ten files remain byte-identical. Task CLI only exposes
 show/list; dispatcher/director orchestration, capability placement, mutation
 suites and replacement examples remain absent. Retained sandbox/reservation
 code needs current behavioral certification. Decision storage trusts caller
 completion, lacks scoped causality/original replay, and only defers cancel;
 director ordering and gate-recovery budget checks need repair by p1-lifecycle.
-See `tmp/work-runtime-p1/step4-plan-current/verification-evidence.json`; inspection is
+See `tmp/work-runtime-p1/step4-plan-v0312/verification-evidence.json`; inspection is
 not passing implementation evidence. Preserve correct retained work and all
 unrelated state, other sessions and Monja tenant-sharding-d48 work.
 
 Continue the Riela-owned immutable user-scope package at
 `/Users/taco/.riela/packages/codex-design-and-implement-review-loop/`, version
-0.3.10, manifest-declared integrity digest
-`63593bf3e7c792969302ca69d3d60b68ac04f18e206a4133e09d480356830f5d`.
+0.3.12, manifest-declared integrity digest
+`92d1fc9dca83f6dd2a50165687bb52a4be0c0737206fde98bb139fc1b975063d`.
 Manifest inspection is not a recomputed integrity check. Do not modify the
 installation or start another workflow. Project canonical payload validation
 is artifact validation only. No worktrees, private branches or concurrent Git
@@ -200,7 +203,11 @@ those files and let the installed runtime materialize this accepted DAG.
 
 After Step 5 accepts, the workflow's serial checkpoint gate commits the
 accepted design and all six plans with an exact allowlist before native fanout.
-Step 4 does not commit pending plans. Initially accepted implementation IDs
+Step 4 does not commit pending plans. The checkpoint allowlist is exactly
+`design-docs/specs/design-work-runtime-consolidation.md` plus the six
+`planPath` values; exclude retained source/test/progress changes and scratch
+evidence. Preserve the existing index and all unrelated hunks. Record the
+checkpoint hash and plan content hashes before admitting either root. Initially accepted implementation IDs
 are empty: only sandbox and reservation are eligible after that checkpoint.
 Every dependency admission requires accepted source revision/content hashes,
 exact interface signatures/owner, behavioral command logs with final exit 0
@@ -275,7 +282,7 @@ For EVERY edit, including deletion and each retry:
    gate. No implementation branch declares the combined tree accepted alone.
 
 Inventory and classify existing dirty/untracked changes before implementation.
-`tmp/work-runtime-p1/step4-plan-current/before-hashes.json` records this planning turn's
+`tmp/work-runtime-p1/step4-plan-v0312/before-hashes.json` records this planning turn's
 baseline; implementation must take a fresh one. Retain correct in-scope work,
 repair incorrect work with evidence, and preserve unrelated changes. Never
 reset/clean the tree or stage all files. Plans remain unchecked until serial
@@ -409,7 +416,8 @@ abstraction, and split touched non-generated files over 1000 lines by actual
 responsibility without unrelated cleanup. Include necessary extracted paths in
 serial ownership records. Do not weaken tests or lint to accept retained WIP.
 
-Before edits, each worker captures repository lint baseline. After edits,
+Before either root edits, the serial preflight owner captures repository lint
+baseline; every worker records that immutable log/hash. After edits,
 materialize exact existing changed/new Swift paths from its intent records in
 `tmp/work-runtime-p1/<planId>/changed-swift-files.nul`; do not rely on git diff
 alone because it omits untracked files and predecessor commits. Replace the
@@ -573,7 +581,7 @@ git diff --cached --check
 ### Step 4 author check and remaining gates
 
 Planning evidence and the author self-check are under
-`tmp/work-runtime-p1/step4-plan-current/`. They verify six-plan coverage, DAG/ownership,
+`tmp/work-runtime-p1/step4-plan-v0312/`. They verify six-plan coverage, DAG/ownership,
 accepted-design mapping, explicit invariants/acceptance/commands, proportion,
 progress and edit-integrity requirements. Step 5 acceptance and all actual
 implementation gates remain downstream. V0–V9 have not run in Step 4.
@@ -611,7 +619,9 @@ Before either root edits source, the serial preflight owner captures the shared
 repository lint baseline. Workers may reference that complete log/hash rather
 than racing baseline capture against another writer. Plan-local post-edit lint
 is compared to that baseline; finalization compares the entire joined tree.
-Separate scratch builds isolate build outputs, not source. Record source hashes
+Separate scratch builds isolate build outputs, not source. An owner may
+verify its contract only while all relevant source inputs are stable; schedule
+wave verification after writers pause, not concurrently with source mutation. Record source hashes
 before/after each verification command; if another writer changes relevant
 inputs during a run, that run cannot certify the resulting tree. Serialize
 verification on stable wave boundaries and re-run affected gates after join.
@@ -626,3 +636,15 @@ Reservation owns retained `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`
 verification and primitive-related repair in wave 1. Transfer its accepted
 hash and cancellation regression evidence to lifecycle only after reservation
 acceptance, then to dispatch after lifecycle acceptance. No concurrent writers.
+
+## Current acceptance boundary
+
+The current Step 3 runtime delivery accepts the resumed design with no
+findings; the design document's historical pending-review prose is not a
+new blocker and is preserved until serial documentation refresh. Step 5
+plan review remains pending. This plan certifies no predecessor or behavior.
+Read the current source and this plan's exact file map before editing; use
+current hashes and complete foreground evidence, never historical progress
+as implementation acceptance. The Step 4 author check is
+`python3 tmp/work-runtime-p1/step4-plan-v0312/self-check.py`; its complete log
+and final exit are recorded in the planning evidence above.

@@ -395,7 +395,8 @@ fileprivate extension ScopedParityCommandRunner {
       let effectiveMockScenarioPath = parsed.mockScenarioPath ?? persisted.record.mockScenarioPath
       let adapter = try makeSessionNodeAdapter(
         mockScenarioPath: effectiveMockScenarioPath,
-        workingDirectory: resolution.workingDirectory
+        workingDirectory: resolution.workingDirectory,
+        codexSupervisorModeEnabled: parsed.supervisorMode
       )
       let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
         scenarioPath: effectiveMockScenarioPath,

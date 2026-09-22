@@ -4,6 +4,11 @@ import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
+  func testCallStepParityOptionsAcceptSupervisorMode() throws {
+    let parsed = try ParsedParityOptions(["--supervisor-mode"])
+    XCTAssertTrue(parsed.supervisorMode)
+  }
+
   func testCallStepCompletesChangeTrackedFanoutBeforeStopping() async throws {
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-call-step-fanout-\(UUID().uuidString)", isDirectory: true)

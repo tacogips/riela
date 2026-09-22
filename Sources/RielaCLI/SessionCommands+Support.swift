@@ -1,10 +1,15 @@
 import RielaAdapters
 import RielaCore
 
-func makeSessionNodeAdapter(mockScenarioPath: String?, workingDirectory: String) throws -> any NodeAdapter {
+func makeSessionNodeAdapter(
+  mockScenarioPath: String?,
+  workingDirectory: String,
+  codexSupervisorModeEnabled: Bool = false
+) throws -> any NodeAdapter {
   try makeScenarioBackedNodeAdapter(
     scenarioPath: mockScenarioPath,
-    workingDirectory: workingDirectory
+    workingDirectory: workingDirectory,
+    codexSupervisorModeEnabled: codexSupervisorModeEnabled
   )
 }
 

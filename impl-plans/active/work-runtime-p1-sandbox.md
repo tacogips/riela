@@ -4,8 +4,8 @@
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
-**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted_for_step4_implementation_planning`; findings/feedback empty; no Step 5 feedback supplied.
-**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `communicationId:comm-000003`, `communicationId:comm-000004`, `sourceStepExecutionId:step2-design-doc-update-attempt-1-exec-3`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
+**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
+**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
 **Updated**: 2026-09-22
 
 ```json
@@ -128,3 +128,8 @@ join/changeTracking and serial repair rules in the dispatcher contract apply.
 Only this plan's implementation owner appends to its progressLog; it may not
 mark another plan or shared index complete. Documentation refresh and final
 checkbox/index reconciliation belong to p1-finalize after independent acceptance.
+
+The retained `ImplementationWorkflowSandboxTests.swift` modification belongs
+to this root. Record its fresh hash and executed cases rather than relying on
+checkpoint logs. A correct unchanged artifact still needs current behavioral
+evidence and independent acceptance; report any runtime admission blocker.

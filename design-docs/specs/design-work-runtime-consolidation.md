@@ -905,29 +905,29 @@ The authoritative issue is
 from Step 1 communication `comm-000002` in
 `codex-design-and-implement-review-loop-session-1`, mode `issue-resolution`.
 There is no GitHub URL, repository-plus-number, or external Codex-reference
-input. Preserve agent references `comm-000001`, `riela-manager`,
-`step1-issue-intake`, `step2-design-doc-update`, `step3-design-review`, and
-`step4-impl-plan-create`, manager execution `riela-manager-attempt-1-exec-1`,
-and intake execution `step1-issue-intake-attempt-1-exec-2`. Intake decision is
-`normalized_for_single_design_author`, design fanout rejected; Step 3 has not
+input. Preserve `comm-000002`, intake execution
+`step1-issue-intake-attempt-1-exec-2`, and design step
+`step2-design-doc-update`; downstream reviews record their actual execution IDs.
+Intake decisions are `accept-intake` and `require-adversarial-review`;
+design remains single-author. Step 3 has not
 reviewed this resumed revision. Earlier acceptance/progress references belong
 to the prior run and do not certify this revision or the checkpoint code.
 No Step 3 or Step 5 revision feedback was supplied for this turn.
 
 Execution remains owned by the immutable installed user-scope package at
 `/Users/taco/.riela/packages/codex-design-and-implement-review-loop/`, version
-0.3.6, with manifest-declared SHA-256 integrity digest
-`45efc8840875e19b5e69151a3c9b99e5cbc0c8352b5b90c813de8d372227be14`.
+0.3.10, with manifest-declared SHA-256 integrity digest
+`63593bf3e7c792969302ca69d3d60b68ac04f18e206a4133e09d480356830f5d`.
 This turn read the manifest; it does not claim a recomputed package-integrity
-gate. The prior 0.3.5 and `f085c1f` inspection facts in the dispatcher plan are
-historical, superseded by this intake and §17.6. Do not edit
+gate. Earlier package versions and checkpoint-only inspection facts are historical,
+superseded by this intake and §17.6. Do not edit
 the installation or start a project-scope or replacement workflow. Stay on
 `feat/remaining-impl-plans` in
 `/Users/taco/gits/tacogips/riela-worktrees/remaining-impl-plans`; create no
 worktree. Preserve unrelated work, including all Monja tenant-sharding-d48 work.
 The current workflow input explicitly authorizes commit and push of accepted
-P1 changes and narrowly necessary documentation/index updates, superseding
-older no-push language in the active plan. Finalization remains a later
+P1 changes and narrowly necessary documentation/index updates. Older no-push language, wherever retained as history, does not
+override this authorization. Finalization remains a later
 workflow gate; this design turn does not commit, push, or authorize base-branch
 integration.
 
@@ -1004,12 +1004,18 @@ example is in P1; specialist classification and long-lived supervision are not.
   Reservation consumes that request once and links the existing decision to its
   new attempt; it must not insert a conflicting duplicate decision or silently
   lose the request between application and launch. A replay may reconcile the
-  same pending request, never create a second request. Start/resume use the same
+  same pending request, never create a second request. Retain consumed requests
+  as replay evidence while allowing a later distinct decision to enqueue the
+  next request after reconciliation; uniqueness applies to the unconsumed
+  request per task, not all historical requests. Start/resume use the same
   reservation fence and decision identity rules.
 - Cancel, stop, reject, and inactivity-triggered rerun first request runner
   cancellation when execution is live. Persist the request, retain the fence,
   and wait for durable terminal acknowledgment before reconciliation, terminal
-  task state, or a replacement launch. If acknowledgment is uncertain, expose
+  task state, or a replacement launch. A caller outcome alone is insufficient:
+  require the reserved runtime snapshot to durably record the matching cancelled
+  failure; a created snapshot, mismatched outcome, or non-cancellation failure
+  cannot acknowledge cancellation. If acknowledgment is uncertain, expose
   that state for an explicit decision; do not merely mark an active attempt
   reconciled in the store. Process interruption follows this same path.
 
@@ -1163,9 +1169,10 @@ Self-check and the workflow's single adversarial implementation review must
 leave no material finding unresolved. Native join/change evidence and serial
 shared-file reconciliation remain required when implementation fans out.
 Refresh all six P1 plans and indexes only from accepted evidence; retain P2–P7
-as deferred. The dispatcher plan's one-plan-only scope, external-readiness mode,
-old checkpoint/package facts, and the finalization plan's no-push statement
-must be reconciled by Step 4 to this intake before implementation starts.
+as deferred. The six current plan metadata blocks already encode this DAG. Step 4 must
+reconcile their historical status/review claims and any stale package or
+checkpoint references against this intake; retain identities and dependency
+edges rather than resetting dispatch to a standalone plan.
 Do not mark checkboxes or archive plans merely because their design or plan
 was accepted. Blocked, unchanged, or materially unverified implementation
 returns actionable blockers and cannot enter repetitive integrity,
@@ -1180,8 +1187,7 @@ The installed package has its own manifest and is not edited. Implementation
 must repeat the ownership audit for any workflow/prompt/script/skill edit and
 refresh an applicable owning manifest rather than inventing one.
 
-**Reference mapping and questions.** `../../codex-agent` is absent (recorded
-inspection exit 1); intake supplies no alternative and is not reference-driven.
+**Reference mapping and questions.** `../../codex-agent` is absent (`test ! -e ../../codex-agent`, exit 0); intake supplies no alternative and is not reference-driven.
 There is therefore no external Codex behavior parity claim or required external
 comparison. Cursor CLI remains one backend behind the existing adapter boundary
 in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; backend-specific probe,
@@ -1194,13 +1200,39 @@ host-probe results, and independent review remain verification work.
 
 ### 17.6 Resumption evidence and dependency readiness (2026-09-22)
 
-Current HEAD and checkpoint `bf39f374` both resolve to
-`bf39f3749894f4a01bf456c6d5178e377d5dd140` on `feat/remaining-impl-plans`.
-This turn's initial `git status --short` returned no changes, exit 0. Complete
-foreground inspection commands, exits and log paths are recorded in
-`tmp/work-runtime-p1/step2-design/inspection-evidence.json`. Step 1's unlogged
-read-only inspections are not passing evidence. This Step 2 can write its
-design and logs; downstream nodes must still prove their own execution access.
+Current HEAD is `a9bdbbe54a373f107f6b1f39c975fdaf46978acf` on
+`feat/remaining-impl-plans`; checkpoint `bf39f374` resolves to
+`bf39f3749894f4a01bf456c6d5178e377d5dd140` and is an ancestor (exit 0).
+The initial status matches intake: no staged or untracked changes and nine
+pre-existing modified tracked files:
+
+- `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`
+- `Sources/RielaWork/WorkStore+Reservation.swift`
+- `Sources/RielaWork/WorkStore+Schema.swift`
+- `Tests/RielaCLITests/ImplementationWorkflowSandboxTests.swift`
+- `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`
+- `Tests/RielaWorkTests/WorkStoreReservationTests.swift`
+- `Tests/RielaWorkTests/WorkStoreTests.swift`
+- `impl-plans/progress/p1-reservation.md`
+- `impl-plans/progress/p1-sandbox.md`
+
+Preserve these bytes during design authoring. Later implementation owners must
+fresh-read and attribute retained hunks before editing; a pre-existing change
+is neither disposable nor automatically accepted for the final commit.
+`DecisionApplierStoreTests.swift` contains retained reservation/cancellation
+coverage despite its lifecycle-oriented name: Step 4 must assign its root-wave
+verification/repair ownership explicitly, then transfer ownership to lifecycle
+only after reservation acceptance. Do not permit two owners to edit it at once.
+Historical progress logs report tests and repairs, but do not establish current
+source hashes plus all required review gates. No predecessor is newly certified
+by this design turn.
+
+Complete foreground inspection commands, final exits and log paths are in
+`tmp/work-runtime-p1/step2-design-current/inspection-evidence.json`; original
+file hashes are in `preserved-files.json` in that directory. Retain this evidence
+through downstream handoff. Step 1's exit-0 inspections remain intake facts with
+their explicit missing-log limitation, not behavioral acceptance. This Step 2
+can write design and logs; downstream nodes must prove their own access.
 Source inspection is not behavioral certification and executes no tests.
 
 | Current-source observation | Consequence for this package |
@@ -1208,7 +1240,8 @@ Source inspection is not behavioral certification and executes no tests.
 | `Sources/RielaCLI/TaskCommands.swift` switches only over show/list; `TaskCommandModels.swift` contains read-result models. Source inventory contains no `TaskDispatcher*.swift` or `AgentDirector*.swift`. | P1-6a–d require actual integration; do not infer it from reservation APIs or the checkpoint subjects. |
 | Canonical Step 6/8 node payloads already declare workspace-write, and `Tests/RielaCLITests/ImplementationWorkflowSandboxTests.swift` exists. | `p1-sandbox` fresh-reads and behaviorally verifies the retained correction. Its artifact validation does not execute the project workflow or modify the installed package. |
 | `Sources/RielaWork/WorkStore+Reservation.swift` has reservation, authorization, pending-request and cancellation APIs and `Tests/RielaWorkTests/WorkStoreReservationTests.swift` exists. | `p1-reservation` audits and repairs only gaps against §17.2, records finalized primitive signatures, and obtains current behavioral acceptance before lifecycle/capabilities consume them. Existing APIs and tests alone do not close P1-1. |
-| `Sources/RielaWork/WorkStore+Decisions.swift` accepts caller completion, copies causal IDs without validating their ledger scope, returns current rows on replay, and specially defers only cancel for a live attempt. Pending reservation enqueue is a separate API in `WorkStore+Reservation.swift`. | Shared-applier integration must enforce §17.2 at the durable boundary; replay must return the original outcome, rerun recording must be atomic with decision application, and all live terminal/replacement actions must await cancellation acknowledgment. These are material current-source gaps, not passing behavior. |
+| Retained reservation/schema changes add a transaction-scoped enqueue seam, unconsumed-request uniqueness, cancelled-snapshot acknowledgment, and schema generation 7; retained tests exercise successive requests and cancellation provenance. | Preserve and behaviorally reverify these repairs. Generation policy remains the existing no-compatibility contract; use task-owned scratch stores only, never open or reset other sessions' runtime databases to validate it. Source presence does not certify rollback, replay, or cancellation behavior. |
+| `Sources/RielaWork/WorkStore+Decisions.swift` accepts caller completion, copies causal IDs without validating their ledger scope, returns current rows on replay, and specially defers only cancel for a live attempt. A transaction-scoped enqueue seam now exists in `WorkStore+Reservation.swift`, but the applier does not call it. | Shared-applier integration must enforce §17.2 at the durable boundary; replay must return the original outcome, rerun recording must be atomic with decision application, and all live terminal/replacement actions must await cancellation acknowledgment. These are material current-source gaps, not passing behavior. |
 | `Sources/RielaWork/DeterministicDirector.swift` selects the first violation/gate in input order and gate recovery lacks an attempt-budget check. `TaskGuardCoordinator.swift` passes a caller completion verdict to the store. | `p1-lifecycle` owns stable ordering, remaining-budget and store-authoritative completion/causality/replay repairs, using accepted reservation primitives. Never compensate with a CLI-only validation path. |
 | No work host-capability/placement implementation was identified by the source inventory and `HostCapability`, `BackendCapability`, `backendPolicy` search (existing generic runner capability diagnostics are unrelated). | `p1-capabilities` implements the §17.4 snapshot/resolver/placement contract after reservation acceptance. Its accepted interface gates dispatch; no dispatcher-local capability registry. |
 | Required `TaskCommandMutationTests`, `TaskDispatcherTests`, `TaskDispatcherIntegrationTests`, `TaskRuntimeExampleTests`, `examples/task-repair-loop/`, `examples/task-agent-director/` and `impl-plans/progress/p1-dispatch.md` are absent from the inventory. | These are deliverables to author and execute, not existing passing suites, examples or progress evidence. |
@@ -1285,13 +1318,12 @@ sessions' evidence. Plan paths/IDs in this DAG remain canonical throughout
 execution; any later archive must retain their identity and source-path mapping.
 
 Only accepted P1 implementation and narrowly required documentation/index
-changes may enter the final commit allowlist and push. Intake records origin's
-same-name branch absent and no upstream; this turn confirms no configured
-upstream (git config exit 1) and no local remote-tracking ref (show-ref exit
-128), not live remote absence. Final publication must freshly inspect origin,
-explicitly target `origin` / `feat/remaining-impl-plans`, establish the branch
-and its upstream through the authorized finalization path, and verify the
-accepted hash remotely. Do not force-push. If the installed finalizer cannot
+changes may enter the final commit allowlist and push. Intake identifies the
+unambiguous `origin` remote but supplies no upstream or live remote-branch
+readiness evidence. Final publication must freshly inspect origin, explicitly
+target `origin` / `feat/remaining-impl-plans`, establish any missing upstream
+through the authorized finalization path, and verify the accepted hash remotely.
+Do not force-push. If the installed finalizer cannot
 handle a first push without an upstream, report that concrete blocker rather
 than altering this immutable workflow, fabricating tracking refs, or claiming
 publication. Base-branch integration is not requested.

@@ -4,8 +4,8 @@
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
-**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted_for_step4_implementation_planning`; findings/feedback empty; no Step 5 feedback supplied.
-**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `communicationId:comm-000003`, `communicationId:comm-000004`, `sourceStepExecutionId:step2-design-doc-update-attempt-1-exec-3`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
+**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
+**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
 **Updated**: 2026-09-22
 
 ```json
@@ -146,20 +146,22 @@ Step 3 accepted it in `comm-000004`, `step3-design-review-attempt-1-exec-4`,
 `codex-design-and-implement-review-loop-session-1`, with no findings.
 No Step 5 feedback was supplied; Step 5 acceptance remains pending.
 
-Current inspection confirms HEAD equals the checkpoint. Task CLI only exposes
+Current HEAD is `a9bdbbe54a373f107f6b1f39c975fdaf46978acf`;
+`bf39f374` is an ancestor, not HEAD. Accepted §17.6 records nine retained
+modified files, whose bytes are preserved by this planning turn. Task CLI only exposes
 show/list; dispatcher/director orchestration, capability placement, mutation
 suites and replacement examples remain absent. Retained sandbox/reservation
 code needs current behavioral certification. Decision storage trusts caller
 completion, lacks scoped causality/original replay, and only defers cancel;
 director ordering and gate-recovery budget checks need repair by p1-lifecycle.
-See `tmp/work-runtime-p1/step4-plan/inspection-evidence.json`; inspection is
+See `tmp/work-runtime-p1/step4-plan-current/verification-evidence.json`; inspection is
 not passing implementation evidence. Preserve correct retained work and all
 unrelated state, other sessions and Monja tenant-sharding-d48 work.
 
 Continue the Riela-owned immutable user-scope package at
 `/Users/taco/.riela/packages/codex-design-and-implement-review-loop/`, version
-0.3.6, manifest-declared integrity digest
-`45efc8840875e19b5e69151a3c9b99e5cbc0c8352b5b90c813de8d372227be14`.
+0.3.10, manifest-declared integrity digest
+`63593bf3e7c792969302ca69d3d60b68ac04f18e206a4133e09d480356830f5d`.
 Manifest inspection is not a recomputed integrity check. Do not modify the
 installation or start another workflow. Project canonical payload validation
 is artifact validation only. No worktrees, private branches or concurrent Git
@@ -273,7 +275,7 @@ For EVERY edit, including deletion and each retry:
    gate. No implementation branch declares the combined tree accepted alone.
 
 Inventory and classify existing dirty/untracked changes before implementation.
-`tmp/work-runtime-p1/step4-plan/before-hashes.json` records this planning turn's
+`tmp/work-runtime-p1/step4-plan-current/before-hashes.json` records this planning turn's
 baseline; implementation must take a fresh one. Retain correct in-scope work,
 repair incorrect work with evidence, and preserve unrelated changes. Never
 reset/clean the tree or stage all files. Plans remain unchecked until serial
@@ -571,7 +573,7 @@ git diff --cached --check
 ### Step 4 author check and remaining gates
 
 Planning evidence and the author self-check are under
-`tmp/work-runtime-p1/step4-plan/`. They verify six-plan coverage, DAG/ownership,
+`tmp/work-runtime-p1/step4-plan-current/`. They verify six-plan coverage, DAG/ownership,
 accepted-design mapping, explicit invariants/acceptance/commands, proportion,
 progress and edit-integrity requirements. Step 5 acceptance and all actual
 implementation gates remain downstream. V0–V9 have not run in Step 4.
@@ -619,3 +621,8 @@ include every transferred file, including tests/help/parser files. Before a
 new helper, remote decoder, digest manifest or repair path is edited, record its
 exact path/accepted requirement and serial owner. Revalidate overlapping
 predecessor behavior; do not silently widen parallel ownership.
+
+Reservation owns retained `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`
+verification and primitive-related repair in wave 1. Transfer its accepted
+hash and cancellation regression evidence to lifecycle only after reservation
+acceptance, then to dispatch after lifecycle acceptance. No concurrent writers.

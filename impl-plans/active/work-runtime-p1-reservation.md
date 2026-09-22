@@ -4,8 +4,8 @@
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
-**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted_for_step4_implementation_planning`; findings/feedback empty; no Step 5 feedback supplied.
-**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `communicationId:comm-000003`, `communicationId:comm-000004`, `sourceStepExecutionId:step2-design-doc-update-attempt-1-exec-3`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
+**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
+**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
 **Updated**: 2026-09-22
 
 ```json
@@ -22,6 +22,7 @@
     "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
     "Tests/RielaWorkTests/WorkStoreTests.swift",
     "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
     "impl-plans/progress/p1-reservation.md"
   ],
   "sharedPaths": [
@@ -29,7 +30,8 @@
     "Sources/RielaWork/WorkModels.swift",
     "Sources/RielaWork/WorkStore+Reservation.swift",
     "Sources/RielaWork/WorkStore+Schema.swift",
-    "Sources/RielaWork/WorkStore.swift"
+    "Sources/RielaWork/WorkStore.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift"
   ],
   "progressLog": "impl-plans/progress/p1-reservation.md",
   "taskIds": [
@@ -37,7 +39,7 @@
   ],
   "verificationCommands": [
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-reservation",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-reservation --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-reservation --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests|DecisionApplierStoreTests'",
     "git diff --check",
     "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-reservation/changed-swift-files.nul",
     "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache"
@@ -131,7 +133,7 @@ failed gate; record the discovered test names and positive executed counts.
 
 ```bash
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-reservation
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-reservation --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-reservation --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests|DecisionApplierStoreTests'
 git diff --check
 ```
 
@@ -166,3 +168,22 @@ join/changeTracking and serial repair rules in the dispatcher contract apply.
 Only this plan's implementation owner appends to its progressLog; it may not
 mark another plan or shared index complete. Documentation refresh and final
 checkbox/index reconciliation belong to p1-finalize after independent acceptance.
+
+## Retained repair ownership and acceptance (§17.6)
+
+This root owns `Tests/RielaWorkTests/DecisionApplierStoreTests.swift` until
+reservation acceptance. Fresh-read its retained cancellation changes; run the
+whole suite in the focused command above, repair only primitive regressions,
+and preserve lifecycle assertions. Transfer the file hash and evidence to
+p1-lifecycle after acceptance. Semantic applier fixes belong to lifecycle;
+if an existing failure prevents root acceptance, report the exact failing case
+and required serial owner repair rather than weakening the assertion.
+
+Preserve and verify generation-7 retained schema changes. Tests must enqueue,
+consume and reconcile one request, then enqueue a distinct later decision's
+request for the same task; uniqueness applies only to unconsumed requests.
+Test that cancellation acknowledgment rejects a created runtime snapshot,
+non-cancelled failure and mismatched outcome; only the matching durable
+cancelled terminal snapshot releases the fence. Exercise rollback with the
+transaction-scoped enqueue seam. Use scratch databases only; never initialize,
+reset or inspect another session's store to prove schema behavior.

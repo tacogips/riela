@@ -442,14 +442,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
         effectiveRequest.variables["fanoutJoin"] = .object(fanoutJoin)
         publishedTransitions += 1
+        session = try await persistFanoutJoinCursor(session: session, publishResult: publishResult, joinStepId: dispatch.joinStepId)
         stoppedAfterRequestedStep = effectiveRequest.stopAfterStepId == step.id
         currentStepId = stoppedAfterRequestedStep ? nil : dispatch.joinStepId
         continue
       }
-      if effectiveRequest.stopAfterStepId == step.id {
-        stoppedAfterRequestedStep = true
-        break
-      }
+      stoppedAfterRequestedStep = effectiveRequest.stopAfterStepId == step.id
+      if stoppedAfterRequestedStep { break }
       if let stoppedRootOutput = try await branchRootOutputIfStoppingBeforeStep(
         publishResult: publishResult,
         request: effectiveRequest

@@ -117,6 +117,7 @@ extension WorkflowCommandTests {
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
     ).load(sessionId: session.sessionId)
+    XCTAssertEqual(snapshot.session.currentStepId, "join")
     XCTAssertTrue(snapshot.workflowMessages.contains { message in
       guard case let .object(join)? = message.payload["fanoutJoin"] else { return false }
       return join["groupId"] == .string("implementation")

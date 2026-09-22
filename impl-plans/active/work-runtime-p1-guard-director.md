@@ -1,13 +1,13 @@
 # Work Runtime P1: Guard, director and decision application
 
-**Status**: Step 4 reconciled for user-scope package 0.3.12; Step 5 review pending; implementation not certified.
+**Status**: Step 4 reconciled for user-scope package 0.3.14; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
 **Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
 **Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
-**Resumption authority**: Current runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4`, accepting design execution `step2-design-doc-update-attempt-1-exec-3` (`comm-000003`). This accepts the resumed design for package 0.3.12; identical historical communication labels alone are not current acceptance. Intake is `comm-000002`; role assignment originates at `comm-000001` / `riela-manager-attempt-1-exec-1`. No implementation predecessor is accepted by this planning turn.
-**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0312/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0312/author-self-check.json`.
+**Resumption authority**: Authoritative runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4` in `codex-design-and-implement-review-loop-session-1`, accepting `design-docs/specs/design-work-runtime-consolidation.md` with no findings. Effective workflowInput selects immutable user-scope package 0.3.14 and checkpoint `8286b20f16548354d9023c1255c12dfd4ce4f70d`. Runner preflight owns package provenance/integrity; no registry rediscovery or package-readiness commands belong to this node. No implementation predecessor is accepted by planning.
+**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0314/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0314/author-self-check.json`.
 **Updated**: 2026-09-22
 
 ```json
@@ -38,7 +38,8 @@
     "Sources/RielaWork/TaskGuardCoordinator.swift",
     "Sources/RielaWork/WorkStore+Decisions.swift",
     "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
-    "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift"
+    "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
+    "Sources/RielaWork/DecisionApplier.swift"
   ],
   "progressLog": "impl-plans/progress/p1-lifecycle.md",
   "taskIds": [
@@ -183,7 +184,9 @@ checkbox/index reconciliation belong to p1-finalize after independent acceptance
 
 ## Reservation-to-lifecycle handoff (§17.6)
 
-Acquire `Tests/RielaWorkTests/DecisionApplierStoreTests.swift` only after
+Acquire `Sources/RielaWork/DecisionApplier.swift`,
+`Sources/RielaWork/WorkStore+Decisions.swift`, and
+`Tests/RielaWorkTests/DecisionApplierStoreTests.swift` only after
 p1-reservation's accepted hash and current cancellation tests are available.
 Preserve the root's cancellation-provenance assertions while adding causal,
 completion, replay and atomic enqueue tests. Cover successive distinct rerun
@@ -202,5 +205,5 @@ plan review remains pending. This plan certifies no predecessor or behavior.
 Read the current source and this plan's exact file map before editing; use
 current hashes and complete foreground evidence, never historical progress
 as implementation acceptance. The Step 4 author check is
-`python3 tmp/work-runtime-p1/step4-plan-v0312/self-check.py`; its complete log
+`python3 tmp/work-runtime-p1/step4-plan-v0314/self-check.py`; its complete log
 and final exit are recorded in the planning evidence above.

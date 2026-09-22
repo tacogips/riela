@@ -1,13 +1,13 @@
 # Work Runtime P1: Canonical authoring ownership
 
-**Status**: Step 4 reconciled for user-scope package 0.3.12; Step 5 review pending; implementation not certified.
+**Status**: Step 4 reconciled for user-scope package 0.3.14; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
 **Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
 **Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
-**Resumption authority**: Current runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4`, accepting design execution `step2-design-doc-update-attempt-1-exec-3` (`comm-000003`). This accepts the resumed design for package 0.3.12; identical historical communication labels alone are not current acceptance. Intake is `comm-000002`; role assignment originates at `comm-000001` / `riela-manager-attempt-1-exec-1`. No implementation predecessor is accepted by this planning turn.
-**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0312/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0312/author-self-check.json`.
+**Resumption authority**: Authoritative runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4` in `codex-design-and-implement-review-loop-session-1`, accepting `design-docs/specs/design-work-runtime-consolidation.md` with no findings. Effective workflowInput selects immutable user-scope package 0.3.14 and checkpoint `8286b20f16548354d9023c1255c12dfd4ce4f70d`. Runner preflight owns package provenance/integrity; no registry rediscovery or package-readiness commands belong to this node. No implementation predecessor is accepted by planning.
+**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0314/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0314/author-self-check.json`.
 **Updated**: 2026-09-22
 
 ```json
@@ -31,8 +31,7 @@
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-sandbox --filter 'ImplementationWorkflowSandboxTests'",
     "git diff --check",
     "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-sandbox/changed-swift-files.nul",
-    "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
-    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run --scratch-path tmp/work-runtime-p1/build/p1-sandbox riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json"
+    "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache"
   ],
   "dependencyMode": "native-accepted-predecessor-DAG",
   "evidenceDirectory": "tmp/work-runtime-p1/p1-sandbox/"
@@ -71,15 +70,13 @@ is separately proven by the runtime's actual granted scope.
   repair only the canonical Step 6/Step 8 `agentSandbox: workspace-write`
   correction. Assert all surrounding intake/review nodes retain read-only
   access and prompts retain accepted-plan/review boundaries.
-- Validate the canonical bundle as an artifact with the command below; never
-  execute it. It is not a prerequisite for installed user-scope execution.
+- Use `ImplementationWorkflowSandboxTests` to load and assert the real checked-in
+  payload structure and prompt boundaries. Do not run current-workflow CLI
+  validation, inspection, lookup or registry discovery; readiness is runner-owned.
 - Inventory any owning package manifest for these two files and hand its exact
   path to serial finalization for digest refresh. If absent, record the audit;
   do not manufacture a manifest or edit the installed package.
 
-```bash
-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run --scratch-path tmp/work-runtime-p1/build/p1-sandbox riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json
-```
 
 Deliverable: the two narrowly scoped payload fixes and a regression that loads
 real canonical node definitions. Existing uncommitted content is unverified
@@ -145,5 +142,5 @@ plan review remains pending. This plan certifies no predecessor or behavior.
 Read the current source and this plan's exact file map before editing; use
 current hashes and complete foreground evidence, never historical progress
 as implementation acceptance. The Step 4 author check is
-`python3 tmp/work-runtime-p1/step4-plan-v0312/self-check.py`; its complete log
+`python3 tmp/work-runtime-p1/step4-plan-v0314/self-check.py`; its complete log
 and final exit are recorded in the planning evidence above.

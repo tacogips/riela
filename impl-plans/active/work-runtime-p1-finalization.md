@@ -1,13 +1,13 @@
 # Work Runtime P1: Serial reconciliation, documentation and verification
 
-**Status**: Step 4 reconciled for user-scope package 0.3.12; Step 5 review pending; implementation not certified.
+**Status**: Step 4 reconciled for user-scope package 0.3.14; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
 **Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
 **Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
-**Resumption authority**: Current runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4`, accepting design execution `step2-design-doc-update-attempt-1-exec-3` (`comm-000003`). This accepts the resumed design for package 0.3.12; identical historical communication labels alone are not current acceptance. Intake is `comm-000002`; role assignment originates at `comm-000001` / `riela-manager-attempt-1-exec-1`. No implementation predecessor is accepted by this planning turn.
-**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0312/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0312/author-self-check.json`.
+**Resumption authority**: Authoritative runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4` in `codex-design-and-implement-review-loop-session-1`, accepting `design-docs/specs/design-work-runtime-consolidation.md` with no findings. Effective workflowInput selects immutable user-scope package 0.3.14 and checkpoint `8286b20f16548354d9023c1255c12dfd4ce4f70d`. Runner preflight owns package provenance/integrity; no registry rediscovery or package-readiness commands belong to this node. No implementation predecessor is accepted by planning.
+**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0314/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0314/author-self-check.json`.
 **Updated**: 2026-09-22
 
 ```json
@@ -107,7 +107,6 @@
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize",
     "tmp/work-runtime-p1/build/p1-finalize/debug/riela doctor --output json",
     "tmp/work-runtime-p1/build/p1-finalize/debug/riela doctor --output text",
-    "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json",
     "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
     "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/p1-finalize/examples/task-repair-loop --output json",
     "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
@@ -206,7 +205,6 @@ mock semantic test or hide a real command failure.
 /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize
 tmp/work-runtime-p1/build/p1-finalize/debug/riela doctor --output json
 tmp/work-runtime-p1/build/p1-finalize/debug/riela doctor --output text
-tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json
 tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json
 tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/p1-finalize/examples/task-repair-loop --output json
 tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json
@@ -330,7 +328,8 @@ git diff --cached --check
 
 Record logs/exits separately. Config exit 1 means missing upstream; a successful
 ls-remote with empty output means absent remote branch, not a network failure.
-The design found no upstream/local tracking ref; that is not live absence.
+Step 4 status reports the same-name origin tracking branch; that is not
+proof of live remote state. Fresh publication checks remain required.
 Only the authorized finalization path may establish origin's same-name branch
 and upstream, without force-push, then verify the accepted commit hash using
 the same ls-remote command. If the immutable installed finalizer requires a
@@ -344,7 +343,7 @@ Use the six exact paths in writePaths if required by the existing index schema;
 do not generate or rewrite unrelated records. Global archiving remains a later
 serial action after acceptance with an explicit destination-path assignment.
 
-Use §17.6 and comm-000004 as current planning authority. Reconcile the seven retained source/test files and two retained progress
+Use §17.6 and comm-000004 as current planning authority. Reconcile the nine retained source/test files and two retained progress
 logs explicitly against accepted owner intents; prior progress is
 not acceptance. Review decisions must identify the current source hashes.
 Historical Step 2 pending-review text in the design is reconciled during
@@ -359,5 +358,5 @@ plan review remains pending. This plan certifies no predecessor or behavior.
 Read the current source and this plan's exact file map before editing; use
 current hashes and complete foreground evidence, never historical progress
 as implementation acceptance. The Step 4 author check is
-`python3 tmp/work-runtime-p1/step4-plan-v0312/self-check.py`; its complete log
+`python3 tmp/work-runtime-p1/step4-plan-v0314/self-check.py`; its complete log
 and final exit are recorded in the planning evidence above.

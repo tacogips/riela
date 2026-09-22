@@ -1,13 +1,13 @@
 # Work Runtime P1: Atomic reservation and fencing
 
-**Status**: Step 4 reconciled for user-scope package 0.3.12; Step 5 review pending; implementation not certified.
+**Status**: Step 4 reconciled for user-scope package 0.3.14; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
 **Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
 **Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
 **Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
 **Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
-**Resumption authority**: Current runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4`, accepting design execution `step2-design-doc-update-attempt-1-exec-3` (`comm-000003`). This accepts the resumed design for package 0.3.12; identical historical communication labels alone are not current acceptance. Intake is `comm-000002`; role assignment originates at `comm-000001` / `riela-manager-attempt-1-exec-1`. No implementation predecessor is accepted by this planning turn.
-**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0312/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0312/author-self-check.json`.
+**Resumption authority**: Authoritative runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4` in `codex-design-and-implement-review-loop-session-1`, accepting `design-docs/specs/design-work-runtime-consolidation.md` with no findings. Effective workflowInput selects immutable user-scope package 0.3.14 and checkpoint `8286b20f16548354d9023c1255c12dfd4ce4f70d`. Runner preflight owns package provenance/integrity; no registry rediscovery or package-readiness commands belong to this node. No implementation predecessor is accepted by planning.
+**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0314/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0314/author-self-check.json`.
 **Updated**: 2026-09-22
 
 ```json
@@ -25,6 +25,8 @@
     "Tests/RielaWorkTests/WorkStoreTests.swift",
     "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
     "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
     "impl-plans/progress/p1-reservation.md"
   ],
   "sharedPaths": [
@@ -33,7 +35,9 @@
     "Sources/RielaWork/WorkStore+Reservation.swift",
     "Sources/RielaWork/WorkStore+Schema.swift",
     "Sources/RielaWork/WorkStore.swift",
-    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift"
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift"
   ],
   "progressLog": "impl-plans/progress/p1-reservation.md",
   "taskIds": [
@@ -73,6 +77,7 @@ legacy removal, auto-improve migration or a second database/transaction path.
 | `Sources/RielaWork/WorkStore+Reservation.swift` | Atomic reservation, authorization/node-start fence, terminal acknowledgment and transaction-scoped pending-request consumption primitives. Lifecycle must enqueue within its decision transaction, not in a later commit. |
 | `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` | Minimal shared-connection snapshot insertion seam: duplicate IDs reject; every row rolls back with reservation. Core does not import Work. |
 | `Tests/RielaWorkTests/WorkStoreTests.swift`, `Tests/RielaWorkTests/WorkStoreReservationTests.swift` | Independent-connection races, each rollback boundary, dependency/version/admission checks, token/fencing, durable request/cancellation and P0 behavior. |
+| `Sources/RielaWork/DecisionApplier.swift`, `Sources/RielaWork/WorkStore+Decisions.swift`, `Tests/RielaWorkTests/DecisionApplierStoreTests.swift` | Reconcile retained durable original-outcome replay and cancellation primitives; verify replay after later task changes. Transfer accepted hashes/signatures to lifecycle. Scoped causality and completion policy remain lifecycle work. |
 | `impl-plans/progress/p1-reservation.md` | Record finalized type/method signatures, original-outcome storage seam, exact owner/hash and tests for both dependent plans. |
 
 Invariants: one shared runtime database and transaction; unique attempt/session;
@@ -173,15 +178,18 @@ checkbox/index reconciliation belong to p1-finalize after independent acceptance
 
 ## Retained repair ownership and acceptance (§17.6)
 
-This root owns `Tests/RielaWorkTests/DecisionApplierStoreTests.swift` until
-reservation acceptance. Fresh-read its retained cancellation changes; run the
+This root owns `Sources/RielaWork/DecisionApplier.swift`,
+`Sources/RielaWork/WorkStore+Decisions.swift`, and
+`Tests/RielaWorkTests/DecisionApplierStoreTests.swift` until reservation acceptance.
+Verify retained durable original-outcome replay after intervening task changes;
+changed intent conflicts and replay must not advance versions or enqueue twice. Fresh-read its retained cancellation changes; run the
 whole suite in the focused command above, repair only primitive regressions,
 and preserve lifecycle assertions. Transfer the file hash and evidence to
 p1-lifecycle after acceptance. Semantic applier fixes belong to lifecycle;
 if an existing failure prevents root acceptance, report the exact failing case
 and required serial owner repair rather than weakening the assertion.
 
-Preserve and verify generation-7 retained schema changes. Tests must enqueue,
+Preserve and verify generation-8 retained schema changes. Tests must enqueue,
 consume and reconcile one request, then enqueue a distinct later decision's
 request for the same task; uniqueness applies only to unconsumed requests.
 Test that cancellation acknowledgment rejects a created runtime snapshot,
@@ -199,5 +207,5 @@ plan review remains pending. This plan certifies no predecessor or behavior.
 Read the current source and this plan's exact file map before editing; use
 current hashes and complete foreground evidence, never historical progress
 as implementation acceptance. The Step 4 author check is
-`python3 tmp/work-runtime-p1/step4-plan-v0312/self-check.py`; its complete log
+`python3 tmp/work-runtime-p1/step4-plan-v0314/self-check.py`; its complete log
 and final exit are recorded in the planning evidence above.

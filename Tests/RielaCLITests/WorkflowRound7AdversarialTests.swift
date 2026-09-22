@@ -346,7 +346,9 @@ private extension WorkflowRound7AdversarialTests {
     let fixture = try await transactionFixture()
     let directory = fixture.historyRoot.appendingPathComponent("snapshots/\(fixture.snapshot.snapshotId)")
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
-    try create(directory.appendingPathComponent(name))
+    let specialEntry = directory.appendingPathComponent(name)
+    try create(specialEntry)
+    defer { _ = unlink(specialEntry.path) }
     XCTAssertThrowsError(try WorkflowHistoryStore(root: fixture.historyRoot).loadSnapshot(
       fixture.snapshot.snapshotId,
       expectedIdentity: fixture.target
@@ -374,7 +376,9 @@ private extension WorkflowRound7AdversarialTests {
     try store.publishProposal(proposal, contentObjects: [:])
     let directory = fixture.historyRoot.appendingPathComponent("proposals/\(proposal.proposalId)")
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
-    try create(directory.appendingPathComponent(name))
+    let specialEntry = directory.appendingPathComponent(name)
+    try create(specialEntry)
+    defer { _ = unlink(specialEntry.path) }
     XCTAssertThrowsError(try store.loadProposal(proposal.proposalId, expectedIdentity: fixture.target))
   }
 
@@ -415,15 +419,18 @@ private extension WorkflowRound7AdversarialTests {
     )
     let directory = fixture.historyRoot.appendingPathComponent("change-sets/\(changeSet.changeSetId)")
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
-    try create(directory.appendingPathComponent(name))
+    let specialEntry = directory.appendingPathComponent(name)
+    try create(specialEntry)
+    defer { _ = unlink(specialEntry.path) }
     XCTAssertThrowsError(try store.loadChangeSet(changeSet.changeSetId, expectedIdentity: fixture.target))
   }
 
   func createUnixSocket(at url: URL) throws {
     let scratch = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("tmp")
     try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-    let socketURL = scratch.appendingPathComponent("r7-\(UUID().uuidString.lowercased()).sock")
-    defer { try? FileManager.default.removeItem(at: socketURL) }
+    let socketSuffix = UUID().uuidString.lowercased().prefix(8)
+    let socketURL = scratch.appendingPathComponent("r7-\(socketSuffix).sock")
+    defer { _ = unlink(socketURL.path) }
     #if canImport(Darwin)
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
     #else
@@ -450,7 +457,14 @@ private extension WorkflowRound7AdversarialTests {
       }
     }
     guard result == 0 else { throw POSIXError(.EIO) }
-    try FileManager.default.moveItem(at: socketURL, to: url)
+    let renameResult = socketURL.path.withCString { sourcePath in
+      url.path.withCString { destinationPath in
+        rename(sourcePath, destinationPath)
+      }
+    }
+    guard renameResult == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
   }
 
   func loadAttempts(historyRoot: URL) throws -> [WorkflowPreflightAttemptRecord] {

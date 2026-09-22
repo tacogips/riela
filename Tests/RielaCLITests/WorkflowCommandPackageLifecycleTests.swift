@@ -928,13 +928,22 @@ extension WorkflowCommandTests {
     let calledResult = try decodeJSON(WorkflowRunResult.self, from: called.stdout)
     XCTAssertEqual(calledResult.session.sessionId, "call-flow-run-1")
     XCTAssertEqual(calledResult.session.executions.map(\.stepId), ["step-b"])
-    XCTAssertEqual(calledResult.rootOutput?["resumedFromNodeExecId"], .string("previous-exec-1"))
-    XCTAssertEqual(calledResult.rootOutput?["promptText"], .string("direct variant"))
+    XCTAssertEqual(calledResult.session.executions.first?.adapterOutput?.provider, "scenario-mock")
+    XCTAssertEqual(calledResult.rootOutput?["status"], .string("called-step-b"))
+    let calledExecution = try XCTUnwrap(calledResult.session.executions.first)
+    guard case let .object(calledVariables)? = calledExecution.inputSnapshot?["mergedVariables"] else {
+      return XCTFail("expected merged variables in call-step input snapshot")
+    }
+    XCTAssertEqual(calledVariables["resumedFromNodeExecId"], .string("previous-exec-1"))
+    XCTAssertEqual(calledExecution.inputSnapshot?["promptText"], .string("direct variant"))
     let calledSnapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: callSessionStore.path))
       .load(sessionId: calledResult.session.sessionId)
     let directCallMessage = try XCTUnwrap(calledSnapshot.workflowMessages.first { $0.payload["directCallPromptVariant"] == .string("direct") })
     XCTAssertEqual(directCallMessage.payload["directCallPromptVariant"], .string("direct"))
-    XCTAssertEqual(calledSnapshot.rootOutput?["resumedFromNodeExecId"], .string("previous-exec-1"))
+    guard case let .object(persistedCalledVariables)? = calledSnapshot.session.executions.first?.inputSnapshot?["mergedVariables"] else {
+      return XCTFail("expected persisted merged variables in call-step input snapshot")
+    }
+    XCTAssertEqual(persistedCalledVariables["resumedFromNodeExecId"], .string("previous-exec-1"))
     let calledCommunicationIds = calledSnapshot.workflowMessages.map(\.communicationId)
     XCTAssertEqual(Set(calledCommunicationIds).count, calledCommunicationIds.count)
     XCTAssertTrue(calledCommunicationIds.contains("comm-000001"))

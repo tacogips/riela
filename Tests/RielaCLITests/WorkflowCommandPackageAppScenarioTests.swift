@@ -240,9 +240,9 @@ extension WorkflowCommandTests {
 
     let managedCandidates = appState.managedCandidates(from: [candidate])
 
-    XCTAssertEqual(managedCandidates.map(\.id), ["scenario-persona-a", "scenario-persona-b"])
-    XCTAssertEqual(managedCandidates.map(\.sourceIdentity), [candidate.id, candidate.id])
-    XCTAssertEqual(managedCandidates.map(\.displayName), ["Scenario Persona A", "Scenario Persona B"])
+    XCTAssertEqual(managedCandidates.map(\.id), ["scenario-persona-a", "scenario-persona-b", candidate.id])
+    XCTAssertEqual(managedCandidates.map(\.sourceIdentity), [candidate.id, candidate.id, candidate.id])
+    XCTAssertEqual(managedCandidates.map(\.displayName), ["Scenario Persona A", "Scenario Persona B", candidate.displayName])
     XCTAssertEqual(appState.preference(for: "scenario-persona-a").environmentVariables["SCENARIO_PERSONA"], "a")
     XCTAssertEqual(
       appState.preference(for: "scenario-persona-a").defaultVariables["workflowInput"],

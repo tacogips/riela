@@ -2,6 +2,39 @@ import XCTest
 @testable import RielaCore
 
 extension RuntimeStoreTests {
+  func testSeedSessionAdvancesStepExecutionIdentityPastImportedHistory() async throws {
+    let date = Date(timeIntervalSince1970: 100)
+    let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))
+    let existing = WorkflowStepExecution(
+      executionId: "dispatch-attempt-1-exec-41",
+      stepId: "dispatch",
+      nodeId: "dispatch-node",
+      attempt: 1,
+      status: .completed,
+      createdAt: date,
+      updatedAt: date
+    )
+    await store.seedSession(WorkflowSession(
+      workflowId: "wf",
+      sessionId: "seeded-session",
+      status: .running,
+      entryStepId: "dispatch",
+      currentStepId: "dispatch",
+      createdAt: date,
+      updatedAt: date,
+      executions: [existing]
+    ))
+
+    let recorded = try await store.recordStepExecution(WorkflowStepExecutionRecordInput(
+      sessionId: "seeded-session",
+      stepId: "dispatch",
+      nodeId: "dispatch-node",
+      attempt: 1
+    ))
+
+    XCTAssertEqual(recorded.executionId, "dispatch-attempt-1-exec-42")
+  }
+
   func testSeedSessionOnlyDetachesRunningBackendLiveTails() async throws {
     let date = Date(timeIntervalSince1970: 100)
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(date))

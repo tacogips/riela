@@ -34,7 +34,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   /// each dispatched callee run increments it so runaway workflow-call cycles
   /// fail loudly instead of recursing without bound.
   public var crossWorkflowDispatchDepth: Int
-  var stopBeforeStepId: String?
+  var stopBeforeStepId: String?, stopAfterStepId: String?
   var workflowRunId: String?
   var parentSessionId: String?
   var rootSessionId: String?
@@ -68,7 +68,8 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     eventHandler: WorkflowRunEventHandler? = nil,
     sessionExecutionAdmission: (@Sendable (String) throws -> Void)? = nil,
     crossWorkflowDispatchDepth: Int = 0,
-    stopBeforeStepId: String? = nil
+    stopBeforeStepId: String? = nil,
+    stopAfterStepId: String? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -94,6 +95,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.sessionExecutionAdmission = sessionExecutionAdmission
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
+    self.stopAfterStepId = stopAfterStepId
     self.workflowRunId = nil
     self.parentSessionId = nil
     self.rootSessionId = nil
@@ -288,6 +290,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var visitedSteps = 0
     var publishedTransitions = 0
     var rootOutput: JSONObject?
+    var stoppedAfterRequestedStep = false
     var executionCounts = Dictionary(grouping: session.executions, by: \.stepId).mapValues { executions in
       executions.map(\.attempt).max() ?? 0
     }
@@ -439,8 +442,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
         effectiveRequest.variables["fanoutJoin"] = .object(fanoutJoin)
         publishedTransitions += 1
-        currentStepId = dispatch.joinStepId
+        stoppedAfterRequestedStep = effectiveRequest.stopAfterStepId == step.id
+        currentStepId = stoppedAfterRequestedStep ? nil : dispatch.joinStepId
         continue
+      }
+      if effectiveRequest.stopAfterStepId == step.id {
+        stoppedAfterRequestedStep = true
+        break
       }
       if let stoppedRootOutput = try await branchRootOutputIfStoppingBeforeStep(
         publishResult: publishResult,
@@ -460,7 +468,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       workflowId: effectiveRequest.workflow.workflowId,
       session: loadedSession,
       rootOutput: rootOutput,
-      exitCode: loadedSession.status == .completed ? 0 : 1,
+      exitCode: loadedSession.status == .completed || stoppedAfterRequestedStep ? 0 : 1,
       transitions: publishedTransitions,
       recovery: recoveryLineage
     )

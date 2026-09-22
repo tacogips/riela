@@ -443,17 +443,18 @@ fileprivate extension ScopedParityCommandRunner {
         store: runtimeStore,
         adapter: adapter,
         stdioNodeExecutor: stdioNodeExecutor,
-        simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil
+        simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: resolution.workingDirectory, isDirectory: true)
       )
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
           workflow: workflow,
           nodePayloads: bundle.nodePayloads,
           variables: variables,
-          maxSteps: 1,
           timeoutMs: parsed.timeoutMs,
           resumeSessionId: seededSession.sessionId,
-          sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+          sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot),
+          stopAfterStepId: stepId
         )
       )
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)

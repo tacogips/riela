@@ -1,12 +1,12 @@
 # Work Runtime P1: Capability placement and host-aware authoring
 
-**Status**: Step 5 review pending; implementation not certified.
+**Status**: Step 4 revised; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
-**Issue reference**: workflow-input:Complete Work Runtime P1 using the accepted dispatcher, guard, and director design
-**Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.5 and the sections identified below.
-**Review source**: `comm-000004`, `step3-design-review`, `accepted_for_step4_implementation_planning`; no findings or revision request.
-**Codex-agent references**: `riela-manager`, `step1-issue-intake`, `step2-design-doc-update`, `step3-design-review`, `step4-impl-plan-create`; downstream installed-package implementation/review executions must record their actual IDs.
-**Updated**: 2026-09-21
+**Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
+**Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
+**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted_for_step4_implementation_planning`; findings/feedback empty; no Step 5 feedback supplied.
+**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `communicationId:comm-000003`, `communicationId:comm-000004`, `sourceStepExecutionId:step2-design-doc-update-attempt-1-exec-3`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
+**Updated**: 2026-09-22
 
 ```json
 {
@@ -16,24 +16,26 @@
     "p1-reservation"
   ],
   "writePaths": [
-    "Sources/RielaCore/BackendCapability*.swift",
-    "Sources/RielaCore/WorkflowBackendPolicy*.swift",
-    "Sources/RielaCore/WorkflowRequirement*.swift",
+    "Sources/RielaCore/BackendCapability.swift",
+    "Sources/RielaCore/WorkflowBackendPolicy.swift",
+    "Sources/RielaCore/WorkflowRequirements.swift",
     "Sources/RielaCore/WorkflowModel.swift",
     "Sources/RielaCore/WorkflowNodeValidation.swift",
     "Sources/RielaCore/WorkflowValidationHelpers.swift",
     "Sources/RielaCore/DistributedWorkerModels.swift",
-    "Sources/RielaAdapters/BackendCapabilityProbe*.swift",
+    "Sources/RielaAdapters/BackendCapabilityProbe.swift",
     "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
-    "Sources/RielaWork/BackendCapabilityPlacement*.swift",
+    "Sources/RielaWork/BackendCapabilityPlacement.swift",
     "Sources/RielaWork/WorkStore+Hosts.swift",
     "Sources/RielaWork/WorkStore+Schema.swift",
     "Sources/RielaCLI/DoctorCommand.swift",
     "Sources/RielaCLI/DistributedWorkerCommand.swift",
     "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
     "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
-    "Sources/RielaCLI/HostCapability*.swift",
-    "Sources/RielaServer/DistributedWorker*.swift",
+    "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaServer/DistributedWorkerProtocol.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPClient.swift",
     "Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift",
     "Tests/RielaCLITests/DoctorBackendCapabilityTests.swift",
     "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
@@ -46,9 +48,9 @@
     "Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift"
   ],
   "sharedPaths": [
-    "Sources/RielaWork/WorkStore+Schema.swift",
     "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
-    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"
+    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift"
   ],
   "progressLog": "impl-plans/progress/p1-capabilities.md",
   "taskIds": [
@@ -58,8 +60,12 @@
   "verificationCommands": [
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-capabilities",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-capabilities --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
-    "git diff --check"
-  ]
+    "git diff --check",
+    "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-capabilities/changed-swift-files.nul",
+    "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache"
+  ],
+  "dependencyMode": "native-accepted-predecessor-DAG",
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-capabilities/"
 }
 ```
 
@@ -67,6 +73,36 @@ The execution, overwrite protection, evidence, and completion contract in
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` applies to this plan.
 No worker edits another worker’s progress log or marks a shared plan complete.
 
+
+## Intent, context, non-goals and invariants
+
+User intent is honest capability diagnostics and deterministic legal placement
+shared by dispatch and authoring. Generic runner capability diagnostics are not
+the missing host/backend implementation. Consume accepted reservation placement
+values/transaction seam; this wave owns schema while lifecycle owns decisions.
+Non-goals: new planner, task serve, GraphQL host/task APIs, GUI controls, new
+credential system, login/inference probes, new probing framework or migration
+of legacy supervision. Add only accepted §5a/§17.4 behavior.
+
+| Exact files (new names are intended destinations) | Smallest intended change / acceptance |
+| --- | --- |
+| `Sources/RielaCore/BackendCapability.swift`, `WorkflowBackendPolicy.swift`, `WorkflowRequirements.swift` | Neutral snapshot/policy/entry-reachable requirement values and shared projection; provenance retained through calls/cycles. |
+| `Sources/RielaCore/WorkflowModel.swift`, `WorkflowNodeValidation.swift`, `WorkflowValidationHelpers.swift` | Decode/validate policy/model/pin constraints at existing boundaries; preserve ordinary structural validation. |
+| `Sources/RielaCore/DistributedWorkerModels.swift` | Carry declared/observed host values in existing registration models. |
+| `Sources/RielaAdapters/BackendCapabilityProbe.swift`, `AgentGatewayNodeAdapter.swift` | Bounded injectable version/auth/config probes for the seven supported backends; concrete backend logic stays in adapters; no inference/login/secrets in diagnostics. |
+| `Sources/RielaWork/BackendCapabilityPlacement.swift`, `WorkStore+Hosts.swift`, `WorkStore+Schema.swift` | One merged fresh snapshot, deterministic per-node placement, work_hosts persistence; use reservation's atomic placement seam. |
+| `Sources/RielaCLI/HostCapabilityResolver.swift`, `DoctorCommand.swift`, `DistributedWorkerCommand.swift` | Compose snapshot refresh, doctor text/JSON and worker.json declarations; fresh read-only mode for validation/dry-run. |
+| `Sources/RielaCLI/WorkflowValidateInspectCommands.swift`, `RielaArgumentParser+WorkflowAndMemory.swift` | Shared usage projection, --host/--strict-host and warning/failure semantics; no persisted refresh. |
+| `Sources/RielaServer/DistributedWorkerProtocol.swift`, `DistributedWorkerHTTPRouter.swift`, `DistributedWorkerHTTPClient.swift` | Round-trip capability payload through existing worker registration without inventing liveness/capacity. |
+| `Sources/RielaAppSupport/DaemonWorkflowSupport.swift`, `RielaAppDaemonWorkflowStore.swift` | Backends declarations in existing profile config; read-only decoder never quarantines corrupt files. No UI changes. |
+| Seven test files in writePaths | Deterministic probe/merge, placement, policy, doctor/validation, worker/profile round-trip and read-only regression cases. |
+| `impl-plans/progress/p1-capabilities.md` | Record snapshot/resolver/probe/placement signatures and planner-input shape/hash for dispatch. |
+
+Invariants: Core never imports Work; explicit pin never falls back; explicit
+enable can remain usable/unverified even after failed auth, but cannot waive
+executable/env requirements or invent capacity; disabled wins; equality is
+stale; failed refresh never reuses stale success; selected entry/called targets
+supply requirements; validation/dry-run never write or quarantine input state.
 
 ## Intended changes and acceptance (§5a, §17.4)
 
@@ -152,3 +188,27 @@ specified acceptance assertions, passing build/typecheck, focused tests and
 lint, complete evidence, and independent review with no unresolved high/mid
 finding. Passing this plan alone does not close P1. Report blocked commands
 explicitly; never substitute source-text assertions for behavioral tests.
+
+## Evidence-producing command contract
+
+Run each metadata verificationCommands entry in the foreground from repository
+root, one command per immutable log under the evidenceDirectory above; retain
+handles and poll through exit. Build establishes compile/typecheck. Focused
+filters must exercise every named suite with positive executed counts and the
+acceptance cases in this plan; missing/zero-test suites, timeout or incomplete
+logs block acceptance. Diff checks establish patch hygiene, not behavior.
+Strict lint uses the NUL manifest of surviving touched AND new Swift files from
+intent/change evidence. Capture repository lint before edits and after the final
+plan tree; compare diagnostics and fail new attributable issues while recording
+unrelated baseline findings. Do not run xargs on an empty manifest; record why
+no Swift file changed. Finalization lints the union of all accepted write sets.
+
+Record exact command, start/end, finalExitStatus, completeLogPath, per-suite
+testCount (null for non-tests), source hashes and review decision in
+`verification-evidence.json` in this plan's evidenceDirectory and its progressLog.
+Use numbered attempt subdirectories for reruns; retain logs through handoff.
+All common per-edit fresh-read/pre/post SHA-256, immutable intent, drift-stop,
+join/changeTracking and serial repair rules in the dispatcher contract apply.
+Only this plan's implementation owner appends to its progressLog; it may not
+mark another plan or shared index complete. Documentation refresh and final
+checkbox/index reconciliation belong to p1-finalize after independent acceptance.

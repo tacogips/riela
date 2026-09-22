@@ -1,12 +1,12 @@
 # Work Runtime P1: Guard, director and decision application
 
-**Status**: Step 5 review pending; implementation not certified.
+**Status**: Step 4 revised; Step 5 review pending; implementation not certified.
 **Workflow mode**: issue-resolution
-**Issue reference**: workflow-input:Complete Work Runtime P1 using the accepted dispatcher, guard, and director design
-**Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.5 and the sections identified below.
-**Review source**: `comm-000004`, `step3-design-review`, `accepted_for_step4_implementation_planning`; no findings or revision request.
-**Codex-agent references**: `riela-manager`, `step1-issue-intake`, `step2-design-doc-update`, `step3-design-review`, `step4-impl-plan-create`; downstream installed-package implementation/review executions must record their actual IDs.
-**Updated**: 2026-09-21
+**Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
+**Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
+**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted_for_step4_implementation_planning`; findings/feedback empty; no Step 5 feedback supplied.
+**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `communicationId:comm-000003`, `communicationId:comm-000004`, `sourceStepExecutionId:step2-design-doc-update-attempt-1-exec-3`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
+**Updated**: 2026-09-22
 
 ```json
 {
@@ -34,7 +34,9 @@
   ],
   "sharedPaths": [
     "Sources/RielaWork/TaskGuardCoordinator.swift",
-    "Sources/RielaWork/WorkStore+Decisions.swift"
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift"
   ],
   "progressLog": "impl-plans/progress/p1-lifecycle.md",
   "taskIds": [
@@ -44,8 +46,12 @@
   "verificationCommands": [
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-lifecycle",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-lifecycle --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|CompletionEvaluatorTests'",
-    "git diff --check"
-  ]
+    "git diff --check",
+    "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-lifecycle/changed-swift-files.nul",
+    "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache"
+  ],
+  "dependencyMode": "native-accepted-predecessor-DAG",
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-lifecycle/"
 }
 ```
 
@@ -53,6 +59,34 @@ The execution, overwrite protection, evidence, and completion contract in
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` applies to this plan.
 No worker edits another worker’s progress log or marks a shared plan complete.
 
+
+## Intent, context, non-goals and invariants
+
+User intent is deterministic evidence-backed decisions, durable replay and
+safe cancellation without false completion. Current director input ordering,
+caller-authoritative completion and replay/causality storage are material gaps.
+Consume accepted reservation signatures and storage seams first. This plan
+implements those repairs before dispatch can be admitted. Non-goals: schema,
+WorkModels, WorkStore.swift, Package.swift or capability/CLI edits; agent child
+orchestration; new policy framework; unrelated detector refactoring.
+
+| Exact file | Smallest intended change / acceptance |
+| --- | --- |
+| `Sources/RielaWork/WorkGuard.swift`, `WorkEvidence.swift` | Adapt existing observations into complete typed batches with stable identity and correct equality boundaries; preserve SDK exemption. |
+| `Sources/RielaWork/TaskGuardCoordinator.swift` | Persist full batch before any dependent decision, deduplicate replay/cumulative accounting, invoke shared applier with evidence references. |
+| `Sources/RielaWork/DeterministicDirector.swift` | Total stable priority/order and remaining-attempt check on every recovery/rerun. |
+| `Sources/RielaWork/CompletionEvaluator.swift` | Latest accepting-attempt required gates/verification, applicable blocking findings, acceptance payload and separate human requirement. |
+| `Sources/RielaWork/DecisionApplier.swift`, `WorkDecision.swift` | One typed principal/action validation path for human/policy/agent; stable intent identity. |
+| `Sources/RielaWork/WorkStore+Decisions.swift` | Transaction-authoritative causal scope/completion; persist/return original replay outcome; atomic pending request and all-live-action cancellation using predecessor primitives. |
+| Six `Tests/RielaWorkTests/` files named in writePaths | Guard/coordination, policy, pure/store applier and completion suites prove each acceptance row, including rollback and crash windows. |
+| `impl-plans/progress/p1-lifecycle.md` | Publish accepted applier/coordinator signatures and semantic handoff for dispatch. |
+
+Invariants: no policy/human/agent bypass of budget or completion checks; full
+batch durability before action; deterministic priority regardless of input
+order; original replay outcome after later state changes; no duplicate request;
+terminal acknowledgment before reconciliation. If an accepted storage seam
+is missing, return it to reservation for serial repair and renewed acceptance,
+not defer this plan's correctness to dispatch or concurrently edit schema.
 
 ## Intended changes and acceptance (§5–7, §17.2–17.3)
 
@@ -120,3 +154,27 @@ specified acceptance assertions, passing build/typecheck, focused tests and
 lint, complete evidence, and independent review with no unresolved high/mid
 finding. Passing this plan alone does not close P1. Report blocked commands
 explicitly; never substitute source-text assertions for behavioral tests.
+
+## Evidence-producing command contract
+
+Run each metadata verificationCommands entry in the foreground from repository
+root, one command per immutable log under the evidenceDirectory above; retain
+handles and poll through exit. Build establishes compile/typecheck. Focused
+filters must exercise every named suite with positive executed counts and the
+acceptance cases in this plan; missing/zero-test suites, timeout or incomplete
+logs block acceptance. Diff checks establish patch hygiene, not behavior.
+Strict lint uses the NUL manifest of surviving touched AND new Swift files from
+intent/change evidence. Capture repository lint before edits and after the final
+plan tree; compare diagnostics and fail new attributable issues while recording
+unrelated baseline findings. Do not run xargs on an empty manifest; record why
+no Swift file changed. Finalization lints the union of all accepted write sets.
+
+Record exact command, start/end, finalExitStatus, completeLogPath, per-suite
+testCount (null for non-tests), source hashes and review decision in
+`verification-evidence.json` in this plan's evidenceDirectory and its progressLog.
+Use numbered attempt subdirectories for reruns; retain logs through handoff.
+All common per-edit fresh-read/pre/post SHA-256, immutable intent, drift-stop,
+join/changeTracking and serial repair rules in the dispatcher contract apply.
+Only this plan's implementation owner appends to its progressLog; it may not
+mark another plan or shared index complete. Documentation refresh and final
+checkbox/index reconciliation belong to p1-finalize after independent acceptance.

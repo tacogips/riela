@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; resumed Step 2 design update pending independent review, 2026-09-22**, under `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts; §17.1 and §17.6 limit this execution to P1-6a through P1-7b over the broader roadmap below.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; full-DAG Step 2 design update pending independent review, 2026-09-22**. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts; §17.1 and §17.6 authorize P1-0 through P1-8 through the six existing plans and preserve their dependency gates.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -901,21 +901,26 @@ domain model or moving work from P2-P7 into P1.
 ### 17.1 Current intake, ownership, and phase boundary
 
 The authoritative issue is
-`workflow-input:Resume and complete Work Runtime P1 dispatcher, guard, and director`,
+`workflow-input:Complete the Work Runtime P1 dependency DAG`,
 from Step 1 communication `comm-000002` in
 `codex-design-and-implement-review-loop-session-1`, mode `issue-resolution`.
 There is no GitHub URL, repository-plus-number, or external Codex-reference
 input. Preserve agent references `comm-000001`, `riela-manager`,
 `step1-issue-intake`, `step2-design-doc-update`, `step3-design-review`, and
-`step4-impl-plan-create`. Intake decision is
-`accepted_for_single_design_author`, `fanoutAllowed: false`; Step 3 has not
+`step4-impl-plan-create`, manager execution `riela-manager-attempt-1-exec-1`,
+and intake execution `step1-issue-intake-attempt-1-exec-2`. Intake decision is
+`normalized_for_single_design_author`, design fanout rejected; Step 3 has not
 reviewed this resumed revision. Earlier acceptance/progress references belong
 to the prior run and do not certify this revision or the checkpoint code.
 No Step 3 or Step 5 revision feedback was supplied for this turn.
 
 Execution remains owned by the immutable installed user-scope package at
 `/Users/taco/.riela/packages/codex-design-and-implement-review-loop/`, version
-0.3.5 inspected in this turn; minimum permitted version is 0.3.5. Do not edit
+0.3.6, with manifest-declared SHA-256 integrity digest
+`45efc8840875e19b5e69151a3c9b99e5cbc0c8352b5b90c813de8d372227be14`.
+This turn read the manifest; it does not claim a recomputed package-integrity
+gate. The prior 0.3.5 and `f085c1f` inspection facts in the dispatcher plan are
+historical, superseded by this intake and §17.6. Do not edit
 the installation or start a project-scope or replacement workflow. Stay on
 `feat/remaining-impl-plans` in
 `/Users/taco/gits/tacogips/riela-worktrees/remaining-impl-plans`; create no
@@ -926,16 +931,23 @@ older no-push language in the active plan. Finalization remains a later
 workflow gate; this design turn does not commit, push, or authorize base-branch
 integration.
 
-This execution implements only the six unchecked dispatcher-plan items
-**P1-6a, P1-6b, P1-6c, P1-6d, P1-7a, P1-7b**. Reservation, lifecycle,
-capability, sandbox and finalization plans are dependencies, not additional
-implementation packages authorized by this intake. The general P1 contracts
-below describe what dispatcher integration must consume, not permission to
-implement all P1 plans. §17.6 records readiness and current-source gaps.
+This execution covers **P1-0 through P1-8**, including all six existing plans:
+sandbox, reservation, lifecycle, capabilities, dispatch, and serial finalization.
+Their exact identities, paths, dependencies, and ownership are in §17.6.
+Retained source is input to reconciliation, not accepted implementation.
+The dispatcher remains blocked until all four predecessors have accepted
+implementation, behavioral evidence, and integration review. Step 4 must
+reconcile every plan's metadata with this scope before native dispatch;
+neither an external-readiness label nor an empty dependency list may bypass it.
 Do not implement loop-engineering, agent-node-output-contract,
-workflow-defect detection, Tauri, note plans, or any other active Work Runtime
-plan. Use native dependency-ready Riela waves only after design/plan acceptance;
-serialize all shared-file edits. No design-author fanout is needed.
+workflow-defect detection, Tauri, note plans, or non-P1 plans. Preserve existing
+workflow-defect documents and other sessions. Use native dependency-ready Riela
+waves only after design/plan acceptance; serialize all shared-file edits.
+Astra owns single-author design, single-author planning, and the final
+combined-tree integration review. Terra owns implementation and reconciliation;
+Sol owns gates and the single material adversarial review. Implementation and
+verification may delegate independent work, with one owner per overlapping
+file. This Step 2 turn performs no design/planning fanout.
 
 The wider sections 3-12 describe the eventual consolidation. P1 adds only
 reservation/leases, guards, director/application, capability placement and its
@@ -1119,20 +1131,28 @@ unverified implementation work until current behavioral evidence is accepted:
 
 | Intake item | Design contract | Required behavioral evidence |
 | --- | --- | --- |
+| P1-0 canonical sandbox | §17, §17.1 | Real canonical Step 6/8 payloads retain workspace-write; surrounding node access and prompt boundaries remain intact; canonical bundle validates without being executed |
+| P1-1 atomic reservation | §11, §17.2 | Independent-connection races, rollback at every insertion, dependency/version rechecks, duplicate IDs, digest-only single-use launch token, uncertain-launch fencing, pending-request consumption and cancellation acknowledgment |
+| P1-2 guard | §7, §17.3 | Complete durable guard batch before decisions, persistence failure blocks policy, replay deduplication, simultaneous violations, exact equality boundaries and last-admitted-attempt completion |
+| P1-3 director/applier | §6, §17.2–17.3 | Stable policy ordering, all action/principal paths share store validation, same-task/attempt causality, reconstructed completion, original replay outcome and atomic pending/cancellation transitions |
+| P1-4 capabilities | §5a, §17.4 | Bounded deterministic probes, declaration merge including failed-auth enable, read-only corrupt-profile handling, policy/model constraints, freshness equality, explicit host/group/liveness/capacity and per-node placement |
+| P1-5 host-aware authoring | §17.4 | Entry-reachable/called-node requirements, warning versus strict-host failure, no persisted refresh during validation, and planner snapshot passed through existing workflow inputs |
 | P1-6a canonical dispatch | §17.2, §17.4 | Exact reserved session executes; terminal projection precedes evaluation; dependency/version races and waits create no attempt/session/lease; selected host/backend reaches runner |
 | P1-6b read-only dry-run | §17.5 | Identical resolution and prospective placement; database bytes/rows, sidecars and host configuration unchanged; absent stores remain absent; corrupt profiles are not quarantined |
 | P1-6c shared human decisions and interruption | §17.2, §17.5 | Exactly one action and explicit audit/version/identity fields; identical/conflicting replay; durable cancellation during authorization/running/acknowledgment; crash-safe pending rerun consumption |
 | P1-6d bounded director and planner inputs | §17.3, §17.4 | Stable policy ordering; last-attempt completion; work TaskView retained across child execution; child session/cost/attempt charged once; invalid/forbidden/failed/budget-blocked output escalates; host snapshot reaches workflow inputs |
 | P1-7a ordered removal | §17.5 | Passing replacement inactivity/retry/gate/failure/cancellation/replay tests recorded before legacy deletion; removed CLI/remote fields rejected; plain workflows remain task-free; specialist/event supervisor and loop/routine regressions preserved |
 | P1-7b replacement examples | §17.5 | Real task lifecycle against both deterministic mock bundles and EXPECTED_RESULTS.md: acceptance, gate recovery, guard stop, capacity wait, director output/accounting/escalation |
+| P1-8 serial finalization | §17.5–17.6 | Accepted predecessor change evidence survives join; affected and aggregate gates pass; Astra combined-tree review accepts; docs, progress/indexes and owning package digests match that tree; exact commit allowlist excludes unrelated work |
 
 Retain every verification command, final exit status, positive executed test
 count (null for non-test inspections), and complete log under
 `tmp/work-runtime-p1/`; poll every yielded foreground process through exit.
 No zero-selected-test, incomplete-log, timeout, or unpolled command passes.
-Step 4 must retain the intake's exact build, focused-test, strict touched-file
-SwiftLint, repository lint baseline and diff commands/log destinations in
-`tmp/work-runtime-p1/p1-dispatch/`. Add proportional broader suites for the
+Step 4 must retain the six plans' exact build, focused-test, strict touched/new-file
+SwiftLint, repository lint baseline and diff commands, with separate logs and
+build scratch paths under `tmp/work-runtime-p1/<plan-id>/` and
+`tmp/work-runtime-p1/build/<plan-id>/`. Add proportional broader suites for the
 actual shared-path changes: RielaWork, CLI parsing/workflow run and remote
 request handling, plus Core/adapter regressions if removal touches them.
 Compare repository lint with the pre-edit baseline; do not clear unrelated
@@ -1142,10 +1162,16 @@ turn. No web code is in scope, so browser E2E is not a design gate.
 Self-check and the workflow's single adversarial implementation review must
 leave no material finding unresolved. Native join/change evidence and serial
 shared-file reconciliation remain required when implementation fans out.
-Refresh the P1 plan/index from accepted evidence and explicitly retain deferred
-dependencies; do not archive or certify other plans to close this package.
-The old six-plan fanout/all-P1 closure prose in the dispatcher plan is historical
-and must be reconciled by Step 4 to this intake before implementation starts.
+Refresh all six P1 plans and indexes only from accepted evidence; retain P2–P7
+as deferred. The dispatcher plan's one-plan-only scope, external-readiness mode,
+old checkpoint/package facts, and the finalization plan's no-push statement
+must be reconciled by Step 4 to this intake before implementation starts.
+Do not mark checkboxes or archive plans merely because their design or plan
+was accepted. Blocked, unchanged, or materially unverified implementation
+returns actionable blockers and cannot enter repetitive integrity,
+adversarial, or reconciliation gates. A retained implementation may be
+certified only by new behavioral evidence and independent acceptance, not
+by inventing a source change to pass a change-count gate.
 Author review here certifies design scope only, not implementation completion.
 
 No repository `riela-package.json` was found in the Step 2 audit. This turn
@@ -1168,49 +1194,113 @@ host-probe results, and independent review remain verification work.
 
 ### 17.6 Resumption evidence and dependency readiness (2026-09-22)
 
-Current HEAD is `f085c1f9410e8ff2f3d4a8cdc8fb9452156fbdec` on the supplied
-branch; intake and this turn's status inspection found no pre-existing tracked
-or untracked changes. `git merge-base --is-ancestor 368a3032 HEAD` and the same
-command for `c6a35e6` both exited 0. These checkpoint commits are retained
-ancestry, not certification. Complete inspection commands, exits and log paths
-are in `tmp/work-runtime-p1/step2-resume/inspection-evidence.json`.
+Current HEAD and checkpoint `bf39f374` both resolve to
+`bf39f3749894f4a01bf456c6d5178e377d5dd140` on `feat/remaining-impl-plans`.
+This turn's initial `git status --short` returned no changes, exit 0. Complete
+foreground inspection commands, exits and log paths are recorded in
+`tmp/work-runtime-p1/step2-design/inspection-evidence.json`. Step 1's unlogged
+read-only inspections are not passing evidence. This Step 2 can write its
+design and logs; downstream nodes must still prove their own execution access.
+Source inspection is not behavioral certification and executes no tests.
 
 | Current-source observation | Consequence for this package |
 | --- | --- |
 | `Sources/RielaCLI/TaskCommands.swift` switches only over show/list; `TaskCommandModels.swift` contains read-result models. Source inventory contains no `TaskDispatcher*.swift` or `AgentDirector*.swift`. | P1-6a–d require actual integration; do not infer it from reservation APIs or the checkpoint subjects. |
-| `Sources/RielaWork/WorkStore+Reservation.swift` has reservation, authorization, pending-request and cancellation APIs; both checkpoints touched this dependency and its tests. | Consume the accepted reservation contract after readiness verification. Do not redesign reservation or claim its separate plan complete. |
+| Canonical Step 6/8 node payloads already declare workspace-write, and `Tests/RielaCLITests/ImplementationWorkflowSandboxTests.swift` exists. | `p1-sandbox` fresh-reads and behaviorally verifies the retained correction. Its artifact validation does not execute the project workflow or modify the installed package. |
+| `Sources/RielaWork/WorkStore+Reservation.swift` has reservation, authorization, pending-request and cancellation APIs and `Tests/RielaWorkTests/WorkStoreReservationTests.swift` exists. | `p1-reservation` audits and repairs only gaps against §17.2, records finalized primitive signatures, and obtains current behavioral acceptance before lifecycle/capabilities consume them. Existing APIs and tests alone do not close P1-1. |
 | `Sources/RielaWork/WorkStore+Decisions.swift` accepts caller completion, copies causal IDs without validating their ledger scope, returns current rows on replay, and specially defers only cancel for a live attempt. Pending reservation enqueue is a separate API in `WorkStore+Reservation.swift`. | Shared-applier integration must enforce §17.2 at the durable boundary; replay must return the original outcome, rerun recording must be atomic with decision application, and all live terminal/replacement actions must await cancellation acknowledgment. These are material current-source gaps, not passing behavior. |
-| `Sources/RielaWork/DeterministicDirector.swift` selects the first violation/gate in input order and gate recovery lacks an attempt-budget check. `TaskGuardCoordinator.swift` passes a caller completion verdict to the store. | Stable ordering, remaining-budget and completion authority must be supplied by the lifecycle dependency or explicitly assigned serial shared-applier integration; never compensate with a CLI-only validation path. |
-| No work host-capability/placement implementation was identified by the source inventory and `HostCapability`, `BackendCapability`, `backendPolicy` search (the test-name substring match is unrelated). | Capability readiness is unproven. Require the capability plan's accepted snapshot/resolver/placement interface before dependent dispatcher work; do not invent a dispatcher-local capability registry or silently take over that plan. |
+| `Sources/RielaWork/DeterministicDirector.swift` selects the first violation/gate in input order and gate recovery lacks an attempt-budget check. `TaskGuardCoordinator.swift` passes a caller completion verdict to the store. | `p1-lifecycle` owns stable ordering, remaining-budget and store-authoritative completion/causality/replay repairs, using accepted reservation primitives. Never compensate with a CLI-only validation path. |
+| No work host-capability/placement implementation was identified by the source inventory and `HostCapability`, `BackendCapability`, `backendPolicy` search (existing generic runner capability diagnostics are unrelated). | `p1-capabilities` implements the §17.4 snapshot/resolver/placement contract after reservation acceptance. Its accepted interface gates dispatch; no dispatcher-local capability registry. |
 | Required `TaskCommandMutationTests`, `TaskDispatcherTests`, `TaskDispatcherIntegrationTests`, `TaskRuntimeExampleTests`, `examples/task-repair-loop/`, `examples/task-agent-director/` and `impl-plans/progress/p1-dispatch.md` are absent from the inventory. | These are deliverables to author and execute, not existing passing suites, examples or progress evidence. |
 | Legacy `WorkflowRunCommand+AutoImprove.swift`, CLI policy/options, remote forwarding, tests and all three old example directories remain. `WorkflowAutoImprovePolicy` and `WorkflowMutationMode` actually live in `Sources/RielaCLI/RielaCommand.swift`. | Keep the removal barrier. Step 4 must use actual references, including `Sources/RielaCLI/ParsedWorkflowOptions.swift` and `Sources/RielaCLI/WorkflowCommands.swift`, when assigning narrowly required serialized removal paths; a broad supervisor-name deletion is forbidden. |
 
-Before admitting a dependent implementation wave, Step 4 records the accepted
-predecessor revision, exact interface owner and behavioral evidence for:
+The six plan identities and paths remain unchanged. Step 4 authors their
+reconciliation as one DAG, without planning fanout; it does not manufacture
+predecessor implementation evidence. The implementation/gate nodes record
+that evidence when it exists, before admitting a dependent wave:
 
-- `p1-reservation` (`impl-plans/active/work-runtime-p1-reservation.md`): atomic
-  task/version/dependency recheck, reserved session identity, one-live fence,
-  launch authorization and pending-request/cancellation transaction boundaries.
-- `p1-lifecycle` (`impl-plans/active/work-runtime-p1-guard-director.md`): durable
-  guard batch, store-authoritative causality/completion, deterministic policy,
-  replay outcome, terminal acknowledgment and last-attempt admission rules.
-- `p1-capabilities` (`impl-plans/active/work-runtime-p1-capabilities.md`): selected
-  entry requirements, one merged host snapshot, freshness/probe behavior,
-  deterministic per-node placement and planner input contract.
-- `p1-sandbox` (`impl-plans/active/work-runtime-p1-sandbox.md`): existing owned
-  execution access. Its canonical node edits are an external dependency for
-  this run, not new deliverables of the dispatcher package.
-- `p1-finalize` (`impl-plans/active/work-runtime-p1-finalization.md`): external
-  whole-P1 closure. This package still supplies its own tests, review, narrow
-  documentation refresh and authorized commit/push through the current workflow.
+| Wave | Plan ID and exact path | Required accepted predecessors | Scope / ownership |
+| --- | --- | --- | --- |
+| 1 | `p1-sandbox`: `impl-plans/active/work-runtime-p1-sandbox.md` | none | P1-0 canonical Step 6/8 payloads and their regression only |
+| 1 | `p1-reservation`: `impl-plans/active/work-runtime-p1-reservation.md` | none | P1-1 Work models/store/schema, shared SQLite reservation connection and launch/cancellation/request primitives; initial Package.swift ownership |
+| 2 | `p1-lifecycle`: `impl-plans/active/work-runtime-p1-guard-director.md` | `p1-reservation` | P1-2/3 guard/director/completion and WorkStore+Decisions; consumes accepted durable primitives |
+| 2 | `p1-capabilities`: `impl-plans/active/work-runtime-p1-capabilities.md` | `p1-reservation` | P1-4/5 neutral Core capability values, adapter probes, Work host storage/placement, CLI/server/profile registration and host-aware validation; owns schema in this wave |
+| 3 | `p1-dispatch`: `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` | `p1-sandbox`, `p1-reservation`, `p1-lifecycle`, `p1-capabilities` | P1-6/7 CLI/runner integration, bounded director, replacement examples, then legacy removal |
+| 4 | `p1-finalize`: `impl-plans/active/work-runtime-p1-finalization.md` | `p1-sandbox`, `p1-reservation`, `p1-lifecycle`, `p1-capabilities`, `p1-dispatch` | P1-8 serial join/repair, aggregate verification, documentation/digest/index reconciliation |
 
-Missing or failing predecessor contracts block the affected work and remain
-explicit in the handoff. Independent scoped work may continue only when the
-native scheduler's accepted dependencies permit it. Shared paths already owned
-by P1-6 (`TaskGuardCoordinator.swift`, `WorkStore+Decisions.swift`) may receive
-the narrowly required integration fixes after predecessor contracts are clear;
-changes to dependency-owned types/stores/director rules require assignment to
-that dependency owner rather than silent scope expansion. No fabricated
-interface, permissive fallback, or acceptance-checkbox update substitutes for
-readiness. This is a known implementation dependency risk, not an unresolved
-user product decision. No additional user-QA document is necessary.
+Admission requires each predecessor's accepted source revision or content
+hashes, exact interface owner/signatures, behavioral commands with complete
+logs/final exits/positive counts, and an integration review decision with no
+unresolved high/mid finding. Sol gates readiness; these are not additional
+adversarial passes. Astra reviews the final combined tree independently.
+Initially no plan has that acceptance, so only the two root plans are eligible
+for implementation after design/plan acceptance. Lifecycle and capabilities
+can proceed independently after reservation passes; dispatcher waits for all
+four predecessors. Finalization waits for all five implementation plans.
+
+One owner writes each overlapping file at a time. Lifecycle must not edit the
+schema, WorkModels, WorkStore.swift, or Package.swift while capabilities owns
+its wave. Dispatcher fresh-reads accepted interfaces before touching shared
+coordinator/applier/CLI files. Missing shared contracts return to the designated
+owner for serial repair; do not silently expand concurrent write sets.
+Native intent/change evidence and pre/post hashes drive the join. Independent
+verification uses distinct build paths, or serializes access to a shared cache.
+No worker edits another worker's append-only progress log.
+
+The final aggregate command source remains
+`impl-plans/active/work-runtime-p1-finalization.md`, including the explicit
+dry-run database-equivalence case and help/doctor/SurfaceCatalog checks, not
+only the intake's abbreviated aggregate list. Required core commands include:
+
+```bash
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-finalize
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize --filter RielaWorkTests
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize --filter 'WorkStoreReservationTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|ImplementationWorkflowSandboxTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize
+tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json
+tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json
+tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/examples/task-repair-loop --output json
+tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json
+tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1/examples/task-agent-director --output json
+git diff --check
+git diff --name-only
+```
+
+Run strict SwiftLint on the union of surviving touched/new Swift files and
+compare full repository lint against the pre-edit baseline; retain each exact
+command and diagnostic log. Each named required suite must execute positive
+test counts, even if a combined filter exits 0. Record self-review, Sol's one
+material adversarial review and Astra's combined-tree review against the
+actual joined content. Finalization prepares closure evidence; later workflow
+gates grant independent acceptance. Repairs invalidate affected earlier evidence
+and require the corresponding checks/review before final acceptance.
+
+After acceptance, the serial documentation owner reconciles the six checklists,
+`impl-plans/README.md`, `impl-plans/PROGRESS.json`, and affected
+`impl-plans/progress/` indexes from that same tree. Audit all owning
+`riela-package.json` files for workflow/prompt/script/skill edits; refresh using
+the owning package's established tool or retain an explicit no-owner audit.
+The installed package stays immutable. Preserve non-P1 entries and other
+sessions' evidence. Plan paths/IDs in this DAG remain canonical throughout
+execution; any later archive must retain their identity and source-path mapping.
+
+Only accepted P1 implementation and narrowly required documentation/index
+changes may enter the final commit allowlist and push. Intake records origin's
+same-name branch absent and no upstream; this turn confirms no configured
+upstream (git config exit 1) and no local remote-tracking ref (show-ref exit
+128), not live remote absence. Final publication must freshly inspect origin,
+explicitly target `origin` / `feat/remaining-impl-plans`, establish the branch
+and its upstream through the authorized finalization path, and verify the
+accepted hash remotely. Do not force-push. If the installed finalizer cannot
+handle a first push without an upstream, report that concrete blocker rather
+than altering this immutable workflow, fabricating tracking refs, or claiming
+publication. Base-branch integration is not requested.
+
+Missing/failing predecessor evidence blocks only affected descendants;
+eligible independent work may continue. An unchanged or materially unverified
+implementation returns its missing contract, responsible owner, required
+command/access repair and failed exit/log once; it does not cycle through
+integrity/adversarial/reconciliation gates. No fallback or checkbox update
+substitutes for readiness. No unresolved user product decision remains; source
+gaps, downstream access and publication readiness are verification/implementation
+work, so no new user-QA document is necessary.

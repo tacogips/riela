@@ -1,136 +1,158 @@
 # Work Runtime P1-6a: selected-host and called-workflow delivery
 
-Status: retained implementation at `cbe1dd1`; resumption clarification awaiting independent plan review; implementation acceptance pending.
-Workflow mode: issue-resolution. The original planning-only run is historical.
-Issue: local-request: Complete Work Runtime P1-6a selected-host delivery verification; no GitHub issue supplied.
-Codex-agent references: intake `comm-000002`, design handoffs `comm-000003`/`comm-000005`, scope revision requested by `comm-000004`, accepted design review `comm-000006`, prior read-only reviews `/root/source_analysis` and `/root/test_analysis`. No external reference-code input or new Cursor adapter behavior applies.
+Status: source-matched host verification recorded; independent implementation acceptance and bounded V5 exception pending.
+Workflow mode: issue-resolution.
+Issue: local-request: Work Runtime P1-6a SHD-5; no GitHub issue supplied.
+Codex-agent reference-code inputs: none (`codexAgentReferences: []`). Current workflow references: intake `comm-000002`, accepted design review `comm-000004` / `step3-design-review-attempt-1-exec-4`, execution `codex-design-and-implement-review-loop-session-1`.
 
-## Current resumption contract (2026-09-23, checkpoint cbe1dd1)
+## Current finalization contract (2026-09-24, checkpoint 2264315)
 
-Step 3 accepted the revised design through `comm-000006` in
-`step3-design-review-attempt-1-exec-6`, resolving the prior mid scope finding.
-The sole effective plan is this file; the parent plan is a reference.
-This section governs the current run's
-execution status and sequencing; the behavior, T1–T8 requirements, ownership
-manifest and parent acceptance criteria below remain in force. Earlier source
-inventories and prospective implementation wording describe the original work,
-not instructions to replace its retained implementation. Preserve checkpoints
-`6b86992`, `0e9ceb9`, `85ab45a`, `0f22a27` and `cbe1dd1`; do not restart from `fbd4412` or `39d08a4`.
-The effective input authorizes only this P1-6a slice, with final P1 still open.
+User intent: independently review the retained P1-6a implementation and final
+operator-host evidence, decide the bounded baseline exception, and finalize only
+this slice if accepted. The accepted design is
+`design-docs/specs/design-work-runtime-consolidation.md` §17.7, SHA-256
+`2e33a88188b8659496248e4454d3514e7b29657672cfe41531234b05ff781e61`.
+Step 3 accepted that design, not the implementation or V5 exception. The sole
+plan is this file. Preserve checkpoint
+`22643151891ad47e999343d05da1a20044176193`, its history and all current WIP.
+The parent plan is read-only reference; parent P1 and later slices remain open.
 
-Step 4 changes only this plan. Step 5 must review the exact updated bytes; the
-accepted design and plan must be committed before downstream native implementation/review
-fanout. Step 4 does not commit unreviewed bytes or start implementation. The
-planning commit allowlist is the accepted design
-`design-docs/specs/design-work-runtime-consolidation.md` plus this plan.
-Step 4 preserves the accepted design SHA-256
-`f0f16bddf491c99c2429ac4220bc9a3a3bcab2bd9c81e7748c473cb32871b80f`.
-Final implementation publication requires a separately reviewed exact file
-allowlist and non-force push; no main merge.
+This section and the current manifest govern execution. Historical progress
+below is retained as evidence, not a request to recreate tests, restart SHD-1–4,
+rerun completed host gates or repair unrelated baseline failures. The original
+source-contract table and T1–T8 matrix remain behavioral review requirements;
+their prospective wording does not authorize new implementation. No new runtime
+component, Cursor behavior or reference-code comparison is needed.
 
-Retain stable task IDs and the serial DAG SHD-1 → SHD-2 → SHD-3 → SHD-4 → SHD-5.
-Execute them as follows:
+### Tasks, dependencies and deliverables
 
-| Task | Remaining deliverable and exact ownership |
-| --- | --- |
-| SHD-1 | Fresh-read current files and prior logs, record HEAD/dirty inventory and pre-hashes, map every T1–T8 assertion to named existing or missing tests. Preserve `tmp/p1-6a-host-verify/` and earlier evidence. Record baseline V0/V2/V3/V4/V7 outcomes with source identity; reuse evidence only with an explicit unchanged-source justification. |
-| SHD-2 | Verify retained topology, pre-reservation validation and admission evidence against T5/T8. Repair only a demonstrated failure in the existing source ownership table; capture the failing test and per-edit intent before repair. No automatic rewrite of completed topology or controller work. |
-| SHD-3 | Verify retained root/callee placement and ordinary child admission against T1/T2/T4/T6. Keep the passing authenticated fixture and frozen callee semantics. Repair only demonstrated defects in the existing source ownership table. |
-| SHD-4 | One owner adds the task-level cases below in `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`, with configuration assertions in `Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift`, reservation race assertions in `Tests/RielaWorkTests/TaskDispatcherTests.swift`, and lease/loss assertions in `Tests/RielaCoreTests/DistributedJobControllerTests.swift`. Existing lower-level tests supplement, but cannot replace, actual task execution observations. |
-| SHD-5 | Reconcile source and intent hashes, run source-matched gates, obtain independent adversarial and combined-tree integration review, resolve material findings, document the V5 decision and final evidence here, then hand off exact-file commit/push. Review retained P1-6a changes from `6b86992` together with new changes; exclude unrelated merge changes. |
+Retain the original SHD-1 → SHD-2 → SHD-3 → SHD-4 → SHD-5 dependency history.
+SHD-1–4 implementation is retained for review; only the following SHD-5 subtasks
+remain. They execute serially on the existing branch and shared directory.
 
-The following proposed names make the remaining deliverables executable; an
-equivalent existing test may be extended and mapped explicitly instead of
-duplicated. Every row retains all assertions in its original T matrix.
+| Task | Depends on | Deliverable and acceptance |
+| --- | --- | --- |
+| SHD-5a evidence audit | retained SHD-4 | Fresh-read current source, design, plan and complete host logs. Record HEAD/dirty inventory and hashes; map T1–T8 to actual named tests/assertions and passing suites. Reconcile the 22-case/24-assertion failure set and signatures with both baselines. No host rerun when source/evidence remains sufficient. |
+| SHD-5b adversarial review | SHD-5a | Independent read-only reviewer assesses material correctness, data loss, security and verification; records reviewed hashes, exact findings and explicit accept/reject plus rationale for the bounded V5 exception. |
+| SHD-5c integration review | SHD-5b | A distinct independent read-only reviewer checks retained plus current P1-6a source/test changes, test integrity and source-matched evidence on the combined tree. Explicitly accept/reject the same V5 exception and report all high/mid defects. |
+| SHD-5d serial reconciliation | SHD-5c | If either review rejects or reports high/mid defects, record precise repair scope and do not finalize. One owner repairs only demonstrated P1-6a defects, refreshes affected gates/hashes and returns revised bytes to both reviewers. If both accept, update only this plan's progress/acceptance evidence, reconcile exact six-path publication allowlist and hand off commit/non-force push. |
 
-| ID | Proposed task-level tests and required proof |
-| --- | --- |
-| T4 | `testTaskExplicitWorkerAndGroupExecutePinnedChoices`: two authenticated workers with distinct recording adapters, incompatible local capability, explicit worker and deterministic group selection; observe actual adapter host/backend/model. `testTaskRepeatedNodePlacementsSurviveInstancePatches`: shared node IDs across steps and root/callee remain distinct at execution; instance patch cannot undo admission choices. |
-| T5 | `testTaskAdmissionWaitsAndDryRunLeaveNoAllocations`: named subcases for dependency wait, absent live worker, zero capacity, stale capability and dry-run; compare attempts, sessions, leases, jobs, evidence and relevant database/sidecar/config bytes. `testTaskReservationRaceDeniesLaunch`: barrier-controlled task-version and dependency changes before reservation; no worker/local invocation or durable allocation. Preserve missing-default pre-reservation failure coverage. |
-| T6 | `testTaskClaimedWorkerLossDoesNotFallbackOrReleaseUncertainFence`: real task handoff and claim, controlled worker loss and lease clock; no replacement worker/local execution, second job or attempt. While outcome is uncertain, retry remains fenced; after durable loss/terminal evidence, assert only the retained terminal/reconciliation semantics. Do not require indefinite fencing after certainty or implement P1-6c cancellation. |
-| T8 | Retain `testTaskControllerDefaultWorkspaceDecodesLegacyAndRejectsInvalidAliases`. Preserve and rerun `testTaskAuthoredWorkspaceOverridesControllerDefaultAtWorker` and `testTaskDefaultWorkspaceAliasReachesWorker` in the integration suite: assert the actual worker workspace for explicit and default aliases. Retain `testRemoteTaskWithoutDefaultWorkspaceFailsBeforeReservation` and prove no attempt/session/lease/job/evidence. |
+No parallel implementation tasks or new native fanout are scheduled. Use the
+existing sequential review stages with independent reviewers. Accepted design
+and plans must be committed before any native implementation/review fanout;
+this continuation additionally prohibits any commit before independent slice
+acceptance. Thus do not launch native fanout or make an early planning commit.
+Step 4 only authors this plan; Step 5 reviews its exact bytes. Publication is a
+later serial action after both implementation reviews accept. Do not create
+worktrees/private branches or run concurrent Git mutations.
 
-Reuse fixture helpers without letting any touched Swift file exceed 1,000 lines.
-The current integration suite is 926 lines. SHD-4 may extract its existing
-authenticated-worker fixture helpers into
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift`
-to accommodate the remaining T4–T6 cases within the limit. This exact helper
-path is included in the manifest for Step 5 review. Move only required fixture
-helpers; use internal visibility only where cross-file test access requires it,
-keep test methods discoverable on `TaskDispatcherIntegrationTests`, and preserve
-existing assertions. No general test framework or unrelated refactoring. Use injected clocks and barriers,
-owned worker shutdown and awaited foreground execution; no arbitrary sleeps as
-proof. Scratch, fixture, intent and full log output stays under repository `tmp/`.
+### File-level intent and boundaries
 
-The helper extraction owns `TaskWorkerHostResolver`,
-`TaskWorkerRecordingAdapter`, `assertTaskWorkerHandoff`, `taskWorkerChildBundle`,
-`assertTerminalTaskEvidence` and `assertWorkerJobs` only as needed by these
-cases. Keep generic task harness changes in the original test file. The new
-helper file must be included in strict V6 lint and exact-file review if created;
-V1/V11 must still discover and run all retained and new test methods.
+The two current production changes are in
+`Sources/RielaCLI/HostCapabilityResolver.swift` and
+`Sources/RielaCLI/TaskDispatch.swift`: review dry-run/topology behavior and
+selected-host task dispatch against the invariant list below. Preserve them
+unless a concrete defect requires repair. Review the current assertions in
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and helpers in
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift`;
+do not recreate the authenticated T4/T6 cases or reinstate the unsupported
+pre-reserved-session `instanceConfiguration.nodePatches` expectation. Preserve
+separate patch-before-placement and actual worker backend/model assertions.
+Keep all other source/test paths read-only unless a precise material finding
+requires a separately reviewed ownership extension.
 
-Independent read-only investigations may run in parallel: one maps T1–T8 test
-coverage, another compares the V5 failure signatures and retained source diff.
-Each uses a separate progress log under
-`tmp/work-runtime-p1-selected-host-delivery/reviews/<role>/`. Neither edits source,
-tests or this plan, runs concurrent Git mutations, or replaces the single final
-adversarial/integration gates. Coupled implementation and tests have one serial
-owner; there are no additional independent implementation plans.
+Step 4 writes only this plan. The accepted design stays byte-identical. After
+implementation acceptance, this plan records reviewers, reviewed hashes,
+T1–T8 mapping, commands/logs/exits, V5 exception rationale, residual limitations
+and exact committed files. The final candidate allowlist is exactly the four
+Swift paths above, the accepted design and this plan, in manifest order.
+Verify the complete retained P1-6a diff as well as the unpublished delta;
+checkpointed files need review but are not silently added to publication.
+Read README and affected documentation; no user-facing behavior change means
+no additional documentation edit. Parent plans, indexes, lockfiles, package
+files, Monja and unrelated work remain unchanged. No archiving, broad formatting
+or unrelated baseline repair is part of this work.
 
-Use new execution-specific subdirectories for these review logs and immutable
-intent snapshots; append progress or create a new revision, never overwrite
-prior evidence. Drift requires a new intent referencing the superseded intent,
-followed by serial reconciliation against current bytes.
+Before each edit, fresh-read and compare the file hash to the latest recorded
+post-hash, initially the pre-hash. Save an immutable intent revision under
+`tmp/p1-6a-finalization/<execution>/intents/` with task, exact paths, pre-hashes,
+finding and intended change. After editing save post-hashes and the actual diff.
+On drift stop the edit, inspect intervening changes and create a superseding
+intent from current bytes; never restore stale buffers. One serial owner joins
+and repairs all changes. Each reviewer writes only its own progress/evidence
+under `tmp/p1-6a-finalization/<execution>/reviews/<role>/`; the owner writes
+`tmp/p1-6a-finalization/<execution>/progress.md`. Record task/status, commands,
+terminal exits, complete log paths, source hashes, findings and decisions.
+Preserve earlier logs and checkpoint history; never stage scratch artifacts.
 
-**Current evidence and acceptance.** Checkpoint `cbe1dd1` retains T4 explicit
-worker/group and T8 authored/default workspace execution: host integration
-passed 19/19, exit 0, in `logs/T4-T8-host-integration.log` beneath the
-`tmp/work-runtime-p1-selected-host-delivery/` directory. The dependency/zero
-capacity/dry-run no-allocation and dependency reservation-race additions passed
-2/2 in `logs/step6-local-focused-final.*`. Do not recreate those passing tests.
-Remaining additions are repeated-node/instance-patch execution (T4), absent/stale
-worker and task-level task-version/dependency races (T5), and claimed-worker
-loss/uncertain fencing (T6). Lower-level race coverage remains supplemental.
-Host-side V1 passed 32/32 and V11 45/45
-after `0e9ceb9`; their logs and exit files remain under `tmp/p1-6a-host-verify/`.
-V5 host CLI/Core failed 23 assertions across 1,944 tests; the selected 21 failing
-cases reproduced 23 assertions at pre-implementation `39d08a4`. Compare exact
-case names and failure signatures, not counts alone. The final independent
-review must record `accept` or `reject` for the bounded baseline exception,
-with those exact cases, baseline/current log paths, source hashes and rationale.
-New failures are outside that exception. V5 remains reported as failing even
-if the slice exception is accepted; no parent gate is thereby closed.
+### Source-matched evidence and verification
 
-Run the V0–V7/V11 commands below on the final stable source; terminal logs,
-exit codes and positive selected suite/case counts are required. The earlier
-progress paragraph's V7 waiver is historical and does not apply to this run:
-record baseline/final repository lint diagnostics and classify their delta,
-while V6 strict changed-file lint must pass. Build the V6 manifest from the
-reviewed combined P1-6a file set, including retained changed Swift files, not
-just the new unstaged diff. No zero-selected suite or incomplete log passes.
-If sandbox listener denial prevents new source-matched execution evidence,
-report verification incomplete and request the same gate on the operator host;
-preserve earlier positive logs without presenting them as a rerun of new code.
+Use `tmp/p1-6a-finalization/host-verify/evidence.json` and every referenced
+complete log. Recorded V0/V6/V7 exit 0; V1 41/41, V2 23/23, V3 80/80,
+V4 55/55, V11 53/53. V5 adapters/server/GraphQL/app exits 0 with 440 XCTest
+cases (two skipped) and 19 Swift Testing cases. V7 has 30 warnings in unchanged
+files. V5 CLI/Core exits **1**, 1,965 tests, 24 assertions in 22 cases. Compare
+21 cases/23 assertions against
+`tmp/p1-6a-host-verify/preimplementation-baseline/all-current-failures.log`;
+compare the additional
+`WorkflowCommandTests.testCallStepCompletesChangeTrackedFanoutBeforeStopping`
+against `tmp/p1-6a-finalization/host-verify/baseline-cbe1dd1-call-step.log`
+(exit 1, same missing `agentSandbox` validation error). Both reviewers must
+inspect signatures and slice relevance, not infer acceptance from counts.
+The exception may cover only this identified set; V5 remains failing and no
+parent gate closes even if both accept it.
 
-In serial finalization, run `git diff --no-ext-diff --unified=3 85ab45a --` and
-`git show --format= --no-ext-diff 6b86992 --` with the reviewed exact file
-allowlist appended, saving complete output under the slice's `logs/` directory.
-Review both outputs for unexpected files, credential values, private keys,
-transport tokens and secret-bearing fixture/log additions; record the checked
-paths and a redacted secret-review decision. This is an explicit diff/secret
-check, not a claim that pattern matching proves absence. Never stage scratch
-logs. Reread README and affected user-facing documentation; only a demonstrated
-behavior change justifies a separately reviewed documentation ownership
-extension. Otherwise record unchanged documentation as intentional and update
-only this plan's evidence. Preserve all prior evidence without cleanup deletion.
+Run the following read-only audit commands from repository root and save full
+stdout/stderr plus each terminal exit under the execution evidence directory:
+
+```bash
+git status --short --branch
+git rev-parse HEAD
+cat tmp/p1-6a-finalization/host-verify/evidence.json
+shasum -a 256 design-docs/specs/design-work-runtime-consolidation.md impl-plans/active/work-runtime-p1-selected-host-delivery.md
+shasum -a 256 Sources/RielaCLI/HostCapabilityResolver.swift Sources/RielaCLI/TaskDispatch.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift
+git diff -- Sources/RielaCLI/HostCapabilityResolver.swift Sources/RielaCLI/TaskDispatch.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift | shasum -a 256
+rg -n 'func test|XCTAssert|XCTUnwrap' Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift
+rg -n 'error: -\[|Test Case.*failed|Executed .*tests' tmp/p1-6a-finalization/host-verify/V5-work-cli-core-final.log tmp/p1-6a-host-verify/preimplementation-baseline/all-current-failures.log tmp/p1-6a-finalization/host-verify/baseline-cbe1dd1-call-step.log
+git diff --check
+```
+
+Hashes must match the host manifest; inspect full logs (not only rg excerpts)
+for T1–T8 assertions, positive selected counts and terminal summaries. The
+source-diff pipeline must record both producer statuses, not just shasum's exit.
+Record the exact 22 case names, per-case assertion counts, signature comparison
+and each reviewer's exception decision. Evidence audit is not a fresh test run.
+
+Do not repeat completed host gates unless bytes change or evidence is materially
+insufficient. The V0–V7/V11 command catalog below is conditional repair guidance.
+For required reruns use the host's resolved scratch path
+`tmp/p1-6a-host-verify/build`, `--skip-update`, and `--disable-sandbox` for tests,
+with the catalog's exact toolchain and filters; record actual commands and why
+each gate is affected. V0 provides Swift compilation/typechecking; V6 covers
+all changed Swift paths including the helper; V7 compares repository warnings.
+No browser/UI gate applies. An inability to run listeners here requires owned
+host verification of changed bytes, not replacing existing host evidence with
+sandbox environment failures. No incomplete log or zero-selected suite passes.
+Run foreground commands and retain/poll yielded handles to terminal exit.
+
+Before publication review `git diff --no-ext-diff --unified=3 85ab45a --` and
+`git show --format= --no-ext-diff 6b86992 --` with the exact retained slice paths
+from the original ownership table appended. Record unexpected-file and redacted
+secret-review findings; never include credentials in logs. Then independently
+review the current six-path publication diff, including the untracked helper.
+Finalization checks `git diff --check`, exact allowlist staging,
+`git diff --cached --check` and `git diff --cached --name-only`; commit only
+accepted bytes and non-force push to `origin` / `feat/remaining-impl-plans`.
+Record committed files, commit hash, push exit and remote hash equality. No
+publication is claimed by this plan; do not close acceptance boxes early.
 
 ## Intent and authority
 
-Complete one missing execution slice: task admission selects a host/backend/model and the actual root/callee node executes that choice through the retained worker path. A placement DTO or successful compile does not prove delivery. Current continuation baseline is `cbe1dd1c1efc8337e01e3d10d78cc782468fea41`. The original `fbd4412199068a63ad3977e600696dc725dd6f18` baseline is historical, not a restart point. Intake reports 26/26 focused and 156/156 prerequisite tests; those counts are historical, not this plan's verification.
-
-Authority is [accepted design](../../design-docs/specs/design-work-runtime-consolidation.md) §17.2, §17.4 and §17.7, accepted for this planning handoff by Step 3 communication `comm-000006`. The [parent P1 plan](work-runtime-p1-dispatcher-guard-director.md) supplies reference contracts, especially its P1-6a delivery section and V0–V7/V11 gates; it is not an additional effective plan. Preserve both documents and all unchecked parent criteria. This plan neither supersedes nor narrows their final acceptance.
-
-The current planning commit includes only this plan and the already accepted design revision. No Swift, fixtures, package source, dispatch records or accepted design edits occur in this run. Runner-supplied provenance is authoritative; do not rediscover the executing workflow's package or registry. Commit accepted planning bytes before any subsequent native implementation/review dispatch; do not dispatch implementation here.
+The current finalization contract above supersedes prior execution scheduling,
+source inventories and planning commit wording. Accepted design §17.2, §17.4
+and §17.7 and the T1–T8 matrix below define behavior. Runner-supplied provenance
+and effective input are authoritative; no package/registry rediscovery task is
+part of this plan. There is no new user product decision or reference divergence.
 
 ## Contract and ownership manifest
 
@@ -139,51 +161,57 @@ The current planning commit includes only this plan and the already accepted des
   "planId": "work-runtime-p1-selected-host-delivery",
   "planPath": "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
   "dependsOn": [],
-  "execution": "single serial implementation owner; independent review after verification",
-  "planningCommitAllowlist": ["design-docs/specs/design-work-runtime-consolidation.md", "impl-plans/active/work-runtime-p1-selected-host-delivery.md"],
+  "execution": "serial SHD-5 finalization; independent sequential reviews",
   "writePaths": [
-    "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/HostCapabilityResolver.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
-    "Sources/RielaCLI/WorkflowRunCommand.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
-    "Sources/RielaCLI/WorkflowCalleeResolution.swift",
-    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
-    "Sources/RielaCLI/DistributedWorkerCommand.swift",
-    "Sources/RielaCore/WorkflowRequirements.swift",
-    "Sources/RielaCore/DistributedJobController.swift",
-    "Sources/RielaServer/DistributedControllerHost.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
-    "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
-    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
-    "Tests/RielaCLITests/DistributedNodeExecutionTests.swift",
-    "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
-    "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
-    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
-    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
     "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
   ],
   "sharedPaths": [
+    "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+  ],
+  "publicationAllowlist": [
+    "Sources/RielaCLI/HostCapabilityResolver.swift",
     "Sources/RielaCLI/TaskDispatch.swift",
-    "Sources/RielaCLI/WorkflowRunCommand.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
-    "Sources/RielaCLI/WorkflowCalleeResolution.swift",
-    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
-    "Sources/RielaCore/WorkflowRequirements.swift",
-    "Sources/RielaServer/DistributedControllerHost.swift"
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
   ],
   "tasks": [
-    {"id":"SHD-1","dependsOn":[],"deliverable":"baseline and immutable edit intents"},
-    {"id":"SHD-2","dependsOn":["SHD-1"],"deliverable":"one topology evaluation and complete admission evidence"},
-    {"id":"SHD-3","dependsOn":["SHD-2"],"deliverable":"root and callee selected placement execution"},
-    {"id":"SHD-4","dependsOn":["SHD-3"],"deliverable":"deterministic task-to-worker handoff and failure tests"},
-    {"id":"SHD-5","dependsOn":["SHD-4"],"deliverable":"joined verification, independent review and exact commit evidence"}
+    {
+      "id": "SHD-5a",
+      "dependsOn": [],
+      "deliverable": "retained SHD-4 and source-matched evidence audit"
+    },
+    {
+      "id": "SHD-5b",
+      "dependsOn": [
+        "SHD-5a"
+      ],
+      "deliverable": "independent adversarial and V5 exception decision"
+    },
+    {
+      "id": "SHD-5c",
+      "dependsOn": [
+        "SHD-5b"
+      ],
+      "deliverable": "independent combined-tree integration and V5 exception decision"
+    },
+    {
+      "id": "SHD-5d",
+      "dependsOn": [
+        "SHD-5c"
+      ],
+      "deliverable": "serial repair/review if required; accepted documentation and exact-file publication handoff"
+    }
   ]
 }
 ```
 
-The empty plan-level dependency list means there is no new separately scheduled plan prerequisite; SHD-1 must validate retained prerequisite behavior. All tasks are serial because composition, admission and test fixtures overlap. No parallel implementation tasks, private branches, worktrees or concurrent Git operations. One owner controls all listed source/test edits. The author/reviewer roles remain independent.
+The empty plan-level dependency list means there is no new separately scheduled plan prerequisite; SHD-5a audits retained SHD-1–4 evidence. All tasks are serial because composition, admission and test fixtures overlap. No parallel implementation tasks, private branches, worktrees or concurrent Git operations. One owner controls all listed source/test edits. The author/reviewer roles remain independent.
 
 ## Non-goals and stopping rules
 
@@ -195,9 +223,9 @@ If a required repair exceeds the explicit file map, record the failing test, exa
 
 ## Retained source contracts and bounded repair ownership
 
-The table records the original implementation intent now retained at `cbe1dd1`.
+The table records original implementation intent, retained through checkpoint `2264315` plus current WIP.
 SHD-2/SHD-3 verify these contracts; change production code only for a failure
-demonstrated by the required tests. SHD-4 owns the remaining test additions.
+demonstrated by the required tests. The current continuation has no planned test additions; repairs require a concrete finding.
 
 | File / retained seam | Required change or preservation |
 | --- | --- |
@@ -230,7 +258,7 @@ Workspace configuration is the one bounded addition necessary because a capabili
 
 ## Tasks, deliverables and progress
 
-Execute the current resumption table above. The original task descriptions
+Execute only the current SHD-5a–d finalization table above. The original task descriptions
 below define retained deliverables, not instructions to reimplement them.
 
 - **SHD-1 / baseline:** Fresh-read this plan, authority docs and all owned files. Record HEAD, clean/dirty inventory, source hashes and V0/V2/V3/V4 baseline outcomes. Inspect existing controller/workspace configuration and retained worker tests. Capture an immutable intent JSON per task under `tmp/work-runtime-p1-selected-host-delivery/intents/` listing exact paths, pre-hashes, intended changes and acceptance rows. Do not edit until that snapshot is saved.
@@ -260,7 +288,7 @@ Each named case must have an explicit test name and positive execution count in 
 
 ## Verification commands and evidence
 
-Run from repository root, foreground only. Save complete stdout/stderr and final exit codes under `tmp/work-runtime-p1-selected-host-delivery/logs/`; poll every yielded process to terminal exit. A timeout, missing suite, zero selected tests or incomplete log is not a pass. Use the following toolchain and scratch path consistently (shell variables are task-specific):
+Conditional repair catalog only: the current contract above controls whether any gate must rerun. Run from repository root, foreground only. Save complete stdout/stderr and final exit codes under `tmp/work-runtime-p1-selected-host-delivery/logs/`; poll every yielded process to terminal exit. A timeout, missing suite, zero selected tests or incomplete log is not a pass. Use the following toolchain and scratch path consistently (shell variables are task-specific):
 
 For this continuation, place the log names below in a fresh execution-specific
 subdirectory of `logs/` and record its exact path in progress. Never truncate
@@ -306,7 +334,12 @@ V1 and V11 are slice evidence only: they do not certify missing parent examples 
 
 ## Acceptance and finalization
 
-Planning acceptance: independently review this document's exact SHA-256, ownership manifest, DAG, T1–T8 matrix and commands; resolve every high/mid finding. The current planning commit allowlist is exactly the accepted design revision and this file (ordered paths in the manifest), on `feat/remaining-impl-plans`, followed by non-force push of the accepted commit to the same branch. No main merge. The parent hash and accepted design hash must remain unchanged during Step 4; the accepted design revision is included in the planning commit without further edits. The current node authors the document; downstream review/finalization records acceptance and commit/push evidence.
+Planning acceptance: Step 5 independently reviews this document's exact hash,
+manifest, DAG, T1–T8 mapping and conditional commands; resolve every high/mid
+finding. Preserve accepted design and parent bytes. No commit/push occurs before
+independent implementation acceptance. Native fanout is not scheduled; the
+commit-before-fanout rule does not authorize an early commit. Final publication
+uses the current six-path allowlist after acceptance and serial reconciliation.
 
 Later implementation acceptance requires all of the following, without changing parent checkboxes:
 
@@ -369,3 +402,101 @@ implementation sandbox. The complete rerun log is
 `tmp/work-runtime-p1-selected-host-delivery/logs/T4-T8-host-integration.log`.
 This is focused evidence only: the listed T4 repeated-node/instance-patch,
 T5 and T6 gaps and final source-matched V0–V7/V11 gates remain open.
+
+Step 6 continuation at `22643151891ad47e999343d05da1a20044176193`
+(2026-09-23, still incomplete): the single implementation owner changed
+`Sources/RielaCLI/TaskDispatch.swift`,
+`Sources/RielaCLI/HostCapabilityResolver.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`, and new
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift`.
+Per-edit intents and post-hashes are in
+`tmp/work-runtime-p1-selected-host-delivery/intents/continue-20260923/`;
+the final code source identity and exact hashes are in
+`logs/continue-20260923/source-identity.txt` beneath that evidence root.
+The new task-level cases cover absent/stale/unregistered worker waits and a
+missing controller lock sidecar without allocation, version/dependency changes
+between preview and reserve, repeated node IDs across root/callee with distinct
+worker/backend/model choices, an actual conflicting instance patch routed through
+task dispatch to the selected worker, and a claimed-worker-loss retry before and
+after durable lease loss. The dry-run lock sidecar regression was found by
+`/root/source_review` and fixed in the existing topology seam. Fixture helpers
+were extracted into the allowed sibling test file to keep each Swift file below
+1,000 lines. These new authenticated cases are **compiled but have not passed**
+on the current source: this sandbox denies localhost listeners.
+
+Terminal logs and exit files under `logs/continue-20260923/` record the exact
+V0 scratch build exiting 1 before compilation on the protected module cache
+(`V0-build-exact-scratch-final.*`), followed by the current-tree cache fallback
+exiting 0 (`V0-build-fallback-final.*`); V2 23/23, V3 80/80, V4 55/55; and
+local T4 patch/T5 cases 3/3.
+V1 ran 41 tests and exited 1 with 16 assertions in eight HTTP fixture cases;
+V11 ran 53 tests and exited 1 with 25 assertions in HTTP fixture cases. All
+observed V1/V11 failures occurred at listener creation with
+`Network.NWError error 1 - Operation not permitted`; neither gate is a pass.
+V5 CLI/Core ran 1,965 tests and exited 1 with 519 failed assertions across 249
+cases in this sandbox. V5 adapter/server/GraphQL/app exited 0 with 85 XCTest
+and 19 Swift Testing cases. V6 strict selected-file lint exited 0. V7 explicit
+repository-file lint exited 0 with 30 warnings in 19 files; none of those files
+changed since `cbe1dd1`. `git diff --check` passed. The exact plan scratch test
+failed before compilation on the protected module cache; its plan-local-cache
+retry failed fetching `agent-gateway` because DNS was unavailable. The
+current-tree dependency checkout supplied the completed runs. No incomplete log
+is counted as a passing check.
+
+Independent `/root/source_review` found no unresolved high/mid source finding
+after the dry-run, task-level patch and post-loss retry corrections, but its
+decision is source-review acceptance **pending positive host verification**.
+Independent `/root/evidence_audit` explicitly **rejected** the bounded V5
+exception for this run: the final sandbox V5 includes 228 failing cases beyond
+the historical host's 21-case/23-assertion preimplementation baseline, and the
+historical host log is not source-matched. A listener-capable operator host must
+run final V1/V11, the new authenticated T4/T6 tests, and V5 on these exact
+source bytes; then an independent reviewer must compare exact V5 case names and
+signatures and decide the exception again. V5 remains failing, every
+implementation acceptance checkbox above remains open, and later P1 slices and
+final P1 remain open. No commit or push occurred in this Step 6 continuation.
+
+Operator host verification after Step 6 terminal (2026-09-24; independent
+acceptance still pending): the new instance-patch worker test initially failed
+because it demanded `instanceConfiguration.nodePatches` on the pre-reserved
+session, where that metadata is not persisted. The test now retains the
+separate `prepareRunExecution` assertion that the conflicting patch applies
+before placement and the authenticated worker assertion that the admitted
+backend/model wins, without asserting unrelated reserved-session metadata.
+The failing case passed 1/1 after this correction. The four reviewed Swift
+file SHA-256 values, tracked code diff hash, exact host commands, terminal exit
+codes and full logs are recorded in
+`tmp/p1-6a-finalization/host-verify/evidence.json`; the source identity stayed
+unchanged throughout the final host gates.
+
+On that source, host V0 build exited 0; V1 passed 41/41, V2 23/23, V3 80/80,
+V4 55/55 and V11 53/53. The final authenticated T4/T6 cases are included in
+the passing V1/V11 runs. V5 adapter/server/GraphQL/app passed 440 XCTest cases
+(two skipped, zero failures) plus 19 Swift Testing cases. Strict touched-file
+SwiftLint and repository-wide SwiftLint exited 0; the latter reported 30
+warnings only in unchanged files. `git diff --check` passed. The host commands
+used the already resolved scratch build and `--skip-update`, because the exact
+fresh scratch path in the implementation sandbox could not reach compilation.
+
+Host V5 CLI/Core **still failed**: 1,965 tests, 24 failed assertions in 22
+distinct cases (seven unexpected), exit 1. Twenty-one cases and 23 assertions
+match the independent preimplementation baseline exactly by case name and
+per-case assertion count. The one additional case,
+`WorkflowCommandTests.testCallStepCompletesChangeTrackedFanoutBeforeStopping`,
+was run in a clean detached checkout of checkpoint `cbe1dd1` and failed with
+the same missing `agentSandbox` validation error before this continuation's
+source edits. Its complete terminal log is
+`tmp/p1-6a-finalization/host-verify/baseline-cbe1dd1-call-step.log`; the
+disposable checkout was removed after verifying it was clean. This is
+source-matched evidence for an expanded 22-case/24-assertion pre-existing
+failure set, **not** a passing V5 gate or an accepted exception. An independent
+reviewer must explicitly accept or reject the bounded exception against these
+logs before any P1-6a acceptance, commit or push. Parent P1 and later slices
+remain open.
+
+Step 4 finalization-plan revision (2026-09-24): Step 3 `comm-000004` accepted
+the design with no findings. This revision limits remaining work to SHD-5a–d,
+retains source-matched host evidence and requires both independent V5 decisions.
+All implementation acceptance boxes remain open. No source edits, gate reruns,
+commit, push or parent closure occurred in Step 4. Author evidence is under
+`tmp/p1-6a-finalization/step4-plan/`.

@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; resumed Step 2 update pending independent review, 2026-09-23**. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts. **The current-execution scope clarification at the start of §17.7 governs this P1-6a intake; the earlier parent-run execution scope, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; P1-6a finalization design update pending independent review, 2026-09-24**. Source-matched host verification is recorded; independent slice acceptance remains pending and P2-P7 remain deferred. Section 17 defines the P1 contracts. **The current-execution scope clarification at the start of §17.7 governs this P1-6a intake; the earlier parent-run execution scope, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -1351,29 +1351,70 @@ work, so no new user-QA document is necessary.
 
 ### 17.7 Resumption contracts (2026-09-23)
 
-**Current execution: P1-6a only, checkpoint cbe1dd1.** Mode:
-`issue-resolution`. Issue: `local-request: Complete Work Runtime P1-6a
-selected-host delivery verification`; no GitHub issue supplied. The effective
-implementation-plan input is exactly
-`impl-plans/active/work-runtime-p1-selected-host-delivery.md`. Retain the
-applicable §17.2, §17.4 and §17.7 behavior contracts for selected root/callee
-host/backend/model delivery, exact reservation and ordinary child admission,
-terminal projection, waits without allocation, and no fallback or premature
-fence release after worker loss. The parent plan
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` is a reference,
-not an additional work package. Later P1 slices, examples, legacy removal and
-parent P1 acceptance remain open and outside this execution.
+**Current execution: P1-6a SHD-5 finalization only, 2026-09-24.** Mode:
+`issue-resolution`. Issue: `local-request: Work Runtime P1-6a SHD-5; no GitHub
+issue supplied`. Step 1 intake `comm-000002` in
+`codex-design-and-implement-review-loop-session-1` supplies checkpoint
+`22643151891ad47e999343d05da1a20044176193` plus the preserved uncommitted
+source/test/plan changes. The sole effective implementation plan is
+`impl-plans/active/work-runtime-p1-selected-host-delivery.md`.
 
-Intake `comm-000002` and design handoff `comm-000003` precede the current Step 3
-review `comm-000004` (`step3-design-review-attempt-1-exec-4`), which rejected
-the unchanged design for a mid-severity scope ambiguity. This clarification
-addresses that finding; renewed independent acceptance remains pending. Prior
-read-only reviews `/root/source_analysis` and `/root/test_analysis` remain
-implementation evidence. No new product decision or Cursor adapter behavior
-is introduced. Remaining T4–T6 tests, final-source V0–V7/V11 evidence and
-independent implementation reviews are governed by the slice plan. V5 remains
-failing unless fixed; a reviewed bounded baseline exception cannot close V5 or
-parent P1. No unresolved user decision requires a user-QA document.
+Retain the applicable §17.2, §17.4 and §17.7 contracts: selected root/callee
+host/backend/model delivery, exact reserved root and ordinary child admission,
+terminal projection before evaluation, waits/races without allocation, and no
+fallback, duplicate launch or premature fence release after worker loss. The
+plan's T1–T8 matrix remains the behavioral acceptance contract. This continuation
+reviews existing implementation and evidence; it adds no runtime component or
+new product behavior. Reopen design or repair code only for a concrete material
+correctness, data-loss, security or verification defect in this slice.
+
+**Evidence and bounded exception.** The authoritative host evidence is
+`tmp/p1-6a-finalization/host-verify/evidence.json` and its adjacent complete
+logs. Recomputed SHA-256 values for `Sources/RielaCLI/HostCapabilityResolver.swift`,
+`Sources/RielaCLI/TaskDispatch.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift`,
+and the tracked code diff hash, match that manifest in this Step 2 execution.
+Recorded host results are V0 exit 0; V1 41/41, V2 23/23, V3 80/80, V4 55/55,
+V11 53/53; V5 adapters/server/GraphQL/app 440 XCTest cases (two skipped) and
+19 Swift Testing cases with no failures; V6/V7 exit 0 (30 repository warnings
+in unchanged files). V1/V11 include authenticated T4/T6 worker cases. These
+are carried-forward host results, not tests rerun by this documentation step.
+
+V5 CLI/Core remains **failing**, exit 1: 1,965 tests, 24 assertions in 22 cases.
+Independent adversarial and combined-tree integration reviews must compare
+21 cases/23 assertions with
+`tmp/p1-6a-host-verify/preimplementation-baseline/all-current-failures.log`
+and the additional
+`WorkflowCommandTests.testCallStepCompletesChangeTrackedFanoutBeforeStopping`
+case with `tmp/p1-6a-finalization/host-verify/baseline-cbe1dd1-call-step.log`
+(exit 1, identical missing `agentSandbox` validation error at checkpoint
+`cbe1dd1`). Case names/counts alone do not waive review of failure signatures
+and relevance to this slice. Both reviews must explicitly accept or reject
+this bounded 22-case/24-assertion baseline exception and resolve every high/mid
+P1-6a finding. The exception is pending; it cannot turn V5 green or close parent
+P1. Preserve complete terminal logs and exit statuses. Do not repeat completed
+host gates unless source bytes change or evidence is materially insufficient;
+a repair requires affected gates and source identity to be refreshed.
+
+**Acceptance and rollout boundary.** Only after independent acceptance may the
+slice plan/progress be updated and the exact reviewed file allowlist committed
+and pushed without force to `origin` / `feat/remaining-impl-plans`. Include this
+design revision in downstream review and reconcile the final allowlist with
+the existing WIP; preserve checkpoint history, Monja, unrelated plans and other
+worktrees. No acceptance checkbox, commit or push is authorized by Step 2
+completion alone. The parent plan
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` remains a
+reference, not another work package. Parent P1 and later slices stay open.
+
+**Questions and reference mapping.** The remaining decisions are independent
+adversarial/integration acceptance and the bounded V5 exception, not unresolved
+user product choices; no user-QA file is needed. Intake supplies no codex-agent
+reference-code input (`codexAgentReferences: []`); no reference checkout or new
+Cursor behavior is required. Existing adapter isolation remains unchanged.
+Historical review identifiers, reference checks, source inventories, package
+versions, model assignments and scheduling statements below belong to earlier
+executions and do not establish current evidence or expand this intake.
 
 **Earlier parent-run context: checkpoint f46ff788.** The rest of this section
 records that earlier run's input, inventories and verification scope; it does

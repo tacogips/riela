@@ -364,11 +364,11 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("darwin-arm64"))
-    XCTAssertTrue(script.contains("darwin-x64"))
+    XCTAssertFalse(script.contains("darwin-x64"))
     XCTAssertTrue(script.contains("Casks/riela.rb"))
     XCTAssertTrue(script.contains("cask \"riela\" do"))
-    XCTAssertTrue(script.contains("arch arm: \"darwin-arm64\", intel: \"darwin-x64\""))
-    XCTAssertTrue(script.contains("sha256 arm:   \"$darwin_arm64_sha\","))
+    XCTAssertTrue(script.contains("arch arm: \"darwin-arm64\""))
+    XCTAssertTrue(script.contains("sha256 \"$darwin_arm64_sha\""))
     XCTAssertTrue(script.contains("riela-#{version}-#{arch}.dmg"))
     XCTAssertTrue(script.contains("desc \"Swift-native workflow runtime with a menu bar app and CLI\""))
     XCTAssertTrue(script.contains("depends_on macos: :sonoma"))
@@ -384,7 +384,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("darwin-arm64"))
-    XCTAssertTrue(script.contains("darwin-x64"))
+    XCTAssertFalse(script.contains("darwin-x64"))
     XCTAssertFalse(script.contains("linux-arm64"))
     XCTAssertFalse(script.contains("linux-x64"))
     XCTAssertFalse(script.contains("linux_arm64_sha"))

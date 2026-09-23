@@ -17,6 +17,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var rerunFromStepId: String?
   public var preserveHistory: Bool
   public var resumeSessionId: String?
+  public var retryFailedStep: Bool
   /// Recovery lineage recorded on the source session's evidence manifest,
   /// supplied by callers that can read persisted manifests (the CLI). Rerun
   /// entries derive `rootSessionId`/`attemptNumber` from it; absent lineage is
@@ -27,11 +28,14 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var agentSilenceMonitorIntervalMs: Int
   public var effectiveInstance: EffectiveWorkflowInstance?
   public var eventHandler: WorkflowRunEventHandler?
+  /// Optional process-level admission boundary invoked after the session
+  /// identity is resolved and before any workflow event or node effect.
+  public var sessionExecutionAdmission: (@Sendable (String) throws -> Void)?
   /// Nesting depth of live cross-workflow dispatch. Top-level runs are 0;
   /// each dispatched callee run increments it so runaway workflow-call cycles
   /// fail loudly instead of recursing without bound.
   public var crossWorkflowDispatchDepth: Int
-  var stopBeforeStepId: String?
+  var stopBeforeStepId: String?, stopAfterStepId: String?
   var workflowRunId: String?
   var parentSessionId: String?
   var rootSessionId: String?
@@ -57,14 +61,17 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     rerunFromStepId: String? = nil,
     preserveHistory: Bool = false,
     resumeSessionId: String? = nil,
+    retryFailedStep: Bool = false,
     sourceRecoveryLineage: LoopRecoveryLineage? = nil,
     memoryRootDirectory: String? = nil,
     agentSilenceWarningMs: Int? = nil,
     agentSilenceMonitorIntervalMs: Int = 1_000,
     effectiveInstance: EffectiveWorkflowInstance? = nil,
     eventHandler: WorkflowRunEventHandler? = nil,
+    sessionExecutionAdmission: (@Sendable (String) throws -> Void)? = nil,
     crossWorkflowDispatchDepth: Int = 0,
-    stopBeforeStepId: String? = nil
+    stopBeforeStepId: String? = nil,
+    stopAfterStepId: String? = nil
   ) {
     self.workflow = workflow
     self.nodePayloads = nodePayloads
@@ -81,59 +88,23 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromStepId = rerunFromStepId
     self.preserveHistory = preserveHistory
     self.resumeSessionId = resumeSessionId
+    self.retryFailedStep = retryFailedStep
     self.sourceRecoveryLineage = sourceRecoveryLineage
     self.memoryRootDirectory = memoryRootDirectory
     self.agentSilenceWarningMs = agentSilenceWarningMs
     self.agentSilenceMonitorIntervalMs = agentSilenceMonitorIntervalMs
     self.effectiveInstance = effectiveInstance
     self.eventHandler = eventHandler
+    self.sessionExecutionAdmission = sessionExecutionAdmission
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
+    self.stopAfterStepId = stopAfterStepId
     self.workflowRunId = nil
     self.parentSessionId = nil
     self.rootSessionId = nil
     self.effectiveStepBudget = nil
     self.isNestedCalleeEffectBoundary = false
   }
-}
-
-public struct WorkflowRunResult: Codable, Equatable, Sendable {
-  public var workflowId: String
-  public var session: WorkflowSession
-  public var rootOutput: JSONObject?
-  public var exitCode: Int32
-  public var status: WorkflowSessionStatus
-  public var nodeExecutions: Int
-  public var transitions: Int
-  public var supervision: JSONObject?
-  public var loopEvidence: LoopEvidenceSummary?
-  public var recovery: LoopRecoveryLineage?
-
-  public init(
-    workflowId: String,
-    session: WorkflowSession,
-    rootOutput: JSONObject?,
-    exitCode: Int32,
-    transitions: Int,
-    supervision: JSONObject? = nil,
-    loopEvidence: LoopEvidenceSummary? = nil,
-    recovery: LoopRecoveryLineage? = nil
-  ) {
-    self.workflowId = workflowId
-    self.session = session
-    self.rootOutput = rootOutput
-    self.exitCode = exitCode
-    self.status = session.status
-    self.nodeExecutions = session.newExecutionCount
-    self.transitions = transitions
-    self.supervision = supervision
-    self.loopEvidence = loopEvidence
-    self.recovery = recovery
-  }
-}
-
-public protocol DeterministicWorkflowRunning: Sendable {
-  func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult
 }
 
 /// Explicit recovery-boundary seam for durable nested execution. Production
@@ -258,6 +229,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       entryContext = context
     }
     var session = entryContext.session
+    try effectiveRequest.sessionExecutionAdmission?(session.sessionId)
     await reconcileAcceptedFinalizations(in: session)
     var currentStepId = entryContext.currentStepId
     effectiveRequest.parentSessionId = session.parentSessionId
@@ -282,6 +254,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var visitedSteps = 0
     var publishedTransitions = 0
     var rootOutput: JSONObject?
+    var stoppedAfterRequestedStep = false
     var executionCounts = Dictionary(grouping: session.executions, by: \.stepId).mapValues { executions in
       executions.map(\.attempt).max() ?? 0
     }
@@ -433,9 +406,13 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
         effectiveRequest.variables["fanoutJoin"] = .object(fanoutJoin)
         publishedTransitions += 1
-        currentStepId = dispatch.joinStepId
+        session = try await persistFanoutJoinCursor(session: session, publishResult: publishResult, joinStepId: dispatch.joinStepId)
+        stoppedAfterRequestedStep = effectiveRequest.stopAfterStepId == step.id
+        currentStepId = stoppedAfterRequestedStep ? nil : dispatch.joinStepId
         continue
       }
+      stoppedAfterRequestedStep = effectiveRequest.stopAfterStepId == step.id
+      if stoppedAfterRequestedStep { break }
       if let stoppedRootOutput = try await branchRootOutputIfStoppingBeforeStep(
         publishResult: publishResult,
         request: effectiveRequest
@@ -454,7 +431,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       workflowId: effectiveRequest.workflow.workflowId,
       session: loadedSession,
       rootOutput: rootOutput,
-      exitCode: loadedSession.status == .completed ? 0 : 1,
+      exitCode: loadedSession.status == .completed || stoppedAfterRequestedStep ? 0 : 1,
       transitions: publishedTransitions,
       recovery: recoveryLineage
     )

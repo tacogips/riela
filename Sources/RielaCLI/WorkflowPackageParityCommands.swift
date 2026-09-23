@@ -12,42 +12,42 @@ import RielaServer
 
 private let packageRegistryTimestamp = "2026-06-18T00:00:00Z"
 
+private struct RegistryIndex: Decodable {
+  var packages: [RegistryIndexPackage]
+}
+
+private struct RegistryIndexPackage: Decodable {
+  var name: String
+  var directory: String
+  var archiveURL: String?
+  var archiveSHA256: String?
+  var version: String?
+  var kind: WorkflowPackageKind?
+  var title: String?
+  var description: String?
+  var tags: [String]?
+  var workflow: RegistryIndexWorkflow?
+  var backends: [String]?
+  var requiredEnvironment: [WorkflowPackageEnvironmentVariable]?
+  var addons: [RegistryIndexAddon]?
+}
+
+private struct RegistryIndexAddon: Decodable {
+  var name: String
+  var version: String
+  var sourcePath: String?
+  var contentDigest: String?
+  var execution: WorkflowPackageAddonExecutionDescriptor?
+}
+
+private struct RegistryIndexWorkflow: Decodable {
+  var directory: String?
+}
+
 public struct WorkflowPackageCommandRunner: Sendable {
   struct PackageSummaryRoot {
     var url: URL
     var source: String
-  }
-
-  private struct RegistryIndex: Decodable {
-    var packages: [RegistryIndexPackage]
-  }
-
-  private struct RegistryIndexPackage: Decodable {
-    var name: String
-    var directory: String
-    var archiveURL: String?
-    var archiveSHA256: String?
-    var version: String?
-    var kind: WorkflowPackageKind?
-    var title: String?
-    var description: String?
-    var tags: [String]?
-    var workflow: RegistryIndexWorkflow?
-    var backends: [String]?
-    var requiredEnvironment: [WorkflowPackageEnvironmentVariable]?
-    var addons: [RegistryIndexAddon]?
-  }
-
-  private struct RegistryIndexAddon: Decodable {
-    var name: String
-    var version: String
-    var sourcePath: String?
-    var contentDigest: String?
-    var execution: WorkflowPackageAddonExecutionDescriptor?
-  }
-
-  private struct RegistryIndexWorkflow: Decodable {
-    var directory: String?
   }
 
   public init() {}
@@ -450,9 +450,14 @@ public struct WorkflowPackageCommandRunner: Sendable {
     let result = try await DeterministicWorkflowRunner(
       store: runtimeStore,
       adapter: adapter,
-      stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+      stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(defaultWorkingDirectory: workingDirectory),
       simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil
-    ).run(DeterministicWorkflowRunRequest(workflow: bundle.workflow, nodePayloads: bundle.nodePayloads, variables: variables))
+    ).run(DeterministicWorkflowRunRequest(
+      workflow: bundle.workflow,
+      nodePayloads: bundle.nodePayloads,
+      variables: variables,
+      sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+    ))
     let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(

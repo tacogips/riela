@@ -392,18 +392,16 @@ fileprivate extension ScopedParityCommandRunner {
         variables["resumeStepExecId"] = .string(resumeStepExecutionId)
         variables["resumedFromNodeExecId"] = .string(resumeStepExecutionId)
       }
-      let adapter: any NodeAdapter
-      if let scenarioPath = parsed.mockScenarioPath {
-        adapter = try ScenarioNodeAdapter(
-          scenario: WorkflowMockScenarioLoader().loadScenario(at: absoluteURL(
-            scenarioPath,
-            relativeTo: URL(fileURLWithPath: resolution.workingDirectory)
-          ).path),
-          fallback: DeterministicLocalNodeAdapter()
-        )
-      } else {
-        adapter = DeterministicLocalNodeAdapter()
-      }
+      let effectiveMockScenarioPath = parsed.mockScenarioPath ?? persisted.record.mockScenarioPath
+      let adapter = try makeSessionNodeAdapter(
+        mockScenarioPath: effectiveMockScenarioPath,
+        workingDirectory: resolution.workingDirectory,
+        codexSupervisorModeEnabled: parsed.supervisorMode
+      )
+      let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
+        scenarioPath: effectiveMockScenarioPath,
+        workingDirectory: resolution.workingDirectory
+      )
       let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
         sessionStore: parsed.sessionStore,
         scope: persistedResolution.scope,
@@ -445,17 +443,19 @@ fileprivate extension ScopedParityCommandRunner {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
-        simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil
+        stdioNodeExecutor: stdioNodeExecutor,
+        simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: resolution.workingDirectory, isDirectory: true)
       )
       let result = try await runner.run(
         DeterministicWorkflowRunRequest(
           workflow: workflow,
           nodePayloads: bundle.nodePayloads,
           variables: variables,
-          maxSteps: 1,
           timeoutMs: parsed.timeoutMs,
-          resumeSessionId: seededSession.sessionId
+          resumeSessionId: seededSession.sessionId,
+          sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot),
+          stopAfterStepId: stepId
         )
       )
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
@@ -464,7 +464,7 @@ fileprivate extension ScopedParityCommandRunner {
           workflowName: persisted.record.workflowName,
           session: result.session,
           resolution: persistedResolution,
-          mockScenarioPath: parsed.mockScenarioPath,
+          mockScenarioPath: effectiveMockScenarioPath,
           runtimeVariables: variables
         ),
         runtimeSnapshot: WorkflowRuntimePersistenceProjector.snapshot(session: result.session, workflowMessages: workflowMessages)

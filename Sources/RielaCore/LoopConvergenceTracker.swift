@@ -68,6 +68,12 @@ public struct LoopConvergenceTracker: Sendable {
     state.visitCount += 1
 
     let fingerprints = Set(findings.map(LoopFindingFingerprint.make(from:)))
+    let blocksVisitCap = decision != .accepted
+    if blocksVisitCap {
+      state.blockingVisitCount += 1
+    } else {
+      state.blockingVisitCount = 0
+    }
     if decision == .rejected || decision == .needsWork {
       state.repeatedRounds = state.lastRejectedFingerprints == fingerprints ? state.repeatedRounds + 1 : 1
       state.lastRejectedFingerprints = fingerprints
@@ -79,12 +85,13 @@ public struct LoopConvergenceTracker: Sendable {
     let sortedFingerprints = fingerprints.sorted { $0.key < $1.key }
     var violation: LoopConvergenceViolation?
     if !state.stallDetected,
+       blocksVisitCap,
        let maxGateVisits = declaration.maxGateVisits,
-       state.visitCount > maxGateVisits {
+       state.blockingVisitCount > maxGateVisits {
       violation = LoopConvergenceViolation(
           kind: .gateVisitsExceeded,
           gateId: gateId,
-          gateVisits: state.visitCount,
+          gateVisits: state.blockingVisitCount,
           repeatedRounds: state.repeatedRounds,
           fingerprints: sortedFingerprints
       )
@@ -112,6 +119,7 @@ public struct LoopConvergenceTracker: Sendable {
 
 private struct GateState: Sendable {
   var visitCount = 0
+  var blockingVisitCount = 0
   var lastRejectedFingerprints: Set<LoopFindingFingerprint>?
   var repeatedRounds = 0
   var stallDetected = false

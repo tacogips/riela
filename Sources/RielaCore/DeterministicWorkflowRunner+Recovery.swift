@@ -59,7 +59,16 @@ extension DeterministicWorkflowRunner {
       sourceLineage: request.sourceRecoveryLineage
     )
     let canResumeBudgetFailure = existing.status == .failed && existing.failureKind == .maxStepsExceeded
-    if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure) {
+    let failedExecution = existing.executions.last
+    let canRetryFailedStep = existing.status == .failed && existing.failureKind == .adapterFailure
+      && failedExecution?.status == .failed && failedExecution?.stepId == existing.currentStepId
+      && failedExecution?.acceptedOutput == nil && failedExecution?.pendingRoutePublication == nil
+    if request.retryFailedStep && !canRetryFailedStep {
+      throw DeterministicWorkflowRunnerError.resumeValidation(
+        "--retry-failed-step requires an adapter-failed current step with no accepted output"
+      )
+    }
+    if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure && !request.retryFailedStep) {
       let terminalResult = WorkflowRunResult(
         workflowId: request.workflow.workflowId,
         session: existing,

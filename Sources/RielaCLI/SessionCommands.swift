@@ -473,7 +473,9 @@ public struct SessionRerunCommand: Sendable {
         adapter: adapter,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
+          defaultWorkingDirectory: kaibaContext.workingDirectory
+        ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
         fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
@@ -509,7 +511,8 @@ public struct SessionRerunCommand: Sendable {
               storeRoot: storeRoot
             ),
             effectiveInstance: instanceResolution.effectiveInstance,
-            eventHandler: eventHandler
+            eventHandler: eventHandler,
+            sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
           )
         )
       }
@@ -660,7 +663,7 @@ public struct SessionResumeCommand: Sendable {
         workingDirectory: options.workingDirectory
       )
       let persisted = loaded.record
-      if blocksResume(persisted.session) {
+      if blocksResume(persisted.session) && !options.retryFailedStep {
         return await resumeFailure(
           options: options,
           exitCode: .failure,
@@ -737,7 +740,9 @@ public struct SessionResumeCommand: Sendable {
         adapter: adapter,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
+          defaultWorkingDirectory: kaibaContext.workingDirectory
+        ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
         fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
@@ -767,12 +772,14 @@ public struct SessionResumeCommand: Sendable {
               variables: variables,
               maxSteps: options.maxSteps,
               resumeSessionId: persisted.session.sessionId,
+              retryFailedStep: options.retryFailedStep,
               sourceRecoveryLineage: persistedRecoveryLineage(
                 sessionId: persisted.session.sessionId,
                 storeRoot: storeRoot
               ),
               effectiveInstance: instanceResolution.effectiveInstance,
-              eventHandler: eventHandler
+              eventHandler: eventHandler,
+              sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
             )
           )
         }
@@ -941,9 +948,12 @@ public struct SessionResumeCommand: Sendable {
   private func nonBudgetFailureResumeMessage(session: WorkflowSession) -> String {
     let failureKind = session.failureKind?.rawValue ?? "unknown"
     let rerunStepId = session.currentStepId ?? session.entryStepId
+    let retryGuidance = session.failureKind == .adapterFailure
+      ? "`riela session resume \(session.sessionId) --retry-failed-step` to explicitly retry the failed adapter step, "
+      : ""
     return """
-    session \(session.sessionId) failed with failureKind \(failureKind) and cannot be resumed; use \
-    `riela session rerun \(session.sessionId) \(rerunStepId)` to rerun from a step, or inspect with \
+    session \(session.sessionId) failed with failureKind \(failureKind) and cannot be resumed normally; use \
+    \(retryGuidance)`riela session rerun \(session.sessionId) \(rerunStepId)` to rerun from a step, or inspect with \
     `riela session progress \(session.sessionId)`.
     """
   }

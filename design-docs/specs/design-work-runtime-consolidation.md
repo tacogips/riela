@@ -1113,6 +1113,97 @@ SQLite WAL/SHM sidecars, host-profile configuration and other affected files.
 An absent store must remain absent. Corrupt host-profile input is diagnostic
 only: do not quarantine, rewrite, or repair it during dry-run.
 
+#### P1-6b bounded continuation (2026-09-24)
+
+This continuation addresses **Work Runtime P1-6b** (no GitHub issue number
+supplied), from `codex-design-and-implement-review-loop-session-1`,
+`step1-issue-intake`, `comm-000002` (intake also references `comm-000001`).
+Historical design acceptance is `comm-000004`,
+`step3-design-review-attempt-1-exec-4`; it is not current implementation
+acceptance. Effective workflow input limits this slice to P1-6b on
+`feat/remaining-impl-plans`, preserving accepted P1-6a commit
+`2f10916a14501af68fd7e7f63cb91f244a343f8c`. The broader rollout requirements
+below remain parent-plan requirements, not authorization to implement or
+certify P1-6c/d, P1-7a/b or parent P1 in this slice. No new architecture,
+storage schema, task-management command or adapter is needed.
+
+**Resolution and mutation boundary.** Parse `task run <task-id> [--dry-run]`
+with the existing scope, working-directory, session-store and output options.
+Preserve their precedence and missing-ID/invalid-option diagnostics. Both
+modes locate the stored task and workflow reference, resolve the selected
+entry (including an existing pending request), validate reachable/called
+workflow requirements, and compute prospective host/backend placement through
+the existing dispatcher. Select read-only dependencies before any loader or
+constructor that could initialize, migrate, reset, quarantine or write state.
+Dry-run stops before reservation, request consumption, launch authorization or
+runner execution. Only real execution reserves and runs the exact reserved
+session under the accepted P1-6a contract. A preview is not a reservation:
+concurrent dependency/version/capacity changes remain subject to admission
+rechecks; preview does not promise a later launch.
+
+**Result contract.** Text and structured JSON expose the same task ID, status,
+and applicable result data using the existing typed result model:
+
+| Outcome | Required result |
+| --- | --- |
+| Dry-run ready | `ready`, prospective per-node host/backend placement, no attempt/session IDs and no wait reason |
+| Dependency/capacity wait | `waiting`, exact typed wait reason and available placement diagnostics; no allocated attempt/session IDs |
+| Admitted execution | Exact reserved attempt/session IDs and observed execution status, including a failed execution once those identities exist; preserve nonzero failure exit status |
+| Pre-admission error | Actionable diagnostic with nonzero exit status; structured output uses the existing task failure envelope and does not invent allocated IDs |
+
+Missing task/store, incompatible or corrupt database, invalid stored plan and
+unreadable/corrupt profile are errors, not successful readiness or capacity
+waits. Missing optional host configuration retains existing in-memory defaults
+without persisting a default profile. Text preview must expose placement as
+well as status; a structured invocation must not lose its typed result merely
+because a lower-level runner returns an error. Preserve existing JSON optional
+field conventions; no new streaming protocol is required.
+
+**Retained code and concrete inspection leads.** Fresh source inspection at
+the accepted commit found parsing and `TaskRunCommandResult` already present,
+`TaskDispatcher.preview` read-only in intent, and host topology requesting
+read-only profile loading. Retain behavior that passes verification.
+`Sources/RielaCLI/TaskDispatch.swift` currently omits placement from text
+rendering, catches errors into stderr even for structured output, and returns
+the runner failure directly after terminal reconciliation. These are concrete
+result-contract repair targets, not a request to rewrite dispatch. Existing
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` covers ready preview,
+absent stores and corrupt profiles; its row-count comparisons alone do not
+prove unchanged row contents. These observations are source inspection, not
+test-pass claims or a completed read-only audit.
+
+**Evidence and acceptance.** Exercise the command boundary and real retained
+read paths for ready/wait/error outcomes in text and JSON. Compare complete
+before/after file inventories and bytes, including database WAL/SHM sidecars,
+host/controller configuration and profile files, plus affected row values
+(not only counts), including `work_hosts`. Include existing, absent,
+incompatible and corrupt stores; existing, absent and corrupt profiles; and
+sidecars present and absent. Read fixtures through nonmutating inspection;
+do not checkpoint or repair them to make comparisons pass. Where corruption
+prevents row decoding, record the diagnostic and byte/inventory invariance
+instead of claiming a row comparison. Controlled fixtures must not confuse
+external concurrent writes with command side effects.
+
+Step 4 refines the existing plan at
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` for this slice.
+Keep its V1/V2/V4/V11 command filters and add explicit parsing coverage:
+`swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskCommandParsingTests`.
+Run strict changed-file SwiftLint for changed Swift files and `git diff --check`.
+Record exact commands, terminal exit codes, positive counts per selected suite,
+complete foreground logs and final-source hashes under `tmp/work-runtime-p1/`.
+Reused evidence must match final relevant source bytes. Baseline failures stay
+failures and require an explicit independent bounded review decision; no
+zero-test or incomplete-log success. Independent integration and adversarial
+reviews must resolve every material finding before accepting P1-6b. Publish
+only the exact reviewed file allowlist by commit and non-force push on the
+same branch; do not merge main, modify unrelated worktrees, or close parent P1.
+
+**Reference mapping and open questions.** Supplied codex-agent references are
+workflow/communication identities, not a Codex source parity requirement.
+Cursor CLI behavior and reference-adapter divergence are not applicable.
+No unresolved user decision is needed for this bounded design; implementation
+verification and independent acceptance remain downstream work.
+
 `task decide <task-id>` requires exactly one of `--accept`, `--reject <reason>`,
 `--rerun [step]`, or `--cancel`, an explicit human principal, expected task
 version, and stable decision ID (`--principal`, `--expected-version`, and

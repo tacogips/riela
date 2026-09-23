@@ -1,12 +1,19 @@
-# Work Runtime P1: Dispatcher, guard and director completion
+# Work Runtime P1: P1-6b task run and read-only dry-run
 
-**Status**: Retained implementation incomplete; Step 4 resumption refresh after accepted Step 3 design. Step 5 plan review and P1-6/7 implementation acceptance remain pending. Historical evidence: `impl-plans/progress/p1-dispatch.md`.
+**Status**: P1-6b planning updated; Step 5 review and implementation acceptance pending.
 **Workflow mode**: issue-resolution
-**Issue reference**: Work Runtime P1-6a–P1-6d and P1-7a–P1-7b; no GitHub issue supplied. Finish retained Work Runtime P1 dispatcher, director, and legacy replacement requirements. Checkpoint: `f46ff788d522b6e53631862253fdcbcf17adfb1a`.
-**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.7, with behavioral contracts §17.2–17.5; current resumption revision accepted via `comm-000004`.
-**Review decision**: Step 3 accepted via `comm-000004`, `step3-design-review-attempt-1-exec-4`; findings and feedback empty. No Step 5 feedback supplied.
-**Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `nested-v1-f637160bee4a0e57484a92a8400c09a6a58ec7ccbb82ac72bb5ebee0ca2d68ae`, `dispatch_audit`, `director_audit`, `legacy_audit`; current design acceptance: `comm-000004`, `step3-design-review-attempt-1-exec-4`.
-**Updated**: 2026-09-23
+**Issue reference**: Work Runtime P1-6b; no GitHub issue number supplied.
+**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `d80ac30d217450772a535f2308f99f87ac225aea6db0876e08d4c7a18b5ee98f`.
+**Review decision**: Step 3 accepted, no findings or feedback, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
+**Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `step1-issue-intake`, `comm-000002`, `step2-design-doc-update`, `comm-000003`, `step3-design-review`, `comm-000004`.
+**Updated**: 2026-09-24
+
+This metadata and the current contract below are the only executable plan for
+this invocation. The historical parent material at the end is reference-only:
+its broad task list, old baseline, verification and completion requirements do
+not authorize work beyond P1-6b. Stable plan ID and progress-log ownership are
+preserved. One implementation owner runs the coupled tasks serially; no second
+plan or implementation fanout is needed.
 
 ```json
 {
@@ -14,287 +21,332 @@
   "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
   "dependsOn": [],
   "writePaths": [
-    "Sources/RielaWork/TaskDispatcher.swift",
-    "Sources/RielaWork/AgentDirector.swift",
-    "Sources/RielaWork/TaskGuardCoordinator.swift",
-    "Sources/RielaWork/WorkStore+Decisions.swift",
     "Sources/RielaCLI/TaskCommands.swift",
     "Sources/RielaCLI/TaskCommandModels.swift",
     "Sources/RielaCLI/TaskDispatch.swift",
-    "Sources/RielaCLI/RielaCommand.swift",
-    "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
-    "Sources/RielaCLI/WorkflowRunCommand.swift",
-    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
-    "Sources/RielaCLI/ParsedWorkflowOptions.swift",
-    "Sources/RielaCLI/WorkflowCommands.swift",
-    "Sources/RielaCLI/ProductionNodeAdapter.swift",
-    "Sources/RielaCLI/RielaCLIApplication.swift",
-    "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
-    "Sources/RielaCLI/SessionCommands.swift",
-    "Sources/RielaCLI/SessionCommandModels.swift",
-    "Sources/RielaCLI/LoopCommands.swift",
-    "Sources/RielaCore/DeterministicWorkflowRunner.swift",
-    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
-    "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
+    "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaWork/TaskDispatcher.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Tests/RielaCLITests/TaskCommandParsingTests.swift",
     "Tests/RielaCLITests/TaskCommandMutationTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
-    "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
-    "Tests/RielaCLITests/TaskCommandParsingTests.swift",
-    "Tests/RielaCLITests/CommandParsingTests.swift",
-    "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
-    "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
-    "Tests/RielaCLITests/WorkflowCommandPackageLifecycleTests.swift",
-    "Tests/RielaCLITests/RielaExampleParityTests.swift",
-    "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
-    "examples/auto-improve/**",
-    "examples/default-superviser/**",
-    "examples/supervised-mock-retry/**",
-    "examples/task-repair-loop/**",
-    "examples/task-agent-director/**",
-    "impl-plans/progress/p1-dispatch.md",
-    "Package.swift",
-    "Sources/RielaWork/WorkModels.swift",
-    "Sources/RielaWork/WorkStore.swift",
-    "Sources/RielaWork/WorkStore+Schema.swift",
-    "Sources/RielaWork/WorkStore+Reservation.swift",
-    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+    "Tests/RielaCLITests/TaskRunResultTests.swift",
+    "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
+    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
     "Tests/RielaWorkTests/WorkStoreTests.swift",
-    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
-    "Sources/RielaWork/DecisionApplier.swift",
-    "Sources/RielaWork/WorkGuard.swift",
-    "Sources/RielaWork/DeterministicDirector.swift",
-    "Sources/RielaWork/CompletionEvaluator.swift",
-    "Sources/RielaWork/WorkDecision.swift",
-    "Sources/RielaWork/WorkEvidence.swift",
-    "Tests/RielaWorkTests/WorkGuardTests.swift",
-    "Tests/RielaWorkTests/DeterministicDirectorTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierTests.swift",
-    "Tests/RielaWorkTests/CompletionEvaluatorTests.swift",
-    "Sources/RielaCore/BackendCapability.swift",
-    "Sources/RielaCore/WorkflowBackendPolicy.swift",
-    "Sources/RielaCore/WorkflowRequirements.swift",
-    "Sources/RielaCore/WorkflowModel.swift",
-    "Sources/RielaCore/WorkflowNodeValidation.swift",
-    "Sources/RielaCore/WorkflowValidationHelpers.swift",
-    "Sources/RielaCore/DistributedWorkerModels.swift",
-    "Sources/RielaAdapters/BackendCapabilityProbe.swift",
-    "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
-    "Sources/RielaWork/BackendCapabilityPlacement.swift",
-    "Sources/RielaWork/WorkStore+Hosts.swift",
-    "Sources/RielaCLI/DoctorCommand.swift",
-    "Sources/RielaCLI/DistributedWorkerCommand.swift",
-    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
-    "Sources/RielaCLI/HostCapabilityResolver.swift",
-    "Sources/RielaServer/DistributedWorkerProtocol.swift",
-    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
-    "Sources/RielaServer/DistributedWorkerHTTPClient.swift",
-    "Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift",
-    "Tests/RielaCLITests/DoctorBackendCapabilityTests.swift",
-    "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
-    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
-    "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
-    "Tests/RielaAdaptersTests/BackendCapabilityProbeTests.swift",
-    "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
-    "Sources/RielaAppSupport/RielaAppDaemonWorkflowStore.swift",
-    "Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
-    "Sources/RielaCLI/WorkflowValidationOptions.swift",
-    "Sources/RielaCLI/WorkflowCalleeResolution.swift",
-    "Sources/RielaCLI/ServeHTTPCommand.swift",
-    "Sources/RielaCore/WorkflowValidation.swift",
-    "Sources/RielaCore/DistributedJobController.swift",
-    "Sources/RielaServer/DistributedControllerHost.swift",
-    "Sources/RielaServer/DistributedWorkerLoop.swift",
-    "Sources/RielaApp/EntryPoint+DistributedController.swift",
-    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
-    "Tests/RielaWorkTests/AgentDirectorTests.swift",
-    "Tests/RielaWorkTests/BudgetAdmissionStoreTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
-    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
-    "README.md",
-    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
-    "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-    "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
-    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
     "design-docs/specs/design-work-runtime-consolidation.md",
-    "impl-plans/README.md",
-    "impl-plans/PROGRESS.json",
-    "impl-plans/progress/plans-index.json",
-    "impl-plans/progress/meta.json",
-    "impl-plans/progress/phases.json",
-    "impl-plans/progress/plans/work-runtime-p1-dispatcher-guard-director.json",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "Package.resolved",
-    "Tests/RielaCoreTests/DistributedJobControllerTests.swift"
+    "impl-plans/progress/p1-dispatch.md"
   ],
   "sharedPaths": [
-    "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
-    "Sources/RielaCLI/RielaCommand.swift",
-    "Sources/RielaCLI/WorkflowRunCommand.swift",
-    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
-    "Sources/RielaCore/DeterministicWorkflowRunner.swift",
-    "Sources/RielaWork/TaskGuardCoordinator.swift",
-    "Sources/RielaWork/WorkStore+Decisions.swift",
-    "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
-    "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
-    "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
-    "examples/task-agent-director/**",
-    "examples/task-repair-loop/**",
-    "Package.swift",
-    "Sources/RielaWork/WorkModels.swift",
-    "Sources/RielaWork/WorkStore.swift",
-    "Sources/RielaWork/WorkStore+Schema.swift",
-    "Sources/RielaWork/WorkStore+Reservation.swift",
-    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
-    "Tests/RielaWorkTests/WorkStoreTests.swift",
-    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
-    "Sources/RielaWork/DecisionApplier.swift",
-    "Sources/RielaWork/WorkGuard.swift",
-    "Sources/RielaWork/DeterministicDirector.swift",
-    "Sources/RielaWork/CompletionEvaluator.swift",
-    "Sources/RielaWork/WorkDecision.swift",
-    "Sources/RielaWork/WorkEvidence.swift",
-    "Tests/RielaWorkTests/WorkGuardTests.swift",
-    "Tests/RielaWorkTests/DeterministicDirectorTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierTests.swift",
-    "Tests/RielaWorkTests/CompletionEvaluatorTests.swift",
-    "Sources/RielaCore/BackendCapability.swift",
-    "Sources/RielaCore/WorkflowBackendPolicy.swift",
-    "Sources/RielaCore/WorkflowRequirements.swift",
-    "Sources/RielaCore/WorkflowModel.swift",
-    "Sources/RielaCore/WorkflowNodeValidation.swift",
-    "Sources/RielaCore/WorkflowValidationHelpers.swift",
-    "Sources/RielaCore/DistributedWorkerModels.swift",
-    "Sources/RielaAdapters/BackendCapabilityProbe.swift",
-    "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
-    "Sources/RielaWork/BackendCapabilityPlacement.swift",
-    "Sources/RielaWork/WorkStore+Hosts.swift",
-    "Sources/RielaCLI/DoctorCommand.swift",
-    "Sources/RielaCLI/DistributedWorkerCommand.swift",
-    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+    "Sources/RielaCLI/TaskCommands.swift",
+    "Sources/RielaCLI/TaskCommandModels.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/HostCapabilityResolver.swift",
-    "Sources/RielaServer/DistributedWorkerProtocol.swift",
-    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
-    "Sources/RielaServer/DistributedWorkerHTTPClient.swift",
-    "Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift",
-    "Tests/RielaCLITests/DoctorBackendCapabilityTests.swift",
-    "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
-    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
-    "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
-    "Tests/RielaAdaptersTests/BackendCapabilityProbeTests.swift",
-    "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
-    "Sources/RielaAppSupport/RielaAppDaemonWorkflowStore.swift",
-    "Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
-    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
-    "Sources/RielaCLI/WorkflowValidationOptions.swift",
-    "Sources/RielaCLI/WorkflowCalleeResolution.swift",
-    "Sources/RielaCLI/ServeHTTPCommand.swift",
-    "Sources/RielaCore/WorkflowValidation.swift",
-    "Sources/RielaCore/DistributedJobController.swift",
-    "Sources/RielaServer/DistributedControllerHost.swift",
-    "Sources/RielaServer/DistributedWorkerLoop.swift",
-    "Sources/RielaApp/EntryPoint+DistributedController.swift",
-    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
-    "Tests/RielaWorkTests/AgentDirectorTests.swift",
-    "Tests/RielaWorkTests/BudgetAdmissionStoreTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
-    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
-    "README.md",
-    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
-    "Sources/RielaCore/SurfaceCatalog+Rows.swift",
-    "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
-    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+    "Sources/RielaWork/TaskDispatcher.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Tests/RielaCLITests/TaskCommandParsingTests.swift",
+    "Tests/RielaCLITests/TaskCommandMutationTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskRunResultTests.swift",
+    "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
+    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift",
     "design-docs/specs/design-work-runtime-consolidation.md",
-    "impl-plans/README.md",
-    "impl-plans/PROGRESS.json",
-    "impl-plans/progress/plans-index.json",
-    "impl-plans/progress/meta.json",
-    "impl-plans/progress/phases.json",
-    "impl-plans/progress/plans/work-runtime-p1-dispatcher-guard-director.json",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "Package.resolved",
-    "Tests/RielaCoreTests/DistributedJobControllerTests.swift"
+    "impl-plans/progress/p1-dispatch.md"
   ],
   "progressLog": "impl-plans/progress/p1-dispatch.md",
   "taskIds": [
-    "P1-AUDIT",
-    "P1-PREREQ-R",
-    "P1-PREREQ-L",
-    "P1-PREREQ-C",
-    "P1-6a",
-    "P1-6b",
-    "P1-6c",
-    "P1-6d",
-    "P1-7b",
-    "P1-7a",
-    "P1-FINAL"
+    "P1-6b-audit",
+    "P1-6b-results",
+    "P1-6b-readonly",
+    "P1-6b-verification",
+    "P1-6b-finalization"
   ],
-  "verificationCommands": [
-    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter ImplementationWorkflowSandboxTests",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'",
-    "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/changed-swift-files.nul",
-    "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
-    "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
-    "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/p1-dispatch/examples/task-repair-loop --output json",
-    "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
-    "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1/p1-dispatch/examples/task-agent-director --output json",
-    "rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples",
-    "git diff --check",
-    "git diff --cached --check",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'"
-  ],
-  "dependencyMode": "single-plan-ordered-internal-gates",
   "taskDependencies": {
-    "P1-AUDIT": [],
-    "P1-PREREQ-R": [
-      "P1-AUDIT"
+    "P1-6b-audit": [],
+    "P1-6b-results": [
+      "P1-6b-audit"
     ],
-    "P1-PREREQ-L": [
-      "P1-PREREQ-R"
+    "P1-6b-readonly": [
+      "P1-6b-results"
     ],
-    "P1-PREREQ-C": [
-      "P1-PREREQ-R"
+    "P1-6b-verification": [
+      "P1-6b-readonly"
     ],
-    "P1-6a": [
-      "P1-PREREQ-L",
-      "P1-PREREQ-C"
-    ],
-    "P1-6b": [
-      "P1-6a"
-    ],
-    "P1-6c": [
-      "P1-6a"
-    ],
-    "P1-6d": [
-      "P1-6b",
-      "P1-6c"
-    ],
-    "P1-7b": [
-      "P1-6d"
-    ],
-    "P1-7a": [
-      "P1-7b"
-    ],
-    "P1-FINAL": [
-      "P1-7a"
+    "P1-6b-finalization": [
+      "P1-6b-verification"
     ]
   },
-  "evidenceDirectory": "tmp/work-runtime-p1/p1-dispatch/"
+  "dependencyMode": "single-plan-ordered-internal-gates",
+  "acceptedPrerequisite": {
+    "taskId": "P1-6a",
+    "commit": "2f10916a14501af68fd7e7f63cb91f244a343f8c"
+  },
+  "verificationCommands": [
+    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'",
+    "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6b/changed-swift-files.nul",
+    "git diff --check",
+    "git diff --cached --check"
+  ],
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-6b/"
 }
 ```
+
+## Current P1-6b executable contract
+
+### Intent, context, and non-goals
+
+Finish the retained task run command and prove allocation-free dry-run using
+accepted P1-6a dispatch. Inspected branch is `feat/remaining-impl-plans`, HEAD
+`2f10916a14501af68fd7e7f63cb91f244a343f8c`; Step 4 begins with only the accepted
+design edit. Recheck actual status before implementation; never reset changes.
+The supplied effective workflow input and runtime provenance are authoritative.
+Do not inspect the executing package or scoped registries.
+
+No director, human-decision/cancellation redesign, legacy removal, new examples,
+new schema, general persistence framework, new dependency, broad formatting,
+main merge, worktree creation or unrelated baseline repair is authorized.
+P1-6c/d, P1-7a/b and parent P1 remain open. Existing examples are regression
+fixtures only. Preserve other sessions/worktrees, including Monja tenant-sharding-d48.
+Codex references are workflow identities; no Cursor adapter or source-parity task applies.
+
+### Ownership, dependencies, and safe edits
+
+`dependsOn: []` means no newly scheduled external plan; P1-6a is an accepted
+prerequisite at the commit above, not work to rerun or reopen. The metadata DAG
+orders audit → results → read-only boundary → verification → finalization.
+All listed paths are exclusively owned by this single implementation owner;
+reviewers inspect without edits. The write set is a ceiling, not a demand to
+change every file. Production edits to WorkStore/host reads are conditional on
+concrete P1-6b failures. Tests may live in the two named focused new files to
+avoid swelling the existing integration suite; if created, both execute in the
+explicit additional gate below. No other path is implicitly writable: a needed
+path expansion requires a concrete finding, exact path and bounded plan/review
+amendment before editing, not a blanket new abstraction or unrelated repair.
+
+Before each edit, fresh-read the file and capture SHA256 plus an immutable
+intent snapshot under `tmp/work-runtime-p1/p1-6b/attempt-N/` recording intended
+hunks and accepted requirement. Record post-edit hashes. Compare predecessor
+hashes at every handoff; preserve unexpected changes, invalidate affected
+verification, and reconcile serially instead of restoring whole files. No
+concurrent Git operations or private implementation branches. The workflow
+must accept and commit the design and this plan before native implementation
+begins; this author node does not preempt Step 5 or commit an unreviewed plan.
+
+Workers append only to `impl-plans/progress/p1-dispatch.md`. Shared indexes,
+lockfile generation, formatting and global archiving are reserved for serial
+finalization and are unnecessary for this slice. Never archive this parent plan.
+If native join supplies change evidence, the serial integration owner compares
+all intended hunks and hashes and repairs overwritten accepted behavior before
+independent combined-tree review.
+
+### Tasks and exact deliverables
+
+- [ ] **P1-6b-audit**: Fresh-read the listed command, dispatcher, host and store
+  files plus nearby tests. Trace from `TaskCommandRunner.locateTask` through
+  pending request, dependency, host and placement reads, including constructors.
+  Record retained behavior and concrete defects in the progress log. Read-only
+  labels are not proof: `WorkStore.openReadOnlyIfPresent`,
+  `WorkStore+Hosts` and `TaskDispatcher.pendingReservation` must be checked
+  against `Sources/RielaSQLite/SQLiteDatabase.swift`, whose ordinary `.readOnly`
+  can fall back to read-write. Inspect existing strict modes before choosing the
+  smallest caller-level repair. Inspect profile initialization and controller
+  inspection for side effects; no package rediscovery or real user-state probes.
+- [ ] **P1-6b-results**: In `Sources/RielaCLI/TaskDispatch.swift` and, only where
+  needed, `TaskCommandModels.swift`/`TaskCommands.swift`, preserve existing wire
+  field names and optional-field conventions while exposing prospective
+  per-node host/backend choices in text as well as JSON. Use typed statuses
+  with existing wire spellings if touching the closed result status domain.
+  Keep exact reservation identities available once admitted, including runner
+  failures and post-reservation errors; never substitute a child or generated
+  replacement session ID. Preserve nonzero exits and diagnostic details.
+  Pre-admission structured errors use the existing task failure envelope;
+  failures before a durable terminal result must not pretend completion.
+  A ready preview has no IDs or wait reason; waits have the exact typed reason
+  and no allocated IDs. Do not change runner execution or reconciliation policy.
+  Extend `TaskCommandParsingTests` for target, dry-run/shared options, missing
+  ID, invalid options and precedence; add command-level text/JSON success,
+  ready/wait and pre-/post-admission error assertions in `TaskCommandMutationTests`
+  or `TaskRunResultTests`. Compare reported IDs with durable attempt/session rows.
+- [ ] **P1-6b-readonly**: Keep the same task/reference/entry/requirement/placement
+  resolution in both modes. At the earliest applicable read boundary in
+  `TaskCommands.swift`, `TaskDispatch.swift`, `TaskDispatcher.swift`,
+  `HostCapabilityResolver.swift`, `WorkStore.swift` and `WorkStore+Hosts.swift`,
+  select existing nonmutating APIs or add only the minimal task-preview read
+  option needed to avoid writable loaders. Preserve ordinary inspection and
+  real-run compatibility; no global SQLite semantics rewrite. No migration,
+  generation reset, checkpoint, quarantine, host cache persistence, lock-file
+  creation, pending-request consumption, reservation, launch or runner call on
+  dry-run. Absent stores remain absent; incompatible/corrupt stores fail with
+  diagnostics; absent optional profiles use in-memory defaults; corrupt profiles
+  fail without repair. Never use immutable SQLite reads over an active WAL and
+  silently ignore committed data. If a sidecar layout cannot be read safely,
+  diagnose it before opening rather than create/alter sidecars or return stale
+  readiness. Preserve current WAL contents and existing sidecars even on error.
+  Prove this with real store/profile APIs, not a stub that skips the risky read.
+- [ ] **P1-6b-verification**: In `TaskDispatcherIntegrationTests`,
+  `TaskDryRunReadOnlyTests`, `TaskDispatcherTests` and conditionally
+  `WorkStoreTests`, build controlled fixtures under repository `tmp/`. Compare
+  file inventory plus bytes and complete affected row values (not just counts)
+  before/after: tasks, attempts, sessions, decisions, leases, evidence, pending
+  requests and `work_hosts`. Include database/WAL/SHM and host/profile/controller
+  files. Cover ready and dependency/capacity waits, absent/incompatible/corrupt
+  stores, present/absent/corrupt profiles, existing and absent sidecars, and
+  committed WAL data. Disable unrelated concurrent writes during snapshots;
+  snapshot helpers must not checkpoint, migrate or mutate fixtures. For corrupt
+  data that cannot decode, require diagnostic and byte/inventory equivalence,
+  explicitly marking row comparison inapplicable. Retain P1-6a selected-host,
+  reservation/race and exact-session tests. Run the gates below to terminal exit.
+- [ ] **P1-6b-finalization**: Independent integration and adversarial reviews
+  inspect final changed bytes and actual logs. Resolve all material findings;
+  repeat only invalidated checks. Append commands, exits, positive per-suite
+  counts, complete log paths, hashes, retained-code attribution and review
+  decisions to `impl-plans/progress/p1-dispatch.md`. Update only P1-6b evidence
+  in this plan and §17.5 of the design. Review README for accuracy; an actual
+  required change needs an exact scoped amendment, not a general refresh.
+  Mark P1-6b accepted only after both independent reviews; keep parent and
+  later slices open. Final workflow gates commit the exact accepted allowlist
+  and non-force push to `origin/feat/remaining-impl-plans`; verify matching
+  accepted commit/push evidence. No broad staging, tmp files, force push or
+  main merge. No workflow/prompt/script/skill edit is planned, so no package
+  digest refresh is needed.
+
+### Invariants and acceptance matrix
+
+| Accepted requirement | Passing evidence |
+| --- | --- |
+| CLI parsing and typed text/JSON | Valid and invalid parsing; shared option precedence; text placement; typed diagnostics; correct nonzero failure exits |
+| Exact identity and wait reason | Output IDs equal reserved durable rows on successful and failed admitted runs; ready/wait allocate nothing; wait reason matches dispatcher |
+| Read-only dry-run | Same resolution/prospective placement, all byte/inventory/row-value checks unchanged across the matrix above; no misleading stale WAL read |
+| P1-6a preserved | Final-source reservation and selected-worker/callee execution regression gates pass |
+| Bounded publication | Independent integration/adversarial acceptance without unresolved material finding, exact file allowlist, matching committed/pushed hash; later slices open |
+
+A preview is not a launch promise: real admission still rechecks dependency,
+version, budget and capacity races. Do not add a second direct-mutation path or
+weaken authentication, placement pinning, reservation tokens or uncertainty fences.
+
+### Exact verification and evidence
+
+All commands run in the foreground from repository root. Capture full stdout
+and stderr, exact argv/environment, start/end timestamps, terminal exit code,
+per-suite positive test counts and final relevant source SHA256 inventory in
+`tmp/work-runtime-p1/p1-6b/attempt-N/verification-evidence.json`. Use immutable
+numbered attempts, the log names below and the existing shared scratch path;
+never run SwiftPM gates concurrently against it. Poll every yielded session
+through terminal exit. Incomplete logs, timeouts and zero/absent selected suites
+are failed/blocked checks, never passes. Reuse only evidence matching final
+relevant sources and fixtures; unrelated documentation edits alone do not
+invalidate Swift tests. No implementation test pass is claimed by this plan.
+
+**V0 compile/typecheck — build.log**
+
+```bash
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+```
+
+**Parsing — parsing-tests.log**
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests'
+```
+
+**V1 focused behavior — focused-tests.log**
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+```
+
+**V2 reservation regression — reservation-tests.log**
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'
+```
+
+**V4 capabilities/profile regression — capability-tests.log**
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'
+```
+
+**V11 selected-host regression — selected-host-tests.log**
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+```
+
+V1 retains each named suite, including existing task examples; it does not
+certify later slices. Require positive counts for each selected suite. V2 proves
+reservation/cancellation/budget compatibility. V4 proves placement and profile
+read compatibility. V11 proves real selected-host and exact-session behavior.
+If the two new focused test files are used, run their gate and require a
+positive count for each created suite (adjust the filter to the created names
+and record exact argv; never report a missing suite as passing):
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'
+```
+
+If `WorkStore.swift` or `WorkStore+Hosts.swift` changes, also run:
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreTests|TaskCommandTests'
+```
+
+Before lint, build `tmp/work-runtime-p1/p1-6b/changed-swift-files.nul` from the
+reviewed exact changed/new Swift paths relative to the accepted implementation
+baseline; include newly created files, exclude unrelated changes, record the
+list in evidence and require it nonempty. Never invoke xargs with an empty list.
+**Strict changed-file lint — swiftlint.log**:
+
+```bash
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6b/changed-swift-files.nul
+git diff --check
+git diff --cached --check
+```
+
+Capture diff checks as `diff-check.log` and `cached-diff-check.log` respectively;
+the cached check is repeated by finalization after accepted staging. Inspect
+changed Swift file sizes and keep files within the skill's 1000-line rule using
+the named focused test files, without broad unrelated extraction. Build/tests
+must compile touched modules. Broaden only for a concrete shared-path risk or
+new failure; record exact additional command and reason. Pre-existing failures
+remain failures: require an explicit independent bounded disposition, never
+suppress them, count a failed gate as passing or repair unrelated baseline work.
+
+### Completion and progress state
+
+| Item | State at authoring |
+| --- | --- |
+| P1-6a | Accepted prerequisite at 2f10916; preserve |
+| P1-6b | Plan authored; Step 5 and implementation/review gates pending |
+| P1-6c/d, P1-7a/b | Deferred/open |
+| Parent P1 | Open; no global certification or archiving |
+
+No unresolved user decision or design defect was identified. Progress entries
+must distinguish source inspection, actual verification and independent
+acceptance; record exact retained files, concrete repairs, hash drift and
+invalidated/reused evidence. Design/plan acceptance is not implementation
+acceptance. Finalization requires all scoped acceptance rows and reviewer
+findings resolved, matching final-source evidence and exact accepted publication.
+
+## Historical parent-plan reference — not executable in this invocation
+
+The following pre-P1-6b parent narrative is retained to preserve later work and
+historical evidence. Its former scope, unchecked P1-6a status, predecessor
+inventories and broad gates are superseded for this invocation by the current
+contract above. Do not schedule, certify, update indexes for, or execute its
+later tasks as part of P1-6b. Historical metadata is available in Git at
+`2f10916a14501af68fd7e7f63cb91f244a343f8c` under this same plan path.
 
 ## Intent, authority and repository context
 

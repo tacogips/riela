@@ -62,7 +62,7 @@ func makeScenarioBackedStdioNodeExecutor(
   scenarioPath: String?,
   workingDirectory: String
 ) throws -> any WorkflowStdioNodeExecuting {
-  let fallback = LocalWorkflowStdioNodeExecutor()
+  let fallback = LocalWorkflowStdioNodeExecutor(defaultWorkingDirectory: workingDirectory)
   guard let scenarioPath else {
     return fallback
   }

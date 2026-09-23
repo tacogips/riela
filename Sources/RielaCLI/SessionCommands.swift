@@ -473,7 +473,9 @@ public struct SessionRerunCommand: Sendable {
         adapter: adapter,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
+          defaultWorkingDirectory: kaibaContext.workingDirectory
+        ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
         fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
@@ -738,7 +740,9 @@ public struct SessionResumeCommand: Sendable {
         adapter: adapter,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
+          defaultWorkingDirectory: kaibaContext.workingDirectory
+        ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
         fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)

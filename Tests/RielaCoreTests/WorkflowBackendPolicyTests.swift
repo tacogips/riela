@@ -159,6 +159,29 @@ final class WorkflowBackendPolicyTests: XCTestCase {
     XCTAssertEqual(requirement.requiredEnvironment, ["CUSTOM_API_KEY"])
   }
 
+  func testExplicitCommandPlacementProjectsProvenanceWithoutBackendPolicy() throws {
+    let workflow = WorkflowDefinition(
+      workflowId: "command-placement",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 1),
+      entryStepId: "run",
+      nodeRegistry: [.init(id: "command", nodeFile: "node.json")],
+      steps: [.init(id: "run", nodeId: "command", placement: .init(
+        target: .init(workerId: "worker"), workspace: "project"
+      ))],
+      nodes: [.init(id: "command", nodeFile: "node.json")]
+    )
+    let payload = AgentNodePayload(id: "command", nodeType: .command, model: "", command: .init(executable: "/usr/bin/true"))
+    let requirements = try WorkflowRequirementResolver().resolve(
+      workflowId: workflow.workflowId,
+      workflows: [workflow.workflowId: workflow],
+      nodePayloads: [workflow.workflowId: ["command": payload]]
+    )
+    XCTAssertEqual(requirements.count, 1)
+    XCTAssertEqual(requirements.first?.provenance, [.init(workflowId: "command-placement", stepId: "run", nodeId: "command")])
+    XCTAssertNil(requirements.first?.pin)
+    XCTAssertNil(requirements.first?.policy)
+  }
+
   func testRequirementProjectionKeepsPackageEnvironmentWithoutBackendPin() throws {
     let workflow = WorkflowDefinition(
       workflowId: "package-env",

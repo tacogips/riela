@@ -2,7 +2,14 @@ import Foundation
 import RielaAdapters
 import RielaAppSupport
 import RielaCore
+import RielaServer
 import RielaWork
+
+struct TaskHostTopology: Sendable {
+  var local: HostCapabilitySnapshot
+  var workers: [HostCapabilitySnapshot]
+  var defaultWorkspace: String?
+}
 
 protocol HostCapabilityResolving: Sendable {
   func resolve(
@@ -12,9 +19,32 @@ protocol HostCapabilityResolving: Sendable {
     readOnly: Bool,
     localAddonExecutables: [String: Bool]
   ) async throws -> [HostCapabilitySnapshot]
+
+  func taskTopology(
+    store: WorkStore,
+    scope: WorkflowScope,
+    workingDirectory: String,
+    localAddonExecutables: [String: Bool]
+  ) async throws -> TaskHostTopology
 }
 
 extension HostCapabilityResolving {
+  func taskTopology(
+    store: WorkStore,
+    scope: WorkflowScope,
+    workingDirectory: String,
+    localAddonExecutables: [String: Bool]
+  ) async throws -> TaskHostTopology {
+    let snapshots = try await resolve(
+      host: "local", scope: scope, workingDirectory: workingDirectory,
+      readOnly: true, localAddonExecutables: localAddonExecutables
+    )
+    guard let local = snapshots.first else {
+      throw WorkStoreError("local host capability snapshot is unavailable")
+    }
+    return TaskHostTopology(local: local, workers: [], defaultWorkspace: nil)
+  }
+
   func resolve(
     host: String,
     scope: WorkflowScope,
@@ -98,6 +128,47 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
       try runtimeStore(scope: scope, workingDirectory: workingDirectory).saveHostSnapshot(snapshot)
     }
     return [snapshot]
+  }
+
+  func taskTopology(
+    store: WorkStore,
+    scope: WorkflowScope,
+    workingDirectory: String,
+    localAddonExecutables: [String: Bool]
+  ) async throws -> TaskHostTopology {
+    let local = try await resolve(
+      host: "local", scope: scope, workingDirectory: workingDirectory,
+      readOnly: true, localAddonExecutables: localAddonExecutables
+    )
+    guard let local = local.first else {
+      throw WorkStoreError("local host capability snapshot is unavailable")
+    }
+    guard let configPath = environment[DistributedControllerConfiguration.environmentKey],
+          !configPath.isEmpty else {
+      return TaskHostTopology(local: local, workers: [], defaultWorkspace: nil)
+    }
+    let configURL = URL(fileURLWithPath: configPath)
+    let config = try DistributedControllerConfiguration.load(from: configURL)
+    let configured = Dictionary(uniqueKeysWithValues: config.workers.map { ($0.id, $0) })
+    let now = Date()
+    let controllerURL = config.storePath.hasPrefix("/")
+      ? URL(fileURLWithPath: config.storePath)
+      : configURL.deletingLastPathComponent().appendingPathComponent(config.storePath)
+    let statuses = FileManager.default.fileExists(atPath: controllerURL.path)
+      ? try await config.controller(relativeTo: configURL).inspectWorkers(now: now) : []
+    let live = Dictionary(uniqueKeysWithValues: statuses.map { ($0.workerId, $0) })
+    let workers = try store.loadHostSnapshots().compactMap { snapshot -> HostCapabilitySnapshot? in
+      guard let worker = configured[snapshot.hostId], let status = live[snapshot.hostId],
+            status.online, status.groups == worker.groups,
+            status.groups == snapshot.groups else { return nil }
+      let age = now.timeIntervalSince(snapshot.refreshedAt)
+      let available = min(snapshot.capacity ?? 0, status.capacity - status.activeJobIds.count)
+      guard snapshot.live && available > 0 && age >= 0 && age < 30 else { return nil }
+      var eligible = snapshot
+      eligible.capacity = available
+      return eligible
+    }
+    return TaskHostTopology(local: local, workers: workers, defaultWorkspace: config.defaultWorkspace)
   }
 
   private func runtimeStore(scope: WorkflowScope, workingDirectory: String) -> WorkStore {

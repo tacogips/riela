@@ -2,52 +2,93 @@ import Foundation
 import RielaCore
 import RielaWork
 
+struct TaskPlacementExecutionContext: Sendable {
+  var bundles: [String: ResolvedWorkflowBundle]
+  var placement: BackendCapabilityPlacementResult
+  var defaultWorkspace: String?
+}
+
 extension WorkflowRunCommand {
   func runTaskReservation(
     _ options: WorkflowRunOptions,
     reservation: AttemptReservation,
     store: WorkStore,
-    placement: BackendCapabilityPlacementResult
+    context: TaskPlacementExecutionContext
   ) async -> CLICommandResult {
     guard options.endpoint == nil, !options.autoImprove,
           options.resumeSessionId == reservation.attempt.sessionId else {
       return CLICommandResult(exitCode: .usage, stderr: "task run requires its local reserved session")
     }
     return await runWithoutSpecialistMonitor(
-      options, taskReservation: (reservation, store), taskPlacement: placement
+      options, taskReservation: (reservation, store), taskContext: context
     )
   }
 
   func applyingTaskPlacement(
-    _ placement: BackendCapabilityPlacementResult,
+    _ context: TaskPlacementExecutionContext,
     to original: ResolvedWorkflowBundle
   ) throws -> ResolvedWorkflowBundle {
-    guard placement.complete else { throw WorkStoreError("task placement is incomplete") }
+    guard context.placement.complete else { throw WorkStoreError("task placement is incomplete") }
     var bundle = original
-    var choiceByNode: [String: BackendPlacementChoice] = [:]
-    for choice in placement.choices {
-      guard choice.provenance.workflowId == bundle.workflow.workflowId,
-            choice.hostId == "local" else {
-        throw WorkStoreError("task placement cannot execute on the selected host")
-      }
-      let nodeId = choice.provenance.nodeId
-      if let existing = choiceByNode[nodeId],
-         existing.hostId != choice.hostId || existing.backend != choice.backend || existing.model != choice.model {
-        throw WorkStoreError("task node has conflicting placement choices")
-      }
-      choiceByNode[nodeId] = choice
+    let choices = context.placement.choices.filter {
+      $0.provenance.workflowId == bundle.workflow.workflowId
     }
-    for (nodeId, choice) in choiceByNode {
-      guard var payload = bundle.nodePayloads[nodeId] else {
-        if choice.backend == nil { continue }
-        throw WorkStoreError("task placement refers to an unknown agent node")
+    var seen: Set<WorkflowRequirementProvenance> = []
+    for (index, choice) in choices.enumerated() {
+      guard seen.insert(choice.provenance).inserted,
+            let stepIndex = bundle.workflow.steps.firstIndex(where: {
+              $0.id == choice.provenance.stepId && $0.nodeId == choice.provenance.nodeId
+            }),
+            let registryNode = bundle.workflow.nodeRegistry.first(where: {
+              $0.id == choice.provenance.nodeId
+            }) else {
+        throw WorkStoreError("task placement does not match an admitted executable step")
       }
+      let originalStep = bundle.workflow.steps[stepIndex]
+      if choice.hostId == "local" {
+        guard originalStep.placement == nil else {
+          throw WorkStoreError("task placement cannot move an explicitly remote step to local")
+        }
+      } else {
+        guard let workspace = originalStep.placement?.workspace.isEmpty == false
+          ? originalStep.placement?.workspace : context.defaultWorkspace else {
+          throw WorkStoreError("remote task placement requires a controller default workspace")
+        }
+        let target = DistributedWorkerTarget(
+          workerId: choice.hostId,
+          group: originalStep.placement?.target.group
+        )
+        bundle.workflow.steps[stepIndex].placement = DistributedExecutionPlacement(
+          target: target, workspace: workspace, exports: originalStep.placement?.exports
+        )
+      }
+      let alias = "__task_placement_\(index)_\(choice.provenance.nodeId)"
+      guard bundle.workflow.nodeRegistry.allSatisfy({ $0.id != alias }),
+            bundle.nodePayloads[alias] == nil else {
+        throw WorkStoreError("task placement alias conflicts with an authored node")
+      }
+      var placedRegistry = registryNode
+      placedRegistry.id = alias
+      bundle.workflow.nodeRegistry.append(placedRegistry)
+      if let node = bundle.workflow.nodes.first(where: { $0.id == choice.provenance.nodeId }) {
+        var placedNode = node
+        placedNode.id = alias
+        bundle.workflow.nodes.append(placedNode)
+      }
+      bundle.workflow.steps[stepIndex].nodeId = alias
+      guard var payload = bundle.nodePayloads[choice.provenance.nodeId] else {
+        if choice.backend != nil || choice.model != nil {
+          throw WorkStoreError("task placement refers to an unknown agent node")
+        }
+        continue
+      }
+      payload.id = alias
       if let backend = choice.backend {
         payload.executionBackend = backend
         payload.backendPolicy = nil
       }
       if let model = choice.model { payload.model = model }
-      bundle.nodePayloads[nodeId] = payload
+      bundle.nodePayloads[alias] = payload
     }
     return bundle
   }

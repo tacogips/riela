@@ -279,6 +279,28 @@ final class DistributedJobControllerTests: XCTestCase {
     XCTAssertFalse(files.contains { $0.hasPrefix(".distributed-snapshot-") })
   }
 
+  func testTaskWorkerInspectionLeavesExpiredLeaseSnapshotUnchanged() async throws {
+    let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent(
+      "tmp/work-runtime-p1-selected-host-delivery/tests/T5-controller/\(UUID().uuidString)", isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("jobs.json")
+    let controller = try DistributedJobController(fileURL: url)
+    let now = Date(timeIntervalSince1970: 100)
+    let worker = try await controller.register(workerId: "remote", groups: [], capacity: 1, now: now)
+    _ = try await controller.enqueue(id: "job", target: .init(workerId: "remote"), payload: [:])
+    _ = try await controller.claim(worker: worker, now: now, leaseDuration: 10)
+    let before = try Data(contentsOf: url)
+    let statuses = try await controller.inspectWorkers(now: now.addingTimeInterval(11))
+    XCTAssertEqual(statuses.first?.workerId, "remote")
+    XCTAssertEqual(statuses.first?.activeJobIds, [])
+    XCTAssertEqual(statuses.first?.online, true)
+    XCTAssertEqual(try Data(contentsOf: url), before)
+  }
+
   func testWorkerStatusTracksIdleAndBusyHeartbeatsWithoutCredentials() async throws {
     let controller = try DistributedJobController(fileURL: storeURL())
     let now = Date(timeIntervalSince1970: 100)

@@ -22,12 +22,14 @@ public struct DistributedControllerConfiguration: Codable, Equatable, Sendable {
   public var port: Int
   public var storePath: String
   public var workers: [Worker]
+  public var defaultWorkspace: String?
 
-  public init(host: String, port: Int, storePath: String, workers: [Worker]) {
+  public init(host: String, port: Int, storePath: String, workers: [Worker], defaultWorkspace: String? = nil) {
     self.host = host
     self.port = port
     self.storePath = storePath
     self.workers = workers
+    self.defaultWorkspace = defaultWorkspace
   }
 
   public func validate() throws {
@@ -36,6 +38,7 @@ public struct DistributedControllerConfiguration: Codable, Equatable, Sendable {
         && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
     }
     guard name(host), (1...65535).contains(port), !storePath.isEmpty,
+      defaultWorkspace.map(name) ?? true,
       !storePath.utf8.contains(0), !workers.isEmpty,
       Set(workers.map(\.id)).count == workers.count,
       workers.allSatisfy({ worker in

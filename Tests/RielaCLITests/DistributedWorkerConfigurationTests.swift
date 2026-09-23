@@ -303,6 +303,25 @@ final class DistributedWorkerConfigurationTests: XCTestCase {
     XCTAssertEqual(stillActive?.lease?.token, leaseToken)
   }
 
+  func testTaskControllerDefaultWorkspaceDecodesLegacyAndRejectsInvalidAliases() throws {
+    let legacy = #"{"host":"127.0.0.1","port":8788,"storePath":"jobs.json","workers":[{"id":"worker","groups":[],"tokenEnvironment":"TOKEN","maxCapacity":1}]}"#
+    let decoded = try JSONDecoder().decode(DistributedControllerConfiguration.self, from: Data(legacy.utf8))
+    XCTAssertNil(decoded.defaultWorkspace)
+    XCTAssertNoThrow(try decoded.validate())
+
+    var configured = decoded
+    configured.defaultWorkspace = "project"
+    XCTAssertNoThrow(try configured.validate())
+    XCTAssertEqual(
+      try JSONDecoder().decode(DistributedControllerConfiguration.self, from: JSONEncoder().encode(configured)),
+      configured
+    )
+    for invalid in ["", " project", "project\n", String(repeating: "a", count: 257)] {
+      configured.defaultWorkspace = invalid
+      XCTAssertThrowsError(try configured.validate())
+    }
+  }
+
   private func decode(_ credentials: String) throws -> DistributedWorkerCommand.Configuration {
     var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(credentials.utf8)) as? [String: Any])
     object["controllerURL"] = "https://controller.example.com"

@@ -318,16 +318,31 @@ public actor DistributedJobController {
   public func workers(now: Date, offlineAfter: TimeInterval = 30) throws -> [DistributedWorkerStatus] {
     try withStoreLock {
       try commit(expiredSnapshot(now: now))
-      return state.workers.values.sorted { $0.workerId < $1.workerId }.map { worker in
-        let lastSeen = state.workerLastSeen?[worker.workerId]
-        return DistributedWorkerStatus(
-          workerId: worker.workerId, groups: worker.groups, capacity: worker.capacity,
-          activeJobIds: state.jobs.filter { $0.status == .leased && $0.lease?.workerId == worker.workerId }.map(\.id),
-          lastSeenAt: lastSeen,
-          online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false,
-          capabilities: worker.capabilities
-        )
-      }
+      return workerStatuses(now: now, offlineAfter: offlineAfter)
+    }
+  }
+
+  /// Task preview reads registration and capacity without advancing leases or
+  /// rewriting the controller snapshot.
+  public func inspectWorkers(now: Date, offlineAfter: TimeInterval = 30) throws -> [DistributedWorkerStatus] {
+    try withStoreLock {
+      workerStatuses(now: now, offlineAfter: offlineAfter)
+    }
+  }
+
+  private func workerStatuses(now: Date, offlineAfter: TimeInterval) -> [DistributedWorkerStatus] {
+    state.workers.values.sorted { $0.workerId < $1.workerId }.map { worker in
+      let lastSeen = state.workerLastSeen?[worker.workerId]
+      return DistributedWorkerStatus(
+        workerId: worker.workerId, groups: worker.groups, capacity: worker.capacity,
+        activeJobIds: state.jobs.filter {
+          $0.status == .leased && $0.lease?.workerId == worker.workerId
+            && ($0.lease?.expiresAt ?? .distantPast) > now
+        }.map(\.id),
+        lastSeenAt: lastSeen,
+        online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false,
+        capabilities: worker.capabilities
+      )
     }
   }
 

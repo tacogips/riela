@@ -135,7 +135,7 @@ public struct WorkflowRequirementResolver: Sendable {
           nodeId: step.nodeId
         )
       }
-      if payload?.executionBackend != nil || payload?.backendPolicy != nil
+      if step.placement != nil || payload?.executionBackend != nil || payload?.backendPolicy != nil
         || hostRequirement?.addonExecutable != nil
         || hostRequirement?.requiredEnvironment.isEmpty == false
         || payload?.agentEnvironment.values.contains(where: { $0.required }) == true

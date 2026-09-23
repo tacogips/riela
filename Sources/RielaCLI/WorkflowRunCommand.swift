@@ -35,7 +35,7 @@ public struct WorkflowRunCommand: Sendable {
   func runWithoutSpecialistMonitor(
     _ options: WorkflowRunOptions,
     taskReservation: (AttemptReservation, WorkStore)? = nil,
-    taskPlacement: BackendCapabilityPlacementResult? = nil
+    taskContext: TaskPlacementExecutionContext? = nil
   ) async -> CLICommandResult {
     var livePersistenceState: WorkflowRunLivePersistenceState?, pendingLease: WorkflowRunPendingLease?
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
@@ -44,16 +44,16 @@ public struct WorkflowRunCommand: Sendable {
       if let result = try await remoteRunResult(options) { return result }
       let resolution = options.resolution
         ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
-      var bundle = try resolveRunBundle(options: options, resolution: resolution, taskPlacement: taskPlacement)
+      var bundle = try resolveRunBundle(options: options, resolution: resolution, taskContext: taskContext)
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
       let prepared = try await prepareRunExecution(
         options: options,
         resolution: resolution,
         bundle: &bundle,
-        variables: variables
+        variables: variables,
+        taskContext: taskContext
       )
       let effectiveInstance = prepared.instance
-      let calleeResolver = prepared.calleeResolver
       let effectiveVariables = effectiveInstance.configuration.defaultVariables
       let runContext = prepared.context
       let runWorkingDirectory = runContext.workingDirectory
@@ -101,7 +101,7 @@ public struct WorkflowRunCommand: Sendable {
         stdioNodeExecutor: stdioNodeExecutor,
         telemetry: telemetry,
         simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil,
-        calleeResolver: calleeResolver,
+        calleeResolver: prepared.calleeResolver,
         fanoutWorkspaceRoot: URL(fileURLWithPath: runWorkingDirectory, isDirectory: true),
         nestedInvocationPersistenceStore: durableRuntime.nestedInvocationPersistenceStore,
         nestedInvocationRecoveryCheckpointer: durableRuntime.nestedRecoveryCheckpointer
@@ -627,15 +627,21 @@ public struct WorkflowRunCommand: Sendable {
   private func resolveRunBundle(
     options: WorkflowRunOptions,
     resolution: WorkflowResolutionOptions,
-    taskPlacement: BackendCapabilityPlacementResult?
+    taskContext: TaskPlacementExecutionContext?
   ) throws -> ResolvedWorkflowBundle {
+    if let taskContext {
+      guard let bundle = taskContext.bundles[options.target] else {
+        throw WorkStoreError("reserved task root is absent from admitted bundles")
+      }
+      return bundle
+    }
     let bundle: ResolvedWorkflowBundle
     if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
       bundle = temporary
     } else if options.fromRegistry { bundle = try resolveRegistryRunBundle(options: options) } else {
       bundle = try resolver.resolve(resolution)
     }
-    return try taskPlacement.map { try applyingTaskPlacement($0, to: bundle) } ?? bundle
+    return bundle
   }
 
   private func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {

@@ -56,12 +56,13 @@ struct TaskDispatch: Sendable {
       let pending = try dispatcher.pendingReservation(taskId: id)
       let entry = pending?.entry ?? .start
       let entryStepId = try selectedEntryStep(entry, task: located.task, workflow: bundle.workflow)
-      let maps = try await reachableWorkflowMaps(
+      var maps = try await reachableWorkflowMaps(
         bundle: bundle,
         resolution: resolution,
         resolver: resolver,
         entryStepId: entryStepId
       )
+      maps.bundles[bundle.workflow.workflowId]?.workflow.entryStepId = entryStepId
       let requirements = try WorkflowRequirementResolver().resolve(
         workflowId: bundle.workflow.workflowId,
         entryStepId: entryStepId,
@@ -69,20 +70,26 @@ struct TaskDispatch: Sendable {
         nodePayloads: maps.nodePayloads,
         nodeHostRequirements: maps.nodeHostRequirements
       )
-      let snapshots = try await hostResolver.resolve(
-        host: "local",
+      let topology = try await hostResolver.taskTopology(
+        store: located.store,
         scope: resolution.scope,
         workingDirectory: options.workingDirectory,
-        readOnly: true,
         localAddonExecutables: maps.localAddonExecutables
       )
-      guard let local = snapshots.first else {
-        throw WorkStoreError("local host capability snapshot is unavailable")
+      var assignments: [WorkflowRequirementProvenance: DistributedWorkerTarget] = [:]
+      for requirement in requirements {
+        for provenance in requirement.provenance {
+          if let target = maps.workflows[provenance.workflowId]?
+            .steps.first(where: { $0.id == provenance.stepId })?.placement?.target {
+            assignments[provenance] = target
+          }
+        }
       }
       let placement = BackendCapabilityPlacementResolver().resolve(
         requirements: requirements,
-        local: local,
-        workers: []
+        local: topology.local,
+        workers: topology.workers,
+        assignments: assignments
       )
       let preview = try dispatcher.preview(
         taskId: id,
@@ -98,13 +105,36 @@ struct TaskDispatch: Sendable {
           sessionId: nil, waitReason: reason, placement: placement
         ), output: output)
       case let .ready(ready):
+        let taskContext = TaskPlacementExecutionContext(
+          bundles: maps.bundles,
+          placement: ready.placement,
+          defaultWorkspace: topology.defaultWorkspace
+        )
+        guard ready.placement.choices.allSatisfy({ maps.bundles[$0.provenance.workflowId] != nil }) else {
+          throw WorkStoreError("task placement refers to an unresolved workflow")
+        }
+        for admittedBundle in maps.bundles.values {
+          _ = try runner.applyingTaskPlacement(taskContext, to: admittedBundle)
+        }
         if dryRun {
           return try render(TaskRunCommandResult(
             taskId: taskId, status: "ready", attemptId: nil,
             sessionId: nil, waitReason: nil, placement: ready.placement
           ), output: output)
         }
+        if ready.placement.choices.contains(where: { $0.hostId != "local" }) {
+          guard try configuredDistributedExecutor(
+            environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+          ) != nil else {
+            throw WorkStoreError("remote task placement requires a configured distributed controller")
+          }
+        }
         let attemptId = AttemptID.generate()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let placementRecord = try JSONDecoder().decode(
+          JSONValue.self, from: encoder.encode(ready.placement)
+        )
         let placementEvidence = Evidence(
           id: EvidenceID("evidence-placement-\(attemptId.rawValue)"),
           taskId: id,
@@ -112,7 +142,7 @@ struct TaskDispatch: Sendable {
           kind: .contextSnapshot,
           producedBy: .runtime,
           payloadRef: .inline([
-            "hosts": .array(placement.choices.map { .string($0.hostId) }),
+            "placement": placementRecord,
             "workflowId": .string(bundle.workflow.workflowId)
           ]),
           createdAt: Date()
@@ -147,7 +177,7 @@ struct TaskDispatch: Sendable {
           resumeSessionId: reservation.attempt.sessionId
         )
         let workflowResult = await runner.runTaskReservation(
-          runOptions, reservation: reservation, store: located.store, placement: ready.placement
+          runOptions, reservation: reservation, store: located.store, context: taskContext
         )
         let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
           .load(sessionId: reservation.attempt.sessionId)

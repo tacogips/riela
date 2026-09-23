@@ -328,6 +328,7 @@ func nativeBundleAddonInspections(
 }
 
 struct ReachableWorkflowMaps {
+  var bundles: [String: ResolvedWorkflowBundle]
   var workflows: [String: WorkflowDefinition]
   var nodePayloads: [String: [String: AgentNodePayload]]
   var nodeHostRequirements: [String: [String: WorkflowNodeHostRequirement]]
@@ -455,7 +456,9 @@ func reachableWorkflowMaps(
       nodePayloads[next.workflowId] = callee.nodePayloads
       nodeHostRequirements[next.workflowId] = addonHostRequirements(in: callee)
     }
-    guard let step = workflows[next.workflowId]?.steps.first(where: { $0.id == next.stepId }) else { continue }
+    guard let step = workflows[next.workflowId]?.steps.first(where: { $0.id == next.stepId }) else {
+      throw WorkflowRequirementResolutionError.unknownStep(workflowId: next.workflowId, stepId: next.stepId)
+    }
     if let currentBundle = bundles[next.workflowId] {
       localAddonExecutables.merge(localAddonExecutableAvailability(in: currentBundle, nodeId: step.nodeId)) {
         $0 && $1
@@ -475,6 +478,7 @@ func reachableWorkflowMaps(
     }
   }
   return ReachableWorkflowMaps(
+    bundles: bundles,
     workflows: workflows,
     nodePayloads: nodePayloads,
     nodeHostRequirements: nodeHostRequirements,

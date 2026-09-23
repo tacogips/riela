@@ -1349,19 +1349,23 @@ gaps, downstream access and publication readiness are verification/implementatio
 work, so no new user-QA document is necessary.
 
 
-### 17.7 Current resumption contract (2026-09-23, checkpoint c1d779f)
+### 17.7 Current resumption contract (2026-09-23, checkpoint f46ff788)
 
-**Authority and review.** Mode: `issue-resolution`. Issue reference: workflow
-input, “Complete the remaining Work Runtime P1 dispatcher and director behavior
-after the first implementation wave”; no GitHub issue URL or number supplied.
+**Authority and review.** Mode: `issue-resolution`. Issue reference: Work
+Runtime P1-6a–P1-6d and P1-7a–P1-7b; no GitHub issue URL or number supplied.
 Step 1 `comm-000002`, execution `step1-issue-intake-attempt-1-exec-2`, supplies
-this brief to `step2-design-doc-update`. Codex-agent references are
-`codex-design-and-implement-review-loop-session-1`, `comm-000002`,
-`comm-000003`, `comm-000004`, and `step3-design-review-attempt-1-exec-4`.
-The accepted plan records prior Step 3 design acceptance through the last two
-references, with no findings. No new Step 3/5 corrective feedback was supplied.
-Prior implementation ended `implementation_blocked`; design acceptance is not
-implementation acceptance. This updated design awaits independent Step 3 review.
+“Finish retained Work Runtime P1 dispatcher, director, and legacy replacement
+requirements” to `step2-design-doc-update`. Codex-agent references are
+`codex-design-and-implement-review-loop-session-1`,
+`nested-v1-f637160bee4a0e57484a92a8400c09a6a58ec7ccbb82ac72bb5ebee0ca2d68ae`,
+`dispatch_audit`, `director_audit`, and `legacy_audit`.
+The accepted plan records prior Step 3 design acceptance through `comm-000004`
+and `step3-design-review-attempt-1-exec-4`, with no findings. No new Step 3/5
+corrective feedback was supplied. The second run ended at
+`implementation-blocked-output`; its findings are evidence, not implementation
+acceptance or an exhaustive source audit. Accepted design and plan remain in
+force. This refresh corrects execution metadata and stale source observations
+only; behavioral contracts and implementation-plan scope are unchanged.
 
 This section supersedes historical execution inventories, scheduler waves and
 publication context in §17.1/17.6. Behavioral contracts §17.2–17.5 remain in
@@ -1374,10 +1378,14 @@ input are authoritative; no contradiction is present and no provenance
 rediscovery is required. This intake supplies no minimum or exact package
 version; older documentation must not impose one.
 
-Inspected HEAD is `c1d779f12646e0cc4d76334c21d8d108229e46ee`.
+Inspected HEAD is `f46ff788d522b6e53631862253fdcbcf17adfb1a`.
 Implementation and base branch are both `feat/remaining-impl-plans`, with
-`origin/feat/remaining-impl-plans` supplied as upstream. Preserve all 94
-pre-existing changed/untracked files (50 tracked, 44 untracked) as owned WIP.
+`origin/feat/remaining-impl-plans` supplied as upstream. Preserve all 93
+pre-existing changed/untracked files (49 tracked, 44 untracked; zero staged)
+as owned WIP. The active plan retains its earlier 50/44 inventory as historical
+evidence; checkpoint f46ff788 committed the design and plan updates. Reconcile
+individual P1 files and hunks before finalization rather than inferring ownership
+from counts. This design refresh adds one tracked documentation modification.
 Only accepted P1 files and hunks may enter finalization; no merge to main is
 requested. Exclude loop-engineering, agent-node-output-contract, workflow defect
 detection, Tauri, Note, gateway SDK, Monja and P2–P7 implementation. Use existing
@@ -1385,16 +1393,16 @@ runner, store, adapter and distributed execution seams; no new planner, task
 service, authentication system or generic framework is required.
 
 **Current source evidence, not acceptance.** Inspection of retained source and
-`tmp/work-runtime-p1-resume-20260923-comm000006-fe4da6cd/p1-dispatch/verification-evidence-attempt-1.json`
+`impl-plans/progress/p1-dispatch.md` (implementation attempt 3)
 confirms useful implementation but material remaining gaps:
 
 | Finding | Source evidence | Required completion contract |
 | --- | --- | --- |
 | Bounded director remains unwired | `Sources/RielaCLI/TaskDispatch.swift` rejects `.director`; `Sources/RielaWork/AgentDirector.swift` escalates every `accept`. | Execute one bounded ordinary child and apply decisions against persisted judged-work linkage as below. |
 | Cancellation primitives lack proven live integration | `Sources/RielaWork/WorkStore+Reservation.swift` requires a matching cancelled snapshot; `TaskDispatch.swift` uses generic terminal reconciliation without calling cancellation acknowledgment. | Connect durable requests to running execution and acknowledge the exact reserved session before releasing its fence. Store-only tests do not establish this path. |
-| Reachable callees and selected hosts are not delivered by task dispatch | `TaskDispatch.swift` passes only the root workflow to `WorkflowRequirementResolver`, asks for local capabilities and supplies no workers; `Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift` rejects nonlocal or other-workflow placement. | Resolve reachable callees and execute the selected per-node host/backend through the existing distributed path; no silent local fallback. |
+| Reachable callees and selected hosts are not delivered by task dispatch | `TaskDispatch.swift` now resolves reachable workflow/add-on maps, but still asks for local capabilities and supplies no workers; `Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift` rejects nonlocal or other-workflow placement. | Resolve reachable callees and execute the selected per-node host/backend through the existing distributed path; no silent local fallback. |
 | Replacement examples cover only part of the required behavior | `Tests/RielaCLITests/TaskRuntimeExampleTests.swift` covers acceptance, guard stop and capacity wait, but its director test runs a single ordinary task attempt and inspects recommendation output. | Add real recovery and bounded child application/accounting/escalation evidence before legacy removal. Recommendation JSON alone does not prove director behavior. |
-| Guard coverage still needs end-to-end certification | `TaskDispatch.swift` builds terminal guard input using the current session duration and gate visits; `impl-plans/progress/p1-dispatch.md` leaves cumulative wall-clock and repeated-finding coverage open. | Reinspect guard data flow and prove cumulative budgets, repeated findings, inactivity, ordering and last-admitted-attempt completion under §17.3; do not assume the four reported gaps are exhaustive. |
+| Guard coverage still needs end-to-end certification | `TaskDispatch.swift` now sums exact durable attempt-session durations and supplies gate visits; `TaskDispatcherIntegrationTests.swift` includes cumulative wall-clock coverage. Repeated-finding and inactivity dispatch inputs remain open. | Reinspect guard data flow and prove cumulative budgets, repeated findings, inactivity, ordering and last-admitted-attempt completion under §17.3; do not assume the four reported gaps are exhaustive. |
 
 **Director execution and judged-work acceptance (P1-6d).** Reconcile work and
 persist its evidence before reserving one `.director` attempt. The reservation
@@ -1467,11 +1475,19 @@ Reject removed input fields explicitly; preserve plain task-free workflow runs
 and unrelated specialist/event supervisors, loops and routines. No publication
 occurs between replacement and removal.
 
+The `agentSandbox: .readOnly` field is present in the previously failing
+callee fixture in `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`.
+Attempt-3 progress records a corrected passing rerun; final-source verification
+must establish it again. Historical mutable-registry test failures and the
+truncated XCTest aggregate require test-execution investigation, not a new
+workflow-provenance requirement.
+
 Use the supplied plan's V0–V9 commands and this intake's core gates:
 
 ```bash
 swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'
 rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples
@@ -1496,11 +1512,14 @@ mark to behavioral evidence. Reconcile P1 documentation and plan/progress
 indexes from the accepted tree while preserving unrelated entries. Attribute
 retained changes and prepare an exact P1 file/hunk allowlist before authorized
 commit/push to `origin` / `feat/remaining-impl-plans`; verify published hash.
+Push any checkpoint commit before final git-push so exactly one unpublished
+final commit remains. Require test-integrity review and one adversarial
+implementation review of the final source, with necessary repair verification.
 Historical progress referring to another finalization plan does not expand this
 single-plan input or waive any acceptance gate.
 
 **Reference mapping, questions and author evidence.** Step 1 names
-`../../codex-agent` and establishes it as absent; `test ! -e ../../codex-agent`
+`../../codex-agent`; this step establishes it as absent: `test ! -e ../../codex-agent`
 also exited 0 in this step. No external code-parity claim is made. The
 codex-agent identifiers above map to workflow review provenance, not inspected
 reference code. Cursor invocation/authentication/probing and heartbeat behavior
@@ -1515,7 +1534,7 @@ implementation investigations: cumulative guard coverage, actual distributed
 handoff and live cancellation behavior, and completion of final-source test
 execution. They do not permit broader design or accepting retained code.
 Step 2 inspection, preservation and author-check evidence is recorded in
-`tmp/work-runtime-p1/step2-c1d779f-resumption/verification-evidence.json`.
+`tmp/work-runtime-p1/step2-f46ff788/verification-evidence.json`.
 Only this design document changes; no workflow/prompt/script/skill digest
 refresh is triggered. Author review checks intake/reference mapping, necessary
 scope, explicit data/validation boundaries, recorded questions and WIP

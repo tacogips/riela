@@ -1,11 +1,11 @@
 # Work Runtime P1: Dispatcher, guard and director completion
 
-**Status**: Step 6 implementation in progress; P1-6/7 acceptance and final verification remain incomplete. See `impl-plans/progress/p1-dispatch.md` for this attempt's evidence.
+**Status**: Retained implementation incomplete; Step 4 resumption refresh after accepted Step 3 design. Step 5 plan review and P1-6/7 implementation acceptance remain pending. Historical evidence: `impl-plans/progress/p1-dispatch.md`.
 **Workflow mode**: issue-resolution
-**Issue reference**: Workflow input: Complete remaining Work Runtime P1 dispatcher/director behavior, P1-6a–d and P1-7a–b; no GitHub issue URL/number. Checkpoint: `c1d779f12646e0cc4d76334c21d8d108229e46ee`.
+**Issue reference**: Work Runtime P1-6a–P1-6d and P1-7a–P1-7b; no GitHub issue supplied. Finish retained Work Runtime P1 dispatcher, director, and legacy replacement requirements. Checkpoint: `f46ff788d522b6e53631862253fdcbcf17adfb1a`.
 **Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.7, with behavioral contracts §17.2–17.5; current resumption revision accepted via `comm-000004`.
 **Review decision**: Step 3 accepted via `comm-000004`, `step3-design-review-attempt-1-exec-4`; findings and feedback empty. No Step 5 feedback supplied.
-**Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `comm-000002`, `comm-000003`, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
+**Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `nested-v1-f637160bee4a0e57484a92a8400c09a6a58ec7ccbb82ac72bb5ebee0ca2d68ae`, `dispatch_audit`, `director_audit`, `legacy_audit`; current design acceptance: `comm-000004`, `step3-design-review-attempt-1-exec-4`.
 **Updated**: 2026-09-23
 
 ```json
@@ -307,10 +307,14 @@ it does not waive the internal prerequisite gates below. Supporting reservation,
 guard/director, capability and finalization plans supply reference detail only;
 do not launch or implement them as additional work packages.
 
-Inspected HEAD is `c1d779f12646e0cc4d76334c21d8d108229e46ee` on
+Inspected HEAD is `f46ff788d522b6e53631862253fdcbcf17adfb1a` on
 `feat/remaining-impl-plans`, also the deliberate base branch; supplied upstream
-is `origin/feat/remaining-impl-plans`. Preserve the intake’s 94 retained files
-(50 tracked, 44 untracked) and the accepted Step 2 design edit. These include
+is `origin/feat/remaining-impl-plans`. Preserve the intake’s 93 retained files
+(49 tracked, 44 untracked, zero staged) and the accepted Step 2 design edit.
+Step 4 therefore starts with 50 tracked changes and 44 untracked files; its
+plan edit adds one tracked change. The older 50/44 inventory predates the
+f46ff788 checkpoint; reconcile exact paths/hunks rather than using counts
+as ownership evidence. These include
 dispatch, capability and example code. The CLI still rejects
 `.director` dispatch in `Sources/RielaCLI/TaskDispatch.swift`; the retained
 `AgentDirector.validate` escalates all accept output. Reconcile these concrete
@@ -372,7 +376,10 @@ not repaired through package rediscovery or unrelated workflow implementation.
 After Step 5 accepts, the serial workflow checkpoint gate commits exactly the
 accepted design and this plan before any native implementation/review fanout.
 It preserves the existing index and excludes retained source, tests, progress
-and scratch. This Step 4 neither commits nor certifies implementation. Later
+and scratch. Push that checkpoint before final git-push so exactly one
+unpublished final commit remains. Record the checkpoint hash and publication
+evidence; do not leave checkpoint commits stacked below an unpublished final
+commit. This Step 4 neither commits nor certifies implementation. Later
 final commit/push contains only accepted P1 implementation and necessary docs.
 
 ## Edit integrity and evidence ownership
@@ -607,9 +614,20 @@ Invariant checklist for tests and independent review:
 These tasks complete the retained implementation; they do not restart it or
 certify existing checkmarks. Step 3 accepted this revision with empty findings
 and feedback; no Step 5 revision request was delivered. Preserve the prior
-attempt evidence at
-`tmp/work-runtime-p1-resume-20260923-comm000006-fe4da6cd/p1-dispatch/verification-evidence-attempt-1.json`.
-Use new numbered evidence directories; never overwrite that attempt's logs.
+attempt evidence in `impl-plans/progress/p1-dispatch.md`, including attempt 3
+from `nested-v1-f637160bee4a0e57484a92a8400c09a6a58ec7ccbb82ac72bb5ebee0ca2d68ae`
+and its logs under `tmp/p1-dispatch-step6-attempt3/`. The second workflow run
+ended at `implementation-blocked-output`; neither its findings nor partial
+passing suites certify the implementation or exhaust the remaining paths.
+Use new numbered evidence directories; never overwrite prior logs.
+
+Retained source now resolves reachable workflow/add-on requirements and sums
+wall-clock durations from exact durable attempt sessions. Preserve these changes
+and reverify them rather than reimplementing from the older gap inventory.
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` already supplies
+`agentSandbox: .readOnly` in the previously failing callee fixture. V1 must
+rerun that case and the cumulative wall-clock case on final source; a historical
+passing rerun is not final acceptance.
 
 ### P1-AUDIT and P1-PREREQ-L: data flow beyond the reported gaps
 
@@ -626,6 +644,16 @@ multi-attempt budgets, repeated findings, stable simultaneous-violation order,
 inactivity and successful completion of the last admitted attempt. No new
 attempt may evade budget through human, agent or warning paths. V1/V3 must
 exercise these cases; helper-only guard tests cannot certify dispatch input.
+For repeated findings, use the existing fingerprint identity across real task
+attempts; assert the configured equality threshold persists the violation and
+applies the ordered decision, while replay neither duplicates evidence nor
+counts the same observation again. For inactivity, drive a configured
+heartbeat-capable backend through the live runner with a deterministic clock;
+assert threshold-triggered cancellation is durably acknowledged before any
+replacement admission. Include below-threshold and SDK-exemption cases, and
+assert heartbeat loss alone cannot release the one-live-attempt fence. Route
+signals through existing runner/guard seams; do not add a monitoring service.
+
 
 ### P1-6a: called workflow and selected-host delivery
 
@@ -989,9 +1017,9 @@ build/test/lint result is claimed in Step 4. No unresolved user decision or
 known design defect remains. The current concrete director integration gap is
 an implementation task, not a reason to reopen accepted design.
 
-Author check: `python3 tmp/work-runtime-p1/step4-c1d779f-resumption/self-check.py`.
+Author check: `python3 tmp/work-runtime-p1/step4-f46ff788/self-check.py`.
 Complete logs/final exits and source-preservation evidence are recorded in
-`tmp/work-runtime-p1/step4-c1d779f-resumption/verification-evidence.json`.
+`tmp/work-runtime-p1/step4-f46ff788/verification-evidence.json`.
 This plan's source inspections are not behavioral acceptance. The author
 checks the single-plan DAG, exact scope, file-level tasks, accepted §17.7 mapping,
 evidence commands, review/finalization gates and preservation of all prior work.

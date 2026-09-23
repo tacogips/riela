@@ -93,5 +93,14 @@ being mixed into this documentation-only integration:
   `impl-plans/active/tauri-dashboard-reintegration-20260921-dispatch.json`.
   No `Sources/`, `Tests/`, `web/`, `scripts/`, `.github/`, Cargo, or
   `src-tauri` path differs from current main.
-- The remaining publication action is a non-force push of only
-  `integrate/tauri-dashboard-app`.
+- The remaining publication action at this checkpoint was a non-force push of
+  only `integrate/tauri-dashboard-app`.
+
+## 2026-09-23 main rebase-point audit
+
+- Merged main at `9ab2e22936ee7a326c3b61ddb6667e54141e9b8b` into the clean
+  integration branch without conflicts. This retained all intervening main
+  changes, including Riela 0.1.49.
+- `git diff --name-only main...HEAD` still contains exactly the 11 historical
+  documentation/plan paths listed above. No runtime, test, web, script, or
+  release file is changed by integrating this branch.

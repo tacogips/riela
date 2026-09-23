@@ -596,11 +596,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       requestVariables: request.variables,
       resolvedInputPayload: resolvedInput.payload
     )
-    let prompts = composedPrompts(
+    let prompts = try composedPromptsWithFinalizationEvidence(
       workflow: request.workflow,
       step: step,
       payload: executionPayload,
-      variables: mergedVariables
+      variables: mergedVariables,
+      session: session
     )
     if let providerError = validateAgentNodePayload(executionPayload, path: "nodes.\(step.nodeId)")
       .first(where: { $0.severity == .error }) {

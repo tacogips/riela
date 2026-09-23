@@ -3,6 +3,57 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowGitFinalizationEvidenceTests: XCTestCase {
+  func testFinalOutputPromptReceivesLatestAcceptedPredecessorEvidence() throws {
+    var session = makeContext().session
+    let now = Date(timeIntervalSince1970: 1_700_000_003)
+    session.executions.append(execution(
+      id: "first-review", stepId: "step3-design-review",
+      payload: ["decision": .string("needs-revision")], now: now
+    ))
+    session.executions.append(execution(
+      id: "latest-review", stepId: "step3-design-review",
+      payload: ["decision": .string("accepted")], now: now
+    ))
+    session.executions.append(WorkflowStepExecution(
+      executionId: "failed-push", stepId: "step11-git-push", nodeId: "step11-git-push",
+      attempt: 2, status: .failed, createdAt: now, updatedAt: now
+    ))
+
+    let json = try DeterministicWorkflowRunner.gitFinalizationPromptEvidence(session: session)
+    let evidence = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]])
+    XCTAssertEqual(evidence.filter { $0["stepId"] as? String == "step3-design-review" }.count, 1)
+    let review = try XCTUnwrap(evidence.first { $0["stepId"] as? String == "step3-design-review" })
+    XCTAssertEqual((review["payload"] as? [String: String])?["decision"], "accepted")
+    XCTAssertFalse(evidence.contains { $0["stepId"] as? String == "step11-git-push" })
+    let commit = try XCTUnwrap(evidence.first { $0["stepId"] as? String == "step10-git-commit" })
+    XCTAssertEqual(((commit["payload"] as? [String: Any])?["git"] as? [String: Any])?["committedFiles"] as? [String], ["tracked.txt"])
+  }
+
+  func testProtectedFinalPromptIncludesAcceptedHistoryButOtherStepsDoNot() throws {
+    let workflow = WorkflowDefinition(
+      workflowId: "codex-design-and-implement-review-loop",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 1),
+      entryStepId: "workflow-output", nodeRegistry: [], steps: [], nodes: []
+    )
+    let payload = AgentNodePayload(id: "workflow-output", model: "test", promptTemplate: "Publish result")
+    let runner = DeterministicWorkflowRunner()
+    let session = makeContext().session
+    let outputStep = WorkflowStepRef(id: "workflow-output", nodeId: "workflow-output")
+    let final = try runner.composedPromptsWithFinalizationEvidence(
+      workflow: workflow, step: outputStep, payload: payload, variables: [:], session: session
+    )
+    XCTAssertTrue(final.promptText.contains("Runtime-accepted predecessor step outputs"))
+    XCTAssertTrue(final.promptText.contains("test: finalization evidence"))
+    XCTAssertTrue(final.resumedPromptText.contains("test: finalization evidence"))
+
+    let other = try runner.composedPromptsWithFinalizationEvidence(
+      workflow: workflow,
+      step: WorkflowStepRef(id: "other-step", nodeId: "workflow-output"),
+      payload: payload, variables: [:], session: session
+    )
+    XCTAssertFalse(other.promptText.contains("Runtime-accepted predecessor step outputs"))
+  }
+
   func testParallelImplementationRequiresLatestCombinedReviewAndBaseIntegration() throws {
     var context = makeContext()
     context.session.executions.removeAll { $0.stepId == "step6-implement" }

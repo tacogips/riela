@@ -1,20 +1,21 @@
-# Work Runtime P1: P1-6b task run and read-only dry-run
+# Work Runtime P1: P1-6c durable decisions and live cancellation
 
-**Status**: P1-6b accepted and published at `7d8fc121a4f4469de7a40495282b53c9d813b8d4` after source-matched host 198/198, independent reviews, and completed workflow finalization. This plan stays active for P1-6c/d, P1-7a/b and parent P1.
+**Status**: Design accepted; P1-6c plan proposed for Step 5 review. Implementation and publication pending.
 **Workflow mode**: issue-resolution
-**Issue reference**: Work Runtime P1-6b; no GitHub issue number supplied.
-**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `5fe60591dc3335a3f306ccfd5297de7a61f2e2d9a1c857888e8d8618e5e9be39` (evidence-only refresh; accepted behavior unchanged).
-**Review decision**: Step 3 accepted, no findings or feedback, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
-**Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `step1-issue-intake`, `comm-000002`, `step2-design-doc-update`, `comm-000003`, `step3-design-review`, `comm-000004`.
+**Issue reference**: Work Runtime P1-6c; no GitHub issue URL or number supplied.
+**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.2 and §17.5 “P1-6c bounded amendment (2026-09-24)”.
+**Design SHA256**: `32d6976cdffe22488f77971c32a70f616145cb286595fc73cd2f3c9f0caefadf`.
+**Review decision**: Step 3 accepted with no findings, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
+**Codex-agent references**: `gpt-6-astra` single design/plan author and final integration reviewer; `gpt-6-sol` implementation, serial reconciliation, independent test-integrity and adversarial review. Execution `codex-design-and-implement-review-loop-session-1`.
 **Updated**: 2026-09-24
 
-The P1-6b contract below is now a completed-slice record, not authorization to
-redispatch it. The next invocation must review and re-scope this active plan for
-P1-6c before implementation. The historical parent material at the end is reference-only:
-its broad task list, old baseline, verification and completion requirements do
-not authorize work beyond P1-6b. Stable plan ID and progress-log ownership are
-preserved. One implementation owner runs the coupled tasks serially; no second
-plan or implementation fanout is needed.
+This is the only current executable contract in this file. The historical
+P1-6b and parent material below is reference-only and does not authorize work.
+Preserve P1-6b publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4` and receipt
+baseline `ae7cafe7577fda5037dee105e894804c88626f43`. P1-6d, P1-7a/b and parent P1
+remain active. One implementation owner is necessary because store, runner,
+signal and selected-host acknowledgment form one coupled safety contract;
+there is no independent implementation plan to fan out.
 
 ```json
 {
@@ -22,87 +23,425 @@ plan or implementation fanout is needed.
   "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
   "dependsOn": [],
   "writePaths": [
-    "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaCLI/TaskCommands.swift",
     "Sources/RielaCLI/TaskDispatch.swift",
-    "Sources/RielaSQLite/SQLiteDatabase.swift",
-    "Sources/RielaWork/TaskDispatcher.swift",
-    "Sources/RielaWork/WorkStore.swift",
+    "Sources/RielaCLI/TaskCommandModels.swift",
+    "Sources/RielaCLI/EntryPoint.swift",
+    "Sources/RielaCLI/CLISignalCancellation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaCore/DistributedNodeExecution.swift",
+    "Sources/RielaCore/DistributedJobController.swift",
+    "Sources/RielaCore/DistributedWorkerModels.swift",
+    "Sources/RielaServer/DistributedWorkerLoop.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+    "Sources/RielaServer/DistributedWorkerProtocol.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaCLITests/TaskCommandMutationTests.swift",
     "Tests/RielaCLITests/TaskCommandParsingTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
-    "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
-    "Tests/RielaCLITests/TaskRunResultTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+    "Tests/RielaCLITests/DistributedProcessCancellationTests.swift",
+    "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
+    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+Finalization.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+    "README.md",
     "design-docs/specs/design-work-runtime-consolidation.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
     "impl-plans/progress/p1-dispatch.md"
   ],
   "sharedPaths": [
-    "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaCLI/TaskCommands.swift",
     "Sources/RielaCLI/TaskDispatch.swift",
-    "Sources/RielaSQLite/SQLiteDatabase.swift",
-    "Sources/RielaWork/TaskDispatcher.swift",
-    "Sources/RielaWork/WorkStore.swift",
+    "Sources/RielaCLI/TaskCommandModels.swift",
+    "Sources/RielaCLI/EntryPoint.swift",
+    "Sources/RielaCLI/CLISignalCancellation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaCore/DistributedNodeExecution.swift",
+    "Sources/RielaCore/DistributedJobController.swift",
+    "Sources/RielaCore/DistributedWorkerModels.swift",
+    "Sources/RielaServer/DistributedWorkerLoop.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+    "Sources/RielaServer/DistributedWorkerProtocol.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaCLITests/TaskCommandMutationTests.swift",
     "Tests/RielaCLITests/TaskCommandParsingTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
-    "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
-    "Tests/RielaCLITests/TaskRunResultTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+    "Tests/RielaCLITests/DistributedProcessCancellationTests.swift",
+    "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
+    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+Finalization.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+    "README.md",
     "design-docs/specs/design-work-runtime-consolidation.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
     "impl-plans/progress/p1-dispatch.md"
   ],
   "progressLog": "impl-plans/progress/p1-dispatch.md",
   "taskIds": [
-    "P1-6b-audit",
-    "P1-6b-results",
-    "P1-6b-readonly",
-    "P1-6b-verification",
-    "P1-6b-finalization"
+    "P1-6c-audit",
+    "P1-6c-store",
+    "P1-6c-remote",
+    "P1-6c-live",
+    "P1-6c-regressions",
+    "P1-6c-integrity",
+    "P1-6c-adversarial",
+    "P1-6c-reconcile",
+    "P1-6c-integration",
+    "P1-6c-finalize"
   ],
   "taskDependencies": {
-    "P1-6b-audit": [],
-    "P1-6b-results": [
-      "P1-6b-audit"
+    "P1-6c-audit": [],
+    "P1-6c-store": [
+      "P1-6c-audit"
     ],
-    "P1-6b-readonly": [
-      "P1-6b-audit"
+    "P1-6c-remote": [
+      "P1-6c-store"
     ],
-    "P1-6b-verification": [
-      "P1-6b-results",
-      "P1-6b-readonly"
+    "P1-6c-live": [
+      "P1-6c-remote"
     ],
-    "P1-6b-finalization": [
-      "P1-6b-verification"
+    "P1-6c-regressions": [
+      "P1-6c-live"
+    ],
+    "P1-6c-integrity": [
+      "P1-6c-regressions"
+    ],
+    "P1-6c-adversarial": [
+      "P1-6c-regressions"
+    ],
+    "P1-6c-reconcile": [
+      "P1-6c-integrity",
+      "P1-6c-adversarial"
+    ],
+    "P1-6c-integration": [
+      "P1-6c-reconcile"
+    ],
+    "P1-6c-finalize": [
+      "P1-6c-integration"
     ]
   },
   "dependencyMode": "single-plan-ordered-internal-gates",
-  "acceptedPrerequisite": {
-    "taskId": "P1-6a",
-    "commit": "2f10916a14501af68fd7e7f63cb91f244a343f8c"
+  "acceptedPrerequisites": {
+    "P1-6a": "2f10916a14501af68fd7e7f63cb91f244a343f8c",
+    "P1-6b": "7d8fc121a4f4469de7a40495282b53c9d813b8d4"
   },
   "verificationCommands": [
-    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests|DecisionApplierStoreTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedProcessCancellationTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'",
-    "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6b/changed-swift-files.nul",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaCLITests|RielaWorkTests|RielaCoreTests|RielaServerTests'",
+    "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6c/changed-swift-files.nul",
     "git diff --check",
     "git diff --cached --check"
   ],
-  "evidenceDirectory": "tmp/work-runtime-p1/p1-6b/",
-  "verificationPolicy": "Reuse source-matched completed gates. Run affected build/test/lint commands only after code changes or a material evidence gap; always recheck hashes and diffs.",
-  "hostAggregateCommand": "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'",
-  "hostAggregateEnvironment": {
-    "CLANG_MODULE_CACHE_PATH": "tmp/work-runtime-p1-6b-host-final/module-cache",
-    "SWIFTPM_MODULECACHE_OVERRIDE": "tmp/work-runtime-p1-6b-host-final/module-cache"
-  },
-  "hostEvidencePath": "tmp/work-runtime-p1-6b-host-final/evidence.json",
-  "priorEvidencePath": "tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/attempt-1/verification-evidence-final-source-v2.json"
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-6c/"
 }
 ```
 
-## Current P1-6b executable contract
+## Current P1-6c executable contract
+
+### Intent, boundaries and invariants
+
+Complete actual task cancellation, not just request storage: human cancel/reject,
+guard stop/replacement and Ctrl-C must commit the shared decision before
+interrupting the exact local or selected-host execution. Reuse the WorkStore
+applier, reservation fence, workflow persistence and authenticated worker path.
+Requests from another CLI process must reach the running owner without output
+or heartbeat dependence. The runtime-supplied workflow input and provenance
+are authoritative; registry rediscovery is not a task.
+
+Non-goals: director execution, legacy auto-improve removal, later examples,
+new decision storage or scheduler, new dependencies, generalized signaling or
+persistence frameworks, broad formatting, unrelated baseline repair, main merge,
+release, worktrees or private branches. Preserve Monja and unrelated work.
+Codex references map to agent roles, not product behavior; no Cursor adapter or
+reference-repository comparison is required.
+
+Invariant sequence: durable request -> interruption -> proven owned execution
+stop -> exact reserved cancelled snapshot -> atomic store acknowledgment ->
+optional one-time replacement reservation. Generic reconcile, caller outcomes,
+HTTP cancellation acceptance, expired leases and missing heartbeats cannot
+substitute for any boundary. Pre-authorization cancellation prevents launch;
+authorized uncertainty remains fenced. Matching success or non-cancelled failure
+cannot acknowledge cancellation and must remain an explicit fenced conflict.
+No stale token, duplicated evidence/usage, replacement or decision is permitted.
+
+### Ownership and evidence safety
+
+Step 5 acceptance precedes the workflow's serial exact-file design/plan checkpoint
+commit, which must occur before native implementation/review fanout. Step 4
+itself does not commit an unreviewed plan. Record checkpoint hash and changed
+file list; retain baseline and accepted P1-6b evidence separately.
+
+All writePaths are exclusive to the single implementation owner; listed files
+are candidates, not a requirement to edit every file. Shared docs, README,
+indexes, lockfile generation and finalization are serial-only. Do not change a
+lockfile or index unless necessary and explicitly recorded by reconciliation.
+No concurrent Git operations. Reviewers are read-only and write evidence only
+under their own `tmp/work-runtime-p1/p1-6c/reviews/<role>/` directory.
+
+Before each edit, fresh-read the file, hash its current bytes and save an
+immutable preimage plus intended change, requirement and owner under
+`tmp/work-runtime-p1/p1-6c/intents/<unique-edit-id>/`. Recheck the pre-hash just
+before writing; drift means stop that edit and reconcile, never overwrite.
+Record postimage/hash immediately. For new files record nonexistence first.
+At the review join compare current files to owner/reviewer manifests and all
+accepted intents; serially restore missing behavior, then rerun affected checks
+and reviews against repaired hashes. Never reset unrelated changes.
+
+Only this plan's owner appends `impl-plans/progress/p1-dispatch.md`, recording
+workflow/communication IDs, task IDs, exact edited paths, hashes, complete log
+paths, exit codes, counts, review decisions, blockers and next work. Preserve
+historical entries and P1-6b hashes. Do not mark parent/later slices complete.
+
+### Tasks, file-level deliverables and dependencies
+
+- [ ] **P1-6c-audit**: Fresh-read accepted design, current source/tests, progress
+  and actual git status. Inventory parsing, applier replay, authorization,
+  acknowledgment and pending reservation behavior before changing code. Inspect
+  `EntryPoint.swift` (currently cancels runTask directly),
+  `WorkflowRunCommand+TaskReservation.swift` (admission),
+  `DistributedNodeExecution.swift` (cancel request then return), and
+  `DistributedJobController.swift` (cancel status alone is not worker-stop proof).
+  Record signatures and test gaps. These concrete seams justify the additional
+  exact paths in metadata; do not reopen P1-6a/b without a demonstrated defect.
+- [ ] **P1-6c-store** after audit: In `WorkStore+Decisions.swift` and
+  `WorkStore+Reservation.swift`, expose only the narrow pending/acknowledged
+  request read needed by the owner, and repair demonstrated transaction/replay
+  gaps. Preserve decision/version validation, request-before-signal ordering,
+  authorization/node-start guards and generic-reconcile rejection. Acknowledge
+  only canonical exact cancelled snapshots; atomically update attempt, lease,
+  task and acknowledgment. Reopen recognizes already committed acknowledgment
+  without applying it twice. Keep pending replacement consumption in the existing
+  reservation transaction. Extend the three Work test files listed above.
+- [ ] **P1-6c-remote** after store: In `DistributedNodeExecution.swift`,
+  `DistributedJobController.swift`, `DistributedWorkerModels.swift`,
+  `DistributedWorkerLoop.swift`, `DistributedWorkerHTTPRouter.swift` and only
+  if needed `DistributedWorkerProtocol.swift`, carry proof of worker stop using
+  the existing authenticated worker completion route and durable job record.
+  Controller cancellation intent/status alone is insufficient. Retain the exact
+  job, lease token, worker incarnation and task-session attachment binding;
+  acknowledge only after the worker has cancelled and joined its executor/process
+  tree. A queued job proven never claimed may establish nonexecution atomically.
+  A leased job needs worker acknowledgment, including after lease expiry; expired
+  or missing heartbeat alone cannot establish it. Reject foreign/stale worker
+  proof and late successful results. Preserve cancelled-job result semantics;
+  use a minimal additive optional acknowledgment field if required, with absent
+  legacy data meaning unacknowledged. Do not add a parallel transport or store.
+  The task-backed caller awaits that proof before canonical cancellation
+  persistence; failed/lost transport keeps the attempt fenced. Bound individual
+  waits and surface uncertainty without releasing the fence. Preserve plain
+  distributed cancellation and worker reuse; add Core controller and Server HTTP
+  tests plus the existing distributed process regression.
+- [ ] **P1-6c-live** after remote: Connect `TaskDispatch.swift` and
+  `WorkflowRunCommand+TaskReservation.swift` to a run-owned bounded poll of exact
+  durable pending requests. Use `TaskRunCancellation.swift` only as a cohesive
+  helper for this lifetime, not a general service. Observe before admission and
+  throughout running, interrupt once per request while allowing safe retry,
+  and cancel/join the observer on every exit. In `TaskCommands.swift` preserve
+  exactly-one-action and required identity/version parsing; distinguish request
+  acceptance from task completion in existing output (`TaskCommandModels.swift`
+  only if necessary). Route guard actions through the same applier. In
+  `EntryPoint.swift`/`CLISignalCancellation.swift`, route task-backed Ctrl-C to
+  the owner so the stable decision commits before cancelling execution; handle
+  signals before reservation and repeated signals without a stale launch or
+  duplicate decision. Other command cancellation remains compatible. Do not
+  propagate parent cancellation to execution before the durable write finishes.
+  In `WorkflowRunCommand.swift`, `WorkflowRunLivePersistence.swift` and
+  `WorkflowRunCommand+SupervisionPersistence.swift`, preserve reserved identity
+  and await cancellation-safe terminal persistence. A prelaunch-cancelled
+  reservation records its own cancelled snapshot without launching work.
+  `TaskDispatch.swift` checks pending/acknowledged cancellation before generic
+  reconciliation or completion/guard evaluation, projects evidence idempotently,
+  and reserves a pending replacement once only after acknowledgment. Return
+  explicit pending/error for persistence/stop uncertainty, retaining IDs/fence.
+  `WorkflowRunCommand.swift` is already 998 lines: keep new cancellation logic
+  in the cohesive helper; if the file exceeds 1000, move only existing finalization
+  responsibility to `WorkflowRunCommand+Finalization.swift`, preserving access
+  boundaries. No broad file splitting is authorized.
+- [ ] **P1-6c-regressions** after live: Complete the matrix below. Keep new live
+  tests in `TaskCancellationIntegrationTests.swift` and its fixtures file to
+  avoid enlarging the existing integration suite unnecessarily. Extend existing
+  selected-host fixtures only where needed. Run all commands below on final
+  implementation source, produce a source/test manifest, and record every
+  failure honestly. Store-only tests cannot close this gate.
+- [ ] **P1-6c-integrity** and **P1-6c-adversarial** after regressions: Independent
+  Sol read-only reviews may run concurrently. Integrity verifies test selection,
+  positive counts, meaningful ordering/process assertions, final-source hashes,
+  actual terminal exits and complete logs. Adversarial review exercises material
+  races/failure cases against design; no style-only or speculative scope.
+- [ ] **P1-6c-reconcile** after both reviews: Single Sol owner repairs all high/mid
+  findings and shared-file drift, preserves accepted changes, reruns affected
+  focused/aggregate/lint gates and obtains renewed independent acceptance where
+  repairs invalidate review. Shared indexes and documentation edits are serial.
+- [ ] **P1-6c-integration** after reconciliation: Independent Astra review accepts
+  the exact combined tree, evidence and accepted design with no material open
+  finding. Any repair repeats affected verification/review before acceptance.
+- [ ] **P1-6c-finalize** after integration: Serial docs refresh in design, this
+  plan, progress and README's directly affected task decision/cancellation usage.
+  Record exact changed-file allowlist and accepted hashes; workflow finalization
+  commits and non-force pushes that exact accepted result to
+  `origin/feat/remaining-impl-plans`. Record commit/push receipts. Keep parent
+  plan active; do not archive it or close P1-6d/P1-7a/b. No main merge or release.
+
+### Required regression matrix
+
+| Requirement | Files and observable proof |
+| --- | --- |
+| CLI validation/replay | `TaskCommandParsingTests.swift`, `TaskCommandMutationTests.swift`, `DecisionApplierStoreTests.swift`: absent/conflicting actions, blank principal/ID/reason, negative/missing version, step without rerun, valid actions; rejected inputs leave rows/version unchanged; identical replay returns original result; conflicting replay/stale new decision rejects. |
+| Prelaunch and authorization race | Work reservation/cancellation tests plus `TaskCancellationIntegrationTests.swift`: deterministic barriers before authorization and node start; no worker/process launch if request wins; exact reserved cancellation snapshot; authorized uncertainty stays fenced. |
+| Live local and separate-process decisions | New CLI live tests: real owned command/process blocked at a deterministic fixture barrier, request from another store connection/process using CLI decision path, durable row observed before signal, process exit observed before acknowledgment, IDs match reservation. Cover cancel, reject, guard stop and replacement. |
+| Ctrl-C | New CLI live tests drive the actual EntryPoint signal path in an owned subprocess; prove durable request before interruption, repeated signals stable, pre-reservation signal does not launch work, ordinary non-task command cancellation unchanged. |
+| Live selected host | CLI selected-host fixtures, `DistributedProcessCancellationTests.swift`, `DistributedWorkerHTTPTests.swift`, `DistributedJobControllerTests.swift`: authenticated chosen worker actually runs/stops, exact session/job linkage, no local fallback, no acknowledgment merely on HTTP acceptance, delayed worker-stop proof holds fence, stale lease/incarnation proof rejected. |
+| Persistence and acknowledgment loss | Work and CLI live tests inject failure at terminal persistence and after snapshot/before acknowledgment; reopen store and reconcile exact snapshot; after committed acknowledgment simulate lost response and prove no duplicate transition, evidence, usage or replacement. |
+| Negative terminal evidence | Wrong session, created/nonterminal snapshot, success and non-cancelled failure cannot release pending fence; generic reconcile blocked. No rewriting an unrelated outcome as cancellation. |
+| Replacement and failure uncertainty | Pause between acknowledgment and reservation, reopen/replay twice, assert one consumed request/new session, no stale token launch or duplicate accounting; lease expiry, missing heartbeat, transport loss and inaccessible runner retain fence. |
+
+Use deterministic readiness/barrier signals and bounded deadlines, not timing-only
+sleep assertions. Every process/worker/server fixture is owned and awaited in
+teardown even after failure. Capture live execution counts and exact session IDs;
+mock DTOs or fabricated snapshots establish only store-level invariants.
+
+### Verification commands and required evidence
+
+Run commands in the foreground. Record each exact argv/environment, complete log,
+terminal exit code, selected suites/counts and before/after source/test SHA256
+under `tmp/work-runtime-p1/p1-6c/`; retain/poll any tool session to terminal exit.
+Do not use detached shell jobs. A logging wrapper under that directory must
+propagate the child exit status, never just tee's status. Planning checks do not
+substitute for these implementation gates.
+
+**V0** — log `tmp/work-runtime-p1/p1-6c/V0.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+```
+
+**V1** — log `tmp/work-runtime-p1/p1-6c/V1.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+```
+
+**V2** — log `tmp/work-runtime-p1/p1-6c/V2.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'
+```
+
+**V11** — log `tmp/work-runtime-p1/p1-6c/V11.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+```
+
+**decisions** — log `tmp/work-runtime-p1/p1-6c/decisions.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests|DecisionApplierStoreTests'
+```
+
+**live** — log `tmp/work-runtime-p1/p1-6c/live.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedProcessCancellationTests'
+```
+
+**compatibility** — log `tmp/work-runtime-p1/p1-6c/compatibility.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'
+```
+
+**aggregate** — log `tmp/work-runtime-p1/p1-6c/aggregate.log`
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaCLITests|RielaWorkTests|RielaCoreTests|RielaServerTests'
+```
+
+**lint** — log `tmp/work-runtime-p1/p1-6c/lint.log`
+
+```bash
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6c/changed-swift-files.nul
+```
+
+**diff** — log `tmp/work-runtime-p1/p1-6c/diff.log`
+
+```bash
+git diff --check
+```
+
+**staged-diff** — log `tmp/work-runtime-p1/p1-6c/staged-diff.log`
+
+```bash
+git diff --cached --check
+```
+
+V0 is compile/typecheck. V1 proves task behavior; V2 covers reservation,
+cancellation and budgets; V11 covers selected-host/controller/HTTP behavior.
+The decisions and live commands explicitly select suites omitted by V1/V2/V11.
+Compatibility protects accepted read-only dry-run and result behavior. Aggregate
+covers affected CLI, Work, Core and Server targets including plain workflows.
+Require positive counts for every named suite; absence is a failure. Add exact
+filters for any extra suite introduced by a necessary seam before claiming
+coverage. No web/UI changed, so browser/AppKit checks are not required.
+
+Before lint generate `changed-swift-files.nul` from the exact task-owned changed
+Swift allowlist, including new untracked Swift files; validate every path exists
+and reject an empty list. Do not select only `git diff` tracked files or include
+unrelated changes. Record that list in the evidence manifest. Strict changed-file
+SwiftLint must pass; retain repository baseline exceptions separately.
+
+If the exact scratch command fails due to module-cache permissions, record its
+failure and retry with absolute repo-local `CLANG_MODULE_CACHE_PATH` and
+`SWIFTPM_MODULECACHE_OVERRIDE` under the evidence directory, recording full env.
+If listeners cannot run, retain the failed log and identify the exact bounded
+environment cause. Run the same filters on a capable host against matching full
+source/test manifests before and after execution; record the actual host argv,
+environment, logs and exits. Do not treat P1-6b host evidence or a reduced filter
+as P1-6c acceptance. Unavailable host evidence remains an explicit verification
+gap. No blanket test skipping or unrelated baseline repair. Swift/package files
+are not changed in this plan, so package digest refresh is unnecessary unless a
+subsequently accepted edit actually changes a packaged workflow/prompt/skill.
+
+### Completion criteria
+
+All matrix behaviors have passing final-source evidence, or bounded environment
+failures are recorded alongside passing source-matched capable-host evidence.
+Strict lint and compile pass; independent integrity/adversarial/Astra decisions
+accept the exact tree without high/mid findings. Documentation accurately reports
+request acceptance versus terminal acknowledgment. Progress records review/log/
+hash evidence and exact committed/pushed files. Only then mark P1-6c complete;
+P1-6d, P1-7a/b and parent P1 remain open. Do not reuse the historical P1-6b task
+checkboxes, hash comparison or host receipt as new-slice completion evidence.
+
+---
+
+## Historical P1-6b completed contract
 
 ### Intent, context, and non-goals
 

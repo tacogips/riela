@@ -1113,6 +1113,120 @@ SQLite WAL/SHM sidecars, host-profile configuration and other affected files.
 An absent store must remain absent. Corrupt host-profile input is diagnostic
 only: do not quarantine, rewrite, or repair it during dry-run.
 
+#### P1-6c bounded amendment (2026-09-24)
+
+**Scope and status.** Issue `Work Runtime P1-6c` (no GitHub issue URL or
+number supplied), mode `issue-resolution`, intake `comm-000002` from
+`step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
+This amendment makes §17.2 and the later “Live cancellation (P1-6c)” contract
+executable; it is proposed for independent design review, not implementation
+acceptance. Preserve P1-6a/b behavior and the P1-6b accepted publication
+`7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
+`impl-plans/progress/p1-dispatch.md`; intake baseline is `ae7cafe` on
+`feat/remaining-impl-plans`. P1-6d, P1-7a/b and parent P1 remain open.
+
+**Existing boundaries.** `Sources/RielaCLI/TaskCommands.swift` owns human
+parsing/application; `TaskDispatch.swift` owns reserved-session orchestration
+and terminal reconciliation. `Sources/RielaWork/WorkStore+Decisions.swift` and
+`WorkStore+Reservation.swift` remain the sole durable decision, cancellation,
+launch-authorization and replacement boundaries. The existing workflow runner,
+live/final persistence and selected-host cancellation transport own execution
+interruption. No second decision store, replacement scheduler, transport or
+framework is introduced. Current store guards and matching-snapshot checks are
+present, but `TaskDispatch.swift` still calls generic `reconcileAttempt` after
+running: this is the live integration gap, not proof that cancellation works.
+
+**Human command contract.** `task decide` accepts exactly one of `--accept`,
+`--reject <reason>`, `--rerun [step-id]` or `--cancel`, with nonempty
+`--principal`, explicit `--expected-version`, and nonempty `--decision-id`.
+Reject an empty rejection reason, an optional step without rerun, conflicting
+or absent actions, and invalid version/identity input before mutation. The
+shared applier validates current version, task/attempt and causal evidence;
+accept cannot waive completion requirements. Identical decision replay returns
+the original recorded application; changed intent with the same identity
+conflicts. A successful application reports request acceptance, not proof that
+execution has stopped or the task is terminal.
+
+**Durable request to live execution.** Human cancel/reject, guard
+stop/replacement and task-backed Ctrl-C enter the same shared applier. Commit
+the decision and cancellation request (and pending replacement when applicable)
+before sending an interruption signal. A write failure is visible and does not
+authorize a signal or fence release. The task-run owner observes durable pending
+requests for its exact task/attempt/session while execution is active, including
+requests written by a separate `task decide` process; an in-memory callback
+alone is insufficient. Use a bounded polling observation in the existing run
+lifetime, read once before authorization and again across launch/start, and
+stop and join observation when that owned run exits. Polling must not depend
+on workflow output or heartbeat arrival. Signals are retryable consequences
+of the stored request, never fresh decisions on each poll. Ctrl-C first commits
+its stable decision in a cancellation-safe bounded operation, then cancels the
+owned runner; preserve the existing behavior of plain, non-task workflows.
+
+| Boundary or race | Required result |
+| --- | --- |
+| Request commits before authorization | Authorization and node-start checks reject it. The owning runner persists cancellation for the reserved session without launching work, then uses acknowledgment; no synthetic second session. |
+| Authorization/start races with request | Store checks serialize authorization with the durable request. If authorization wins, treat execution as potentially live, interrupt the exact owned execution and retain its fence. |
+| Local or selected-host work is running | Interrupt the local child or existing authenticated selected-host job through the current runner path. Preserve reserved session and selected placement; no local fallback or replacement dispatch. |
+| Selected-host cancellation is sent or transport fails | Sending, HTTP acceptance, lease loss or heartbeat loss is not terminal proof. Existing worker completion must establish that the owned work stopped before the runner persists the cancelled result. Uncertainty remains fenced and visible. |
+| Terminal persistence fails or acknowledgment is lost | Keep the request and fence. Retry/reopen reads the canonical reserved snapshot and stored acknowledgment; it never substitutes an in-memory result. |
+| A completed or non-cancellation failed snapshot races with the request | It cannot acknowledge cancellation or pass generic reconciliation while cancellation is pending. Expose the conflict for explicit reconciliation; never relabel unrelated terminal evidence as cancellation. |
+
+**Persistence, acknowledgment and replay.**
+`Sources/RielaCLI/WorkflowRunCommand.swift`, `WorkflowRunLivePersistence.swift`
+and `WorkflowRunCommand+SupervisionPersistence.swift` must preserve the exact
+reserved identity through cancellation and durably persist the final cancelled
+snapshot even when the execution task is cancelled. Keep bounded terminal
+persistence owned and awaited; no orphan persistence task. Once the runner has
+stopped and persistence has succeeded, dispatch projects canonical evidence and
+routes pending cancellation through `acknowledgeAttemptCancellation`, never
+ordinary completion/guard evaluation. The store checks the cancellation's
+original decision/task/attempt plus the exact reserved snapshot with failed
+status, cancelled failure kind and matching canonical outcome. Acknowledgment,
+attempt reconciliation, lease release and task transition commit atomically:
+cancel becomes cancelled, reject/stop becomes failed, rerun/recover becomes
+scheduled. Generic reconciliation must continue rejecting pending requests.
+
+Reopening after a crash before acknowledgment repeats the canonical check;
+after acknowledgment it recognizes the recorded result without applying the
+transition, evidence or usage twice. Do not require the low-level acknowledgment
+API to accept a second mutation: the orchestration may read its durable result.
+Consume a pending replacement only through the existing reservation transaction
+after acknowledgment, once, with a new exact session and the original decision
+linkage. Crash/replay between acknowledgment and reservation cannot lose the
+request, duplicate accounting or authorize an old launch token. An unreachable
+runner or uncertain terminal outcome remains an explicit fenced error/pending
+state; no timeout, lease expiry, heartbeat loss or generic cleanup clears it.
+
+**Verification and handoff.** The next plan updates
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` for P1-6c,
+retaining the completed P1-6b evidence. Tests in
+`Tests/RielaWorkTests/WorkStoreCancellationTests.swift`,
+`WorkStoreReservationTests.swift`, `DecisionApplierStoreTests.swift`,
+`Tests/RielaCLITests/TaskCommandMutationTests.swift`,
+`TaskDispatcherIntegrationTests.swift`, and
+`Tests/RielaServerTests/DistributedWorkerHTTPTests.swift` must cover the table
+above with deterministic barriers at authorization, execution, persistence and
+acknowledgment. Assert request-before-signal ordering, real child interruption
+locally and on the selected worker, exact durable session/outcome, held fence,
+no premature task terminal state, stable replay and one replacement/accounting.
+Store-only or manually fabricated terminal snapshots cannot substitute for the
+live local and selected-host tests. Retain the accepted V1/V2/V11 commands;
+explicitly include `DecisionApplierStoreTests` and command parsing tests, plus
+affected CLI, Work, Core and Server aggregate suites and strict changed-file
+SwiftLint. Final-source execution evidence records exact commands, full log
+paths, terminal exit codes and source/test hashes under repository-root `tmp/`.
+A bounded environment failure remains a failed run and must be separated from
+source-matched capable-host evidence; P1-6b evidence cannot certify new code.
+
+`gpt-6-astra` is the single design author, single plan author and final
+integration reviewer; `gpt-6-sol` owns implementation, serial reconciliation,
+independent test-integrity and adversarial reviews. These references describe
+workflow roles, not a Codex product behavior reference: no Cursor CLI adapter
+or Codex-reference divergence is required. No unresolved user decision is
+needed for this amendment. Independent design/plan and implementation review
+remain pending. Only accepted exact files may be committed and non-force
+pushed; no main merge, release or closure of later slices belongs to P1-6c.
+
 #### P1-6b bounded continuation (2026-09-24)
 
 This continuation addresses **Work Runtime P1-6b** (no GitHub issue number

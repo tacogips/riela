@@ -1,6 +1,8 @@
 # Operation-mode gateway SDK add-ons and schema discovery
 
-Status: revised for Step 3 review; acceptance blocked by dependency finding D1 below.
+Status: revised for independent Step 3 review; historical dependency finding D1
+is resolved by the operator-approved Google Documents v0.3.3 decision. Design
+acceptance is pending; no implementation plan or Swift implementation is authored here.
 The dependency decision is recorded in
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`
 
@@ -41,10 +43,13 @@ gateway-neutral models and builders.
 
 The graph uses public exact-version dependencies for the five gateways:
 Wrike `0.2.4`, Google Analytics `0.1.1`, Gmail `0.1.11`, Google Documents
-`0.3.1`, and Apple `0.1.7`. Their existing products and macOS conditions remain
-unchanged. This is the retained operator decision, not a claim that resolution has passed.
-Finding D1 must be resolved before the Google Documents SDK contract is accepted. No ambient mirror, symlink,
-or copied checkout participates.
+`0.3.3`, and Apple `0.1.7`. Their existing products and macOS conditions remain
+unchanged. The six public URLs, exact versions, and tag commits are recorded in
+the QA dependency table. The effective workflow input supersedes the brief's
+historical Google Documents 0.3.1 pin. Source verification of v0.3.3 confirms
+the SDK facade and exact kit dependency; it is not a claim that the future
+Riela dependency graph has resolved. No ambient mirror, symlink, or copied
+checkout participates.
 
 The dependency readiness gate is `swift package show-dependencies --format
 json` from this Riela worktree after the manifest edit. It must exit zero, emit
@@ -133,16 +138,23 @@ The SDK runtime still enforces the fixed tier.
 The stand-in records the actual document and variables submitted to execute, with
 operation metadata available for assertions. It must not merely echo a preview.
 
-Google-documents keeps its separate engine and runner boundary. The following intended contract is conditional on resolving D1; the locally
-observed release does not contain this API. In operation
-mode that engine constructs the pinned `GoogleDocumentsGatewaySDK`, calls its
+Google-documents keeps its separate engine and runner boundary. The verified
+v0.3.3 facade at commit `4baeb285f459adb9031273490b922abc8204dedb` supplies
+this API. In operation mode that engine constructs the pinned `GoogleDocumentsGatewaySDK`, calls its
 public `buildArgv(operation:variables:)`, and passes the resulting argv directly
 to the existing `GoogleDocumentsGatewayRunner`. It does not run a generic
 `GatewayArgvBuilder` preview followed by `sdk.invoke`, because the facade adds
 provider-specific variable validation, argument normalization, and token
-limits. This one construction call therefore throws every pre-dispatch builder
-failure to Riela as `policyBlocked`, while the runner supplies the provider
-envelope. The payload records the compact JSON encoding of the exact argv given
+limits. Construction failures thrown by this call map to `policyBlocked`,
+while the runner supplies the provider envelope. `buildArgv` is a pure
+construction boundary, not SDK execution authorization: the facade's `execute`
+accepts a JSON argv string and ignores variables, and `invoke` takes a
+`GatewayOperationRequest`; those execution paths additionally apply SDK file
+policies and bounded execution. This design deliberately retains Riela's
+existing command runner, fixed role, environment restrictions, auth-command
+refusal, and deadline. It does not claim to inherit SDK snapshot/file-access
+policies or SDK execution limits from `buildArgv`. Do not add credential/file
+policy options or silently switch execution paths in this feature. The payload records the compact JSON encoding of the exact argv given
 to that runner. Tests cover input objects, confirm flags, normalization, limits,
 unknown operations, missing variables, and equality with the recorded argv.
 
@@ -335,7 +347,10 @@ design document do not trigger that refresh.
 The effective workflow input supersedes the brief's historical no-push instruction.
 Only accepted design, QA, brief, implementation-plan and necessary index changes
 may be committed and pushed on `feat/gateway-sdk-addons`; main integration requires
-a passing independent combined-tree review. Step 2 performs none of these actions. The review must explicitly check
+a later implementation run and its independent review; no merge to main is
+authorized in this planning-only run. Independent Step 3 design acceptance
+must precede actionable plan authoring, and the plan needs its own independent
+review before publication. Step 2 performs none of these publication actions. The review must explicitly check
 the resolved SwiftPM graph, execution policy, error classification, provenance,
 static/no-network schema behavior, platform guards, validation injection, and
 preservation of unrelated add-ons.
@@ -373,13 +388,13 @@ feature did not introduce the failure.
 
 ## Risks and review decisions
 
-- **D1 / high / unresolved — Google Documents release contract.** Local tag
-  `v0.3.1` resolves to `649d95efb7ade0bfc4e2f5450439b62697daeeb3`; its
-  `Package.swift` has no kit dependency and its source tree has no SDK facade.
-  The public remote could not be checked (DNS failure). Preserve the requested
-  pin, but do not accept this design for implementation until the public tag
-  contract is evidenced or the operator explicitly changes the dependency decision.
-  Details and exact commands are in the user-QA document.
+- **D1 / historical high / resolved by corrected release decision.** v0.3.1
+  lacked the facade and kit dependency; that finding remains valid. The operator
+  approved v0.3.3, whose local tag peels to supplied public release commit
+  `4baeb285f459adb9031273490b922abc8204dedb`. Its manifest declares exact kit
+  0.1.0 and its source contains the facade contract used above. See the QA
+  document for historical rejection and current command evidence. This resolves
+  D1, not the independent design-review gate.
 
 - **High — construction failures can look like provider failures.** Preflight
   GraphQL with the identical catalog and builder; use
@@ -407,32 +422,27 @@ feature did not introduce the failure.
 
 ## Step 2 source review evidence (2026-09-23)
 
-HEAD `002f6e654aa757dc5fc7b7241c95282d095b5c92` and local main/origin/main
-`0bd95e84eaba3d8f37c61b5ef596b52a4eb5a9da` differ only in the brief and the
-two planning documents (`git diff HEAD..main --stat`, exit 0). No current remote
-main freshness claim is made. Source inspection covered Package.swift, the local
-GraphQL engine, Apple admin/support, Google Documents engine, Core validation,
-and tag-addressed SDK source for Wrike, Analytics, Gmail and Apple.
+Current authoring base: `fd736844cf370c8cef1642ffc3bea20c8a9b7743` on
+`feat/gateway-sdk-addons`; initial working tree clean. Current read-only checks
+of all six local release tags and manifests, plus the full Google Documents
+v0.3.3 facade, exited 0. Expanded commands, complete log paths, and final
+statuses are recorded in `tmp/gateway-sdk-design-step2/commands.json`.
+The public release identity comes from effective workflow input; local
+commit-addressed source corroborates it without claiming a fresh remote check.
 
 No codex-agent reference was supplied by intake; Cursor CLI mapping is not
-applicable. No workflow registry rediscovery is part of this design.
+applicable. No reference-repository adaptation is required by this issue.
 
-Author corrections: Apple binaryPath refusal and config/input compatibility;
-Gmail build-once execution instead of mismatched invoke preflight; raw envelope
-error ordering; explicit validator injection seam; CLI stepId/defaults; effective
-planning-only publication authorization. These correct concrete source mismatches,
-without introducing new provider operations or frameworks.
+Prior source-review corrections are retained: Apple binaryPath refusal and
+config/input compatibility; Gmail build-once execution; raw-envelope error
+ordering; validator injection; CLI stepId/defaults. GraphQL build-once execution
+intentionally diverges from the brief's invoke closure for Gmail catalog parity.
+The Google Documents buildArgv/runner split intentionally preserves the existing
+runner contract and does not adopt the facade's separate file/execution policies.
 
-The GraphQL build-once execution is an intentional divergence from the brief's
-invoke closure, justified by Gmail's actual override and exact provenance.
-D1 remains high and unresolved; this author does not claim accepted design or
-completed dependency verification. The detailed implementation plan must retain
-this gate and must not invent a substitute SDK or pin.
-
-
-Step 3 feedback `comm-000004` rejected acceptance for D1. The Step 2 rerun
-attempted public tag, manifest, and facade verification; DNS and web-fetch
-failures persist. See the user-QA review-response section and complete command
-logs under `tmp/gateway-sdk-design/review-retry/`. No corrected dependency
-decision has been received. This revision records the attempted resolution;
-it does not mark D1 addressed or authorize implementation/publication.
+Historical Step 3 feedback `comm-000004` rejected the previous design for D1.
+Current intake `comm-000002` supplies the corrected release decision. This
+revision addresses D1 using v0.3.3 evidence, preserves the historical v0.3.1
+finding in QA, and awaits a new independent Step 3 decision. No actionable
+implementation plan, Swift edits, package resolution, commit, or push occurs
+in this author node. No unresolved user decision remains.

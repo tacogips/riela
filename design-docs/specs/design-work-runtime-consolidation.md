@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; resumed Step 2 update pending independent review, 2026-09-23**. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts. **§17.7 governs the current intake and supersedes historical execution scope, package versions, model assignments, source inventories and scheduling claims in §17.1, §17.5 and §17.6**; their behavioral contracts and prerequisite verification requirements remain applicable.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; resumed Step 2 update pending independent review, 2026-09-23**. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts. **The current-execution scope clarification at the start of §17.7 governs this P1-6a intake; the earlier parent-run execution scope, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -1349,7 +1349,36 @@ gaps, downstream access and publication readiness are verification/implementatio
 work, so no new user-QA document is necessary.
 
 
-### 17.7 Current resumption contract (2026-09-23, checkpoint f46ff788)
+### 17.7 Resumption contracts (2026-09-23)
+
+**Current execution: P1-6a only, checkpoint cbe1dd1.** Mode:
+`issue-resolution`. Issue: `local-request: Complete Work Runtime P1-6a
+selected-host delivery verification`; no GitHub issue supplied. The effective
+implementation-plan input is exactly
+`impl-plans/active/work-runtime-p1-selected-host-delivery.md`. Retain the
+applicable §17.2, §17.4 and §17.7 behavior contracts for selected root/callee
+host/backend/model delivery, exact reservation and ordinary child admission,
+terminal projection, waits without allocation, and no fallback or premature
+fence release after worker loss. The parent plan
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` is a reference,
+not an additional work package. Later P1 slices, examples, legacy removal and
+parent P1 acceptance remain open and outside this execution.
+
+Intake `comm-000002` and design handoff `comm-000003` precede the current Step 3
+review `comm-000004` (`step3-design-review-attempt-1-exec-4`), which rejected
+the unchanged design for a mid-severity scope ambiguity. This clarification
+addresses that finding; renewed independent acceptance remains pending. Prior
+read-only reviews `/root/source_analysis` and `/root/test_analysis` remain
+implementation evidence. No new product decision or Cursor adapter behavior
+is introduced. Remaining T4–T6 tests, final-source V0–V7/V11 evidence and
+independent implementation reviews are governed by the slice plan. V5 remains
+failing unless fixed; a reviewed bounded baseline exception cannot close V5 or
+parent P1. No unresolved user decision requires a user-QA document.
+
+**Earlier parent-run context: checkpoint f46ff788.** The rest of this section
+records that earlier run's input, inventories and verification scope; it does
+not authorize their execution in the current P1-6a slice. Its applicable
+behavior contracts remain binding without importing later-slice work.
 
 **Authority and review.** Mode: `issue-resolution`. Issue reference: Work
 Runtime P1-6a–P1-6d and P1-7a–P1-7b; no GitHub issue URL or number supplied.
@@ -1369,14 +1398,14 @@ only; behavioral contracts and implementation-plan scope are unchanged.
 
 This section supersedes historical execution inventories, scheduler waves and
 publication context in §17.1/17.6. Behavioral contracts §17.2–17.5 remain in
-force. The complete effective plan input is exactly
+force. That earlier run's complete effective plan input was exactly
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; supporting
 reservation, lifecycle, capability and finalization plans are references, not
 additional work packages. Reconcile prerequisite repairs inside this one plan.
 Runtime-resolved immutable user-scope workflow provenance and the effective
 input are authoritative; no contradiction is present and no provenance
-rediscovery is required. This intake supplies no minimum or exact package
-version; older documentation must not impose one.
+rediscovery is required. That earlier intake supplied no minimum or exact
+package version; the current runtime-supplied input governs this execution.
 
 Inspected HEAD is `f46ff788d522b6e53631862253fdcbcf17adfb1a`.
 Implementation and base branch are both `feat/remaining-impl-plans`, with

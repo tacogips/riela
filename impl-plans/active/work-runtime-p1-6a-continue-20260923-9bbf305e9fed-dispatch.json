@@ -1,0 +1,157 @@
+{
+  "taskId": "work-runtime-p1-6a-continue-20260923-9bbf305e9fed",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "cbe1dd1c1efc8337e01e3d10d78cc782468fea41",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6a-continue-20260923-9bbf305e9fed",
+  "reviewContext": {
+    "issueReference": "local-request: Complete Work Runtime P1-6a selected-host delivery verification; no GitHub issue supplied",
+    "userProblem": "At cbe1dd1, authenticated T4 worker/group and T8 workspace cases passed 19/19 on the operator host, but repeated-node/instance-patch T4, absent/stale-worker and task-version-race T5, claimed-worker-loss T6, final source-matched gates and independent review remain open.",
+    "requiredOutcomes": [
+      "Complete serial SHD-1–SHD-5 and named deterministic T1–T8 coverage, including remaining task-level T4–T6 cases; repair only demonstrated P1-6a defects.",
+      "Prove real root/callee selected host/backend/model delivery, exact reserved root, ordinary child admission, accepted outputs and terminal projection.",
+      "Run final source-matched V0–V7/V11 with complete logs, exit codes and positive counts; classify V5 exact 21-case/23-assertion pre-implementation failures and obtain independent accept/reject decision on the bounded exception.",
+      "Resolve independent adversarial and combined-tree integration findings, document accepted P1-6a evidence, and commit/push only reviewed slice files while later P1 and final P1 remain open."
+    ],
+    "nonGoals": [
+      "No P1-6c cancellation integration, P1-6d director execution, P1-7b examples, P1-7a legacy removal or final P1 acceptance.",
+      "No Monja, unrelated worktrees, package workflow, examples, new runner/transport/store/schema or main merge."
+    ],
+    "constraints": [
+      "Use only immutable user-scope codex-design-and-implement-review-loop package 0.3.26 or newer; never project-scope workflow.",
+      "One serial implementation owner for coupled code/tests; independent read-only investigations and final reviews may be parallel without overlapping edits.",
+      "Preserve retained checkpoints, unrelated tracked/untracked state and tmp/p1-6a-host-verify evidence; all new scratch and full logs belong under repository tmp/ with per-plan/per-attempt directories.",
+      "Run commands in foreground to terminal exit; sandbox localhost denial is missing sandbox evidence, requiring source-matched operator-host execution when affected.",
+      "Do not label V5 passing; exact baseline exception needs independent acceptance and does not close the parent gate.",
+      "No force push, reset, main merge, Monja, other worktrees, package workflow, examples or other P1 slice edits."
+    ],
+    "designDecisionsAndRationale": [
+      "The retained TaskDispatcher evaluates reachable topology once, reserves atomically, and carries full-provenance placement into the existing workflow runner and authenticated worker path (§17.2/§17.4).",
+      "The exact reserved root consumes the task launch token; called workflows use ordinary process admission and frozen admitted definitions (§17.2).",
+      "Authored workspace takes precedence over optional controller default; unresolved remote workspace fails before reservation (§17.4).",
+      "Retained uncertain-launch fencing prevents local or alternate-worker fallback after a claim (§17.2)."
+    ],
+    "intentionalTradeoffs": [
+      "SHD-1–SHD-5 share one serial code/test owner because source and fixtures are coupled; shared paths are reconciled in SHD-5.",
+      "The existing 19/19 host and 2/2 sandbox logs are checkpoint evidence; final affected gates must run against final source bytes.",
+      "A bounded V5 baseline exception can support slice review while V5 remains failing and parent P1 remains open."
+    ],
+    "supportedEdgeCases": [
+      "Explicit worker/group pins, stale capabilities, zero capacity, absent live worker, dependency wait and pre-reservation version races.",
+      "Called-workflow reachability, reused node IDs across steps and callees, instance patches, missing targets and workspace aliases.",
+      "Worker loss after claim, uncertain launch, no duplicate attempt/job, durable terminal reconciliation and old controller JSON decoding."
+    ],
+    "outOfScopeEdgeCases": [
+      "Task-level live cancellation acknowledgment, director child accounting, task-backed examples and legacy removal.",
+      "Credential-backed model equivalence, new service APIs, schema migration and final parent certification."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "tmp/work-runtime-p1-selected-host-delivery/logs/T4-T8-host-integration.log",
+      "tmp/work-runtime-p1-selected-host-delivery/logs/step6-local-focused-final.log",
+      "tmp/work-runtime-p1-selected-host-delivery/logs/step6-local-focused-final.exit",
+      "tmp/p1-6a-host-verify/"
+    ],
+    "reviewDecision": "accepted implementation plan at cbe1dd1; plan SHA-256 1f1a7ad7ebe8dd003f11c2b9e0f50b61bf68b918b3fb9a943495b47e46fcc40a; no design or plan revision required; implementation acceptance pending",
+    "codexAgentReferences": [
+      "step4-impl-plan-create",
+      "step5-impl-plan-review",
+      "comm-000006",
+      "comm-000007",
+      "comm-000008"
+    ],
+    "verificationEvidence": {
+      "checkpointInspection": "tmp/work-runtime-p1-6a-checkpoint-20260923-6b08f863/checkpoint-inspection.json",
+      "planningReviewCommands": [
+        "git status --porcelain=v1",
+        "git diff --check",
+        "git diff -- impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+        "shasum -a 256 impl-plans/active/work-runtime-p1-selected-host-delivery.md design-docs/specs/design-work-runtime-consolidation.md impl-plans/active/work-runtime-p1-dispatcher-guard-director.md"
+      ],
+      "planningReviewResult": "Step 5 reported exit 0; no build or tests in planning review.",
+      "hostEvidenceRoot": "tmp/p1-6a-host-verify/"
+    },
+    "reviewedCommunicationId": "comm-000008",
+    "reviewStepId": "step5-impl-plan-review",
+    "findings": [],
+    "referencePlanPaths": [
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md"
+    ],
+    "checkpointEvidence": {
+      "hostIntegration": "tmp/work-runtime-p1-selected-host-delivery/logs/T4-T8-host-integration.log: 19/19 passed at cbe1dd1",
+      "localFocused": "tmp/work-runtime-p1-selected-host-delivery/logs/step6-local-focused-final.log and .exit: 2/2 passed",
+      "openVerification": "Final source-matched V0–V7/V11, bounded V5 exception decision and independent implementation reviews required."
+    }
+  },
+  "plans": [
+    {
+      "planId": "work-runtime-p1-selected-host-delivery",
+      "planPath": "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/HostCapabilityResolver.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
+        "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/DistributedWorkerCommand.swift",
+        "Sources/RielaCore/WorkflowRequirements.swift",
+        "Sources/RielaCore/DistributedJobController.swift",
+        "Sources/RielaServer/DistributedControllerHost.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+        "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+        "Tests/RielaCLITests/DistributedNodeExecutionTests.swift",
+        "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
+        "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
+        "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+        "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+        "impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+KaibaPreflight.swift",
+        "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCore/WorkflowRequirements.swift",
+        "Sources/RielaServer/DistributedControllerHost.swift"
+      ],
+      "progressFile": "tmp/work-runtime-p1-6a-continue-20260923-9bbf305e9fed/plans/work-runtime-p1-selected-host-delivery/progress.jsonl",
+      "planEvidenceRoot": "tmp/work-runtime-p1-6a-continue-20260923-9bbf305e9fed/plans/work-runtime-p1-selected-host-delivery",
+      "acceptanceCriteria": [
+        "T1–T8 are mapped to named passing tests, including new task-level T4–T6/T8 observations through the authenticated worker path.",
+        "Real root/callee execution preserves selected host/backend/model, exact reserved root and ordinary child admission, accepted outputs and terminal projection.",
+        "V0–V7/V11 have complete terminal logs and source identity; V5 failures receive precise baseline classification and an independent bounded-exception accept/reject decision.",
+        "Independent adversarial and combined-tree integration reviews have no unresolved high/mid findings; exact P1-6a files are accepted while parent P1 remains open."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-selected-host-delivery/build",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|DistributedNodeExecutionTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-selected-host-delivery/build --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-selected-host-delivery/changed-swift-files.nul",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "git diff --check",
+        "git diff --cached --check",
+        "shasum -a 256 impl-plans/active/work-runtime-p1-selected-host-delivery.md"
+      ],
+      "attemptDirTemplate": "tmp/work-runtime-p1-6a-continue-20260923-9bbf305e9fed/plans/work-runtime-p1-selected-host-delivery/attempt-<n>",
+      "sharedPathIntent": "One serial implementation owner applies only proven P1-6a repairs; SHD-5 reconciles retained and new edits to listed shared CLI/Core/Server paths and final plan evidence. No parallel writer, global formatting, index or lockfile edits."
+    }
+  ]
+}

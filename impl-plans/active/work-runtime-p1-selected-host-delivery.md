@@ -1,26 +1,32 @@
 # Work Runtime P1-6a: selected-host and called-workflow delivery
 
-Status: retained implementation at `85ab45a`; resumption clarification awaiting independent plan review; implementation acceptance pending.
+Status: retained implementation at `cbe1dd1`; resumption clarification awaiting independent plan review; implementation acceptance pending.
 Workflow mode: issue-resolution. The original planning-only run is historical.
 Issue: local-request: Complete Work Runtime P1-6a selected-host delivery verification; no GitHub issue supplied.
-Codex-agent references: intake `comm-000002`, design handoff `comm-000003`, accepted design review `comm-000004`, prior read-only reviews `/root/source_analysis` and `/root/test_analysis`. No external reference-code input or new Cursor adapter behavior applies.
+Codex-agent references: intake `comm-000002`, design handoffs `comm-000003`/`comm-000005`, scope revision requested by `comm-000004`, accepted design review `comm-000006`, prior read-only reviews `/root/source_analysis` and `/root/test_analysis`. No external reference-code input or new Cursor adapter behavior applies.
 
-## Current resumption contract (2026-09-23, checkpoint 85ab45a)
+## Current resumption contract (2026-09-23, checkpoint cbe1dd1)
 
-Step 3 accepted preservation of the design with no findings in
-`step3-design-review-attempt-1-exec-4`. This section governs the current run's
+Step 3 accepted the revised design through `comm-000006` in
+`step3-design-review-attempt-1-exec-6`, resolving the prior mid scope finding.
+The sole effective plan is this file; the parent plan is a reference.
+This section governs the current run's
 execution status and sequencing; the behavior, T1–T8 requirements, ownership
 manifest and parent acceptance criteria below remain in force. Earlier source
 inventories and prospective implementation wording describe the original work,
 not instructions to replace its retained implementation. Preserve checkpoints
-`6b86992`, `0e9ceb9` and `85ab45a`; do not restart from `fbd4412` or `39d08a4`.
+`6b86992`, `0e9ceb9`, `85ab45a`, `0f22a27` and `cbe1dd1`; do not restart from `fbd4412` or `39d08a4`.
 The effective input authorizes only this P1-6a slice, with final P1 still open.
 
 Step 4 changes only this plan. Step 5 must review the exact updated bytes; the
-accepted plan must be committed before downstream native implementation/review
+accepted design and plan must be committed before downstream native implementation/review
 fanout. Step 4 does not commit unreviewed bytes or start implementation. The
-planning allowlist remains this file only; final implementation publication
-requires a separately reviewed exact file allowlist and non-force push.
+planning commit allowlist is the accepted design
+`design-docs/specs/design-work-runtime-consolidation.md` plus this plan.
+Step 4 preserves the accepted design SHA-256
+`f0f16bddf491c99c2429ac4220bc9a3a3bcab2bd9c81e7748c473cb32871b80f`.
+Final implementation publication requires a separately reviewed exact file
+allowlist and non-force push; no main merge.
 
 Retain stable task IDs and the serial DAG SHD-1 → SHD-2 → SHD-3 → SHD-4 → SHD-5.
 Execute them as follows:
@@ -42,15 +48,26 @@ duplicated. Every row retains all assertions in its original T matrix.
 | T4 | `testTaskExplicitWorkerAndGroupExecutePinnedChoices`: two authenticated workers with distinct recording adapters, incompatible local capability, explicit worker and deterministic group selection; observe actual adapter host/backend/model. `testTaskRepeatedNodePlacementsSurviveInstancePatches`: shared node IDs across steps and root/callee remain distinct at execution; instance patch cannot undo admission choices. |
 | T5 | `testTaskAdmissionWaitsAndDryRunLeaveNoAllocations`: named subcases for dependency wait, absent live worker, zero capacity, stale capability and dry-run; compare attempts, sessions, leases, jobs, evidence and relevant database/sidecar/config bytes. `testTaskReservationRaceDeniesLaunch`: barrier-controlled task-version and dependency changes before reservation; no worker/local invocation or durable allocation. Preserve missing-default pre-reservation failure coverage. |
 | T6 | `testTaskClaimedWorkerLossDoesNotFallbackOrReleaseUncertainFence`: real task handoff and claim, controlled worker loss and lease clock; no replacement worker/local execution, second job or attempt. While outcome is uncertain, retry remains fenced; after durable loss/terminal evidence, assert only the retained terminal/reconciliation semantics. Do not require indefinite fencing after certainty or implement P1-6c cancellation. |
-| T8 | Retain `testTaskControllerDefaultWorkspaceDecodesLegacyAndRejectsInvalidAliases`. Add `testTaskAuthoredWorkspaceOverridesControllerDefaultAtWorker` and `testTaskDefaultWorkspaceAliasReachesWorker` to the integration suite: assert the actual worker workspace for explicit and default aliases. Retain `testRemoteTaskWithoutDefaultWorkspaceFailsBeforeReservation` and prove no attempt/session/lease/job/evidence. |
+| T8 | Retain `testTaskControllerDefaultWorkspaceDecodesLegacyAndRejectsInvalidAliases`. Preserve and rerun `testTaskAuthoredWorkspaceOverridesControllerDefaultAtWorker` and `testTaskDefaultWorkspaceAliasReachesWorker` in the integration suite: assert the actual worker workspace for explicit and default aliases. Retain `testRemoteTaskWithoutDefaultWorkspaceFailsBeforeReservation` and prove no attempt/session/lease/job/evidence. |
 
 Reuse fixture helpers without letting any touched Swift file exceed 1,000 lines.
-If the current 813-line integration suite needs extraction, record the exact
-sibling helper path in a reviewed ownership extension before editing it; do not
-silently add files outside `writePaths`. Fixture extraction is only to support
-these cases, not a general test framework. Use injected clocks and barriers,
+The current integration suite is 926 lines. SHD-4 may extract its existing
+authenticated-worker fixture helpers into
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift`
+to accommodate the remaining T4–T6 cases within the limit. This exact helper
+path is included in the manifest for Step 5 review. Move only required fixture
+helpers; use internal visibility only where cross-file test access requires it,
+keep test methods discoverable on `TaskDispatcherIntegrationTests`, and preserve
+existing assertions. No general test framework or unrelated refactoring. Use injected clocks and barriers,
 owned worker shutdown and awaited foreground execution; no arbitrary sleeps as
 proof. Scratch, fixture, intent and full log output stays under repository `tmp/`.
+
+The helper extraction owns `TaskWorkerHostResolver`,
+`TaskWorkerRecordingAdapter`, `assertTaskWorkerHandoff`, `taskWorkerChildBundle`,
+`assertTerminalTaskEvidence` and `assertWorkerJobs` only as needed by these
+cases. Keep generic task harness changes in the original test file. The new
+helper file must be included in strict V6 lint and exact-file review if created;
+V1/V11 must still discover and run all retained and new test methods.
 
 Independent read-only investigations may run in parallel: one maps T1–T8 test
 coverage, another compares the V5 failure signatures and retained source diff.
@@ -60,7 +77,21 @@ tests or this plan, runs concurrent Git mutations, or replaces the single final
 adversarial/integration gates. Coupled implementation and tests have one serial
 owner; there are no additional independent implementation plans.
 
-**Current evidence and acceptance.** Host-side V1 passed 32/32 and V11 45/45
+Use new execution-specific subdirectories for these review logs and immutable
+intent snapshots; append progress or create a new revision, never overwrite
+prior evidence. Drift requires a new intent referencing the superseded intent,
+followed by serial reconciliation against current bytes.
+
+**Current evidence and acceptance.** Checkpoint `cbe1dd1` retains T4 explicit
+worker/group and T8 authored/default workspace execution: host integration
+passed 19/19, exit 0, in `logs/T4-T8-host-integration.log` beneath the
+`tmp/work-runtime-p1-selected-host-delivery/` directory. The dependency/zero
+capacity/dry-run no-allocation and dependency reservation-race additions passed
+2/2 in `logs/step6-local-focused-final.*`. Do not recreate those passing tests.
+Remaining additions are repeated-node/instance-patch execution (T4), absent/stale
+worker and task-level task-version/dependency races (T5), and claimed-worker
+loss/uncertain fencing (T6). Lower-level race coverage remains supplemental.
+Host-side V1 passed 32/32 and V11 45/45
 after `0e9ceb9`; their logs and exit files remain under `tmp/p1-6a-host-verify/`.
 V5 host CLI/Core failed 23 assertions across 1,944 tests; the selected 21 failing
 cases reproduced 23 assertions at pre-implementation `39d08a4`. Compare exact
@@ -95,11 +126,11 @@ only this plan's evidence. Preserve all prior evidence without cleanup deletion.
 
 ## Intent and authority
 
-Complete one missing execution slice: task admission selects a host/backend/model and the actual root/callee node executes that choice through the retained worker path. A placement DTO or successful compile does not prove delivery. Source baseline is `fbd4412199068a63ad3977e600696dc725dd6f18`, an incomplete WIP checkpoint. Intake reports 26/26 focused and 156/156 prerequisite tests; those counts are historical, not this plan's verification.
+Complete one missing execution slice: task admission selects a host/backend/model and the actual root/callee node executes that choice through the retained worker path. A placement DTO or successful compile does not prove delivery. Current continuation baseline is `cbe1dd1c1efc8337e01e3d10d78cc782468fea41`. The original `fbd4412199068a63ad3977e600696dc725dd6f18` baseline is historical, not a restart point. Intake reports 26/26 focused and 156/156 prerequisite tests; those counts are historical, not this plan's verification.
 
-Authority is [accepted design](../../design-docs/specs/design-work-runtime-consolidation.md) §17.2, §17.4 and §17.7, accepted for this planning handoff by Step 3 communication `comm-000004`, and [parent P1 plan](work-runtime-p1-dispatcher-guard-director.md), especially its P1-6a delivery section and V0–V7/V11 gates. Preserve both documents and all unchecked parent criteria. This plan neither supersedes nor narrows their final acceptance.
+Authority is [accepted design](../../design-docs/specs/design-work-runtime-consolidation.md) §17.2, §17.4 and §17.7, accepted for this planning handoff by Step 3 communication `comm-000006`. The [parent P1 plan](work-runtime-p1-dispatcher-guard-director.md) supplies reference contracts, especially its P1-6a delivery section and V0–V7/V11 gates; it is not an additional effective plan. Preserve both documents and all unchecked parent criteria. This plan neither supersedes nor narrows their final acceptance.
 
-Only this new document is authorized for the current planning commit. No Swift, fixtures, package source, dispatch records or accepted design edits occur in this run. Runner-supplied provenance is authoritative; do not rediscover the executing workflow's package or registry. Commit accepted planning bytes before any subsequent native implementation/review dispatch; do not dispatch implementation here.
+The current planning commit includes only this plan and the already accepted design revision. No Swift, fixtures, package source, dispatch records or accepted design edits occur in this run. Runner-supplied provenance is authoritative; do not rediscover the executing workflow's package or registry. Commit accepted planning bytes before any subsequent native implementation/review dispatch; do not dispatch implementation here.
 
 ## Contract and ownership manifest
 
@@ -109,7 +140,7 @@ Only this new document is authorized for the current planning commit. No Swift, 
   "planPath": "impl-plans/active/work-runtime-p1-selected-host-delivery.md",
   "dependsOn": [],
   "execution": "single serial implementation owner; independent review after verification",
-  "planningCommitAllowlist": ["impl-plans/active/work-runtime-p1-selected-host-delivery.md"],
+  "planningCommitAllowlist": ["design-docs/specs/design-work-runtime-consolidation.md", "impl-plans/active/work-runtime-p1-selected-host-delivery.md"],
   "writePaths": [
     "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/HostCapabilityResolver.swift",
@@ -123,6 +154,7 @@ Only this new document is authorized for the current planning commit. No Swift, 
     "Sources/RielaCore/DistributedJobController.swift",
     "Sources/RielaServer/DistributedControllerHost.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
     "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
     "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
     "Tests/RielaCLITests/DistributedNodeExecutionTests.swift",
@@ -161,7 +193,11 @@ No second dispatcher, capability registry, runner, transport, store, scheduler, 
 
 If a required repair exceeds the explicit file map, record the failing test, exact additional path and smallest necessary change for serial review before editing it. Do not silently expand scope. Source drift is a reconciliation event, not permission to overwrite another owner's changes. Material design contradictions must be returned for review; cosmetic preferences are not blockers.
 
-## Current source and precise intended changes
+## Retained source contracts and bounded repair ownership
+
+The table records the original implementation intent now retained at `cbe1dd1`.
+SHD-2/SHD-3 verify these contracts; change production code only for a failure
+demonstrated by the required tests. SHD-4 owns the remaining test additions.
 
 | File / retained seam | Required change or preservation |
 | --- | --- |
@@ -194,13 +230,16 @@ Workspace configuration is the one bounded addition necessary because a capabili
 
 ## Tasks, deliverables and progress
 
+Execute the current resumption table above. The original task descriptions
+below define retained deliverables, not instructions to reimplement them.
+
 - **SHD-1 / baseline:** Fresh-read this plan, authority docs and all owned files. Record HEAD, clean/dirty inventory, source hashes and V0/V2/V3/V4 baseline outcomes. Inspect existing controller/workspace configuration and retained worker tests. Capture an immutable intent JSON per task under `tmp/work-runtime-p1-selected-host-delivery/intents/` listing exact paths, pre-hashes, intended changes and acceptance rows. Do not edit until that snapshot is saved.
 - **SHD-2 / admission composition:** Implement reachable requirement/assignment composition, one topology evaluation, explicit workspace selection and full admission evidence through the listed seams. Add requirement/topology/config tests alongside changes. Deliver preview/wait behavior with zero durable allocations and no credential values in evidence.
 - **SHD-3 / execution delivery:** Thread frozen execution context through root and callees, preparation, placement application and existing distributed executor. Verify effective-instance override ordering, exact root identity and ordinary callee admission. Keep retained terminal reconciliation. No human decision/director expansion.
 - **SHD-4 / evidence:** Extend the test owners below with actual task-dispatch-to-worker execution. The fixture adapter may be deterministic, but the task dispatcher, admission/store, queued controller, authenticated transport, worker executor and completion projection under test must be real. Add failure/race cases and ensure owned shutdown.
 - **SHD-5 / serial acceptance:** Fresh-read all changed files, compare post-hashes and joined diff against intents, repair integration conflicts serially, run required gates, obtain independent review, resolve all high/mid findings, and record reviewed commit bytes. Update only this plan's progress/acceptance evidence. No parent checkbox changes. Commit only accepted exact files; no main merge.
 
-Before each edit, reread the current file and compare its SHA-256 with the latest recorded post-hash (or baseline pre-hash). On mismatch, stop that edit, inspect the intervening diff and rewrite the intent from current bytes; never restore a stale buffer. Save post-hash and actual diff after each edit. Shared indexes, lockfile generation, global formatting and plan archiving belong only to serial finalization and are not needed by this slice. Each owner writes only its own progress log; for this single implementation owner use `tmp/work-runtime-p1-selected-host-delivery/progress.md`. Record task ID, changed paths, pre/post hashes, commands, exit status, full log paths, positive test counts, blockers and review decision. Final accepted evidence is summarized in this plan before scratch cleanup.
+Before each edit, reread the current file and compare its SHA-256 with the latest recorded post-hash (or baseline pre-hash). On mismatch, stop that edit, inspect the intervening diff and rewrite the intent from current bytes; never restore a stale buffer. Save post-hash and actual diff after each edit. Shared indexes, lockfile generation, global formatting and plan archiving belong only to serial finalization and are not needed by this slice. Each owner writes only its own progress log; for this single implementation owner use `tmp/work-runtime-p1-selected-host-delivery/progress.md`. Record task ID, changed paths, pre/post hashes, commands, exit status, full log paths, positive test counts, blockers and review decision. Final accepted evidence is summarized in this plan. Preserve prior and current verification evidence; do not delete it during cleanup.
 
 ## Deterministic test ownership and required assertions
 
@@ -222,6 +261,14 @@ Each named case must have an explicit test name and positive execution count in 
 ## Verification commands and evidence
 
 Run from repository root, foreground only. Save complete stdout/stderr and final exit codes under `tmp/work-runtime-p1-selected-host-delivery/logs/`; poll every yielded process to terminal exit. A timeout, missing suite, zero selected tests or incomplete log is not a pass. Use the following toolchain and scratch path consistently (shell variables are task-specific):
+
+For this continuation, place the log names below in a fresh execution-specific
+subdirectory of `logs/` and record its exact path in progress. Never truncate
+older gate logs. Record the invoked command, HEAD, exact reviewed source/test
+file SHA-256 manifest and dirty-diff hash with each gate. If toolchain cache or
+listener restrictions prevent completion, preserve the failure and obtain a
+source-matched host run; a changed scratch path or host command must be recorded
+explicitly with the same test filter and source identity.
 
 ```bash
 mkdir -p tmp/work-runtime-p1-selected-host-delivery/logs
@@ -259,7 +306,7 @@ V1 and V11 are slice evidence only: they do not certify missing parent examples 
 
 ## Acceptance and finalization
 
-Planning acceptance: independently review this document's exact SHA-256, ownership manifest, DAG, T1–T8 matrix and commands; resolve every high/mid finding. The current planning commit allowlist is exactly this file, on `feat/remaining-impl-plans`, followed by non-force push of the accepted commit to the same branch. No main merge. Parent/design hashes must remain unchanged. The current node authors the document; downstream review/finalization records acceptance and commit/push evidence.
+Planning acceptance: independently review this document's exact SHA-256, ownership manifest, DAG, T1–T8 matrix and commands; resolve every high/mid finding. The current planning commit allowlist is exactly the accepted design revision and this file (ordered paths in the manifest), on `feat/remaining-impl-plans`, followed by non-force push of the accepted commit to the same branch. No main merge. The parent hash and accepted design hash must remain unchanged during Step 4; the accepted design revision is included in the planning commit without further edits. The current node authors the document; downstream review/finalization records acceptance and commit/push evidence.
 
 Later implementation acceptance requires all of the following, without changing parent checkboxes:
 

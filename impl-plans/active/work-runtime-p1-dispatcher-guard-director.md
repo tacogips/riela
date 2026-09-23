@@ -1,6 +1,6 @@
 # Work Runtime P1: P1-6b task run and read-only dry-run
 
-**Status**: P1-6b Step 6 source and verification accepted on nine matching Swift hashes; serial finalization and publication gates remain pending. This plan stays active for later P1 slices.
+**Status**: P1-6b accepted and published at `7d8fc121a4f4469de7a40495282b53c9d813b8d4` after source-matched host 198/198, independent reviews, and completed workflow finalization. This plan stays active for P1-6c/d, P1-7a/b and parent P1.
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6b; no GitHub issue number supplied.
 **Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `5fe60591dc3335a3f306ccfd5297de7a61f2e2d9a1c857888e8d8618e5e9be39` (evidence-only refresh; accepted behavior unchanged).
@@ -8,8 +8,9 @@
 **Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `step1-issue-intake`, `comm-000002`, `step2-design-doc-update`, `comm-000003`, `step3-design-review`, `comm-000004`.
 **Updated**: 2026-09-24
 
-This metadata and the current contract below are the only executable plan for
-this invocation. The historical parent material at the end is reference-only:
+The P1-6b contract below is now a completed-slice record, not authorization to
+redispatch it. The next invocation must review and re-scope this active plan for
+P1-6c before implementation. The historical parent material at the end is reference-only:
 its broad task list, old baseline, verification and completion requirements do
 not authorize work beyond P1-6b. Stable plan ID and progress-log ownership are
 preserved. One implementation owner runs the coupled tasks serially; no second
@@ -222,7 +223,7 @@ new review is required only where evidence is missing or a material concern rema
   plan/review amendment first. Preserve unexpected drift and reconcile serially.
   Unchanged bytes reuse completed host gates; never rerun solely because this
   is a new workflow. Deliver final hash manifest and all three review decisions.
-- [ ] **P1-6b-finalization** (wave 4, downstream serial workflow gates): After
+- [x] **P1-6b-finalization** (wave 4, downstream serial workflow gates): After
   acceptance, align §17.5 and P1-6b plan/progress evidence. The README Work
   Runtime section lacked the accepted read-only preview and result contract;
   include its bounded Step 8 amendment in publication.
@@ -379,10 +380,10 @@ suppress them, count a failed gate as passing or repair unrelated baseline work.
 
 ### Completion and progress state
 
-| Item | State at authoring |
+| Item | Current slice state |
 | --- | --- |
 | P1-6a | Accepted prerequisite at 2f10916; preserve |
-| P1-6b | Nine final Swift hashes match both manifests; host aggregate passed 198/198, including listener-backed selected-host/HTTP cases. Fresh independent test-integrity, read-only and Astra combined-tree reviews accept with no material finding. Serial publication remains pending. |
+| P1-6b | Nine final Swift hashes match both manifests; host aggregate passed 198/198, including listener-backed selected-host/HTTP cases. Independent test-integrity, adversarial and Astra combined-tree reviews accepted with no material finding. Commit `7d8fc12` was non-force pushed; the resumed workflow completed. |
 | P1-6c/d, P1-7a/b | Deferred/open |
 | Parent P1 | Open; no global certification or archiving |
 

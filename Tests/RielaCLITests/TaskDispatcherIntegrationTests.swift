@@ -359,7 +359,30 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
     try await assertTaskWorkerHandoff(includeCallee: true)
   }
 
-  private func assertTaskWorkerHandoff(includeCallee: Bool) async throws {
+  func testTaskAuthoredWorkspaceOverridesControllerDefaultAtWorker() async throws {
+    try await assertTaskWorkerHandoff(includeCallee: false, authoredWorkspace: "authored")
+  }
+
+  func testTaskDefaultWorkspaceAliasReachesWorker() async throws {
+    try await assertTaskWorkerHandoff(includeCallee: false, verifyWorkspace: true)
+  }
+
+  func testTaskExplicitWorkerAndGroupExecutePinnedChoices() async throws {
+    try await assertTaskWorkerHandoff(
+      includeCallee: false, target: .init(workerId: "remote-b"), expectedWorker: "remote-b"
+    )
+    try await assertTaskWorkerHandoff(
+      includeCallee: false, target: .init(group: "capable"), expectedWorker: "remote"
+    )
+  }
+
+  private func assertTaskWorkerHandoff(
+    includeCallee: Bool,
+    authoredWorkspace: String? = nil,
+    verifyWorkspace: Bool = false,
+    target: DistributedWorkerTarget? = nil,
+    expectedWorker: String = "remote"
+  ) async throws {
     let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
     let root = repository.appendingPathComponent(
@@ -368,6 +391,10 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
     )
     let workerRoot = root.appendingPathComponent("worker", isDirectory: true)
     try FileManager.default.createDirectory(at: workerRoot, withIntermediateDirectories: true)
+    let authoredRoot = root.appendingPathComponent("authored", isDirectory: true)
+    if authoredWorkspace != nil {
+      try FileManager.default.createDirectory(at: authoredRoot, withIntermediateDirectories: true)
+    }
     defer { try? FileManager.default.removeItem(at: root) }
     let store = WorkStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
     let taskId = TaskID("task-remote-root")
@@ -383,7 +410,10 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
         + (includeCallee ? [.init(id: "done-node", nodeFile: "done.json")] : []),
       steps: [.init(
         id: "run", nodeId: "node",
-        transitions: includeCallee ? [.init(toStepId: "child-run", toWorkflowId: "child", resumeStepId: "done")] : nil
+        transitions: includeCallee ? [.init(toStepId: "child-run", toWorkflowId: "child", resumeStepId: "done")] : nil,
+        placement: (authoredWorkspace != nil || target != nil) ? .init(
+          target: target ?? .init(workerId: "remote"), workspace: authoredWorkspace ?? "project"
+        ) : nil
       )] + (includeCallee ? [.init(id: "done", nodeId: "done-node")] : []),
       nodes: [.init(id: "node", nodeFile: "node.json")]
         + (includeCallee ? [.init(id: "done-node", nodeFile: "done.json")] : [])
@@ -397,46 +427,49 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
       )] : [:]) { first, _ in first },
       sourceScope: .project, workflowDirectory: root.path
     )
-    let child = ResolvedWorkflowBundle(
-      workflow: .init(
-        workflowId: "child", defaults: .init(nodeTimeoutMs: 10_000, maxLoopIterations: 1),
-        entryStepId: "child-run", nodeRegistry: [.init(id: "child-node", nodeFile: "child.json")],
-        steps: [.init(id: "child-run", nodeId: "child-node")],
-        nodes: [.init(id: "child-node", nodeFile: "child.json")]
-      ),
-      nodePayloads: ["child-node": .init(
-        id: "child-node", executionBackend: .claudeCodeAgent, model: "claude-test", agentSandbox: .readOnly
-      )],
-      sourceScope: .project, workflowDirectory: root.path
-    )
+    let child = taskWorkerChildBundle(root: root)
     let resolver = TaskExampleBundleResolver(bundle: bundle, callees: includeCallee ? ["child": child] : [:])
     let token = String(repeating: "t", count: 40)
+    let secondToken = String(repeating: "u", count: 40)
+    let hasSecondWorker = target != nil
+    let groups: Set<String> = hasSecondWorker ? ["capable"] : []
     let configURL = root.appendingPathComponent("controller.json")
     let config = DistributedControllerConfiguration(
       host: "127.0.0.1", port: 8788, storePath: "jobs.json",
-      workers: [.init(id: "remote", groups: [], tokenEnvironment: "TEST_TOKEN", maxCapacity: 1)],
+      workers: [.init(id: "remote", groups: groups, tokenEnvironment: "TEST_TOKEN", maxCapacity: 1)]
+        + (hasSecondWorker ? [.init(
+          id: "remote-b", groups: groups, tokenEnvironment: "TEST_TOKEN_B", maxCapacity: 1
+        )] : []),
       defaultWorkspace: "project"
     )
     try JSONEncoder().encode(config).write(to: configURL)
     let controller = try config.controller(relativeTo: configURL)
     let registered = expectation(description: "worker capability snapshot")
     registered.assertForOverFulfill = false
+    let secondRegistered = hasSecondWorker ? expectation(description: "second worker capability snapshot") : nil
+    secondRegistered?.assertForOverFulfill = false
     let router = try DistributedWorkerHTTPRouter(
-      controller: controller, credentials: [.init(workerId: "remote", groups: [], token: token)],
+      controller: controller, credentials: [.init(workerId: "remote", groups: groups, token: token)]
+        + (hasSecondWorker ? [.init(workerId: "remote-b", groups: groups, token: secondToken)] : []),
       capabilitySnapshotSink: { snapshot in
         try store.saveHostSnapshot(snapshot)
-        registered.fulfill()
+        if snapshot.hostId == "remote" { registered.fulfill() }
+        if snapshot.hostId == "remote-b" { secondRegistered?.fulfill() }
       }
     )
     let server = RielaLocalHTTPServer(routeHandler: router)
     let port = try await server.startForTesting()
     let adapter = TaskWorkerRecordingAdapter()
+    let secondAdapter = TaskWorkerRecordingAdapter()
     let executor = DistributedWorkerNodeExecutor(
-      workspaces: ["project": .init(root: workerRoot)], adapter: adapter,
+      workspaces: ["project": .init(root: workerRoot), "authored": .init(root: authoredRoot)], adapter: adapter,
       stdio: LocalWorkflowStdioNodeExecutor()
     )
     let client = try DistributedWorkerHTTPClient(
       controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)")), token: token
+    )
+    let secondClient = try DistributedWorkerHTTPClient(
+      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(port)")), token: secondToken
     )
     let capability = BackendCapability(
       backend: .codexAgent, source: .observed, observedAt: Date(),
@@ -453,8 +486,21 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
       try await executor.execute($0)
     }
     let worker = Task { try await loop.run() }
+    let secondWorker: Task<Void, Error>? = if hasSecondWorker {
+      Task {
+        let secondExecutor = DistributedWorkerNodeExecutor(
+          workspaces: ["project": .init(root: workerRoot)], adapter: secondAdapter,
+          stdio: LocalWorkflowStdioNodeExecutor()
+        )
+        let secondLoop = try DistributedWorkerLoop(client: secondClient, capacity: 1, capabilities: [capability]) {
+          try await secondExecutor.execute($0)
+        }
+        try await secondLoop.run()
+      }
+    } else { nil }
     do {
       await fulfillment(of: [registered], timeout: 5)
+      if let secondRegistered { await fulfillment(of: [secondRegistered], timeout: 5) }
       let previous = getenv(DistributedControllerConfiguration.environmentKey).map { String(cString: $0) }
       setenv(DistributedControllerConfiguration.environmentKey, configURL.path, 1)
       defer {
@@ -477,13 +523,19 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
       decoder.dateDecodingStrategy = .iso8601
       let response = try decoder.decode(TaskRunCommandResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(response.status, "completed")
-      XCTAssertEqual(response.placement?.choices.first?.hostId, "remote")
+      XCTAssertEqual(response.placement?.choices.first?.hostId, expectedWorker)
       XCTAssertEqual(response.placement?.choices.first?.provenance.stepId, "run")
       XCTAssertEqual(response.placement?.choices.first?.backend, .codexAgent)
-      let inputs = await adapter.inputs
+      let inputs = expectedWorker == "remote" ? await adapter.inputs : await secondAdapter.inputs
+      let unusedInputs = expectedWorker == "remote" ? await secondAdapter.inputs : await adapter.inputs
+      XCTAssertTrue(unusedInputs.isEmpty)
       let input = try XCTUnwrap(inputs.first)
       XCTAssertEqual(input.node.executionBackend, .codexAgent)
       XCTAssertEqual(input.node.model, "gpt-test")
+      if authoredWorkspace != nil || verifyWorkspace {
+        let expectedRoot = authoredWorkspace == nil ? workerRoot : authoredRoot
+        XCTAssertEqual(input.node.workingDirectory, expectedRoot.path)
+      }
       let sessions = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory).loadAll()
       let rootSession = try XCTUnwrap(sessions.first { $0.session.sessionId == response.sessionId })
       XCTAssertEqual(rootSession.session.status, .completed)
@@ -504,30 +556,65 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
         XCTAssertEqual(childSession.session.status, .completed)
         XCTAssertTrue(childSession.session.executions.contains { $0.acceptedOutput != nil })
       }
-      let attempts = try store.listAttempts(taskId: taskId)
-      XCTAssertEqual(attempts.count, 1)
-      XCTAssertEqual(attempts.first?.sessionId, response.sessionId)
-      XCTAssertEqual(attempts.first?.state, .reconciled)
-      XCTAssertEqual(attempts.first?.outcome?.sessionStatus, .completed)
-      let terminalEvidence = try XCTUnwrap(store.listEvidence(taskId: taskId).first {
-        $0.payloadRef.inlinePayload?["sessionStatus"] == .string("completed")
-      })
-      XCTAssertEqual(terminalEvidence.attemptId, attempts.first?.id)
-      XCTAssertEqual(try store.loadTask(id: taskId)?.state, .succeeded)
-      XCTAssertTrue(try store.listDecisions(taskId: taskId).contains {
-        $0.kind == .accept && $0.causedBy.contains(terminalEvidence.id)
-      })
+      try assertTerminalTaskEvidence(store: store, taskId: taskId, sessionId: response.sessionId)
       let jobs = try await controller.jobs(now: Date())
-      XCTAssertEqual(jobs.count, includeCallee ? 2 : 1)
-      XCTAssertTrue(jobs.allSatisfy { $0.lease?.workerId == "remote" })
+      assertWorkerJobs(
+        jobs, includeCallee: includeCallee, expectedWorker: expectedWorker,
+        expectedWorkspace: authoredWorkspace != nil || verifyWorkspace ? authoredWorkspace ?? "project" : nil
+      )
       worker.cancel()
+      secondWorker?.cancel()
       _ = try? await worker.value
+      _ = try? await secondWorker?.value
       await server.stop()
     } catch {
       worker.cancel()
+      secondWorker?.cancel()
       _ = try? await worker.value
+      _ = try? await secondWorker?.value
       await server.stop()
       throw error
+    }
+  }
+
+  private func taskWorkerChildBundle(root: URL) -> ResolvedWorkflowBundle {
+    ResolvedWorkflowBundle(
+      workflow: .init(
+        workflowId: "child", defaults: .init(nodeTimeoutMs: 10_000, maxLoopIterations: 1),
+        entryStepId: "child-run", nodeRegistry: [.init(id: "child-node", nodeFile: "child.json")],
+        steps: [.init(id: "child-run", nodeId: "child-node")],
+        nodes: [.init(id: "child-node", nodeFile: "child.json")]
+      ),
+      nodePayloads: ["child-node": .init(
+        id: "child-node", executionBackend: .claudeCodeAgent, model: "claude-test", agentSandbox: .readOnly
+      )],
+      sourceScope: .project, workflowDirectory: root.path
+    )
+  }
+
+  private func assertTerminalTaskEvidence(store: WorkStore, taskId: TaskID, sessionId: String?) throws {
+    let attempts = try store.listAttempts(taskId: taskId)
+    XCTAssertEqual(attempts.count, 1)
+    XCTAssertEqual(attempts.first?.sessionId, sessionId)
+    XCTAssertEqual(attempts.first?.state, .reconciled)
+    XCTAssertEqual(attempts.first?.outcome?.sessionStatus, .completed)
+    let terminalEvidence = try XCTUnwrap(store.listEvidence(taskId: taskId).first {
+      $0.payloadRef.inlinePayload?["sessionStatus"] == .string("completed")
+    })
+    XCTAssertEqual(terminalEvidence.attemptId, attempts.first?.id)
+    XCTAssertEqual(try store.loadTask(id: taskId)?.state, .succeeded)
+    XCTAssertTrue(try store.listDecisions(taskId: taskId).contains {
+      $0.kind == .accept && $0.causedBy.contains(terminalEvidence.id)
+    })
+  }
+
+  private func assertWorkerJobs(
+    _ jobs: [DistributedJob], includeCallee: Bool, expectedWorker: String, expectedWorkspace: String?
+  ) {
+    XCTAssertEqual(jobs.count, includeCallee ? 2 : 1)
+    XCTAssertTrue(jobs.allSatisfy { $0.lease?.workerId == expectedWorker })
+    if let expectedWorkspace {
+      XCTAssertEqual(jobs.first?.payload["workspace"], .string(expectedWorkspace))
     }
   }
 
@@ -679,6 +766,32 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
     XCTAssertNil(response.attemptId)
     XCTAssertNil(response.sessionId)
     XCTAssertTrue(try harness.store.listAttempts(taskId: task.id).isEmpty)
+  }
+
+  func testTaskAdmissionWaitsAndDryRunLeaveNoAllocations() async throws {
+    for mode in ["dependency", "zero-capacity", "dry-run"] {
+      let harness = try TaskExampleHarness()
+      defer { harness.remove() }
+      let prerequisite = try harness.seed("prerequisite")
+      let task = try harness.seed(
+        "task-repair-loop", dependsOn: mode == "dependency" ? [prerequisite.id] : []
+      )
+      let beforeRows = try harness.rowCounts(taskId: task.id)
+      let beforeBytes = try harness.fileBytes()
+
+      let result = try await harness.dispatch(
+        "task-repair-loop", capacity: mode == "zero-capacity" ? 0 : 1, dryRun: mode == "dry-run"
+      )
+      XCTAssertEqual(result.exitCode, .success, "\(mode): \(result.stderr)")
+      let response = try harness.decode(result)
+      XCTAssertEqual(response.status, mode == "dry-run" ? "ready" : "waiting", mode)
+      XCTAssertEqual(response.waitReason, mode == "dry-run" ? nil : mode == "dependency" ? .dependency : .capacity, mode)
+      XCTAssertNil(response.attemptId, mode)
+      XCTAssertNil(response.sessionId, mode)
+      XCTAssertEqual(try harness.rowCounts(taskId: task.id), beforeRows, mode)
+      XCTAssertEqual(try harness.fileBytes(), beforeBytes, mode)
+      XCTAssertEqual(try harness.store.loadTask(id: task.id), task, mode)
+    }
   }
 
   func testDryRunIncludesReachableCalleeBackendBeforeReservation() async throws {

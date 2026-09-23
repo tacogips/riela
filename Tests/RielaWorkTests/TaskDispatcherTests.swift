@@ -107,6 +107,28 @@ final class TaskDispatcherTests: XCTestCase {
     XCTAssertThrowsError(try dispatcher.authorize(reservation))
   }
 
+  func testDependencyChangeBetweenPreviewAndReservationDeniesLaunch() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var dependency = sampleTask(id: "dependency")
+    dependency.state = .succeeded
+    try store.saveTask(dependency)
+    var task = sampleTask()
+    task.dependsOn = [dependency.id]
+    try store.saveTask(task)
+    let dispatcher = TaskDispatcher(store: store)
+    guard case let .ready(admitted) = try preview(dispatcher) else {
+      return XCTFail("expected ready preview")
+    }
+
+    dependency.state = .waiting
+    try store.saveTask(dependency)
+    XCTAssertEqual(try reserve(dispatcher, ready: admitted), .wait(.dependency))
+    XCTAssertTrue(try store.listAttempts(taskId: task.id).isEmpty)
+    XCTAssertTrue(try store.listDecisions(taskId: task.id).isEmpty)
+    XCTAssertTrue(try store.listEvidence(taskId: task.id).isEmpty)
+    XCTAssertEqual(try store.loadTask(id: task.id), task)
+  }
+
   func testPendingReservationReadsExactUnconsumedRequestWithoutMutation() throws {
     let store = WorkStore(rootDirectory: root.path)
     var task = sampleTask()

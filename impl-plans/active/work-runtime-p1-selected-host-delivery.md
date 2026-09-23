@@ -278,3 +278,47 @@ Selected checks on the current implementation: V0 fallback build passed after th
 Independent read-only source review by `/root/source_analysis` found no remaining high/mid production-code defect but marked verification incomplete: T1/T2 lack positive authenticated execution, and T2 does not directly assert ordinary child process admission or terminal output projection before completion. `/root/test_analysis` also identified remaining task-level T4–T6 and T8 coverage gaps. These findings and failing gates keep every implementation acceptance box above unchecked. At that workflow terminal, no implementation acceptance, commit, push or parent P1 closure was claimed.
 
 Operator host-side follow-up (2026-09-23): after the implementation session ended, the T1/T2 fixture was corrected for repeated capability publications and the CLI's ISO-8601 date encoding. Both authenticated root/callee tests now pass with assertions for the reserved root, linked ordinary child, accepted outputs, reconciled attempt, terminal evidence and final decision. On the exact pre-merge branch content, V1 passed 32/32 and V11 passed 45/45 using `swift test --disable-sandbox --skip-update` with an isolated scratch build; both remained 32/32 and 45/45 after merge commit `0e9ceb9`. Complete logs and exit codes are in `tmp/p1-6a-host-verify/`. The host-side V5 CLI/Core run failed 23 assertions across 1,944 tests (versus 503 in the implementation sandbox). An independent checkout of the pre-implementation checkpoint `39d08a4` reproduced the **same 21 failing cases and 23 assertions**; exact-case baseline logs, exit code and SHA-256-verified copies are in `tmp/p1-6a-host-verify/preimplementation-baseline/`. This proves the observed host-side V5 failures predate the P1-6a implementation, but V5 is still failing and requires an explicit bounded baseline exception from the independent reviewer. The WIP implementation checkpoint `6b86992` and main merge `0e9ceb9` were pushed to `feat/remaining-impl-plans`; neither is acceptance. T4–T6/T8 coverage and final independent review remain open.
+
+Step 6 continuation (2026-09-23, still incomplete): one serial owner added
+`testTaskExplicitWorkerAndGroupExecutePinnedChoices` and authenticated-worker
+workspace cases `testTaskAuthoredWorkspaceOverridesControllerDefaultAtWorker`
+and `testTaskDefaultWorkspaceAliasReachesWorker` to
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`. The retained T1/T2
+fixture now optionally starts two distinct recording workers and checks the
+chosen adapter, leased worker ID, backend/model and workspace alias. The new
+`testTaskAdmissionWaitsAndDryRunLeaveNoAllocations` covers dependency wait,
+zero capacity and dry-run with exact row and file-byte comparisons. In
+`Tests/RielaWorkTests/TaskDispatcherTests.swift`,
+`testDependencyChangeBetweenPreviewAndReservationDeniesLaunch` proves the
+reservation recheck creates no attempt, decision or evidence. The latter two
+tests passed 2/2 with zero failures on the current source; full output and exit
+status are in `tmp/work-runtime-p1-selected-host-delivery/logs/step6-local-focused-final.*`.
+Strict selected-file SwiftLint passed on the retained P1-6a Swift set plus the
+new Work test, using `step6-changed-swift-files.nul`; see `logs/step6-V6-lint-4.*`.
+
+The exact plan scratch test stopped before compilation because its module cache
+was unwritable; the plan-local-cache retry stopped before compilation while
+fetching `agent-gateway` because DNS was unavailable. The current-tree `.build`
+retry compiled the new HTTP tests, but `testTaskExplicitWorkerAndGroupExecutePinnedChoices`
+and the two T8 workspace cases failed at listener creation with
+`Network.NWError error 1 - Operation not permitted`; see
+`logs/step6-T4-pins-2.*` and `logs/step6-T8-current-tree.*`. These are missing
+host execution evidence, not passing tests. T4 repeated-node/instance-patch
+execution, T5 absent/stale-worker and task-level version race, and T6 claimed
+worker loss/uncertain fence remain unimplemented. Final source-matched V0–V7/V11,
+V5 signature reclassification and explicit independent bounded-exception
+decision, adversarial/integration reviews, and exact-file acceptance remain
+open. Historical post-merge V1/V11 and V5 logs do not certify these new bytes.
+No completion box or parent P1 criterion is closed; no commit or push occurred
+in this Step 6 continuation.
+
+Operator host follow-up after Step 6 terminal (2026-09-23): the current two-test-file
+diff SHA-256 is `d5fc7541fb97ebd8474ae12b3a03857792327b9df0a99d4d448170309072c8d4`.
+Using the existing resolved scratch build on the listener-capable host,
+`swift test --disable-sandbox --skip-update --filter TaskDispatcherIntegrationTests`
+passed 19/19 with zero failures (exit 0). This includes the authenticated T4
+worker/group pin and both T8 workspace cases that could not run inside the
+implementation sandbox. The complete rerun log is
+`tmp/work-runtime-p1-selected-host-delivery/logs/T4-T8-host-integration.log`.
+This is focused evidence only: the listed T4 repeated-node/instance-patch,
+T5 and T6 gaps and final source-matched V0–V7/V11 gates remain open.

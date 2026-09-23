@@ -104,6 +104,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 | `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |
 | `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
 | `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |
+| `riela-note-kanban-status-sets-and-orchestration` | 2026-07-31 | `design-riela-note-kanban-status-sets-and-orchestration` (historical Riela Note completion, PR #77; Riela Note extracted to Kaiba in #86) |
 | `web-cross-tag-filter-and-fixes` | 2026-07-27 | `design-web-cross-tag-filter-and-fixes` |
 | `web-tags-and-card-preview` | 2026-07-26 | `design-web-tags-and-card-preview` |
 | `riela-note-book-like-reader`                 | 2026-07-21 | `design-riela-note-ui-refinements#book-like-reader-addendum-2026-07-20`                                                                                                                      |

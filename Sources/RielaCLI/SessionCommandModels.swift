@@ -48,6 +48,7 @@ public struct SessionResumeOptions: Equatable, Sendable {
   public var sessionStore: String?
   public var maxSteps: Int?
   public var variables: String?
+  public var retryFailedStep: Bool
 
   public init(
     sessionId: String,
@@ -58,7 +59,8 @@ public struct SessionResumeOptions: Equatable, Sendable {
     mockScenarioPath: String? = nil,
     sessionStore: String? = nil,
     maxSteps: Int? = nil,
-    variables: String? = nil
+    variables: String? = nil,
+    retryFailedStep: Bool = false
   ) {
     self.sessionId = sessionId
     self.output = output
@@ -69,6 +71,7 @@ public struct SessionResumeOptions: Equatable, Sendable {
     self.sessionStore = sessionStore
     self.maxSteps = maxSteps
     self.variables = variables
+    self.retryFailedStep = retryFailedStep
   }
 }
 

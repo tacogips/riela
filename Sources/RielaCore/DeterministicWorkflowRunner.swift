@@ -17,6 +17,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   public var rerunFromStepId: String?
   public var preserveHistory: Bool
   public var resumeSessionId: String?
+  public var retryFailedStep: Bool
   /// Recovery lineage recorded on the source session's evidence manifest,
   /// supplied by callers that can read persisted manifests (the CLI). Rerun
   /// entries derive `rootSessionId`/`attemptNumber` from it; absent lineage is
@@ -60,6 +61,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     rerunFromStepId: String? = nil,
     preserveHistory: Bool = false,
     resumeSessionId: String? = nil,
+    retryFailedStep: Bool = false,
     sourceRecoveryLineage: LoopRecoveryLineage? = nil,
     memoryRootDirectory: String? = nil,
     agentSilenceWarningMs: Int? = nil,
@@ -86,6 +88,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.rerunFromStepId = rerunFromStepId
     self.preserveHistory = preserveHistory
     self.resumeSessionId = resumeSessionId
+    self.retryFailedStep = retryFailedStep
     self.sourceRecoveryLineage = sourceRecoveryLineage
     self.memoryRootDirectory = memoryRootDirectory
     self.agentSilenceWarningMs = agentSilenceWarningMs
@@ -102,45 +105,6 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.effectiveStepBudget = nil
     self.isNestedCalleeEffectBoundary = false
   }
-}
-
-public struct WorkflowRunResult: Codable, Equatable, Sendable {
-  public var workflowId: String
-  public var session: WorkflowSession
-  public var rootOutput: JSONObject?
-  public var exitCode: Int32
-  public var status: WorkflowSessionStatus
-  public var nodeExecutions: Int
-  public var transitions: Int
-  public var supervision: JSONObject?
-  public var loopEvidence: LoopEvidenceSummary?
-  public var recovery: LoopRecoveryLineage?
-
-  public init(
-    workflowId: String,
-    session: WorkflowSession,
-    rootOutput: JSONObject?,
-    exitCode: Int32,
-    transitions: Int,
-    supervision: JSONObject? = nil,
-    loopEvidence: LoopEvidenceSummary? = nil,
-    recovery: LoopRecoveryLineage? = nil
-  ) {
-    self.workflowId = workflowId
-    self.session = session
-    self.rootOutput = rootOutput
-    self.exitCode = exitCode
-    self.status = session.status
-    self.nodeExecutions = session.newExecutionCount
-    self.transitions = transitions
-    self.supervision = supervision
-    self.loopEvidence = loopEvidence
-    self.recovery = recovery
-  }
-}
-
-public protocol DeterministicWorkflowRunning: Sendable {
-  func run(_ request: DeterministicWorkflowRunRequest) async throws -> WorkflowRunResult
 }
 
 /// Explicit recovery-boundary seam for durable nested execution. Production

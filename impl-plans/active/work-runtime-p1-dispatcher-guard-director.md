@@ -1,9 +1,9 @@
 # Work Runtime P1: P1-6b task run and read-only dry-run
 
-**Status**: Revised plan awaits Step 5. Final-source host aggregate passed 198/198; independent decision confirmation, final integration acceptance, documentation, commit and push remain pending.
+**Status**: P1-6b Step 6 source and verification accepted on nine matching Swift hashes; serial finalization and publication gates remain pending. This plan stays active for later P1 slices.
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6b; no GitHub issue number supplied.
-**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `a96fe110c61a901f396cd22fc35ef720dd3ef2bd34d52ad489b3680b29e010ef`.
+**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `5fe60591dc3335a3f306ccfd5297de7a61f2e2d9a1c857888e8d8618e5e9be39` (evidence-only refresh; accepted behavior unchanged).
 **Review decision**: Step 3 accepted, no findings or feedback, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
 **Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `step1-issue-intake`, `comm-000002`, `step2-design-doc-update`, `comm-000003`, `step3-design-review`, `comm-000004`.
 **Updated**: 2026-09-24
@@ -177,13 +177,13 @@ instructions to redo prior coding or discard prior reviews. Result/read-only
 review tasks first confirm the existing independent decisions on final hashes;
 new review is required only where evidence is missing or a material concern remains. Historical completed implementation remains recorded in progress.
 
-- [ ] **P1-6b-audit** (wave 1, single owner): Fresh-read accepted §17.5, the nine
+- [x] **P1-6b-audit** (wave 1, single owner): Fresh-read accepted §17.5, the nine
   Swift files in `writePaths`, both exact manifests and complete host log.
   Recompute nine hashes, inventory current diff/untracked files and record
   source identity plus the host command/exit 0/198 tests. Preserve the earlier
   sandbox aggregate as failed, exit 1, including 24 listener/dependent failures.
   Deliver an evidence inventory and review inputs in repository-root `tmp/`.
-- [ ] **P1-6b-results** (wave 2, independent test-integrity review, read-only):
+- [x] **P1-6b-results** (wave 2, independent test-integrity review, read-only):
   Inspect `Sources/RielaCLI/TaskDispatch.swift`,
   `Tests/RielaCLITests/TaskCommandParsingTests.swift`,
   `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`, and
@@ -195,7 +195,7 @@ new review is required only where evidence is missing or a material concern rema
   row values and nonmutating observation. Deliver findings with severity,
   paths, concrete evidence and an explicit private-copy repair accept/reject
   decision; no edits or inferred pass from row counts alone.
-- [ ] **P1-6b-readonly** (wave 2, independent adversarial review, read-only):
+- [x] **P1-6b-readonly** (wave 2, independent adversarial review, read-only):
   Trace `Sources/RielaCLI/TaskDispatch.swift`,
   `Sources/RielaCLI/HostCapabilityResolver.swift`,
   `Sources/RielaWork/TaskDispatcher.swift`, `Sources/RielaWork/WorkStore.swift`
@@ -209,7 +209,7 @@ new review is required only where evidence is missing or a material concern rema
   store opens, shared-reader compatibility and concurrent-writer races. Deliver
   a separate explicit private-copy repair accept/reject decision and material
   findings supported by evidence, not hypothetical hardening requests.
-- [ ] **P1-6b-verification** (wave 3, serial join and independent Astra
+- [x] **P1-6b-verification** (wave 3, serial join and independent Astra
   combined-tree integration review): Join both reports and recheck all hashes.
   Astra explicitly decides the private-copy repair and combined result/placement/
   reservation contract against accepted §17.5 and P1-6a regression evidence.
@@ -223,13 +223,14 @@ new review is required only where evidence is missing or a material concern rema
   Unchanged bytes reuse completed host gates; never rerun solely because this
   is a new workflow. Deliver final hash manifest and all three review decisions.
 - [ ] **P1-6b-finalization** (wave 4, downstream serial workflow gates): After
-  acceptance, align §17.5 and P1-6b plan/progress evidence only. Review README
-  for accuracy; edit only if a concrete discrepancy warrants an exact amendment.
+  acceptance, align §17.5 and P1-6b plan/progress evidence. The README Work
+  Runtime section lacked the accepted read-only preview and result contract;
+  include its bounded Step 8 amendment in publication.
   Append commands, terminal exits, positive suite counts, complete logs, hashes,
   retained-code attribution and independent decisions to
   `impl-plans/progress/p1-dispatch.md`. Step 9 explicitly records P1-6c/d,
   P1-7a/b and parent P1 open and retains this active plan. Emit the exact reviewed
-  file allowlist (the eight changed Swift files plus directly affected
+  file allowlist (the eight changed Swift files plus README and directly affected
   design/plan/progress; exclude reverted `SQLiteDatabase.swift` and already
   committed checkpoint-only docs from a later commit).
   Native commit/push gates publish only accepted files, non-force to
@@ -381,7 +382,7 @@ suppress them, count a failed gate as passing or repair unrelated baseline work.
 | Item | State at authoring |
 | --- | --- |
 | P1-6a | Accepted prerequisite at 2f10916; preserve |
-| P1-6b | Revised plan awaits Step 5; final-source host aggregate passed 198/198, including listener-backed selected-host/HTTP cases. Independent reviews and publication remain pending. |
+| P1-6b | Nine final Swift hashes match both manifests; host aggregate passed 198/198, including listener-backed selected-host/HTTP cases. Fresh independent test-integrity, read-only and Astra combined-tree reviews accept with no material finding. Serial publication remains pending. |
 | P1-6c/d, P1-7a/b | Deferred/open |
 | Parent P1 | Open; no global certification or archiving |
 
@@ -397,9 +398,13 @@ Current final-source follow-up (2026-09-24): Step 3 accepted §17.5 via
 and Step 6 v2 manifests. The host complete log confirms 198/198, recorded exit
 0; prior safe suites are 169/169 and 15/15, and strict changed-file SwiftLint
 records exit 0. Preserve their exact commands/log paths from the manifests.
-The sandbox aggregate remains failed, exit 1 with 24 failures. Confirm original
-independent decisions and close Astra's verification condition using this host
-evidence before publication. No remaining user decision is required.
+The sandbox aggregate remains failed, exit 1 with 24 failures. The preserved
+Step 6 runtime payload records the original test-integrity and adversarial
+acceptances and Astra's source acceptance with verification withheld. Its
+verbatim reviewer transcripts are unavailable; fresh read-only test-integrity,
+read-only behavior, and Astra combined-tree reviews accepted the same nine-hash
+tree with no material finding. The host 198/198 closes the recorded verification
+condition. Serial commit/push evidence remains pending; no user decision is required.
 
 ### Historical evidence chronology (superseded by current follow-up)
 

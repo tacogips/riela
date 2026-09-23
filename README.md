@@ -711,8 +711,15 @@ reserving an attempt. It keeps selected worker, backend, model and workspace
 choices through the existing workflow runner and authenticated worker path.
 Missing capacity, dependencies or a live eligible worker return a wait without
 allocating an attempt or session; `--dry-run` previews placement without an
-allocation. Once a worker has claimed a job, loss of that worker does not
-trigger a local fallback or duplicate launch. See
+allocation. A dry run reads private copies of existing task stores and leaves
+the live database, SQLite sidecars and host profile unchanged. An active SQLite
+WAL, corrupt input or a concurrent store change returns an error instead of a
+possibly stale preview. Text and structured output report `ready` with
+prospective placement, or `waiting` with a reason, without attempt or session
+IDs. A real run reports the exact reserved IDs after admission, including when
+the admitted execution fails; pre-admission errors have no reserved IDs. A
+preview does not guarantee later admission. Once a worker has claimed a job,
+loss of that worker does not trigger a local fallback or duplicate launch. See
 [controller and worker setup](docs/distributed-workers.md) for placement and
 workspace configuration and the
 [P1-6a plan](impl-plans/completed/work-runtime-p1-selected-host-delivery.md) for

@@ -2,13 +2,99 @@ import Foundation
 import RielaCore
 import RielaWork
 
+enum TaskRunStatus: String, Codable, Sendable {
+  case ready
+  case waiting
+  case completed
+  case failed
+  case error
+}
+
+/// Keeps immutable SQLite readers away from a live database during preview.
+struct PreviewStoreSnapshot {
+  private struct FileSnapshot {
+    var path: String
+    var bytes: Data?
+  }
+
+  private let temporaryRoot: URL
+  private let files: [FileSnapshot]
+  private let selectedTask: TaskCommandRunner.LocatedTask?
+
+  init(roots: [String], taskId: TaskID) throws {
+    let temporaryRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-task-preview-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
+    do {
+      var files: [FileSnapshot] = []
+      var selectedTask: TaskCommandRunner.LocatedTask?
+      for (index, root) in roots.enumerated() {
+        let source = WorkStore(rootDirectory: root).databasePath
+        let paths = [source, source + "-wal", source + "-shm"]
+        let observed = try paths.map { FileSnapshot(path: $0, bytes: try Self.readIfPresent($0)) }
+        if let wal = observed[1].bytes, !wal.isEmpty {
+          throw WorkStoreError("task preview cannot safely read an active SQLite WAL at \(paths[1])")
+        }
+        files.append(contentsOf: observed)
+        let copyRoot = temporaryRoot.appendingPathComponent("store-\(index)", isDirectory: true)
+        let copy = WorkStore(rootDirectory: copyRoot.path).databasePath
+        if let database = observed[0].bytes {
+          try FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: copy).deletingLastPathComponent(),
+            withIntermediateDirectories: true
+          )
+          try database.write(to: URL(fileURLWithPath: copy))
+        }
+        let store = WorkStore(rootDirectory: copyRoot.path, immutableReadOnly: true)
+        if let task = try store.loadTask(id: taskId) {
+          selectedTask = TaskCommandRunner.LocatedTask(task: task, store: store, root: copyRoot.path)
+          break
+        }
+      }
+      self.temporaryRoot = temporaryRoot
+      self.files = files
+      self.selectedTask = selectedTask
+      try verifyUnchanged()
+    } catch {
+      try? FileManager.default.removeItem(at: temporaryRoot)
+      throw error
+    }
+  }
+
+  func locateTask() -> TaskCommandRunner.LocatedTask? {
+    selectedTask
+  }
+
+  func verifyUnchanged() throws {
+    for file in files where try Self.readIfPresent(file.path) != file.bytes {
+      throw WorkStoreError("task preview source changed concurrently at \(file.path)")
+    }
+  }
+
+  func remove() {
+    try? FileManager.default.removeItem(at: temporaryRoot)
+  }
+
+  private static func readIfPresent(_ path: String) throws -> Data? {
+    guard FileManager.default.fileExists(atPath: path) else { return nil }
+    return try Data(contentsOf: URL(fileURLWithPath: path))
+  }
+}
+
 struct TaskRunCommandResult: Codable, Sendable {
   var taskId: String
-  var status: String
+  var statusKind: TaskRunStatus
+  var status: String { statusKind.rawValue }
   var attemptId: String?
   var sessionId: String?
   var waitReason: WaitReason?
   var placement: BackendCapabilityPlacementResult?
+  var error: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case taskId, attemptId, sessionId, waitReason, placement, error
+    case statusKind = "status"
+  }
 }
 
 /// Bridges Work's atomic admission to the existing CLI workflow runner.
@@ -28,7 +114,11 @@ struct TaskDispatch: Sendable {
   ) async -> CLICommandResult {
     do {
       let id = TaskID(taskId)
-      guard let located = try TaskCommandRunner().locateTask(id, in: options) else {
+      let previewSnapshot = try dryRun ? PreviewStoreSnapshot(
+        roots: TaskCommandRunner().storeRoots(options), taskId: id
+      ) : nil
+      defer { previewSnapshot?.remove() }
+      guard let located = try locateTask(id, options: options, previewSnapshot: previewSnapshot) else {
         throw WorkStoreError("task '\(taskId)' was not found")
       }
       guard let plan = located.task.plan else {
@@ -102,8 +192,9 @@ struct TaskDispatch: Sendable {
       )
       switch preview {
       case let .wait(reason):
+        try previewSnapshot?.verifyUnchanged()
         return try render(TaskRunCommandResult(
-          taskId: taskId, status: "waiting", attemptId: nil,
+          taskId: taskId, statusKind: .waiting, attemptId: nil,
           sessionId: nil, waitReason: reason, placement: placement
         ), output: output)
       case let .ready(ready):
@@ -119,8 +210,9 @@ struct TaskDispatch: Sendable {
           _ = try runner.applyingTaskPlacement(taskContext, to: admittedBundle)
         }
         if dryRun {
+          try previewSnapshot?.verifyUnchanged()
           return try render(TaskRunCommandResult(
-            taskId: taskId, status: "ready", attemptId: nil,
+            taskId: taskId, statusKind: .ready, attemptId: nil,
             sessionId: nil, waitReason: nil, placement: ready.placement
           ), output: output)
         }
@@ -165,7 +257,7 @@ struct TaskDispatch: Sendable {
             throw WorkStoreError("task reservation returned no attempt or wait reason")
           }
           return try render(TaskRunCommandResult(
-            taskId: taskId, status: "waiting", attemptId: nil,
+            taskId: taskId, statusKind: .waiting, attemptId: nil,
             sessionId: nil, waitReason: reason, placement: placement
           ), output: output)
         }
@@ -183,24 +275,49 @@ struct TaskDispatch: Sendable {
         let workflowResult = await runner.runTaskReservation(
           runOptions, reservation: reservation, store: located.store, context: taskContext
         )
-        let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
-          .load(sessionId: reservation.attempt.sessionId)
-        guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
-          throw WorkStoreError("reserved task session did not reach a durable terminal state")
+        do {
+          let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
+            .load(sessionId: reservation.attempt.sessionId)
+          guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
+            throw WorkStoreError("reserved task session did not reach a durable terminal state")
+          }
+          try reconcileTerminal(snapshot: snapshot, reservation: reservation, store: located.store, taskId: id)
+          let exitCode: CLIExitCode = snapshot.session.status == .failed ? .failure : workflowResult.exitCode
+          let diagnostic = workflowResult.stderr.isEmpty ? workflowResult.stdout : workflowResult.stderr
+          return try render(TaskRunCommandResult(
+            taskId: taskId, statusKind: snapshot.session.status == .completed ? .completed : .failed,
+            attemptId: reservation.attempt.id.rawValue,
+            sessionId: reservation.attempt.sessionId,
+            waitReason: nil,
+            placement: placement,
+            error: exitCode == .success ? nil : diagnostic.isEmpty ? "workflow execution failed" : diagnostic
+          ), output: output, exitCode: exitCode)
+        } catch {
+          return try render(TaskRunCommandResult(
+            taskId: taskId, statusKind: .error, attemptId: reservation.attempt.id.rawValue,
+            sessionId: reservation.attempt.sessionId, waitReason: nil,
+            placement: placement, error: "\(error)"
+          ), output: output, exitCode: .failure)
         }
-        try reconcileTerminal(snapshot: snapshot, reservation: reservation, store: located.store, taskId: id)
-        if workflowResult.exitCode != .success { return workflowResult }
-        return try render(TaskRunCommandResult(
-          taskId: taskId, status: snapshot.session.status.rawValue,
-          attemptId: attemptId.rawValue,
-          sessionId: reservation.attempt.sessionId,
-          waitReason: nil,
-          placement: placement
-        ), output: output)
       }
     } catch {
+      if output.isStructured {
+        let payload = TaskCommandFailureResult(
+          taskId: taskId, command: "run", error: "\(error)", exitCode: CLIExitCode.failure.rawValue
+        )
+        return CLICommandResult(exitCode: .failure, stdout: (try? jsonString(payload)) ?? "")
+      }
       return CLICommandResult(exitCode: .failure, stderr: "\(error)")
     }
+  }
+
+  private func locateTask(
+    _ id: TaskID,
+    options: TaskStoreOptions,
+    previewSnapshot: PreviewStoreSnapshot?
+  ) throws -> TaskCommandRunner.LocatedTask? {
+    if let previewSnapshot { return previewSnapshot.locateTask() }
+    return try TaskCommandRunner().locateTask(id, in: options)
   }
 
   private func reconcileTerminal(
@@ -324,16 +441,32 @@ struct TaskDispatch: Sendable {
     return stepId
   }
 
-  private func render(_ result: TaskRunCommandResult, output: WorkflowOutputFormat) throws -> CLICommandResult {
+  private func render(
+    _ result: TaskRunCommandResult,
+    output: WorkflowOutputFormat,
+    exitCode: CLIExitCode = .success
+  ) throws -> CLICommandResult {
     switch output {
     case .json, .jsonl:
-      return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
+      return CLICommandResult(exitCode: exitCode, stdout: try jsonString(result))
     case .text, .table:
       var lines = ["taskId: \(result.taskId)", "status: \(result.status)"]
       if let attemptId = result.attemptId { lines.append("attemptId: \(attemptId)") }
       if let sessionId = result.sessionId { lines.append("sessionId: \(sessionId)") }
       if let reason = result.waitReason { lines.append("waitReason: \(reason)") }
-      return CLICommandResult(exitCode: .success, stdout: lines.joined(separator: "\n") + "\n")
+      if let placement = result.placement {
+        for choice in placement.choices {
+          let node = "\(choice.provenance.workflowId)/\(choice.provenance.stepId)/\(choice.provenance.nodeId)"
+          lines.append(
+            "placement: \(node) host=\(choice.hostId) backend=\(choice.backend?.rawValue ?? "none") model=\(choice.model ?? "none")"
+          )
+        }
+        for failure in placement.failures {
+          lines.append("placement: \(failure.provenance.workflowId)/\(failure.provenance.stepId)/\(failure.provenance.nodeId) unavailable: \(failure.reason)")
+        }
+      }
+      if let error = result.error, !error.isEmpty { lines.append("error: \(error)") }
+      return CLICommandResult(exitCode: exitCode, stdout: lines.joined(separator: "\n") + "\n")
     }
   }
 }

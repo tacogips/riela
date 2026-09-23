@@ -402,7 +402,7 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
       dryRun: false, output: .json
     )
     XCTAssertEqual(result.exitCode, .failure)
-    XCTAssertTrue(result.stderr.contains("default workspace"), result.stderr)
+    XCTAssertTrue(result.stdout.contains("default workspace"), result.stdout)
     XCTAssertTrue(try store.listAttempts(taskId: taskId).isEmpty)
     XCTAssertTrue(try store.listEvidence(taskId: taskId).isEmpty)
     XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: store.databasePath)), before)
@@ -647,7 +647,7 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
       })
       if mode == "version" {
         XCTAssertEqual(result.exitCode, .failure)
-        XCTAssertTrue(result.stderr.contains("version"), result.stderr)
+        XCTAssertTrue(result.stdout.contains("version"), result.stdout)
       } else {
         XCTAssertEqual(result.exitCode, .success, result.stderr)
         let response = try harness.decode(result)
@@ -759,7 +759,7 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
 
     let result = try await harness.dispatch("task-repair-loop", dryRun: true)
     XCTAssertEqual(result.exitCode, .failure)
-    XCTAssertTrue(result.stderr.contains("not found"), result.stderr)
+    XCTAssertTrue(result.stdout.contains("not found"), result.stdout)
     XCTAssertEqual(try harness.rowCounts(taskId: taskId), beforeRows)
     XCTAssertEqual(try harness.fileBytes(), beforeBytes)
     XCTAssertFalse(FileManager.default.fileExists(atPath: harness.store.databasePath))
@@ -783,7 +783,7 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
 
     let result = try await harness.dispatch("task-repair-loop", dryRun: true, hostResolver: resolver)
     XCTAssertEqual(result.exitCode, .failure)
-    XCTAssertTrue(result.stderr.contains("invalidProfile"), result.stderr)
+    XCTAssertTrue(result.stdout.contains("invalidProfile"), result.stdout)
     XCTAssertEqual(try harness.rowCounts(taskId: task.id), beforeRows)
     XCTAssertEqual(try harness.fileBytes(), beforeBytes)
     XCTAssertFalse(FileManager.default.fileExists(

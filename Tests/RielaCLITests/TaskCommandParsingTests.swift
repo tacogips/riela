@@ -87,6 +87,24 @@ final class TaskCommandParsingTests: XCTestCase {
     XCTAssertEqual(parsed.decisionId, "decision-1")
   }
 
+  func testRunOptionsAndMissingOrInvalidArguments() throws {
+    let parser = RielaArgumentParser()
+    let parsed = try parser.parse([
+      "task", "run", "task-42", "--dry-run", "--scope", "project",
+      "--working-dir", "/tmp/project", "--session-store", "/tmp/sessions", "--output", "jsonl"
+    ])
+    guard case let .task(command) = parsed else { return XCTFail("expected task command") }
+    XCTAssertEqual(command.options.target, "task-42")
+    XCTAssertEqual(command.options.output, .jsonl)
+    let options = try ParsedTaskRunOptions.resolve(command.options.arguments)
+    XCTAssertTrue(options.dryRun)
+    XCTAssertEqual(options.shared.scope, .project)
+    XCTAssertEqual(options.shared.workingDirectory, "/tmp/project")
+    XCTAssertEqual(options.shared.sessionStore, "/tmp/sessions")
+    XCTAssertThrowsError(try parser.parse(["task", "run"]))
+    XCTAssertThrowsError(try ParsedTaskRunOptions.resolve(["--unknown-option"]))
+  }
+
   func testDecideRejectsMissingOrMultipleActionsAndAuditFields() throws {
     let common = ["--principal", "operator", "--expected-version", "1", "--decision-id", "decision-1"]
     XCTAssertThrowsError(try ParsedTaskDecideOptions.resolve(common))

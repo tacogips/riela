@@ -53,9 +53,16 @@ public struct WorkStore: Sendable {
   public static let maximumListLimit = 1_000
 
   public var rootDirectory: String
+  /// Set only for a private, stable copy that cannot be changed by another process.
+  public let immutableReadOnly: Bool
 
   public init(rootDirectory: String) {
+    self.init(rootDirectory: rootDirectory, immutableReadOnly: false)
+  }
+
+  public init(rootDirectory: String, immutableReadOnly: Bool) {
     self.rootDirectory = rootDirectory
+    self.immutableReadOnly = immutableReadOnly
   }
 
   public var databasePath: String {
@@ -382,7 +389,11 @@ public struct WorkStore: Sendable {
       return nil
     }
     let db = try mapSQLiteError {
-      try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+      try SQLiteDatabase.open(
+        path: databasePath,
+        mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
+        options: .readOnlyDefault
+      )
     }
     // A database written before the Work Runtime existed has no work_* tables;
     // a read of it is empty, not an error, and the next writable open rebuilds

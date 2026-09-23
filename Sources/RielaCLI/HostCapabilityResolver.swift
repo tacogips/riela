@@ -70,6 +70,7 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
   var profileStore: RielaAppDaemonWorkflowStore
   var runner: any LocalProcessRunning
   var environment: [String: String]
+  var profileSelectionError: String?
 
   init(
     profileStore: RielaAppDaemonWorkflowStore? = nil,
@@ -77,7 +78,20 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
     runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
   ) {
-    let activeProfile = activeProfileStore.loadActiveProfileName()
+    let activeProfile: RielaAppProfileName
+    if FileManager.default.fileExists(atPath: activeProfileStore.activeProfileURL.path) {
+      do {
+        let data = try Data(contentsOf: activeProfileStore.activeProfileURL)
+        activeProfile = try JSONDecoder().decode(RielaAppProfileState.self, from: data).activeProfileName
+        self.profileSelectionError = nil
+      } catch {
+        activeProfile = .default
+        self.profileSelectionError = "active profile selection is incompatible or corrupt"
+      }
+    } else {
+      activeProfile = .default
+      self.profileSelectionError = nil
+    }
     self.profileStore = profileStore ?? RielaAppDaemonWorkflowStore(
       stateURL: RielaAppProfileStore.profilesRootURL(appRootURL: activeProfileStore.appRootURL)
         .appendingPathComponent(activeProfile.rawValue, isDirectory: true)
@@ -95,6 +109,9 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
     readOnly: Bool,
     localAddonExecutables: [String: Bool]
   ) async throws -> [HostCapabilitySnapshot] {
+    if let profileSelectionError {
+      throw HostCapabilityResolverError.invalidProfile(profileSelectionError)
+    }
     if host != "local" {
       let snapshots = try runtimeStore(scope: scope, workingDirectory: workingDirectory).loadHostSnapshots()
       if let exact = snapshots.first(where: { isLive($0) && $0.hostId == host }) {

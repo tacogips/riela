@@ -35,7 +35,7 @@ public struct TaskDispatcher: Sendable {
     guard FileManager.default.fileExists(atPath: store.databasePath) else { return nil }
     let database = try SQLiteDatabase.open(
       path: store.databasePath,
-      mode: .readOnly,
+      mode: store.immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
       options: .readOnlyDefault
     )
     guard try database.tableExists("work_pending_reservations") else {

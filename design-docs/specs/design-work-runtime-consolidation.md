@@ -1249,11 +1249,14 @@ Any material repair requires independent review and affected verification on
 its new final hashes. `impl-plans/progress/p1-dispatch.md` records that prior
 test-integrity, adversarial and Astra source reviews accepted the private-copy
 repair, with Astra withholding overall verification pending the host gate.
-Downstream review must confirm those independent decisions against their
-original artifacts, including canonical first-match SQLite path selection,
-read-only behavior and shared-reader compatibility, before implementation
-acceptance. This design update establishes the final-source host evidence;
-it does not substitute for those independent decisions or publish the WIP.
+The preserved Step 6 runtime payload records the original test-integrity and
+adversarial acceptances and Astra's source acceptance; verbatim reviewer
+transcripts were not retained as separate artifacts. Fresh independent
+test-integrity, read-only behavior, and Astra combined-tree reviews accepted
+the nine-hash tree with no material finding, including canonical first-match
+SQLite path selection, read-only behavior and shared-reader compatibility.
+The host aggregate closes Astra's recorded verification condition. Publication
+still requires the serial exact-file commit and non-force push gates.
 
 Step 4 retains the same active plan and remaining tasks, updating its design
 reference for this amendment rather than creating a replacement plan. After

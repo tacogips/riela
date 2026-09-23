@@ -15,9 +15,9 @@ Targets:
 
 Required environment for real builds:
   APPLE_SIGNING_IDENTITY  Developer ID Application identity for RielaApp and the CLI executable.
-  APPLE_ID                Apple ID email for notarization.
-  APPLE_PASSWORD          Apple app-specific password for notarization.
-  APPLE_TEAM_ID           Apple Developer Team ID for notarization.
+
+Required local Keychain setup:
+  notarytool profile       Store a validated profile named riela-release before building.
 
 Optional environment:
   RIELA_VERSION             Override archive version used in archive names.
@@ -27,12 +27,13 @@ Optional environment:
   RIELA_SWIFT_SDKROOT       Defaults to Xcode's macOS SDK path.
   RIELA_APP_BUNDLE_ID       Defaults to com.tacogips.riela.menubar.
   RIELA_NOTARYTOOL          Defaults to Xcode's notarytool.
+  RIELA_NOTARY_KEYCHAIN_PROFILE  Defaults to riela-release.
   RIELA_STAPLER             Defaults to Xcode's stapler.
 
 Examples:
-  scripts/build-homebrew-cask-release.sh --dry-run darwin-arm64 darwin-x64
-  kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-    scripts/build-homebrew-cask-release.sh darwin-arm64 darwin-x64
+  scripts/build-homebrew-cask-release.sh --dry-run darwin-arm64
+  kinko exec --env APPLE_SIGNING_IDENTITY -- \
+    scripts/build-homebrew-cask-release.sh darwin-arm64
 
 This builder stages signed, notarized, and stapled macOS .dmg artifacts for the
 Homebrew Cask. Each DMG contains RielaApp.app and the riela CLI. It does not
@@ -364,7 +365,8 @@ print_plan() {
   printf '  signing order: CLI, nested Tauri helper, parent app, DMG\n'
   printf '  notarized DMG: %s\n' "$dmg_path"
   printf '  checksum: %s.sha256\n' "$dmg_path"
-  printf '  required Apple env: APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID\n'
+  printf '  required Apple env: APPLE_SIGNING_IDENTITY\n'
+  printf '  notarization: Keychain profile %s\n' "${RIELA_NOTARY_KEYCHAIN_PROFILE:-riela-release}"
   printf '  publish side effects: false\n'
 }
 
@@ -386,9 +388,12 @@ build_target() {
   assert_child_path "$release_dir" "$scratch_path"
 
   require_env APPLE_SIGNING_IDENTITY
-  require_env APPLE_ID
-  require_env APPLE_PASSWORD
-  require_env APPLE_TEAM_ID
+  local notary_profile
+  notary_profile="${RIELA_NOTARY_KEYCHAIN_PROFILE:-riela-release}"
+  if [[ -z "$notary_profile" || "$notary_profile" == -* ]]; then
+    printf 'invalid notarization Keychain profile name\n' >&2
+    return 1
+  fi
   require_command codesign
   require_command hdiutil
   require_command security
@@ -430,9 +435,7 @@ build_target() {
   codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg_path"
   codesign --verify --strict --verbose=2 "$dmg_path"
   "$notarytool" submit "$dmg_path" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
+    --keychain-profile "$notary_profile" \
     --wait
   "$stapler" staple "$dmg_path"
   "$stapler" validate "$dmg_path"

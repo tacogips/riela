@@ -90,7 +90,10 @@ extension RielaArgumentParser {
 
   private func parseSessionResume(_ arguments: [String]) throws -> RielaCommand {
     let route = try ParsedSessionResumeArguments.parseCLI(arguments)
-    let parsed = try ParsedWorkflowOptions(route.options, allowRunOptions: true)
+    let retryFailedStep = route.options.contains("--retry-failed-step")
+    let parsed = try ParsedWorkflowOptions(
+      route.options.filter { $0 != "--retry-failed-step" }, allowRunOptions: true
+    )
     try rejectRemoteSessionOptions(parsed)
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     return .session(.resume(SessionResumeOptions(
@@ -102,7 +105,8 @@ extension RielaArgumentParser {
       mockScenarioPath: parsed.mockScenarioPath,
       sessionStore: parsed.sessionStore,
       maxSteps: parsed.maxSteps,
-      variables: parsed.variablesReference
+      variables: parsed.variablesReference,
+      retryFailedStep: retryFailedStep
     )))
   }
 

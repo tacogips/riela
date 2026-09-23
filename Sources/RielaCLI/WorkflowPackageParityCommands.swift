@@ -450,7 +450,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
     let result = try await DeterministicWorkflowRunner(
       store: runtimeStore,
       adapter: adapter,
-      stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+      stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(defaultWorkingDirectory: workingDirectory),
       simulatesCrossWorkflowDispatch: parsed.mockScenarioPath != nil
     ).run(DeterministicWorkflowRunRequest(
       workflow: bundle.workflow,

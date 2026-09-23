@@ -359,7 +359,7 @@ Usage:
   riela auth invite <user> | users | revoke-user <user> | revoke-key <credential-id>
   riela worker --config <worker.json>
   riela session rerun <session-id> <step-id> [--preserve-history] [--scope project|user|auto] [--output jsonl|json|text]
-  riela session resume <session-id> [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
+  riela session resume <session-id> [--retry-failed-step] [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session progress <session-id> [--follow] [--poll-interval 2.0] [--include-children] [--output text|jsonl|json]

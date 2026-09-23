@@ -10,17 +10,16 @@ are normative; section 1 lists the riela seams with file:line references verifie
   `GatewaySDK` protocol, `GatewayEnvelope`, `GatewayOperationRequest`, `GatewaySelection`,
   `GatewaySchemaSearch`, `GatewayDocumentBuilder`, `GatewayArgvBuilder`,
   `GraphQLVariableInliner`, `GatewayJSONValue`). Read its README first.
-- Five gateway worktrees on branch `feat/gateway-sdk`, each with a facade conforming to
-  `GatewaySDK` and a brief at `design-docs/briefs/gateway-sdk-2026-09-04.md` describing it:
-  - `/Users/taco/gits/tacogips/wrike-gateway-worktrees/gateway-sdk` — `WrikeGatewaySDK`
+- Five public gateway releases, each with a facade conforming to `GatewaySDK`:
+  - `https://github.com/tacogips/wrike-gateway.git` at `0.2.4` — `WrikeGatewaySDK`
     (`.reader()` in `WrikeGatewayRead`, `.writer()` in `WrikeGatewayWrite`, `.admin()` in
     `WrikeGatewayAdmin`)
-  - `/Users/taco/gits/tacogips/google-analytics-gateway-worktrees/gateway-sdk` —
+  - `https://github.com/tacogips/google-analytics-gateway.git` at `0.1.1` —
     `GoogleAnalyticsGatewaySDK` (same tier constructors; writer/admin are cumulative now)
-  - `/Users/taco/gits/tacogips/apple-gateway-worktrees/gateway-sdk` — `AppleGatewaySDK(role:)`
-  - `/Users/taco/gits/tacogips/gmail-gateway-worktrees/gateway-sdk` — `GmailGatewaySDK(mode:)`;
+  - `https://github.com/tacogips/apple-gateway.git` at `0.1.7` — `AppleGatewaySDK(role:)`
+  - `https://github.com/tacogips/gmail-gateway.git` at `0.1.11` — `GmailGatewaySDK(mode:)`;
     gmail now accepts GraphQL variables
-  - `/Users/taco/gits/tacogips/google-documents-gateway-worktrees/gateway-sdk` —
+  - `https://github.com/tacogips/google-documents-gateway.git` at `0.3.1` —
     `GoogleDocumentsGatewaySDK(role:)` (command catalog; `execute` takes a JSON argv array)
 
 ## Goal
@@ -34,14 +33,10 @@ and workflow validation checks the new config shapes against the static catalogs
 
 ## Deliverables
 
-1. **Package.swift.** Add `GatewaySDKKit` from `.package(path: "../../gateway-sdk-kit")`
-   as a dependency of `RielaCLI` (unconditional; pure Swift) and point the five gateway
-   packages at their worktrees with path dependencies for now:
-   `.package(path: "../../wrike-gateway-worktrees/gateway-sdk")` etc. (this worktree is
-   `/Users/taco/gits/tacogips/riela-worktrees/gateway-sdk-addons`, so `../../` is
-   `/Users/taco/gits/tacogips/`). Keep the same product names and the macOS-only
-   conditions. Leave a comment block that the operator switches these six path
-   dependencies back to URL + revision pins before merge. Bump nothing else.
+1. **Package.swift.** Add `GatewaySDKKit` from `.package(url: "https://github.com/tacogips/gateway-sdk-kit.git", exact: "0.1.0")`
+   as a dependency of `RielaCLI` (unconditional; pure Swift). Consume the five gateway
+   repositories from their public GitHub URLs at the exact versions listed above. Keep
+   the same product names and macOS-only conditions. Bump nothing else in this feature.
 2. **Generic engine.** In `Sources/RielaCLI/ProductionNodeAdapter+LocalGatewaySupport.swift`
    replace `LocalGatewayGraphQLDescriptor.run` / `LocalGatewayGraphQLRunner` with an
    SDK-backed descriptor and rename the engine:

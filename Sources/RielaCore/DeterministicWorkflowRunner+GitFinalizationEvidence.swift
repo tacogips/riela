@@ -14,6 +14,49 @@ private enum WorkflowGitFinalizationMode: String {
 }
 
 extension DeterministicWorkflowRunner {
+  func composedPromptsWithFinalizationEvidence(
+    workflow: WorkflowDefinition,
+    step: WorkflowStepRef,
+    payload: AgentNodePayload,
+    variables: JSONObject,
+    session: WorkflowSession
+  ) throws -> ComposedAdapterPrompts {
+    var prompts = composedPrompts(workflow: workflow, step: step, payload: payload, variables: variables)
+    guard Self.requiresGitFinalizationEvidence(workflow: workflow, terminalStep: step) else {
+      return prompts
+    }
+    let evidence = try Self.gitFinalizationPromptEvidence(session: session)
+    let supplement = "\n\nRuntime-accepted predecessor step outputs (not authored input):\n\(evidence)"
+    prompts.promptText += supplement
+    prompts.resumedPromptText += supplement
+    return prompts
+  }
+
+  static func gitFinalizationPromptEvidence(session: WorkflowSession) throws -> String {
+    let relevantStepIds = [
+      "step1-issue-intake", "step2-design-doc-update", "step3-design-review",
+      "step4-impl-plan-create", "step5-impl-plan-review", "step5-feature-plan-join",
+      "plan-checkpoint", "plan-git-commit", "dispatch-plans",
+      "step6-implement", "step6-test-integrity-check", "step7-adversarial-review",
+      "step7b-e2e-evidence", "implementation-wave-outcome", "reconcile-implementations",
+      "integration-review", "step8-docs-refresh", "step9-commit-message",
+      "step10-git-commit", "step11-git-push", "base-branch-integrate"
+    ]
+    let entries: [JSONValue] = relevantStepIds.compactMap { stepId in
+      guard let execution = session.executions.last(where: { $0.stepId == stepId }),
+            execution.status == .completed,
+            let accepted = execution.acceptedOutput else {
+        return nil
+      }
+      return .object([
+        "stepId": .string(stepId),
+        "payload": .object(accepted.payload),
+        "when": .object(accepted.when.mapValues(JSONValue.bool))
+      ])
+    }
+    return try JSONValue.array(entries).compactJSONString()
+  }
+
   static func requiresGitFinalizationEvidence(
     workflow: WorkflowDefinition,
     terminalStep: WorkflowStepRef

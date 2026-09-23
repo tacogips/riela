@@ -1,6 +1,83 @@
 # Workflow defect detection and verified repair
 
-Status: Draft revised after Step 3 review, 2026-09-22. Independent acceptance and implementation pending.
+Status: Planning-only finalization, 2026-09-23. Historical D1–D8 acceptance and D9 Step 3 acceptance are distinguished below. This status correction requires renewed Step 3 review; Step 5 acceptance of the current plan remains pending. Runtime implementation remains pending and is not authorized in this run.
+
+## Current finalization authority and review status
+
+Issue: **Finalize workflow defect detection and verified repair design and
+implementation plan**. Issue reference: `workflowInput local request`; no GitHub
+issue number/URL or Codex-agent reference was supplied (`codexAgentReferences=[]`).
+Mode: `planning-only`. Authoritative intake is `comm-000002`,
+`step1-issue-intake-attempt-1-exec-2`, execution
+`codex-design-and-implement-review-loop-session-1`. The runtime-resolved immutable
+user-scope workflow and effective workflowInput are authoritative; this node does
+not rediscover package provenance or readiness.
+
+Inspected local `main`, `origin/main` and branch
+`design/workflow-defect-liveness-finalize` all point to
+`0fab7f95e300ecb9e5d236813a9a6519df6025e8`. This is the local source baseline,
+not a claim that the remote was fetched. Only material documentation corrections
+are in scope; Work Runtime P1's separate branch and runtime code remain outside
+this run. Later workflow stages own plan review, accepted-document commit/push,
+and any main integration after acceptance and verification.
+
+| Review scope | Evidence and current decision |
+| --- | --- |
+| Historical D1–D8 | Intake reports accepted design and plan. The plan retains Step 3 `comm-000006`, `step3-design-review-attempt-1-exec-3`, accepted design digest `258cc1d34f78d64971e96e4f130ed8ee8db02eba5209657ee39f8a0ac416b170`, and resolved Step 5 `comm-000008` Package.swift ownership feedback. A later raw Step 5 acceptance receipt is not available in this checkout; historical acceptance is attributed to intake, not independently reconstructed. |
+| D9 Step 3 | Plan records `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`, no findings, for SHA-256 `998818586b15ab158a6dd956ef9a69de52b3bbdcd3a008702a2e96e593b45a0c`. That digest matches this design before the current status correction. This is historical receipt evidence, not acceptance of the newly edited bytes. |
+| Current design | D1–D9 behavior is retained; current authority/status supersedes historical pending-review prose below. Renewed Step 3 review must bind the corrected bytes. |
+| Current plan / implementation | Independent Step 5 review of exact final plan bytes is pending; all six runtime tasks remain unimplemented. The README's blanket acceptance statement must not substitute for this gate. |
+
+Current source recheck confirms `WorkflowBranchEvaluation.swift` still falls back
+to false for missing controls; `RuntimePublication.swift` validates before normal
+transition selection; loop gate eligibility remains in
+`DeterministicWorkflowRunner+LoopPolicy.swift`. `AgentGatewayNodeAdapter.swift`
+still maps the four ACP discriminators, `RuntimeStore.swift` trusts generic event
+time/sequence, and `SessionObservability.swift` classifies generic event time.
+`FailClosedSQLiteWorkflowRuntimeStore.swift` and the SQLite `session_json` store
+remain the durable implementation seams. These facts support the existing
+ownership boundaries; they do not establish runtime implementation of D1–D9.
+
+No new Codex schema mapping is required by this intake. D9's historical behavioral
+references remain context only; Cursor-specific mapping stays in the gateway
+adapter. No user decision is unresolved. Historical incident causal reconstruction,
+exact upstream event-schema equivalence and cross-host freshness remain evidence
+limits, not prerequisites for synthetic deterministic implementation tests.
+
+The historical scratch verifiers cited below are absent in this checkout and their
+reported results are not fresh verification. Current author checks use
+`python3 tmp/workflow-defect-finalize/step2/verify.py`, complete log
+`tmp/workflow-defect-finalize/step2/verification.log`; require terminal exit 0.
+The checks cover baseline hashes, preserved D1–D9 contracts, source seams, unchanged
+plan/index, changed-file scope and whitespace. Step 4 must reconcile the plan's
+old design digest and authority prose before Step 5; acceptance cannot carry across
+changed bytes. No independent acceptance, runtime test, commit or push is claimed.
+
+## Historical D9 extension authority (2026-09-22)
+
+Issue: **Expose authoritative backend activity and session liveness**. Mode:
+`design-plan-only`. Issue reference: `workflow-input`, repository `tacogips/riela`,
+issue number/URL null, original communication `comm-000001`; intake receipt
+`comm-000002` from `step1-issue-intake-attempt-1-exec-2`, execution
+`codex-design-and-implement-review-loop-session-1`. The intake decision is
+`ready_for_single_design_author`; no Step 3/5 feedback for this extension was
+supplied. Historical receipts below apply only to the earlier routing design.
+
+Inspected base: `991f619fd13e548275ba20ac4073a4168f97a2d3`, clean `main` tracking
+`origin/main`. The immutable user-scope manifest
+`/Users/taco/.riela/packages/codex-design-and-implement-review-loop/riela-package.json`
+is version **0.3.6**. No installed package is edited or nested workflow started.
+The single implementation-plan batch remains
+`impl-plans/active/workflow-defect-detection-and-repair.md`. D9 extends its T4/T6
+contracts; D1–D8 and their original A1–A16 acceptance scope remain intact.
+This intake's A1–A8 are named **L1–L8** below to avoid collision.
+
+Codex references are reported JSONL reasoning activity, tool-call activity,
+subagent communication and process activity, all behavioral references from
+`workflowInput.issueBody`, each with filePath null. The specified local reference
+`/Users/taco/gits/codex-agent` is absent; no reference URL or exact event fixture
+was supplied. Exact upstream schema mapping remains unverified. Riela's inspected
+ACP mapping, not an invented Codex JSONL parser, supplies the implementation seam.
 
 ## Intent and evidence
 
@@ -159,7 +236,7 @@ explicit option, not a side effect of validation. D5 specifies the proposed CLI 
 Independent review must verify these cases against runtime semantics. This draft
 does not claim implementation, test execution, or independent acceptance.
 
-## Evidence identity and unresolved evidence
+## Evidence identity and unresolved evidence (historical D1–D8 revision)
 
 This is the single-author design for the complete requested plan set:
 `impl-plans/active/workflow-defect-detection-and-repair.md`. Issue reference is
@@ -615,7 +692,7 @@ planning turn runs only documentation/source-evidence checks, not Swift tests or
 future repair commands. Commit/push of the requested design/plan/narrow index are
 authorized for the later workflow finalization stages, not performed in Step 2.
 
-## Author self-check — Step 2
+## Author self-check — historical D1–D8 Step 2
 
 Author decision: `ready_for_design_rereview`, not independent acceptance. The author
 checked the complete intake against D1–D8 and A1–A16. No high or mid design finding
@@ -652,3 +729,344 @@ against hashes captured at the start of this revision. Both logs require termina
 exit status 0. Historical causal replay remains unavailable; renewed independent
 review and implementation verification remain later workflow gates. The sole edited deliverable in Step 2 is
 this design; the existing plan and index are preserved byte-for-byte.
+
+## D9: Authoritative backend activity and session liveness
+
+### D9.1 Boundary, producer authority and reference mapping (L1, L2)
+
+An activity observation proves recent correlated inbound work at the Riela adapter
+boundary. It does not prove successful work, semantic progress, or uninterrupted
+provider responsiveness. Extend `AdapterExecutionContext`, existing runtime
+receipts/live-tail projection and `SessionBackendActivity`; do not add a history
+service, scheduler, provider filesystem scanner, or another health subsystem.
+
+`AgentGatewayNodeAdapter.swift` currently maps ACP `agent_message_chunk`,
+`agent_thought_chunk`, `tool_call`, and `tool_call_update` into open
+`AdapterBackendEvent` values. `RuntimeStore.swift` stores up to 100 generic events,
+including content/tool names, and trusts supplied time/sequence. Those records are
+not the new authority. `DeterministicWorkflowRunner+ExecutionEvents.swift` currently
+bases silence warnings on `lastBackendEventAt`; the existing classifier uses that
+same generic time and has no definitive stalled/terminal value. Replace those
+liveness inputs with the typed projection below, leaving semantic output ownership
+with the existing output contract.
+
+| Producer / observed input | Normalized kind / provenance | Capability and confidence |
+| --- | --- | --- |
+| Local gateway, live current-turn ACP message chunk | `assistant-output` / `gateway-stream` | `partial`, `correlated`: fresh inbound observation, never claim full backend coverage |
+| Local gateway, ACP thought chunk discriminator | `reasoning-activity` / `gateway-stream` | Same; discard thought content before activity serialization |
+| Local gateway, ACP tool_call or tool_call_update discriminator | `tool-activity` / `gateway-stream` | Same; no names, call IDs, arguments, output, status prose or hashes of content |
+| Owned child runtime with durable parent/child execution link | Child's original kind / original provenance with `child-runtime` propagation | Child-only evidence; no synthetic parent refresh; delegation represented by that relationship |
+| Provider-supported correlated delegation notification | `delegation-activity` / `gateway-stream` | Reserved normalized kind; current inspected ACP collector provides none, so unsupported until a concrete typed mapping and tests exist |
+| Provider-generated correlated response heartbeat | `backend-heartbeat` / `gateway-stream` | Reserved kind, unsupported by inspected collector; never synthesize from Riela timers or socket keepalives |
+| Distributed worker event relay | Original kind / `distributed-worker`, retaining originating producer | Current relay has lease/sequence, but no verified cross-host freshness bound: `freshness-unverified`, `unknown`; receipt/lease alone cannot refresh responsiveness |
+| PID, open socket, worker lease renewal, filesystem mtime, generic unknown event, Riela progress heartbeat | No qualifying kind; fixed diagnostic reason only | `unsupported` or `partial` with `unknown` confidence; never active evidence |
+
+Capability is runtime-owned `partial`, `unsupported`, or `freshness-unverified`,
+not supplied by the model or inferred from backend brand. No current producer is
+claimed to guarantee periodic activity. Missing reserved kinds do not block the
+local ACP implementation. Cursor CLI and official Cursor SDK use the same gateway
+adapter boundary; any provider-specific discriminator handling stays in that
+adapter. Do not create Cursor behavior in Core. This intentionally diverges from
+copying Codex JSONL or treating reported process activity as responsiveness.
+
+### D9.2 Closed record, correlation and acceptance (L1–L3)
+
+Define a typed optional `activity` on the existing execution live tail/session,
+and `activity` payload on a new `WorkflowRunEventType.backendActivity` wire event
+`backend_activity`. Share the DTO across persistence, JSONL and observability.
+The allowlist is: `version=1`, `sessionId`, `executionId` (includes attempt identity),
+`rootSessionId`, optional runtime-owned `parentSessionId`/`parentExecutionId`,
+`producerEpoch`, `producerSequence`, `sequence`, `kind`, `provenance`, `confidence`,
+`capability`, `occurredAt`, `receivedAt`, `committedAt`. All enums are closed.
+IDs are Riela-owned bounded identifiers; do not expose opaque backend session IDs,
+lease tokens, arbitrary provider strings, paths, messages or metadata maps here.
+Runtime privately binds backend session and turn to the execution callback; model
+payload IDs cannot override that binding. Parent/root identities come from stored
+lineage, never untrusted event attributes.
+
+`occurredAt` means first Riela ingress observation, not claimed provider generation
+time. Capture it and a monotonic tick before any asynchronous Riela queue, together
+with a sequence assigned by that execution's serialized adapter producer.
+`receivedAt` is Core admission time, `committedAt` durable commit time. Provider
+wall timestamps are neither persisted as activity nor used to advance freshness.
+The active age uses `occurredAt`, never commit time. This cannot detect hidden
+buffering before the first Riela ingress; confidence describes observed correlated
+traffic, not a claim about the provider's internal clock. Reconnect/replay streams
+cannot be classified as live until bound to a new owned producer epoch.
+
+Within the existing store's serialized receipt/checkpoint boundary:
+
+1. Require running owning session and execution, matching bound backend turn and
+   current durable producer epoch. Reject old epoch, cross-session/execution,
+   unknown kind/version and post-terminal input before any mutation or JSONL event.
+2. Require `producerSequence > producerHighWater`; repeated or lower sequence is
+   rejected. A gap marks coverage interrupted; do not fill or reorder a buffer.
+   A later fresh observation can prove activity but cannot erase the recorded gap
+   or assert continuous coverage. Advance a separate seen high-water even for a
+   stale recognized event, atomically; never reuse it as qualifying activity time.
+3. For local producer ingress, monotonic admission delay and commit delay must be
+   at most **5,000 ms** total. Require ingress time not before the execution/epoch
+   start or previous accepted ingress time. Duplicate, late, reordered, future,
+   stale and freshness-unverified events do not update latest activity or its
+   sequence. Same-millisecond distinct events may be accepted by sequence order.
+   Unknown event kinds cannot acquire authority by a claimed timestamp.
+4. Allocate `sequence = durableActivityHighWater + 1` only for accepted activity.
+   It is execution-scoped, independent of generic backendEventCount. Commit latest
+   projection, both high-water values and epoch in the existing session/message
+   checkpoint before emitting `backend_activity`. Commit failure emits no accepted
+   event and reports fixed `activity-persistence-failed`; never mask it with success.
+   Generic raw backend events cannot stand in for an activity commit.
+5. Emission is at-most-once per successful live callback; a crash after commit may
+   omit its JSONL line. Consumers reconcile from durable projection and deduplicate
+   by `(sessionId, executionId, sequence)`. A missing line does not roll back state;
+   JSONL alone is not the durable source of truth.
+
+Retain only one latest qualifying record per existing execution, scalar high-water
+values, current epoch, coverage reason and terminal freeze data: at most **2 KiB**
+encoded activity extension per execution. Oversize/invalid IDs fail closed rather
+than truncate identity. No activity event ring, raw content, per-tool history or
+unbounded producer map. Session execution retention remains the existing policy.
+Do not append activity to `recentBackendEvents`, conversation messages, streamed
+response text, prompt context, or accepted-output payload. Reuse the session/message
+transaction machinery without manufacturing a conversational message.
+
+Normalization constructs the allowlist before any new log/persistence sink.
+Reasoning content, prompts, tool arguments/results, secrets and raw backend payloads
+are forbidden in activity, warning diagnostics and rejection logs, including hashes
+of those contents. Current generic output features retain their separate purpose;
+this work must not enable or expand raw capture merely to prove liveness. Privacy
+tests inspect new/changed sinks and prove activity-only input leaves generic history
+and response text unchanged.
+
+### D9.3 Durability, recovery and clocks (L3)
+
+`RuntimeSession.swift`, `RuntimeStore.swift` and
+`WorkflowRuntimePersistenceSnapshot.swift` own the additive versioned projection;
+`SQLiteWorkflowRuntimePersistenceStore.swift` already serializes executions in
+`session_json`, so **no SQL table/column or schema-version bump is required**.
+`SQLiteRuntimeSchemaMigrationTests.swift` must prove old-schema/session loading,
+missing activity defaults and checkpoint recovery. This is a serialized-record
+migration, not a second database. D6's cycleProgress migration remains separate.
+
+Production already wraps the backing actor with
+`Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift`, constructed by
+`WorkflowRunCommand.swift`; do not assume Core's in-memory actor itself is durable.
+Add the typed activity receipt to that existing wrapper. Stage an activity-only
+candidate privately; a failed canonical write must not expose candidate activity
+through the backing cache, CLI live snapshot or later unrelated save. Use a
+SQLite transaction to compare running session/execution, epoch and high-water,
+then update only the activity projection while preserving concurrent semantic
+fields. Publish the committed projection to the cache only after success. A stale
+candidate loses its fence and is rejected, never blindly writes an old whole-session
+snapshot over a terminal/accepted state. Existing snapshot save paths must retain
+the greater committed activity high-water and terminal fence so throttled saves
+cannot regress it. No activity transaction changes message order or semantic output.
+The existing wrapper remains the single durable execution boundary for CLI and
+its library/GraphQL command routes. Core-only in-memory runners remain explicit.
+
+Activity checkpoints bypass the CLI's existing one-second generic-event throttle
+in `WorkflowRunLivePersistence.swift`. The same durable receipt path must serve
+library, CLI and GraphQL-started runs; CLI event-handler presence is not a condition
+for collection or persistence. A persistence-less in-memory library run may expose
+session-local activity with `durability=memory`, but has no restart guarantee and
+must not claim a durable JSONL receipt. Persisted runs use `durability=durable`.
+Treat durability as envelope/projection metadata, not a producer claim. Bound input
+backlog to the existing execution event path; if it cannot keep up with the 5-second
+freshness limit, reject stale work and report interrupted coverage, never make queued
+old work fresh by stamping it again. Do not add a timer-based activity generator.
+
+Restart reloads high-water, latest accepted time, frozen state and classification
+policy before admitting callbacks. A new producer epoch is durably allocated on
+reattachment/resume; the activity sequence continues within the same execution,
+while producer sequence restarts in the new epoch. No old epoch survives recovery.
+A retry/new execution starts its own sequence; lineage remains visible. Missing old
+activity is `unknown/legacy-no-activity`; never synthesize it from generic history.
+Unknown record versions fail activity admission/classification closed and require
+reviewed recovery, without changing the semantic progress metadata or budgets.
+
+Use the injected runtime clock plus monotonic elapsed time within one process.
+Persist UTC observation and the evaluation time of its last durable checkpoint;
+read-only queries must not mutate session state or persist their evaluation time. After restart derive age from trusted runtime UTC
+against the durable observation. A backwards clock relative to durable observation
+or checkpoint, or disagreement exceeding **5,000 ms** between wall and monotonic
+elapsed time in a process, yields `unknown/clock-discontinuity`, age null. A
+cross-restart forward jump is not distinguishable from real downtime: stale age can
+produce suspicion, but never definitive stalled without runtime timeout authority.
+No clamping future timestamps to zero to produce active. Fresh activity in a valid
+new clock/producer epoch can restore active; expose recovery provenance.
+
+Terminal transition and final activity flush share checkpoint ordering. Once either
+owning session or execution is terminal, freeze sequence/latest observation and
+age at terminal time; later reads have a newer `observedAt` but the same frozen
+activity. A delayed child or callback cannot reopen its parent. Terminal result
+remains the existing workflow result, not a new activity-derived success/failure.
+
+### D9.4 Classification and silence warnings (L4, L7)
+
+Extend `SessionBackendActivityClassifier`, using one supplied evaluation time and
+the following ordered rules. Persist policy with the execution so resume keeps it.
+Capture the runner's effective deadline once for the current execution/producer
+epoch at the existing `deadline(for:request:)` call sites, not separately for health.
+Persist that optional deadline in the activity extension before adapter invocation;
+resume retains it unless the existing execution owner explicitly starts a new
+attempt. `DeterministicWorkflowRunner+Prompting.swift` retains timeout precedence
+and uses the injected clock; this work does not change duration/default policy.
+`DeterministicWorkflowRunner+Cancellation.swift` maps typed `.timeout` to existing
+`.nodeTimeout`; project that decision with source execution and fixed reason only,
+never scrape `failureReason` text. Current timeout handling normally goes directly
+to terminal. The stalled verdict represents an owner-confirmed timeout still
+outstanding during finalization, not a new persisted health decision authority.
+
+Retain defaults `activeThresholdMs=30000`, `stalledThresholdMs=180000`; the latter
+remains the existing suspect threshold despite its legacy field name. Require
+`0 < activeThresholdMs < stalledThresholdMs`. Expose
+`definitiveDeadlineAt` from the existing execution deadline, nullable. Do not create
+a new execution timeout or forced-cancellation policy for liveness.
+
+| Precedence / state | Exact rule and fixed classification reason |
+| --- | --- |
+| `terminal` | Owning lifecycle terminal; `execution-terminal` or `session-terminal`, frozen age and terminal outcome |
+| `unknown` | Unsupported capability/version, unverified freshness/identity, persistence or clock fault; specific fixed reason, nullable age |
+| `stalled` | Existing runtime owner has recorded a correlated response-timeout decision for this still-outstanding execution, its deadline has expired, and no qualifying activity after the timed-out observation invalidates it; `response-deadline-expired`. Silence thresholds alone never suffice |
+| `active` | Valid qualifying observation with `ageMs <= 30000`; `recent-correlated-activity` |
+| `quiet` | `30000 < ageMs <= 180000`; `activity-within-silence-budget` |
+| `stalled-suspect` | `ageMs > 180000`; `activity-overdue` (or `activity-overdue-coverage-interrupted`). This is the existing wire spelling for suspected-stalled, not definitive failure |
+| `unknown` then `stalled-suspect` without first activity | Supported local channel: `awaiting-first-activity` until elapsed time since owned start exceeds 180000, then `no-activity-since-start`; ageMs stays null, `waitingAgeMs` explains the baseline. Process-only/unsupported channels remain unknown |
+
+The definitive timeout reference is the existing owner failure/deadline record,
+not a provider error string or new health authority. If the owner transitions
+straight to failed, report terminal with timeout reason; no artificial intermediate
+stalled lifecycle is required. Without that record or deadline, expose null
+`definitiveDeadlineAt`/`timeoutEvidence` and remain suspect. A fresh accepted event
+may restore active from suspicion (and invalidate a still-pending timeout decision
+only through the existing owner's fencing), but never resets semantic counters.
+
+`silence_warning` remains an observational warning. Use the same projection and
+clock, qualifying observation or owned-start baseline, and the request's existing
+`agentSilenceWarningMs`; expose that warning threshold separately from classifier
+thresholds. Suppress backend-silence warnings while classification is active,
+including thought/tool activity for the exact execution being assessed;
+child activity affects its child verdict and the rollup only.
+Warnings carry the shared activity summary, fixed reason and age; unsupported or
+unverified sources say responsiveness is unknown, never assert stalled. Repeated
+warnings use existing throttling; Riela-generated heartbeat/warning events cannot
+refresh activity. Assistant-visible-text age may remain a separately labelled output
+fact and does not override backend activity. Child activity is evaluated at the
+child, never used to suppress an overdue parent's independent backend warning.
+
+Activity is expressly excluded from `WorkflowCycleProgressProjection`,
+`LoopConvergenceTracker` fingerprints, repeated/no-progress rounds, gate visits,
+accepted-plan/change evidence and retry eligibility. D3 still determines cycle
+comparability from owned unfinished work; activity neither completes that work nor
+creates an indefinite owned wait. Stale ownership is reconciled by its existing
+owner. Active traffic does not suspend max steps, deadlines or loop limits. Health
+`stalled` is distinct from the semantic `loop_stall` event and cannot emit it.
+
+### D9.5 Shared surfaces and nested/fanout rollup (L5, L6)
+
+Use `SessionBackendActivity` as the single typed projection for session
+status/progress/health, their JSON/JSONL and text rendering, GraphQL observability
+contracts/schema/projectors and library DTOs. Expose: `verdict`, `reason`,
+`observedAt`, `ageMs`, `waitingAgeMs`, `lastActivityAt`, the activity record identity,
+`provenance`, `confidence`, `capability`, `durability`, `coverage`, `coverageReason`,
+`activeThresholdMs`, `stalledThresholdMs`, `definitiveDeadlineAt`, `timeoutEvidence`
+(runtime-owned execution/decision identifier only), and `terminalAt`/frozen state.
+Null means absent/unknown, never zero age or an invented source. JSONL warning and
+progress snapshots include the same projection; `backend_activity` includes its
+accepted record plus that shared summary evaluated at commit. Text renders these
+facts without dumping generic evidence detail/path fields. Keep legacy generic
+backend time/count fields labelled as generic observations, never convert them to
+new authoritative evidence. Missing fields decode as unknown for old sessions;
+there is no unsupported old-client enum compatibility layer. Update existing
+GraphQL schema snapshot and parity tests for additive stalled/terminal values.
+
+Aggregate the outstanding owned execution set, not just the newest child/session.
+Use persisted call/fanout lineage and existing observability traversal; each entry
+retains its source session/execution, parent relation, verdict/reason/age and
+provenance. Count running local executions as well as descendants. A parent waiting
+only on a child is structural and contributes no fictitious backend observation;
+a parent with its own running backend is evaluated independently. Accepted queued
+work is `unknown/not-started`; authorized external wait is `quiet/authorized-wait`
+without claiming a responsive backend. Both remain outstanding for terminal checks.
+
+Bound traversal to **256 sessions, 1024 outstanding executions, depth 32**, in stable
+session/execution ID order with a visited set. Reuse stricter existing request bounds
+if supplied. Bound exceeded, missing child, cycle, duplicate ownership or snapshot
+revision drift sets `rollupTruncated` or `rollupIncomplete`, lists fixed reasons and
+known/omitted counts (null if unknowable), and `coverage=partial`. Never repair
+lineage from model text. Terminal children keep their own frozen summaries and do
+not mask unfinished work. Root-terminal display retains root result but cannot
+claim aggregate terminal if a child is unresolved or the view is incomplete.
+
+Reduction is deterministic: known stalled > known stalled-suspect > unknown or
+incomplete > quiet > active; aggregate terminal only when the complete owned set
+is terminal. Thus any overdue branch defeats an active sibling. Missing/truncated
+members cannot yield a healthy active/quiet aggregate. Keep `worstKnownVerdict`
+and full coverage status even when incomplete, plus stable sorted blocker IDs;
+truncation never hides a known stall. No descendant timestamp is copied into the
+parent activity record, and no root-wide sequence is invented. CLI, GraphQL and
+library use the same reducer and evaluation time, not different newest-child logic.
+
+### D9.6 Implementation boundary, rollout and deterministic acceptance (L1–L8)
+
+The one plan retains six tasks. T4 adds activity normalization, durable projection,
+classifier, existing silence monitor and surface parity; T6 adds integrated L1–L8
+acceptance and documentation. Exact paths and dependency-ready internal waves are
+in the plan manifest and activity extension. T1–T3/T5 keep their original scopes.
+Do not broaden output-contract or loop-engineering implementation ownership.
+Roll out DTO/persistence first, then local ACP mapping and classifier, then surfaces
+and rollup; enable authoritative warnings only after privacy/recovery/parity gates.
+Absent/old records remain unknown. Distributed freshness and unsupported delegation
+or heartbeat kinds must remain explicitly unsupported; no speculative protocol work.
+
+| Intake → design | Deterministic proof required |
+| --- | --- |
+| A1 → L1 / D9.1–D9.2 | Local discriminator mapping, bound turn/epoch identity, capabilities; unmapped provider/process/transport input cannot become active |
+| A2 → L2 / D9.2–D9.3 | Secret sentinels in thought, prompt, tool arguments/results and raw metadata absent from activity JSONL/SQLite/snapshot/DTO/diagnostics; bounded projection only |
+| A3 → L3 / D9.2–D9.3 | Equal/lower sequence, delayed >5000ms, reversed times, old epochs, wrong execution, commit failure/crash windows, recovery and post-terminal rejection; durable latest state never regresses |
+| A4 → L4 / D9.4 | Exact 30000/180000 boundaries, no-first-event, process-only, dropped input, silent text with thought/tool activity, recovery, authoritative timeout and terminal precedence |
+| A5 → L5 / D9.5 | Same clock/source snapshot yields equal CLI status/progress/health, JSON/JSONL, GraphQL and library fields/nullability/reasons |
+| A6 → L6 / D9.5 | Active sibling plus overdue child, nested delegation, active parent plus overdue child, structural parent, queued/waiting child, truncation/missing/cyclic lineage and terminal-root/unresolved-child cases |
+| A7 → L7 / D9.4 | Interleave only activity in identical semantic cycles: byte-equal projections/fingerprints and identical counters, gate visits, retry decisions; actual accepted change still advances progress |
+| A8 → L8 / D9.1–D9.6 | Execute the plan's L-V1–L-V5 plus build/lint/diff gates with injected clocks, mocks, positive test counts and complete logs; no provider credentials or exact upstream fixture required |
+
+Open evidence limitations: exact Codex JSONL schema cannot be verified without the
+missing repository/fixture; opaque provider buffering before Riela ingress cannot
+be distinguished from fresh generation; the current distributed relay cannot prove
+cross-host freshness. These are explicit capability/confidence limits, not user
+product decisions or claimed passes. No user-QA file is needed. Historical Work
+Runtime incident artifacts remain unavailable as described above. Independent
+Step 3 design review and later plan review/adversarial acceptance remain pending;
+author self-check does not substitute for those gates.
+
+### Historical D9 Step 2 author self-check (2026-09-22)
+
+Decision: `ready_for_design_review`, with independent review pending. Checked
+current intake L1–L8 against D9, preserved original D1–D8/A1–A16 and all six plan
+scopes, and resolved these material author findings before handoff:
+
+- SELF-M1 (mid): identified the actual durable production wrapper,
+  `Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift`; added exact ownership,
+  private candidate/cache failure rules and field-preserving transaction fences.
+- SELF-M2 (mid): current execution metadata does not persist its effective deadline;
+  specified capture at the existing runner deadline boundary and typed timeout
+  provenance without inventing another timeout policy or health decision store.
+- Clarified warning child scope, checkpoint clock metadata versus read-only query
+  time, and current intake provenance versus historical acceptance receipts.
+
+Documentation verification: `python3 tmp/backend-activity-design/verify.py`; complete
+log `tmp/backend-activity-design/verification.log`, final exit status **0**. Its
+nested `git diff --check` also exits **0**. The verifier checks only the two owned
+document changes, unchanged main HEAD, the installed 0.3.6 manifest, added path
+existence, unchanged T1–T3/T5 contracts, preserved T4/T6 prior duties, six unchecked
+tasks, serial dependencies and L1–L8/L-V1–L-V5 traceability. Source inspection in that
+log confirms the gateway mapping, classifier defaults and durable wrapper.
+
+No unresolved high/mid author finding remains. Exact Codex upstream schema checking
+is blocked by absent `/Users/taco/gits/codex-agent` (`ls -ld` exit **1**, explicitly
+expected absence rather than a passing mapping check). D9 records the confidence
+limits; no hidden user decision is deferred. Future Swift/runtime verification has
+not run because this stage edits documentation only. No claim of independent
+acceptance, implementation, commit or push is made. Retain task evidence under
+`tmp/backend-activity-design/` until the owning workflow preserves its complete log
+in durable artifacts; finalization then removes the scratch directory.

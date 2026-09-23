@@ -13,15 +13,18 @@ public typealias AgentGatewayExecutorFactory = @Sendable (_ environment: [String
 public struct AgentGatewayAdapterConfiguration: Sendable {
   public var environment: [String: String]
   public var codexSupervisorModeEnabled: Bool
+  public var defaultWorkingDirectory: String?
   public var executorFactory: AgentGatewayExecutorFactory
 
   public init(
     environment: [String: String] = [:],
     codexSupervisorModeEnabled: Bool = false,
+    defaultWorkingDirectory: String? = nil,
     executorFactory: @escaping AgentGatewayExecutorFactory = defaultAgentGatewayExecutorFactory
   ) {
     self.environment = environment
     self.codexSupervisorModeEnabled = codexSupervisorModeEnabled
+    self.defaultWorkingDirectory = defaultWorkingDirectory
     self.executorFactory = executorFactory
   }
 
@@ -33,6 +36,7 @@ public struct AgentGatewayAdapterConfiguration: Sendable {
     AgentGatewayNodeAdapter(
       environment: environment,
       codexSupervisorModeEnabled: codexSupervisorModeEnabled,
+      defaultWorkingDirectory: defaultWorkingDirectory,
       executorFactory: executorFactory
     )
   }
@@ -50,17 +54,20 @@ public let defaultAgentGatewayExecutorFactory: AgentGatewayExecutorFactory = { e
 public struct AgentGatewayNodeAdapter: NodeAdapter {
   public var environment: [String: String]
   public var codexSupervisorModeEnabled: Bool
+  public var defaultWorkingDirectory: String?
   public var executorFactory: AgentGatewayExecutorFactory
   private let sessionStore: AgentGatewaySessionStore
 
   public init(
     environment: [String: String] = [:],
     codexSupervisorModeEnabled: Bool = false,
+    defaultWorkingDirectory: String? = nil,
     executorFactory: @escaping AgentGatewayExecutorFactory = defaultAgentGatewayExecutorFactory,
     sessionStore: AgentGatewaySessionStore = AgentGatewaySessionStore()
   ) {
     self.environment = environment
     self.codexSupervisorModeEnabled = codexSupervisorModeEnabled
+    self.defaultWorkingDirectory = defaultWorkingDirectory
     self.executorFactory = executorFactory
     self.sessionStore = sessionStore
   }
@@ -105,7 +112,7 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
       GatewayTurnRequest(
         defaults: defaults,
         environment: turnEnvironment,
-        workingDirectory: input.node.workingDirectory,
+        workingDirectory: input.node.workingDirectory ?? defaultWorkingDirectory,
         promptBlocks: try gatewayPromptBlocks(input),
         vendorSessionId: reusedSessionId,
         deadline: context.deadline

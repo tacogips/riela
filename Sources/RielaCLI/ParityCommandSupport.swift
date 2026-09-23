@@ -28,6 +28,7 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Option var messageFile: String?
   @Option var promptVariant: String?
   @Flag var continueSession = false
+  @Flag var supervisorMode = false
   @Option(name: .customLong("resume-step-exec")) var resumeStepExecutionId: String?
   @Option var timeoutMs: Int?
   @Option var maxSteps: Int?

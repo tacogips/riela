@@ -16,6 +16,20 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(try RielaArgumentParser().parse(["version"]), .version)
   }
 
+  func testParsesExplicitFailedStepRetryOnlyOnSessionResume() throws {
+    let command = try RielaArgumentParser().parse([
+      "session", "resume", "failed-session", "--retry-failed-step", "--scope", "user"
+    ])
+    guard case let .session(.resume(options)) = command else {
+      return XCTFail("expected session resume")
+    }
+    XCTAssertTrue(options.retryFailedStep)
+    XCTAssertEqual(options.scope, .user)
+    XCTAssertThrowsError(try RielaArgumentParser().parse([
+      "workflow", "run", "example", "--retry-failed-step"
+    ]))
+  }
+
   func testArgumentParserRegistersEveryTopLevelClientCommand() {
     XCTAssertEqual(
       Set(RielaClientCommandRouter.configuration.subcommands.map { $0._commandName }),

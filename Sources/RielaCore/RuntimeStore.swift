@@ -29,11 +29,13 @@ public protocol WorkflowRuntimeIDGenerating: Sendable {
   func nextStepExecutionId(stepId: String, attempt: Int) throws -> String
   func nextCommunicationId() throws -> String
   func noteExistingSessionId(_ sessionId: String, workflowId: String)
+  func noteExistingStepExecutionId(_ executionId: String)
   func noteExistingCommunicationId(_ communicationId: String)
 }
 
 extension WorkflowRuntimeIDGenerating {
   public func noteExistingSessionId(_ sessionId: String, workflowId: String) {}
+  public func noteExistingStepExecutionId(_ executionId: String) {}
   public func noteExistingCommunicationId(_ communicationId: String) {}
 }
 
@@ -92,6 +94,16 @@ public final class MonotonicWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerat
       return
     }
     communicationCounter = max(communicationCounter, parsed)
+  }
+
+  public func noteExistingStepExecutionId(_ executionId: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let range = executionId.range(of: "-exec-", options: .backwards),
+          let parsed = Int(executionId[range.upperBound...]) else {
+      return
+    }
+    executionCounter = max(executionCounter, parsed)
   }
 }
 
@@ -376,6 +388,9 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   public func seedSession(_ session: WorkflowSession) {
     idGenerator.noteExistingSessionId(session.sessionId, workflowId: session.workflowId)
+    for execution in session.executions {
+      idGenerator.noteExistingStepExecutionId(execution.executionId)
+    }
     sessions[session.sessionId] = detachingBackendLiveTails(from: session)
     if messagesBySession[session.sessionId] == nil {
       messagesBySession[session.sessionId] = []

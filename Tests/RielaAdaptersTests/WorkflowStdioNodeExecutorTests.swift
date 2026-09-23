@@ -4,6 +4,52 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowStdioNodeExecutorTests: XCTestCase {
+  func testCommandNodeUsesExecutorDefaultWorkingDirectory() async throws {
+    let expected = "/tmp/riela-target-worktree"
+    let runner = RecordingStdioNodeProcessRunner { configuration, _ in
+      XCTAssertEqual(configuration.workingDirectoryURL?.path, expected)
+      return #"{"status":"ok"}"# + "\n"
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(
+      runner: runner,
+      defaultWorkingDirectory: expected
+    )
+
+    _ = try await executor.execute(
+      input(kind: .command, node: AgentNodePayload(
+        id: "node",
+        nodeType: .command,
+        model: "",
+        command: WorkflowCommandExecution(executable: "true")
+      )),
+      context: AdapterExecutionContext()
+    )
+  }
+
+  func testCommandNodeExplicitWorkingDirectoryOverridesExecutorDefault() async throws {
+    let runner = RecordingStdioNodeProcessRunner { configuration, _ in
+      XCTAssertEqual(configuration.workingDirectoryURL?.path, "/tmp/node-override")
+      return #"{"status":"ok"}"# + "\n"
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(
+      runner: runner,
+      defaultWorkingDirectory: "/tmp/riela-target-worktree"
+    )
+
+    _ = try await executor.execute(
+      input(kind: .command, node: AgentNodePayload(
+        id: "node",
+        nodeType: .command,
+        model: "",
+        command: WorkflowCommandExecution(
+          executable: "true",
+          workingDirectory: "/tmp/node-override"
+        )
+      )),
+      context: AdapterExecutionContext()
+    )
+  }
+
   func testCommandNodePassesInputJSONLOnStdinAndReadsStdoutJSONL() async throws {
     let runner = RecordingStdioNodeProcessRunner { configuration, stdin in
       let lines = stdin.split(whereSeparator: \.isNewline)

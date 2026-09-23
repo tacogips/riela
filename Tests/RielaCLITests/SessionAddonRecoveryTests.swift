@@ -51,7 +51,42 @@ final class SessionAddonRecoveryTests: XCTestCase {
     XCTAssertEqual(rerunResult.rerunFromStepId, "first-signal")
   }
 
-  private func writeWorkflow(to url: URL) throws {
+  func testSessionResumeRetriesPolicyBlockedAddonAfterRepair() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("session-policy-retry")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let workflowRoot = root.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("two-time-signals", isDirectory: true)
+    let sessionStore = root.appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    let workflowFile = workflowDirectory.appendingPathComponent("workflow.json")
+    try writeWorkflow(to: workflowFile, intervalMinutes: 0)
+
+    let app = RielaCLIApplication()
+    let initialRun = await app.run([
+      "workflow", "run", "two-time-signals",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--working-dir", root.path,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(initialRun.exitCode, .failure, initialRun.stderr + initialRun.stdout)
+    let failure = try decode(WorkflowRunFailureResult.self, from: initialRun.stdout)
+    XCTAssertEqual(failure.failureKind, .policyBlocked)
+    let sessionId = try XCTUnwrap(failure.sessionId)
+
+    try writeWorkflow(to: workflowFile, intervalMinutes: 5)
+    let resume = await app.run([
+      "session", "resume", sessionId, "--retry-failed-step",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--working-dir", root.path,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(resume.exitCode, .success, resume.stderr + resume.stdout)
+    XCTAssertEqual(try decode(SessionResumeCommandResult.self, from: resume.stdout).status, .completed)
+  }
+
+  private func writeWorkflow(to url: URL, intervalMinutes: Int = 5) throws {
     try """
     {
       "workflowId": "two-time-signals",
@@ -63,7 +98,7 @@ final class SessionAddonRecoveryTests: XCTestCase {
           "addon": {
             "name": "riela/time-signal",
             "version": "1",
-            "config": { "intervalMinutes": 5 },
+            "config": { "intervalMinutes": \(intervalMinutes) },
             "inputs": {
               "scheduledAt": "2026-08-06T01:00:00.000Z",
               "timezone": "Asia/Tokyo"

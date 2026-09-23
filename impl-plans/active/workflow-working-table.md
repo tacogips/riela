@@ -11,8 +11,9 @@
 - Design acceptance: Step 3 `comm-000004`, reviewed `comm-000003`, intake
   `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
   Decision: accepted, no findings or requested revisions.
-- Plan status: accepted by independent Step 5 review; storage-layout amendment
-  requested 2026-09-23 is pending re-review. Implementation not started.
+- Plan status: accepted by independent Step 5 review; the 2026-09-23
+  storage-layout amendment was re-reviewed against the existing KV source.
+  Implementation not started.
 - Codex-agent references / Cursor behavior mapping / intentional divergences: none.
 - One author and one future implementation owner. No parallelizable tasks or fanout.
 

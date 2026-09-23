@@ -1,7 +1,8 @@
 # Workflow-private disposable JSON working table
 
-Status: accepted by independent Step 3 design review; storage-layout amendment
-requested 2026-09-23 is pending re-review. Implementation pending.
+Status: accepted by independent Step 3 design review; the 2026-09-23
+storage-layout amendment was re-reviewed against the existing KV source.
+Implementation pending.
 Mode: planning-only (`executionMode: design-plan-only`).
 Issue: workflowInput: Workflow-scoped disposable JSON working table with bounded TTL
 (no issue URL or number supplied). Intake: `comm-000002`, from
@@ -10,7 +11,7 @@ No codex-agent reference input or Cursor CLI behavior applies.
 
 ## Scope and current behavior
 
-Provide one small JSON cache per workflow in a workspace, shared by successive
+Provide a small workflow-scoped JSON cache in a workspace, shared by successive
 scheduled runs. Support set/get/delete and list, with default six-hour expiration
 and a hard thirty-day maximum. This document specifies future behavior only.
 No Swift changes, implementation fanout, or main merge belong to this run.
@@ -24,6 +25,11 @@ to `input.workflowId`, but accepts `scope`, `storeId`, and `kvRoot` overrides.
 `Packages/RielaMemory/Tests/RielaMemoryTests/RielaKeyValueStoreTests.swift` covers
 JSON round trips, overwrite, deletion, isolation, listing, and validation.
 Adding TTL or removing scope overrides from those APIs would break their contract.
+Storage amendment review confirmed the current adapter defaults `storeId` to
+`workflow-kv`, `RielaKeyValueStore.databasePath` appends `.sqlite` under
+`.riela/kv`, and its schema creation targets only `kv_entries`. The new table
+name and fixed default path therefore preserve the existing KV API boundary;
+the plan requires tests for either initialization order and shared-file use.
 
 ## Namespace and trust boundary
 

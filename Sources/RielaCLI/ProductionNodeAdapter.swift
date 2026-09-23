@@ -9,12 +9,14 @@ import RielaMemory
 
 func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-  codexSupervisorModeEnabled: Bool = false
+  codexSupervisorModeEnabled: Bool = false,
+  workingDirectory: String? = nil
 ) -> any NodeAdapter {
   let gatewayFactory: NodeAdapterFactory = {
     AgentGatewayNodeAdapter(
       environment: environment,
-      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled,
+      defaultWorkingDirectory: workingDirectory
     )
   }
   return DispatchingNodeAdapter(
@@ -42,7 +44,8 @@ func makeScenarioBackedNodeAdapter(
   guard let scenarioPath else {
     return makeProductionNodeAdapter(
       environment: environment,
-      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled,
+      workingDirectory: workingDirectory
     )
   }
   let fallback = DeterministicLocalNodeAdapter()

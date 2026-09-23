@@ -141,6 +141,43 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   #expect(executor.params()?.systemPrompt?.contains(gatewayForegroundExecutionInstructions) == true)
 }
 
+@Test func gatewayAdapterUsesCommandWorkingDirectoryWhenNodeDoesNotOverrideIt() async throws {
+  let executor = GatewayStubExecutor()
+  _ = try await AgentGatewayNodeAdapter(
+    defaultWorkingDirectory: "/target/worktree",
+    executorFactory: executor.factory
+  ).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-6-luna"),
+      promptText: "prompt"
+    ),
+    context: AdapterExecutionContext()
+  )
+
+  #expect(executor.params()?.workingDirectory == "/target/worktree")
+}
+
+@Test func gatewayAdapterPrefersExplicitNodeWorkingDirectory() async throws {
+  let executor = GatewayStubExecutor()
+  _ = try await AgentGatewayNodeAdapter(
+    defaultWorkingDirectory: "/target/worktree",
+    executorFactory: executor.factory
+  ).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(
+        id: "worker",
+        executionBackend: .codexAgent,
+        model: "gpt-6-luna",
+        workingDirectory: "/node/override"
+      ),
+      promptText: "prompt"
+    ),
+    context: AdapterExecutionContext()
+  )
+
+  #expect(executor.params()?.workingDirectory == "/node/override")
+}
+
 @Test func gatewayForegroundContractPreservesSystemPromptAndDoesNotChangeAPIBackends() async throws {
   for backend: NodeExecutionBackend in [.codexAgent, .claudeCodeAgent, .cursorCliAgent, .officialOpenAISDK] {
     let executor = GatewayStubExecutor()

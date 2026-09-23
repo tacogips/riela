@@ -4,8 +4,8 @@
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6c; no GitHub issue URL or number supplied.
 **Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.2 and §17.5 “P1-6c bounded amendment (2026-09-24)”.
-**Design SHA256**: `c41a8774deb9d2838ee38d1146948482adb887996a9f053624bfef85971d30d9`.
-**Review decision**: Step 3 accepted the continuation update with no findings; implementation acceptance remains pending, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
+**Design SHA256**: `2c3918954715e5f52ef6d2b07d1de55192817c80942ebd854209aab11d8155e1`.
+**Review decision**: Step 3 accepted the five-file continuation status correction with no findings, `comm-000004`. Step 5 acceptance of this metadata refresh and implementation acceptance remain pending.
 **Codex-agent references**: `gpt-6-astra` single design/plan author and final integration reviewer; `gpt-6-sol` implementation, serial reconciliation, independent test-integrity and adversarial review. Execution `codex-design-and-implement-review-loop-session-1`.
 **Updated**: 2026-09-24
 
@@ -16,10 +16,24 @@ baseline `ae7cafe7577fda5037dee105e894804c88626f43`. P1-6d, P1-7a/b and parent P
 remain active. One implementation owner is necessary because store, runner,
 signal and selected-host acknowledgment form one coupled safety contract;
 there is no independent implementation plan to fan out.
-The current implementation baseline is checkpoint
-`0a74a070670a5cb73f6cd18e035adf61732a0b07` plus the four-file Step 6 WIP;
-`ae7cafe` above identifies historical P1-6b receipt context only. Step 3 accepted
-this continuation via `comm-000004`; no Step 5 revision feedback is supplied.
+The accepted design/plan checkpoint is
+`0a74a070670a5cb73f6cd18e035adf61732a0b07`; the current implementation baseline
+is `de64316960a560f6e17dff51b8a799857b4767f4` plus the five-file Step 6 WIP:
+`Sources/RielaCLI/TaskDispatch.swift`,
+`Sources/RielaWork/WorkStore+Reservation.swift`,
+`Tests/RielaWorkTests/WorkStoreCancellationTests.swift`, this complete active
+plan, and `impl-plans/progress/p1-dispatch.md`. `ae7cafe` above identifies
+historical P1-6b receipt context only. Step 3 accepted this continuation via
+`comm-000004`; no Step 5 revision feedback is supplied.
+
+The runner-resolved immutable user-scope package `0.3.28` and effective
+workflow input are authoritative. No registry or package rediscovery belongs
+to this node. Within this run, at most two productive incomplete Step 6
+continuations may retain this accepted design/plan without reopening them.
+Each requires concrete new changes, plan-progress evidence and passing
+behavioral tests. Repeated evidence, external blockers, missing material
+verification or a third consecutive incomplete attempt ends with an accurate
+handoff; incomplete implementation never enters review or finalization.
 
 ### Current P1-6c Step 6 progress
 
@@ -36,6 +50,21 @@ selected-host worker-stop proof, dispatch acknowledgment route and full matrix
 remain open. This seam does not establish P1-6c completion or authorize a
 fence release. The completion criteria below remain unchecked pending those
 paths, final-source V1/V2/V11 and aggregate evidence, and independent reviews.
+
+Continuation `nested-v1-f637160bee4a0e57484a92a8400c09a6a58ec7ccbb82ac72bb5ebee0ca2d68ae`
+added a fail-closed exact cancellation check in `TaskDispatch.swift` before
+terminal evidence projection and generic reconciliation. An unacknowledged
+request remains fenced; an already acknowledged request is accepted only when
+the durable attempt outcome matches the reserved terminal snapshot, then its
+evidence projection can replay without reapplying the transition. This is an
+intermediate guard, not the live acknowledgment route: the run-owned observer,
+worker-stop proof, cancellation-safe terminal persistence and exact first
+acknowledgment remain open. Read-only Codex audits `audit_dispatch`,
+`audit_runner` and `audit_store` identified these coupled gaps. The build and
+selected V2/decisions suites passed with plan-local module caches; V1 selected
+41 tests and failed 16 listener-dependent assertions because this host denies
+local network listeners. Complete logs and exits are under
+`tmp/work-runtime-p1/p1-6c/continuation/`. No completion criterion advances.
 
 ```json
 {
@@ -218,7 +247,7 @@ itself does not commit an unreviewed plan. Record checkpoint hash and changed
 file list; retain baseline and accepted P1-6b evidence separately. Checkpoint
 only the accepted design and plan documents; do not stage the preserved partial
 Swift implementation or its progress log as completed implementation. Preserve
-all four WIP files through checkpointing and later edits; the existing plan WIP
+all five WIP files through checkpointing and later edits; the existing plan WIP
 is retained within this revised plan, not reverted to the old committed version.
 
 All writePaths are exclusive to the single implementation owner; listed files

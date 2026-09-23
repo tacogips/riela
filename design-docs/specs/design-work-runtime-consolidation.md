@@ -1126,15 +1126,20 @@ cancellation (P1-6c)” contract. Preserve P1-6a/b behavior and the P1-6b accept
 publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
 `impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
 
-**Continuation boundary.** Preserve the four uncommitted files from that
-checkpoint: `Sources/RielaWork/WorkStore+Reservation.swift`,
+**Continuation boundary.** Continue checkpoints `0a74a07` and `de64316`,
+preserving all five uncommitted files: `Sources/RielaCLI/TaskDispatch.swift`,
+`Sources/RielaWork/WorkStore+Reservation.swift`,
 `Tests/RielaWorkTests/WorkStoreCancellationTests.swift`,
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, and
 `impl-plans/progress/p1-dispatch.md`. The store seam reads cancellation for the
 exact task/attempt/session across reopened connections. Its recorded focused
 1/1 and reservation 23/23 passes under
-`tmp/work-runtime-p1-6c-2c7cf9334b26/` cover only matching store/test bytes;
-they do not establish live interruption, worker-stop proof or slice acceptance.
+`tmp/work-runtime-p1-6c-2c7cf9334b26/` cover only matching store/test bytes.
+The later continuation under `tmp/work-runtime-p1/p1-6c/continuation/` adds
+pending-request fencing and exact acknowledged replay in dispatch; its V2
+23/23 and decisions 27/27 passes do not establish live interruption, worker-stop
+proof or slice acceptance. Its V1 listener-denied run remains failed and cannot
+replace final-source capable-host evidence.
 Complete the existing orchestration and worker paths below with one serial
 owner; independent audits remain read-only. Preserve Monja and unrelated
 worktrees. No new behavior or architectural amendment is introduced by this
@@ -1148,8 +1153,11 @@ launch-authorization and replacement boundaries. The existing workflow runner,
 live/final persistence and selected-host cancellation transport own execution
 interruption. No second decision store, replacement scheduler, transport or
 framework is introduced. Current store guards and matching-snapshot checks are
-present, but `TaskDispatch.swift` still calls generic `reconcileAttempt` after
-running: this is the live integration gap, not proof that cancellation works.
+present. `TaskDispatch.swift` now fences pending cancellation before generic
+`reconcileAttempt` and replays only a matching acknowledged terminal snapshot.
+The run-owned observer, request-before-signal Ctrl-C, selected-host worker-stop
+proof, prelaunch cancelled snapshot and first exact terminal acknowledgment
+remain implementation gaps; the guard alone does not establish live cancellation.
 
 **Human command contract.** `task decide` accepts exactly one of `--accept`,
 `--reject <reason>`, `--rerun [step-id]` or `--cancel`, with nonempty

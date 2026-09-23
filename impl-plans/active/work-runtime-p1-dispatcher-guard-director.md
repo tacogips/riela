@@ -1,11 +1,11 @@
 # Work Runtime P1: P1-6c durable decisions and live cancellation
 
-**Status**: Design accepted; P1-6c plan proposed for Step 5 review. Implementation and publication pending.
+**Status**: Design and plan accepted at checkpoint `0a74a070670a5cb73f6cd18e035adf61732a0b07`; P1-6c Step 6 implementation incomplete. Publication pending.
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6c; no GitHub issue URL or number supplied.
 **Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.2 and §17.5 “P1-6c bounded amendment (2026-09-24)”.
-**Design SHA256**: `32d6976cdffe22488f77971c32a70f616145cb286595fc73cd2f3c9f0caefadf`.
-**Review decision**: Step 3 accepted with no findings, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
+**Design SHA256**: `c41a8774deb9d2838ee38d1146948482adb887996a9f053624bfef85971d30d9`.
+**Review decision**: Step 3 accepted the continuation update with no findings; implementation acceptance remains pending, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
 **Codex-agent references**: `gpt-6-astra` single design/plan author and final integration reviewer; `gpt-6-sol` implementation, serial reconciliation, independent test-integrity and adversarial review. Execution `codex-design-and-implement-review-loop-session-1`.
 **Updated**: 2026-09-24
 
@@ -16,6 +16,26 @@ baseline `ae7cafe7577fda5037dee105e894804c88626f43`. P1-6d, P1-7a/b and parent P
 remain active. One implementation owner is necessary because store, runner,
 signal and selected-host acknowledgment form one coupled safety contract;
 there is no independent implementation plan to fan out.
+The current implementation baseline is checkpoint
+`0a74a070670a5cb73f6cd18e035adf61732a0b07` plus the four-file Step 6 WIP;
+`ae7cafe` above identifies historical P1-6b receipt context only. Step 3 accepted
+this continuation via `comm-000004`; no Step 5 revision feedback is supplied.
+
+### Current P1-6c Step 6 progress
+
+The owner audited the accepted store, runner, signal and selected-host seams.
+`WorkStore+Reservation.swift` now exposes an exact task/attempt/session scoped
+read of a durable cancellation request and its acknowledgment state. The
+reopened-store regression in `WorkStoreCancellationTests.swift` passes, along
+with the selected 23-case reservation/cancellation suite and strict two-file
+SwiftLint. Complete logs and source hashes are under
+`tmp/work-runtime-p1-6c-2c7cf9334b26/`.
+
+The live request observer, prelaunch cancelled snapshot, task-backed Ctrl-C,
+selected-host worker-stop proof, dispatch acknowledgment route and full matrix
+remain open. This seam does not establish P1-6c completion or authorize a
+fence release. The completion criteria below remain unchecked pending those
+paths, final-source V1/V2/V11 and aggregate evidence, and independent reviews.
 
 ```json
 {
@@ -195,7 +215,11 @@ No stale token, duplicated evidence/usage, replacement or decision is permitted.
 Step 5 acceptance precedes the workflow's serial exact-file design/plan checkpoint
 commit, which must occur before native implementation/review fanout. Step 4
 itself does not commit an unreviewed plan. Record checkpoint hash and changed
-file list; retain baseline and accepted P1-6b evidence separately.
+file list; retain baseline and accepted P1-6b evidence separately. Checkpoint
+only the accepted design and plan documents; do not stage the preserved partial
+Swift implementation or its progress log as completed implementation. Preserve
+all four WIP files through checkpointing and later edits; the existing plan WIP
+is retained within this revised plan, not reverted to the old committed version.
 
 All writePaths are exclusive to the single implementation owner; listed files
 are candidates, not a requirement to edit every file. Shared docs, README,
@@ -227,12 +251,15 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
   `WorkflowRunCommand+TaskReservation.swift` (admission),
   `DistributedNodeExecution.swift` (cancel request then return), and
   `DistributedJobController.swift` (cancel status alone is not worker-stop proof).
-  Record signatures and test gaps. These concrete seams justify the additional
+  Reuse the prior audit and store evidence when hashes match; verify only changed
+  assumptions rather than restarting the accepted design. Record signatures and
+  test gaps. These concrete seams justify the additional
   exact paths in metadata; do not reopen P1-6a/b without a demonstrated defect.
 - [ ] **P1-6c-store** after audit: In `WorkStore+Decisions.swift` and
-  `WorkStore+Reservation.swift`, expose only the narrow pending/acknowledged
-  request read needed by the owner, and repair demonstrated transaction/replay
-  gaps. Preserve decision/version validation, request-before-signal ordering,
+  `WorkStore+Reservation.swift`, preserve and consume the existing
+  `attemptCancellation(taskId:attemptId:sessionId:)` read and
+  `AttemptCancellationRecord`; do not recreate the verified seam. Repair only
+  demonstrated transaction/replay gaps. Preserve decision/version validation, request-before-signal ordering,
   authorization/node-start guards and generic-reconcile rejection. Acknowledge
   only canonical exact cancelled snapshots; atomically update attempt, lease,
   task and acknowledgment. Reopen recognizes already committed acknowledgment
@@ -331,6 +358,9 @@ mock DTOs or fabricated snapshots establish only store-level invariants.
 Run commands in the foreground. Record each exact argv/environment, complete log,
 terminal exit code, selected suites/counts and before/after source/test SHA256
 under `tmp/work-runtime-p1/p1-6c/`; retain/poll any tool session to terminal exit.
+If a named log already exists, use a new attempt subdirectory and record its
+actual path; never overwrite prior evidence. Hash the complete source/test
+manifest, including new files, not merely the two previously verified store files.
 Do not use detached shell jobs. A logging wrapper under that directory must
 propagate the child exit status, never just tee's status. Planning checks do not
 substitute for these implementation gates.
@@ -424,8 +454,9 @@ environment cause. Run the same filters on a capable host against matching full
 source/test manifests before and after execution; record the actual host argv,
 environment, logs and exits. Do not treat P1-6b host evidence or a reduced filter
 as P1-6c acceptance. Unavailable host evidence remains an explicit verification
-gap. No blanket test skipping or unrelated baseline repair. Swift/package files
-are not changed in this plan, so package digest refresh is unnecessary unless a
+gap. No blanket test skipping or unrelated baseline repair. Packaged workflow,
+prompt, script and skill files are outside this plan, so package digest refresh
+is unnecessary unless a
 subsequently accepted edit actually changes a packaged workflow/prompt/skill.
 
 ### Completion criteria

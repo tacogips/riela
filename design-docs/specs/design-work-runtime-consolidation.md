@@ -1118,12 +1118,27 @@ only: do not quarantine, rewrite, or repair it during dry-run.
 **Scope and status.** Issue `Work Runtime P1-6c` (no GitHub issue URL or
 number supplied), mode `issue-resolution`, intake `comm-000002` from
 `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
-This amendment makes §17.2 and the later “Live cancellation (P1-6c)” contract
-executable; it is proposed for independent design review, not implementation
-acceptance. Preserve P1-6a/b behavior and the P1-6b accepted publication
-`7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
-`impl-plans/progress/p1-dispatch.md`; intake baseline is `ae7cafe` on
-`feat/remaining-impl-plans`. P1-6d, P1-7a/b and parent P1 remain open.
+This amendment and its implementation plan were accepted at checkpoint
+`0a74a070670a5cb73f6cd18e035adf61732a0b07` on `feat/remaining-impl-plans`.
+The current intake continues that accepted design after Step 6 returned
+`implementationIncomplete`; it does not reopen §17.2 or the later “Live
+cancellation (P1-6c)” contract. Preserve P1-6a/b behavior and the P1-6b accepted
+publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
+`impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
+
+**Continuation boundary.** Preserve the four uncommitted files from that
+checkpoint: `Sources/RielaWork/WorkStore+Reservation.swift`,
+`Tests/RielaWorkTests/WorkStoreCancellationTests.swift`,
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, and
+`impl-plans/progress/p1-dispatch.md`. The store seam reads cancellation for the
+exact task/attempt/session across reopened connections. Its recorded focused
+1/1 and reservation 23/23 passes under
+`tmp/work-runtime-p1-6c-2c7cf9334b26/` cover only matching store/test bytes;
+they do not establish live interruption, worker-stop proof or slice acceptance.
+Complete the existing orchestration and worker paths below with one serial
+owner; independent audits remain read-only. Preserve Monja and unrelated
+worktrees. No new behavior or architectural amendment is introduced by this
+continuation.
 
 **Existing boundaries.** `Sources/RielaCLI/TaskCommands.swift` owns human
 parsing/application; `TaskDispatch.swift` owns reserved-session orchestration
@@ -1213,8 +1228,12 @@ Store-only or manually fabricated terminal snapshots cannot substitute for the
 live local and selected-host tests. Retain the accepted V1/V2/V11 commands;
 explicitly include `DecisionApplierStoreTests` and command parsing tests, plus
 affected CLI, Work, Core and Server aggregate suites and strict changed-file
-SwiftLint. Final-source execution evidence records exact commands, full log
-paths, terminal exit codes and source/test hashes under repository-root `tmp/`.
+SwiftLint. Run the accepted plan's V0, V1, V2, V11, decisions, live, compatibility,
+aggregate, strict changed-file SwiftLint, `git diff --check` and
+`git diff --cached --check` gates on final source. Final-source execution
+evidence records exact commands, complete foreground logs, terminal exit codes,
+positive per-suite counts and source/test hashes under
+`tmp/work-runtime-p1/p1-6c/`.
 A bounded environment failure remains a failed run and must be separated from
 source-matched capable-host evidence; P1-6b evidence cannot certify new code.
 
@@ -1223,8 +1242,10 @@ integration reviewer; `gpt-6-sol` owns implementation, serial reconciliation,
 independent test-integrity and adversarial reviews. These references describe
 workflow roles, not a Codex product behavior reference: no Cursor CLI adapter
 or Codex-reference divergence is required. No unresolved user decision is
-needed for this amendment. Independent design/plan and implementation review
-remain pending. Only accepted exact files may be committed and non-force
+needed for this continuation. Prior design/plan acceptance is retained;
+review of this status refresh and independent test-integrity, adversarial and
+Astra combined-tree implementation acceptance remain pending. No unresolved
+material finding may be carried into implementation acceptance. Only accepted exact files may be committed and non-force
 pushed; no main merge, release or closure of later slices belongs to P1-6c.
 
 #### P1-6b bounded continuation (2026-09-24)

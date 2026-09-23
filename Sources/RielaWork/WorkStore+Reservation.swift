@@ -91,10 +91,37 @@ public struct AttemptReservation: Equatable, Sendable {
   }
 }
 
+public enum AttemptReservationResult: Equatable, Sendable {
+  case reserved(AttemptReservation)
+  case wait(WaitReason)
+
+  public var reservation: AttemptReservation? {
+    guard case let .reserved(value) = self else { return nil }
+    return value
+  }
+
+  public var task: WorkTask {
+    guard case let .reserved(value) = self else { preconditionFailure("wait has no advanced task") }
+    return value.task
+  }
+  public var attempt: Attempt {
+    guard case let .reserved(value) = self else { preconditionFailure("wait has no attempt") }
+    return value.attempt
+  }
+  public var decision: Decision {
+    guard case let .reserved(value) = self else { preconditionFailure("wait has no decision") }
+    return value.decision
+  }
+  public var launchToken: String {
+    guard case let .reserved(value) = self else { preconditionFailure("wait has no token") }
+    return value.launchToken
+  }
+}
+
 public extension WorkStore {
   /// Atomically commits one task attempt, its launch lease and decision, and
   /// the canonical `.created` workflow snapshot on the shared connection.
-  func reserveAttempt(_ request: AttemptReservationRequest) throws -> AttemptReservation {
+  func reserveAttempt(_ request: AttemptReservationRequest) throws -> AttemptReservationResult {
     let database = try openWritable()
     return try database.transaction { database in
       let task = try requiredTask(request.taskId, in: database)
@@ -114,11 +141,18 @@ public extension WorkStore {
       guard task.plan != nil else {
         throw WorkStoreError("task '\(task.id.rawValue)' has no executable plan")
       }
-      try validateDependencies(of: task, in: database)
-      if let maximum = task.guardPolicy.budget?.maxAttempts {
-        let used = try attemptCount(for: task.id, in: database)
-        guard used < maximum else {
-          throw WorkStoreError("task '\(task.id.rawValue)' exhausted its attempt budget")
+      guard try dependenciesAreSatisfied(of: task, in: database) else { return .wait(.dependency) }
+      try requireExecutionAdmissionBudget(for: task, in: database)
+      let pendingRequest = try database.query(
+        "SELECT request_id, decision_id, predecessor_attempt_id, json(entry_record) AS entry_record FROM work_pending_reservations WHERE task_id = ? AND consumed_attempt_id IS NULL LIMIT 1",
+        bindings: [.text(task.id.rawValue)]
+      ).first
+      if let pendingRequest {
+        guard request.pendingRequestId == pendingRequest["request_id"],
+              request.decisionId.rawValue == pendingRequest["decision_id"],
+              let entryRecord = pendingRequest["entry_record"],
+              try decode(AttemptEntry.self, json: entryRecord) == request.entry else {
+          throw WorkStoreError("pending reservation must be consumed by its matching request")
         }
       }
 
@@ -169,6 +203,11 @@ public extension WorkStore {
           createdAt: request.now
         )
       }
+      if let pendingRequest {
+        guard decision.attemptId?.rawValue == pendingRequest["predecessor_attempt_id"] else {
+          throw WorkStoreError("pending reservation predecessor does not match its decision")
+        }
+      }
       var updatedTask = task
       updatedTask.state = .running
       updatedTask.version += 1
@@ -218,7 +257,7 @@ public extension WorkStore {
       )
       try persistence.save(WorkflowRuntimePersistenceSnapshot(session: session), in: database)
       try failIfRequested(.session, request: request)
-      return AttemptReservation(task: updatedTask, attempt: attempt, decision: decision, launchToken: token)
+      return .reserved(AttemptReservation(task: updatedTask, attempt: attempt, decision: decision, launchToken: token))
     }
   }
 
@@ -232,6 +271,7 @@ public extension WorkStore {
       guard attempt.launch?.phase == .reserved, attempt.state == .prepared else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' is not awaiting launch authorization")
       }
+      try rejectPendingCancellation(for: attempt.id, in: database)
       let consumedDigest = Self.launchTokenDigest("consumed:\(attempt.id.rawValue):\(attempt.sessionId)")
       attempt.launch?.phase = .authorized
       attempt.launch?.tokenDigest = consumedDigest
@@ -258,6 +298,7 @@ public extension WorkStore {
       guard attempt.launch?.phase == .authorized, attempt.state == .running else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' is not authorized for a node start")
       }
+      try rejectPendingCancellation(for: attempt.id, in: database)
       attempt.launch?.phase = .nodeStarted
       attempt.launch?.nodeStartedAt = now
       attempt.launch?.updatedAt = now
@@ -277,19 +318,7 @@ public extension WorkStore {
   func enqueuePendingReservation(_ request: PendingAttemptReservation, now: Date = Date()) throws {
     let database = try openWritable()
     try database.transaction { database in
-      let decision = try storedDecision(request.decisionId, in: database)
-      guard let decision, decision.taskId == request.taskId,
-            Self.requestedEntry(for: decision.kind) == request.entry else {
-        throw WorkStoreError("pending reservation must reference its matching stored decision")
-      }
-      try database.execute(
-        "INSERT INTO work_pending_reservations (request_id, task_id, decision_id, predecessor_attempt_id, entry_record, created_at) VALUES (?, ?, ?, ?, jsonb(?), ?)",
-        bindings: [
-          .text(request.id), .text(request.taskId.rawValue), .text(request.decisionId.rawValue),
-          request.predecessorAttemptId.map { .text($0.rawValue) } ?? .null,
-          .text(try encode(request.entry)), .text(Self.timestamp(now))
-        ]
-      )
+      try enqueuePendingReservation(request, now: now, in: database)
     }
   }
 
@@ -304,6 +333,12 @@ public extension WorkStore {
       guard attempt.state != .reconciled else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' is already reconciled")
       }
+      try validateCancellationDecision(
+        decisionId,
+        taskId: attempt.taskId,
+        attemptId: attempt.id,
+        in: database
+      )
       try database.execute(
         "INSERT INTO work_cancellations (attempt_id, task_id, decision_id, requested_at) VALUES (?, ?, ?, ?)",
         bindings: [
@@ -333,8 +368,27 @@ public extension WorkStore {
       guard attempt.state == .prepared || attempt.state == .running || attempt.state == .terminal else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' is not live")
       }
+      guard let decisionId = cancellation?["decision_id"] else {
+        throw WorkStoreError("attempt '\(attempt.id.rawValue)' cancellation has no decision")
+      }
+      try validateCancellationDecision(
+        DecisionID(decisionId),
+        taskId: attempt.taskId,
+        attemptId: attempt.id,
+        in: database
+      )
+      let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory).load(
+        sessionId: attempt.sessionId,
+        in: database
+      )
+      let canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      guard canonicalOutcome.sessionStatus == .failed,
+            canonicalOutcome.failureKind == .cancelled,
+            canonicalOutcome == outcome else {
+        throw WorkStoreError("attempt '\(attempt.id.rawValue)' has no matching cancelled workflow snapshot")
+      }
       attempt.state = .reconciled
-      attempt.outcome = outcome
+      attempt.outcome = canonicalOutcome
       attempt.launch?.phase = .terminal
       attempt.launch?.updatedAt = now
       try replaceAttempt(attempt, in: database)
@@ -343,18 +397,53 @@ public extension WorkStore {
         bindings: [.text(Self.timestamp(now)), .text(outcome.sessionStatus.rawValue), .text(attempt.id.rawValue)]
       )
       try database.execute("DELETE FROM work_leases WHERE attempt_id = ?", bindings: [.text(attempt.id.rawValue)])
-      if let decisionId = cancellation?["decision_id"],
-         let decision = try storedDecision(DecisionID(decisionId), in: database),
-         case .cancel = decision.kind {
-        var task = try requiredTask(attempt.taskId, in: database)
-        if !task.state.isTerminal {
-          let expectedVersion = task.version
-          task.state = .cancelled
-          task.version += 1
-          try updateTask(task, expectedVersion: expectedVersion, in: database)
+      var task = try requiredTask(attempt.taskId, in: database)
+      if !task.state.isTerminal {
+        let expectedVersion = task.version
+        guard let decision = try storedDecision(DecisionID(decisionId), in: database) else {
+          throw WorkStoreError("cancellation decision is missing")
         }
+        switch decision.kind {
+        case .cancel: task.state = .cancelled
+        case .reject, .stop: task.state = .failed
+        case .rerun, .recover: task.state = .scheduled
+        default: throw WorkStoreError("cancellation decision is not terminal or replacement")
+        }
+        task.version += 1
+        try updateTask(task, expectedVersion: expectedVersion, in: database)
       }
       return attempt
+    }
+  }
+
+  private func validateCancellationDecision(
+    _ decisionId: DecisionID,
+    taskId: TaskID,
+    attemptId: AttemptID,
+    in database: SQLiteDatabase
+  ) throws {
+    guard let decision = try storedDecision(decisionId, in: database),
+          decision.taskId == taskId,
+          decision.attemptId == attemptId,
+          Self.requiresCancellationAcknowledgment(decision.kind) else {
+      throw WorkStoreError("cancellation decision '\(decisionId.rawValue)' does not match attempt '\(attemptId.rawValue)'")
+    }
+  }
+
+  static func requiresCancellationAcknowledgment(_ kind: DecisionKind) -> Bool {
+    switch kind {
+    case .cancel, .stop, .reject, .rerun, .recover: true
+    default: false
+    }
+  }
+
+  private func rejectPendingCancellation(for attemptId: AttemptID, in database: SQLiteDatabase) throws {
+    let cancellation = try database.query(
+      "SELECT 1 FROM work_cancellations WHERE attempt_id = ? AND acknowledged_at IS NULL LIMIT 1",
+      bindings: [.text(attemptId.rawValue)]
+    ).first
+    guard cancellation == nil else {
+      throw WorkStoreError("attempt '\(attemptId.rawValue)' has a pending cancellation")
     }
   }
 
@@ -374,6 +463,7 @@ public extension WorkStore {
       guard attempt.launch?.phase == .reserved, attempt.state == .prepared else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' cannot be recovered after launch authorization")
       }
+      try rejectPendingCancellation(for: attempt.id, in: database)
       var task = try requiredTask(attempt.taskId, in: database)
       guard task.version == expectedTaskVersion else {
         throw WorkStoreError.versionConflict(taskId: task.id, expected: expectedTaskVersion)
@@ -409,8 +499,17 @@ public extension WorkStore {
       guard attempt.state == .running || attempt.state == .terminal else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' is not live")
       }
+      let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory).load(
+        sessionId: attempt.sessionId,
+        in: database
+      )
+      let canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      guard canonicalOutcome.sessionStatus == .completed || canonicalOutcome.sessionStatus == .failed,
+            canonicalOutcome == outcome else {
+        throw WorkStoreError("attempt '\(attempt.id.rawValue)' has no matching terminal workflow snapshot")
+      }
       attempt.state = .reconciled
-      attempt.outcome = outcome
+      attempt.outcome = canonicalOutcome
       attempt.launch?.phase = .terminal
       attempt.launch?.updatedAt = now
       try replaceAttempt(attempt, in: database)
@@ -525,13 +624,14 @@ extension WorkStore {
     }
   }
 
-  func validateDependencies(of task: WorkTask, in database: SQLiteDatabase) throws {
+  func dependenciesAreSatisfied(of task: WorkTask, in database: SQLiteDatabase) throws -> Bool {
     for dependencyId in task.dependsOn {
       let dependency = try requiredTask(dependencyId, in: database)
       guard dependency.state == .succeeded else {
-        throw WorkStoreError("task '\(task.id.rawValue)' dependency '\(dependencyId.rawValue)' is not satisfied")
+        return false
       }
     }
+    return true
   }
 
   func attemptCount(for taskId: TaskID, in database: SQLiteDatabase) throws -> Int {
@@ -540,6 +640,92 @@ extension WorkStore {
       bindings: [.text(taskId.rawValue)]
     ).first?["count"] ?? "0"
     return Int(value) ?? 0
+  }
+
+  /// Admission is the common fence for direct reservations and the shared
+  /// decision applier. Costs are replay-deduplicated by their attempt-scoped
+  /// runner execution id; wall-clock budget snapshots are durable guard evidence.
+  func requireExecutionAdmissionBudget(for task: WorkTask, in database: SQLiteDatabase) throws {
+    guard let budget = task.guardPolicy.budget else { return }
+    if let maximum = budget.maxAttempts,
+       try attemptCount(for: task.id, in: database) >= maximum {
+      throw WorkStoreError("task '\(task.id.rawValue)' exhausted its attempt budget")
+    }
+
+    let attempts = try decodeDecisionRows(Attempt.self, from: database.query(
+      "SELECT json(record) AS record FROM work_attempts WHERE task_id = ?",
+      bindings: [.text(task.id.rawValue)]
+    ))
+    var costsByExecution: [String: LoopCostEvidence] = [:]
+    for attempt in attempts {
+      for cost in attempt.outcome?.costs ?? [] {
+        costsByExecution["\(attempt.id.rawValue)\u{0}\(cost.stepExecutionId)"] = cost
+      }
+    }
+    let tokens = costsByExecution.values.compactMap(\.totalTokens).reduce(0, +)
+    let proposals = try database.query(
+      "SELECT COUNT(*) AS count FROM work_decisions WHERE task_id = ? AND kind = 'proposeWorkflowChange'",
+      bindings: [.text(task.id.rawValue)]
+    ).first?["count"].flatMap(Int.init) ?? 0
+    let exhaustedEvidence = try exhaustedBudgetEvidenceDimensions(for: task.id, budget: budget, in: database)
+
+    try requireExecutionBudget(
+      .tokens, used: tokens, limit: budget.maxTotalTokens,
+      hasExhaustedEvidence: exhaustedEvidence.contains(.tokens), task: task
+    )
+    try requireExecutionBudget(
+      .wallClock, used: 0, limit: budget.maxWallClockMs,
+      hasExhaustedEvidence: exhaustedEvidence.contains(.wallClock), task: task
+    )
+    try requireExecutionBudget(
+      .proposals, used: proposals, limit: budget.maxProposals,
+      hasExhaustedEvidence: exhaustedEvidence.contains(.proposals), task: task
+    )
+  }
+
+  func exhaustedBudgetEvidenceDimensions(
+    for taskId: TaskID,
+    budget: BudgetGuard,
+    in database: SQLiteDatabase
+  ) throws -> [BudgetDimension] {
+    let evidence = try decodeDecisionRows(Evidence.self, from: database.query(
+      "SELECT json(record) AS record FROM work_evidence WHERE task_id = ? AND kind = ?",
+      bindings: [.text(taskId.rawValue), .text(EvidenceKind.guardViolation.rawValue)]
+    ))
+    return evidence.compactMap { record in
+      guard let payload = record.payloadRef.inlinePayload,
+            payload["kind"] == .string("budget"),
+            case let .string(value)? = payload["dimension"],
+            let dimension = BudgetDimension(rawValue: value),
+            case let .integer(used)? = payload["used"],
+            case let .integer(limit)? = payload["limit"],
+            used >= limit,
+            let currentLimit = budgetLimit(for: dimension, budget: budget),
+            used >= currentLimit else {
+        return nil
+      }
+      return dimension
+    }
+  }
+
+  func budgetLimit(for dimension: BudgetDimension, budget: BudgetGuard) -> Int? {
+    switch dimension {
+    case .attempts: budget.maxAttempts
+    case .tokens: budget.maxTotalTokens
+    case .wallClock: budget.maxWallClockMs
+    case .proposals: budget.maxProposals
+    }
+  }
+
+  func requireExecutionBudget(
+    _ dimension: BudgetDimension,
+    used: Int,
+    limit: Int?,
+    hasExhaustedEvidence: Bool,
+    task: WorkTask
+  ) throws {
+    guard let limit, used >= limit || hasExhaustedEvidence else { return }
+    throw WorkStoreError("task '\(task.id.rawValue)' exhausted its \(dimension.rawValue) budget")
   }
 
   func consumePendingReservation(
@@ -558,6 +744,30 @@ extension WorkStore {
       ]
     )
     guard changed == 1 else { throw WorkStoreError("pending reservation was missing, mismatched, or already consumed") }
+  }
+
+  /// Adds a durable retry request to the caller's existing write transaction.
+  /// Decision application uses this seam so its decision and request cannot
+  /// commit separately.
+  func enqueuePendingReservation(
+    _ request: PendingAttemptReservation,
+    now: Date,
+    in database: SQLiteDatabase
+  ) throws {
+    let decision = try storedDecision(request.decisionId, in: database)
+    guard let decision, decision.taskId == request.taskId,
+          decision.attemptId == request.predecessorAttemptId,
+          Self.requestedEntry(for: decision.kind) == request.entry else {
+      throw WorkStoreError("pending reservation must reference its matching stored decision")
+    }
+    try database.execute(
+      "INSERT INTO work_pending_reservations (request_id, task_id, decision_id, predecessor_attempt_id, entry_record, created_at) VALUES (?, ?, ?, ?, jsonb(?), ?)",
+      bindings: [
+        .text(request.id), .text(request.taskId.rawValue), .text(request.decisionId.rawValue),
+        request.predecessorAttemptId.map { .text($0.rawValue) } ?? .null,
+        .text(try encode(request.entry)), .text(Self.timestamp(now))
+      ]
+    )
   }
 
   func failIfRequested(_ point: AttemptReservationFailurePoint, request: AttemptReservationRequest) throws {

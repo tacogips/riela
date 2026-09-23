@@ -7,6 +7,8 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Option var output: WorkflowOutputFormat = .jsonl
   @Flag var executable = false
   @Flag var structure = false
+  @Option var host: String?
+  @Flag var strictHost = false
   @Option var variables: String?
   @Option var variablesFile: String?
   @Option var nodePatch: String?

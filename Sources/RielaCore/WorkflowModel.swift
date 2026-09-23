@@ -767,6 +767,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   public var description: String?
   public var nodeType: NodeType?
   public var executionBackend: NodeExecutionBackend?
+  public var backendPolicy: WorkflowBackendPolicy?
   public var model: String
   public var modelFreeze: Bool
   public var effort: NodeReasoningEffort?
@@ -799,6 +800,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     description: String? = nil,
     nodeType: NodeType? = nil,
     executionBackend: NodeExecutionBackend? = nil,
+    backendPolicy: WorkflowBackendPolicy? = nil,
     model: String,
     modelFreeze: Bool = false,
     effort: NodeReasoningEffort? = nil,
@@ -830,6 +832,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.description = description
     self.nodeType = nodeType
     self.executionBackend = executionBackend
+    self.backendPolicy = backendPolicy
     self.model = model.isEmpty && baseURL != nil ? "custom" : model
     self.modelFreeze = modelFreeze
     self.effort = effort
@@ -863,6 +866,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     case description
     case nodeType
     case executionBackend
+    case backendPolicy
     case model
     case modelFreeze
     case effort
@@ -897,6 +901,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.description = try container.decodeIfPresent(String.self, forKey: .description)
     self.nodeType = try container.decodeIfPresent(NodeType.self, forKey: .nodeType)
     self.executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
+    self.backendPolicy = try container.decodeIfPresent(WorkflowBackendPolicy.self, forKey: .backendPolicy)
     self.baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL)
     self.apiKeyEnvironment = try container.decodeIfPresent(String.self, forKey: .apiKeyEnvironment)
     self.model = try container.decodeIfPresent(String.self, forKey: .model)

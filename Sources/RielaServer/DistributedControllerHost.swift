@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaWork
 
 public struct DistributedControllerConfiguration: Codable, Equatable, Sendable {
   public struct Worker: Codable, Equatable, Sendable {
@@ -94,14 +95,21 @@ public final class DistributedControllerHost: Sendable {
   public let configuration: DistributedControllerConfiguration
   private let server: RielaLocalHTTPServer
 
-  public init(configurationURL: URL, environment: [String: String]) throws {
+  public init(
+    configurationURL: URL,
+    environment: [String: String],
+    capabilityStoreRoot: String? = nil
+  ) throws {
     let configuration = try DistributedControllerConfiguration.load(from: configurationURL)
     let controller = try configuration.controller(relativeTo: configurationURL)
     self.configuration = configuration
     self.controller = controller
     self.executor = QueuedDistributedNodeExecutor(controller: controller)
+    let capabilityStore = capabilityStoreRoot.map(WorkStore.init(rootDirectory:))
     server = RielaLocalHTTPServer(routeHandler: try DistributedWorkerHTTPRouter(
-      controller: controller, credentials: configuration.credentials(environment: environment)
+      controller: controller,
+      credentials: configuration.credentials(environment: environment),
+      capabilitySnapshotSink: { snapshot in try capabilityStore?.saveHostSnapshot(snapshot) }
     ))
   }
 

@@ -138,7 +138,9 @@ public enum WorkGuard {
   public static func evaluate(policy: GuardPolicy, snapshot: GuardSnapshot) -> [GuardViolation] {
     var result: [GuardViolation] = []
     if let budget = policy.budget {
-      appendBudget(.attempts, used: snapshot.attemptCount, limit: budget.maxAttempts, to: &result)
+      // Attempt capacity is an admission fence owned by reservation. The last
+      // admitted attempt may finish and be accepted; only another reservation
+      // is rejected once this count reaches the configured limit.
       appendBudget(.tokens, used: snapshot.totalTokens, limit: budget.maxTotalTokens, to: &result)
       appendBudget(.wallClock, used: snapshot.wallClockMs, limit: budget.maxWallClockMs, to: &result)
       appendBudget(.proposals, used: snapshot.proposalCount, limit: budget.maxProposals, to: &result)
@@ -166,6 +168,7 @@ public enum WorkGuard {
     if let inactivity = policy.inactivity,
        let stepId = snapshot.activeStepId,
        let backend = snapshot.heartbeatBackend,
+       !isOfficialSDKBackend(backend),
        inactivity.heartbeatBackends.contains(backend),
        let idleMs = snapshot.idleMs,
        idleMs >= inactivity.stallTimeoutMs {
@@ -182,5 +185,9 @@ public enum WorkGuard {
   ) {
     guard let limit, used >= limit else { return }
     result.append(.budget(dimension, used: used, limit: limit))
+  }
+
+  private static func isOfficialSDKBackend(_ backend: String) -> Bool {
+    backend.hasPrefix("official/") && backend.hasSuffix("-sdk")
   }
 }

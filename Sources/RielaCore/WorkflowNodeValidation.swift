@@ -5,6 +5,12 @@ public func validateAgentNodePayload(
   path: String = "node"
 ) -> [WorkflowValidationDiagnostic] {
   var diagnostics: [WorkflowValidationDiagnostic] = []
+  diagnostics += WorkflowBackendPolicyValidation.diagnostics(
+    pin: payload.executionBackend,
+    policy: payload.backendPolicy,
+    fallbackModel: payload.model,
+    path: path
+  )
   if payload.provider != nil, payload.baseURL != nil {
     diagnostics.append(error("\(path).baseURL", "cannot be combined with provider"))
   }
@@ -44,7 +50,13 @@ public func validateAgentNodePayload(
       "\(path).provider",
       "is not supported with executionBackend '\(backend.rawValue)'"
     ))
-  } else if payload.executionBackend == nil {
+  } else if let policy = payload.backendPolicy,
+    let unsupportedBackend = policy.allowed.first(where: { !supportedBackends.contains($0) }) {
+    diagnostics.append(error(
+      "\(path).backendPolicy.allowed",
+      "backend '\(unsupportedBackend.rawValue)' is not supported with provider"
+    ))
+  } else if payload.executionBackend == nil, payload.backendPolicy == nil {
     diagnostics.append(error(
       "\(path).provider",
       "requires an agent-gateway-backed executionBackend"

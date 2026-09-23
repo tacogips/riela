@@ -135,6 +135,9 @@ extension RielaArgumentParser {
     let parsed = try ParsedWorkflowOptions(tokens)
     try rejectUnsafeScopedWorkflowName(target, parsed: parsed)
     try rejectRemoteResolutionOptions(parsed, subcommand: "validate")
+    if parsed.strictHost && parsed.host == nil {
+      throw CLIUsageError("--strict-host requires --host")
+    }
     let resolution = WorkflowResolutionOptions(
       workflowName: target,
       scope: parsed.scope,
@@ -147,7 +150,9 @@ extension RielaArgumentParser {
       resolution: resolution,
       output: parsed.output,
       executable: parsed.executable,
-      nodePatch: parsed.nodePatch
+      nodePatch: parsed.nodePatch,
+      host: parsed.host,
+      strictHost: parsed.strictHost
     )
   }
 
@@ -155,6 +160,9 @@ extension RielaArgumentParser {
     let parsed = try ParsedWorkflowOptions(tokens)
     try rejectUnsafeScopedWorkflowName(target, parsed: parsed)
     try rejectRemoteResolutionOptions(parsed, subcommand: "inspect")
+    if parsed.strictHost && parsed.host == nil {
+      throw CLIUsageError("--strict-host requires --host")
+    }
     let resolution = WorkflowResolutionOptions(
       workflowName: target,
       scope: parsed.scope,
@@ -166,7 +174,9 @@ extension RielaArgumentParser {
       workflowName: target,
       resolution: resolution,
       output: parsed.output,
-      structure: parsed.structure
+      structure: parsed.structure,
+      host: parsed.host,
+      strictHost: parsed.strictHost
     )
   }
 

@@ -106,6 +106,7 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     var diagnostics = validate(workflow)
     for nodeId in nodePayloads.keys.sorted() {
       guard let payload = nodePayloads[nodeId] else { continue }
+      diagnostics += validateAgentNodePayload(payload, path: "workflow.nodes.\(nodeId)")
       validateAgentSandbox(payload, nodeId: nodeId, diagnostics: &diagnostics)
       if let schema = payload.output?.jsonSchema,
          let reason = DefaultWorkflowOutputValidator().validateContractSchema(schema) {

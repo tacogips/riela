@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DecisionApplication: Equatable, Sendable {
+public struct DecisionApplication: Codable, Equatable, Sendable {
   public var task: WorkTask
   public var attempt: Attempt?
   /// Decisions that request another execution are reserved by the dispatcher

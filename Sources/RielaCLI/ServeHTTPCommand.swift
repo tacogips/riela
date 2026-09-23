@@ -48,8 +48,19 @@ struct ServeHTTPCommand: Sendable {
       context: serveRequestContext(parsed: parsed)
     )
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let sessionRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: parsed.sessionStore,
+      scope: parsed.scope,
+      workingDirectory: workingDirectory,
+      environment: environment
+    )
     let distributedHost = try environment[DistributedControllerConfiguration.environmentKey].map {
-      try DistributedControllerHost(configurationURL: URL(fileURLWithPath: $0), environment: environment)
+      try DistributedControllerHost(
+        configurationURL: URL(fileURLWithPath: $0),
+        environment: environment,
+        capabilityStoreRoot: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionRoot)
+      )
     }
     let webHost = await ServeWebHost(
       homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true),

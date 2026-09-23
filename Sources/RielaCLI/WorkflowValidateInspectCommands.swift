@@ -5,12 +5,14 @@ import FoundationNetworking
 import RielaAdapters
 import RielaAddons
 import RielaCore
+import RielaWork
 
 public struct WorkflowValidateCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
   public var patchApplier: any WorkflowNodePatchApplying
   public var jsonLoader: JSONReferenceLoader
   public var preflight: any WorkflowExecutablePreflighting
+  var hostResolver: any HostCapabilityResolving
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
@@ -22,6 +24,21 @@ public struct WorkflowValidateCommand: Sendable {
     self.patchApplier = patchApplier
     self.jsonLoader = jsonLoader
     self.preflight = preflight
+    hostResolver = HostCapabilityResolver()
+  }
+
+  init(
+    resolver: any WorkflowBundleResolving,
+    patchApplier: any WorkflowNodePatchApplying = DefaultWorkflowNodePatchApplier(),
+    jsonLoader: JSONReferenceLoader = JSONReferenceLoader(),
+    preflight: any WorkflowExecutablePreflighting = DeterministicWorkflowExecutablePreflight(),
+    hostResolver: any HostCapabilityResolving
+  ) {
+    self.resolver = resolver
+    self.patchApplier = patchApplier
+    self.jsonLoader = jsonLoader
+    self.preflight = preflight
+    self.hostResolver = hostResolver
   }
 
   public func run(_ options: WorkflowValidateOptions) async -> CLICommandResult {
@@ -36,6 +53,7 @@ public struct WorkflowValidateCommand: Sendable {
       let patchedProviderDiagnostics = options.nodePatch == nil ? [] : bundle.nodePayloads.keys.sorted().flatMap { nodeId in
         bundle.nodePayloads[nodeId].map { validateAgentNodePayload($0, path: "nodes.\(nodeId)") } ?? []
       }
+      let hostDiagnostics = await hostDiagnostics(bundle: bundle, options: options)
       let diagnostics = bundle.diagnostics +
         DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
         patchedProviderDiagnostics +
@@ -43,7 +61,7 @@ public struct WorkflowValidateCommand: Sendable {
           bundle: bundle,
           resolution: options.resolution,
           resolver: resolver
-        ))
+        )) + hostDiagnostics
       let nodeResults = options.executable
         ? try await preflight.preflight(
           bundle.workflow,
@@ -89,6 +107,28 @@ public struct WorkflowValidateCommand: Sendable {
       return renderFailure(options: options, exitCode: .usage, error: error.message)
     } catch {
       return renderFailure(options: options, exitCode: .failure, error: "\(error)")
+    }
+  }
+
+  private func hostDiagnostics(
+    bundle: ResolvedWorkflowBundle,
+    options: WorkflowValidateOptions
+  ) async -> [WorkflowValidationDiagnostic] {
+    do {
+      return try await workflowHostAssessment(
+        bundle: bundle,
+        resolution: options.resolution,
+        resolver: resolver,
+        hostResolver: hostResolver,
+        host: options.host,
+        strictHost: options.strictHost
+      ).diagnostics
+    } catch {
+      return [WorkflowValidationDiagnostic(
+        severity: .error,
+        path: "workflow.requirements",
+        message: "host requirements could not be resolved: \(error)"
+      )]
     }
   }
 
@@ -219,6 +259,7 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var nativeBundleAddons: [NativeBundleAddonInspection]
   public var runtimeReadinessDescriptors: [String]
   public var runtimeCapabilityGaps: [WorkflowValidationDiagnostic]
+  public var backendRequirements: [WorkflowBackendRequirement]
   public var loop: WorkflowLoopInspectionSummary?
 }
 
@@ -284,6 +325,236 @@ func nativeBundleAddonInspections(
       preflightHelperStatus: nil
     )
   }
+}
+
+struct ReachableWorkflowMaps {
+  var workflows: [String: WorkflowDefinition]
+  var nodePayloads: [String: [String: AgentNodePayload]]
+  var nodeHostRequirements: [String: [String: WorkflowNodeHostRequirement]]
+  var localAddonExecutables: [String: Bool]
+}
+
+private struct WorkflowHostAssessment {
+  var requirements: [WorkflowBackendRequirement]
+  var diagnostics: [WorkflowValidationDiagnostic]
+}
+
+private func workflowHostAssessment(
+  bundle: ResolvedWorkflowBundle,
+  resolution: WorkflowResolutionOptions,
+  resolver: any WorkflowBundleResolving,
+  hostResolver: any HostCapabilityResolving,
+  host: String?,
+  strictHost: Bool
+) async throws -> WorkflowHostAssessment {
+  let maps = try await reachableWorkflowMaps(
+    bundle: bundle,
+    resolution: resolution,
+    resolver: resolver
+  )
+  let requirements = try WorkflowRequirementResolver().resolve(
+    workflowId: bundle.workflow.workflowId,
+    workflows: maps.workflows,
+    nodePayloads: maps.nodePayloads,
+    nodeHostRequirements: maps.nodeHostRequirements
+  )
+  guard let host else {
+    return WorkflowHostAssessment(requirements: requirements, diagnostics: [])
+  }
+  let severity: WorkflowValidationSeverity = strictHost ? .error : .warning
+  let snapshots: [HostCapabilitySnapshot]
+  do {
+    snapshots = try await hostResolver.resolve(
+      host: host,
+      scope: resolution.scope,
+      workingDirectory: resolution.workingDirectory,
+      readOnly: true,
+      localAddonExecutables: maps.localAddonExecutables
+    )
+  } catch {
+    return WorkflowHostAssessment(
+      requirements: requirements,
+      diagnostics: [WorkflowValidationDiagnostic(
+        severity: severity,
+        path: "workflow.host",
+        message: "host \(host) could not be resolved: \(error)"
+      )]
+    )
+  }
+  guard let first = snapshots.first else {
+    return WorkflowHostAssessment(
+      requirements: requirements,
+      diagnostics: [WorkflowValidationDiagnostic(
+        severity: severity,
+        path: "workflow.host",
+        message: "host \(host) did not resolve to an available capability snapshot"
+      )]
+    )
+  }
+  let placementResolver = BackendCapabilityPlacementResolver()
+  let assignments = Dictionary(uniqueKeysWithValues: requirements.flatMap { requirement in
+    requirement.provenance.compactMap { provenance -> (WorkflowRequirementProvenance, DistributedWorkerTarget)? in
+      guard let target = maps.workflows[provenance.workflowId]?
+        .steps.first(where: { $0.id == provenance.stepId })?.placement?.target else { return nil }
+      return (provenance, target)
+    }
+  })
+  let local = host == "local" ? first : HostCapabilitySnapshot(
+    hostId: "local", live: false, backends: [], refreshedAt: Date()
+  )
+  let result = placementResolver.resolve(
+    requirements: requirements,
+    local: local,
+    workers: host == "local" ? [] : snapshots,
+    assignments: assignments
+  )
+  let failures = result.failures.map { failure in
+    WorkflowValidationDiagnostic(
+      severity: severity,
+      path: "workflow.steps.\(failure.provenance.stepId)",
+      message: "host \(host) \(failure.reason)"
+    )
+  }
+  let unverified = result.choices.filter { !$0.verified }.map { choice in
+    WorkflowValidationDiagnostic(
+      severity: severity,
+      path: "workflow.steps.\(choice.provenance.stepId)",
+      message: "host \(host) backend \(choice.backend?.rawValue ?? "host requirement") is stale or unverified"
+    )
+  }
+  return WorkflowHostAssessment(
+    requirements: requirements,
+    diagnostics: failures + unverified
+  )
+}
+
+func reachableWorkflowMaps(
+  bundle: ResolvedWorkflowBundle,
+  resolution: WorkflowResolutionOptions,
+  resolver: any WorkflowBundleResolving,
+  entryStepId: String? = nil
+) async throws -> ReachableWorkflowMaps {
+  var workflows = [bundle.workflow.workflowId: bundle.workflow]
+  var nodePayloads = [bundle.workflow.workflowId: bundle.nodePayloads]
+  var nodeHostRequirements = [
+    bundle.workflow.workflowId: addonHostRequirements(in: bundle)
+  ]
+  var bundles = [bundle.workflow.workflowId: bundle]
+  var localAddonExecutables: [String: Bool] = [:]
+  var pending = [(workflowId: bundle.workflow.workflowId, stepId: entryStepId ?? bundle.workflow.entryStepId)]
+  var visited: Set<String> = []
+  let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+
+  while !pending.isEmpty {
+    let next = pending.removeFirst()
+    guard visited.insert("\(next.workflowId):\(next.stepId)").inserted else { continue }
+    if workflows[next.workflowId] == nil {
+      let callee = try calleeResolver.resolveBundle(workflowId: next.workflowId)
+      bundles[next.workflowId] = callee
+      workflows[next.workflowId] = callee.workflow
+      nodePayloads[next.workflowId] = callee.nodePayloads
+      nodeHostRequirements[next.workflowId] = addonHostRequirements(in: callee)
+    }
+    guard let step = workflows[next.workflowId]?.steps.first(where: { $0.id == next.stepId }) else { continue }
+    if let currentBundle = bundles[next.workflowId] {
+      localAddonExecutables.merge(localAddonExecutableAvailability(in: currentBundle, nodeId: step.nodeId)) {
+        $0 && $1
+      }
+    }
+    for transition in step.transitions ?? [] {
+      pending.append((
+        workflowId: transition.toWorkflowId ?? next.workflowId,
+        stepId: transition.toStepId
+      ))
+      if let resume = transition.resumeStepId {
+        pending.append((workflowId: next.workflowId, stepId: resume))
+      }
+      if let join = transition.fanout?.joinStepId {
+        pending.append((workflowId: next.workflowId, stepId: join))
+      }
+    }
+  }
+  return ReachableWorkflowMaps(
+    workflows: workflows,
+    nodePayloads: nodePayloads,
+    nodeHostRequirements: nodeHostRequirements,
+    localAddonExecutables: localAddonExecutables
+  )
+}
+
+private func addonHostRequirements(
+  in bundle: ResolvedWorkflowBundle
+) -> [String: WorkflowNodeHostRequirement] {
+  var requirements: [String: WorkflowNodeHostRequirement] = [:]
+  let packageEnvironment = bundle.packageManifest?.environmentVariables
+    .filter(\.required).map(\.name) ?? []
+  for node in bundle.workflow.nodeRegistry {
+    let addonEnvironment = node.addon?.env?.values.compactMap { value -> String? in
+      guard case let .object(binding) = value,
+        case let .string(source)? = binding["fromEnv"], !source.isEmpty,
+        binding["required"] != .bool(false) else { return nil }
+      return source
+    } ?? []
+    let requiredEnvironment = Array(Set(packageEnvironment + addonEnvironment)).sorted()
+    guard let reference = node.addon else {
+      if !requiredEnvironment.isEmpty {
+        requirements[node.id] = WorkflowNodeHostRequirement(requiredEnvironment: requiredEnvironment)
+      }
+      continue
+    }
+    guard let addon = bundle.packageManifest?.nodeAddons.first(where: {
+        $0.name == reference.name && (reference.version == nil || $0.version == reference.version)
+      }) else {
+      let dependencyAddon = bundle.packageManifest?.dependencies.contains { dependency in
+        dependency.addons.contains { lock in
+          (lock.name == reference.name || "\(dependency.packageId)/\(lock.name)" == reference.name)
+            && (reference.version == nil || lock.version == reference.version)
+            && (lock.executionKind == .nativeBundle || lock.executionKind == .declarative
+              || lock.executionKind == .container)
+        }
+      } == true
+      if RielaBuiltinAddonCatalog.supports(name: reference.name, version: reference.version)
+        || dependencyAddon {
+        requirements[node.id] = WorkflowNodeHostRequirement(requiredEnvironment: requiredEnvironment)
+      }
+      continue
+    }
+    if addon.execution?.kind == .localCommand {
+      guard let executable = addon.execution?.entrypoint, !executable.isEmpty else { continue }
+      requirements[node.id] = WorkflowNodeHostRequirement(
+        addonExecutable: executable,
+        requiredEnvironment: requiredEnvironment
+      )
+    } else {
+      requirements[node.id] = WorkflowNodeHostRequirement(requiredEnvironment: requiredEnvironment)
+    }
+  }
+  return requirements
+}
+
+private func localAddonExecutableAvailability(
+  in bundle: ResolvedWorkflowBundle,
+  nodeId: String
+) -> [String: Bool] {
+  guard let manifest = bundle.packageManifest,
+    let packageDirectory = bundle.packageDirectory else { return [:] }
+  let packageRoot = URL(fileURLWithPath: packageDirectory, isDirectory: true)
+  var availability: [String: Bool] = [:]
+  for node in bundle.workflow.nodeRegistry where node.id == nodeId {
+    guard let reference = node.addon,
+      let addon = manifest.nodeAddons.first(where: {
+        $0.name == reference.name && (reference.version == nil || $0.version == reference.version)
+      }),
+      addon.execution?.kind == .localCommand,
+      let executable = addon.execution?.entrypoint,
+      !executable.isEmpty else { continue }
+    let candidate = packageRoot
+      .appendingPathComponent(addon.sourcePath, isDirectory: true)
+      .appendingPathComponent(executable, isDirectory: false)
+    let isExecutable = FileManager.default.isExecutableFile(atPath: candidate.path)
+    availability[executable] = (availability[executable] ?? true) && isExecutable
+  }
+  return availability
 }
 
 func runtimeCapabilityDiagnostics(
@@ -379,22 +650,46 @@ public struct WorkflowInspectionFailureResult: Codable, Equatable, Sendable {
 
 public struct WorkflowInspectCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
+  var hostResolver: any HostCapabilityResolving
 
   public init(resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver()) {
     self.resolver = resolver
+    hostResolver = HostCapabilityResolver()
+  }
+
+  init(
+    resolver: any WorkflowBundleResolving,
+    hostResolver: any HostCapabilityResolving
+  ) {
+    self.resolver = resolver
+    self.hostResolver = hostResolver
   }
 
   public func run(_ options: WorkflowInspectOptions) async -> CLICommandResult {
     do {
       let bundle = try resolver.resolve(options.resolution)
-      let summary = await buildSummary(bundle, resolution: options.resolution)
+      let summary = await buildSummary(bundle, options: options)
+      let failed = summary.runtimeCapabilityGaps.contains { $0.severity == .error }
       if options.output.isStructured {
-        return CLICommandResult(exitCode: .success, stdout: try jsonString(summary))
+        return CLICommandResult(
+          exitCode: failed ? .failure : .success,
+          stdout: try jsonString(summary)
+        )
       }
       if options.structure {
-        return CLICommandResult(exitCode: .success, stdout: renderStructure(bundle.workflow))
+        var output = renderStructure(bundle.workflow)
+        if options.host != nil {
+          output += summary.runtimeCapabilityGaps.map {
+            "\($0.severity.rawValue): \($0.path): \($0.message)"
+          }.joined(separator: "\n")
+          if !summary.runtimeCapabilityGaps.isEmpty { output += "\n" }
+        }
+        return CLICommandResult(exitCode: failed ? .failure : .success, stdout: output)
       }
-      return CLICommandResult(exitCode: .success, stdout: renderText(summary))
+      return CLICommandResult(
+        exitCode: failed ? .failure : .success,
+        stdout: renderText(summary)
+      )
     } catch let error as WorkflowResolutionError {
       let diagnostics: [WorkflowValidationDiagnostic]
       if case let .invalidWorkflow(workflowDiagnostics) = error {
@@ -410,8 +705,9 @@ public struct WorkflowInspectCommand: Sendable {
 
   private func buildSummary(
     _ bundle: ResolvedWorkflowBundle,
-    resolution: WorkflowResolutionOptions
+    options: WorkflowInspectOptions
   ) async -> WorkflowInspectionSummary {
+    let resolution = options.resolution
     let workflow = bundle.workflow
     let crossWorkflowIds = workflow.steps.flatMap { step in
       (step.transitions ?? []).compactMap { transition in
@@ -433,13 +729,33 @@ public struct WorkflowInspectCommand: Sendable {
       return "\(node.id):\(payload.executionBackend?.rawValue ?? "deterministic-local")"
     }
     let callable = buildCallableInspection(workflow, nodePayloads: bundle.nodePayloads)
-    let capabilityGaps = bundle.diagnostics
+    var capabilityGaps = bundle.diagnostics
       + DefaultWorkflowValidator().validate(workflow, nodePayloads: bundle.nodePayloads)
       + (await runtimeCapabilityDiagnostics(
       bundle: bundle,
       resolution: resolution,
       resolver: resolver
       ))
+    let backendRequirements: [WorkflowBackendRequirement]
+    do {
+      let assessment = try await workflowHostAssessment(
+        bundle: bundle,
+        resolution: resolution,
+        resolver: resolver,
+        hostResolver: hostResolver,
+        host: options.host,
+        strictHost: options.strictHost
+      )
+      backendRequirements = assessment.requirements
+      capabilityGaps.append(contentsOf: assessment.diagnostics)
+    } catch {
+      backendRequirements = []
+      capabilityGaps.append(WorkflowValidationDiagnostic(
+        severity: .error,
+        path: options.host == nil ? "workflow.requirements" : "workflow.host",
+        message: "host requirements could not be resolved: \(error)"
+      ))
+    }
     return WorkflowInspectionSummary(
       workflowId: workflow.workflowId,
       sourceScope: bundle.sourceScope,
@@ -469,6 +785,7 @@ public struct WorkflowInspectCommand: Sendable {
       nativeBundleAddons: nativeBundleAddons,
       runtimeReadinessDescriptors: readiness,
       runtimeCapabilityGaps: capabilityGaps,
+      backendRequirements: backendRequirements,
       loop: buildLoopInspection(workflow)
     )
   }
@@ -611,6 +928,16 @@ public struct WorkflowInspectCommand: Sendable {
     lines.append(contentsOf: summary.runtimeCapabilityGaps.map {
       "\($0.severity.rawValue): \($0.path): \($0.message)"
     })
+    if !summary.backendRequirements.isEmpty {
+      lines.append("backendRequirements:")
+      lines.append(contentsOf: summary.backendRequirements.map { requirement in
+        let names = requirement.pin.map { [$0.rawValue] }
+          ?? requirement.policy?.orderedCandidates().map(\.rawValue)
+          ?? []
+        return "- \(names.joined(separator: ",")): "
+          + requirement.provenance.map { "\($0.workflowId):\($0.stepId)" }.joined(separator: ",")
+      })
+    }
     return lines.joined(separator: "\n") + "\n"
   }
 

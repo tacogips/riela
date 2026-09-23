@@ -28,7 +28,6 @@ final class WorkGuardTests: XCTestCase {
     )
 
     XCTAssertEqual(violations, [
-      .budget(.attempts, used: 2, limit: 2),
       .budget(.tokens, used: 10, limit: 10),
       .budget(.wallClock, used: 20, limit: 20),
       .budget(.proposals, used: 1, limit: 1),
@@ -55,6 +54,22 @@ final class WorkGuardTests: XCTestCase {
     ).isEmpty)
   }
 
+  func testOfficialSDKHeartbeatIsExemptEvenWhenExplicitlyConfigured() {
+    let policy = GuardPolicy(inactivity: InactivityGuard(
+      stallTimeoutMs: 100,
+      monitorIntervalMs: 10,
+      heartbeatBackends: ["official/openai-sdk"]
+    ))
+    XCTAssertTrue(WorkGuard.evaluate(
+      policy: policy,
+      snapshot: GuardSnapshot(
+        activeStepId: "step",
+        heartbeatBackend: "official/openai-sdk",
+        idleMs: 1_000
+      )
+    ).isEmpty)
+  }
+
   func testValuesBelowLimitsDoNotViolate() {
     let policy = GuardPolicy(
       convergence: ConvergenceGuard(maxGateVisits: 2, maxRepeatedFindingRounds: 2),
@@ -70,6 +85,14 @@ final class WorkGuardTests: XCTestCase {
         gateVisits: ["gate": 1],
         repeatedFindingRounds: ["gate": 1]
       )
+    ).isEmpty)
+  }
+
+  func testGateVisitsAtTheConfiguredLimitRemainAllowed() {
+    let policy = GuardPolicy(convergence: ConvergenceGuard(maxGateVisits: 2))
+    XCTAssertTrue(WorkGuard.evaluate(
+      policy: policy,
+      snapshot: GuardSnapshot(gateVisits: ["review": 2])
     ).isEmpty)
   }
 

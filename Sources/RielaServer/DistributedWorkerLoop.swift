@@ -8,26 +8,57 @@ public struct DistributedWorkerLoop: Sendable {
   public typealias ContextualExecutor = @Sendable (DistributedJob, DistributedWorkerRegistration) async throws -> DistributedJobResult
   private let client: DistributedWorkerHTTPClient
   private let capacity: Int
+  private let capabilities: [BackendCapability]
+  private let environment: [String: Bool]
+  private let addonExecutables: [String: Bool]
   private let executor: ContextualExecutor
 
-  public init(client: DistributedWorkerHTTPClient, capacity: Int, executor: @escaping Executor) throws {
+  public init(
+    client: DistributedWorkerHTTPClient,
+    capacity: Int,
+    capabilities: [BackendCapability] = [],
+    environment: [String: Bool] = [:],
+    addonExecutables: [String: Bool] = [:],
+    executor: @escaping Executor
+  ) throws {
     guard (1...1024).contains(capacity) else { throw DistributedWorkerTransportError.invalidConfiguration }
     self.client = client
     self.capacity = capacity
+    self.capabilities = capabilities
+    self.environment = environment
+    self.addonExecutables = addonExecutables
     self.executor = { job, _ in try await executor(job) }
   }
 
-  public init(client: DistributedWorkerHTTPClient, capacity: Int, contextualExecutor: @escaping ContextualExecutor) throws {
+  public init(
+    client: DistributedWorkerHTTPClient,
+    capacity: Int,
+    capabilities: [BackendCapability] = [],
+    environment: [String: Bool] = [:],
+    addonExecutables: [String: Bool] = [:],
+    contextualExecutor: @escaping ContextualExecutor
+  ) throws {
     guard (1...1024).contains(capacity) else { throw DistributedWorkerTransportError.invalidConfiguration }
     self.client = client
     self.capacity = capacity
+    self.capabilities = capabilities
+    self.environment = environment
+    self.addonExecutables = addonExecutables
     self.executor = contextualExecutor
   }
 
   /// Register only once per process lifecycle. Transient network errors retry
   /// with the same incarnation; silently re-registering would abandon live work.
   public func run() async throws {
-    let response = try await retryNetwork { try await client.send(.init(operation: .register, capacity: capacity)) }
+    let response = try await retryNetwork {
+      try await client.send(.init(
+        operation: .register,
+        capacity: capacity,
+        capabilities: capabilities,
+        environment: environment,
+        addonExecutables: addonExecutables
+      ))
+    }
     guard let registration = response.registration else { throw DistributedWorkerTransportError.invalidResponse }
     try await withThrowingTaskGroup(of: Void.self) { group in
       defer { group.cancelAll() }

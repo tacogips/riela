@@ -173,7 +173,7 @@ let package = Package(
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
     .target(name: "RielaServer", dependencies: [
-      "RielaCore", "RielaGraphQL", "RielaObservability",
+      "RielaCore", "RielaGraphQL", "RielaObservability", "RielaWork",
       .product(name: "WebAuthn", package: "swift-webauthn"),
       .product(name: "SwiftCBOR", package: "SwiftCBOR"),
       .product(name: "Crypto", package: "swift-crypto")
@@ -329,7 +329,7 @@ let package = Package(
     ),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
-    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
+    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability", "RielaWork"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
     .testTarget(
       name: "RielaAppSupportTests",

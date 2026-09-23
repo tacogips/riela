@@ -51,11 +51,12 @@ public enum RielaCommand: Equatable, Sendable {
   case scoped(ScopedCommand)
 }
 
-/// Work Runtime read surface. P0 ships `show` and `list` only; `submit`,
-/// `serve`, and `decide` arrive with the dispatcher in P1.
+/// Work Runtime task inspection and execution surface.
 public enum TaskCommandKind: String, Codable, CaseIterable, Sendable {
   case show
   case list
+  case run
+  case decide
 }
 
 public struct TaskCommand: Equatable, Sendable {
@@ -287,47 +288,6 @@ public struct CLICommandOptions: Equatable, Sendable {
     self.target = target
     self.arguments = arguments
     self.output = output
-  }
-}
-
-public struct WorkflowValidateOptions: Equatable, Sendable {
-  public var workflowName: String
-  public var resolution: WorkflowResolutionOptions
-  public var output: WorkflowOutputFormat
-  public var executable: Bool
-  public var nodePatch: String?
-
-  public init(
-    workflowName: String,
-    resolution: WorkflowResolutionOptions,
-    output: WorkflowOutputFormat = .jsonl,
-    executable: Bool = false,
-    nodePatch: String? = nil
-  ) {
-    self.workflowName = workflowName
-    self.resolution = resolution
-    self.output = output
-    self.executable = executable
-    self.nodePatch = nodePatch
-  }
-}
-
-public struct WorkflowInspectOptions: Equatable, Sendable {
-  public var workflowName: String
-  public var resolution: WorkflowResolutionOptions
-  public var output: WorkflowOutputFormat
-  public var structure: Bool
-
-  public init(
-    workflowName: String,
-    resolution: WorkflowResolutionOptions,
-    output: WorkflowOutputFormat = .jsonl,
-    structure: Bool = false
-  ) {
-    self.workflowName = workflowName
-    self.resolution = resolution
-    self.output = output
-    self.structure = structure
   }
 }
 
@@ -809,7 +769,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     )
   }
 
-  /// `riela task show <task-id>` and `riela task list`. The shared flags are
+  /// `riela task <show|run|decide> <task-id>` and `riela task list`. The shared flags are
   /// `LoopCommand`'s, so P2 can reuse this parsing when `riela loop` is
   /// deleted and its inspections become task reads.
   private func parseTask(_ arguments: [String]) throws -> TaskCommand {
@@ -822,11 +782,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       )
     }
     guard !family.remainder.isEmpty else {
-      throw CLIUsageError("task show requires a task id")
+      throw CLIUsageError("task \(kind.rawValue) requires a task id")
     }
     let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
     guard let target = route.target else {
-      throw CLIUsageError("task show requires a task id")
+      throw CLIUsageError("task \(kind.rawValue) requires a task id")
     }
     return TaskCommand(
       kind: kind,

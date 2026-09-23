@@ -8,6 +8,7 @@ import RielaAddons
 import RielaCore
 import RielaKaibaAddons
 import RielaObservability
+import RielaWork
 
 public struct WorkflowRunCommand: Sendable {
   public var resolver: any WorkflowBundleResolving
@@ -31,17 +32,19 @@ public struct WorkflowRunCommand: Sendable {
     self.jsonlRecordWriter = jsonlRecordWriter
   }
 
-  func runWithoutSpecialistMonitor(_ options: WorkflowRunOptions) async -> CLICommandResult {
+  func runWithoutSpecialistMonitor(
+    _ options: WorkflowRunOptions,
+    taskReservation: (AttemptReservation, WorkStore)? = nil,
+    taskPlacement: BackendCapabilityPlacementResult? = nil
+  ) async -> CLICommandResult {
     var livePersistenceState: WorkflowRunLivePersistenceState?, pendingLease: WorkflowRunPendingLease?
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       try rejectUnsupportedRunOptions(options)
       if let result = try await remoteRunResult(options) { return result }
-      let resolution = options.resolution ?? WorkflowResolutionOptions(
-        workflowName: options.target,
-        workingDirectory: options.workingDirectory
-      )
-      var bundle = try resolveRunBundle(options: options, resolution: resolution)
+      let resolution = options.resolution
+        ?? WorkflowResolutionOptions(workflowName: options.target, workingDirectory: options.workingDirectory)
+      var bundle = try resolveRunBundle(options: options, resolution: resolution, taskPlacement: taskPlacement)
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
       let prepared = try await prepareRunExecution(
         options: options,
@@ -154,6 +157,8 @@ public struct WorkflowRunCommand: Sendable {
           }
         }
       }
+      let processAdmission = makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+      let taskAdmission = makeTaskAdmission(taskReservation, processAdmission: processAdmission)
       let initialRequest = DeterministicWorkflowRunRequest(
         workflow: bundle.workflow,
         nodePayloads: bundle.nodePayloads,
@@ -169,7 +174,7 @@ public struct WorkflowRunCommand: Sendable {
         agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
         effectiveInstance: effectiveInstance,
         eventHandler: runEventHandler,
-        sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+        sessionExecutionAdmission: taskAdmission ?? processAdmission
       )
       if options.autoImprove {
         var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
@@ -619,29 +624,18 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  private func persistSupervisionRecord(
-    sessionId: String,
-    storeRoot: String,
-    workflowName: String,
-    supervision: JSONObject
-  ) throws {
-    let directory = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot), isDirectory: true)
-      .appendingPathComponent(sessionId, isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    var record = supervision
-    record["sessionId"] = .string(sessionId)
-    record["workflowName"] = .string(workflowName)
-    try jsonString(record).write(to: directory.appendingPathComponent("supervision-record.json"), atomically: true, encoding: .utf8)
-  }
-
-  private func resolveRunBundle(options: WorkflowRunOptions, resolution: WorkflowResolutionOptions) throws -> ResolvedWorkflowBundle {
+  private func resolveRunBundle(
+    options: WorkflowRunOptions,
+    resolution: WorkflowResolutionOptions,
+    taskPlacement: BackendCapabilityPlacementResult?
+  ) throws -> ResolvedWorkflowBundle {
+    let bundle: ResolvedWorkflowBundle
     if let temporary = try loadTemporaryWorkflowIfPresent(options.target, workingDirectory: options.workingDirectory) {
-      return temporary
+      bundle = temporary
+    } else if options.fromRegistry { bundle = try resolveRegistryRunBundle(options: options) } else {
+      bundle = try resolver.resolve(resolution)
     }
-    if options.fromRegistry {
-      return try resolveRegistryRunBundle(options: options)
-    }
-    return try resolver.resolve(resolution)
+    return try taskPlacement.map { try applyingTaskPlacement($0, to: bundle) } ?? bundle
   }
 
   private func resolveRegistryRunBundle(options: WorkflowRunOptions) throws -> ResolvedWorkflowBundle {

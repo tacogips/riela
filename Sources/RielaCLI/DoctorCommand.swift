@@ -24,6 +24,7 @@ public struct DoctorCommandResult: Codable, Equatable, Sendable {
   public var runtimeHints: [DoctorRuntimeHint]
   public var containerRequirements: [DoctorContainerRequirement]
   public var containerRuntimes: [DoctorContainerRuntime]
+  public var backendCapabilities: [BackendCapability]
   public var summary: DoctorSummary
 }
 
@@ -77,15 +78,23 @@ public struct DoctorSummary: Codable, Equatable, Sendable {
   public var missingRuntimeHints: Int
   public var missingContainerRequirements: Int
   public var availableContainerRuntimes: Int
+  public var availableBackends: Int
 }
 
 public struct DoctorCommand: Sendable {
   public var runner: any LocalProcessRunning
+  var hostResolver: any HostCapabilityResolving
 
   public init(
     runner: any LocalProcessRunning = FoundationLocalProcessRunner()
   ) {
     self.runner = runner
+    hostResolver = HostCapabilityResolver(runner: runner)
+  }
+
+  init(runner: any LocalProcessRunning, hostResolver: any HostCapabilityResolving) {
+    self.runner = runner
+    self.hostResolver = hostResolver
   }
 
   public func run(_ options: CLICommandOptions) async -> CLICommandResult {
@@ -170,6 +179,13 @@ public struct DoctorCommand: Sendable {
     let missingRuntimeHints = runtimeHints.filter { $0.status == .missing }.count
     let missingContainerRequirements = containerRequirements.filter { $0.status == .missing }.count
     let availableContainerRuntimes = containerRuntimes.filter { $0.status == .ok }.count
+    let localSnapshots = try await hostResolver.resolve(
+      host: "local",
+      scope: parsed.scope,
+      workingDirectory: workingDirectory.path,
+      readOnly: false
+    )
+    let backendCapabilities = localSnapshots.first?.backends ?? []
     let summaryStatus: DoctorCheckStatus =
       missingEnvironment == 0 && missingRuntimeHints == 0 && missingContainerRequirements == 0 ? .ok : .warning
     return DoctorCommandResult(
@@ -180,13 +196,15 @@ public struct DoctorCommand: Sendable {
       runtimeHints: runtimeHints.sorted { $0.package == $1.package ? $0.hint < $1.hint : $0.package < $1.package },
       containerRequirements: containerRequirements.sorted { $0.package == $1.package ? $0.addon < $1.addon : $0.package < $1.package },
       containerRuntimes: containerRuntimes,
+      backendCapabilities: backendCapabilities,
       summary: DoctorSummary(
         status: summaryStatus,
         packagesChecked: packageReports.count,
         missingEnvironment: missingEnvironment,
         missingRuntimeHints: missingRuntimeHints,
         missingContainerRequirements: missingContainerRequirements,
-        availableContainerRuntimes: availableContainerRuntimes
+        availableContainerRuntimes: availableContainerRuntimes,
+        availableBackends: backendCapabilities.filter { $0.availability == .available }.count
       )
     )
   }
@@ -256,6 +274,22 @@ public struct DoctorCommand: Sendable {
     lines.append("missing runtime hints: \(result.summary.missingRuntimeHints)")
     lines.append("missing container requirements: \(result.summary.missingContainerRequirements)")
     lines.append("container runtimes: \(result.summary.availableContainerRuntimes) available")
+    lines.append("agent backends: \(result.summary.availableBackends) available")
+    if !result.backendCapabilities.isEmpty {
+      lines.append("")
+      lines.append("agent backends:")
+      for capability in result.backendCapabilities {
+        let freshness = capability.isFresh(at: Date(), maximumAge: 300) ? "fresh" : "stale-or-unverified"
+        let version = capability.version.map { " version=\($0)" } ?? ""
+        let models = capability.models.map { " models=\($0.joined(separator: ","))" } ?? ""
+        let failures = capability.failures.isEmpty ? "" : " failures=\(capability.failures.joined(separator: ";"))"
+        lines.append(
+          "- \(capability.backend.rawValue): \(capability.availability.rawValue) "
+            + "auth=\(capability.authentication.rawValue) source=\(capability.source.rawValue) \(freshness)"
+            + version + models + failures
+        )
+      }
+    }
     if !result.requiredEnvironment.isEmpty {
       lines.append("")
       lines.append("environment:")

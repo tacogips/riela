@@ -268,6 +268,40 @@ public struct WorkStore: Sendable {
     }
   }
 
+  /// Persists one immutable guard observation batch. The immediate transaction
+  /// makes compare-and-insert atomic across concurrent coordinator replays;
+  /// equivalent records retain the first observation timestamp, while any
+  /// conflicting id rejects the whole batch without partial inserts.
+  public func saveImmutableGuardEvidence(_ records: [Evidence]) throws -> [Evidence] {
+    guard !records.isEmpty else { return [] }
+    guard records.allSatisfy({ $0.kind == .guardViolation }) else {
+      throw WorkStoreError("immutable guard batches may contain only guard-violation evidence")
+    }
+    guard Set(records.map(\.id)).count == records.count else {
+      throw WorkStoreError("immutable guard batch contains duplicate evidence ids")
+    }
+    let db = try openWritable()
+    return try db.transaction { db in
+      var canonical: [Evidence] = []
+      for record in records {
+        let existing = try db.query(
+          "SELECT json(record) AS record FROM work_evidence WHERE evidence_id = ? LIMIT 1",
+          bindings: [.text(record.id.rawValue)]
+        ).first?["record"].map { try decode(Evidence.self, json: $0) }
+        if let existing {
+          guard Self.sameImmutableGuardObservation(existing, record) else {
+            throw WorkStoreError("guard evidence '\(record.id.rawValue)' conflicts with the persisted batch")
+          }
+          canonical.append(existing)
+          continue
+        }
+        try insertEvidence(record, in: db)
+        canonical.append(record)
+      }
+      return canonical
+    }
+  }
+
   public func listEvidence(taskId: TaskID, kind: EvidenceKind? = nil) throws -> [Evidence] {
     guard let db = try openReadOnlyIfPresent() else {
       return []
@@ -413,6 +447,12 @@ public struct WorkStore: Sendable {
       throw WorkStoreError("work record could not be encoded as UTF-8 JSON")
     }
     return json
+  }
+
+  private static func sameImmutableGuardObservation(_ lhs: Evidence, _ rhs: Evidence) -> Bool {
+    var preserved = lhs
+    preserved.createdAt = rhs.createdAt
+    return preserved == rhs
   }
 
   private func mapSQLiteError<T>(_ body: () throws -> T) throws -> T {

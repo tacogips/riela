@@ -9,16 +9,16 @@
 
 ## Completion criteria
 
-- [x] P1-1a: retained the shared runtime-records database and `RielaWork -> RielaCore` dependency direction; generation 6 adds only P1 launch, lease, pending-reservation, and cancellation storage.
+- [x] P1-1a: retained the shared runtime-records database and `RielaWork -> RielaCore` dependency direction; generation 8 discards generation 6's obsolete pending-reservation uniqueness shape and recreates the current P1 schema.
 - [x] P1-1b: `reserveAttempt(_:)` uses the SQLite wrapper's default `BEGIN IMMEDIATE`, reloads version/dependencies/budget/live fence, and atomically writes the attempt, unique created session, lease, decision or consumed request, optional placement evidence, and task advancement. Six injected post-write boundaries prove rollback.
 - [x] P1-1c: authorization remains digest-only and one-use, is checked against the exact attempt/session lease, refuses wrong/replayed/replaced tokens, permits only pre-authorization recovery, and rejects stale terminal paths through the one-live-attempt fence.
-- [x] P1-1d: rerun/recover requests are durable and consumed once without decision duplication; cancellation retains its attempt/lease fence until durable acknowledgment.
+- [x] P1-1d: rerun/recover requests are durable and consumed once without decision duplication; cancellation retains its attempt/lease fence until the exact reserved workflow snapshot durably reaches the matching terminal status.
 
 ## Durable primitive signatures
 
-- Reservation: `WorkStore.reserveAttempt(_ request: AttemptReservationRequest) throws -> AttemptReservation`
+- Reservation: `WorkStore.reserveAttempt(_ request: AttemptReservationRequest) throws -> AttemptReservationResult` (`.reserved` or dependency `.wait`)
 - Launch: `authorizeAttemptLaunch(attemptId:launchToken:now:)` consumes the token, then `markAttemptNodeStarted(attemptId:now:)` records runner entry without reusing it
-- Pending rerun/recover: `enqueuePendingReservation(_:now:)`; reservation consumes it through `AttemptReservationRequest.pendingRequestId`
+- Pending rerun/recover: `enqueuePendingReservation(_:now:)` and transaction-scoped `enqueuePendingReservation(_:now:in:)`; reservation consumes it through `AttemptReservationRequest.pendingRequestId`. The lifecycle owner invokes the scoped seam with its decision transaction.
 - Cancellation: `requestAttemptCancellation(attemptId:decisionId:now:)`, then `acknowledgeAttemptCancellation(attemptId:outcome:now:)`
 - Normal terminal reconciliation: `reconcileAttempt(attemptId:outcome:now:)`
 
@@ -139,3 +139,151 @@ The focused suite includes an independent-connection race and positive behaviora
 - Writable-cache current-tree suites: exit 0; 50 selected tests and zero failures (3 decision-applier store, 14 reservation, 15 P0 store, 18 projector); command `CLANG_MODULE_CACHE_PATH=$PWD/tmp/work-runtime-p1-20260921/p1-reservation/review-repair-2/cache SWIFTPM_MODULECACHE_OVERRIDE=$PWD/tmp/work-runtime-p1-20260921/p1-reservation/review-repair-2/cache /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests|DecisionApplierStoreTests'`; complete log `tmp/work-runtime-p1-20260921/p1-reservation/review-repair-2/logs/tests-compatible.log`.
 - Strict SwiftLint over all reservation and decision Swift changes: exit 0; command `xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-reservation/review-repair-2/changed-swift-files.nul`; complete log `tmp/work-runtime-p1-20260921/p1-reservation/review-repair-2/logs/swiftlint.log`.
 - Per-edit evidence: `tmp/work-runtime-p1-20260921/p1-reservation/review-repair-2/evidence/edit-intent.md`; pre-node snapshot: `tmp/riela-fanout/32A575AC-1C84-4552-9A94-56BC31446E1E/83B77BA8-2ADA-4734-B9DC-CBBCEFFA10CC.json`.
+
+## Step 6 implementation refresh (2026-09-22)
+
+- Workflow mode: `issue-resolution`; issue reference: `workflow-input: Complete the Work Runtime P1 dependency DAG`; review decision: `accepted_for_step6_implementation`; reviewed communication: `comm-000006`; review step: `step5-impl-plan-review`; codex-agent references: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `communicationId:comm-000004`, `sourceStepExecutionId:step4-impl-plan-create-attempt-1-exec-5`, `implementationModel:gpt-5.6-terra`, `gateModel:gpt-5.6-sol`.
+- Fresh source self-check found the existing reservation implementation and prior repairs intact: one shared writable transaction reserves attempt/decision-or-consumed-request/lease/evidence/task/session; runtime-only duplicate sessions reject before writes; digest-only launch authorization and cancellation acknowledgment retain fences. No shared Swift source changes were necessary in this refresh.
+- Exact build and focused-test commands each exited 1 before compilation/discovery because the sandbox denied `/Users/taco/.cache/clang/ModuleCache`; logs: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/build-exact.log`, `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/tests-exact.log`. A scratch-path writable-cache retry also exited 1 because network resolution for `agent-gateway` was unavailable: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/tests-compatible.log`.
+- Writable-cache, existing-checkout focused suite exited 0 with 50 tests and zero failures: 14 `WorkStoreReservationTests`, 15 `WorkStoreTests`, 18 `WorkEvidenceProjectorTests`, and 3 `DecisionApplierStoreTests`; command and complete log: `CLANG_MODULE_CACHE_PATH=$PWD/tmp/work-runtime-p1/p1-reservation/attempt-1/cache SWIFTPM_MODULECACHE_OVERRIDE=$PWD/tmp/work-runtime-p1/p1-reservation/attempt-1/cache /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests|DecisionApplierStoreTests'`; `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/tests-compatible-default-build.log`.
+- Strict touched-file SwiftLint and `git diff --check` exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/swiftlint-strict.log`, `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/diff-check.log`. Repository SwiftLint exited 0 with pre-existing warnings outside the reservation write set: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/swiftlint-repository.log`.
+- Pre-read hashes, current fanout snapshot, edit intent, and this attempt's NUL Swift manifest are retained under `tmp/work-runtime-p1/p1-reservation/attempt-1/evidence/` and `tmp/work-runtime-p1/p1-reservation/attempt-1/`.
+
+## Step 6 test-integrity repair (2026-09-22)
+
+- Review feedback: `comm-000012`, `step6-test-integrity-check-attempt-1-exec-13`, decision `needs_revision_test_integrity`; no source behavior change requested.
+- Added `testReservationRejectsDuplicateAttemptIDWithFreshSessionAndRollsBack`, proving duplicate durable attempt IDs reject and preserve the original reconciled attempt, task, empty decision/lease set, and absence of the fresh runtime session.
+- Added `testTerminalUnreconciledAttemptRetainsReservationFence`, proving a `.terminal` attempt rejects replacement reservation and preserves the task, terminal attempt, empty decision/lease set, and absence of the replacement runtime session.
+- Writable-cache requested focused command exited 0 with 52 tests and zero failures: 16 `WorkStoreReservationTests`, 15 `WorkStoreTests`, 18 `WorkEvidenceProjectorTests`, and 3 `DecisionApplierStoreTests`; complete log `tmp/work-runtime-p1/p1-reservation/attempt-2/logs/focused-tests.log`.
+- Strict touched-file SwiftLint and `git diff --check` exited 0; complete logs `tmp/work-runtime-p1/p1-reservation/attempt-2/logs/swiftlint-strict.log` and `tmp/work-runtime-p1/p1-reservation/attempt-2/logs/diff-check.log`. Intent, pre-edit hashes, and fanout snapshot: `tmp/work-runtime-p1/p1-reservation/attempt-2/evidence/`.
+
+## Integration repair verification (2026-09-22)
+
+- Astra integration finding `p1-reservation-consumed-request-blocks-next-request` was repaired by replacing global pending-request `task_id` uniqueness with a partial unique index over unconsumed requests. Consumed rows remain durable replay fences.
+- Added `testConsumedPendingRequestsPermitSuccessiveRequestsButCannotReplay`, covering two enqueue/consume/reconcile cycles for one task followed by rejection of a consumed request replay.
+- Parent permissive-environment verification passed 53 ARM64 tests with zero failures: 17 reservation, 15 store, 18 evidence-projector, and 3 decision-applier tests. Strict touched-file SwiftLint and `git diff --check` also passed.
+- Literal commands, UTC boundaries, source hashes, complete-log paths, and log SHA-256 values are retained in `tmp/work-runtime-p1/reconcile/attempt-4-parent/verification-evidence.json`.
+
+## Cancellation guard test-integrity repair (2026-09-22)
+
+- `testCancellationRetainsFenceUntilDurableAcknowledgment` independently rejects a `.created` snapshot with a matching `.created` outcome and a terminal `.completed` snapshot with a mismatched `.failed` outcome; both retain the attempt, task, lease, and pending cancellation before the matching `.failed` snapshot is acknowledged.
+- Focused verification passed: 54 tests, zero failures; `tmp/work-runtime-p1/p1-reservation/attempt-5/logs/focused-tests.log`. Strict touched-file SwiftLint passed: `tmp/work-runtime-p1/p1-reservation/attempt-5/logs/swiftlint-strict.log`.
+
+## Cancellation provenance repair (2026-09-22)
+
+- Acknowledgment now requires the reserved snapshot to persist `status=failed` and `failureKind=cancelled`, as well as matching the supplied failed outcome. Focused regressions reject non-cancel failures and accept the persisted cancelled failure; 54 tests passed in `tmp/work-runtime-p1/p1-reservation/attempt-6/logs/focused-tests.log`.
+
+## Step 6 current-tree verification (2026-09-22)
+
+- Codex-agent reference: `step6-implement`, `workflowExecutionId=nested-v1-84a8b96bfc40938d8ea35b750cb1c5722b109c5d34bdce8c2072a21c777278e2`, `fanoutBranchId=p1-reservation`; issue reference: `comm-000002`, `Complete the Work Runtime P1 dependency DAG`.
+- Fresh P1-1 self-check retained the shared transaction, duplicate-ID/session rejection, digest-only one-use authorization, uncertainty fence, durable pending-request consumption, and cancellation acknowledgment. No Swift source edit was needed in this pass; fresh source hashes and intent are under `tmp/work-runtime-p1/p1-reservation/attempt-1/`.
+- Exact build exited 1 before compilation because the sandbox cannot write `/Users/taco/.cache/clang/ModuleCache`; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/build-current.log`.
+- Exact focused tests exited 1 before discovery for the same sandbox module-cache restriction; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/tests-exact-current.log`.
+- ARM64 focused fallback exited 0: 55 tests, zero failures (18 reservation, 16 store, 18 evidence-projector, 3 decision-applier); complete log: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/focused-tests-current.log`.
+- Strict touched-file SwiftLint, repository SwiftLint, and `git diff --check` each exited 0; complete logs: `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/swiftlint-strict-current.log`, `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/swiftlint-repository-current.log`, and `tmp/work-runtime-p1/p1-reservation/attempt-1/logs/diff-check-current.log`. Repository lint warnings were outside reservation-owned paths.
+
+## Test-integrity repair (2026-09-22)
+
+- Review decision: `needs_revision_test_integrity`; communication `comm-000012`; finding severity: mid. Added `testFreshDispatchDecisionRollsBackAtEveryPostDecisionBoundary`, exercising the `pendingRequestId == nil` fresh-decision path at `.decisionOrRequest`, `.lease`, `.evidence`, `.task`, and `.session` failures. Each case proves task, attempt, fresh decision, lease, evidence, and runtime session rollback.
+- Focused new regression exited 0 with one test and zero failures: `tmp/work-runtime-p1/p1-reservation/attempt-7/logs/fresh-decision-rollback.log`.
+- Required writable-cache ARM64 four-suite filter exited 0 with 56 tests and zero failures: 19 `WorkStoreReservationTests`, 16 `WorkStoreTests`, 18 `WorkEvidenceProjectorTests`, and 3 `DecisionApplierStoreTests`; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-7/logs/focused-four-suite.log`.
+- Strict touched-file SwiftLint and `git diff --check` exited 0; complete logs: `tmp/work-runtime-p1/p1-reservation/attempt-7/logs/swiftlint-strict.log` and `tmp/work-runtime-p1/p1-reservation/attempt-7/logs/diff-check.log`.
+
+## Adversarial cancellation-provenance repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000017`; finding severity: mid. Cancellation acknowledgment now requires `AttemptOutcome.failureKind == .cancelled` in addition to the persisted failed/cancelled runtime snapshot. Positive callers supply `.cancelled`.
+- `testCancellationRetainsFenceUntilDurableAcknowledgment` now rejects caller `.adapterFailure` against a persisted cancelled snapshot while retaining the attempt and lease, then accepts only `.cancelled`. `DecisionApplierStoreTests` positive acknowledgment also supplies `.cancelled`.
+- Focused cancellation regressions exited 0 with two tests; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-8/logs/cancellation-provenance.log`. ARM64 four-suite filter exited 0 with 56 tests and zero failures (19 reservation, 16 store, 18 evidence-projector, 3 decision-applier); log: `tmp/work-runtime-p1/p1-reservation/attempt-8/logs/focused-four-suite.log`.
+- Strict touched-file SwiftLint and `git diff --check` exited 0; logs: `tmp/work-runtime-p1/p1-reservation/attempt-8/logs/swiftlint-strict.log`, `tmp/work-runtime-p1/p1-reservation/attempt-8/logs/diff-check.log`.
+
+## Adversarial cancellation-causality repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000030`; finding severity: mid. `requestAttemptCancellation` and `acknowledgeAttemptCancellation` now both require a stored `.cancel` decision bound to the exact task and attempt before writing or reconciling durable cancellation state.
+- `testCancellationRetainsFenceUntilDurableAcknowledgment` now seeds the matching cancel decision and proves acknowledgment transitions the task to `.cancelled` and removes its lease. `testCancellationRequiresMatchingCancelDecisionAndAcknowledgmentFailsClosed` covers missing, foreign-task, wrong-attempt, and non-cancel decision IDs for both request and malformed durable acknowledgment paths, retaining attempt, task, and lease.
+- Per-edit intent and fresh hashes: `tmp/work-runtime-p1/p1-reservation/attempt-9/intents/cancellation-causality.md`. Focused ARM64 test rerun exited 1 before discovery because `agent-gateway` could not resolve; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-9/focused-tests.log`. Strict targeted SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-9/swiftlint.log`.
+
+## Test-integrity cancellation-causality repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000034`; finding severity: mid. The malformed-acknowledgment regression now saves the matching failed/cancelled runtime snapshot before every invalid decision path, proving the decision-causality guard rather than the snapshot-provenance guard.
+- Focused ARM64 four-suite verification exited 0 with 57 tests and zero failures: 20 `WorkStoreReservationTests`, 16 `WorkStoreTests`, 18 `WorkEvidenceProjectorTests`, and 3 `DecisionApplierStoreTests`; command `CLANG_MODULE_CACHE_PATH=$PWD/tmp/work-runtime-p1/p1-reservation/attempt-10/cache SWIFTPM_MODULECACHE_OVERRIDE=$PWD/tmp/work-runtime-p1/p1-reservation/attempt-10/cache /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests|DecisionApplierStoreTests'`; complete log `tmp/work-runtime-p1/p1-reservation/attempt-10/focused-four-suite.log`.
+- Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-10/swiftlint-strict.log`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-10/intents/acknowledgment-regression.md`.
+
+## Strict-lint structure repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000036`; finding severity: mid. Split the oversized reservation-test class at the cancellation-test responsibility boundary into a same-file extension. No test, fixture, or production behavior changed and no lint suppression was added.
+- Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-11/swiftlint-strict.log`. Focused ARM64 four-suite verification exited 0 with 57 tests and zero failures; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-11/focused-four-suite.log`.
+- Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-11/intents/lint-structure.md`.
+
+## Adversarial cancellation-launch fence repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000039`; finding severity: mid. Authorization and node-start transactions now fail closed when `work_cancellations` contains an unacknowledged row for the exact attempt.
+- Added `testPendingCancellationBlocksAuthorizationAndNodeStart`, proving a prepared delayed dispatcher cannot authorize and an already-authorized delayed dispatcher cannot start a node after cancellation; both retain their attempt phase, lease, and pending cancellation.
+- Focused ARM64 four-suite verification exited 0 with 58 tests and zero failures; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-12/focused-four-suite.log`. Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-12/swiftlint-strict.log`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-12/intents/cancellation-launch-fence.md`.
+
+## Adversarial cancellation-recovery fence repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000042`; finding severity: mid. `recoverPreLaunchReservation` now rejects an unacknowledged cancellation before it can reconcile the prepared attempt, release its lease, or reschedule its task.
+- Added `testPendingCancellationBlocksPreLaunchRecovery`, proving a valid launch-token holder cannot recover a prepared reservation after a matching cancellation request and that the prepared attempt, reserved launch phase, running task, lease, and pending cancellation remain durable.
+- Focused ARM64 four-suite verification exited 0 with 59 tests and zero failures; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-13/focused-four-suite.log`. Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-13/swiftlint-strict.log`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-13/intents/cancellation-recovery-fence.md`.
+
+## Adversarial terminal-reconciliation fence repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000045`; finding severity: mid. `reconcileAttempt` now requires the authoritative runtime snapshot to be terminal (`.completed` or `.failed`), match the caller outcome status, and match its optional failure kind before it releases the live-attempt fence.
+- Existing positive reconciliation paths now persist matching terminal runtime snapshots. Added `testReconciliationRequiresMatchingTerminalSnapshot`, covering created, running, status-mismatched, and failure-kind-mismatched snapshots while retaining the running authorized attempt, task, and lease; it also proves a matching failed snapshot reconciles.
+- Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-14/focused-four-suite.log`. Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-14/swiftlint-strict.log`. Structured evidence: `tmp/work-runtime-p1/p1-reservation/attempt-14/verification-evidence.json`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-14/intents/terminal-reconciliation-fence.md`.
+
+## Adversarial canonical-reconciliation outcome repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000048`; finding severity: mid. `reconcileAttempt` now transactionally loads and decodes the authoritative runtime snapshot through the existing SQLite connection, derives `WorkEvidenceProjector.outcome(from:)`, requires full equality with the caller outcome, and persists that canonical outcome.
+- `testReconciliationRequiresMatchingTerminalSnapshot` now rejects a caller-forged accepted gate and inflated cost against a matching failed snapshot whose canonical gate is rejected and cost is seven. The live attempt, task, and lease remain durable; the canonical outcome subsequently reconciles.
+- Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-15/focused-four-suite.log`. Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-15/swiftlint-strict.log`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-15/intents/canonical-reconciliation-outcome.md`.
+
+## Adversarial canonical-cancellation outcome repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000051`; finding severity: mid. `acknowledgeAttemptCancellation` now transactionally loads and projects the reserved runtime snapshot, requires full equality with the caller outcome, and persists that canonical projected outcome only after confirming failed/cancelled terminal state.
+- `testCancellationRetainsFenceUntilDurableAcknowledgment` now persists rejected verification evidence and cost seven, rejects a matching failed/cancelled caller outcome forged with an accepted gate and cost 999 while retaining the prepared attempt, nil outcome, running task, lease, and pending cancellation, then acknowledges only the canonical outcome.
+- Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-16/focused-four-suite-rerun.log`. Strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-16/swiftlint-strict.log`. Structured evidence: `tmp/work-runtime-p1/p1-reservation/attempt-16/verification-evidence.json`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-16/intents/canonical-cancellation-outcome.md`.
+- Isolated ARM64 build exited 1 before compilation because SwiftPM could not resolve `github.com` while fetching `agent-gateway`; complete log: `tmp/work-runtime-p1/p1-reservation/attempt-16/build.log`. This does not replace the successful 60-test cached-dependency behavioral run; aggregate stable-tree verification remains a final integration responsibility.
+
+## Canonical cancellation test-integrity repair (2026-09-22)
+
+- Review decision: `needs_revision_test_integrity`; communication `comm-000053`; findings severity: mid. Replaced the strict-lint-violating three-member terminal-reconciliation tuple with `TerminalSnapshotRejection`; no production behavior changed.
+- `testCancellationRetainsFenceUntilDurableAcknowledgment` now independently rejects a gate-only forged caller outcome and a cost-only forged caller outcome. Each preserves the prepared attempt with nil outcome, running task, live lease, and unacknowledged cancellation. The successful path reloads durable attempt state and verifies canonical failed/cancelled status, rejected gate, and cost seven.
+- Direct strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-17/swiftlint-strict.log`. Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures: `tmp/work-runtime-p1/p1-reservation/attempt-17/focused-four-suite.log`. Structured evidence: `tmp/work-runtime-p1/p1-reservation/attempt-17/verification-evidence.json`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-17/intents/test-integrity-canonical-cancellation.md`.
+
+## Normal canonical reconciliation test-integrity repair (2026-09-22)
+
+- Review decision: `needs_revision_test_integrity`; communication `comm-000055`; finding severity: mid. `testReconciliationRequiresMatchingTerminalSnapshot` now independently rejects a gate-only forged normal reconciliation outcome and a cost-only forged outcome, retaining the authorized live attempt, task, lease, and nil outcome after each.
+- The successful normal reconciliation now reloads durable attempt storage and asserts canonical failed status, adapter failure kind, rejected gate, and cost seven.
+- Direct strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-18/swiftlint-strict.log`. Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures: `tmp/work-runtime-p1/p1-reservation/attempt-18/focused-four-suite.log`. Structured evidence: `tmp/work-runtime-p1/p1-reservation/attempt-18/verification-evidence.json`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-18/intents/normal-canonical-reconciliation.md`.
+
+## Pending-request reservation fence repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000058`; finding severity: mid. `reserveAttempt` now transactionally loads an unconsumed request for the task before any attempt, decision, lease, task, or runtime-session write, and requires the caller request ID, decision ID, and entry to match it exactly. The existing conditional consume update remains the one-time consumption fence.
+- `testPendingRerunRequestIsConsumedOnceWithoutDuplicatingDecision` now rejects both a nil request ID with a fresh decision and a mismatched request ID while preserving the task, attempt set, decision set, leases, durable pending request, and both attempted runtime sessions. It then consumes the exact request and asserts its recorded consumed attempt.
+- Direct strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-20/swiftlint-strict.log`. Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures (23 reservation, 16 store, 18 evidence-projector, 3 decision-applier): `tmp/work-runtime-p1/p1-reservation/attempt-20/focused-four-suite.log`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-19/intents/pending-request-fence.md`.
+
+## Pending-request identity test-integrity repair (2026-09-22)
+
+- Review decision: `needs_revision`; communication `comm-000060`; finding severity: mid. The existing pending-request rejection table now independently covers a correct request ID with a wrong decision ID, and correct request/decision IDs with a wrong decoded rerun entry, in addition to nil and wrong request IDs.
+- Each case retains the task, attempt set, decision set, lease set, pending request, and attempted runtime snapshot fence before the exact request is consumed once.
+- Direct strict touched-file SwiftLint exited 0: `tmp/work-runtime-p1/p1-reservation/attempt-22/swiftlint-strict.log`. Focused ARM64 four-suite verification exited 0 with 60 tests and zero failures (23 reservation, 16 store, 18 evidence-projector, 3 decision-applier): `tmp/work-runtime-p1/p1-reservation/attempt-22/focused-four-suite.log`. Per-edit intent: `tmp/work-runtime-p1/p1-reservation/attempt-21/intents/pending-request-identity-cases.md`.
+
+## Pending-request predecessor causality repair (2026-09-22)
+
+- Codex-agent reference: `step6-implement`, `workflowExecutionId=nested-v1-84a8b96bfc40938d8ea35b750cb1c5722b109c5d34bdce8c2072a21c777278e2`, `fanoutBranchId=p1-reservation`; issue: `workflow-input:Complete the Work Runtime P1 dependency DAG`.
+- `reserveAttempt` and transaction-scoped pending-request enqueue now require the request's durable predecessor attempt to equal the stored rerun/recover decision's attempt. `WorkStoreTests.testOnlyOneUnconsumedPendingReservationCanExistPerTask` rejects a mismatched predecessor request.
+- Fresh intent and hashes: `tmp/work-runtime-p1-dag-20260922-comm-000006-checkpoint/p1-reservation/attempt-1/intent-pending-request-causality.md`, `post-edit-sha256.txt`. Strict touched-file SwiftLint and `git diff --check` passed: `swiftlint-strict-final.log`, `diff-check-after-repair.log`. Isolated focused tests remain blocked before discovery by unavailable `agent-gateway` dependency/network resolution: `focused-tests-compatible-after-repair.log`.
+
+## Step 6 implementation refresh (2026-09-22)
+
+- Codex-agent reference: `step6-implement`, `workflowExecutionId=nested-v1-ef1803ad4659abd4b4e459d0ef3f5117f75749cd86a492271160069fd42161bf`, `fanoutBranchId=p1-reservation`; issue `comm-000002: Complete the Work Runtime P1 dependency DAG`; review admission `comm-000006/step5-impl-plan-review` accepted with no findings.
+- Reconciled stale durable-primitive documentation to schema generation 8 and `reserveAttempt(_:) -> AttemptReservationResult`; retained the lifecycle-owned transaction-scoped pending-request seam. Repaired the reservation-test lint boundary without changing production reservation behavior, preserving cancellation authorization, prelaunch-recovery, and terminal-snapshot fences.
+- Exact isolated build and focused-test commands each exited 1 before compilation/discovery because the sandbox denies `/Users/taco/.cache/clang/ModuleCache`; complete logs: `tmp/work-runtime-p1-dag-20260922-8286b20f/p1-reservation/step6-ef1803ad/logs/build-exact-retry.log`, `tests-exact.log`.
+- Compatible cached ARM64 focused run exited 0 with 62 tests and zero failures; complete log: `tmp/work-runtime-p1-dag-20260922-8286b20f/p1-reservation/step6-ef1803ad/logs/tests-compatible-final.log`. Strict touched-file SwiftLint and `git diff --check` exited 0; complete logs: `swiftlint-strict-final.log`, `diff-check-final.log`. Repository SwiftLint exited 0 with pre-existing warnings outside the reservation write set: `swiftlint-repository.log`.
+
+## Test-integrity restoration (2026-09-22)
+
+- Review decision: `comm-000016` / `step6-test-integrity-check-attempt-1-exec-10` `needs_revision`; all three mid findings are addressed. Codex-agent reference: `step6-implement`, `workflowExecutionId=nested-v1-ef1803ad4659abd4b4e459d0ef3f5117f75749cd86a492271160069fd42161bf`, `fanoutBranchId=p1-reservation`; issue `comm-000002`.
+- Restored the authoritative 1,227-line pre-lint regression body from the native fanout snapshot SHA-256 `b547f96165ebf57026f1e7e33afeb670962cd91c26414da28cf54a8b13425f08`. The cancellation/reconciliation extension now lives in `Tests/RielaWorkTests/WorkStoreCancellationTests.swift`; recombination differs only in test-only member visibility and the force-try removal, recorded at `tmp/work-runtime-p1-dag-20260922-8286b20f/p1-reservation/step6-ef1803ad/revision-comm-000016/recombined-vs-snapshot.diff`.
+- Restored negative canonical-outcome and fence assertions, cancellation decision identity/acknowledgment cases, and terminal reconciliation mismatch coverage. Compatible ARM64 focused verification passed 62 tests with zero failures: `revision-comm-000016/logs/focused-tests-retry.log`. Strict lint over every tracked changed Swift file plus the new cancellation test file passed: `revision-comm-000016/logs/swiftlint-strict-final.log`.

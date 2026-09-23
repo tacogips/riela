@@ -22,7 +22,7 @@ final class WorkStoreReservationTests: XCTestCase {
     }
   }
 
-  private var root: URL!
+  var root: URL!
 
   override func setUpWithError() throws {
     root = FileManager.default.temporaryDirectory
@@ -119,6 +119,56 @@ final class WorkStoreReservationTests: XCTestCase {
     ))) { error in
       XCTAssertTrue(String(describing: error).contains("live attempt"))
     }
+  }
+
+  func testReservationRejectsDuplicateAttemptIDWithFreshSessionAndRollsBack() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    let existing = Attempt(
+      id: AttemptID("attempt-1"),
+      taskId: task.id,
+      sessionId: "existing-session",
+      state: .reconciled
+    )
+    try store.saveTask(task)
+    try store.saveAttempt(existing)
+
+    XCTAssertThrowsError(try store.reserveAttempt(request()))
+
+    XCTAssertEqual(try store.loadTask(id: task.id), task)
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [existing])
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases"), [])
+    XCTAssertThrowsError(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).load(sessionId: "session-1"))
+  }
+
+  func testTerminalUnreconciledAttemptRetainsReservationFence() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    let terminal = Attempt(
+      id: AttemptID("terminal-attempt"),
+      taskId: task.id,
+      sessionId: "terminal-session",
+      state: .terminal
+    )
+    try store.saveTask(task)
+    try store.saveAttempt(terminal)
+
+    XCTAssertThrowsError(try store.reserveAttempt(request(
+      attemptId: "replacement-attempt",
+      sessionId: "replacement-session",
+      decisionId: "replacement-decision"
+    ))) { error in
+      XCTAssertTrue(String(describing: error).contains("live attempt"))
+    }
+
+    XCTAssertEqual(try store.loadTask(id: task.id), task)
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [terminal])
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases"), [])
+    XCTAssertThrowsError(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).load(sessionId: "replacement-session"))
   }
 
   func testAuthorizationAndNodeStartAreTokenFencedAndNotReplayable() throws {
@@ -229,6 +279,7 @@ final class WorkStoreReservationTests: XCTestCase {
     try store.saveTask(sampleTask())
     let reservation = try store.reserveAttempt(request(token: "token"))
     _ = try store.authorizeAttemptLaunch(attemptId: reservation.attempt.id, launchToken: "token")
+    try saveTerminalSnapshot(for: reservation, status: .completed)
     let terminal = try store.reconcileAttempt(
       attemptId: reservation.attempt.id,
       outcome: AttemptOutcome(sessionStatus: .completed)
@@ -324,6 +375,44 @@ final class WorkStoreReservationTests: XCTestCase {
     }
   }
 
+  func testFreshDispatchDecisionRollsBackAtEveryPostDecisionBoundary() throws {
+    let failurePoints: [AttemptReservationFailurePoint] = [.decisionOrRequest, .lease, .evidence, .task, .session]
+    for point in failurePoints {
+      let caseRoot = root.appendingPathComponent("fresh-decision-\(point)", isDirectory: true)
+      let store = WorkStore(rootDirectory: caseRoot.path)
+      var task = sampleTask()
+      task.state = .scheduled
+      try store.saveTask(task)
+
+      var value = request()
+      value.placementEvidence = Evidence(
+        id: EvidenceID("placement-1"),
+        taskId: task.id,
+        attemptId: value.attemptId,
+        kind: .contextSnapshot,
+        producedBy: .runtime,
+        payloadRef: .inline(["host": .string("local")]),
+        createdAt: value.now
+      )
+      value.failurePoint = point
+
+      XCTAssertThrowsError(try store.reserveAttempt(value), "expected fresh-decision rollback at \(point)")
+      XCTAssertEqual(try store.loadTask(id: task.id), task)
+      XCTAssertEqual(try store.listAttempts(taskId: task.id), [])
+      XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+      XCTAssertEqual(try store.listEvidence(taskId: task.id), [])
+      let database = try SQLiteDatabase.open(
+        path: store.databasePath,
+        mode: .readOnly,
+        options: .readOnlyDefault
+      )
+      XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases"), [])
+      XCTAssertThrowsError(
+        try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: caseRoot.path).load(sessionId: value.sessionId)
+      )
+    }
+  }
+
   func testDependenciesAndExactAttemptBudgetAreRechecked() throws {
     let store = WorkStore(rootDirectory: root.path)
     var task = sampleTask()
@@ -337,9 +426,12 @@ final class WorkStoreReservationTests: XCTestCase {
     dependency.id = TaskID("dependency")
     dependency.state = .waiting
     try store.saveTask(dependency)
-    XCTAssertThrowsError(try store.reserveAttempt(request())) { error in
-      XCTAssertTrue(String(describing: error).contains("not satisfied"))
-    }
+    XCTAssertEqual(try store.reserveAttempt(request()), .wait(.dependency))
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [])
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+    let blockedDatabase = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try blockedDatabase.query("SELECT attempt_id FROM work_leases"), [])
+    XCTAssertThrowsError(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).load(sessionId: "session-1"))
     dependency.state = .succeeded
     try store.saveTask(dependency)
     let reservation = try store.reserveAttempt(request())
@@ -347,6 +439,7 @@ final class WorkStoreReservationTests: XCTestCase {
       attemptId: reservation.attempt.id,
       launchToken: reservation.launchToken
     )
+    try saveTerminalSnapshot(for: reservation, status: .completed)
     _ = try store.reconcileAttempt(
       attemptId: reservation.attempt.id,
       outcome: AttemptOutcome(sessionStatus: .completed)
@@ -363,7 +456,6 @@ final class WorkStoreReservationTests: XCTestCase {
       XCTAssertTrue(String(describing: error).contains("attempt budget"))
     }
   }
-
   func testPendingRerunRequestIsConsumedOnceWithoutDuplicatingDecision() throws {
     let store = WorkStore(rootDirectory: root.path)
     var task = sampleTask()
@@ -389,27 +481,173 @@ final class WorkStoreReservationTests: XCTestCase {
     var value = request(decisionId: decision.id.rawValue)
     value.entry = AttemptEntry.rerunFromStep("repair")
     value.pendingRequestId = "pending-1"
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let snapshots = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    let mismatches: [(inout AttemptReservationRequest) -> Void] = [
+      { $0.pendingRequestId = nil; $0.decisionId = DecisionID("fresh-decision") },
+      { $0.pendingRequestId = "wrong-pending" },
+      { $0.decisionId = DecisionID("wrong-decision") },
+      { $0.entry = .rerunFromStep("wrong-step") }
+    ]
+    for (index, mismatch) in mismatches.enumerated() {
+      var rejected = value
+      mismatch(&rejected)
+      rejected.attemptId = AttemptID("rejected-\(index)")
+      rejected.sessionId = "session-rejected-\(index)"
+      XCTAssertThrowsError(try store.reserveAttempt(rejected))
+      XCTAssertEqual(try store.loadTask(id: task.id), task)
+      XCTAssertEqual(try store.listAttempts(taskId: task.id), [])
+      XCTAssertEqual(try store.listDecisions(taskId: task.id), [decision])
+      XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases").count, 0)
+      XCTAssertNil(try database.query("SELECT consumed_attempt_id FROM work_pending_reservations").first?["consumed_attempt_id"])
+      XCTAssertThrowsError(try snapshots.load(sessionId: rejected.sessionId))
+    }
     let reservation = try store.reserveAttempt(value)
     XCTAssertEqual(reservation.decision, decision)
     XCTAssertEqual(try store.listDecisions(taskId: task.id), [decision])
-    _ = try store.authorizeAttemptLaunch(
-      attemptId: reservation.attempt.id,
-      launchToken: reservation.launchToken
+    XCTAssertEqual(try database.query("SELECT consumed_attempt_id FROM work_pending_reservations").first?["consumed_attempt_id"], reservation.attempt.id.rawValue)
+  }
+  func testConsumedPendingRequestsPermitSuccessiveRequestsButCannotReplay() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.state = .scheduled
+    try store.saveTask(task)
+
+    for index in 1...2 {
+      let decision = Decision(
+        id: DecisionID("rerun-decision-\(index)"),
+        taskId: task.id,
+        attemptId: AttemptID("predecessor-\(index)"),
+        producer: .policy(rule: "recover"),
+        kind: .rerun(fromStepId: "repair"),
+        reason: "retry terminal failure",
+        createdAt: Date(timeIntervalSince1970: 1_800_000_000 + Double(index))
+      )
+      try store.saveDecision(decision)
+      try store.enqueuePendingReservation(PendingAttemptReservation(
+        id: "pending-\(index)",
+        taskId: task.id,
+        decisionId: decision.id,
+        predecessorAttemptId: decision.attemptId,
+        entry: .rerunFromStep("repair")
+      ))
+      let currentTask = try XCTUnwrap(store.loadTask(id: task.id))
+      var value = request(
+        expectedVersion: currentTask.version,
+        attemptId: "attempt-\(index)",
+        sessionId: "session-\(index)",
+        decisionId: decision.id.rawValue
+      )
+      value.entry = .rerunFromStep("repair")
+      value.pendingRequestId = "pending-\(index)"
+      let reservation = try store.reserveAttempt(value)
+      _ = try store.authorizeAttemptLaunch(
+        attemptId: reservation.attempt.id,
+        launchToken: reservation.launchToken
+      )
+      try saveTerminalSnapshot(for: reservation, status: .failed)
+      _ = try store.reconcileAttempt(
+        attemptId: reservation.attempt.id,
+        outcome: AttemptOutcome(sessionStatus: .failed)
+      )
+      task = try XCTUnwrap(store.loadTask(id: task.id))
+      task.state = .scheduled
+      try store.saveTask(task)
+    }
+
+    XCTAssertEqual(try store.listAttempts(taskId: task.id).count, 2)
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try database.query("SELECT request_id FROM work_pending_reservations WHERE consumed_attempt_id IS NOT NULL").count, 2)
+
+    var replay = request(
+      expectedVersion: task.version,
+      attemptId: "attempt-3",
+      sessionId: "session-3",
+      decisionId: "rerun-decision-1"
     )
-    _ = try store.reconcileAttempt(
-      attemptId: reservation.attempt.id,
-      outcome: AttemptOutcome(sessionStatus: .failed)
-    )
-    var scheduled = try XCTUnwrap(store.loadTask(id: task.id))
-    scheduled.state = .scheduled
-    try store.saveTask(scheduled)
-    value.expectedTaskVersion = scheduled.version
-    value.attemptId = AttemptID("attempt-2")
-    value.sessionId = "session-2"
-    XCTAssertThrowsError(try store.reserveAttempt(value)) { error in
+    replay.entry = .rerunFromStep("repair")
+    replay.pendingRequestId = "pending-1"
+    XCTAssertThrowsError(try store.reserveAttempt(replay)) { error in
       XCTAssertTrue(String(describing: error).contains("already consumed"))
     }
-    XCTAssertEqual(try store.listAttempts(taskId: task.id).count, 1)
+    XCTAssertEqual(try store.listAttempts(taskId: task.id).count, 2)
+  }
+
+  func testPendingReservationCanCommitOrRollBackWithItsDecisionTransaction() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let committed = Decision(
+      id: DecisionID("committed-rerun-decision"),
+      taskId: task.id,
+      attemptId: AttemptID("predecessor"),
+      producer: .policy(rule: "recover"),
+      kind: .rerun(fromStepId: "repair"),
+      reason: "retry terminal failure",
+      createdAt: Date(timeIntervalSince1970: 1_800_000_000)
+    )
+    let database = try store.openWritable()
+    try database.transaction { database in
+      try store.insertDecision(committed, in: database)
+      try store.enqueuePendingReservation(
+        PendingAttemptReservation(
+          id: "committed-pending",
+          taskId: task.id,
+          decisionId: committed.id,
+          predecessorAttemptId: committed.attemptId,
+          entry: .rerunFromStep("repair")
+        ),
+        now: committed.createdAt,
+        in: database
+      )
+    }
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [committed])
+
+    let rollbackTask = sampleTask(id: "rollback-task")
+    try store.saveTask(rollbackTask)
+    let rolledBack = Decision(
+      id: DecisionID("rolled-back-rerun-decision"),
+      taskId: rollbackTask.id,
+      attemptId: AttemptID("predecessor"),
+      producer: .policy(rule: "recover"),
+      kind: .rerun(fromStepId: "repair"),
+      reason: "retry terminal failure",
+      createdAt: Date(timeIntervalSince1970: 1_800_000_001)
+    )
+    XCTAssertThrowsError(try database.transaction { database in
+      try store.insertDecision(rolledBack, in: database)
+      try store.enqueuePendingReservation(
+        PendingAttemptReservation(
+          id: "rolled-back-pending",
+          taskId: rollbackTask.id,
+          decisionId: rolledBack.id,
+          predecessorAttemptId: rolledBack.attemptId,
+          entry: .rerunFromStep("repair")
+        ),
+        now: rolledBack.createdAt,
+        in: database
+      )
+      XCTAssertEqual(
+        try database.query("SELECT decision_id FROM work_decisions WHERE decision_id = ?", bindings: [.text(rolledBack.id.rawValue)])
+          .map { $0["decision_id"] },
+        [rolledBack.id.rawValue]
+      )
+      XCTAssertEqual(
+        try database.query("SELECT request_id FROM work_pending_reservations WHERE request_id = ?", bindings: [.text("rolled-back-pending")])
+          .map { $0["request_id"] },
+        ["rolled-back-pending"]
+      )
+      throw WorkStoreError("injected rollback")
+    }) { error in
+      XCTAssertTrue(String(describing: error).contains("injected rollback"))
+    }
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [committed])
+    XCTAssertEqual(try store.listDecisions(taskId: rollbackTask.id), [])
+    let readOnly = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(
+      try readOnly.query("SELECT request_id FROM work_pending_reservations ORDER BY request_id").map { $0["request_id"] },
+      ["committed-pending"]
+    )
   }
 
   func testStaleTerminalWriterFailsAfterAuthorizedReplacement() throws {
@@ -440,64 +678,5 @@ final class WorkStoreReservationTests: XCTestCase {
       XCTAssertTrue(String(describing: error).contains("not live"))
     }
     XCTAssertEqual(try store.loadAttempt(id: replacement.attempt.id)?.state, .running)
-  }
-
-  func testCancellationRetainsFenceUntilDurableAcknowledgment() throws {
-    let store = WorkStore(rootDirectory: root.path)
-    try store.saveTask(sampleTask())
-    let reservation = try store.reserveAttempt(request(token: "cancel-token"))
-    try store.requestAttemptCancellation(
-      attemptId: reservation.attempt.id,
-      decisionId: DecisionID("cancel-decision")
-    )
-    XCTAssertThrowsError(try store.reconcileAttempt(
-      attemptId: reservation.attempt.id,
-      outcome: AttemptOutcome(sessionStatus: .failed)
-    ))
-    XCTAssertThrowsError(try store.reserveAttempt(request(
-      expectedVersion: 2,
-      attemptId: "replacement",
-      sessionId: "replacement-session",
-      decisionId: "replacement-decision"
-    )))
-    let acknowledged = try store.acknowledgeAttemptCancellation(
-      attemptId: reservation.attempt.id,
-      outcome: AttemptOutcome(sessionStatus: .failed)
-    )
-    XCTAssertEqual(acknowledged.state, .reconciled)
-  }
-
-  private func sampleTask() -> WorkTask {
-    WorkTask(
-      id: TaskID("task-1"),
-      intentId: IntentID("intent-1"),
-      title: "Repair task",
-      instruction: "Run the repair workflow",
-      plan: .workflow(WorkflowReference(name: "repair-workflow")),
-      state: .ready
-    )
-  }
-
-  private func request(
-    expectedVersion: Int = 1,
-    attemptId: String = "attempt-1",
-    sessionId: String = "session-1",
-    decisionId: String = "decision-1",
-    token: String? = nil
-  ) -> AttemptReservationRequest {
-    AttemptReservationRequest(
-      taskId: TaskID("task-1"),
-      expectedTaskVersion: expectedVersion,
-      attemptId: AttemptID(attemptId),
-      sessionId: sessionId,
-      workflowId: "repair-workflow",
-      entryStepId: "start",
-      entry: .start,
-      decisionId: DecisionID(decisionId),
-      producer: .policy(rule: "start-ready-task"),
-      reason: "ready task dispatch",
-      launchToken: token,
-      now: Date(timeIntervalSince1970: 1_800_000_000)
-    )
   }
 }

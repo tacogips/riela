@@ -1,0 +1,65 @@
+{
+  "workflowId": "task-repair-loop",
+  "description": "A task-owned repair attempt followed by a verification gate. The task dispatcher interprets gate, guard, and capacity evidence across attempts.",
+  "defaults": {
+    "maxLoopIterations": 2,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise business JSON for the assigned step."
+  },
+  "entryStepId": "repair",
+  "loop": {
+    "kind": "design-implement-review",
+    "required": true,
+    "description": "Require verification evidence before the task can be accepted.",
+    "gates": [
+      {
+        "id": "verification",
+        "stepId": "verify",
+        "required": true,
+        "acceptWhen": {
+          "decision": "accepted",
+          "maxHighFindings": 0,
+          "maxMediumFindings": 0
+        }
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "repair",
+      "nodeFile": "nodes/node-repair.json"
+    },
+    {
+      "id": "verify",
+      "nodeFile": "nodes/node-verify.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "repair",
+      "nodeId": "repair",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "verify"
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "nodeId": "verify",
+      "role": "worker",
+      "loop": {
+        "role": "gate",
+        "gateId": "verification",
+        "evidenceTags": [
+          "verification",
+          "acceptance"
+        ],
+        "recordsVerification": true
+      }
+    }
+  ]
+}

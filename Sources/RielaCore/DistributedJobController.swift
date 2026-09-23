@@ -41,14 +41,27 @@ public actor DistributedJobController {
     }
   }
 
-  public func register(workerId: String, groups: Set<String>, capacity: Int, now: Date = Date()) throws -> DistributedWorkerRegistration {
+  public func register(
+    workerId: String,
+    groups: Set<String>,
+    capacity: Int,
+    capabilities: [BackendCapability] = [],
+    environment: [String: Bool] = [:],
+    addonExecutables: [String: Bool] = [:],
+    now: Date = Date()
+  ) throws -> DistributedWorkerRegistration {
     return try withStoreLock {
-      guard validName(workerId), groups.allSatisfy(validName), (1...1024).contains(capacity) else {
+      guard validName(workerId), groups.allSatisfy(validName), (1...1024).contains(capacity),
+        environment.count <= 512, environment.keys.allSatisfy(validName),
+        addonExecutables.count <= 512, addonExecutables.keys.allSatisfy(validName) else {
         throw DistributedWorkerError.invalidRegistration
       }
       guard state.workers[workerId] != nil || state.workers.count < 1024 else { throw DistributedWorkerError.storeCapacityExceeded }
       let registration = DistributedWorkerRegistration(
-        workerId: workerId, incarnation: UUID().uuidString, groups: groups, capacity: capacity
+        workerId: workerId, incarnation: UUID().uuidString, groups: groups,
+        capacity: capacity, capabilities: capabilities,
+        environment: environment, addonExecutables: addonExecutables,
+        capabilitiesObservedAt: now
       )
       var next = state
       // A new incarnation cannot acknowledge or inherit a previous process's work.
@@ -310,7 +323,9 @@ public actor DistributedJobController {
         return DistributedWorkerStatus(
           workerId: worker.workerId, groups: worker.groups, capacity: worker.capacity,
           activeJobIds: state.jobs.filter { $0.status == .leased && $0.lease?.workerId == worker.workerId }.map(\.id),
-          lastSeenAt: lastSeen, online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false
+          lastSeenAt: lastSeen,
+          online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false,
+          capabilities: worker.capabilities
         )
       }
     }

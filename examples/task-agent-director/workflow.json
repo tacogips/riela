@@ -1,0 +1,25 @@
+{
+  "workflowId": "task-agent-director",
+  "description": "One bounded nonrecursive child workflow that recommends an allowed task decision from a TaskView.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return one concise decision JSON object. Never execute the decision."
+  },
+  "entryStepId": "director",
+  "nodes": [
+    {
+      "id": "director",
+      "nodeFile": "nodes/node-director.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "director",
+      "nodeId": "director",
+      "role": "worker"
+    }
+  ]
+}

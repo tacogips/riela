@@ -9,18 +9,32 @@ final class ImplementationWorkflowSandboxTests: XCTestCase {
       isDirectory: true
     )
     let expected: [String: AgentSandboxMode] = [
+      "node-feature-local-plan.json": .readOnly,
+      "node-riela-manager.json": .readOnly,
       "node-step1-issue-intake.json": .readOnly,
       "node-step2-design-doc-update.json": .readOnly,
       "node-step3-design-review.json": .readOnly,
       "node-step4-impl-plan-create.json": .readOnly,
       "node-step5-impl-plan-review.json": .readOnly,
+      "node-step5-feature-plan-join.json": .readOnly,
       "node-step6-implement.json": .workspaceWrite,
       "node-step6-test-integrity-check.json": .readOnly,
+      "node-step7-review.json": .readOnly,
       "node-step7-adversarial-review.json": .readOnly,
+      "node-step7b-e2e-evidence.json": .readOnly,
       "node-step8-docs-refresh.json": .workspaceWrite,
       "node-step8-impl-plan-completion-check.json": .readOnly,
-      "node-step9-commit-message.json": .readOnly
+      "node-step9-commit-message.json": .readOnly,
+      "node-workflow-output.json": .readOnly
     ]
+    let actualNodeFiles = try FileManager.default.contentsOfDirectory(
+      at: nodes,
+      includingPropertiesForKeys: nil
+    )
+    .map(\.lastPathComponent)
+    .filter { $0.hasSuffix(".json") }
+
+    XCTAssertEqual(Set(actualNodeFiles), Set(expected.keys))
 
     for (fileName, sandbox) in expected {
       let data = try Data(contentsOf: nodes.appendingPathComponent(fileName))

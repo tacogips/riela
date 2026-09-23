@@ -9,6 +9,22 @@ public struct RunnerGuardSignals: Equatable, Sendable {
     self.gateVisits = gateVisits
     self.repeatedFindingRounds = repeatedFindingRounds
   }
+
+  public init(gateResults: [LoopGateResult]) {
+    var tracker = LoopConvergenceTracker(declaration: LoopConvergenceDeclaration())
+    var visits: [String: Int] = [:]
+    var rounds: [String: Int] = [:]
+    for gate in gateResults {
+      let check = tracker.recordGateVisit(
+        gateId: gate.gateId,
+        decision: gate.decision,
+        findings: gate.blockingFindings
+      )
+      visits[gate.gateId] = check.gateVisits
+      rounds[gate.gateId] = check.repeatedRounds
+    }
+    self.init(gateVisits: visits, repeatedFindingRounds: rounds)
+  }
 }
 
 /// Adapts runner state into the immutable task-level guard input without
@@ -23,8 +39,15 @@ public enum TaskGuardSnapshotAdapter {
     now: Date = Date()
   ) -> GuardSnapshot {
     let running = session?.executions.last(where: { $0.status == .running })
-    let totalTokens = attempts
-      .flatMap { $0.outcome?.costs ?? [] }
+    var costsByExecution: [String: LoopCostEvidence] = [:]
+    for attempt in attempts {
+      for cost in attempt.outcome?.costs ?? [] {
+        // Runner event replay may repeat a step's cumulative cost record. Its
+        // attempt-scoped execution identity makes the latest record authoritative.
+        costsByExecution["\(attempt.id.rawValue)\u{0}\(cost.stepExecutionId)"] = cost
+      }
+    }
+    let totalTokens = costsByExecution.values
       .compactMap(\.totalTokens)
       .reduce(0, +)
     let idleMs = running?.lastBackendEventAt.map {
@@ -47,14 +70,15 @@ public enum TaskGuardSnapshotAdapter {
 public struct GuardDirectorApplication: Equatable, Sendable {
   public var violations: [GuardViolation]
   public var evidence: [Evidence]
-  public var resolution: DirectorResolution
-  public var application: DecisionApplication
+  /// A warning persists evidence but deliberately does not force a decision.
+  public var resolution: DirectorResolution?
+  public var application: DecisionApplication?
 
   public init(
     violations: [GuardViolation],
     evidence: [Evidence],
-    resolution: DirectorResolution,
-    application: DecisionApplication
+    resolution: DirectorResolution?,
+    application: DecisionApplication?
   ) {
     self.violations = violations
     self.evidence = evidence
@@ -78,6 +102,9 @@ public struct TaskGuardCoordinator: Sendable {
     snapshot: GuardSnapshot,
     completion: CompletionVerdict,
     failedStepId: String?,
+    attemptFailureEvidenceId: EvidenceID? = nil,
+    gateEvidenceIds: [String: EvidenceID] = [:],
+    completionEvidenceIds: [EvidenceID] = [],
     violationEvidenceIds: [EvidenceID],
     decisionId: DecisionID,
     decisionEvidenceId: EvidenceID,
@@ -98,18 +125,47 @@ public struct TaskGuardCoordinator: Sendable {
         createdAt: now
       )
     }
-    try store.saveEvidence(evidence)
+    let canonicalEvidence = try store.saveImmutableGuardEvidence(evidence)
+    // Warnings preserve non-budget observations without forcing a policy
+    // action. Budget exhaustion is always actionable: warn must not let a
+    // task exceed an admitted resource limit.
+    if task.guardPolicy.onViolation == .warn,
+       !violations.isEmpty,
+       !violations.contains(where: { $0.isBudgetViolation }) {
+      return GuardDirectorApplication(
+        violations: violations,
+        evidence: canonicalEvidence,
+        resolution: nil,
+        application: nil
+      )
+    }
     let guardEvidence = zip(violations, violationEvidenceIds).map {
       GuardViolationEvidence(violation: $0.0, evidenceId: $0.1)
     }
-    let resolution = DeterministicDirector.decide(DeterministicDirectorInput(
+    let deterministicResolution = DeterministicDirector.decide(DeterministicDirectorInput(
       task: task,
       latestAttempt: latestAttempt,
       attemptCount: snapshot.attemptCount,
       failedStepId: failedStepId,
+      attemptFailureEvidenceId: attemptFailureEvidenceId,
+      gateEvidenceIds: gateEvidenceIds,
       completion: completion,
+      completionEvidenceIds: completionEvidenceIds,
       guardEvidence: guardEvidence
     ))
+    let resolution: DirectorResolution
+    if task.guardPolicy.onViolation == .fail,
+       let evidenceId = deterministicResolution.causedBy.first,
+       let violation = guardEvidence.first(where: { $0.evidenceId == evidenceId }) {
+      resolution = DirectorResolution(
+        kind: .stop(GuardViolationRef(evidenceId: evidenceId, summary: violation.violation.summary)),
+        rule: "guard-policy-fail",
+        reason: violation.violation.summary,
+        causedBy: [evidenceId]
+      )
+    } else {
+      resolution = deterministicResolution
+    }
     let decision = Decision(
       id: decisionId,
       taskId: task.id,
@@ -120,15 +176,25 @@ public struct TaskGuardCoordinator: Sendable {
       causedBy: resolution.causedBy,
       createdAt: now
     )
+    let pendingReservation = resolution.kind.requestedEntry.map {
+      PendingAttemptReservation(
+        id: "pending-\(decisionId.rawValue)",
+        taskId: task.id,
+        decisionId: decisionId,
+        predecessorAttemptId: latestAttempt?.id,
+        entry: $0
+      )
+    }
     let application = try store.applyDecision(
       decision,
       expectedTaskVersion: task.version,
       completion: completion,
-      decisionEvidenceId: decisionEvidenceId
+      decisionEvidenceId: decisionEvidenceId,
+      pendingReservation: pendingReservation
     )
     return GuardDirectorApplication(
       violations: violations,
-      evidence: evidence,
+      evidence: canonicalEvidence,
       resolution: resolution,
       application: application
     )
@@ -156,5 +222,25 @@ public struct TaskGuardCoordinator: Sendable {
       payload["limit"] = .integer(Int64(limit))
     }
     return payload
+  }
+
+}
+
+private extension DecisionKind {
+  var requestedEntry: AttemptEntry? {
+    switch self {
+    case .start: .start
+    case .resume: .resume
+    case let .rerun(fromStepId): .rerunFromStep(fromStepId)
+    case let .recover(fromGateId): .recoverFromGate(fromGateId)
+    default: nil
+    }
+  }
+}
+
+private extension GuardViolation {
+  var isBudgetViolation: Bool {
+    if case .budget = self { return true }
+    return false
   }
 }

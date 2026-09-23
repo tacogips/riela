@@ -18,7 +18,10 @@ public struct DeterministicDirectorInput: Equatable, Sendable {
   public var latestAttempt: Attempt?
   public var attemptCount: Int
   public var failedStepId: String?
+  public var attemptFailureEvidenceId: EvidenceID?
+  public var gateEvidenceIds: [String: EvidenceID]
   public var completion: CompletionVerdict
+  public var completionEvidenceIds: [EvidenceID]
   public var guardEvidence: [GuardViolationEvidence]
 
   public init(
@@ -26,14 +29,20 @@ public struct DeterministicDirectorInput: Equatable, Sendable {
     latestAttempt: Attempt? = nil,
     attemptCount: Int = 0,
     failedStepId: String? = nil,
+    attemptFailureEvidenceId: EvidenceID? = nil,
+    gateEvidenceIds: [String: EvidenceID] = [:],
     completion: CompletionVerdict = .unmet([]),
+    completionEvidenceIds: [EvidenceID] = [],
     guardEvidence: [GuardViolationEvidence] = []
   ) {
     self.task = task
     self.latestAttempt = latestAttempt
     self.attemptCount = attemptCount
     self.failedStepId = failedStepId
+    self.attemptFailureEvidenceId = attemptFailureEvidenceId
+    self.gateEvidenceIds = gateEvidenceIds
     self.completion = completion
+    self.completionEvidenceIds = completionEvidenceIds
     self.guardEvidence = guardEvidence
   }
 }
@@ -55,7 +64,10 @@ public struct DirectorResolution: Codable, Equatable, Sendable {
 /// The total, ordered policy table from design sections 6 and 17.
 public enum DeterministicDirector {
   public static func decide(_ input: DeterministicDirectorInput) -> DirectorResolution {
-    let violations = input.guardEvidence
+    let violations = input.guardEvidence.sorted { lhs, rhs in
+      violationSortKey(lhs.violation, evidenceId: lhs.evidenceId)
+        < violationSortKey(rhs.violation, evidenceId: rhs.evidenceId)
+    }
     if let evidence = violations.first(where: { $0.violation.isBudget }) {
       return stop(evidence, rule: "budget-exhausted")
     }
@@ -79,27 +91,48 @@ public enum DeterministicDirector {
       let rules = input.task.director.deterministic
       let rerunnable = (kind == .adapterFailure && rules.rerunOnAdapterFailure)
         || (kind == .nodeTimeout && rules.rerunOnNodeTimeout)
-      if rerunnable, hasAttemptBudget(input) {
+      if rerunnable, hasAttemptBudget(input), let evidenceId = input.attemptFailureEvidenceId {
         return DirectorResolution(
           kind: .rerun(fromStepId: input.failedStepId),
           rule: "recoverable-attempt-failure",
-          reason: "attempt failed with \(kind?.rawValue ?? "unknown")"
+          reason: "attempt failed with \(kind?.rawValue ?? "unknown")",
+          causedBy: [evidenceId]
         )
       }
     }
 
-    if let rejected = input.latestAttempt?.outcome?.latestGateResults.first(where: {
-      $0.decision == .rejected || $0.decision == .needsWork
-    }), input.task.director.deterministic.recoverOnGateRejection {
+    if let latestAttempt = input.latestAttempt,
+       let status = latestAttempt.outcome?.sessionStatus,
+       status != .completed {
       return DirectorResolution(
-        kind: .recover(fromGateId: rejected.gateId),
-        rule: "gate-recovery",
-        reason: "gate \(rejected.gateId) requires recovery"
+        kind: .wait(.human),
+        rule: "attempt-not-completed",
+        reason: "latest attempt has not completed successfully"
       )
     }
 
-    if input.completion == .satisfied {
-      return DirectorResolution(kind: .accept, rule: "completion-satisfied", reason: "completion contract is satisfied")
+    if let rejected = input.latestAttempt?.outcome?.latestGateResults.sorted(by: {
+      "\($0.gateId)\u{0}\($0.stepId)\u{0}\($0.stepExecutionId)"
+        < "\($1.gateId)\u{0}\($1.stepId)\u{0}\($1.stepExecutionId)"
+    }).first(where: {
+      $0.decision == .rejected || $0.decision == .needsWork
+    }), input.task.director.deterministic.recoverOnGateRejection, hasAttemptBudget(input),
+       let evidenceId = input.gateEvidenceIds[rejected.gateId] {
+      return DirectorResolution(
+        kind: .recover(fromGateId: rejected.gateId),
+        rule: "gate-recovery",
+        reason: "gate \(rejected.gateId) requires recovery",
+        causedBy: [evidenceId]
+      )
+    }
+
+    if input.completion == .satisfied, !input.completionEvidenceIds.isEmpty {
+      return DirectorResolution(
+        kind: .accept,
+        rule: "completion-satisfied",
+        reason: "completion contract is satisfied",
+        causedBy: input.completionEvidenceIds
+      )
     }
     if input.task.completion.requiresHumanAccept,
        input.completion == .unmet([.humanAcceptRequired]) {
@@ -124,6 +157,18 @@ public enum DeterministicDirector {
       reason: evidence.violation.summary,
       causedBy: [evidence.evidenceId]
     )
+  }
+
+  private static func violationSortKey(
+    _ violation: GuardViolation,
+    evidenceId: EvidenceID
+  ) -> String {
+    switch violation {
+    case let .budget(dimension, _, _): return "0\u{0}\(dimension.rawValue)\u{0}\(evidenceId.rawValue)"
+    case let .gateVisitsExceeded(gateId, _): return "1\u{0}0\u{0}\(gateId)\u{0}\(evidenceId.rawValue)"
+    case let .repeatedFindings(gateId, _): return "1\u{0}1\u{0}\(gateId)\u{0}\(evidenceId.rawValue)"
+    case let .inactivity(stepId, _): return "2\u{0}\(stepId)\u{0}\(evidenceId.rawValue)"
+    }
   }
 }
 

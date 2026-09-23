@@ -144,7 +144,7 @@ public struct RielaCLIApplication: Sendable {
       case let .specialist(command):
         return await specialistCommandRunner.run(command)
       case let .task(command):
-        return taskCommandRunner.run(command)
+        return await taskCommandRunner.run(command)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }

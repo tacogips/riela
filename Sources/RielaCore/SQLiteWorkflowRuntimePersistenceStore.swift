@@ -108,20 +108,22 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   ///
   /// Generation 5 adds the Work Runtime's `work_*` tables to this same
   /// database file (`WorkStore` in `RielaWork` creates them behind this one
-  /// guard). No `fromGeneration: 4` migration is registered on purpose: the
-  /// Work Runtime design forbids backward compatibility, so a generation-4
-  /// session store has no path forward and `discardIncompatibleStoreIfNeeded`
-  /// deletes and recreates it.
-  public static let schemaGeneration: Int64 = 6
+  /// guard). Generation 7 replaces generation 6's obsolete pending-request
+  /// uniqueness with uniqueness over unconsumed requests only. No migration
+  /// is registered for either shape: the Work Runtime design forbids backward
+  /// compatibility, so `discardIncompatibleStoreIfNeeded` recreates them.
+  public static let schemaGeneration: Int64 = 8
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
   /// they share one file). Append a `SQLiteSchemaMigration(fromGeneration:)`
   /// here for every future `schemaGeneration` bump that is allowed to migrate.
   /// Stores stamped before generation 2 (the migration baseline), at generation
-  /// 4 (the last pre-Work-Runtime shape), or at generation 5 (the P0-only Work
-  /// Runtime shape) have no path and are discarded. P1 deliberately follows
-  /// the Work Runtime's no-compatibility contract.
+  /// 4 (the last pre-Work-Runtime shape), generation 5 (the P0-only Work
+  /// Runtime shape), generation 6 (the obsolete P1 request shape), or generation
+  /// 7 (the pre-decision-application-result shape) have no
+  /// path and are discarded. P1 deliberately follows the Work Runtime's
+  /// no-compatibility contract.
   public static let schemaMigrations: [SQLiteSchemaMigration] = [
     SQLiteSchemaMigration(fromGeneration: 2) { database in
       // Historical migrations must not call the current-schema builder:
@@ -211,6 +213,35 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
 
   public func loadStrictReadOnly(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
     try load(sessionId: sessionId, strictReadOnly: true)
+  }
+
+  /// Loads a snapshot through an existing transaction connection so callers
+  /// can validate runner state before committing related durable changes.
+  public func load(sessionId: String, in db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
+    guard isSafeId(sessionId) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
+    }
+    guard try runtimeSnapshotTableExists(db) else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    let rows = try mapRuntimeSQLiteError {
+      try db.query(
+        """
+        SELECT json(session_json) AS session_json,
+          CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
+          json(diagnostics_json) AS diagnostics_json,
+          \(runtimeLoopEvidenceSelectSQL)
+        FROM workflow_runtime_snapshots
+        WHERE workflow_execution_id = ?
+        LIMIT 1
+        """,
+        bindings: [.text(sessionId)]
+      )
+    }
+    guard let row = rows.first else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    return try snapshot(from: row, db: db)
   }
 
   private func load(

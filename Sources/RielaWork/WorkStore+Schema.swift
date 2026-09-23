@@ -99,7 +99,7 @@ public extension WorkStore {
       """
       CREATE TABLE IF NOT EXISTS work_pending_reservations (
         request_id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL UNIQUE,
+        task_id TEXT NOT NULL,
         decision_id TEXT NOT NULL UNIQUE,
         predecessor_attempt_id TEXT,
         entry_record JSONB NOT NULL CHECK (json_valid(entry_record, 8)),
@@ -108,6 +108,12 @@ public extension WorkStore {
         consumed_at TEXT
       )
       """
+    )
+    // Retain consumed requests for replay detection while allowing the next
+    // request after reconciliation. A task still has only one unconsumed
+    // request, so competing rerun/recover decisions cannot race to reserve it.
+    try db.execute(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_work_pending_reservations_one_unconsumed_task ON work_pending_reservations (task_id) WHERE consumed_attempt_id IS NULL"
     )
 
     try db.execute(
@@ -142,6 +148,15 @@ public extension WorkStore {
 
     try db.execute(
       """
+      CREATE TABLE IF NOT EXISTS work_decision_applications (
+        decision_id TEXT PRIMARY KEY,
+        record JSONB NOT NULL CHECK (json_valid(record, 8))
+      )
+      """
+    )
+
+    try db.execute(
+      """
       CREATE TABLE IF NOT EXISTS work_evidence (
         evidence_id TEXT PRIMARY KEY,
         record JSONB NOT NULL CHECK (json_valid(record, 8)),
@@ -170,6 +185,16 @@ public extension WorkStore {
     )
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_findings_task_status ON work_findings (task_id, status, severity)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_findings_gate ON work_findings (task_id, gate_id)")
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_hosts (
+        host_id TEXT PRIMARY KEY,
+        record JSONB NOT NULL CHECK (json_valid(record, 8)),
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
   }
 
   /// Every table `prepareSchema` creates, in creation order. The store tests
@@ -182,7 +207,9 @@ public extension WorkStore {
     "work_pending_reservations",
     "work_cancellations",
     "work_decisions",
+    "work_decision_applications",
     "work_evidence",
-    "work_findings"
+    "work_findings",
+    "work_hosts"
   ]
 }

@@ -18,6 +18,11 @@ public struct FileSystemWorkflowCalleeResolver: WorkflowCalleeResolving {
   }
 
   public func resolveCallee(workflowId: String) async throws -> ResolvedWorkflowCallee {
+    let bundle = try resolveBundle(workflowId: workflowId)
+    return ResolvedWorkflowCallee(workflow: bundle.workflow, nodePayloads: bundle.nodePayloads)
+  }
+
+  func resolveBundle(workflowId: String) throws -> ResolvedWorkflowBundle {
     var failures: [String] = []
     for candidate in candidateResolutions(workflowId: workflowId) {
       let bundle: ResolvedWorkflowBundle
@@ -33,7 +38,7 @@ public struct FileSystemWorkflowCalleeResolver: WorkflowCalleeResolving {
         )
         continue
       }
-      return ResolvedWorkflowCallee(workflow: bundle.workflow, nodePayloads: bundle.nodePayloads)
+      return bundle
     }
     throw WorkflowResolutionError.notFound(workflowId, failures)
   }

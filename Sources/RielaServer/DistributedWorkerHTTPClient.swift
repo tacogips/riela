@@ -6,8 +6,17 @@ import FoundationNetworking
 public struct DistributedWorkerHTTPClient: Sendable {
   private let endpoint: URL
   private let token: String
+  private let capabilityRefresh: DistributedWorkerCapabilityRefresh?
 
-  public init(controllerURL: URL, token: String, allowInsecureHTTP: Bool = false) throws {
+  public init(
+    controllerURL: URL,
+    token: String,
+    allowInsecureHTTP: Bool = false,
+    initialCapabilities: DistributedWorkerCapabilityObservation? = nil,
+    refreshAfter: TimeInterval = 240,
+    clock: @escaping @Sendable () -> Date = Date.init,
+    capabilityProvider: (@Sendable () async throws -> DistributedWorkerCapabilityObservation)? = nil
+  ) throws {
     guard let parts = URLComponents(url: controllerURL, resolvingAgainstBaseURL: false),
       let host = parts.host, !host.isEmpty, parts.user == nil, parts.password == nil,
       parts.query == nil, parts.fragment == nil, parts.path.isEmpty || parts.path == "/",
@@ -19,11 +28,26 @@ public struct DistributedWorkerHTTPClient: Sendable {
     guard parts.scheme == "https" || allowInsecureHTTP || ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host) else {
       throw DistributedWorkerTransportError.insecureEndpoint
     }
+    guard refreshAfter >= 0, refreshAfter < 300,
+      (initialCapabilities == nil) == (capabilityProvider == nil) else {
+      throw DistributedWorkerTransportError.invalidConfiguration
+    }
     self.endpoint = controllerURL.appendingPathComponent("distributed/v1/worker")
     self.token = token
+    if let initialCapabilities, let capabilityProvider {
+      capabilityRefresh = DistributedWorkerCapabilityRefresh(
+        initial: initialCapabilities,
+        refreshAfter: refreshAfter,
+        clock: clock,
+        provider: capabilityProvider
+      )
+    } else {
+      capabilityRefresh = nil
+    }
   }
 
   public func send(_ message: DistributedWorkerRequest) async throws -> DistributedWorkerResponse {
+    let message = await preparedRequest(message)
     let data = try JSONEncoder().encode(message)
     guard data.count <= DistributedWorkerHTTPRouter.maximumBodyBytes else { throw DistributedWorkerTransportError.oversizedMessage }
     var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
@@ -38,6 +62,59 @@ public struct DistributedWorkerHTTPClient: Sendable {
       transfer.cancel()
     }
     do { return try JSONDecoder().decode(DistributedWorkerResponse.self, from: response) } catch { throw DistributedWorkerTransportError.invalidResponse }
+  }
+
+  func preparedRequest(_ input: DistributedWorkerRequest) async -> DistributedWorkerRequest {
+    var message = input
+    if let capabilityRefresh, message.operation == .claim || message.operation == .renew {
+      let observation = await capabilityRefresh.current()
+      message.capabilities = observation.capabilities
+      message.environment = observation.environment
+      message.addonExecutables = observation.addonExecutables
+      message.capabilitiesObservedAt = observation.observedAt
+    }
+    return message
+  }
+}
+
+private actor DistributedWorkerCapabilityRefresh {
+  private var latest: DistributedWorkerCapabilityObservation
+  private var nextRetryAt: Date
+  private var pending: Task<DistributedWorkerCapabilityObservation, Error>?
+  private let refreshAfter: TimeInterval
+  private let clock: @Sendable () -> Date
+  private let provider: @Sendable () async throws -> DistributedWorkerCapabilityObservation
+
+  init(
+    initial: DistributedWorkerCapabilityObservation,
+    refreshAfter: TimeInterval,
+    clock: @escaping @Sendable () -> Date,
+    provider: @escaping @Sendable () async throws -> DistributedWorkerCapabilityObservation
+  ) {
+    latest = initial
+    nextRetryAt = initial.observedAt
+    self.refreshAfter = refreshAfter
+    self.clock = clock
+    self.provider = provider
+  }
+
+  func current() async -> DistributedWorkerCapabilityObservation {
+    let now = clock()
+    guard now >= nextRetryAt,
+      now.timeIntervalSince(latest.observedAt) >= refreshAfter else { return latest }
+    if pending == nil { pending = Task { try await provider() } }
+    guard let pending else { return latest }
+    do {
+      let observation = try await pending.value
+      if observation.observedAt > latest.observedAt, observation.observedAt <= clock() {
+        latest = observation
+      }
+    } catch {
+      // Keep the old observation time so placement rejects it at expiry.
+      nextRetryAt = clock().addingTimeInterval(15)
+    }
+    self.pending = nil
+    return latest
   }
 }
 

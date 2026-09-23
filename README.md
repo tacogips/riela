@@ -698,16 +698,27 @@ records database as the workflow snapshots, behind that store's single schema
 generation. There is no migration: a session store from an older generation is
 discarded and recreated.
 
-Two read-only commands are available today:
+Task inspection and execution are available through the CLI:
 
 ```bash
 riela task list [--state <task-state>] [--intent <intent-id>] [--workflow <name>] [--limit <n>]
 riela task show <task-id> [--scope project|user|auto] [--session-store <dir>] [--output jsonl|json|text]
+riela task run <task-id> [--scope project|user|auto] [--session-store <dir>] [--dry-run] [--output jsonl|json|text]
 ```
 
-The dispatcher, the guard detectors, the directors and `riela task run|decide`
-land in the next phase; their `SurfaceCatalog` rows are `blocked` and name it.
-The design is `design-docs/specs/design-work-runtime-consolidation.md`.
+`task run` resolves reachable root and called-workflow requirements before
+reserving an attempt. It keeps selected worker, backend, model and workspace
+choices through the existing workflow runner and authenticated worker path.
+Missing capacity, dependencies or a live eligible worker return a wait without
+allocating an attempt or session; `--dry-run` previews placement without an
+allocation. Once a worker has claimed a job, loss of that worker does not
+trigger a local fallback or duplicate launch. See
+[controller and worker setup](docs/distributed-workers.md) for placement and
+workspace configuration and the
+[P1-6a plan](impl-plans/completed/work-runtime-p1-selected-host-delivery.md) for
+the accepted slice and verification limits. Parent P1 and later slices remain
+open. The design is
+[Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).
 
 ## Control Surfaces
 

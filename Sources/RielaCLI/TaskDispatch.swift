@@ -17,6 +17,8 @@ struct TaskDispatch: Sendable {
   var hostResolver: any HostCapabilityResolving = HostCapabilityResolver()
   var runner: WorkflowRunCommand = WorkflowRunCommand()
   var mockScenarioPath: String?
+  var beforeReservation: (@Sendable () throws -> Void)?
+  var nodePatch: String?
 
   func run(
     taskId: String,
@@ -147,6 +149,7 @@ struct TaskDispatch: Sendable {
           ]),
           createdAt: Date()
         )
+        try beforeReservation?()
         let reserved = try dispatcher.reserve(
           ready,
           attemptId: attemptId,
@@ -170,6 +173,7 @@ struct TaskDispatch: Sendable {
         let runOptions = WorkflowRunOptions(
           target: reference.name,
           resolution: resolution,
+          nodePatch: nodePatch,
           mockScenarioPath: mockScenarioPath,
           output: output,
           sessionStore: sessionRoot,

@@ -154,7 +154,10 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
     let controllerURL = config.storePath.hasPrefix("/")
       ? URL(fileURLWithPath: config.storePath)
       : configURL.deletingLastPathComponent().appendingPathComponent(config.storePath)
+    // Controller construction creates its lock sidecar. A read-only task
+    // preview must not create that file for an orphaned controller snapshot.
     let statuses = FileManager.default.fileExists(atPath: controllerURL.path)
+      && FileManager.default.fileExists(atPath: controllerURL.appendingPathExtension("lock").path)
       ? try await config.controller(relativeTo: configURL).inspectWorkers(now: now) : []
     let live = Dictionary(uniqueKeysWithValues: statuses.map { ($0.workerId, $0) })
     let workers = try store.loadHostSnapshots().compactMap { snapshot -> HostCapabilitySnapshot? in

@@ -1,6 +1,6 @@
 # Work Runtime P1-6a: selected-host and called-workflow delivery
 
-Status: source-matched host verification recorded; independent implementation acceptance and bounded V5 exception pending.
+Status: P1-6a SHD-5 implementation reviews accepted with a bounded V5 exception; exact-file publication pending.
 Workflow mode: issue-resolution.
 Issue: local-request: Work Runtime P1-6a SHD-5; no GitHub issue supplied.
 Codex-agent reference-code inputs: none (`codexAgentReferences: []`). Current workflow references: intake `comm-000002`, accepted design review `comm-000004` / `step3-design-review-attempt-1-exec-4`, execution `codex-design-and-implement-review-loop-session-1`.
@@ -343,13 +343,13 @@ uses the current six-path allowlist after acceptance and serial reconciliation.
 
 Later implementation acceptance requires all of the following, without changing parent checkboxes:
 
-- [ ] SHD-1–SHD-5 complete, intents/post-hashes reconciled, exact changed-file allowlist reviewed.
-- [ ] Real task-to-worker root and callee execution proves host/backend/model, exact root identity, ordinary callee admission and terminal projection ordering (T1/T2/T4).
-- [ ] Entry/assignment/configuration rules, waits with no allocations and version/dependency races proven (T3/T5/T8).
-- [ ] Worker loss has no fallback, duplicate launch or premature fence release (T6/T7).
-- [ ] Required gates have complete terminal logs, positive suite/case counts, no introduced regression, and independent review has no unresolved high/mid findings.
+- [x] SHD-1–SHD-5 implementation and review complete, intents/post-hashes reconciled, exact changed-file allowlist reviewed.
+- [x] Real task-to-worker root and callee execution proves host/backend/model, exact root identity, ordinary callee admission and terminal projection ordering (T1/T2/T4).
+- [x] Entry/assignment/configuration rules, waits with no allocations and version/dependency races proven (T3/T5/T8).
+- [x] Worker loss has no fallback, duplicate launch or premature fence release (T6/T7).
+- [x] Required gates have complete terminal logs, positive suite/case counts, no introduced regression, and independent review has no unresolved high/mid findings; the specific V5 CLI/Core failure set is accepted only as the bounded exception recorded below.
 - [ ] This plan records reviewed revision/hash, gate results, residual limitations and exact committed files. No unrelated code, package, example or legacy removal change is included.
-- [ ] P1-6a slice accepted separately; P1-6c/6d/7b/7a and final P1 remain explicitly pending. Parent P1-6a closure requires its own full parent acceptance evidence; this plan does not mark it complete automatically.
+- [x] P1-6a implementation slice accepted separately; P1-6c/6d/7b/7a and final P1 remain explicitly pending. Parent P1-6a closure requires its own full parent acceptance evidence; this plan does not mark it complete automatically.
 
 Progress on 2026-09-23 (issue-resolution Step 6, incomplete): SHD-1 baseline captured; SHD-2–SHD-5 source and selected tests implemented through retained dispatcher, reservation, callee resolver, distributed executor and authenticated worker paths. The controller status inspection seam was added to `Sources/RielaCore/DistributedJobController.swift` after the cached-worker test failed red, then passed green. Per-edit intentions and post-hashes are under `tmp/work-runtime-p1-selected-host-delivery/intents/`. No parent criterion is changed.
 
@@ -500,3 +500,93 @@ retains source-matched host evidence and requires both independent V5 decisions.
 All implementation acceptance boxes remain open. No source edits, gate reruns,
 commit, push or parent closure occurred in Step 4. Author evidence is under
 `tmp/p1-6a-finalization/step4-plan/`.
+
+Step 6 SHD-5 finalization review (2026-09-24, issue-resolution): `/root/evidence_audit`
+completed SHD-5a; `/root/adversarial_review` independently **accepted** SHD-5b;
+distinct `/root/integration_review` independently **accepted** SHD-5c on the
+combined tree. Both reviewers assessed correctness, data loss, security and test
+integrity, found no unresolved high/mid P1-6a defect, and explicitly **accepted
+the bounded V5 exception for this slice only**. SHD-5d found no proven code or
+test defect to repair; no Swift/design bytes changed and no host gate was rerun.
+Workflow references remain intake `comm-000002`, accepted design `comm-000004`,
+execution `codex-design-and-implement-review-loop-session-1`; reference-code
+inputs remain `codexAgentReferences: []`.
+
+The reviewed source identity is HEAD `9abc95d78d6f3e532b09d61e5f3ee392c13b20fa`,
+design SHA-256 `2e33a88188b8659496248e4454d3514e7b29657672cfe41531234b05ff781e61`,
+tracked code diff SHA-256 `df6421d0aa7be0752bafbb8377a1e71938f00fb531d10cf2c16be782d58030bb`,
+and four Swift SHA-256 values in publication order `4ef3a7b85292bd9557a5dbe6f0d33f430204e656bd04da55c396570a721abedb`,
+`fefe3667bd8781b9012be8d2530c4eba4c17731eb4fe2277b372ffda4da6f2fa`,
+`0497a990ec5ebfecb32bac26d432a1a8bd66b55f4e3b29ba9ff939023cc95178`,
+`250f0a9e523584b63f38d8936cbba56d76a9af9147fefee6daf111563e0c9634`.
+The dirty inventory was three modified Swift files and one new Swift fixture.
+The plan-only edit below does not alter that behavioral source identity.
+
+SHD-5a mapped T1/T2 to `testTaskRootUsesSelectedAuthenticatedWorkerBackendAndReservedSession`,
+`testTaskCalleeUsesSelectedAuthenticatedWorkerAndOrdinaryChildSession`, and
+`testTaskLaunchAdmissionConsumesOnlyTheReservedRootToken`; the worker fixture
+asserts selected leases/backend/model, exact reserved root, linked child output,
+one reconciled attempt and terminal-evidence-caused acceptance. T3 maps to
+`WorkflowBackendPolicyTests.testReachableRequirementsFollowCallsAndCyclesButSkipUnreachableAndReusedPrefixes`,
+`testExplicitCommandPlacementProjectsProvenanceWithoutBackendPolicy`, and
+`WorkflowHostCapabilityTests.testStrictHostResolvesReachableCalledWorkflowRequirements`.
+T4 maps to `testTaskExplicitWorkerAndGroupExecutePinnedChoices`,
+`testTaskRepeatedNodePlacementsReachDistinctWorkersAcrossRootAndCallee`,
+`testTaskInstancePatchCannotOverrideAdmittedWorkerBackendAndModel`, and
+`testTaskPlacementKeepsSharedNodeStepsSeparateAndPinsChosenGroupWorker`.
+T5 maps to `testTaskAdmissionWaitsAndDryRunLeaveNoAllocations`,
+`testTaskReservationRaceDeniesLaunchForVersionAndDependencyChanges`,
+`testTaskTopologyRejectsCachedWorkerWithoutLiveControllerRegistration`, and
+`testRemoteTaskWithoutDefaultWorkspaceFailsBeforeReservation`, with the V2
+reservation suite. T6 maps to `testTaskClaimedWorkerLossDoesNotFallbackOrDuplicateAttempt`
+and `DistributedJobControllerTests.testExpiredAndReplacedWorkersCannotCommitResults`.
+T7 maps to `DistributedNodeExecutionTests.testWorkflowCommandExecutesInHTTPWorkersMappedWorkspace`
+and `DistributedWorkerHTTPTests` live worker, replay, renewal and authentication
+cases. T8 maps to `DistributedWorkerConfigurationTests.testTaskControllerDefaultWorkspaceDecodesLegacyAndRejectsInvalidAliases`,
+`testTaskAuthoredWorkspaceOverridesControllerDefaultAtWorker`,
+`testTaskDefaultWorkspaceAliasReachesWorker`, and the missing-default test above.
+These named assertions pass in the source-matched V1/V2/V4/V11 host logs. Terminal
+ordering is evidenced by accepted child output and the decision's causal link
+to terminal evidence; no separate interleaving assertion is claimed.
+
+Host command/results are recorded with complete logs and terminal exits in
+`tmp/p1-6a-finalization/host-verify/evidence.json`. Using Xcode Swift with
+`--disable-sandbox --skip-update --scratch-path tmp/p1-6a-host-verify/build`,
+`swift build --skip-update --scratch-path tmp/p1-6a-host-verify/build` (V0)
+exited 0; `swift test --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'`
+(V1) passed 41/41; reservation V2 passed 23/23; lifecycle V3 80/80; capability
+V4 55/55; `swift test --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|DistributedNodeExecutionTests'`
+(V11) passed 53/53. V5 adapters/server/GraphQL/app passed 440 XCTest cases,
+two skipped, plus 19 Swift Testing cases. Strict selected-file SwiftLint V6,
+repository SwiftLint V7 and `git diff --check` exited 0; V7's 30 warnings are
+in unchanged files. The exact filter strings and log names for every gate are
+in `evidence.json`.
+
+`swift test --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'` (V5 CLI/Core)
+**exited 1**: 1,965 tests, 24 failed assertions in 22 cases. Twenty-one
+cases/23 assertions match the preimplementation log by case and count; 19 error
+texts are byte-identical and two differ only by generated temporary UUID paths.
+The additional `WorkflowCommandTests.testCallStepCompletesChangeTrackedFanoutBeforeStopping`
+has the identical missing `agentSandbox` validation error in the clean
+`cbe1dd1` reproduction log. Both reviewers accepted only this exact failure
+set for P1-6a; V5 remains failing and is not a parent gate pass.
+
+The reviewed publication allowlist is exactly:
+`Sources/RielaCLI/HostCapabilityResolver.swift`,
+`Sources/RielaCLI/TaskDispatch.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift`,
+`design-docs/specs/design-work-runtime-consolidation.md`, and this plan.
+The sixth completion box remains open until the downstream exact-file commit
+and non-force push record actual committed files. Parent P1 and later slices
+remain open; live task cancellation and director child accounting are downstream.
+
+Step 8 documentation refresh (2026-09-24, issue-resolution): following both
+accepted reviews, this P1-6a implementation plan moved to `impl-plans/completed/`.
+`README.md` and `docs/distributed-workers.md` describe the accepted task-run and
+selected-worker behavior, and `impl-plans/README.md` indexes this completed
+slice while keeping parent P1 open. The reviewed six-path publication candidate
+above predates documentation reconciliation; commit generation must use the
+actual changed-file inventory, including this move and the documentation edits.
+The V5 CLI/Core bounded exception remains P1-6a-only. No implementation source
+or test was changed in Step 8, and no host gate was rerun.

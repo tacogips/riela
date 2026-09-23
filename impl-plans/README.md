@@ -58,6 +58,7 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Status | Workstream |
 | ---- | ------ | ---------- |
+| `active/workflow-working-table` | Design and plan accepted 2026-09-23 (`cb3470f`); implementation pending. Uses a separate `working_entries` table in the existing workspace KV SQLite file, scoped by workflow ID, with six-hour default and thirty-day maximum TTL. | Workflow working table |
 | `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
 | `active/swift-cli-runtime-parity-gap-closure` | Implementation largely present; TypeScript deletion gate blocked on accepted review/adversarial metadata + final evidence | W9 |
 | `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |

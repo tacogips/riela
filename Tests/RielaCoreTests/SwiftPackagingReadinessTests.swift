@@ -278,16 +278,17 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertTrue(script.contains("staged riela version mismatch"))
   }
 
-  func testCaskBuilderRequiresAppleCredentialsAndNotarizesDmg() throws {
+  func testCaskBuilderUsesNotaryKeychainProfileAndNotarizesDmg() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh")
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("--dry-run"))
     XCTAssertTrue(script.contains("APPLE_SIGNING_IDENTITY"))
-    XCTAssertTrue(script.contains("APPLE_ID"))
-    XCTAssertTrue(script.contains("APPLE_PASSWORD"))
-    XCTAssertTrue(script.contains("APPLE_TEAM_ID"))
+    XCTAssertTrue(script.contains("RIELA_NOTARY_KEYCHAIN_PROFILE"))
+    XCTAssertTrue(script.contains("--keychain-profile \"$notary_profile\""))
+    XCTAssertFalse(script.contains("--password"))
+    XCTAssertFalse(script.contains("$APPLE_PASSWORD"))
     XCTAssertTrue(script.contains("RIELA_APP_BUNDLE_ID"))
     XCTAssertTrue(script.contains("validate_bundle_id"))
     XCTAssertTrue(script.contains("write_riela_app_bundle"))

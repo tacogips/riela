@@ -11,13 +11,13 @@ Usage:
 
 Required local environment variables:
   APPLE_SIGNING_IDENTITY  Developer ID Application identity for RielaApp and the CLI executable.
-  APPLE_ID                Apple ID email for notarization.
-  APPLE_PASSWORD          Apple app-specific password for notarization.
-  APPLE_TEAM_ID           Apple Developer Team ID for notarization.
+
+Required local Keychain setup:
+  A validated notarytool profile named riela-release (or set RIELA_NOTARY_KEYCHAIN_PROFILE).
 
 The signing certificate must already be installed in the local macOS keychain.
-Use kinko or another local password-manager workflow to provide the environment.
-Do not commit Apple credential values.
+Use kinko or another local password-manager workflow to provide the signing identity.
+Never pass the notarization password as a process argument or commit credential values.
 EOF
 }
 

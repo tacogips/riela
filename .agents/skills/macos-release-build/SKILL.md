@@ -41,18 +41,17 @@ The macOS Cask is the `RielaApp.app` + `riela` CLI install path.
 
 ## Apple Signing And Notarization Inputs
 
-The local release path consumes these secret names:
+The local release path consumes:
 
 - `APPLE_SIGNING_IDENTITY`
-- `APPLE_ID`
-- `APPLE_PASSWORD`
-- `APPLE_TEAM_ID`
+- a validated `notarytool` Keychain profile named `riela-release` by default
 
 Meaning:
 
 - `APPLE_SIGNING_IDENTITY` is the Developer ID Application identity used to
   sign `RielaApp.app` and the `riela` executable.
-- `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` support notarization.
+- `notarytool` reads notarization credentials from the Keychain profile; the
+  password must never be passed as a command-line argument.
 
 Keep certificate material and password values in the local keychain and
 password manager. Do not commit Apple credentials.
@@ -77,7 +76,7 @@ preparing a new release.
 ### 2. Check release plan
 
 ```bash
-mise run build:homebrew-cask -- --dry-run darwin-arm64 darwin-x64
+mise run build:homebrew-cask -- --dry-run darwin-arm64
 ```
 
 The dry-run plan must show both a staged signed app and a staged signed binary:
@@ -90,19 +89,16 @@ staged signed binary: .../riela
 ### 3. Build signed, notarized, and stapled DMGs
 
 ```bash
-kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-  mise run build:homebrew-cask -- darwin-arm64 darwin-x64
+kinko exec --env APPLE_SIGNING_IDENTITY -- \
+  mise run build:homebrew-cask -- darwin-arm64
 ```
 
 ### 4. Verify DMG outputs
 
 ```bash
 ls -lh dist/homebrew-cask/riela-<version>-darwin-arm64.dmg
-ls -lh dist/homebrew-cask/riela-<version>-darwin-x64.dmg
 /Applications/Xcode.app/Contents/Developer/usr/bin/stapler validate dist/homebrew-cask/riela-<version>-darwin-arm64.dmg
-/Applications/Xcode.app/Contents/Developer/usr/bin/stapler validate dist/homebrew-cask/riela-<version>-darwin-x64.dmg
 spctl --assess --type open --context context:primary-signature --verbose=4 dist/homebrew-cask/riela-<version>-darwin-arm64.dmg
-spctl --assess --type open --context context:primary-signature --verbose=4 dist/homebrew-cask/riela-<version>-darwin-x64.dmg
 ```
 
 ## Release Publication
@@ -115,12 +111,12 @@ Formula release (`brew install riela`) and Cask release
   signing, notarization, or `kinko` unlock is required.
 - Cask release contains `RielaApp.app` plus the `riela` CLI. It must be signed,
   notarized, stapled, and therefore requires `kinko` to expose the Apple
-  credential environment.
+  signing identity and a validated Keychain profile for notarization.
 
 For a tagged release:
 
 ```bash
-kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
+kinko exec --env APPLE_SIGNING_IDENTITY -- \
   mise run release:homebrew-cask-local -- v<version>
 ```
 

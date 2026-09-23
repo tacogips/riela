@@ -28,15 +28,15 @@ The local Cask DMG path expects:
 - A valid Developer ID Application certificate imported into the macOS login
   keychain.
 - `APPLE_SIGNING_IDENTITY` stored in kinko.
-- `APPLE_ID` stored in kinko.
-- `APPLE_TEAM_ID` stored in kinko.
-- `APPLE_PASSWORD` stored in kinko as an Apple app-specific password.
+- A validated `notarytool` Keychain profile named `riela-release` (or the name
+  set by `RIELA_NOTARY_KEYCHAIN_PROFILE`). The app-specific password is entered
+  into the secure interactive prompt once, not supplied on a command line.
 
 Check presence only:
 
 ```bash
-kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- bash -lc '
-for key in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+kinko exec --env APPLE_SIGNING_IDENTITY -- bash -lc '
+for key in APPLE_SIGNING_IDENTITY; do
   if [ -n "${!key:-}" ]; then echo "$key=present"; else echo "$key=missing"; fi
 done
 '
@@ -51,26 +51,38 @@ security find-identity -v -p codesigning
 Expect a valid `Developer ID Application` identity matching the stored identity
 name.
 
+## Store Notarization Credentials
+
+After rotating any previously exposed app-specific password, create the
+Keychain profile interactively. Never use `--password` to create it; the
+notarytool prompt accepts the new password without exposing it in process
+arguments. Enter the Apple ID, Team ID, and new password at its prompts:
+
+```bash
+/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool store-credentials riela-release
+```
+
+Set `RIELA_NOTARY_KEYCHAIN_PROFILE` if a different profile name is required.
+
 ## Local Build And Notarization
 
 Build signed, notarized, and stapled Cask DMGs:
 
 ```bash
-kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
-  task build:homebrew-cask -- darwin-arm64 darwin-x64
+kinko exec --env APPLE_SIGNING_IDENTITY -- \
+  task build:homebrew-cask -- darwin-arm64
 ```
 
 For a tagged release:
 
 ```bash
-kinko exec --env APPLE_SIGNING_IDENTITY,APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- \
+kinko exec --env APPLE_SIGNING_IDENTITY -- \
   task release:homebrew-cask-local -- v<version>
 ```
 
 This builds:
 
 - `dist/homebrew-cask/riela-<version>-darwin-arm64.dmg`
-- `dist/homebrew-cask/riela-<version>-darwin-x64.dmg`
 
 The release wrapper uploads the `.dmg` assets to the GitHub release and renders
 `../homebrew-tap/Casks/riela.rb`. Commit and push the tap change from the tap
@@ -82,12 +94,8 @@ When `notarytool` submits notarization, record only submission ids and status.
 To check status:
 
 ```bash
-kinko exec --env APPLE_ID,APPLE_PASSWORD,APPLE_TEAM_ID -- bash -lc '
 /Applications/Xcode.app/Contents/Developer/usr/bin/notarytool info <submission-id> \
-  --apple-id "$APPLE_ID" \
-  --password "$APPLE_PASSWORD" \
-  --team-id "$APPLE_TEAM_ID"
-'
+  --keychain-profile riela-release
 ```
 
 Look for `status: Accepted`. If a submission stays `In Progress`, do not claim
@@ -99,18 +107,16 @@ After notarization is accepted and DMGs exist:
 
 ```bash
 /Applications/Xcode.app/Contents/Developer/usr/bin/stapler validate dist/homebrew-cask/riela-<version>-darwin-arm64.dmg
-/Applications/Xcode.app/Contents/Developer/usr/bin/stapler validate dist/homebrew-cask/riela-<version>-darwin-x64.dmg
 spctl --assess --type open --context context:primary-signature --verbose=4 dist/homebrew-cask/riela-<version>-darwin-arm64.dmg
-spctl --assess --type open --context context:primary-signature --verbose=4 dist/homebrew-cask/riela-<version>-darwin-x64.dmg
 ```
 
 ## Completion Criteria
 
 Local Apple setup is complete when:
 
-- kinko has all required Apple secret keys present.
+- kinko has `APPLE_SIGNING_IDENTITY` present and a validated `notarytool`
+  Keychain profile is available.
 - `security find-identity` reports the matching Developer ID Application
   identity.
-- `task build:homebrew-cask -- darwin-arm64 darwin-x64` signs and notarizes
-  both DMGs.
-- Stapler and Gatekeeper validation pass for both DMGs.
+- `task build:homebrew-cask -- darwin-arm64` signs and notarizes the ARM64 DMG.
+- Stapler and Gatekeeper validation pass for the ARM64 DMG.

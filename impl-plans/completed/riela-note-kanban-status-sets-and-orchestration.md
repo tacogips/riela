@@ -1,6 +1,6 @@
 # Riela Note Kanban Status Sets and Autonomous Orchestration Implementation Plan
 
-**Status**: Completed (pending PR review)
+**Status**: Completed historically; PR #77 merged 2026-07-31. The Riela Note implementation was later extracted to Kaiba in PR #86, so this plan does not assert current Riela runtime ownership.
 **Design Reference**: design-docs/specs/design-riela-note-kanban-status-sets-and-orchestration.md
 **Created**: 2026-07-31
 **Last Updated**: 2026-07-31

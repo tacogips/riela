@@ -104,3 +104,36 @@ being mixed into this documentation-only integration:
 - `git diff --name-only main...HEAD` still contains exactly the 11 historical
   documentation/plan paths listed above. No runtime, test, web, script, or
   release file is changed by integrating this branch.
+
+## 2026-09-23 current-main residual-test check
+
+On main at `8328e4e`, an ARM64 focused rerun of
+`testSessionProgressReportsActiveStepDuringLiveSecondStep` and
+`testAutoImproveCancellationDoesNotCreateIncidentOrRerun` passed: 2 tests,
+0 failures. The command output is retained at
+`tmp/tauri-reintegration-current/residual-tests.log` in the current checkout.
+This resolves the earlier isolated reproductions on the present tree, but is
+not a fresh full-suite result; the plan's full-suite completion criterion
+remains unverified on current main.
+
+## 2026-09-23 current-main ARM64 full suite
+
+On main at `e46eab6`, `/usr/bin/arch -arm64` with the Xcode Swift toolchain
+ran the full `swift test --quiet` suite to completion. The process exited 1:
+2,393 XCTest cases ran, 2 were skipped, and 6 cases produced 11 assertion
+failures (including 1 unexpected XCTest failure). The separate Swift Testing
+run passed 17 tests. Full output is retained at
+`tmp/tauri-reintegration-current/full-suite.log` in this checkout.
+
+All six failing cases are among the ten baseline cases named above: one in
+`RielaAppSettingsEditorNavigationTests`, four in
+`RielaAppUXOnboardingControllerTests`, and one in
+`RielaAppWindowContentInsetTests`. No unix-socket cleanup or package app
+environment case failed in this run. Both cases previously retained as
+unexpected follow-ups passed in the full suite:
+`testSessionProgressReportsActiveStepDuringLiveSecondStep` and
+`testAutoImproveCancellationDoesNotCreateIncidentOrRerun`.
+
+This is a completed full-suite result, but not a green gate. The remaining
+AppKit hierarchy failures are still unresolved, so the Tauri reintegration
+plan is not claimed fully verified by the full-suite criterion.

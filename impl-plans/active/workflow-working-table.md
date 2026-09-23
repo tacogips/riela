@@ -10,9 +10,8 @@
 - Accepted design: `design-docs/specs/design-workflow-working-table.md`
 - Design acceptance: Step 3 `comm-000004`, reviewed `comm-000003`, intake
   `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
-  Decision: accepted, no findings or requested revisions. This acceptance supersedes
-  the design document's historical Step 2 draft status line.
-- Plan status: author complete, pending Step 5 review; implementation not started.
+  Decision: accepted, no findings or requested revisions.
+- Plan status: accepted by independent Step 5 review; implementation not started.
 - Codex-agent references / Cursor behavior mapping / intentional divergences: none.
 - One author and one future implementation owner. No parallelizable tasks or fanout.
 

@@ -1,6 +1,6 @@
 # Workflow-private disposable JSON working table
 
-Status: Step 2 author draft; independent design review and implementation plan pending.
+Status: accepted by independent Step 3 design review; implementation pending.
 Mode: planning-only (`executionMode: design-plan-only`).
 Issue: workflowInput: Workflow-scoped disposable JSON working table with bounded TTL
 (no issue URL or number supplied). Intake: `comm-000002`, from
@@ -130,8 +130,10 @@ outside this scope.
 ## Storage, concurrency, and failures
 
 Add a dedicated working-table store in RielaMemory, backed by
-`<workspace>/.riela/working-table.sqlite` with table `working_entries`:
-`workflow_id TEXT`, `key TEXT`, `value_json BLOB`, `written_at REAL`,
+`<workspace>/.riela/working-table.sqlite`. This is one database file per
+workspace, shared by its workflows through `workflow_id`; it is not a separate
+database per workflow. Table `working_entries` contains `workflow_id TEXT`,
+`key TEXT`, `value_json BLOB`, `written_at REAL`,
 `expires_at REAL`, all NOT NULL; primary key `(workflow_id, key)` and the expiry
 index above. Use SQLite JSONB validation like the current KV store. Reuse
 `MemoryJSONValue`, encoding and bound-SQL helpers from

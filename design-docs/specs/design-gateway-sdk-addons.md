@@ -1,6 +1,7 @@
 # Operation-mode gateway SDK add-ons and schema discovery
 
-Status: ready for review; the dependency decision is recorded in
+Status: revised for Step 3 review; acceptance blocked by dependency finding D1 below.
+The dependency decision is recorded in
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`
 
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md`
@@ -25,8 +26,10 @@ schema-discovery path may read credentials, contact a provider, or execute a
 gateway request.
 
 This is one feature. It does not change container add-ons,
-`google-service-gateway`, unrelated Apple add-on families, package versions, or
-release state. It must not modify the GatewaySDKKit checkout, any gateway
+`google-service-gateway`, unrelated Apple add-on families, unrelated package versions, or
+release state. This execution is planning-only; implementation and provider calls
+are not authorized. Step 2 authors design; independent design review and detailed
+implementation-plan authoring remain later workflow steps. It must not modify the GatewaySDKKit checkout, any gateway
 worktree, or the main Riela checkout.
 
 ## Dependency and platform boundary
@@ -39,8 +42,8 @@ gateway-neutral models and builders.
 The graph uses public exact-version dependencies for the five gateways:
 Wrike `0.2.4`, Google Analytics `0.1.1`, Gmail `0.1.11`, Google Documents
 `0.3.1`, and Apple `0.1.7`. Their existing products and macOS conditions remain
-unchanged. This avoids worktree-derived identity collisions and gives CI the
-same portable dependency graph as release builds. No ambient mirror, symlink,
+unchanged. This is the retained operator decision, not a claim that resolution has passed.
+Finding D1 must be resolved before the Google Documents SDK contract is accepted. No ambient mirror, symlink,
 or copied checkout participates.
 
 The dependency readiness gate is `swift package show-dependencies --format
@@ -63,7 +66,8 @@ run only when the platform can construct the catalog.
 ### Modes
 
 For the wrike, google-analytics, and gmail local GraphQL add-ons, exactly one
-mode discriminator is present:
+mode discriminator is present (presence includes null, which fails its type check).
+Operation names are literal catalog names, not templates:
 
 | Mode | Required configuration | Optional configuration | Rejected combination |
 | --- | --- | --- | --- |
@@ -97,39 +101,40 @@ argv. The fixed-role environment allowlist and the refusal of `auth login` and
 `auth revoke` apply after either mode is normalized and before execution.
 
 `riela/apple-gateway-graphql` keeps its current passthrough keys and precedence:
-`queryFile` over `query`, `variablesFile` over `variables`, literal config-only
-`binaryPath`, and no `addon.env`. Operation mode is selected by `operation` and
+`queryFile` over `query`, `variablesFile` over `variables`, refusal of config `binaryPath`, and no `addon.env`. Operation mode is selected by `operation` and
 uses `arguments` plus optional `selection` through `AppleGatewaySDK`. It is
-mutually exclusive with both passthrough query sources. No other Apple admin
+mutually exclusive with `query`, `queryFile`, `variables`, and `variablesFile`.
+Apple retains rendered `addon.inputs` precedence over config for these keys; checks
+use that effective merged input. Passthrough remains on `AppleGatewayInvoker`.
+Operation mode uses fixed `.full` (the existing GraphQL role), sanitized Apple
+environment and the existing deadline. Map effective `configPath`/`config` to
+`APPLE_GATEWAY_CONFIG` in that per-call environment, preserving explicit config
+precedence and HOME; never widen the ambient allowlist. New operation keys do not
+change role selection. No other Apple admin
 or product add-on changes behavior.
 
 ### Data flow and provenance
 
 The local GraphQL engine becomes `LocalGatewayOperationEngine`, backed by a
-`LocalGatewaySDKDescriptor` whose catalog, operation-preparation closure,
-execute closure, and invoke closure come from the same pinned SDK instance and
-tier. Preparation returns a Riela-owned value containing the typed request,
-the built GraphQL document, and the variables that will cross the SDK boundary.
+`LocalGatewaySDKDescriptor` containing the fixed-tier catalog and SDK `execute`
+closure. Build once with `GatewayDocumentBuilder(catalog:)`, then pass that exact
+built document and variables to `sdk.execute` under `localGatewayRunWithDeadline`.
+Do not preview and then call `invoke`: Gmail 0.1.11 overrides `invoke` using
+`.gmailFull`, whereas its exposed catalog is tier-specific. A single build ensures
+pre-dispatch errors are `policyBlocked` and payload provenance equals execution.
+The SDK runtime still enforces the fixed tier.
 
-1. Resolve add-on variables, `nowVariables`, and the existing bounded child
-   environment.
-2. Validate the exclusive mode and render the mode-specific input.
-3. For operation mode, call the descriptor's exact preparation closure. The
-   GraphQL descriptors use `GatewayDocumentBuilder` with the same catalog as
-   invocation. A preparation failure stops before invocation.
-4. Passthrough calls the descriptor's execute path. Operation mode calls its
-   invoke path under `localGatewayRunWithDeadline`.
-5. Decode the `GatewayEnvelope`, map errors, then run the existing common
-   `selectFirst`, `whenFlags`, `payloadExtras`, request-id, and reply-text path.
+1. Resolve existing variables, nowVariables, and sanitized child environment.
+2. Check modes and render typed input; reject malformed shapes before dispatch.
+3. Build operation input once; passthrough retains authored document and variables.
+4. Execute those exact values through the pinned SDK, within the existing deadline.
+5. Preserve raw-envelope parsing and existing common output processing.
 
-The prepared result is also the provenance value. Production descriptors must
-expose the same catalog instance to preparation and invocation; the stand-in
-tests compare the prepared document and variables with the recorded invocation.
-This avoids misclassifying SDK builder failures (the SDK's default `invoke`
-otherwise returns them as exit-code-2 envelopes) and proves that GraphQL
-payload provenance is what crossed the Riela-to-SDK boundary.
+The stand-in records the actual document and variables submitted to execute, with
+operation metadata available for assertions. It must not merely echo a preview.
 
-Google-documents keeps its separate engine and runner boundary. In operation
+Google-documents keeps its separate engine and runner boundary. The following intended contract is conditional on resolving D1; the locally
+observed release does not contain this API. In operation
 mode that engine constructs the pinned `GoogleDocumentsGatewaySDK`, calls its
 public `buildArgv(operation:variables:)`, and passes the resulting argv directly
 to the existing `GoogleDocumentsGatewayRunner`. It does not run a generic
@@ -159,15 +164,17 @@ and the pinned tier; this runtime mode is distinct from the new authoring mode.
   use the kit's stable message where the kit supplied it.
 - An invoked gateway envelope with errors or a non-success result is
   `providerError`, preserving current compact diagnostics.
-- Malformed successful output remains `invalidOutput`.
+- Malformed raw output remains `invalidOutput`: validate `rawOutput` with the
+  existing provider-specific parser before interpreting normalized envelope errors.
+  GatewayEnvelope wraps malformed text as errors, so testing `errors` first would
+  incorrectly turn existing malformed-output failures into `providerError`.
 - The current deadline helper, cancellation behavior, and timeout messages are
   unchanged for both modes.
 - Provider code observes only the sanitized per-call environment. Existing
   target-name allowlists cannot be widened through operation arguments.
 
-The resolver seam becomes `localGatewaySDKStandIn`. It can record passthrough
-document plus variables or a prepared GraphQL operation request and returns a
-canned envelope. Apple operation tests use this contract. Google-documents
+The resolver seam becomes `localGatewaySDKStandIn`. It records the executed document plus variables and returns a
+canned envelope for either mode. Apple operation tests use this contract. Google-documents
 operation tests retain `GoogleDocumentsGatewayRunner` as the exact argv recorder
 after SDK construction. Existing passthrough-specific fake runners remain
 available for regression coverage.
@@ -257,7 +264,10 @@ requires `--tier` and accepts `--grep`, comma-separated `--kinds`,
 
 The CLI calls the same catalog registry and schema service as the built-in
 add-on, not a workflow runner and not a provider. JSON output is the
-`riela/gateway-schema` payload. SDL output is the full catalog SDL without
+`riela/gateway-schema` payload with `stepId: ""` because no workflow step exists.
+The default output is JSON; default search kinds use the kit Options default.
+An omitted pattern returns SDL, empty matches, and count zero; search-only options
+are type-checked but do not filter that full SDL. SDL output is the full catalog SDL without
 `--grep`, or matched fragments in deterministic result order with `--grep`.
 Usage errors, invalid search inputs, and unavailable catalogs use nonzero exits
 and concise stderr; successful SDL and JSON each end with one newline.
@@ -282,7 +292,13 @@ Validation checks:
 Unknown operations report the requested name and a deterministic bounded list
 of closest names. An unavailable catalog does not make an otherwise valid
 workflow fail on Linux; it skips only the operation-existence check. It never
-skips the cross-platform shape checks. Runtime repeats policy-sensitive checks
+skips the cross-platform shape checks. Add the currently nonexistent
+`WorkflowValidationContext` as a defaulted initializer dependency of
+`DefaultWorkflowValidator`; preserve `WorkflowValidating` and existing call sites.
+Inject the CLI projection in `WorkflowValidateInspectCommands.swift` for explicit
+validation. Other Core callers retain shape-only validation and runtime checks.
+Apple uses its effective input/config precedence; defer template-dependent values
+until execution rather than rejecting valid existing input-driven passthroughs. Runtime repeats policy-sensitive checks
 so a workflow that was not prevalidated still fails closed.
 
 ## Provider wiring and compatibility
@@ -316,8 +332,10 @@ is preserved. Workflow, prompt, script, or skill edits require refreshed
 `riela-package.json` digests; ordinary source, test, example, README, and this
 design document do not trigger that refresh.
 
-Acceptance requires adversarial review of every finding before a local commit on
-`feat/gateway-sdk-addons`. Nothing is pushed. The review must explicitly check
+The effective workflow input supersedes the brief's historical no-push instruction.
+Only accepted design, QA, brief, implementation-plan and necessary index changes
+may be committed and pushed on `feat/gateway-sdk-addons`; main integration requires
+a passing independent combined-tree review. Step 2 performs none of these actions. The review must explicitly check
 the resolved SwiftPM graph, execution policy, error classification, provenance,
 static/no-network schema behavior, platform guards, validation injection, and
 preservation of unrelated add-ons.
@@ -355,9 +373,13 @@ feature did not introduce the failure.
 
 ## Risks and review decisions
 
-- **Resolved — dependency identity and source consistency.** The five gateways
-  and GatewaySDKKit use distinct public GitHub URLs with exact release versions;
-  require a clean dependency-graph gate before build work.
+- **D1 / high / unresolved — Google Documents release contract.** Local tag
+  `v0.3.1` resolves to `649d95efb7ade0bfc4e2f5450439b62697daeeb3`; its
+  `Package.swift` has no kit dependency and its source tree has no SDK facade.
+  The public remote could not be checked (DNS failure). Preserve the requested
+  pin, but do not accept this design for implementation until the public tag
+  contract is evidenced or the operator explicitly changes the dependency decision.
+  Details and exact commands are in the user-QA document.
 
 - **High — construction failures can look like provider failures.** Preflight
   GraphQL with the identical catalog and builder; use
@@ -382,3 +404,35 @@ feature did not introduce the failure.
   operator selected public exact-version URLs for all five gateways and the
   kit. Verify the resolved graph before implementation; reject any local path
   or identity collision.
+
+## Step 2 source review evidence (2026-09-23)
+
+HEAD `002f6e654aa757dc5fc7b7241c95282d095b5c92` and local main/origin/main
+`0bd95e84eaba3d8f37c61b5ef596b52a4eb5a9da` differ only in the brief and the
+two planning documents (`git diff HEAD..main --stat`, exit 0). No current remote
+main freshness claim is made. Source inspection covered Package.swift, the local
+GraphQL engine, Apple admin/support, Google Documents engine, Core validation,
+and tag-addressed SDK source for Wrike, Analytics, Gmail and Apple.
+
+No codex-agent reference was supplied by intake; Cursor CLI mapping is not
+applicable. No workflow registry rediscovery is part of this design.
+
+Author corrections: Apple binaryPath refusal and config/input compatibility;
+Gmail build-once execution instead of mismatched invoke preflight; raw envelope
+error ordering; explicit validator injection seam; CLI stepId/defaults; effective
+planning-only publication authorization. These correct concrete source mismatches,
+without introducing new provider operations or frameworks.
+
+The GraphQL build-once execution is an intentional divergence from the brief's
+invoke closure, justified by Gmail's actual override and exact provenance.
+D1 remains high and unresolved; this author does not claim accepted design or
+completed dependency verification. The detailed implementation plan must retain
+this gate and must not invent a substitute SDK or pin.
+
+
+Step 3 feedback `comm-000004` rejected acceptance for D1. The Step 2 rerun
+attempted public tag, manifest, and facade verification; DNS and web-fetch
+failures persist. See the user-QA review-response section and complete command
+logs under `tmp/gateway-sdk-design/review-retry/`. No corrected dependency
+decision has been received. This revision records the attempted resolution;
+it does not mark D1 addressed or authorize implementation/publication.

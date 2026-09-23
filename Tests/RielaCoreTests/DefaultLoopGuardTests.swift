@@ -167,7 +167,38 @@ final class DefaultLoopGuardTests: XCTestCase {
     XCTAssertEqual(event.loopStallPayload?.action, "accept-with-residual-risks")
   }
 
-  func testDefaultViolationUsesPersistedSelectedBranchForDistinctTerminalSinks() async throws {
+  func testDeclaredVisitCapAllowsAcceptedVisitAfterFourRepairs() async throws {
+    let recorder = WorkflowRunEventRecorder()
+    let adapter = GateSequenceAdapter(reviewOutputs: [
+      gateOutput(findingId: "finding-1"),
+      gateOutput(findingId: "finding-2"),
+      gateOutput(findingId: "finding-3"),
+      gateOutput(findingId: "finding-4"),
+      gateOutput(decision: "accepted", findingId: "resolved")
+    ])
+    let declaredWorkflow = workflow(loop: WorkflowLoopMetadata(
+      convergence: LoopConvergenceDeclaration(maxGateVisits: 4, onStall: .fail)
+    ))
+
+    let result = try await DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(),
+      adapter: adapter
+    ).run(DeterministicWorkflowRunRequest(
+      workflow: declaredWorkflow,
+      nodePayloads: nodePayloads(),
+      maxSteps: 12,
+      eventHandler: { await recorder.append($0) }
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    XCTAssertEqual(result.session.executions.map(\.stepId), [
+      "review", "review", "review", "review", "review", "finalize", "done"
+    ])
+    let events = await recorder.events()
+    XCTAssertFalse(events.contains { $0.type == .loopStall })
+  }
+
+  func testDefaultVisitCapAllowsAcceptedSelectedBranchAfterFourRepairs() async throws {
     let branchWorkflow = workflow(loop: nil, steps: [
       step("review", transitions: [
         transition("review", label: "needs_work"),
@@ -203,11 +234,7 @@ final class DefaultLoopGuardTests: XCTestCase {
       ["review", "review", "review", "review", "review", "accepted-output"]
     )
     XCTAssertFalse(result.session.executions.contains { $0.stepId == "rejected-output" })
-    guard case let .object(outcome)? = result.rootOutput?["loopGuardOutcome"] else {
-      return XCTFail("expected selected-branch loopGuardOutcome")
-    }
-    XCTAssertEqual(outcome["policySource"], .string("default"))
-    XCTAssertEqual(outcome["violationKind"], .string(LoopConvergenceViolationKind.gateVisitsExceeded.rawValue))
+    XCTAssertNil(result.rootOutput?["loopGuardOutcome"])
   }
 
   func testLoopStallEventAndOutcomeBoundFindingFingerprints() async throws {
@@ -477,6 +504,9 @@ private struct NonTransactionalWorkflowRuntimeStore: WorkflowRuntimeStore {
     throw unavailable
   }
   func appendWorkflowMessages(_ inputs: [WorkflowMessageAppendInput]) async throws -> [WorkflowMessageRecord] {
+    throw unavailable
+  }
+  func appendWorkflowMessageOnce(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
     throw unavailable
   }
   func listMessages(for sessionId: String, toStepId: String?) async throws -> [WorkflowMessageRecord] { [] }

@@ -47,7 +47,7 @@ extension RielaApp {
     for (name, value) in preference.environmentVariables {
       environment[name] = value
     }
-    return environment
+    return distributedWorkflowEnvironment(environment)
   }
 
   func daemonConfiguredEnvironmentValues(
@@ -96,6 +96,11 @@ extension RielaApp {
 
   func daemonServerConfiguration(profileName: RielaAppProfileName? = nil) -> RielaServerConfiguration {
     RielaServerConfiguration()
+  }
+
+  func daemonSessionStoreRoot(profileName: RielaAppProfileName) -> String {
+    webSessionStoreRootOverride ?? appHomeDirectory
+      .appendingPathComponent(".riela/profiles/\(profileName.rawValue)/sessions", isDirectory: true).path
   }
 
   private struct EnvironmentStatusSummary {

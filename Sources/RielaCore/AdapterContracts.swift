@@ -146,7 +146,7 @@ public enum AdapterBackendEventChannel: String, Codable, Equatable, Sendable {
   case usage
 }
 
-public struct AdapterBackendEvent: Equatable, Sendable {
+public struct AdapterBackendEvent: Codable, Equatable, Sendable {
   public var provider: String
   public var eventType: String
   public var channel: AdapterBackendEventChannel?

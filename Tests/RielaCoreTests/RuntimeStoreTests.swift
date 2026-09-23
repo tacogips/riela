@@ -2,6 +2,28 @@ import XCTest
 @testable import RielaCore
 
 final class RuntimeStoreTests: XCTestCase {
+  func testReservedNestedSessionIdentityIsIdempotentAndRejectsConflict() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let input = WorkflowSessionCreateInput(
+      sessionId: "nested-reserved", workflowId: "child", entryStepId: "entry",
+      parentSessionId: "parent", rootSessionId: "root"
+    )
+    let reserved = try await store.createSession(input)
+    let replayed = try await store.createSession(input)
+    XCTAssertEqual(replayed, reserved)
+    do {
+      _ = try await store.createSession(WorkflowSessionCreateInput(
+        sessionId: "nested-reserved", workflowId: "other", entryStepId: "entry",
+        parentSessionId: "parent", rootSessionId: "root"
+      ))
+      XCTFail("a conflicting reserved child identity must not be replaced")
+    } catch let error as WorkflowRuntimeStoreError {
+      XCTAssertEqual(error, .sessionIdentityConflict("nested-reserved"))
+    } catch {
+      XCTFail("expected sessionIdentityConflict, got \(error)")
+    }
+  }
+
   func testRuntimePersistenceSnapshotProjectsSessionMessagesAndRootOutput() async throws {
     let store = InMemoryWorkflowRuntimeStore(clock: FixedWorkflowRuntimeClock(Date(timeIntervalSince1970: 100)))
     let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
@@ -953,6 +975,10 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
     throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not append messages")
   }
 
+  func appendWorkflowMessageOnce(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("static store does not atomically append messages")
+  }
+
   func listMessages(for sessionId: String, toStepId: String?) async throws -> [WorkflowMessageRecord] {
     guard sessionId == self.sessionId else {
       throw WorkflowRuntimeStoreError.sessionNotFound(sessionId)
@@ -965,26 +991,5 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
 
   func loadSession(id: String) async throws -> WorkflowSession? {
     nil
-  }
-}
-
-private final class MutableWorkflowRuntimeClock: WorkflowRuntimeClock, @unchecked Sendable {
-  private let lock = NSLock()
-  private var date: Date
-
-  init(_ date: Date) {
-    self.date = date
-  }
-
-  func set(_ date: Date) {
-    lock.lock()
-    self.date = date
-    lock.unlock()
-  }
-
-  func now() -> Date {
-    lock.lock()
-    defer { lock.unlock() }
-    return date
   }
 }

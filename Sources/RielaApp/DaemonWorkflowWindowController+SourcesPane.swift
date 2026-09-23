@@ -35,7 +35,7 @@ extension DaemonWorkflowWindowController {
   }
 
   private func sourcesOverviewFingerprintValue() -> String {
-    ([selectedWorkflowSourceId ?? "", workflowSourceFilterText] + workflowSources.map { source in
+    ([selectedWorkflowSourceId ?? "", workflowSourceFilterText, instanceRowsFingerprint] + workflowSources.map { source in
       [
         source.id,
         source.displayName,
@@ -63,9 +63,14 @@ extension DaemonWorkflowWindowController {
       accessibilityLabel: "Import from URL",
       action: #selector(addURL)
     )
+    let refreshWorkflowsButton = workflowSourceImportButton(
+      title: "", symbolName: "arrow.clockwise",
+      accessibilityLabel: "ワークフローを更新", action: #selector(refresh)
+    )
     let topRow = NSStackView(views: [
       sourcesSummaryLabel,
       spacer,
+      refreshWorkflowsButton,
       importFileButton,
       importURLButton
     ])
@@ -85,13 +90,13 @@ extension DaemonWorkflowWindowController {
   }
 
   private func configureWorkflowSourceSearchField() {
-    workflowSourceSearchField.placeholderString = "Filter workflow sources"
+    workflowSourceSearchField.placeholderString = "ワークフローを検索"
     workflowSourceSearchField.target = self
     workflowSourceSearchField.action = #selector(workflowSourceSearchChanged)
     workflowSourceSearchField.sendsSearchStringImmediately = true
     workflowSourceSearchField.controlSize = .large
     workflowSourceSearchField.stringValue = workflowSourceFilterText
-    workflowSourceSearchField.setAccessibilityLabel("Filter Workflow Sources")
+    workflowSourceSearchField.setAccessibilityLabel("ワークフローを検索")
     workflowSourceSearchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     workflowSourceSearchField.frame.size.width = 220
   }
@@ -167,12 +172,30 @@ extension DaemonWorkflowWindowController {
     selectedSourceId: String?
   ) -> NSScrollView {
     let rows = sources.map { workflowSourceRow($0, selected: $0.id == selectedSourceId) }
-    let stack = settingsDocumentStack(views: rows.isEmpty ? [] : [rielaAppSettingsSection(rows: rows)])
+    let missingRows = missingWorkflowConfigurationRows.map { configuration in
+      let row = actionRow(
+        title: configuration.instanceName,
+        detail: "ワークフローが見つかりません。関連付けを修復してください。",
+        action: #selector(openWorkflowConfiguration(_:))
+      )
+      row.identifier = NSUserInterfaceItemIdentifier(configuration.id)
+      return row
+    }
+    var sections: [NSView] = rows.isEmpty ? [] : [rielaAppSettingsSection(rows: rows)]
+    if !missingRows.isEmpty {
+      sections.append(settingsSectionCaption("要修復の実行設定"))
+      sections.append(rielaAppSettingsSection(rows: missingRows))
+    }
+    let stack = settingsDocumentStack(views: sections)
     let scroll = settingsScrollView(documentStack: stack, topInset: 0)
     scroll.translatesAutoresizingMaskIntoConstraints = true
     scroll.autoresizingMask = []
     rielaAppConfigureGroupedListScroll(scroll)
     return scroll
+  }
+
+  private var missingWorkflowConfigurationRows: [ConfiguredWorkflowInstanceRow] {
+    instanceRows.filter { $0.candidate == nil && $0.profileName == profileName }
   }
 
   private func workflowSourceListContent(
@@ -182,14 +205,14 @@ extension DaemonWorkflowWindowController {
     let selectedSourceId = filteredSources.contains { $0.id == selectedWorkflowSourceId } ? selectedWorkflowSourceId : nil
     let scrollView = workflowSourceListScrollView(sources: filteredSources, selectedSourceId: selectedSourceId)
     let emptyText = workflowSources.isEmpty
-      ? "No workflow sources in this profile. Import a folder, package, or GitHub URL with the buttons above."
-      : "No workflow sources match the current filter."
+      ? "ワークフローを追加すると標準設定ですぐに利用できます。上のボタンからフォルダ、パッケージ、URLを追加してください。"
+      : "検索条件に一致するワークフローはありません。"
     let emptyLabel = NSTextField(labelWithString: emptyText)
     emptyLabel.textColor = .secondaryLabelColor
     emptyLabel.alignment = .center
     emptyLabel.lineBreakMode = .byWordWrapping
     emptyLabel.maximumNumberOfLines = 2
-    emptyLabel.isHidden = !filteredSources.isEmpty
+    emptyLabel.isHidden = !filteredSources.isEmpty || !missingWorkflowConfigurationRows.isEmpty
     return (scrollView, emptyLabel)
   }
 
@@ -227,7 +250,7 @@ extension DaemonWorkflowWindowController {
       target: self,
       action: #selector(openWorkflowSourceDetailFromRow(_:)),
       accessibilityLabel: source.displayName,
-      accessibilityHelp: "Show workflow source detail"
+      accessibilityHelp: "実行設定を表示"
     )
     styled.setSettingsRowSelected(selected)
     return styled
@@ -255,10 +278,13 @@ extension DaemonWorkflowWindowController {
       title: source.displayName,
       summaryLabel: summaryLabel,
       documentStack: settingsDocumentStack(views: [
+        settingsSectionCaption("実行設定"),
+        workflowConfigurationsSection(source),
+        workflowConfigurationActionsSection(),
         graphPane,
-        settingsSectionCaption("Source Settings"),
+        settingsSectionCaption("ワークフロー情報"),
         workflowSourceSummarySection(source),
-        settingsSectionCaption("Manage Source"),
+        settingsSectionCaption("ワークフロー管理"),
         workflowSourceActionsSection()
       ])
     )

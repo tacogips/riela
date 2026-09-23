@@ -21,7 +21,7 @@ extension DeterministicWorkflowRunner {
         step: step,
         request: request
       )
-      guard let addonResolver else {
+      guard addonResolver != nil || (step.placement != nil && distributedExecutor != nil) else {
         throw AdapterExecutionError(.providerError, "missing add-on resolver for '\(addon.name)'")
       }
       let predecessorExecutionIds = retryPredecessorExecutionIds(
@@ -34,8 +34,22 @@ extension DeterministicWorkflowRunner {
         step: step,
         attempt: executionIndex,
         backend: nil,
+        inputSnapshot: [
+          "variables": .object(request.variables),
+          "resolvedInputPayload": .object(workflowAddonResolvedInputPayload(resolvedInputPayload, session: session))
+        ],
         handler: request.eventHandler
       )
+      let operationExecutionId: String
+      do {
+        operationExecutionId = try WorkflowAddonExecutionIdentity.deriveOperationExecutionId(
+          stepExecutionId: startedExecution.execution.executionId,
+          predecessorStepExecutionId: predecessorExecutionIds.first,
+          predecessorStepExecutionIds: predecessorExecutionIds
+        )
+      } catch let error as WorkflowAddonOperationIdentityError {
+        throw AdapterExecutionError(.invalidInput, error.diagnosticCode)
+      }
       let addonInput = WorkflowAddonExecutionInput(
         workflowId: workflow.workflowId,
         stepId: step.id,
@@ -47,14 +61,19 @@ extension DeterministicWorkflowRunner {
         executionIdentity: WorkflowAddonExecutionIdentity(
           workflowExecutionId: sessionId,
           stepExecutionId: startedExecution.execution.executionId,
+          operationExecutionId: operationExecutionId,
           attempt: executionIndex,
           predecessorStepExecutionId: predecessorExecutionIds.first,
           predecessorStepExecutionIds: predecessorExecutionIds
         )
       )
-      adapterOutput = try await addonResolver.execute(
-        addonInput,
-        context: AdapterExecutionContext(deadline: deadline(for: step, request: request))
+      adapterOutput = try await executePlacedAddon(
+        addonInput, step: step, executionId: "\(sessionId)/\(startedExecution.execution.executionId)",
+        context: adapterExecutionContext(
+          deadline: deadline(for: step, request: request), workflowId: workflow.workflowId,
+          step: step, execution: startedExecution.execution,
+          eventContext: startedExecution.backendEventContext, handler: request.eventHandler
+        )
       )
     } catch let adapterFailure as AdapterExecutionError {
       if step.failurePolicy == .advisory {
@@ -96,6 +115,7 @@ extension DeterministicWorkflowRunner {
         throwing: error
       )
     }
+    try await checkpointNestedEffectCompletion(request)
     let routingReconciler = workflowRoutingReconciler(
       workflow: workflow,
       step: step,
@@ -112,6 +132,11 @@ extension DeterministicWorkflowRunner {
         transitions: transitions,
         publishesRootOutput: transitions.isEmpty,
         prePersistenceRoutingDecider: workflowPrePersistenceRoutingDecider(
+          workflow: workflow,
+          step: step,
+          request: request
+        ),
+        preCommitPublicationHook: nestedInvocationPreCommitPublicationHook(
           workflow: workflow,
           step: step,
           request: request

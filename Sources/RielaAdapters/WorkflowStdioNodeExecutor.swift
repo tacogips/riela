@@ -5,15 +5,18 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   public var runner: any LocalProcessRunning
   public var hostPlatform: RielaHostPlatform
   public var hostEnvironment: [String: String]
+  public var defaultWorkingDirectory: String?
 
   public init(
     runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
     hostPlatform: RielaHostPlatform = .current,
-    hostEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    hostEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+    defaultWorkingDirectory: String? = nil
   ) {
     self.runner = runner
     self.hostPlatform = hostPlatform
     self.hostEnvironment = hostEnvironment
+    self.defaultWorkingDirectory = defaultWorkingDirectory
   }
 
   public func execute(
@@ -78,7 +81,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         arguments: invocation.arguments,
         environment: environment(base: renderedEnvironment(command.environment, variables: templateVariables), input: input),
         unsetEnvironmentKeys: strippedEnvironmentKeys,
-        workingDirectoryURL: workingDirectoryURL(command.workingDirectory ?? input.node.workingDirectory)
+        workingDirectoryURL: workingDirectoryURL(
+          command.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
+        )
       )
     case .container:
       guard let container = input.node.container else {
@@ -99,7 +104,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         arguments: invocation.arguments,
         environment: environment(base: renderedEnvironment(container.environment, variables: templateVariables), input: input),
         unsetEnvironmentKeys: strippedEnvironmentKeys,
-        workingDirectoryURL: workingDirectoryURL(container.workingDirectory ?? input.node.workingDirectory)
+        workingDirectoryURL: workingDirectoryURL(
+          container.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
+        )
       )
     }
   }

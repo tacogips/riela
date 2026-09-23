@@ -38,6 +38,7 @@ final class WorkflowAddonExecutionIdentityTests: XCTestCase {
     let observation = await resolver.observation
     XCTAssertEqual(observation?.identity.workflowExecutionId, result.session.sessionId)
     XCTAssertEqual(observation?.identity.attempt, 1)
+    XCTAssertEqual(observation?.identity.operationExecutionId, observation?.identity.stepExecutionId)
     XCTAssertNil(observation?.identity.predecessorStepExecutionId)
     XCTAssertEqual(observation?.identity.predecessorStepExecutionIds, [])
     XCTAssertEqual(observation?.recordedStatus, .running)
@@ -116,6 +117,7 @@ final class WorkflowAddonExecutionIdentityTests: XCTestCase {
     XCTAssertEqual(identities[1].workflowExecutionId, failedSession.sessionId)
     XCTAssertEqual(identities[1].predecessorStepExecutionId, identities[0].stepExecutionId)
     XCTAssertEqual(identities[1].predecessorStepExecutionIds, [identities[0].stepExecutionId])
+    XCTAssertEqual(identities[1].operationExecutionId, identities[0].operationExecutionId)
     XCTAssertNotEqual(identities[1].predecessorStepExecutionId, "spoofed-predecessor")
   }
 
@@ -164,6 +166,7 @@ final class WorkflowAddonExecutionIdentityTests: XCTestCase {
       identities[2].predecessorStepExecutionIds,
       [identities[1].stepExecutionId, identities[0].stepExecutionId]
     )
+    XCTAssertEqual(identities[2].operationExecutionId, identities[0].operationExecutionId)
   }
 
   func testResumeReconcilesAcceptedTokenAfterAcknowledgmentInterruption() async throws {
@@ -235,8 +238,58 @@ final class WorkflowAddonExecutionIdentityTests: XCTestCase {
     XCTAssertEqual(identities.map(\.attempt), [1, 2, 3])
     XCTAssertEqual(identities[1].predecessorStepExecutionId, identities[0].stepExecutionId)
     XCTAssertEqual(identities[1].predecessorStepExecutionIds, [identities[0].stepExecutionId])
+    XCTAssertEqual(identities[1].operationExecutionId, identities[0].operationExecutionId)
     XCTAssertNil(identities[2].predecessorStepExecutionId)
     XCTAssertEqual(identities[2].predecessorStepExecutionIds, [])
+    XCTAssertEqual(identities[2].operationExecutionId, identities[2].stepExecutionId)
+    XCTAssertNotEqual(identities[2].operationExecutionId, identities[0].operationExecutionId)
+  }
+
+  func testOperationIdentityRejectsMissingOrInconsistentRetryLineage() throws {
+    let missing = WorkflowAddonExecutionIdentity(
+      workflowExecutionId: "session",
+      stepExecutionId: "attempt-1",
+      attempt: 1
+    )
+    XCTAssertThrowsError(try missing.validatedOperationExecutionId()) { error in
+      XCTAssertEqual(error as? WorkflowAddonOperationIdentityError, .missingOperationExecutionId)
+    }
+
+    let duplicatePredecessor = WorkflowAddonExecutionIdentity(
+      workflowExecutionId: "session",
+      stepExecutionId: "attempt-3",
+      operationExecutionId: "attempt-1",
+      attempt: 3,
+      predecessorStepExecutionId: "attempt-2",
+      predecessorStepExecutionIds: ["attempt-2", "attempt-1", "attempt-1"]
+    )
+    XCTAssertThrowsError(try duplicatePredecessor.validatedOperationExecutionId()) { error in
+      XCTAssertEqual(error as? WorkflowAddonOperationIdentityError, .invalidOperationExecutionId)
+    }
+
+    let selfContainingPredecessor = WorkflowAddonExecutionIdentity(
+      workflowExecutionId: "session",
+      stepExecutionId: "attempt-2",
+      operationExecutionId: "attempt-1",
+      attempt: 2,
+      predecessorStepExecutionId: "attempt-2",
+      predecessorStepExecutionIds: ["attempt-2"]
+    )
+    XCTAssertThrowsError(try selfContainingPredecessor.validatedOperationExecutionId()) { error in
+      XCTAssertEqual(error as? WorkflowAddonOperationIdentityError, .invalidOperationExecutionId)
+    }
+
+    let inconsistentSingular = WorkflowAddonExecutionIdentity(
+      workflowExecutionId: "session",
+      stepExecutionId: "attempt-2",
+      operationExecutionId: "attempt-1",
+      attempt: 2,
+      predecessorStepExecutionId: "other",
+      predecessorStepExecutionIds: ["attempt-1"]
+    )
+    XCTAssertThrowsError(try inconsistentSingular.validatedOperationExecutionId()) { error in
+      XCTAssertEqual(error as? WorkflowAddonOperationIdentityError, .invalidOperationExecutionId)
+    }
   }
 
   func testCompletedSessionRetriesInterruptedFinalizationAcknowledgment() async throws {

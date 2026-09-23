@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import RielaCore
 import RielaServer
@@ -123,4 +122,3 @@ public extension WorkflowInstanceConfiguration {
     )
   }
 }
-#endif

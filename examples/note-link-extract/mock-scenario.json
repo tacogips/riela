@@ -1,4 +1,26 @@
 {
+  "get-subject-note": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-get",
+    "when": { "always": true },
+    "payload": {
+      "noteId": "note-agent-source",
+      "title": "Architecture Note",
+      "bodyMarkdown": "projectalpha kickoff planning"
+    }
+  },
+  "graph-candidates": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-graph-neighbors",
+    "when": { "always": true },
+    "payload": {
+      "retrievalNoteIds": ["note-candidate"],
+      "results": [{
+        "noteId": "note-agent-source",
+        "neighbors": ["note-candidate"]
+      }]
+    }
+  },
   "select-link-proposals": {
     "provider": "scenario-mock",
     "model": "gpt-5.5",

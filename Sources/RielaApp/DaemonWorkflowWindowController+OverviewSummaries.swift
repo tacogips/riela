@@ -4,7 +4,7 @@ import AppKit
 extension DaemonWorkflowWindowController {
   func updateOverviewSummaries() {
     let sourceCount = workflowSources.count
-    sourcesSummaryLabel.stringValue = sourceCount == 1 ? "1 source" : "\(sourceCount) sources"
+    sourcesSummaryLabel.stringValue = "\(sourceCount) ワークフロー"
     let assistance = state.assistant.normalizedAssistance
     assistantSummaryLabel.stringValue = assistance.isEmpty
       ? "No assistance configured"

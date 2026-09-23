@@ -54,19 +54,6 @@ require_command() {
   fi
 }
 
-build_web_assets() {
-  require_command bun
-  (
-    cd "${repo_root}/web"
-    bun install --frozen-lockfile
-    bun run lint
-    bun run typecheck
-    bun run test
-    bun run build
-  )
-  test -s "${repo_root}/web/dist/index.html"
-}
-
 write_app_icon() {
   local icon_source resources_dir icon_name iconset_dir size scale output_size suffix
   icon_source="$1"
@@ -105,16 +92,20 @@ validate_version "$version"
 validate_bundle_id "$bundle_id"
 
 cd "${repo_root}"
-build_web_assets
+source "${repo_root}/scripts/lib/riela-web-packaging.sh"
+riela_build_web_assets "$repo_root"
+riela_build_desktop "$repo_root" "$configuration"
 DEVELOPER_DIR="${developer_dir}" SDKROOT="${sdkroot}" \
   "${swift_bin}" build -c "${configuration}" --product RielaApp
 
 rm -rf "${bundle_root}"
 mkdir -p "${macos_dir}" "${resources_dir}"
 cp ".build/${configuration}/RielaApp" "${macos_dir}/RielaApp"
+riela_stage_desktop_bundle "web/src-tauri/target/${configuration}/riela-desktop" \
+  "${contents_dir}/Helpers/RielaDesktop.app" "$version"
 write_app_icon "${app_icon_source}" "${resources_dir}" "${app_icon_name}"
-mkdir -p "${resources_dir}/Web"
-cp -R "${repo_root}/web/dist/". "${resources_dir}/Web/"
+riela_stage_web_assets "$repo_root" "${resources_dir}/Web"
+riela_stage_swift_resources "${repo_root}/.build/${configuration}" "$resources_dir"
 
 cat > "${contents_dir}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

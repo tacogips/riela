@@ -32,12 +32,13 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let addListButton = NSButton(title: "", target: nil, action: nil)
   let refreshButton = NSButton(title: "", target: nil, action: nil)
   let navigationBackButton = NSButton(title: "", target: nil, action: nil)
-  let navigationTitleLabel = NSTextField(labelWithString: "Instances")
-  let sidebarInstancesButton = NSButton(title: "Instances", target: nil, action: nil)
+  let navigationTitleLabel = NSTextField(labelWithString: "ワークフロー")
+  let sidebarInstancesButton = NSButton(title: "ワークフロー", target: nil, action: nil)
   let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
   let sidebarMarketplaceButton = NSButton(title: "Install Workflow", target: nil, action: nil)
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
   let sidebarProfilesButton = NSButton(title: "Profiles", target: nil, action: nil)
+  let sidebarKaibaButton = NSButton(title: "Kaiba", target: nil, action: nil)
   let sourcesSummaryLabel = NSTextField(labelWithString: "")
   let marketplaceSummaryLabel = NSTextField(labelWithString: "")
   let workflowSourceSearchField = NSSearchField()
@@ -53,7 +54,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let assistantSendButton = NSButton(title: "", target: nil, action: nil)
   let profilesSummaryLabel = NSTextField(labelWithString: "")
   let emptyInstancesLabel = NSTextField(
-    labelWithString: "No instances. Press + to select a workflow and create one."
+    labelWithString: "ワークフローを選択して実行設定を表示します。"
   )
   let emptyInstancesGuideView = DaemonWorkflowEmptyStateView()
   let statusBannerView = RielaAppStatusBannerView()
@@ -88,11 +89,13 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let onRemoveInstance: (String) -> Void
   /// Opens the web UI, which replaced the removed AppKit workflow viewer.
   /// The parameter is the noun phrase naming the surface being opened.
-  private let onOpenWebUI: (String) -> Void
+  let onOpenWebUI: (String) -> Void
   let defaultInstanceId: (String) -> String
   private let onStartInstance: (String) -> Void
   private let onStopInstance: (String) -> Void
   private let onRestartInstance: (String) -> Void
+  let onSaveKaibaNodeBinding: (String, String, String?, Bool) -> Bool
+  let onCheckKaibaWorkflowReadiness: (String) async -> RielaAppKaibaWorkflowReadiness
   let configuredEnvironmentValues: (RielaAppDaemonWorkflowCandidate) -> [RielaAppConfiguredEnvironmentValue]
   let onSaveAssistantAssistance: (String) -> String?
   let onSaveAssistantSettings: (RielaAppAssistantSettings) -> String?
@@ -100,6 +103,14 @@ final class DaemonWorkflowWindowController: NSWindowController,
   private let environmentSummary: (RielaAppDaemonWorkflowCandidate) -> String
   let environmentColumnStatus: (RielaAppDaemonWorkflowCandidate) -> String
   private let onWindowWillClose: () -> Void
+  let kaibaInstanceController: RielaAppKaibaInstanceController
+  let kaibaNodeBindingsStack = NSStackView()
+  weak var kaibaNodeBindingsCaption: NSView?
+  weak var kaibaNodeBindingsSection: NSView?
+  var kaibaNodeBindingLoadRevision = 0
+  var kaibaNodeBindingLoadTask: Task<Void, Never>?
+  var kaibaWorkflowReadinessRevision = 0
+  var kaibaWorkflowReadinessTask: Task<Void, Never>?
 
   private static let allProfilesMenuTitle = "All Profiles"
 
@@ -136,6 +147,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   var marketplaceWorkflowDetailView: NSView?
   var assistantOverviewView: NSView?
   var profilesOverviewView: NSView?
+  var kaibaOverviewView: NSView?
   var profilesOverviewFingerprint: String?
   var sourcesOverviewFingerprint: String?
   var marketplaceOverviewFingerprint: String?
@@ -150,6 +162,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   weak var eventSourcesSettingRow: NSView?
   weak var relinkSourceActionRow: NSView?
   weak var openWebUIActionRow: NSView?
+  weak var removeInstanceActionRow: NSView?
   weak var startInstanceActionRow: NSView?
   weak var stopInstanceActionRow: NSView?
   weak var restartInstanceActionRow: NSView?
@@ -185,6 +198,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
     case marketplace
     case assistant
     case profiles
+    case kaiba
   }
 
   init(
@@ -208,6 +222,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onStartInstance: @escaping (String) -> Void,
     onStopInstance: @escaping (String) -> Void,
     onRestartInstance: @escaping (String) -> Void,
+    onSaveKaibaNodeBinding: @escaping (String, String, String?, Bool) -> Bool = { _, _, _, _ in false },
+    onCheckKaibaWorkflowReadiness: @escaping (String) async -> RielaAppKaibaWorkflowReadiness = { _ in .notApplicable },
     onSetEnvironment: @escaping (String) -> Void,
     onSetWorkingDirectory: @escaping (String) -> Void,
     onSaveEnvironmentVariables: @escaping (String, String) -> String?,
@@ -219,7 +235,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
     onSubmitAssistantMessage: @escaping (String, String?) -> Void = { _, _ in },
     environmentSummary: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String,
-    onWindowWillClose: @escaping () -> Void
+    onWindowWillClose: @escaping () -> Void,
+    kaibaInstanceController: RielaAppKaibaInstanceController = .init()
   ) {
     self.onRefresh = onRefresh
     self.onSelectProfile = onSelectProfile
@@ -241,6 +258,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.onStartInstance = onStartInstance
     self.onStopInstance = onStopInstance
     self.onRestartInstance = onRestartInstance
+    self.onSaveKaibaNodeBinding = onSaveKaibaNodeBinding
+    self.onCheckKaibaWorkflowReadiness = onCheckKaibaWorkflowReadiness
     _ = onSetEnvironment
     _ = onSetWorkingDirectory
     _ = onSaveEnvironmentVariables
@@ -253,13 +272,14 @@ final class DaemonWorkflowWindowController: NSWindowController,
     self.environmentSummary = environmentSummary
     self.environmentColumnStatus = environmentColumnStatus
     self.onWindowWillClose = onWindowWillClose
+    self.kaibaInstanceController = kaibaInstanceController
     let window = NSWindow(
       contentRect: NSRect(origin: .zero, size: DaemonWorkflowWindowLayout.initialWindowSize),
       styleMask: [.titled, .closable, .resizable, .miniaturizable],
       backing: .buffered,
       defer: false
     )
-    window.title = "Riela Workflow Instances"
+    window.title = "Riela ワークフロー"
     window.minSize = DaemonWorkflowWindowLayout.minimumWindowSize
     super.init(window: window)
     window.delegate = self
@@ -397,7 +417,7 @@ extension DaemonWorkflowWindowController {
     emptyInstancesGuideView.isHidden = rawInstanceRowsCount != 0
     emptyInstancesLabel.stringValue = rawInstanceRowsCount == 0
       ? ""
-      : "No instances match the current filter."
+      : "検索条件に一致する実行設定はありません。"
     emptyInstancesLabel.isHidden = rawInstanceRowsCount == 0 || !instanceRows.isEmpty
   }
 
@@ -511,7 +531,7 @@ extension DaemonWorkflowWindowController {
       return
     }
     onRemoveInstance(identity)
-    showInstancesList()
+    returnToWorkflow()
   }
 
   @objc func cancelRemoveSelectedInstance() {
@@ -522,7 +542,7 @@ extension DaemonWorkflowWindowController {
     guard let row = selectedRow(), row.state != .needsSource else {
       return
     }
-    onOpenWebUI("Web Config")
+    openConfigurationPage(row, page: .settings)
   }
 
   @objc func openWorkflowSourcesInWebUI() {
@@ -580,16 +600,19 @@ extension DaemonWorkflowWindowController {
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
     showContentPane(instancesListView)
-    navigationTitleLabel.stringValue = "Instances"
+    navigationTitleLabel.stringValue = "実行設定"
     updateNavigationState()
     updateSidebarSelection()
   }
 
-  private func showInstanceDetail() {
+  func showInstanceDetail() {
     guard selectedRow() != nil else {
       return
     }
-    activeSidebarPane = .instances
+    activeSidebarPane = .sources
+    if let row = selectedRow() {
+      selectedWorkflowSourceId = workflowSources.first { $0.id == row.sourceIdentity }?.id
+    }
     isShowingInstanceDetail = true
     isShowingAddInstanceSelection = false
     isShowingWorkflowSourceDetail = false
@@ -641,10 +664,10 @@ extension DaemonWorkflowWindowController {
       return
     }
     guard let row = selectedRow() else {
-      showInstancesList()
+      returnToWorkflow()
       return
     }
-    navigationTitleLabel.stringValue = row.instanceName
+    navigationTitleLabel.stringValue = "\(row.workflowName) › \(row.instanceName)"
     detailTitleLabel.stringValue = row.instanceName
     detailSummaryLabel.stringValue = rielaAppMetadataText([
       row.state.rawValue,
@@ -676,7 +699,9 @@ extension DaemonWorkflowWindowController {
       detailEventSourcesValueLabel.stringValue = "Workflow source is missing"
     }
     updateDetailRowAccessibilityValues()
-    updateDetailActions(for: row.state)
+    updateDetailActions(for: row)
+    updateKaibaNodeBindings(for: row)
+    updateKaibaWorkflowReadiness(for: row)
   }
 
   private func stateStatusText(for row: ConfiguredWorkflowInstanceRow) -> String {
@@ -715,7 +740,9 @@ extension DaemonWorkflowWindowController {
     eventSourcesSettingRow?.setAccessibilityValue(detailEventSourcesValueLabel.stringValue)
   }
 
-  private func updateDetailActions(for state: InstanceState) {
+  private func updateDetailActions(for row: ConfiguredWorkflowInstanceRow) {
+    let state = row.state
+    removeInstanceActionRow?.isHidden = row.localIdentity == row.sourceIdentity
     let needsSource = state == .needsSource
     workflowSettingRow?.isHidden = needsSource
     missingSourceSettingRow?.isHidden = !needsSource
@@ -758,7 +785,7 @@ extension DaemonWorkflowWindowController {
     detail.isHidden = false
     instanceDetailView = detail
     showContentPane(detail)
-    navigationTitleLabel.stringValue = row.instanceName
+    navigationTitleLabel.stringValue = "\(row.workflowName) › \(row.instanceName)"
     updateNavigationState()
     updateSidebarSelection()
   }

@@ -427,13 +427,22 @@ public struct SessionRerunCommand: Sendable {
       )
       bundle.nodePayloads = instanceResolution.nodePayloads
       let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
+      let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+      let kaibaContext = try await prepareSessionKaibaPreflight(
+        bundle: &bundle,
+        instance: instanceResolution.effectiveInstance,
+        workingDirectory: options.workingDirectory,
+        mockScenarioPath: effectiveMockScenarioPath,
+        calleeResolver: calleeResolver
+      )
       let adapter = try makeAdapter(
         mockScenarioPath: effectiveMockScenarioPath,
-        workingDirectory: options.workingDirectory
+        workingDirectory: kaibaContext.workingDirectory
       )
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: effectiveMockScenarioPath,
-        workingDirectory: options.workingDirectory
+        workingDirectory: kaibaContext.workingDirectory,
+        environment: kaibaContext.environment
       )
       // Rerun re-acquires the same advisory per-workflow lease as a fresh run
       // (design S11); the lease binds to the new session on its first save.
@@ -462,10 +471,14 @@ public struct SessionRerunCommand: Sendable {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
+        distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
+          defaultWorkingDirectory: kaibaContext.workingDirectory
+        ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
-        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
       )
       let variables = instanceResolution.effectiveInstance?.configuration.defaultVariables
         ?? persisted.runtimeVariables
@@ -484,21 +497,25 @@ public struct SessionRerunCommand: Sendable {
         ),
         recorder: jsonlRecorder
       )
-      let result = try await runner.run(
-        DeterministicWorkflowRunRequest(
-          workflow: bundle.workflow,
-          nodePayloads: bundle.nodePayloads,
-          variables: variables,
-          rerunFromSessionId: persisted.session.sessionId,
-          rerunFromStepId: options.stepId,
-          sourceRecoveryLineage: persistedRecoveryLineage(
-            sessionId: persisted.session.sessionId,
-            storeRoot: storeRoot
-          ),
-          effectiveInstance: instanceResolution.effectiveInstance,
-          eventHandler: eventHandler
+      let result = try await withSessionKaibaSnapshot(kaibaContext, mockScenarioPath: effectiveMockScenarioPath) {
+        try await runner.run(
+          DeterministicWorkflowRunRequest(
+            workflow: bundle.workflow,
+            nodePayloads: bundle.nodePayloads,
+            variables: variables,
+            rerunFromSessionId: persisted.session.sessionId,
+            rerunFromStepId: options.stepId,
+            preserveHistory: options.preserveHistory,
+            sourceRecoveryLineage: persistedRecoveryLineage(
+              sessionId: persisted.session.sessionId,
+              storeRoot: storeRoot
+            ),
+            effectiveInstance: instanceResolution.effectiveInstance,
+            eventHandler: eventHandler,
+            sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+          )
         )
-      )
+      }
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
       let loopEvidence = projectLoopEvidence(
         session: result.session,
@@ -646,7 +663,7 @@ public struct SessionResumeCommand: Sendable {
         workingDirectory: options.workingDirectory
       )
       let persisted = loaded.record
-      if blocksResume(persisted.session) {
+      if blocksResume(persisted.session) && !options.retryFailedStep {
         return await resumeFailure(
           options: options,
           exitCode: .failure,
@@ -676,13 +693,22 @@ public struct SessionResumeCommand: Sendable {
       )
       bundle.nodePayloads = instanceResolution.nodePayloads
       let effectiveMockScenarioPath = options.mockScenarioPath ?? persisted.mockScenarioPath
+      let calleeResolver = FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+      let kaibaContext = try await prepareSessionKaibaPreflight(
+        bundle: &bundle,
+        instance: instanceResolution.effectiveInstance,
+        workingDirectory: options.workingDirectory,
+        mockScenarioPath: effectiveMockScenarioPath,
+        calleeResolver: calleeResolver
+      )
       let adapter = try makeSessionNodeAdapter(
         mockScenarioPath: effectiveMockScenarioPath,
-        workingDirectory: options.workingDirectory
+        workingDirectory: kaibaContext.workingDirectory
       )
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: effectiveMockScenarioPath,
-        workingDirectory: options.workingDirectory
+        workingDirectory: kaibaContext.workingDirectory,
+        environment: kaibaContext.environment
       )
       // Resume re-acquires the same advisory per-workflow lease as a fresh
       // run (design S11); the lease binds to the resumed session on its
@@ -712,10 +738,14 @@ public struct SessionResumeCommand: Sendable {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
+        distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(),
+        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
+          defaultWorkingDirectory: kaibaContext.workingDirectory
+        ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
-        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
       )
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
       let eventHandler = await makeSessionCommandLivePersistenceHandler(
@@ -734,20 +764,25 @@ public struct SessionResumeCommand: Sendable {
       )
       let result: WorkflowRunResult
       do {
-        result = try await runner.run(
-          DeterministicWorkflowRunRequest(
-            workflow: bundle.workflow,
-            nodePayloads: bundle.nodePayloads,
-            variables: variables,
-            maxSteps: options.maxSteps,
-            resumeSessionId: persisted.session.sessionId,
-            sourceRecoveryLineage: persistedRecoveryLineage(
-              sessionId: persisted.session.sessionId,
-              storeRoot: storeRoot
-            ),
-            eventHandler: eventHandler
+        result = try await withSessionKaibaSnapshot(kaibaContext, mockScenarioPath: effectiveMockScenarioPath) {
+          try await runner.run(
+            DeterministicWorkflowRunRequest(
+              workflow: bundle.workflow,
+              nodePayloads: bundle.nodePayloads,
+              variables: variables,
+              maxSteps: options.maxSteps,
+              resumeSessionId: persisted.session.sessionId,
+              retryFailedStep: options.retryFailedStep,
+              sourceRecoveryLineage: persistedRecoveryLineage(
+                sessionId: persisted.session.sessionId,
+                storeRoot: storeRoot
+              ),
+              effectiveInstance: instanceResolution.effectiveInstance,
+              eventHandler: eventHandler,
+              sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+            )
           )
-        )
+        }
       } catch {
         do {
           try await persistFailedResumeSnapshot(
@@ -913,9 +948,12 @@ public struct SessionResumeCommand: Sendable {
   private func nonBudgetFailureResumeMessage(session: WorkflowSession) -> String {
     let failureKind = session.failureKind?.rawValue ?? "unknown"
     let rerunStepId = session.currentStepId ?? session.entryStepId
+    let retryGuidance = session.failureKind == .adapterFailure
+      ? "`riela session resume \(session.sessionId) --retry-failed-step` to explicitly retry the failed adapter step, "
+      : ""
     return """
-    session \(session.sessionId) failed with failureKind \(failureKind) and cannot be resumed; use \
-    `riela session rerun \(session.sessionId) \(rerunStepId)` to rerun from a step, or inspect with \
+    session \(session.sessionId) failed with failureKind \(failureKind) and cannot be resumed normally; use \
+    \(retryGuidance)`riela session rerun \(session.sessionId) \(rerunStepId)` to rerun from a step, or inspect with \
     `riela session progress \(session.sessionId)`.
     """
   }
@@ -928,66 +966,5 @@ public struct SessionResumeCommand: Sendable {
       return try JSONReferenceLoader().object(from: variablesReference, workingDirectory: options.workingDirectory)
     }
     return persisted.runtimeVariables ?? [:]
-  }
-}
-
-/// Reads the recovery lineage persisted on the source session's evidence
-/// manifest so rerun/resume entries can thread `rootSessionId`/`attemptNumber`
-/// (and the runner can enforce `budget.maxSessionAttempts`) without walking
-/// session chains. Absent snapshots or manifests degrade to nil (attempt one).
-private func persistedRecoveryLineage(
-  sessionId: String,
-  storeRoot: String
-) -> LoopRecoveryLineage? {
-  let store = SQLiteWorkflowRuntimePersistenceStore(
-    rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
-  )
-  return (try? store.load(sessionId: sessionId))?.loopEvidence?.recovery
-}
-
-private func projectLoopEvidence(
-  session: WorkflowSession,
-  workflowMessages: [WorkflowMessageRecord],
-  bundle: ResolvedWorkflowBundle,
-  recovery: LoopRecoveryLineage?
-) -> LoopEvidenceManifest? {
-  try? DefaultLoopEvidenceProjector().project(
-    LoopEvidenceProjectionInput(
-      workflow: bundle.workflow,
-      session: session,
-      workflowMessages: workflowMessages,
-      workflowSource: loopWorkflowSource(from: bundle),
-      recovery: recovery
-    )
-  )
-}
-
-private func loopWorkflowSource(from bundle: ResolvedWorkflowBundle) -> LoopWorkflowSource {
-  LoopWorkflowSource(
-    scope: bundle.sourceScope.rawValue,
-    kind: bundle.packageManifest == nil ? "workflow-directory" : "package",
-    workflowDirectory: bundle.workflowDirectory,
-    packageName: bundle.packageManifest?.name,
-    packageVersion: bundle.packageManifest?.version,
-    packageDirectory: bundle.packageDirectory,
-    mutable: bundle.provenance == .mutable
-  )
-}
-
-private func makeSessionNodeAdapter(mockScenarioPath: String?, workingDirectory: String) throws -> any NodeAdapter {
-  try makeScenarioBackedNodeAdapter(
-    scenarioPath: mockScenarioPath,
-    workingDirectory: workingDirectory
-  )
-}
-
-private func loadExistingWorkflowMessages(
-  sessionId: String,
-  persistenceStore: SQLiteWorkflowRuntimePersistenceStore
-) throws -> [WorkflowMessageRecord] {
-  do {
-    return try persistenceStore.load(sessionId: sessionId).workflowMessages
-  } catch WorkflowRuntimePersistenceStoreError.notFound(_) {
-    return []
   }
 }

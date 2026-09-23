@@ -13,7 +13,7 @@ extension RielaClientFamilyArguments {
   }
 }
 
-enum WorkflowClientSubcommand: String, ExpressibleByArgument {
+enum WorkflowClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case package
   case manifest
   case list
@@ -36,7 +36,7 @@ enum WorkflowClientSubcommand: String, ExpressibleByArgument {
   case selfImprove = "self-improve"
 }
 
-enum SessionClientSubcommand: String, ExpressibleByArgument {
+enum SessionClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case rerun
   case resume
   case list
@@ -50,7 +50,7 @@ enum SessionClientSubcommand: String, ExpressibleByArgument {
   case logs
 }
 
-enum InstanceClientSubcommand: String, ExpressibleByArgument {
+enum InstanceClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case list
   case show
   case create
@@ -58,20 +58,20 @@ enum InstanceClientSubcommand: String, ExpressibleByArgument {
   case remove
 }
 
-enum SetupClientSubcommand: String, ExpressibleByArgument {
+enum SetupClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case container
 }
 
-enum WorkflowManifestClientSubcommand: String, ExpressibleByArgument {
+enum WorkflowManifestClientSubcommand: String, CaseIterable, ExpressibleByArgument {
   case validate
 }
 
-enum WorkflowVersionClientOperation: String, ExpressibleByArgument {
+enum WorkflowVersionClientOperation: String, CaseIterable, ExpressibleByArgument {
   case show
   case diff
 }
 
-enum LoopBaselineAction: String, ExpressibleByArgument {
+enum LoopBaselineAction: String, CaseIterable, ExpressibleByArgument {
   case set
   case show
   case clear
@@ -80,7 +80,6 @@ enum LoopBaselineAction: String, ExpressibleByArgument {
 enum PackageRegistryClientAction: String, CaseIterable, ExpressibleByArgument {
   case add
   case list
-  case sync
   case index
 }
 
@@ -121,6 +120,48 @@ enum HookClientVendor: String, CaseIterable, ExpressibleByArgument {
   case codex
   case claude
   case cursor
+}
+
+/// Families below are dispatched by string switch rather than by a typed
+/// `@Argument`. Their actions are declared here so the CLI surface stays
+/// enumerable: adding a case without a `SurfaceCatalog` row fails the CLI gate,
+/// and the owning switches read their literals from these raw values.
+enum RoutineClientAction: String, CaseIterable {
+  case create
+  case list
+  case inspect
+  case complete
+  case enable
+  case disable
+  case delete
+}
+
+enum ServeClientAction: String, CaseIterable {
+  case status
+  case health
+  case overview
+  case graphql
+}
+
+enum KaibaInstanceClientAction: String, CaseIterable {
+  case list
+  case show
+  case add
+  case update
+  case remove
+  case test
+  case setDefault = "set-default"
+}
+
+enum PasskeyClientAction: String, CaseIterable {
+  case invite
+  case users
+  case revokeUser = "revoke-user"
+  case revokeKey = "revoke-key"
+}
+
+enum DistributedWorkerClientAction: String, CaseIterable {
+  case status
 }
 
 extension CaseIterable where Self: RawRepresentable, RawValue == String {

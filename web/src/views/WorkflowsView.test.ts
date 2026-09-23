@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { WorkflowDefinitionResponse } from '../contracts'
+import { discoveredDefinitionMatchesSelection } from './WorkflowDefinitionView'
 import type { RegistryWorkflow } from '../workflows/types'
 import {
-  discoveredDefinitionMatchesSelection,
   mutableDetailMatchesSelection,
   sourcePathForProfileTransition,
 } from './WorkflowsView'

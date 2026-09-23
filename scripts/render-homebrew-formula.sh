@@ -17,7 +17,7 @@ Environment:
   RIELA_RELEASE_BASE_URL  Release URL base. Defaults to GitHub v<version>.
 
 Example:
-  scripts/build-homebrew-release.sh darwin-arm64 darwin-x64
+  scripts/build-homebrew-release.sh darwin-arm64
   scripts/render-homebrew-formula.sh 0.1.0 Formula/riela.rb
 
 This renderer expects macOS Swift CLI production archives. Linux CLI archives
@@ -56,16 +56,14 @@ main() {
   release_dir="${RIELA_RELEASE_DIR:-$repo_root/dist/homebrew}"
   release_base_url="${RIELA_RELEASE_BASE_URL:-https://github.com/tacogips/riela/releases/download/v$version}"
 
-  local darwin_arm64_sha darwin_x64_sha
+  local darwin_arm64_sha
   darwin_arm64_sha="$(sha_for_target "$version" darwin-arm64 "$release_dir")"
-  darwin_x64_sha="$(sha_for_target "$version" darwin-x64 "$release_dir")"
 
   mkdir -p "$(dirname "$output")"
   cat > "$output" <<EOF
 class Riela < Formula
   desc "Swift-native workflow runtime for cooperative multi-agent execution"
   homepage "https://github.com/tacogips/riela"
-  version "$version"
   license "MIT"
 
   livecheck do
@@ -74,17 +72,15 @@ class Riela < Formula
   end
 
   on_macos do
-    if Hardware::CPU.arm?
+    on_arm do
       url "$release_base_url/riela-$version-darwin-arm64.tar.gz"
       sha256 "$darwin_arm64_sha"
-    else
-      url "$release_base_url/riela-$version-darwin-x64.tar.gz"
-      sha256 "$darwin_x64_sha"
     end
   end
 
   def install
     bin.install "bin/riela"
+    share.install "share/riela"
   end
 
   test do

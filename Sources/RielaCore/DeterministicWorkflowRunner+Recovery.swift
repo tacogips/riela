@@ -59,7 +59,16 @@ extension DeterministicWorkflowRunner {
       sourceLineage: request.sourceRecoveryLineage
     )
     let canResumeBudgetFailure = existing.status == .failed && existing.failureKind == .maxStepsExceeded
-    if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure) {
+    let failedExecution = existing.executions.last
+    let canRetryFailedStep = existing.status == .failed && existing.failureKind == .adapterFailure
+      && failedExecution?.status == .failed && failedExecution?.stepId == existing.currentStepId
+      && failedExecution?.acceptedOutput == nil && failedExecution?.pendingRoutePublication == nil
+    if request.retryFailedStep && !canRetryFailedStep {
+      throw DeterministicWorkflowRunnerError.resumeValidation(
+        "--retry-failed-step requires an adapter-failed current step with no accepted output"
+      )
+    }
+    if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure && !request.retryFailedStep) {
       let terminalResult = WorkflowRunResult(
         workflowId: request.workflow.workflowId,
         session: existing,
@@ -105,17 +114,23 @@ extension DeterministicWorkflowRunner {
     } catch let error as WorkflowSessionEntryValidationError {
       throw DeterministicWorkflowRunnerError.rerunValidation(errorMessage(error))
     }
+    let history = try await request.preserveHistory
+      ? preservedHistory(request, source: sourceSession, target: entryStepId) : nil
     try await validateCrossWorkflowDispatchTargets(in: request.workflow)
-    let session = try await store.createSession(
+    var session = try await store.createSession(
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
         effectiveInstance: request.effectiveInstance,
-        parentSessionId: request.parentSessionId,
-        rootSessionId: request.rootSessionId,
+        parentSessionId: request.preserveHistory ? sourceSession.sessionId : request.parentSessionId,
+        rootSessionId: request.preserveHistory ? (sourceSession.rootSessionId ?? sourceSession.sessionId) : request.rootSessionId,
         effectiveStepBudget: request.effectiveStepBudget
       )
     )
+    if var history {
+      history.sessionId = session.sessionId
+      session = try await store.importAcceptedHistory(history)
+    }
     return .proceed(SessionEntryContext(
       session: session,
       currentStepId: entryStepId,

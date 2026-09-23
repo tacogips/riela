@@ -5,6 +5,16 @@ import RielaCore
 // its own target so add-on targets (RielaKaibaAddons and any future one) can
 // reuse it without importing RielaCLI.
 
+/// Forward application fields, not the runtime's input-only history views.
+/// `_rielaInput` contains both messages and a latest-message alias; copying it
+/// into accepted output makes each subsequent hop retain the preceding tree
+/// three times. `upstream` and `runtime` are likewise reconstructed per step.
+public func addonForwardedApplicationPayload(_ resolvedInput: JSONObject) -> JSONObject {
+  var payload = resolvedInput
+  for key in ["_rielaInput", "upstream", "runtime"] { payload.removeValue(forKey: key) }
+  return payload
+}
+
 public func addonVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {
   var variables = input.variables
   for (key, value) in input.resolvedInputPayload {

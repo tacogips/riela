@@ -4,6 +4,12 @@ extension DeterministicWorkflowRunner {
   func validatedExecutionPlan(
     for request: DeterministicWorkflowRunRequest
   ) throws -> WorkflowExecutionPlan {
+    if request.preserveHistory && request.rerunFromSessionId == nil {
+      throw DeterministicWorkflowRunnerError.rerunValidation("preserveHistory requires rerunFromSessionId")
+    }
+    if request.preserveHistory && request.resumeSessionId != nil {
+      throw DeterministicWorkflowRunnerError.rerunValidation("preserveHistory cannot be combined with resumeSessionId")
+    }
     let diagnostics = DefaultWorkflowValidator().validate(
       request.workflow,
       nodePayloads: request.nodePayloads

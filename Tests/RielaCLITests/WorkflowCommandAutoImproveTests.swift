@@ -222,7 +222,7 @@ extension WorkflowCommandTests {
   }
 
   func testAutoImproveCancellationDoesNotCreateIncidentOrRerun() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
+    let tempDir = URL(fileURLWithPath: repositoryRoot()).appendingPathComponent("tmp/specialist-supervisor/cancellation")
       .appendingPathComponent("riela-auto-improve-cancel-\(UUID().uuidString)", isDirectory: true)
     let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
     let workflowDirectory = workflowRoot.appendingPathComponent("cancelled-run", isDirectory: true)
@@ -266,6 +266,7 @@ extension WorkflowCommandTests {
 
     XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
     XCTAssertTrue(result.stderr.isEmpty, result.stderr)
+    XCTAssertTrue(result.stdout.contains("\"workflowId\""), String(result.stdout.prefix(2_000)))
     let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
     XCTAssertEqual(runResult.session.sessionId, liveRecord.session.sessionId)
     XCTAssertEqual(runResult.status, .failed)
@@ -293,8 +294,47 @@ extension WorkflowCommandTests {
     XCTAssertEqual(persistedSupervision["remediations"], .array([]))
   }
 
+  func testCancellationWithoutAutoImprovePersistsTerminalFailure() async throws {
+    let tempDir = URL(fileURLWithPath: repositoryRoot())
+      .appendingPathComponent("tmp/cancellation-finalization/\(UUID().uuidString)", isDirectory: true)
+    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("cancelled-run", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    let script = try createExecutable(directory: tempDir, name: "wait.sh", body: "exec sleep 60")
+    try writeSingleCommandWorkflow(
+      workflowDirectory: workflowDirectory,
+      nodesDirectory: nodesDirectory,
+      workflowId: "cancelled-run",
+      executable: script,
+      argument: tempDir.appendingPathComponent("unused.txt")
+    )
+    let task = Task {
+      await RielaCLIApplication().run([
+        "workflow", "run", "cancelled-run",
+        "--workflow-definition-dir", workflowRoot.path,
+        "--session-store", sessionStore.path,
+        "--no-auto-improve", "--output", "json"
+      ])
+    }
+    let live = try await waitForPersistedSession(sessionStore: sessionStore, workflowName: "cancelled-run")
+    task.cancel()
+    let result = await task.value
+    XCTAssertEqual(result.exitCode, .failure, result.stdout + result.stderr)
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
+    )
+    let snapshot = try XCTUnwrap(persistence.load(sessionId: live.session.sessionId))
+    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.failureKind, .cancelled)
+    XCTAssertFalse(snapshot.session.executions.contains { $0.status == .running })
+    XCTAssertTrue(result.stdout.contains("\"failureKind\":\"cancelled\""), result.stdout)
+  }
+
   func testAutoImproveCancellationPreservesPriorIncidentAndRemediation() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
+    let tempDir = URL(fileURLWithPath: repositoryRoot()).appendingPathComponent("tmp/specialist-supervisor/cancellation")
       .appendingPathComponent("riela-auto-improve-cancel-rerun-\(UUID().uuidString)", isDirectory: true)
     let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
     let workflowDirectory = workflowRoot.appendingPathComponent("fail-then-cancel", isDirectory: true)
@@ -351,6 +391,7 @@ extension WorkflowCommandTests {
     let result = await task.value
 
     XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
+    XCTAssertTrue(result.stdout.contains("\"workflowId\""), String(result.stdout.prefix(2_000)))
     let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
     XCTAssertEqual(runResult.session.sessionId, liveRecords.last?.session.sessionId)
     XCTAssertEqual(runResult.status, .failed)

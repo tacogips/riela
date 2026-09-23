@@ -152,7 +152,6 @@ public struct WorkflowPackageCacheMetadata: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowPackageRegistryConfig: Codable, Equatable, Sendable {
-  public var defaultRegistryId: String
   public var registries: [WorkflowPackageRegistryEntry]
 }
 

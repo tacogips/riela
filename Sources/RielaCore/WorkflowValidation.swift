@@ -70,6 +70,9 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     }
 
     for step in workflow.steps {
+      if let placement = step.placement {
+        validateDistributedPlacement(placement, path: "workflow.steps.\(step.id).placement", diagnostics: &diagnostics)
+      }
       if !registryIds.contains(step.nodeId) {
         diagnostics.append(error("workflow.steps.\(step.id).nodeId", "must reference workflow.nodes[] entry '\(step.nodeId)'"))
       }
@@ -101,8 +104,17 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     nodePayloads: [String: AgentNodePayload]
   ) -> [WorkflowValidationDiagnostic] {
     var diagnostics = validate(workflow)
+    for nodeId in nodePayloads.keys.sorted() {
+      if let schema = nodePayloads[nodeId]?.output?.jsonSchema,
+         let reason = DefaultWorkflowOutputValidator().validateContractSchema(schema) {
+        diagnostics.append(error("workflow.nodes.\(nodeId).output.jsonSchema", reason))
+      }
+    }
     let stepIds = Set(workflow.steps.map(\.id))
     for step in workflow.steps {
+      if step.placement != nil, nodePayloads[step.nodeId]?.output?.projection != nil {
+        diagnostics.append(error("workflow.steps.\(step.id).placement", "output projection steps execute on the controller and cannot specify worker placement"))
+      }
       let effectivePolicy = step.sessionPolicy ?? nodePayloads[step.nodeId]?.sessionPolicy
       validateEffectiveSessionPolicy(
         effectivePolicy,

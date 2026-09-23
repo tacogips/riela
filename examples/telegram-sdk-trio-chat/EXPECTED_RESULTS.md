@@ -3,6 +3,10 @@
 - The workflow validates as a simple step-addressed Telegram trio chat bundle.
 - Persona and reply nodes use the built-in Telegram `mention-responder`
   `inputFilters`. Non-matching nodes are skipped without failing the workflow.
+- Trigger evaluation follows a sequential Yui, Mika, then Rina candidate chain.
+  A skipped candidate does not invoke its LLM, but its skipped path and the
+  preceding memory-load step still add deterministic orchestration work before
+  a later persona is reached.
 - Mika and Rina answer only when `telegram.message.text` explicitly mentions
   their display name or Telegram bot username, such as `Mika`,
   `@mikatrend0529bot`, `Rina`, or `@rinacursor0529bot`.
@@ -41,5 +45,10 @@
 - The selected `send-*-reply` step is the root output for that run. Non-selected
   reply steps advance only through `input_filter_skipped` transitions, so Yui
   and Mika replies are not overwritten by later skipped nodes.
+- The first matching persona produces the only LLM reply for the run; this
+  example has no internal persona-to-persona handoff. This makes single-reply
+  behavior predictable, while the central-router `*-agent-trio-chat` examples
+  are a better fit when constant routing depth, more personas, or bounded
+  multi-person discussion is required.
 - The bundled mock scenario passes Telegram event variables with an explicit
   Rina mention and completes without requiring live API keys.

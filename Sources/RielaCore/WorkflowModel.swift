@@ -402,6 +402,8 @@ public enum WorkflowFanoutWriteOwnershipMode: String, Codable, Sendable {
   case readOnly = "read-only"
   case disjointPaths = "disjoint-paths"
   case isolatedWorkspace = "isolated-workspace"
+  /// Cooperative writers share one workspace; no isolation guarantee.
+  case sharedWorkspace = "shared-workspace"
 }
 
 public struct WorkflowFanoutWriteOwnership: Codable, Equatable, Sendable {
@@ -425,6 +427,8 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
   public var failurePolicy: WorkflowFanoutFailurePolicy?
   public var resultOrder: WorkflowFanoutResultOrder?
   public var writeOwnership: WorkflowFanoutWriteOwnership?
+  public var dependencies: WorkflowFanoutDependencies?
+  public var changeTracking: WorkflowFanoutChangeTracking?
 
   public init(
     groupId: String,
@@ -434,7 +438,9 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
     joinStepId: String,
     failurePolicy: WorkflowFanoutFailurePolicy? = nil,
     resultOrder: WorkflowFanoutResultOrder? = nil,
-    writeOwnership: WorkflowFanoutWriteOwnership? = nil
+    writeOwnership: WorkflowFanoutWriteOwnership? = nil,
+    dependencies: WorkflowFanoutDependencies? = nil,
+    changeTracking: WorkflowFanoutChangeTracking? = nil
   ) {
     self.groupId = groupId
     self.itemsFrom = itemsFrom
@@ -444,6 +450,8 @@ public struct WorkflowStepFanout: Codable, Equatable, Sendable {
     self.failurePolicy = failurePolicy
     self.resultOrder = resultOrder
     self.writeOwnership = writeOwnership
+    self.dependencies = dependencies
+    self.changeTracking = changeTracking
   }
 }
 
@@ -482,49 +490,6 @@ public struct WorkflowStepSessionPolicy: Codable, Equatable, Sendable {
 public enum WorkflowStepFailurePolicy: String, Codable, Sendable {
   case fail
   case advisory
-}
-
-public struct WorkflowStepRef: Codable, Equatable, Sendable {
-  public var id: String
-  public var stepFile: String?
-  public var nodeId: String
-  public var description: String?
-  public var role: NodeRole?
-  public var promptVariant: String?
-  public var timeoutMs: Int?
-  public var stallTimeoutMs: Int?
-  public var failurePolicy: WorkflowStepFailurePolicy?
-  public var sessionPolicy: WorkflowStepSessionPolicy?
-  public var transitions: [WorkflowStepTransition]?
-  public var loop: WorkflowStepLoopMetadata?
-
-  public init(
-    id: String,
-    stepFile: String? = nil,
-    nodeId: String,
-    description: String? = nil,
-    role: NodeRole? = nil,
-    promptVariant: String? = nil,
-    timeoutMs: Int? = nil,
-    stallTimeoutMs: Int? = nil,
-    failurePolicy: WorkflowStepFailurePolicy? = nil,
-    sessionPolicy: WorkflowStepSessionPolicy? = nil,
-    transitions: [WorkflowStepTransition]? = nil,
-    loop: WorkflowStepLoopMetadata? = nil
-  ) {
-    self.id = id
-    self.stepFile = stepFile
-    self.nodeId = nodeId
-    self.description = description
-    self.role = role
-    self.promptVariant = promptVariant
-    self.timeoutMs = timeoutMs
-    self.stallTimeoutMs = stallTimeoutMs
-    self.failurePolicy = failurePolicy
-    self.sessionPolicy = sessionPolicy
-    self.transitions = transitions
-    self.loop = loop
-  }
 }
 
 public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
@@ -986,87 +951,4 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     self.input = try container.decodeIfPresent(NodeInputContract.self, forKey: .input)
     self.output = try container.decodeIfPresent(NodeOutputContract.self, forKey: .output)
   }
-}
-
-public struct NodePromptVariant: Codable, Equatable, Sendable {
-  public var systemPromptTemplate: String?
-  public var systemPromptTemplateFile: String?
-  public var promptTemplate: String?
-  public var promptTemplateFile: String?
-  public var sessionStartPromptTemplate: String?
-  public var sessionStartPromptTemplateFile: String?
-
-  public init(
-    systemPromptTemplate: String? = nil,
-    systemPromptTemplateFile: String? = nil,
-    promptTemplate: String? = nil,
-    promptTemplateFile: String? = nil,
-    sessionStartPromptTemplate: String? = nil,
-    sessionStartPromptTemplateFile: String? = nil
-  ) {
-    self.systemPromptTemplate = systemPromptTemplate
-    self.systemPromptTemplateFile = systemPromptTemplateFile
-    self.promptTemplate = promptTemplate
-    self.promptTemplateFile = promptTemplateFile
-    self.sessionStartPromptTemplate = sessionStartPromptTemplate
-    self.sessionStartPromptTemplateFile = sessionStartPromptTemplateFile
-  }
-}
-
-public struct NodeInputContract: Codable, Equatable, Sendable {
-  public var description: String?
-  public var jsonSchema: JSONObject?
-
-  public init(description: String? = nil, jsonSchema: JSONObject? = nil) {
-    self.description = description
-    self.jsonSchema = jsonSchema
-  }
-}
-
-public struct NodeOutputContract: Codable, Equatable, Sendable {
-  public var description: String?
-  public var jsonSchema: JSONObject?
-  public var maxValidationAttempts: Int?
-  public var projection: WorkflowOutputProjection?
-
-  public init(
-    description: String? = nil,
-    jsonSchema: JSONObject? = nil,
-    maxValidationAttempts: Int? = nil,
-    projection: WorkflowOutputProjection? = nil
-  ) {
-    self.description = description
-    self.jsonSchema = jsonSchema
-    self.maxValidationAttempts = maxValidationAttempts
-    self.projection = projection
-  }
-}
-
-public enum WorkflowOutputProjectionKind: String, Codable, CaseIterable, Hashable, Sendable {
-  case latestInputPayload = "latest-input-payload"
-}
-
-public struct WorkflowOutputProjection: Codable, Equatable, Sendable {
-  public var kind: WorkflowOutputProjectionKind
-
-  public init(kind: WorkflowOutputProjectionKind) {
-    self.kind = kind
-  }
-}
-
-public func normalizeCliAgentBackend(_ rawValue: String) -> CliAgentBackend? {
-  CliAgentBackend(rawValue: rawValue)
-}
-
-public func normalizeNodeExecutionBackend(_ rawValue: String) -> NodeExecutionBackend? {
-  NodeExecutionBackend(rawValue: rawValue)
-}
-
-public func nodeExecutionBackendListText() -> String {
-  let values = NodeExecutionBackend.allCases.map(\.rawValue)
-  guard let last = values.last else {
-    return ""
-  }
-  let leading = values.dropLast()
-  return leading.isEmpty ? last : "\(leading.joined(separator: ", ")), or \(last)"
 }

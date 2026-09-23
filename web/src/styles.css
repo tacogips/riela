@@ -39,6 +39,7 @@ button:not(nav button):not(.instance-card) { padding: 9px 14px; border: 1px soli
 .warning-badge { color: #efd879; }
 .instance-affordance, .surface-notice, .confirmation-box { display: flex; flex-direction: column; gap: 5px; margin-bottom: 18px; padding: 12px 14px; border: 1px solid #28404d; border-radius: 8px; color: #73899d; background: #0b1720; font-size: 11px; }
 .instance-affordance strong, .surface-notice strong, .confirmation-box strong { color: #b9c9d6; }
+.instance-controls { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
 .requirements, .secret-editor { margin-bottom: 18px; padding: 14px; border: 1px solid #1c2b38; border-radius: 8px; }
 .requirements h3, .secret-editor h3, .diagnostics h2 { margin: 0 0 10px; font-family: Georgia, serif; font-size: 16px; font-weight: 400; }
 .secret-editor > p { margin: -5px 0 14px; color: #657a8d; font-size: 10px; }

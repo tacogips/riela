@@ -27,13 +27,34 @@ public struct RielaAppAssistantModelCatalog: Equatable, Sendable {
 
   private static func loadBundledCatalog() -> RielaAppAssistantModelCatalog {
     guard
-      let url = Bundle.module.url(forResource: "assistant-models", withExtension: "json"),
+      let url = installedCatalogURL() ?? Bundle.module.url(forResource: "assistant-models", withExtension: "json"),
       let data = try? Data(contentsOf: url),
       let decoded = try? JSONDecoder().decode([String: [String]].self, from: data)
     else {
       return RielaAppAssistantModelCatalog(modelsByVendor: [:])
     }
     return RielaAppAssistantModelCatalog(modelsByVendor: decoded)
+  }
+
+  static func installedCatalogURL(
+    resourceURL: URL? = Bundle.main.resourceURL,
+    executableURL: URL? = Bundle.main.executableURL
+  ) -> URL? {
+    var roots = [resourceURL].compactMap { $0 }
+    if let executableURL {
+      let directory = executableURL.resolvingSymlinksInPath().deletingLastPathComponent()
+      roots.append(directory)
+      roots.append(directory.appendingPathComponent("../share/riela", isDirectory: true))
+    }
+    for root in roots {
+      for name in ["riela_RielaAppSupport.bundle", "riela_RielaAppSupport.resources"] {
+        if let bundle = Bundle(path: root.appendingPathComponent(name).standardizedFileURL.path),
+           let url = bundle.url(forResource: "assistant-models", withExtension: "json") {
+          return url
+        }
+      }
+    }
+    return nil
   }
 
   static func uniqueNormalizedModels(_ models: [String]) -> [String] {

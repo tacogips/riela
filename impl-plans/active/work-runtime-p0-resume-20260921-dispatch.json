@@ -1,0 +1,164 @@
+{
+  "taskId": "work-runtime-p0-resume-20260921",
+  "workflowMode": "serial-resume-completion",
+  "implementationBranch": "feat/work-runtime-p0",
+  "baseBranch": "feat/work-runtime-p0",
+  "remote": "origin",
+  "originalHead": "60b8fe8fb69c905c52ec3356e626525edb1e4bec",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p0-resume-20260921",
+  "notes": {
+    "supersedes": "impl-plans/active/work-runtime-p0-20260921-dispatch.json (first session, killed by operator-machine OOM after code and docs landed on disk but before evidence, full-suite verification, commit and push)",
+    "featureFanout": false,
+    "planCount": 4,
+    "parallelism": "none; R1 -> R2 -> R3 -> R4 strictly serial, single worker",
+    "evidenceLayout": "tmp/work-runtime-p0-resume-20260921/plans/<planId>/attempt-<n>/",
+    "evidenceTracked": false,
+    "designDeltas": "No new deltas. D1-D6 (design step) and D7-D11 (first implementation session) are already recorded in the plan's 'Accepted Deltas' section and pointed at from the design-doc status block; this resume records none.",
+    "keepImplementationAsIs": "The on-disk implementation (RielaWork module, work_* store, projector, evaluator, task CLI, catalog flips, docs) is live-verified and must not be rewritten. Remaining work is evidence recording, full-suite verification, lint and the commit/push.",
+    "serialReconciliation": "impl-plans/active/work-runtime-p0-model-and-store.md is the only file every plan writes (progress log + R boxes). It is edited serially with a fresh read before each append; no parallel worker exists. impl-plans/README.md and the code/doc tree are committed once, by R4.",
+    "branchDiscipline": "Commit and push feat/work-runtime-p0 only; first push needs -u because the branch does not exist on origin. Never touch main or feat/control-surface-parity. No force push, reset or branch deletion.",
+    "shellRequirement": "Every Swift/SwiftLint command runs through arch -arm64 /bin/zsh -lc; the default shell runs under Rosetta and the xctest bundle refuses to dlopen there. Run in the foreground, never tail output, keep the complete log and final exit status.",
+    "acceptedBaselineFailures": [
+      "RielaAppUXOnboardingControllerTests (AppKit view hierarchy)",
+      "RielaAppSettingsEditorNavigationTests (AppKit view hierarchy)",
+      "RielaAppWindowContentInsetTests (AppKit view hierarchy)",
+      "WorkflowRound7AdversarialTests (3 unix-socket-unlink cases)",
+      "WorkflowCommandTests.testPackageAppEnvironmentEnablementRunAndMonitoringScenario"
+    ],
+    "knownFlake": "The interleaved-submit timing flake is never folded into the ten-item baseline: name it, retry once, note the outcome.",
+    "uncommittedAtCheckpoint": "15 modified + 26 untracked files carrying the P0 implementation stay uncommitted after this checkpoint by design; R4 commits them. This checkpoint commits only the design doc, the plan and this manifest."
+  },
+  "plans": [
+    {
+      "planId": "R1",
+      "planPath": "impl-plans/active/work-runtime-p0-model-and-store.md",
+      "dependsOn": [],
+      "progressFile": "impl-plans/active/work-runtime-p0-model-and-store.md#progress-log",
+      "evidenceDir": "tmp/work-runtime-p0-resume-20260921/plans/R1/attempt-1",
+      "writePaths": [
+        "impl-plans/active/work-runtime-p0-model-and-store.md"
+      ],
+      "sharedPaths": [
+        {
+          "path": "impl-plans/active/work-runtime-p0-model-and-store.md",
+          "intendedEdit": "Append one dated progress-log entry per P0-1..P0-7 with the exact command and result counts from freshly re-run filtered suites, plus the D8 note that no RielaCore visibility change was needed; tick the R1 box. Do not uncheck the P0 boxes.",
+          "phase": "R1"
+        }
+      ],
+      "acceptanceCriteria": [
+        "One dated progress-log entry per P0-1 through P0-7, each carrying the exact command and its result counts from a fresh run (the analysis /tmp logs are templates, not substitutes).",
+        "An explicit progress-log note that no RielaCore visibility change was needed (D8).",
+        "The R1 box is checked and the seven P0 boxes remain checked."
+      ],
+      "verification": "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaWorkTests|TaskCommandTests|TaskCommandParsingTests|TaskProjectionProofTests\"' -> exit 0, 79 tests, 0 failures; arch -arm64 /bin/zsh -lc 'swift test --filter \"SurfaceCatalogTests|SurfaceParityCLITests|SQLiteRuntimeSchemaMigrationTests|CommandParsingTests\"' -> exit 0, 47 tests, 0 failures; grep -rn 'import RielaWork' Sources/RielaCore -> 0 matches. Complete logs under the plan evidence dir."
+    },
+    {
+      "planId": "R2",
+      "planPath": "impl-plans/active/work-runtime-p0-model-and-store.md",
+      "dependsOn": [
+        "R1"
+      ],
+      "progressFile": "impl-plans/active/work-runtime-p0-model-and-store.md#progress-log",
+      "evidenceDir": "tmp/work-runtime-p0-resume-20260921/plans/R2/attempt-1",
+      "writePaths": [
+        "impl-plans/active/work-runtime-p0-model-and-store.md"
+      ],
+      "sharedPaths": [
+        {
+          "path": "impl-plans/active/work-runtime-p0-model-and-store.md",
+          "intendedEdit": "Append the full-suite result: command, exit status, complete log path, and the name-by-name comparison of the failure set against the ten accepted environmental failures; tick R2.",
+          "phase": "R2"
+        },
+        {
+          "path": "<any source file a non-baseline failure forces>",
+          "intendedEdit": "Only if the full suite surfaces a failure outside the ten-item baseline: the fix stays inside the plan's Verification diff allow-list and is logged as an accepted delta in the progress log. No other production change is authorised in this resume.",
+          "phase": "R2"
+        }
+      ],
+      "acceptanceCriteria": [
+        "The full build+test ran in the foreground from the worktree root with the complete untailed log and final exit status retained under the plan evidence dir.",
+        "The observed failure set is a subset of the ten accepted environmental failures, with any difference listed explicitly in the progress log and any non-baseline failure fixed and re-verified.",
+        "The interleaved-submit timing flake, if it appears, is named, retried once and noted rather than folded into the baseline.",
+        "The R2 box is checked with the comparison recorded."
+      ],
+      "verification": "arch -arm64 /bin/zsh -lc 'swift build && swift test' from /Users/taco/gits/tacogips/riela-worktrees/work-runtime-p0, output redirected whole to tmp/work-runtime-p0-resume-20260921/plans/R2/attempt-1/full-suite.log; grep the failing-test names out of the complete log and diff them against the ten-item baseline. An incomplete log is not a passing check. Run build and test serially (nothing else in parallel) to avoid a second OOM kill."
+    },
+    {
+      "planId": "R3",
+      "planPath": "impl-plans/active/work-runtime-p0-model-and-store.md",
+      "dependsOn": [
+        "R2"
+      ],
+      "progressFile": "impl-plans/active/work-runtime-p0-model-and-store.md#progress-log",
+      "evidenceDir": "tmp/work-runtime-p0-resume-20260921/plans/R3/attempt-1",
+      "writePaths": [
+        "impl-plans/active/work-runtime-p0-model-and-store.md"
+      ],
+      "sharedPaths": [
+        {
+          "path": "impl-plans/active/work-runtime-p0-model-and-store.md",
+          "intendedEdit": "Append the SwiftLint command and its zero-violation result; tick R3.",
+          "phase": "R3"
+        }
+      ],
+      "acceptanceCriteria": [
+        "SwiftLint reports zero violations over every modified and untracked Swift source in the worktree.",
+        "The R3 box is checked with the command and result recorded."
+      ],
+      "verification": "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet <every changed and untracked .swift path>' -> exit 0 with no output; complete log kept under the plan evidence dir."
+    },
+    {
+      "planId": "R4",
+      "planPath": "impl-plans/active/work-runtime-p0-model-and-store.md",
+      "dependsOn": [
+        "R3"
+      ],
+      "progressFile": "impl-plans/active/work-runtime-p0-model-and-store.md#progress-log",
+      "evidenceDir": "tmp/work-runtime-p0-resume-20260921/plans/R4/attempt-1",
+      "writePaths": [
+        "impl-plans/active/work-runtime-p0-model-and-store.md",
+        "impl-plans/README.md",
+        "README.md",
+        "Package.swift",
+        "Sources/RielaWork/**",
+        "Tests/RielaWorkTests/**",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/RielaClientCommandRouter.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskCommandModels.swift",
+        "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Tests/RielaCLITests/TaskCommandTests.swift",
+        "Tests/RielaCLITests/TaskCommandParsingTests.swift",
+        "Tests/RielaCLITests/TaskProjectionProofTests.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCoreTests/SQLiteRuntimeSchemaMigrationTests.swift"
+      ],
+      "sharedPaths": [
+        {
+          "path": "impl-plans/active/work-runtime-p0-model-and-store.md",
+          "intendedEdit": "Record the commit SHA and the push result; tick R4.",
+          "phase": "R4"
+        },
+        {
+          "path": "impl-plans/README.md",
+          "intendedEdit": "Plan-index row for work-runtime-p0-model-and-store is already updated on disk (D2 correction plus implemented status); it is committed here, in the same commit as the implementation it describes, not at checkpoint time.",
+          "phase": "R4"
+        }
+      ],
+      "acceptanceCriteria": [
+        "All remaining modified and untracked files carrying the P0 implementation are committed on feat/work-runtime-p0 in one feature commit whose committedFiles list contains only paths that exist on disk (no renames exist in this change).",
+        "The branch is pushed with 'git push -u origin feat/work-runtime-p0' and nothing else; main and feat/control-surface-parity are untouched; no force push.",
+        "The commit SHA is recorded in the progress log and the R4 box is checked."
+      ],
+      "verification": "git status --porcelain empty (excluding the ignored tmp/ evidence tree); git log --oneline -1; git ls-remote --heads origin feat/work-runtime-p0 shows the pushed SHA. Evidence kept under the plan evidence dir."
+    }
+  ]
+}

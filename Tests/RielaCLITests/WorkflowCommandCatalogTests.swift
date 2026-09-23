@@ -547,16 +547,14 @@ extension WorkflowCommandTests {
     ], environment: ["HOME": homeRoot.path])
     XCTAssertEqual(registryList.exitCode, .success, registryList.stderr)
     let listedRegistry = try decodeJSON(WorkflowPackageRegistryConfig.self, from: registryList.stdout)
-    XCTAssertEqual(listedRegistry.defaultRegistryId, "default")
-    XCTAssertEqual(listedRegistry.registries.map(\.id), ["default"])
-    XCTAssertEqual(listedRegistry.registries.map(\.url), ["https://github.com/tacogips/riela-packages"])
-    XCTAssertEqual(listedRegistry.registries.first?.localPath, homeRoot.appendingPathComponent(".riela/registries/default").path)
+    XCTAssertEqual(listedRegistry.registries, [])
     XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: registryConfig.deletingLastPathComponent().path))
 
     let publishDryRun = await app.run([
       "package", "publish", packageSource.path,
       "--package-name", "dry-run-package",
+      "--registry-url", "https://github.com/example/packages",
       "--dry-run",
       "--working-dir", tempDir.path,
       "--output", "json"
@@ -569,13 +567,12 @@ extension WorkflowCommandTests {
     XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-registry").path))
   }
 
-  func testDefaultPackageRegistryUsesRielaPackagesWithoutPersistedConfig() async throws {
+  func testPackagePublishRequiresExplicitRegistryWithoutPersistedConfig() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-cli-default-registry-\(UUID().uuidString)", isDirectory: true)
     let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
     let homeRoot = tempDir.appendingPathComponent("home", isDirectory: true)
-    let defaultRegistryRoot = homeRoot.appendingPathComponent(".riela/registries/default", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: tempDir) }
     try FileManager.default.createDirectory(at: packageSource, withIntermediateDirectories: true)
     try FileManager.default.copyItem(
@@ -600,15 +597,9 @@ extension WorkflowCommandTests {
       "--output", "json"
     ], environment: ["HOME": homeRoot.path])
 
-    XCTAssertEqual(publish.exitCode, .success, publish.stderr)
-    let publishResult = try decodeJSON(WorkflowPackageCommandResult.self, from: publish.stdout)
-    let registryRecord = try decodeJSON(JSONObject.self, from: String(contentsOfFile: try XCTUnwrap(publishResult.destinationDirectory)))
-    XCTAssertEqual(registryRecord["registry"]?.stringValue, "default")
-    XCTAssertEqual(registryRecord["registryUrl"]?.stringValue, "https://github.com/tacogips/riela-packages")
-    XCTAssertEqual(registryRecord["registryRef"]?.stringValue, "main")
-    XCTAssertTrue(FileManager.default.fileExists(
-      atPath: defaultRegistryRoot.appendingPathComponent("registry/default-registry-package.json").path
-    ))
+    XCTAssertEqual(publish.exitCode, .failure)
+    XCTAssertTrue(publish.stdout.contains("requires --registry"), publish.stdout)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent(".riela/package-registry").path))
   }
 
   func testPackagePublishDryRunReportsRequiredLoopReadinessIssues() async throws {
@@ -638,6 +629,7 @@ extension WorkflowCommandTests {
     let missing = await app.run([
       "package", "publish", packageSource.path,
       "--package-name", "loop-readiness-missing",
+      "--registry-url", "https://github.com/example/packages",
       "--dry-run",
       "--working-dir", tempDir.path,
       "--output", "json"
@@ -686,6 +678,7 @@ extension WorkflowCommandTests {
     let ready = await app.run([
       "package", "publish", packageSource.path,
       "--package-name", "loop-readiness-ready",
+      "--registry-url", "https://github.com/example/packages",
       "--dry-run",
       "--working-dir", tempDir.path,
       "--output", "json"

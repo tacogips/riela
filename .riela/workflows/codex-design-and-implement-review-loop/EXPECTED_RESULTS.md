@@ -6,6 +6,13 @@ Use the available `riela` command. Add `--scope user` for a user-scope
 install, or `--workflow-definition-dir <root>` when validating an unpacked
 workflow directory.
 
+Verification commands belong to their executing node. Step 6 must retain any
+running tool-session handle until terminal exit, report the final exit status
+and complete log path, and must not launch detached/background aggregates.
+The mock scenario validates workflow routing, not vendor process cleanup.
+Process ownership regressions are covered separately by
+`LocalProcessForegroundLifetimeTests` and `GatewayTurnLifetimeTests`.
+
 ## Validate
 
 Command:

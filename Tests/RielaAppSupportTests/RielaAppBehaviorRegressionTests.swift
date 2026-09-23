@@ -2,6 +2,7 @@
 import AppKit
 import RielaAppSupport
 import RielaCore
+import RielaKaibaSupport
 import RielaServer
 @testable import RielaApp
 import XCTest
@@ -214,6 +215,165 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertNil(savedDefaultState.preference(for: "daily").environmentVariables["PERSONA"])
   }
 
+  func testKaibaDefaultResetPrunesEmptyPatchAndPreservesAuthoredBindingMask() throws {
+    let temp = try scratchRoot(name: "riela-app-kaiba-default-reset-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let appRoot = temp.appendingPathComponent("app-root", isDirectory: true)
+    let app = RielaApp()
+    app.appHomeDirectory = temp
+    app.profileStore = RielaAppProfileStore(appRootURL: appRoot)
+    app.daemonProfileName = .default
+    try app.profileStore.prepareInitialProfile(.default, persistsSelection: false)
+    let workflowDirectory = RielaAppProfileStore.workflowRootURL(
+      appRootURL: appRoot,
+      profileName: .default
+    ).appendingPathComponent("kaiba-default-reset", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeWorkflow(id: "kaiba-default-reset", to: workflowDirectory)
+
+    let source = RielaAppDaemonWorkflowCandidate(
+      id: "app-workflow:kaiba-default-reset",
+      workflowId: "kaiba-default-reset",
+      displayName: "Kaiba Default Reset",
+      sourceDescription: "profile workflow",
+      sourceScope: .profile,
+      workflowDirectory: workflowDirectory.path,
+      workingDirectory: workflowDirectory.deletingLastPathComponent().path,
+      eventRoot: nil,
+      eventSources: []
+    )
+    app.daemonWorkflowSources = [source]
+    app.daemonState = RielaAppDaemonWorkflowState(preferences: [
+      "instance": RielaAppDaemonWorkflowPreference(
+        identity: "instance",
+        sourceIdentity: source.id,
+        available: true,
+        active: false
+      )
+    ])
+    try app.makeDaemonStore(profileName: .default).save(app.daemonState)
+
+    XCTAssertTrue(app.saveDaemonKaibaNodeBinding(
+      identity: "instance",
+      nodeId: "search",
+      instanceID: nil,
+      hasAuthoredBinding: false
+    ))
+    XCTAssertNil(app.daemonState.preference(for: "instance").nodePatches["search"])
+    XCTAssertNil(app.makeDaemonStore(profileName: .default).load().preference(for: "instance").nodePatches["search"])
+
+    XCTAssertTrue(app.saveDaemonKaibaNodeBinding(
+      identity: "instance",
+      nodeId: "search",
+      instanceID: nil,
+      hasAuthoredBinding: true
+    ))
+    let patch = app.daemonState.preference(for: "instance").nodePatches["search"]
+    XCTAssertEqual(patch?.clearsKaibaInstanceId, true)
+    XCTAssertNil(patch?.kaibaInstanceId)
+    XCTAssertEqual(
+      app.makeDaemonStore(profileName: .default).load().preference(for: "instance")
+        .nodePatches["search"]?.clearsKaibaInstanceId,
+      true
+    )
+  }
+
+  func testKaibaReadinessUsesWorkflowEnvironmentAndBlocksMissingCredential() async {
+    let instance = KaibaInstance(
+      name: "Credentialed",
+      endpoint: "https://kaiba.example.test",
+      authentication: .bearer(environmentVariable: "KAIBA_TOKEN"),
+      isDefault: true
+    )
+    let workflow = WorkflowDefinition(
+      workflowId: "kaiba-readiness",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 3),
+      entryStepId: "search",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "search")],
+      steps: [WorkflowStepRef(id: "search", nodeId: "search")],
+      nodes: [
+        WorkflowNodeRef(
+          id: "search",
+          addon: WorkflowNodeAddonRef(name: "kaiba/note-search")
+        )
+      ]
+    )
+    let preference = RielaAppDaemonWorkflowPreference(identity: "kaiba-readiness")
+
+    let result = await RielaAppKaibaWorkflowReadiness.evaluate(
+      workflow: workflow,
+      preference: preference,
+      catalog: KaibaInstanceCatalog(instances: [instance]),
+      environment: [:]
+    )
+
+    XCTAssertEqual(result, .blocked(.configureWorkflowEnvironment))
+    XCTAssertFalse(result.isStartAllowed)
+    XCTAssertFalse(result.statusText?.contains("KAIBA_TOKEN") == true)
+  }
+
+  func testUnreadableWorkflowBlocksKaibaReadiness() async throws {
+    let temp = try scratchRoot(name: "riela-app-kaiba-unreadable-workflow-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let app = RielaApp()
+    let candidate = RielaAppDaemonWorkflowCandidate(
+      id: "unreadable-workflow",
+      workflowId: "unreadable-workflow",
+      displayName: "Unreadable Workflow",
+      sourceDescription: "test",
+      workflowDirectory: temp.path,
+      workingDirectory: temp.path,
+      eventRoot: nil,
+      eventSources: []
+    )
+    app.daemonWorkflowSources = [candidate]
+    app.daemonState = .init(preferences: [
+      "instance": .init(identity: "instance", sourceIdentity: candidate.id, available: true)
+    ])
+
+    let readiness = await app.daemonKaibaWorkflowReadiness(identity: "instance")
+
+    XCTAssertEqual(readiness, .blocked(.openKaibaSettings))
+    XCTAssertFalse(readiness.isStartAllowed)
+  }
+
+  func testStartApprovalRejectsSourceMutationDuringFinalCatalogLoad() async throws {
+    let temp = try scratchRoot(name: "riela-app-kaiba-approval-race-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let app = RielaApp()
+    let workflowDirectory = temp.appendingPathComponent("workflow", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try writeWorkflow(id: "approval-race", to: workflowDirectory)
+    let candidate = RielaAppDaemonWorkflowCandidate(
+      id: "approval-race-source",
+      workflowId: "approval-race",
+      displayName: "Approval Race",
+      sourceDescription: "test",
+      workflowDirectory: workflowDirectory.path,
+      workingDirectory: temp.path,
+      eventRoot: nil,
+      eventSources: []
+    )
+    app.daemonWorkflowSources = [candidate]
+    app.daemonState = .init(preferences: [
+      "instance": .init(identity: "instance", sourceIdentity: candidate.id, available: true)
+    ])
+    let loads = KaibaCatalogLoadCounter()
+    app.kaibaCatalogLoader = { _ in
+      if await loads.next() == 2 {
+        await MainActor.run {
+          app.daemonWorkflowSources = []
+        }
+      }
+      return .init()
+    }
+
+    let approved = await app.approvedDaemonWorkflowInstance(identity: "instance")
+
+    XCTAssertNil(approved)
+    XCTAssertEqual(app.status, "Kaiba configuration changed during readiness check. Try again.")
+  }
+
   func testProfileQualifiedInstancesWithSameLocalIdentityCanRunConcurrently() async throws {
     let temp = try scratchRoot(name: "riela-app-profile-runtime-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: temp) }
@@ -284,7 +444,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     app.rebuildMenu()
 
     let menu = app.statusItem.menu
-    XCTAssertEqual(menu?.items.first?.title, "Instances...")
+    XCTAssertEqual(menu?.items.first?.title, "Open Riela...")
     XCTAssertEqual(menu?.items.first?.target as? RielaApp, app)
     XCTAssertTrue(menu?.items.contains { $0.title == "Launch on Login" } == true)
     let aboutItem = try XCTUnwrap(menu?.items.first { $0.title == "About Riela" })
@@ -294,7 +454,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Instances:") } == true)
 
     let summaryItem = try XCTUnwrap(menu?.items.first { item in
-      item.title.contains("Instances ") && item.title.contains("Profile work")
+      item.title.contains("実行設定 ") && item.title.contains("Profile work")
     })
     XCTAssertEqual(summaryItem.isEnabled, false)
     XCTAssertEqual(summaryItem.toolTip, summaryItem.title)
@@ -324,7 +484,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
     addButton.performClick(nil)
     controller.window?.layoutIfNeeded()
 
@@ -337,8 +497,8 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
 
     controller.goBack()
     controller.window?.layoutIfNeeded()
-    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "Instances")
-    XCTAssertEqual(controller.instancesListView?.isHidden, false)
+    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "ワークフロー")
+    XCTAssertEqual(controller.sourcesOverviewView?.isHidden, false)
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, true)
   }
 
@@ -409,7 +569,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
   private func makeDaemonController(
     environmentColumnStatus: @escaping (RielaAppDaemonWorkflowCandidate) -> String = { _ in "Ready" }
   ) -> DaemonWorkflowWindowController {
-    DaemonWorkflowWindowController(
+    let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
@@ -435,6 +595,8 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
       environmentColumnStatus: environmentColumnStatus,
       onWindowWillClose: {}
     )
+    controller.showInstancesList()
+    return controller
   }
 
   private func writeWorkflow(id: String, to workflowDirectory: URL) throws {
@@ -572,6 +734,15 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
   private func allSubviews<T: NSView>(of type: T.Type, in root: NSView) -> [T] {
     let current = (root as? T).map { [$0] } ?? []
     return current + root.subviews.flatMap { allSubviews(of: type, in: $0) }
+  }
+}
+
+private actor KaibaCatalogLoadCounter {
+  private var calls = 0
+
+  func next() -> Int {
+    calls += 1
+    return calls
   }
 }
 

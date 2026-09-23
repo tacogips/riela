@@ -74,13 +74,14 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         deactivatedOrigins: deactivatedOrigins,
         includeDeactivated: options.includeDeactivated
       )
-      return try resolveCoordinated(options, sharedNodeActivationPolicy: activationPolicy)
+      return try resolveCoordinated(options, sharedNodeActivationPolicy: activationPolicy, inheritanceAncestry: [])
     }
   }
 
   private func resolveCoordinated(
     _ options: WorkflowResolutionOptions,
-    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy
+    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy,
+    inheritanceAncestry: [String]
   ) throws -> ResolvedWorkflowBundle {
     let candidates = try candidateDirectories(for: options)
     if enforcesTransactionBlock {
@@ -156,7 +157,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
           bundle = try resolveCandidate(
             candidate,
             options: options,
-            sharedNodeActivationPolicy: sharedNodeActivationPolicy
+            sharedNodeActivationPolicy: sharedNodeActivationPolicy,
+            inheritanceAncestry: inheritanceAncestry
           )
           if enforcesTransactionBlock {
             try refuseNonterminalHistoryTransaction(bundle: bundle, options: options)
@@ -248,7 +250,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
   private func resolveCandidate(
     _ candidate: CandidateDirectory,
     options: WorkflowResolutionOptions,
-    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy
+    sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy,
+    inheritanceAncestry: [String]
   ) throws -> ResolvedWorkflowBundle {
     let resolvedRoot = candidate.rootDirectory.resolvingSymlinksInPath().standardizedFileURL
     let resolvedDirectory = candidate.directory.resolvingSymlinksInPath().standardizedFileURL
@@ -267,8 +270,79 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       packageDirectory: candidate.packageDirectory,
       provenance: candidate.provenance,
       expectedWorkflowId: candidate.provenance == .mutable ? options.workflowName : nil,
-      sharedNodeActivationPolicy: sharedNodeActivationPolicy
+      sharedNodeActivationPolicy: sharedNodeActivationPolicy,
+      inheritanceAncestry: inheritanceAncestry,
+      inheritanceBaseResolver: { baseWorkflowId, nextAncestry in
+        let baseName = try installedUserWorkflowName(
+          workflowId: baseWorkflowId,
+          workingDirectory: options.workingDirectory
+        )
+        do {
+          let base = try resolveCoordinated(
+            WorkflowResolutionOptions(
+              workflowName: baseName,
+              scope: .user,
+              workingDirectory: options.workingDirectory,
+              includeDeactivated: options.includeDeactivated
+            ),
+            sharedNodeActivationPolicy: sharedNodeActivationPolicy,
+            inheritanceAncestry: nextAncestry
+          )
+          guard base.workflow.workflowId == baseWorkflowId else {
+            throw WorkflowInheritanceError.missingBase(
+              derivedWorkflowId: options.workflowName,
+              baseWorkflowId: baseWorkflowId,
+              searchedRoots: userInheritanceRoots()
+            )
+          }
+          return base
+        } catch let error as WorkflowResolutionError {
+          if case .notFound = error {
+            throw WorkflowInheritanceError.missingBase(
+              derivedWorkflowId: options.workflowName,
+              baseWorkflowId: baseWorkflowId,
+              searchedRoots: userInheritanceRoots()
+            )
+          }
+          throw error
+        }
+      }
     )
+  }
+
+  private func installedUserWorkflowName(workflowId: String, workingDirectory: String) throws -> String {
+    let direct = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+      .appendingPathComponent(".riela/workflows/\(workflowId)/workflow.json")
+    if authoredWorkflowId(at: direct) == workflowId { return workflowId }
+    let packageRoot = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+      .appendingPathComponent(".riela/packages", isDirectory: true)
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: packageRoot.path)) ?? []
+    for name in names.sorted() {
+      let manifestURL = packageRoot.appendingPathComponent(name).appendingPathComponent("riela-package.json")
+      guard let manifest = try? JSONDecoder().decode(
+        WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL)
+      ), manifest.kind == .workflow,
+      let relative = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".")
+      else { continue }
+      let workflowURL = packageRoot.appendingPathComponent(name).appendingPathComponent(relative)
+        .appendingPathComponent("workflow.json")
+      guard authoredWorkflowId(at: workflowURL) == workflowId else { continue }
+      return name
+    }
+    _ = workingDirectory
+    return workflowId
+  }
+
+  private func authoredWorkflowId(at workflowURL: URL) -> String? {
+    guard let data = try? Data(contentsOf: workflowURL),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    return object["workflowId"] as? String
+  }
+
+  private func userInheritanceRoots() -> [String] {
+    let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+    return [home.appendingPathComponent(".riela/workflows").path, home.appendingPathComponent(".riela/packages").path]
   }
 
   private func refuseStableNonterminalTransactions(candidates: [CandidateDirectory]) throws {
@@ -516,7 +590,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     provenance: WorkflowProvenance = .immutable,
     expectedWorkflowId: String? = nil,
     sharedNodeActivationPolicy: WorkflowSharedNodeActivationPolicy = .includeDeactivated,
-    sharedNodeActivationRootDirectory: URL? = nil
+    sharedNodeActivationRootDirectory: URL? = nil,
+    inheritanceAncestry: [String] = [],
+    inheritanceBaseResolver: WorkflowInheritanceBaseResolver? = nil
   ) throws -> ResolvedWorkflowBundle {
     try WorkflowRegistryBundleLoader().loadBundle(
       at: directory,
@@ -527,7 +603,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       provenance: provenance,
       expectedWorkflowId: expectedWorkflowId,
       sharedNodeActivationPolicy: sharedNodeActivationPolicy,
-      sharedNodeActivationRootDirectory: sharedNodeActivationRootDirectory
+      sharedNodeActivationRootDirectory: sharedNodeActivationRootDirectory,
+      inheritanceAncestry: inheritanceAncestry,
+      inheritanceBaseResolver: inheritanceBaseResolver
     )
   }
 
@@ -584,6 +662,9 @@ func workflowResolutionErrorDescription(_ error: Error) -> String {
     }
   case let error as CLIUsageError:
     return error.message
+  case let WorkflowInheritanceError.missingBase(derivedWorkflowId, baseWorkflowId, searchedRoots):
+    return "workflow '\(derivedWorkflowId)' extends missing base '\(baseWorkflowId)'; install it for user scope "
+      + "and retry with --scope user (searched: \(searchedRoots.joined(separator: ", ")))"
   default:
     return "\(error)"
   }

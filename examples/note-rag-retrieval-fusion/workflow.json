@@ -1,0 +1,318 @@
+{
+  "workflowId": "note-rag-retrieval-fusion",
+  "description": "Benchmark kaiba's retrieval-fusion RAG: seed a tagged notebook, then probe it with strict, contextual, relaxed, and graph-expanded searches and report termCoverage, isLinkedNeighbor, and PageRank-ordered neighbours side by side.",
+  "defaults": {
+    "maxLoopIterations": 3,
+    "nodeTimeoutMs": 120000
+  },
+  "prompts": {
+    "workerSystemPromptTemplate": "Return concise JSON only. Derive retrieval probe queries without inventing corpus terms."
+  },
+  "entryStepId": "plan-queries",
+  "nodes": [
+    {
+      "id": "plan-queries",
+      "nodeFile": "nodes/node-plan-queries.json"
+    },
+    {
+      "id": "seed-knowledge-base",
+      "addon": {
+        "name": "kaiba/notebook-ingest-pages",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "notebookTitle": "Atlas Retrieval Playbook",
+          "notebookKindTag": "notebook-kind:retrieval-fusion-demo",
+          "passthrough": {
+            "queryPlan": {
+              "strict": "{{strictQuery}}",
+              "context": "{{contextQuery}}",
+              "relaxed": "{{relaxedQuery}}",
+              "graph": "{{graphQuery}}"
+            }
+          },
+          "pages": [
+            {
+              "title": "Hybrid reranking pipeline",
+              "body": "The hybrid reranking stage merges lexical scores with graph proximity before the final cut. Rerun it whenever ranking quality drifts.",
+              "readOnly": false,
+              "tags": [
+                {
+                  "name": "retrieval-fusion",
+                  "class": "topic"
+                },
+                {
+                  "name": "ranking",
+                  "class": "topic"
+                }
+              ]
+            },
+            {
+              "title": "Cache eviction policy",
+              "body": "The sparse index keeps hot postings in memory and applies LRU eviction under pressure. Compaction runs nightly.",
+              "readOnly": false,
+              "tags": [
+                {
+                  "name": "retrieval-fusion",
+                  "class": "topic"
+                },
+                {
+                  "name": "index-maintenance",
+                  "class": "topic"
+                }
+              ]
+            },
+            {
+              "title": "Telemetry dashboards",
+              "body": "Ingestion lag and recall dashboards feed the weekly tuning review. Telemetry alerts page the on-call rotation.",
+              "readOnly": false,
+              "tags": [
+                {
+                  "name": "operations",
+                  "class": "topic"
+                }
+              ]
+            },
+            {
+              "title": "Query planner fallback",
+              "body": "When the planner times out, the fallback path degrades to a single-stage scan with a fixed budget.",
+              "readOnly": false,
+              "tags": [
+                {
+                  "name": "retrieval-fusion",
+                  "class": "topic"
+                },
+                {
+                  "name": "planner",
+                  "class": "topic"
+                }
+              ]
+            },
+            {
+              "title": "Rollout checklist",
+              "body": "Ship changes behind a flag, then verify recall metrics before widening the cohort.",
+              "readOnly": false,
+              "tags": [
+                {
+                  "name": "operations",
+                  "class": "topic"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "strict-search",
+      "addon": {
+        "name": "kaiba/note-search",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "{{queryPlan.strict}}",
+          "includeLinked": false,
+          "limit": 8,
+          "passthrough": {
+            "queryPlan": "{{queryPlan}}",
+            "seededNotebookId": "{{notebookId}}",
+            "seededNoteIds": "{{noteIds}}",
+            "seededPageCount": "{{pageCount}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "contextual-search",
+      "addon": {
+        "name": "kaiba/note-search",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "{{queryPlan.context}}",
+          "includeLinked": false,
+          "limit": 8,
+          "passthrough": {
+            "queryPlan": "{{queryPlan}}",
+            "seededNotebookId": "{{seededNotebookId}}",
+            "seededNoteIds": "{{seededNoteIds}}",
+            "seededPageCount": "{{seededPageCount}}",
+            "strictSearch": {
+              "query": "{{queryPlan.strict}}",
+              "resultCount": "{{resultCount}}",
+              "noteIds": "{{noteIds}}",
+              "results": "{{results}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "relaxed-search",
+      "addon": {
+        "name": "kaiba/note-search",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "{{queryPlan.relaxed}}",
+          "includeLinked": false,
+          "limit": 8,
+          "passthrough": {
+            "queryPlan": "{{queryPlan}}",
+            "seededNotebookId": "{{seededNotebookId}}",
+            "seededNoteIds": "{{seededNoteIds}}",
+            "seededPageCount": "{{seededPageCount}}",
+            "strictSearch": "{{strictSearch}}",
+            "contextualSearch": {
+              "query": "{{queryPlan.context}}",
+              "resultCount": "{{resultCount}}",
+              "noteIds": "{{noteIds}}",
+              "results": "{{results}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "graph-search",
+      "addon": {
+        "name": "kaiba/note-search",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "query": "{{queryPlan.graph}}",
+          "includeLinked": true,
+          "depth": 1,
+          "limit": 8,
+          "passthrough": {
+            "queryPlan": "{{queryPlan}}",
+            "seededNotebookId": "{{seededNotebookId}}",
+            "seededNoteIds": "{{seededNoteIds}}",
+            "seededPageCount": "{{seededPageCount}}",
+            "strictSearch": "{{strictSearch}}",
+            "contextualSearch": "{{contextualSearch}}",
+            "relaxedSearch": {
+              "query": "{{queryPlan.relaxed}}",
+              "resultCount": "{{resultCount}}",
+              "noteIds": "{{noteIds}}",
+              "results": "{{results}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "graph-neighbors",
+      "addon": {
+        "name": "kaiba/note-graph-neighbors",
+        "version": "1",
+        "config": {
+          "noteRoot": "{{noteRoot}}",
+          "depth": 1,
+          "limit": 8,
+          "passthrough": {
+            "question": "{{workflowInput.question}}",
+            "queryPlan": "{{queryPlan}}",
+            "seededNotebookId": "{{seededNotebookId}}",
+            "seededNoteIds": "{{seededNoteIds}}",
+            "seededPageCount": "{{seededPageCount}}",
+            "strictSearch": "{{strictSearch}}",
+            "contextualSearch": "{{contextualSearch}}",
+            "relaxedSearch": "{{relaxedSearch}}",
+            "graphSearch": {
+              "query": "{{queryPlan.graph}}",
+              "resultCount": "{{resultCount}}",
+              "noteIds": "{{noteIds}}",
+              "results": "{{results}}"
+            }
+          }
+        },
+        "inputs": {
+          "noteIds": "{{strictSearch.noteIds}}"
+        }
+      }
+    },
+    {
+      "id": "workflow-output",
+      "kind": "output",
+      "nodeFile": "nodes/node-workflow-output.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "plan-queries",
+      "nodeId": "plan-queries",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "seed-knowledge-base"
+        }
+      ]
+    },
+    {
+      "id": "seed-knowledge-base",
+      "nodeId": "seed-knowledge-base",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "strict-search"
+        }
+      ]
+    },
+    {
+      "id": "strict-search",
+      "nodeId": "strict-search",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "contextual-search"
+        }
+      ]
+    },
+    {
+      "id": "contextual-search",
+      "nodeId": "contextual-search",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "relaxed-search"
+        }
+      ]
+    },
+    {
+      "id": "relaxed-search",
+      "nodeId": "relaxed-search",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "graph-search"
+        }
+      ]
+    },
+    {
+      "id": "graph-search",
+      "nodeId": "graph-search",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "graph-neighbors"
+        }
+      ]
+    },
+    {
+      "id": "graph-neighbors",
+      "nodeId": "graph-neighbors",
+      "role": "worker",
+      "transitions": [
+        {
+          "toStepId": "workflow-output"
+        }
+      ]
+    },
+    {
+      "id": "workflow-output",
+      "nodeId": "workflow-output",
+      "role": "worker"
+    }
+  ]
+}

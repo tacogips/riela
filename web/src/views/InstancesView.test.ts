@@ -14,6 +14,8 @@ function instance(
 ): Instance {
   return {
     id,
+    sourceId: id,
+    isDefault: true,
     name: id,
     workflowId: id,
     source: id,

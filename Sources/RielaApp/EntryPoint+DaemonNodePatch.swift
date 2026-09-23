@@ -1,8 +1,28 @@
 #if os(macOS)
 import Foundation
 import RielaAppSupport
+import RielaCore
 
 extension RielaApp {
+  func saveDaemonKaibaNodeBinding(
+    identity: String,
+    nodeId: String,
+    instanceID: String?,
+    hasAuthoredBinding: Bool
+  ) -> Bool {
+    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
+      status = "Instance could not be found"
+      refreshDaemonWorkflowWindow()
+      return false
+    }
+    var patch = resolved.preference.nodePatches[nodeId] ?? RielaAppDaemonWorkflowNodePatch()
+    patch.kaibaInstanceId = instanceID
+    // The AppKit editor has already loaded the authored workflow off-main-actor.
+    // A reset only needs an explicit JSON null when it masks that binding.
+    patch.clearsKaibaInstanceId = instanceID == nil && hasAuthoredBinding
+    return saveDaemonNodePatch(identity: identity, nodeId: nodeId, patch: patch)
+  }
+
   func saveDaemonNodePatch(
     identity: String,
     nodeId: String,

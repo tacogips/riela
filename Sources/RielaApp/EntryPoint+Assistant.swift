@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import RielaCLI
 import RielaAdapters
 import RielaAppSupport
 import RielaCore
@@ -96,30 +97,8 @@ extension RielaApp {
     }
   }
 
-  private func resolvedAssistantVendor(_ vendor: RielaAppAssistantVendor) throws -> RielaAppAssistantVendor {
-    if vendor != .automatic {
-      return vendor
-    }
-    if executablePath(named: "codex") != nil {
-      return .codexCLI
-    }
-    if executablePath(named: "claude") != nil {
-      return .claudeCodeCLI
-    }
-    if executablePath(named: "cursor-agent") != nil {
-      return .cursorCLI
-    }
-    let environment = ProcessInfo.processInfo.environment
-    if environment["OPENAI_API_KEY"]?.isEmpty == false {
-      return .openAIAPI
-    }
-    if environment["ANTHROPIC_API_KEY"]?.isEmpty == false || environment["CLAUDE_API_KEY"]?.isEmpty == false {
-      return .anthropicAPI
-    }
-    if environment["CURSOR_API_KEY"]?.isEmpty == false {
-      return .cursorAPI
-    }
-    throw AdapterExecutionError(.policyBlocked, "No assistant agent is available. Install codex/claude/cursor-agent or set OPENAI_API_KEY, ANTHROPIC_API_KEY, or CURSOR_API_KEY.")
+  func resolvedAssistantVendor(_ vendor: RielaAppAssistantVendor) throws -> RielaAppAssistantVendor {
+    try RielaWebAssistantProvider.resolve(vendor, environment: ProcessInfo.processInfo.environment)
   }
 
   private func assistantAdapter(for vendor: RielaAppAssistantVendor) throws -> any NodeAdapter {
@@ -174,21 +153,8 @@ extension RielaApp {
     return values
   }
 
-  private func assistantExecutionBackend(for vendor: RielaAppAssistantVendor) -> NodeExecutionBackend {
-    switch vendor {
-    case .automatic, .codexCLI:
-      .codexAgent
-    case .claudeCodeCLI:
-      .claudeCodeAgent
-    case .cursorCLI:
-      .cursorCliAgent
-    case .openAIAPI:
-      .officialOpenAISDK
-    case .anthropicAPI:
-      .officialAnthropicSDK
-    case .cursorAPI:
-      .officialCursorSDK
-    }
+  func assistantExecutionBackend(for vendor: RielaAppAssistantVendor) -> NodeExecutionBackend {
+    RielaWebAssistantProvider.backend(for: vendor)
   }
 
   func assistantSystemPrompt(workingDirectory: String) -> String {
@@ -267,15 +233,6 @@ extension RielaApp {
       return text
     }
     return "Assistant finished without a text response."
-  }
-
-  private func executablePath(named name: String) -> String? {
-    let paths = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin")
-      .split(separator: ":")
-      .map(String.init)
-    return paths
-      .map { URL(fileURLWithPath: $0, isDirectory: true).appendingPathComponent(name).path }
-      .first { FileManager.default.isExecutableFile(atPath: $0) }
   }
 
   private func gitValue(arguments: [String], workingDirectory: String) -> String? {

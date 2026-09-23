@@ -1,4 +1,8 @@
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import Foundation
 import XCTest
 @testable import RielaCLI
@@ -342,7 +346,9 @@ private extension WorkflowRound7AdversarialTests {
     let fixture = try await transactionFixture()
     let directory = fixture.historyRoot.appendingPathComponent("snapshots/\(fixture.snapshot.snapshotId)")
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
-    try create(directory.appendingPathComponent(name))
+    let specialEntry = directory.appendingPathComponent(name)
+    try create(specialEntry)
+    defer { _ = unlink(specialEntry.path) }
     XCTAssertThrowsError(try WorkflowHistoryStore(root: fixture.historyRoot).loadSnapshot(
       fixture.snapshot.snapshotId,
       expectedIdentity: fixture.target
@@ -370,7 +376,9 @@ private extension WorkflowRound7AdversarialTests {
     try store.publishProposal(proposal, contentObjects: [:])
     let directory = fixture.historyRoot.appendingPathComponent("proposals/\(proposal.proposalId)")
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
-    try create(directory.appendingPathComponent(name))
+    let specialEntry = directory.appendingPathComponent(name)
+    try create(specialEntry)
+    defer { _ = unlink(specialEntry.path) }
     XCTAssertThrowsError(try store.loadProposal(proposal.proposalId, expectedIdentity: fixture.target))
   }
 
@@ -411,14 +419,23 @@ private extension WorkflowRound7AdversarialTests {
     )
     let directory = fixture.historyRoot.appendingPathComponent("change-sets/\(changeSet.changeSetId)")
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
-    try create(directory.appendingPathComponent(name))
+    let specialEntry = directory.appendingPathComponent(name)
+    try create(specialEntry)
+    defer { _ = unlink(specialEntry.path) }
     XCTAssertThrowsError(try store.loadChangeSet(changeSet.changeSetId, expectedIdentity: fixture.target))
   }
 
   func createUnixSocket(at url: URL) throws {
-    let socketURL = URL(fileURLWithPath: "/tmp/riela-round7-\(UUID().uuidString.lowercased()).sock")
-    defer { try? FileManager.default.removeItem(at: socketURL) }
+    let scratch = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("tmp")
+    try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    let socketSuffix = UUID().uuidString.lowercased().prefix(8)
+    let socketURL = scratch.appendingPathComponent("r7-\(socketSuffix).sock")
+    defer { _ = unlink(socketURL.path) }
+    #if canImport(Darwin)
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+    #else
+    let descriptor = socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { _ = close(descriptor) }
     var address = sockaddr_un()
@@ -426,13 +443,28 @@ private extension WorkflowRound7AdversarialTests {
     guard path.count <= MemoryLayout.size(ofValue: address.sun_path) else { throw POSIXError(.ENAMETOOLONG) }
     address.sun_family = sa_family_t(AF_UNIX)
     withUnsafeMutableBytes(of: &address.sun_path) { buffer in buffer.copyBytes(from: path) }
-    let length = socklen_t(MemoryLayout<sa_family_t>.size + path.count)
+    let length = socklen_t(MemoryLayout<sockaddr_un>.size)
+    #if canImport(Darwin)
     address.sun_len = UInt8(length)
+    #endif
     let result = withUnsafePointer(to: &address) {
-      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(descriptor, $0, length) }
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        #if canImport(Darwin)
+        Darwin.bind(descriptor, $0, length)
+        #else
+        Glibc.bind(descriptor, $0, length)
+        #endif
+      }
     }
     guard result == 0 else { throw POSIXError(.EIO) }
-    try FileManager.default.moveItem(at: socketURL, to: url)
+    let renameResult = socketURL.path.withCString { sourcePath in
+      url.path.withCString { destinationPath in
+        rename(sourcePath, destinationPath)
+      }
+    }
+    guard renameResult == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
   }
 
   func loadAttempts(historyRoot: URL) throws -> [WorkflowPreflightAttemptRecord] {

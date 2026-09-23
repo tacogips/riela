@@ -236,9 +236,7 @@ final class WorkflowHistoryPrivateDirectory {
     rewinddir(directory)
     var names: [String] = []
     while let entry = readdir(directory) {
-      let name = withUnsafePointer(to: entry.pointee.d_name) {
-        $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
-      }
+      let name = try posixDirectoryEntryName(entry)
       if name != ".", name != ".." { names.append(name) }
     }
     for name in names.sorted() {
@@ -333,9 +331,7 @@ final class WorkflowHistoryPrivateDirectory {
     rewinddir(directory)
     var names: [String] = []
     while let entry = readdir(directory) {
-      let name = withUnsafePointer(to: entry.pointee.d_name) {
-        $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
-      }
+      let name = try posixDirectoryEntryName(entry)
       if name != ".", name != ".." { names.append(name) }
     }
     return names.sorted()

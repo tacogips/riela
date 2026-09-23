@@ -1,5 +1,10 @@
 # Implementation Plans
 
+Completed: [Monja multi-agent collaboration](completed/monja-agent-collaboration.md).
+
+Completed: [Monja project task orchestrator](completed/monja-project-task-orchestrator.md)
+and [workflow cancellation finalization](completed/workflow-cancellation-finalization.md).
+
 This directory contains implementation plans that translate design documents into actionable implementation specifications.
 
 ## Purpose
@@ -38,6 +43,10 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
+| `active/workflow-defect-detection-and-repair` | 6 | Step 4 authored 2026-09-22; design accepted, plan review pending; six serial tasks for routing contracts, cycle analysis, persisted progress and verified repairs; no implementation | Workflow correctness |
+| `active/execution-environment-consolidation` | 8 | Planned 2026-09-21, no code written; zero-based, no back-compat: definitions (workflows, workspaces, policies, models) move from files into the runtime records database with versions/lineage/proposals and a validate→normalize→digest write path (files become import/export); one `Workspace` instance root per execution with relative `cwd` (deletes node `workingDirectory`, `--working-dir`, worker `controllerPath`, fanout `writeOwnership`, Work Runtime `RepositoryContext`); `Policy` engine actually enforced (deletes `agentSandbox`, `AgentToolPolicy`, `RIELA_SANDBOX_SEATBELT`); `Model` profiles (deletes node `apiKeyEnvironment`/`baseURL`/`provider`/`providerProxy`); placement by capability; runner contract; typed conditions (`design-docs/specs/design-execution-environment-consolidation.md`, supersedes intake adoptions A/C/D/F/G) | Execution environment consolidation |
+| `active/agent-node-output-contract` | 6 | Planned 2026-09-21, no code written; agent-node execution contract (`design-docs/specs/design-agent-node-output-contract.md`): validate-time agentSandbox + output.jsonSchema requirements, no-contract text-wrap simplification, output-block-default retry 2, typed template-resolution error naming producer/path/consumer; D4 bundle edits are a riela-packages follow-up work package | Agent-node output contract |
+| `active/work-runtime-p0-model-and-store` | 0 | Implemented 2026-09-21 (archive candidate); P0 of the Work Runtime consolidation (`design-docs/specs/design-work-runtime-consolidation.md`): `RielaWork` module, work_* tables in the runtime records DB, evidence/finding projection from existing sessions, completion evaluator, read-only `riela task show|list` (delta D2: `import-session` was never in the plan's task table and is not built). Later phases delete auto-improve and fold loop/routine/specialist | Work Runtime consolidation |
 | `active/loop-engineering-convergence-and-operations` | 13 | Ready for implementation; S9a default convergence, graceful terminal routing/reservation, opt-outs, child request propagation, fixture adoption, tests, and docs | Current issue-resolution work package |
 | `active/apple-mail-addons` | 3 | Implemented in Swift + `AppleMailAddonTests` (15) green; every implementation/verification box reconciled+checked with per-box evidence 2026-07-12. The 3 open boxes are the upstream `apple-gateway file download` output-contract confirmation, its contingent code change, and closing the QA note — all **DEFERRED (accepted): live QA blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
 | `active/apple-clock-alarm-addons` | 4 | Implemented + tested (`AppleClockAlarmAddonTests`, 9 green); all 4 open boxes are TASK-001 **live envelope/time-format QA DEFERRED (accepted): blocked on absent `apple-gateway` CLI**; owner: next session with apple-gateway; trigger: `which apple-gateway` succeeds | W4 |
@@ -92,6 +101,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |
 | `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
 | `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |
 | `web-cross-tag-filter-and-fixes` | 2026-07-27 | `design-web-cross-tag-filter-and-fixes` |

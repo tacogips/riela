@@ -1,392 +1,179 @@
-import AppCore
-import Crypto
 import Foundation
+import KaibaClient
 import RielaAddonSupport
 import RielaCore
 
-/// Bridge add-ons between riela's short-term memory (SQLite records under the
-/// memory root) and kaiba's long-term memory (the canonical notebook plus its
-/// note graph). Short-term record ids are not kaiba notes, so they are carried
-/// as metadata rather than as note links.
 extension KaibaAddonCatalog {
   static func executeLongTermMemoryAddon(
     _ input: WorkflowAddonExecutionInput,
-    environment: [String: String],
+    client: KaibaClient,
     operation: BuiltinKaibaLongTermMemoryAddon
-  ) throws -> AdapterExecutionOutput {
+  ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
-      throw AdapterExecutionError(
-        .policyBlocked,
-        "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'"
+      throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
+    }
+    let values = KaibaAddonInputs(input: input, environment: [:])
+    do {
+      let payload: JSONObject
+      switch operation {
+      case .consolidate:
+        payload = try await consolidateLongTermMemory(input, values: values, client: client)
+      case .recall:
+        payload = try await recallLongTermMemory(values: values, client: client)
+      }
+      return addonOutput(
+        input: input,
+        operation: operation.rawValue.replacingOccurrences(of: "kaiba/", with: ""),
+        payload: payload,
+        values: values
       )
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as AdapterExecutionError {
+      throw error
+    } catch {
+      throw AdapterExecutionError(.providerError, "Kaiba HTTP operation failed")
     }
-    let context = try NoteAddonContext(input: input, environment: environment)
-    let candidate: JSONObject
-    switch operation {
-    case .consolidate:
-      candidate = try consolidateLongTermMemory(context)
-    case .recall:
-      candidate = try recallLongTermMemory(context)
-    }
-
-    var payload: JSONObject = [
-      "status": .string("ok"),
-      "addon": .string(input.addon.name),
-      "operation": .string(operation.rawValue.replacingOccurrences(of: "kaiba/", with: "")),
-      "stepId": .string(input.stepId),
-      "noteRoot": .string(context.noteRoot),
-      "databasePath": .string(context.service.driver.databasePath)
-    ]
-    // Consolidation and recall usually run as consecutive steps, and only the
-    // last payload reaches an output projection; `passthrough` lets a workflow
-    // carry the earlier step's real values forward instead of restating them.
-    for (key, value) in longTermMemoryPassthrough(context) {
-      payload[key] = value
-    }
-    for (key, value) in candidate {
-      payload[key] = value
-    }
-    return AdapterExecutionOutput(
-      provider: "riela-builtin-addon",
-      model: input.addon.name,
-      promptText: "",
-      completionPassed: true,
-      when: ["always": true],
-      payload: payload
-    )
   }
 }
 
-private let longTermMemoryDefaultAssociationLimit = 8
-private let longTermMemoryMaximumAssociationLimit = 20
-private let longTermMemoryDefaultRecallLimit = 10
-private let longTermMemoryMaximumRecallLimit = 20
-private let longTermMemoryRecallTextLimit = 600
-
-private struct LongTermMemoryConsolidationEntry {
-  var content: String
-  var topicTags: [String]
-  var relatedNoteIds: [String]
-  var sourceMemoryRecordIds: [JSONValue]
-  var periodStart: Date?
-  var periodEnd: Date?
-}
-
-private func longTermMemoryPassthrough(_ context: NoteAddonContext) -> JSONObject {
-  guard let raw = context.config["passthrough"],
-        case let .object(rendered) = renderJSONTemplates(raw, variables: context.variables) else {
-    return [:]
+private func consolidateLongTermMemory(
+  _ input: WorkflowAddonExecutionInput,
+  values: KaibaAddonInputs,
+  client: KaibaClient
+) async throws -> JSONObject {
+  let entries = try memoryEntries(values.value("entries") ?? values.value("memoryEntries"))
+  let key = try idempotencyKey(input, values: values, discriminator: "memory-consolidate:append")
+  guard !entries.isEmpty || values.bool("allowEmptyEntries", default: false) else {
+    throw noteAddonInvalidInput("\(input.addon.name) requires at least one entry in config.entries or upstream memoryEntries")
   }
-  return rendered
-}
-
-private func consolidateLongTermMemory(_ context: NoteAddonContext) throws -> JSONObject {
-  let defaultPeriodStart = try longTermMemoryDate(context.string("periodStart"), fieldName: "periodStart")
-  let defaultPeriodEnd = try longTermMemoryDate(context.string("periodEnd"), fieldName: "periodEnd")
-  let entries = try longTermMemoryEntries(
-    context,
-    defaultPeriodStart: defaultPeriodStart,
-    defaultPeriodEnd: defaultPeriodEnd
-  )
   guard !entries.isEmpty else {
-    // Data-driven pipelines (seeded imports, summarizers that found nothing
-    // durable) can legitimately produce zero entries; erroring would fail the
-    // whole run, so an explicit opt-in turns the write into a no-op instead.
-    if context.bool("allowEmptyEntries", default: false) {
-      let notebookId = try context.service.longTermMemoryNotebook().notebookId
-      return [
-        "notebookId": .string(notebookId.rawValue),
-        "noteIds": .array([]),
-        "notes": .array([]),
-        "entriesWritten": .number(0),
-        "idempotentReplay": .bool(false),
-        "idempotencyKey": .string(longTermMemoryIdempotencyKey(context)),
-        "associations": .array([])
-      ]
-    }
-    throw noteAddonInvalidInput(
-      "\(context.input.addon.name) requires at least one entry in config.entries or upstream memoryEntries"
-    )
+    let notebook = try await client.longTermMemoryNotebook()
+    try requireAccepted(notebook.result)
+    return [
+      "notebookId": notebook.value.map { .string($0.notebookId.rawValue) } ?? .null,
+      "noteIds": .array([]), "notes": .array([]), "entriesWritten": .number(0),
+      "idempotentReplay": .bool(false), "idempotencyKey": .string(key), "associations": .array([])
+    ]
   }
-  let idempotencyKey = longTermMemoryIdempotencyKey(context)
-  let result = try context.service.appendLongTermMemoryNotes(
-    entries.map { entry in
-      LongTermMemoryEntryInput(
-        bodyMarkdown: entry.content,
-        topicTags: entry.topicTags,
-        // Riela short-term record ids never resolve to kaiba notes, so the
-        // provenance they carry belongs in metadata, not in `sourceNoteIds`.
-        sourceNoteIds: [],
-        relatedNoteIds: entry.relatedNoteIds.map(NoteID.init),
-        periodStart: entry.periodStart,
-        periodEnd: entry.periodEnd,
-        metaJSON: longTermMemoryEntryMetaJSON(entry)
-      )
-    },
-    idempotencyKey: idempotencyKey
-  )
-
+  let result = try await client.appendLongTermMemory(entries: entries, idempotencyKey: key)
+  try requireAccepted(result.result)
   var associations: [JSONValue] = []
-  if !result.idempotentReplay, context.bool("autoAssociate", default: true) {
-    let associationLimit = max(
-      1,
-      min(
-        context.int("associationLimit", default: longTermMemoryDefaultAssociationLimit),
-        longTermMemoryMaximumAssociationLimit
-      )
-    )
+  if !result.idempotentReplay, values.bool("autoAssociate", default: true) {
+    let limit = bounded(values.int("associationLimit", default: 8), upper: 20)
     for note in result.notes {
-      let links = try context.service.linkLongTermMemoryAssociations(
-        noteId: note.noteId,
-        limit: associationLimit
-      )
+      let links = try await client.linkLongTermMemoryAssociations(noteId: note.noteId, limit: limit)
+      try requireAccepted(links.result)
       associations.append(.object([
         "noteId": .string(note.noteId.rawValue),
-        "linkedNoteIds": .array(links.map { .string($0.toNoteId.rawValue) })
+        "linkedNoteIds": .array((links.value ?? []).map { .string($0.toNoteId.rawValue) })
       ]))
     }
   }
-
-  let notebookId = try result.notes.first?.notebookId
-    ?? context.service.longTermMemoryNotebook().notebookId
+  let notebookID = result.notes.first?.notebookId.rawValue
   return [
-    "notebookId": .string(notebookId.rawValue),
+    "notebookId": notebookID.map(JSONValue.string) ?? .null,
     "noteIds": .array(result.notes.map { .string($0.noteId.rawValue) }),
-    "notes": .array(result.notes.map(noteJSON)),
+    "notes": .array(result.notes.map(kaibaNoteJSON)),
     "entriesWritten": .number(Double(result.notes.count)),
     "idempotentReplay": .bool(result.idempotentReplay),
-    "idempotencyKey": .string(idempotencyKey),
-    "associations": .array(associations)
+    "idempotencyKey": .string(key), "associations": .array(associations)
   ]
 }
 
-private func recallLongTermMemory(_ context: NoteAddonContext) throws -> JSONObject {
-  let query = try context.requiredString("query", "match", fieldName: "query")
-  let limit = max(
-    1,
-    min(context.int("limit", default: longTermMemoryDefaultRecallLimit), longTermMemoryMaximumRecallLimit)
-  )
-  let includeAssociations = context.bool("includeAssociations", default: true)
-  let associationDepth = max(
-    NoteGraphPolicy.associationMaxDepth,
-    min(
-      context.int("associationDepth", default: NoteGraphPolicy.associationMaxDepth),
-      NoteGraphPolicy.maximumDepth
-    )
-  )
-  let results = try context.service.recallLongTermMemories(
+private func recallLongTermMemory(values: KaibaAddonInputs, client: KaibaClient) async throws -> JSONObject {
+  let query = try values.requiredString(["query", "match"], fieldName: "query")
+  let limit = bounded(values.int("limit", default: 10), upper: 20)
+  let includeAssociations = values.bool("includeAssociations", default: true)
+  let depth = bounded(values.int("associationDepth", default: 2), upper: 8)
+  let result = try await client.recallLongTermMemory(
     query: query,
     limit: limit,
     includeAssociations: includeAssociations,
-    associationDepth: associationDepth
+    associationDepth: depth,
+    recencyWeight: values.value("recencyWeight")?.asDouble ?? 0.5
   )
+  try requireAccepted(result.result)
+  let hits = result.value ?? []
   return [
-    "query": .string(query),
-    "limit": .number(Double(limit)),
-    "includeAssociations": .bool(includeAssociations),
-    "associationDepth": .number(Double(associationDepth)),
-    "results": .array(results.map(longTermMemoryRecallResultJSON)),
-    "resultCount": .number(Double(results.count)),
-    "noteIds": .array(results.map { .string($0.note.noteId.rawValue) }),
-    "recallText": .string(longTermMemoryRecallText(results))
+    "query": .string(query), "limit": .number(Double(limit)),
+    "includeAssociations": .bool(includeAssociations), "associationDepth": .number(Double(depth)),
+    "results": .array(hits.map(memoryRecallJSON)),
+    "resultCount": .number(Double(hits.count)),
+    "noteIds": .array(hits.map { .string($0.note.noteId.rawValue) }),
+    "recallText": .string(memoryRecallText(hits))
   ]
 }
 
-private func longTermMemoryEntries(
-  _ context: NoteAddonContext,
-  defaultPeriodStart: Date?,
-  defaultPeriodEnd: Date?
-) throws -> [LongTermMemoryConsolidationEntry] {
-  let rawEntries = context.config["entries"].map { renderJSONTemplates($0, variables: context.variables) }
-    ?? context.variables["entries"]
-    ?? context.variables["memoryEntries"]
-  guard let rawEntries else {
-    return []
-  }
-  guard case let .array(values) = rawEntries else {
-    if case .null = rawEntries {
-      return []
+private func memoryEntries(_ value: JSONValue?) throws -> [KaibaLongTermMemoryEntry] {
+  guard let value else { return [] }
+  guard case let .array(entries) = value else { throw noteAddonInvalidInput("entries must be an array") }
+  return try entries.enumerated().map { index, value in
+    guard case let .object(entry) = value,
+          let body = entry["content"].flatMap(nonEmptyString) ?? entry["bodyMarkdown"].flatMap(nonEmptyString) else {
+      throw noteAddonInvalidInput("entries[\(index)].content is required")
     }
-    throw noteAddonInvalidInput("\(context.input.addon.name) entries must be an array")
-  }
-  return try values.enumerated().map { index, value in
-    guard case let .object(entry) = value else {
-      throw noteAddonInvalidInput("\(context.input.addon.name) entries[\(index)] must be an object")
-    }
-    guard let content = nonEmptyString(entry["content"]) ?? nonEmptyString(entry["bodyMarkdown"]) else {
-      throw noteAddonInvalidInput("\(context.input.addon.name) entries[\(index)].content is required")
-    }
-    return LongTermMemoryConsolidationEntry(
-      content: content,
-      topicTags: try longTermMemoryStringArray(entry["topicTags"], fieldName: "entries[\(index)].topicTags"),
-      relatedNoteIds: try longTermMemoryStringArray(
-        entry["relatedNoteIds"],
-        fieldName: "entries[\(index)].relatedNoteIds"
-      ),
-      sourceMemoryRecordIds: longTermMemoryRecordIds(entry["sourceMemoryRecordIds"]),
-      periodStart: try longTermMemoryDate(
-        nonEmptyString(entry["periodStart"]),
-        fieldName: "entries[\(index)].periodStart"
-      ) ?? defaultPeriodStart,
-      periodEnd: try longTermMemoryDate(
-        nonEmptyString(entry["periodEnd"]),
-        fieldName: "entries[\(index)].periodEnd"
-      ) ?? defaultPeriodEnd
+    let recordIDs = memoryRecordIDs(entry["sourceMemoryRecordIds"])
+    let metaJSON = recordIDs.isEmpty ? entry["metaJSON"].flatMap(nonEmptyString) : JSONValue.object([
+      "sourceMemoryRecordIds": .array(recordIDs)
+    ]).compactJSONStringOrEmpty()
+    return .init(
+      bodyMarkdown: body,
+      topicTags: try stringArray(entry["topicTags"], field: "topicTags"),
+      relatedNoteIds: try stringArray(entry["relatedNoteIds"], field: "relatedNoteIds").map(KaibaNoteID.init(rawValue:)),
+      periodStart: entry["periodStart"].flatMap(nonEmptyString),
+      periodEnd: entry["periodEnd"].flatMap(nonEmptyString),
+      metaJSON: metaJSON
     )
   }
 }
 
-private func longTermMemoryEntryMetaJSON(_ entry: LongTermMemoryConsolidationEntry) -> String? {
-  guard !entry.sourceMemoryRecordIds.isEmpty else {
-    return nil
-  }
-  return JSONValue.object([
-    "sourceMemoryRecordIds": .array(entry.sourceMemoryRecordIds)
-  ]).compactJSONStringOrEmpty()
-}
-
-/// Short-term record ids arrive as numbers from `riela/memory-load` payloads and
-/// as strings from hand-written configs; both are preserved verbatim so the
-/// stored provenance still matches the riela memory store.
-private func longTermMemoryRecordIds(_ value: JSONValue?) -> [JSONValue] {
-  guard let value else {
-    return []
-  }
+private func memoryRecordIDs(_ value: JSONValue?) -> [JSONValue] {
+  guard let value else { return [] }
   switch value {
-  case let .array(values):
-    return values.compactMap(longTermMemoryRecordId)
-  case .integer, .number, .string:
-    return [longTermMemoryRecordId(value)].compactMap { $0 }
-  case .null, .bool, .object:
-    return []
+  case let .array(values): return values.filter(memoryRecordID)
+  case .integer, .number, .string: return memoryRecordID(value) ? [value] : []
+  case .null, .bool, .object: return []
   }
 }
 
-private func longTermMemoryRecordId(_ value: JSONValue) -> JSONValue? {
+private func memoryRecordID(_ value: JSONValue) -> Bool {
   switch value {
-  case let .integer(number):
-    return .integer(number)
-  case let .number(number):
-    return .number(number)
-  case let .string(string):
-    return string.isEmpty ? nil : .string(string)
-  case .null, .bool, .array, .object:
-    return nil
+  case let .string(value): return !value.isEmpty
+  case .integer, .number: return true
+  case .null, .bool, .array, .object: return false
   }
 }
 
-private func longTermMemoryStringArray(_ value: JSONValue?, fieldName: String) throws -> [String] {
-  guard let value else {
-    return []
-  }
-  switch value {
-  case let .string(string):
-    return string.isEmpty ? [] : [string]
-  case let .array(values):
-    return try values.enumerated().map { index, value in
-      guard let string = nonEmptyString(value) else {
-        throw noteAddonInvalidInput("\(fieldName)[\(index)] must be a non-empty string")
-      }
-      return string
-    }
-  case .null:
-    return []
-  case .bool, .integer, .number, .object:
-    throw noteAddonInvalidInput("\(fieldName) must be a string or array of strings")
-  }
-}
-
-private func longTermMemoryDate(_ value: String?, fieldName: String) throws -> Date? {
-  guard let value, !value.isEmpty else {
-    return nil
-  }
-  guard let date = longTermMemoryISO8601Date(value) else {
-    throw noteAddonInvalidInput("\(fieldName) must be an ISO8601 timestamp")
-  }
-  return date
-}
-
-private func longTermMemoryISO8601Date(_ value: String) -> Date? {
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  if let date = fractional.date(from: value) {
-    return date
-  }
-  return ISO8601DateFormatter().date(from: value)
-}
-
-// One append batch per step execution: the same runtime identity the persona
-// memory writer uses, so a session resume or event redelivery replays the
-// already-written memories instead of duplicating them. Callers that consolidate
-// on a fixed period can pin the batch with an explicit `idempotencyKey`.
-private func longTermMemoryIdempotencyKey(_ context: NoteAddonContext) -> String {
-  if let configured = context.string("idempotencyKey") {
-    return configured
-  }
-  let rielaInput = noteObject(context.variables["_rielaInput"])
-  let latest = noteObject(rielaInput["latest"])
-  let workflowExecutionId = nonEmptyString(rielaInput["workflowExecutionId"])
-    ?? nonEmptyString(latest["workflowExecutionId"])
-    ?? nonEmptyString(context.variables["workflowExecutionId"])
-    ?? context.input.workflowId
-  let sourceExecutionId = nonEmptyString(rielaInput["sourceStepExecutionId"])
-    ?? nonEmptyString(latest["sourceStepExecutionId"])
-    ?? nonEmptyString(rielaInput["communicationId"])
-    ?? nonEmptyString(latest["communicationId"])
-    ?? context.input.stepId
-  let key = [
-    workflowExecutionId,
-    context.input.workflowId,
-    context.input.stepId,
-    context.input.nodeId,
-    sourceExecutionId
-  ].joined(separator: ":")
-  let digest = SHA256.hash(data: Data(key.utf8))
-  return "riela-consolidate-" + digest.map { String(format: "%02x", $0) }.joined().prefix(32)
-}
-
-private func longTermMemoryRecallResultJSON(_ result: LongTermMemoryRecallResult) -> JSONValue {
+private func memoryRecallJSON(_ hit: KaibaLongTermMemoryRecallHit) -> JSONValue {
   .object([
-    "noteId": .string(result.note.noteId.rawValue),
-    "notebookId": .string(result.note.notebookId.rawValue),
-    "title": result.note.title.map { .string($0) } ?? .null,
-    "bodyMarkdown": .string(result.note.bodyMarkdown),
-    "snippet": .string(result.snippet),
-    "rank": .number(result.rank),
-    "isAssociation": .bool(result.isAssociation),
-    "edgeKind": result.edgeKind.map { .string($0.rawValue) } ?? .null,
-    "weight": result.weight.map { .number($0) } ?? .null,
-    "hopCount": result.hopCount.map { .number(Double($0)) } ?? .null,
-    "pathNoteIds": .array(result.pathNoteIds.map { .string($0.rawValue) }),
-    "createdAt": .string(result.note.createdAt),
-    "metaJSON": result.note.metaJSON.map { .string($0) } ?? .null
+    "noteId": .string(hit.note.noteId.rawValue), "notebookId": .string(hit.note.notebookId.rawValue),
+    "title": hit.note.title.map(JSONValue.string) ?? .null,
+    "bodyMarkdown": .string(hit.note.bodyMarkdown), "snippet": .string(hit.snippet),
+    "rank": .number(hit.rank), "isAssociation": .bool(hit.isAssociation),
+    "edgeKind": hit.edgeKind.map(JSONValue.string) ?? .null,
+    "weight": hit.weight.map(JSONValue.number) ?? .null,
+    "hopCount": hit.hopCount.map { .number(Double($0)) } ?? .null,
+    "pathNoteIds": .array(hit.pathNoteIds.map { .string($0.rawValue) }),
+    "createdAt": .string(hit.note.createdAt), "metaJSON": hit.note.metaJSON.map(JSONValue.string) ?? .null
   ])
 }
 
-private func longTermMemoryRecallText(_ results: [LongTermMemoryRecallResult]) -> String {
-  results.map { result in
-    let edge = result.isAssociation ? (result.edgeKind?.rawValue ?? "association") : "direct"
-    let title = result.note.title ?? longTermMemoryFirstLine(result.note.bodyMarkdown)
-    let body = result.snippet.isEmpty ? result.note.bodyMarkdown : result.snippet
-    return "#\(result.note.noteId) [\(edge)] \(title): \(longTermMemoryTruncated(body))"
+private func memoryRecallText(_ hits: [KaibaLongTermMemoryRecallHit]) -> String {
+  hits.map { hit in
+    let relation = hit.isAssociation ? (hit.edgeKind ?? "association") : "direct"
+    let title = hit.note.title ?? firstLine(hit.note.bodyMarkdown)
+    let body = hit.snippet.isEmpty ? hit.note.bodyMarkdown : hit.snippet
+    return "#\(hit.note.noteId.rawValue) [\(relation)] \(title): \(truncatedRecallText(body))"
   }.joined(separator: "\n")
 }
 
-private func longTermMemoryFirstLine(_ bodyMarkdown: String) -> String {
-  let line = bodyMarkdown
-    .split(separator: "\n", omittingEmptySubsequences: true)
-    .first
-    .map(String.init)?
-    .trimmingCharacters(in: .whitespaces) ?? ""
+private func firstLine(_ body: String) -> String {
+  let line = body.split(separator: "\n").first.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? ""
   return line.isEmpty ? "(untitled)" : line
 }
 
-private func longTermMemoryTruncated(_ value: String) -> String {
-  let collapsed = value
-    .replacingOccurrences(of: "\n", with: " ")
-    .trimmingCharacters(in: .whitespacesAndNewlines)
-  guard collapsed.count > longTermMemoryRecallTextLimit else {
-    return collapsed
-  }
-  return String(collapsed.prefix(longTermMemoryRecallTextLimit)) + "…"
+private func truncatedRecallText(_ value: String) -> String {
+  let collapsed = value.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  return collapsed.count > 600 ? String(collapsed.prefix(600)) + "…" : collapsed
 }

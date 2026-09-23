@@ -18,12 +18,7 @@ extension RielaApp {
       onStateChange: { [weak self] in self?.rebuildMenu() }
     )
     webServerSetupError = store.load().diagnostic
-    guard webServerController?.settings.isEnabled == true else {
-      return
-    }
-    Task { @MainActor [weak self] in
-      await self?.webServerController?.start()
-    }
+
   }
 
   @objc func startWebServerFromMenu() {
@@ -42,30 +37,27 @@ extension RielaApp {
     webServerController?.openInBrowser()
   }
 
-  /// Starts the local web server when needed and opens it in the browser.
-  /// Every "open" action funnels through here because the AppKit workflow
-  /// viewer window was removed once the web app took over run inspection.
-  /// - Parameter context: Noun phrase naming the surface, used in status text.
-  func openWebUI(context: String) {
+  @objc func openDesktopFromMenu() {
+    openWebUI(context: "Riela")
+  }
+
+  @objc func openSettingsFromMenu() {
+    openWebUI(context: "Settings", route: .settings)
+  }
+
+  /// The menu-bar host opens bundled assets over native IPC without starting HTTP.
+  func openWebUI(context: String, route: RielaDesktopRoute? = nil) {
+    if desktopController == nil {
+      desktopController = RielaDesktopController(app: self)
+    }
     Task { @MainActor [weak self] in
-      guard let self else {
-        return
+      guard let self else { return }
+      do {
+        try await desktopController?.open(route: route)
+        status = "Opened \(context) for profile \(daemonProfileName.rawValue)."
+      } catch {
+        status = "Failed to open \(context): \(error.localizedDescription)"
       }
-      guard let webServerController else {
-        status = webServerSetupError ?? "Web Server: Unavailable"
-        rebuildMenu()
-        return
-      }
-      if webServerController.endpointURL == nil {
-        await webServerController.start()
-      }
-      guard webServerController.endpointURL != nil else {
-        status = "Failed to open \(context): the web server did not start."
-        rebuildMenu()
-        return
-      }
-      webServerController.openInBrowser()
-      status = "Opened \(context) (web) for profile \(daemonProfileName.rawValue)."
       rebuildMenu()
     }
   }

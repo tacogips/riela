@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 
 public enum RielaAppWorkflowRepositoryReferenceError: Error, LocalizedError, Equatable {
@@ -92,4 +91,3 @@ public struct RielaAppWorkflowRepositoryReference: Codable, Equatable, Sendable 
     }
   }
 }
-#endif

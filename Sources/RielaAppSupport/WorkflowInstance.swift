@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 
 public struct WorkflowInstance: Identifiable, Equatable, Sendable {
@@ -49,8 +48,11 @@ public struct WorkflowInstance: Identifiable, Equatable, Sendable {
     preference.sourceIdentity ?? source.id
   }
 
+  public var isDefault: Bool { identity == sourceIdentity }
+
   public var displayName: String {
-    preference.displayName?.isEmpty == false ? preference.displayName ?? source.displayName : source.displayName
+    if let name = preference.displayName, !name.isEmpty { return name }
+    return isDefault ? "標準設定" : source.displayName
   }
 
   public var candidate: RielaAppDaemonWorkflowCandidate {
@@ -73,13 +75,11 @@ public extension RielaAppDaemonWorkflowState {
         }
         return .configured(identity: identity, source: source, preference: preference)
       }
-    let configuredSourceIds = Set(preferences.map { identity, preference in
-      preference.sourceIdentity ?? identity
-    })
+    // A named configuration must never replace the stable source-id default.
+    let configuredIdentities = Set(preferences.keys)
     let unconfiguredInstances = sourceCandidates
-      .filter { !configuredSourceIds.contains($0.id) }
+      .filter { !configuredIdentities.contains($0.id) }
       .map(WorkflowInstance.unconfigured(source:))
     return configuredInstances + unconfiguredInstances
   }
 }
-#endif

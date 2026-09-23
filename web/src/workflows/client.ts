@@ -1,3 +1,4 @@
+import { rielaFetch } from '../transport'
 import { APIError, api } from '../api'
 import type { RegistryMutationPayload, RegistryWorkflow } from './types'
 
@@ -185,9 +186,20 @@ export class WorkflowRegistryClient {
 }
 
 const defaultClient = new WorkflowRegistryClient({
-  request: (input, init) => fetch(input, init),
+  request: (input, init) => rielaFetch(input, init),
   appHeaders: () => api.noteHeaders(),
 })
+
+/** Explicit graph-authoring projection; standard registry reads stay redacted. */
+export async function getEditorWorkflow(workflow: RegistryWorkflow): Promise<RegistryWorkflow> {
+  const response = await rielaFetch('/api/v1/workflow-editor/definition', {
+    method: 'POST', credentials: 'same-origin', headers: { ...api.noteHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workflowId: workflow.workflowId, originId: workflow.originId }),
+  })
+  const value = await response.json()
+  if (!response.ok) throw new APIError(value.error?.message ?? 'Could not load workflow for editing.', response.status, 'editor_read_failed')
+  return value as RegistryWorkflow
+}
 
 export const listMutableWorkflows = () => defaultClient.listMutableWorkflows()
 export const getMutableWorkflow = (workflow: RegistryWorkflow) =>

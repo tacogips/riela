@@ -1,13 +1,10 @@
 // swift-tools-version: 6.0
 
-import Foundation
 import PackageDescription
 
-let rielaVersionFileURL = URL(fileURLWithPath: #filePath)
-  .deletingLastPathComponent()
-  .appendingPathComponent("VERSION")
-let rielaVersion = try String(contentsOf: rielaVersionFileURL, encoding: .utf8)
-  .trimmingCharacters(in: .whitespacesAndNewlines)
+// Keep this value in sync with VERSION. It must be part of Package.swift because
+// SwiftPM's manifest cache does not track files read dynamically by the manifest.
+let rielaVersion = "0.1.49"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -34,6 +31,7 @@ let package = Package(
   ],
   products: [
     .library(name: "RielaCore", targets: ["RielaCore"]),
+    .library(name: "RielaWork", targets: ["RielaWork"]),
     .library(name: "RielaSQLite", targets: ["RielaSQLite"]),
     .library(name: "RielaJavaScript", targets: ["RielaJavaScript"]),
     .library(name: "RielaAddons", targets: ["RielaAddons"]),
@@ -52,14 +50,16 @@ let package = Package(
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "0a28f04d91f5149cead7aa96b048bed1e3be737c"
+      revision: "c7f269753ec36aca92d429ec13316ba033128967"
     ),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
+    .package(url: "https://github.com/swift-server/swift-webauthn.git", exact: "1.0.0-beta.1"),
+    .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "31f23145d26f87803d7c10984969f937a6926ff7"
+      revision: "bdaf0ab503b59b7065f110e4c1984f0f767461bb"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
@@ -113,6 +113,16 @@ let package = Package(
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
+    // The Work Runtime lifecycle (intents, tasks, attempts, decisions,
+    // evidence). It depends on RielaCore and never the reverse: the runner
+    // must stay usable without the task layer (design section 16).
+    .target(
+      name: "RielaWork",
+      dependencies: [
+        "RielaCore",
+        "RielaSQLite"
+      ]
+    ),
     .target(
       name: "RielaSQLite",
       dependencies: [
@@ -131,6 +141,7 @@ let package = Package(
       name: "RielaAddons",
       dependencies: [
         "RielaCore",
+        "RielaGraphQL",
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
@@ -138,22 +149,34 @@ let package = Package(
     // out of RielaCLI so add-on targets can depend on it without depending on
     // the CLI.
     .target(name: "RielaAddonSupport", dependencies: ["RielaCore"]),
-    // The only target that links kaiba. Everything kaiba-typed — its note
-    // service, its identifiers, its JSON model — stops here; RielaCLI sees a
-    // RielaCore-only façade (`KaibaAddonCatalog`).
+    .target(
+      name: "RielaKaibaSupport",
+      dependencies: [
+        "RielaCore",
+        .product(name: "KaibaClient", package: "kaiba")
+      ]
+    ),
+    // The only target that links Kaiba's dependency-free HTTP client. RielaCLI
+    // sees a RielaCore-only façade (`KaibaAddonCatalog`); no Riela production
+    // path imports Kaiba's service, GraphQL server, or storage modules.
     .target(
       name: "RielaKaibaAddons",
       dependencies: [
         "RielaAddonSupport",
         "RielaCore",
-        .product(name: "AppCore", package: "kaiba"),
-        .product(name: "AppGraphQL", package: "kaiba"),
+        "RielaKaibaSupport",
+        .product(name: "KaibaClient", package: "kaiba"),
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
-    .target(name: "RielaServer", dependencies: ["RielaCore", "RielaGraphQL", "RielaObservability"]),
+    .target(name: "RielaServer", dependencies: [
+      "RielaCore", "RielaGraphQL", "RielaObservability",
+      .product(name: "WebAuthn", package: "swift-webauthn"),
+      .product(name: "SwiftCBOR", package: "SwiftCBOR"),
+      .product(name: "Crypto", package: "swift-crypto")
+    ]),
     .target(name: "RielaViewer", dependencies: ["RielaCore"]),
     .target(
       name: "RielaHook",
@@ -169,8 +192,10 @@ let package = Package(
         .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         "RielaAddons",
         "RielaCore",
+        "RielaKaibaSupport",
         "RielaEvents",
         "RielaServer",
+        "RielaViewer",
         "RielaObservability"
       ],
       resources: [.process("Resources")]
@@ -229,12 +254,15 @@ let package = Package(
         .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
+        "RielaWork",
+        "RielaAppSupport",
         "RielaVersion",
         "RielaSQLite",
         .product(name: "RielaMemory", package: "RielaMemory"),
         "RielaAdapters",
         "RielaAddons",
         "RielaAddonSupport",
+        "RielaKaibaSupport",
         "RielaKaibaAddons",
         "RielaEvents",
         "RielaObservability",
@@ -254,7 +282,9 @@ let package = Package(
     .executableTarget(
       name: "RielaApp",
       dependencies: [
+        "RielaCLI",
         "RielaAppSupport",
+        "RielaKaibaSupport",
         "RielaAdapters",
         "RielaCore",
         "RielaGraphQL",
@@ -273,9 +303,14 @@ let package = Package(
         .product(name: "RielaMemory", package: "RielaMemory")
       ]
     ),
+    .testTarget(
+      name: "RielaWorkTests",
+      dependencies: ["RielaWork", "RielaCore"],
+      resources: [.copy("Fixtures")]
+    ),
     .testTarget(name: "RielaSQLiteTests", dependencies: ["RielaSQLite"]),
     .testTarget(name: "RielaJavaScriptTests", dependencies: ["RielaJavaScript"]),
-    .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons"]),
+    .testTarget(name: "RielaAddonsTests", dependencies: ["RielaCore", "RielaAddons", .product(name: "Crypto", package: "swift-crypto")]),
     .testTarget(
       name: "RielaAdaptersTests",
       dependencies: [
@@ -287,6 +322,10 @@ let package = Package(
       ]
     ),
     .testTarget(name: "RielaEventsTests", dependencies: ["RielaCore", "RielaEvents"]),
+    .testTarget(
+      name: "RielaKaibaSupportTests",
+      dependencies: ["RielaCore", "RielaKaibaSupport"]
+    ),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
     .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
@@ -298,6 +337,7 @@ let package = Package(
         .product(name: "AgentGatewayAppCore", package: "agent-gateway"),
         "RielaAddons",
         "RielaAppSupport",
+        "RielaKaibaSupport",
         "RielaServer",
         "RielaApp",
         "RielaCLI"
@@ -323,6 +363,7 @@ let package = Package(
         "RielaAdapters",
         "RielaAppSupport",
         "RielaCLI",
+        "RielaServer",
         "RielaWorkflowRegistry",
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway")
       ]

@@ -1,6 +1,7 @@
 export type HashRoute =
   | { view: 'instances' | 'logs' | 'workflows' | 'ops' | 'settings' }
-  | { view: 'run-detail'; sessionId: string }
+  | { view: 'workflow-detail'; sourceId: string; configurationId?: string; tab?: 'settings' | 'history' | 'definition' }
+  | { view: 'run-detail'; sessionId: string; sourceId?: string; configurationId?: string }
   | { view: 'ops-run'; instanceId: string; sessionId: string }
 
 const NAV_VIEWS = new Set(['instances', 'logs', 'workflows', 'ops', 'settings'] as const)
@@ -20,6 +21,17 @@ export function parseViewHash(hash: string): HashRoute | undefined {
   } catch {
     return undefined
   }
+  if (segments.length === 6 && segments[0] === 'workflows' && segments[1] && segments[2] === 'configurations' && segments[3] && segments[4] === 'runs' && segments[5]) {
+    return { view: 'run-detail', sourceId: segments[1], configurationId: segments[3], sessionId: segments[5] }
+  }
+  if ((segments.length === 4 || segments.length === 5) && segments[0] === 'workflows' && segments[1] && segments[2] === 'configurations' && segments[3]) {
+    const tab = segments[4] ?? 'settings'
+    if (tab !== 'settings' && tab !== 'history' && tab !== 'definition') return undefined
+    return { view: 'workflow-detail', sourceId: segments[1], configurationId: segments[3], tab }
+  }
+  if (segments.length === 2 && segments[0] === 'workflows' && segments[1]) {
+    return { view: 'workflow-detail', sourceId: segments[1] }
+  }
   if (segments.length === 2 && segments[0] === 'runs' && segments[1]) {
     return { view: 'run-detail', sessionId: segments[1] }
   }
@@ -33,7 +45,12 @@ export function parseViewHash(hash: string): HashRoute | undefined {
 }
 
 export function viewHash(route: HashRoute): string {
+  if (route.view === 'workflow-detail') {
+    const base = `#/workflows/${encodeURIComponent(route.sourceId)}`
+    return route.configurationId ? `${base}/configurations/${encodeURIComponent(route.configurationId)}/${route.tab ?? 'settings'}` : base
+  }
   if (route.view === 'run-detail') {
+    if (route.sourceId && route.configurationId) return `#/workflows/${encodeURIComponent(route.sourceId)}/configurations/${encodeURIComponent(route.configurationId)}/runs/${encodeURIComponent(route.sessionId)}`
     return `#/runs/${encodeURIComponent(route.sessionId)}`
   }
   if (route.view === 'ops-run') {

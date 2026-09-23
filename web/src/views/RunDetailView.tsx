@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { RunDetailLog, RunDetailResponse, RunDetailStep } from '../contracts'
 import { EmptyState, ErrorBanner, LoadingState, PageHeader } from '../components/Primitives'
 import { createPollingResource, pollingStatusLabel } from '../polling'
+import { RunTrace } from './RunTrace'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -36,6 +37,7 @@ export function RunDetailView(props: {
     <Show when={detail.data()}>{(run) => <>
       <div class="run-summary"><span class={`status-chip ${run().session.status}`}>{run().session.status}</span><span>Updated {new Date(run().session.updatedAt).toLocaleString()}</span><span>{run().session.currentStepId ? `Current step: ${run().session.currentStepId}` : 'No active step'}</span></div>
       <Show when={run().truncated}><p class="truncation-notice" role="status">Some persisted evidence was truncated for safe display.</p></Show>
+      <Show when={run().steps.length > 0}><RunTrace run={run()} profileKey={props.profileKey} /></Show>
       <div class="panel"><div class="section-title"><h2>Step executions</h2><span>{run().steps.length} of {run().stepsTotalCount}</span></div>
         <Show when={run().steps.length === 0}><EmptyState title="No step executions" detail="This run has no persisted step records." /></Show>
         <For each={run().steps}>{(step) => {

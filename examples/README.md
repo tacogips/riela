@@ -26,6 +26,9 @@ tests may still construct legacy fixtures under explicit non-strict validation.
   that runs the same workflow with two saved execution configurations
 - `open-model-provider-codex/` demonstrates canonical `provider` and
   `providerProxy` routing to a loopback OpenAI-compatible endpoint
+- `monja-typescript-sdk/` installs a locally packed `@monja/client` into an
+  isolated Node ESM consumer and proves typed REST plus arbitrary GraphQL
+  execution through Riela's command-node JSONL boundary
 
 ## Split Document Index
 

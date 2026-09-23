@@ -15,7 +15,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertEqual(window.frame.size.width, 920, accuracy: 0.1)
 
     let root = try XCTUnwrap(window.contentView)
-    let listScroll = try XCTUnwrap(firstSubview(of: NSScrollView.self, in: root))
+    let listScroll = try XCTUnwrap(controller.instanceTable.enclosingScrollView)
     XCTAssertEqual(listScroll.contentCompressionResistancePriority(for: .vertical), .defaultLow)
     XCTAssertFalse(hasHeightConstraint(listScroll, relation: .greaterThanOrEqual, constant: 260))
     XCTAssertNil(heightConstraint(listScroll, relation: .equal, constant: 260))
@@ -26,7 +26,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertTrue(hasWidthConstraint(profilePopup, relation: .lessThanOrEqual, constant: 220))
     XCTAssertFalse(hasWidthConstraint(profilePopup, relation: .equal, constant: 160))
 
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
     XCTAssertEqual(addButton.title, "")
     XCTAssertNotNil(addButton.image)
     let listView = try XCTUnwrap(firstSubview(of: DaemonWorkflowInstanceListView.self, in: root))
@@ -34,15 +34,15 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertTrue(addButton.isDescendant(of: listView.footer))
     XCTAssertFalse(addButton.isDescendant(of: listView.header))
 
-    let refreshButton = try XCTUnwrap(button(accessibilityLabel: "Refresh Instances", in: root))
+    let refreshButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を更新", in: root))
     XCTAssertEqual(refreshButton.title, "")
     XCTAssertNotNil(refreshButton.image)
 
     let emptyState = try XCTUnwrap(visibleTextFields(in: root).first {
-      $0.stringValue == "No instances. Press + to select a workflow and create one."
+      $0.stringValue == "ワークフローを選択して実行設定を表示します。"
     })
     XCTAssertEqual(emptyState.textColor, .secondaryLabelColor)
-    XCTAssertEqual(emptyState.accessibilityLabel(), "No instances. Press Add Instance to select a workflow and create one.")
+    XCTAssertEqual(emptyState.accessibilityLabel(), "ワークフローを選択して実行設定を表示します。")
   }
 
   func testAddInstanceButtonShowsInlineWorkflowSelectionPaneAtRuntime() throws {
@@ -72,7 +72,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
     addButton.performClick(nil)
     controller.window?.layoutIfNeeded()
 
@@ -88,8 +88,8 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
 
     controller.goBack()
     controller.window?.layoutIfNeeded()
-    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "Instances")
-    XCTAssertEqual(controller.instancesListView?.isHidden, false)
+    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "ワークフロー")
+    XCTAssertEqual(controller.sourcesOverviewView?.isHidden, false)
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, true)
   }
 
@@ -127,7 +127,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    try XCTUnwrap(button(accessibilityLabel: "Add Instance", in: root)).performClick(nil)
+    try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root)).performClick(nil)
     controller.window?.layoutIfNeeded()
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })
@@ -179,7 +179,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
   }
 
   private func makeController() -> DaemonWorkflowWindowController {
-    DaemonWorkflowWindowController(
+    let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
@@ -205,6 +205,8 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
       environmentColumnStatus: { _ in "Ready" },
       onWindowWillClose: {}
     )
+    controller.showInstancesList()
+    return controller
   }
 
   private func firstSubview<T: NSView>(of type: T.Type, in root: NSView) -> T? {

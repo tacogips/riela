@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 37
+    static let expectedMockScenarioCount = 39
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -138,74 +138,22 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
-  /// The graph-RAG examples drive the `kaiba/*` retrieval add-ons for real (only
-  /// their agent step is mocked), so the mock run needs a note root that already
-  /// contains a bounded graph. Seeding `subject -> hop-one -> hop-two` lets the
-  /// traversal return actual neighbors instead of failing on missing input.
+  /// Graph-RAG examples are fully deterministic under `--mock-scenario`.
+  /// Their Kaiba node responses live beside the workflow, so this fixture never
+  /// creates a local note store or invokes production Kaiba resolution.
   private enum GraphRAGExampleFixture {
     static let workflowNames: Set<String> = ["note-agent", "note-link-extract"]
 
-    /// Seeded through the `kaiba/*` add-ons rather than kaiba's own API: the
-    /// CLI test target does not link kaiba, and going through the same nodes
-    /// the examples use keeps the fixture honest.
-    static func variables(noteRoot: String, workflowName: String) async throws -> String {
-      try FileManager.default.createDirectory(
-        atPath: noteRoot,
-        withIntermediateDirectories: true
-      )
-      let subject = try await createNote(noteRoot: noteRoot, body: "# Subject\n\nprojectalpha kickoff planning")
-      let hopOne = try await createNote(noteRoot: noteRoot, body: "# Hop One\n\nprojectalpha design decisions")
-      let hopTwo = try await createNote(noteRoot: noteRoot, body: "# Hop Two\n\nrollout notes")
-      try await linkNotes(noteRoot: noteRoot, from: subject, to: hopOne)
-      try await linkNotes(noteRoot: noteRoot, from: hopOne, to: hopTwo)
+    static func variables(workflowName: String) throws -> String {
       let input: [String: Any] = workflowName == "note-link-extract"
-        ? ["noteId": subject, "limit": 8]
+        ? ["noteId": "note-agent-source", "limit": 8]
         : ["query": "projectalpha", "limit": 5]
-      let payload: [String: Any] = ["noteRoot": noteRoot, "workflowInput": input]
+      let payload: [String: Any] = ["workflowInput": input]
       let data = try JSONSerialization.data(withJSONObject: payload)
-      return String(decoding: data, as: UTF8.self)
-    }
-
-    private static func createNote(noteRoot: String, body: String) async throws -> String {
-      let output = try await execute(
-        addon: "kaiba/note-create",
-        config: ["noteRoot": .string(noteRoot), "bodyMarkdown": .string(body)]
-      )
-      guard case let .string(noteId)? = output.payload["noteId"] else {
-        throw CLIUsageError("kaiba/note-create returned no noteId")
+      guard let variables = String(data: data, encoding: .utf8) else {
+        throw CLIUsageError("unable to encode Graph-RAG scenario variables")
       }
-      return noteId
-    }
-
-    private static func linkNotes(noteRoot: String, from: String, to: String) async throws {
-      _ = try await execute(
-        addon: "kaiba/note-graphql-document",
-        config: [
-          "noteRoot": .string(noteRoot),
-          "query": .string(
-            "mutation Link($input: LinkNotesInput!) { linkNotes(input: $input) { result { accepted } link { fromNoteId toNoteId } } }"
-          ),
-          "variables": .object([
-            "input": .object(["fromNoteId": .string(from), "toNoteId": .string(to)])
-          ])
-        ]
-      )
-    }
-
-    private static func execute(
-      addon: String,
-      config: RielaCore.JSONObject
-    ) async throws -> AdapterExecutionOutput {
-      try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
-        WorkflowAddonExecutionInput(
-          workflowId: "graph-rag-fixture",
-          stepId: "seed",
-          nodeId: "seed",
-          addon: WorkflowNodeAddonRef(name: addon, version: "1", config: config),
-          resolvedInputPayload: [:]
-        ),
-        context: AdapterExecutionContext()
-      )
+      return variables
     }
   }
 
@@ -232,13 +180,28 @@ final class RielaExampleParityTests: XCTestCase {
     }
   }
 
+  /// The retrieval-fusion mock scenario supplies all Kaiba operations, so its
+  /// test input needs only the user question and never a local note root.
+  private enum RetrievalFusionExampleFixture {
+    static let workflowName = "note-rag-retrieval-fusion"
+
+    static func variables() throws -> String {
+      let payload: [String: Any] = [
+        "workflowInput": [
+          "question": "How does retrieval-fusion search behave on a tagged notebook?"
+        ]
+      ]
+      let data = try JSONSerialization.data(withJSONObject: payload)
+      return String(decoding: data, as: UTF8.self)
+    }
+  }
+
   private enum WorkflowKnowledgeBaseExampleFixture {
     static let workflowName = "workflow-knowledge-base"
 
-    static func variables(memoryRoot: String, noteRoot: String) throws -> String {
+    static func variables(memoryRoot: String) throws -> String {
       let payload: [String: Any] = [
         "memoryRoot": memoryRoot,
-        "noteRoot": noteRoot,
         "workflowInput": [
           "task": "Implement retry handling for the flaky sync API client.",
           "knowledgeQuery": "backoff",
@@ -301,11 +264,12 @@ final class RielaExampleParityTests: XCTestCase {
     )
 
     for workflowName in mockScenarioExamples {
+      FileHandle.standardError.write(Data("parity-start \(workflowName)\n".utf8))
       let scenario = examplesRoot
         .appendingPathComponent(workflowName, isDirectory: true)
         .appendingPathComponent(MockScenario.fileName)
       let sessionStore = root.appendingPathComponent("tmp/test-example-sessions-\(workflowName)-\(UUID().uuidString)", isDirectory: true)
-      addTeardownBlock {
+      defer {
         try? FileManager.default.removeItem(at: sessionStore)
       }
       var arguments = WorkflowRunCLI.workflowRunArgumentsPrefix + [
@@ -325,6 +289,10 @@ final class RielaExampleParityTests: XCTestCase {
           "--variables",
           TelegramSDKTrioChatMock.variables(memoryRoot: memoryRoot.path)
         ])
+      }
+      if workflowName.hasSuffix("-agent-trio-chat") {
+        let memoryRoot = sessionStore.appendingPathComponent("memory", isDirectory: true)
+        arguments.append(contentsOf: ["--variables", #"{"memoryRoot":"\#(memoryRoot.path)"}"#])
       }
       if workflowName.hasPrefix("enterprise-matrix-") {
         let memoryRoot = sessionStore.appendingPathComponent("memory", isDirectory: true)
@@ -346,16 +314,20 @@ final class RielaExampleParityTests: XCTestCase {
         arguments.append(contentsOf: [
           "--variables",
           try WorkflowKnowledgeBaseExampleFixture.variables(
-            memoryRoot: sessionStore.appendingPathComponent("memory", isDirectory: true).path,
-            noteRoot: sessionStore.appendingPathComponent("notes", isDirectory: true).path
+            memoryRoot: sessionStore.appendingPathComponent("memory", isDirectory: true).path
           )
         ])
       }
-      if GraphRAGExampleFixture.workflowNames.contains(workflowName) {
-        let noteRoot = sessionStore.appendingPathComponent("notes", isDirectory: true)
+      if workflowName == RetrievalFusionExampleFixture.workflowName {
         arguments.append(contentsOf: [
           "--variables",
-          try await GraphRAGExampleFixture.variables(noteRoot: noteRoot.path, workflowName: workflowName)
+          try RetrievalFusionExampleFixture.variables()
+        ])
+      }
+      if GraphRAGExampleFixture.workflowNames.contains(workflowName) {
+        arguments.append(contentsOf: [
+          "--variables",
+          try GraphRAGExampleFixture.variables(workflowName: workflowName)
         ])
       }
       let generatedWorkflowHome = sessionStore.appendingPathComponent("home", isDirectory: true)
@@ -369,12 +341,20 @@ final class RielaExampleParityTests: XCTestCase {
         result = await app.run(arguments)
       }
 
+      FileHandle.standardError.write(Data("parity-output \(workflowName) \(result.stdout.utf8.count) bytes\n".utf8))
+      guard result.stdout.utf8.count <= 512 * 1024 else {
+        XCTFail("\(workflowName) exceeded the bounded fixture output contract; runtime history must not be recursively forwarded")
+        return
+      }
       XCTAssertEqual(result.exitCode, .success, "\(workflowName): \(result.stderr)\n\(result.stdout)")
       let decoder = JSONDecoder()
       decoder.dateDecodingStrategy = .iso8601
       let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(payload.workflowId, workflowName)
       XCTAssertEqual(payload.status, .completed, workflowName)
+      if workflowName.hasSuffix("-agent-trio-chat") {
+        assertIsolatedPersonaMemory(payload, sessionStore: sessionStore)
+      }
       if workflowName == "enterprise-matrix-security-incident" {
         let generated = try XCTUnwrap(
           payload.session.executions.first { $0.stepId == "generate-incident-lead-workflow" }?
@@ -796,6 +776,23 @@ final class RielaExampleParityTests: XCTestCase {
     XCTAssertEqual(attachment["fileId"], .string("telegram-large-photo"))
     XCTAssertEqual(attachment["width"], .number(1280))
     XCTAssertEqual(attachment["height"], .number(720))
+  }
+
+}
+
+// Catalog and fixture helpers are separate from the executable parity cases.
+extension RielaExampleParityTests {
+  private func assertIsolatedPersonaMemory(_ result: WorkflowRunResult, sessionStore: URL) {
+    let expectedRoot = sessionStore.appendingPathComponent("memory", isDirectory: true).path
+    for execution in result.session.executions {
+      guard let payload = execution.acceptedOutput?.payload else { continue }
+      if execution.stepId.hasPrefix("read-"), execution.stepId.hasSuffix("-memory") {
+        XCTAssertEqual(payload["memoryRoot"], .string(expectedRoot), "Mock examples must not read the user's persona memory")
+      }
+      if execution.stepId.hasPrefix("write-"), execution.stepId.hasSuffix("-memory") {
+        XCTAssertEqual(jsonObject(payload["memory"])?["memoryRoot"], .string(expectedRoot), "Mock examples must not write the user's persona memory")
+      }
+    }
   }
 
   private func expectedWorkflowId(for workflowName: String) -> String {

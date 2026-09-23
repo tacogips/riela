@@ -1,0 +1,20 @@
+[
+	{
+		"stepId": "architect",
+		"displayName": "Aster",
+		"tokenEnv": "MONJA_ARCHITECT_TOKEN",
+		"finalDecision": false
+	},
+	{
+		"stepId": "skeptic",
+		"displayName": "Flint",
+		"tokenEnv": "MONJA_SKEPTIC_TOKEN",
+		"finalDecision": false
+	},
+	{
+		"stepId": "integrator",
+		"displayName": "Mira",
+		"tokenEnv": "MONJA_INTEGRATOR_TOKEN",
+		"finalDecision": true
+	}
+]

@@ -1,0 +1,167 @@
+{
+  "plan-queries": {
+    "provider": "scenario-mock",
+    "model": "gpt-5.5",
+    "when": {
+      "always": true
+    },
+    "payload": {
+      "strictQuery": "hybrid reranking",
+      "contextQuery": "atlas eviction",
+      "relaxedQuery": "eviction telemetry planner",
+      "graphQuery": "hybrid reranking"
+    }
+  },
+  "seed-knowledge-base": {
+    "provider": "scenario-mock",
+    "model": "kaiba/notebook-ingest-pages",
+    "when": { "always": true },
+    "payload": {
+      "notebookId": "notebook-atlas-retrieval-playbook",
+      "noteIds": ["note-hybrid-reranking", "note-cache-eviction"],
+      "pageCount": 5,
+      "queryPlan": {
+        "strict": "hybrid reranking",
+        "context": "atlas eviction",
+        "relaxed": "eviction telemetry planner",
+        "graph": "hybrid reranking"
+      },
+      "seededNotebookId": "notebook-atlas-retrieval-playbook",
+      "seededNoteIds": ["note-hybrid-reranking", "note-cache-eviction"],
+      "seededPageCount": 5
+    }
+  },
+  "strict-search": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-search",
+    "when": { "always": true },
+    "payload": {
+      "queryPlan": {
+        "strict": "hybrid reranking",
+        "context": "atlas eviction",
+        "relaxed": "eviction telemetry planner",
+        "graph": "hybrid reranking"
+      },
+      "seededNotebookId": "notebook-atlas-retrieval-playbook",
+      "seededNoteIds": ["note-hybrid-reranking", "note-cache-eviction"],
+      "seededPageCount": 5,
+      "resultCount": 1,
+      "noteIds": ["note-hybrid-reranking"],
+      "results": [{
+        "noteId": "note-hybrid-reranking",
+        "title": "Hybrid reranking pipeline",
+        "termCoverage": 1,
+        "isLinkedNeighbor": false
+      }],
+      "strictSearch": {
+        "query": "hybrid reranking",
+        "resultCount": 1,
+        "noteIds": ["note-hybrid-reranking"]
+      }
+    }
+  },
+  "contextual-search": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-search",
+    "when": { "always": true },
+    "payload": {
+      "queryPlan": {
+        "strict": "hybrid reranking",
+        "context": "atlas eviction",
+        "relaxed": "eviction telemetry planner",
+        "graph": "hybrid reranking"
+      },
+      "seededNotebookId": "notebook-atlas-retrieval-playbook",
+      "seededNoteIds": ["note-hybrid-reranking", "note-cache-eviction"],
+      "seededPageCount": 5,
+      "strictSearch": {
+        "query": "hybrid reranking",
+        "resultCount": 1,
+        "noteIds": ["note-hybrid-reranking"]
+      },
+      "resultCount": 1,
+      "noteIds": ["note-cache-eviction"],
+      "results": [{
+        "noteId": "note-cache-eviction",
+        "title": "Cache eviction policy",
+        "termCoverage": 1,
+        "isLinkedNeighbor": false
+      }],
+      "contextualSearch": {
+        "query": "atlas eviction",
+        "resultCount": 1,
+        "noteIds": ["note-cache-eviction"]
+      }
+    }
+  },
+  "relaxed-search": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-search",
+    "when": { "always": true },
+    "payload": {
+      "queryPlan": {
+        "strict": "hybrid reranking",
+        "context": "atlas eviction",
+        "relaxed": "eviction telemetry planner",
+        "graph": "hybrid reranking"
+      },
+      "seededNotebookId": "notebook-atlas-retrieval-playbook",
+      "seededNoteIds": ["note-hybrid-reranking", "note-cache-eviction"],
+      "seededPageCount": 5,
+      "strictSearch": { "noteIds": ["note-hybrid-reranking"] },
+      "contextualSearch": { "noteIds": ["note-cache-eviction"] },
+      "resultCount": 2,
+      "noteIds": ["note-cache-eviction", "note-telemetry-dashboards"],
+      "results": [{ "noteId": "note-cache-eviction" }, { "noteId": "note-telemetry-dashboards" }],
+      "relaxedSearch": {
+        "query": "eviction telemetry planner",
+        "resultCount": 2,
+        "noteIds": ["note-cache-eviction", "note-telemetry-dashboards"]
+      }
+    }
+  },
+  "graph-search": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-search",
+    "when": { "always": true },
+    "payload": {
+      "queryPlan": {
+        "strict": "hybrid reranking",
+        "context": "atlas eviction",
+        "relaxed": "eviction telemetry planner",
+        "graph": "hybrid reranking"
+      },
+      "seededNotebookId": "notebook-atlas-retrieval-playbook",
+      "seededNoteIds": ["note-hybrid-reranking", "note-cache-eviction"],
+      "seededPageCount": 5,
+      "strictSearch": { "noteIds": ["note-hybrid-reranking"] },
+      "contextualSearch": { "noteIds": ["note-cache-eviction"] },
+      "relaxedSearch": { "noteIds": ["note-cache-eviction", "note-telemetry-dashboards"] },
+      "resultCount": 1,
+      "noteIds": ["note-hybrid-reranking"],
+      "results": [{
+        "noteId": "note-hybrid-reranking",
+        "isLinkedNeighbor": true,
+        "termCoverage": 1
+      }],
+      "graphSearch": {
+        "query": "hybrid reranking",
+        "resultCount": 1,
+        "noteIds": ["note-hybrid-reranking"]
+      }
+    }
+  },
+  "graph-neighbors": {
+    "provider": "scenario-mock",
+    "model": "kaiba/note-graph-neighbors",
+    "when": { "always": true },
+    "payload": {
+      "notebookId": "notebook-atlas-retrieval-playbook",
+      "graphNeighbors": [{
+        "fromNoteId": "note-hybrid-reranking",
+        "toNoteId": "note-cache-eviction",
+        "pageRank": 0.42
+      }]
+    }
+  }
+}

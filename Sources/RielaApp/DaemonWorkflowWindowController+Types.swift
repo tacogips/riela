@@ -67,9 +67,9 @@ extension DaemonWorkflowWindowController {
     var importDetail: String {
       switch self {
       case .addInstance:
-        "Import a workflow directory, package directory, or package file, then return to instance creation."
+        "ワークフローまたはパッケージを追加して、実行設定に戻ります。"
       case .relink:
-        "Import a workflow directory, package directory, or package file, then return to relink this instance."
+        "ワークフローまたはパッケージを追加して、この実行設定に関連付けます。"
       }
     }
   }

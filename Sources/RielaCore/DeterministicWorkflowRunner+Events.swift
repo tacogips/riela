@@ -36,7 +36,7 @@ extension DeterministicWorkflowRunner {
         stepId: step.id,
         nodeId: step.nodeId,
         executionId: execution?.executionId,
-        nodeExecutions: execution == nil ? nil : session.executions.count
+        nodeExecutions: execution == nil ? nil : session.newExecutionCount
       ),
       handler: handler
     )
@@ -59,7 +59,7 @@ extension DeterministicWorkflowRunner {
       stepId: step.id,
       nodeId: step.nodeId,
       executionId: publishResult.stepExecution.executionId,
-      nodeExecutions: session.executions.count,
+      nodeExecutions: session.newExecutionCount,
       transitions: publishedTransitions
     )
     await recordCompletionTelemetry(

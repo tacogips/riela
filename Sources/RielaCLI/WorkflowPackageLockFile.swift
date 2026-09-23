@@ -58,17 +58,20 @@ public struct WorkflowPackageLockEntry: Codable, Equatable, Sendable {
 public struct WorkflowPackageLockSource: Codable, Equatable, Sendable {
   public var kind: String
   public var reference: String?
+  public var gitRevision: String?
   public var archiveDigestAlgorithm: String?
   public var archiveDigest: String?
 
   public init(
     kind: String,
     reference: String? = nil,
+    gitRevision: String? = nil,
     archiveDigestAlgorithm: String? = nil,
     archiveDigest: String? = nil
   ) {
     self.kind = kind
     self.reference = reference
+    self.gitRevision = gitRevision
     self.archiveDigestAlgorithm = archiveDigestAlgorithm
     self.archiveDigest = archiveDigest
   }

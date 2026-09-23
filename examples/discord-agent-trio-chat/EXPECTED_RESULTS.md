@@ -18,9 +18,9 @@
   `@Rina` plus a concrete question, so autonomous discussion is readable in the
   chat instead of being only an internal route.
 - Requests such as `しばらく自然に雑談して` keep the trio in bounded autonomous
-  conversation for up to six persona turns across Yui, Mika, and Rina, then clear
-  all handoff flags and close the final reply so the workflow stops without a
-  dangling mention or runaway loop.
+  conversation. The current memory-write guard defaults to at most three
+  persona turns, clears all handoff flags at the limit, and closes the final
+  reply without a dangling mention or runaway loop.
 - Each persona reads only its own recent records from the declared
   `persona-chat-memory` memory database before replying, using
   `workflowInput.memoryRoot`, `RIELA_MEMORY_ROOT`, or the default Riela memory

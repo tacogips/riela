@@ -17,7 +17,7 @@ extension RielaApp {
       ? defaultIdentity
       : sanitizedDaemonInstanceId(request.identity)
     guard !daemonState.preferences.keys.contains(identity) else {
-      status = "Instance ID already exists: \(identity)"
+      status = "Run configuration ID already exists: \(identity)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -27,7 +27,7 @@ extension RielaApp {
       sourceIdentity: source.id,
       displayName: request.displayName,
       available: true,
-      active: request.startsImmediately,
+      active: false,
       workingDirectory: request.workingDirectory,
       environmentFilePath: request.environmentFilePath
     )
@@ -41,33 +41,23 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    status = "Created instance \(identity)"
+    status = "実行設定を作成しました: \(identity)"
     refreshDaemonWorkflowWindow()
     let runtimeIdentity = profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity)
     daemonWindowController?.selectCandidate(identity: runtimeIdentity)
-    guard request.startsImmediately,
-      let resolved = resolveDaemonWorkflowInstance(identity: runtimeIdentity)
-    else {
-      return
-    }
-    Task { @MainActor in
-      await daemonRuntime.start(
-        resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: resolved.preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
-      )
-      status = "Started \(resolved.candidate.displayName)"
-      refreshDaemonWorkflowWindow()
-      daemonWindowController?.selectCandidate(identity: runtimeIdentity)
-    }
+    guard request.startsImmediately else { return }
+    startDaemonWorkflowInstance(identity: runtimeIdentity)
   }
 
   func startDaemonWorkflowInstance(identity: String) {
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance needs a workflow source"
-      refreshDaemonWorkflowWindow()
-      return
+    Task { [weak self] in
+      guard let self else { return }
+      guard let current = await self.approvedDaemonWorkflowInstance(identity: identity) else { return }
+      self.activateDaemonWorkflowInstance(resolved: current)
     }
+  }
+
+  private func activateDaemonWorkflowInstance(resolved: ResolvedDaemonWorkflowInstance) {
     var state = resolved.state
     var preference = resolved.preference
     preference.sourceIdentity = resolved.instance.instance.source.id
@@ -78,20 +68,26 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    Task { @MainActor in
+    let runtimeIdentity = resolved.runtimeIdentity
+    Task { @MainActor [weak self] in
+      guard let self,
+            let approved = await self.approvedDaemonWorkflowInstance(identity: runtimeIdentity) else {
+        return
+      }
       await daemonRuntime.start(
-        resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
+        approved.candidate,
+        configuration: self.daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
+        server: self.daemonServerConfiguration(profileName: approved.profileName),
+        sessionStoreRoot: daemonSessionStoreRoot(profileName: approved.profileName)
       )
-      status = "Started \(resolved.candidate.displayName)"
-      refreshDaemonWorkflowWindow()
+      self.status = "Started \(approved.candidate.displayName)"
+      self.refreshDaemonWorkflowWindow()
     }
   }
 
   func stopDaemonWorkflowInstance(identity: String) {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance needs a workflow source"
+      status = "実行設定にワークフローを関連付けてください"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -113,30 +109,30 @@ extension RielaApp {
   }
 
   func restartDaemonWorkflowInstance(identity: String) {
-    guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance needs a workflow source"
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    var state = resolved.state
-    var preference = resolved.preference
-    preference.sourceIdentity = resolved.instance.instance.source.id
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      guard let current = await self.approvedDaemonWorkflowInstance(identity: identity) else { return }
+      var state = current.state
+      var preference = current.preference
+      preference.sourceIdentity = current.instance.instance.source.id
       preference.available = true
       preference.active = true
-    state.preferences[resolved.localIdentity] = preference
-    guard saveDaemonState(state, profileName: resolved.profileName) else {
-      refreshDaemonWorkflowWindow()
-      return
-    }
-    Task { @MainActor in
-      await daemonRuntime.stop(identity: resolved.runtimeIdentity)
-      await daemonRuntime.start(
-        resolved.candidate,
-        configuration: daemonRuntimeConfiguration(for: resolved.candidate, preference: preference),
-        server: daemonServerConfiguration(profileName: resolved.profileName)
+      state.preferences[current.localIdentity] = preference
+      guard self.saveDaemonState(state, profileName: current.profileName) else {
+        self.refreshDaemonWorkflowWindow()
+        return
+      }
+      await self.daemonRuntime.stop(identity: current.runtimeIdentity)
+      guard let approved = await self.approvedDaemonWorkflowInstance(identity: identity),
+            approved.preference.available, approved.preference.active else { return }
+      await self.daemonRuntime.start(
+        approved.candidate,
+        configuration: self.daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference),
+        server: self.daemonServerConfiguration(profileName: approved.profileName),
+        sessionStoreRoot: daemonSessionStoreRoot(profileName: approved.profileName)
       )
-      status = "Restarted \(resolved.candidate.displayName)"
-      refreshDaemonWorkflowWindow()
+      self.status = "Restarted \(approved.candidate.displayName)"
+      self.refreshDaemonWorkflowWindow()
     }
   }
 
@@ -145,7 +141,7 @@ extension RielaApp {
     var state = daemonState(profileName: resolvedIdentity.profileName)
     let previousPreference = state.preferences[resolvedIdentity.localIdentity]
     guard previousPreference != nil else {
-      status = "Instance could not be found"
+      status = "Run configuration could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -159,7 +155,7 @@ extension RielaApp {
     }
     Task { @MainActor in
       await daemonRuntime.stop(identity: identity)
-      status = "Removed instance \(resolvedIdentity.localIdentity) from profile \(resolvedIdentity.profileName.rawValue)"
+      status = "実行設定を削除しました: \(resolvedIdentity.localIdentity)（\(resolvedIdentity.profileName.rawValue)）"
       refreshDaemonWorkflowWindow()
     }
   }
@@ -210,15 +206,15 @@ extension RielaApp {
 
   func duplicateDaemonWorkflowInstance(identity: String) {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance could not be found"
+      status = "Run configuration could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
     let candidate = resolved.candidate
     let defaultId = uniqueDaemonInstanceId(for: candidate)
     guard let result = promptForDaemonInstance(
-      title: "New Instance",
-      message: "Create another saved instance from \(candidate.displayName).",
+      title: "実行設定を追加",
+      message: "\(candidate.displayName) の実行設定を追加します。",
       idValue: defaultId,
       displayNameValue: "\(candidate.displayName) copy"
     ) else {
@@ -226,7 +222,7 @@ extension RielaApp {
     }
     var state = resolved.state
     guard !state.preferences.keys.contains(result.identity) else {
-      status = "Instance ID already exists: \(result.identity)"
+      status = "Run configuration ID already exists: \(result.identity)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -248,7 +244,7 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    status = "Created instance \(result.identity)"
+    status = "実行設定を作成しました: \(result.identity)"
     refreshDaemonWorkflowWindow()
     daemonWindowController?.selectCandidate(identity: profileRuntimeIdentity(
       profileName: resolved.profileName,
@@ -258,16 +254,16 @@ extension RielaApp {
 
   func renameDaemonWorkflowInstance(identity: String) {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "Instance could not be found"
+      status = "Run configuration could not be found"
       refreshDaemonWorkflowWindow()
       return
     }
     let candidate = resolved.candidate
     guard let result = promptForDaemonInstance(
-      title: "Instance Name",
-      message: "Update the saved instance identifier and display name for \(candidate.displayName).",
+      title: "実行設定の名前",
+      message: "\(candidate.displayName) の実行設定の名前を変更します。",
       idValue: resolved.localIdentity,
-      displayNameValue: candidate.displayName
+      displayNameValue: resolved.instance.instance.displayName
     ) else {
       return
     }
@@ -275,7 +271,7 @@ extension RielaApp {
     let previousPreference = state.preferences[resolved.localIdentity]
     let previousTargetPreference = state.preferences[result.identity]
     if result.identity != resolved.localIdentity, previousTargetPreference != nil {
-      status = "Instance ID already exists: \(result.identity)"
+      status = "Run configuration ID already exists: \(result.identity)"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -301,17 +297,20 @@ extension RielaApp {
       if result.identity != resolved.localIdentity {
         await daemonRuntime.stop(identity: identity)
       }
-      status = "Renamed instance to \(result.identity)"
+      status = "実行設定の名前を変更しました: \(result.identity)"
       refreshDaemonWorkflowWindow()
       let renamedIdentity = RielaAppProfileInstanceIdentity(
         profileName: resolved.profileName,
         identity: result.identity
       ).rawValue
-      if shouldRestart, let renamed = resolveDaemonWorkflowInstance(identity: renamedIdentity) {
-        await daemonRuntime.start(
+      if shouldRestart,
+         let renamed = await approvedDaemonWorkflowInstance(identity: renamedIdentity),
+         renamed.preference.available, renamed.preference.active {
+        await self.daemonRuntime.start(
           renamed.candidate,
-          configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: preference),
-          server: daemonServerConfiguration(profileName: resolved.profileName)
+          configuration: daemonRuntimeConfiguration(for: renamed.candidate, preference: renamed.preference),
+          server: daemonServerConfiguration(profileName: renamed.profileName),
+          sessionStoreRoot: daemonSessionStoreRoot(profileName: renamed.profileName)
         )
         refreshDaemonWorkflowWindow()
       }
@@ -321,7 +320,7 @@ extension RielaApp {
 
   func saveDaemonWorkflowEnvironmentVariables(identity: String, text: String) -> String? {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      return "Instance could not be found"
+      return "Run configuration could not be found"
     }
     do {
       let variables = try parseEnvironmentVariables(text)
@@ -345,7 +344,7 @@ extension RielaApp {
 
   func saveDaemonWorkflowDefaultVariables(identity: String, text: String) -> String? {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      return "Instance could not be found"
+      return "Run configuration could not be found"
     }
     do {
       let variables = try parseWorkflowVariables(text)
@@ -396,9 +395,9 @@ extension RielaApp {
     guard alert.runModal() == .alertFirstButtonReturn else {
       return nil
     }
-    let identity = sanitizedDaemonInstanceId(idField.stringValue)
+    let identity = idValue
     guard !identity.isEmpty else {
-      status = "Instance ID is required"
+      status = "実行設定 ID が必要です"
       refreshDaemonWorkflowWindow()
       return nil
     }
@@ -487,8 +486,7 @@ struct DaemonInstancePromptViewFactory {
   func nameEditorStack(idField: NSTextField, nameField: NSTextField) -> NSStackView {
     accessoryStack(
       views: [
-        sectionTitle("Instance Settings"),
-        fieldRow(title: "Instance ID", control: idField),
+        sectionTitle("実行設定"),
         fieldRow(title: "Display Name", control: nameField)
       ],
       size: Self.nameEditorSize

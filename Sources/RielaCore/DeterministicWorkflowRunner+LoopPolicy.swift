@@ -473,7 +473,7 @@ extension DeterministicWorkflowRunner {
       loopBudgetMaxTotalTokens: violation.maxTotalTokens,
       loopBudgetElapsedMs: violation.elapsedMs,
       loopBudgetMaxWallClockMs: violation.maxWallClockMs,
-      nodeExecutions: session.executions.count
+      nodeExecutions: session.newExecutionCount
     )
   }
 
@@ -571,7 +571,7 @@ extension DeterministicWorkflowRunner {
         .prefix(maximumReportedLoopFindingFingerprints)
         .map(\.key),
       loopStallPolicySource: policySource.rawValue,
-      nodeExecutions: session.executions.count
+      nodeExecutions: session.newExecutionCount
     )
   }
 

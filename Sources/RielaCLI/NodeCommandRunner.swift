@@ -1,6 +1,8 @@
 import Foundation
 import RielaAddons
 import RielaCore
+import RielaKaibaAddons
+import RielaKaibaSupport
 
 public struct NodeRunCommandResult: Codable, Equatable, Sendable {
   public var scope: String
@@ -106,30 +108,49 @@ public struct NodeCommandRunner: Sendable {
     let variables = try parsed.variables.map {
       try JSONReferenceLoader().object(from: $0, workingDirectory: workingDirectory)
     } ?? [:]
+    let kaibaSnapshot: KaibaExecutionSnapshot?
     if parsed.mockScenarioPath == nil {
+      do {
+        kaibaSnapshot = try await KaibaExecutionPreflight.direct(
+          addon: WorkflowNodeAddonRef(name: target, version: nil, inputs: variables),
+          environment: environment
+        )
+      } catch {
+        if let preflight = CLIUsageError.kaibaPreflight(error) {
+          throw preflight
+        }
+        throw error
+      }
       try await preflightInstalledAddonExecution(
         target: target,
         parsed: parsed,
         workingDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true),
         environment: environment
       )
+    } else {
+      kaibaSnapshot = nil
     }
     let resolver = try await makeScenarioBackedAddonResolver(
       scenarioPath: parsed.mockScenarioPath,
       workingDirectory: workingDirectory,
       environment: environment
     )
-    let output = try await resolver.execute(
-      WorkflowAddonExecutionInput(
-        workflowId: "node-run",
-        stepId: "node-run",
-        nodeId: "node-run",
-        addon: WorkflowNodeAddonRef(name: target, version: nil, inputs: variables),
-        variables: variables,
-        resolvedInputPayload: variables
-      ),
-      context: AdapterExecutionContext(deadline: deadline(timeoutMs: parsed.timeoutMs))
-    )
+    let output = try await KaibaAddonExecutionContext.withSnapshot(
+      kaibaSnapshot,
+      allowsMockExecution: parsed.mockScenarioPath != nil
+    ) {
+      try await resolver.execute(
+        WorkflowAddonExecutionInput(
+          workflowId: "node-run",
+          stepId: "node-run",
+          nodeId: "node-run",
+          addon: WorkflowNodeAddonRef(name: target, version: nil, inputs: variables),
+          variables: variables,
+          resolvedInputPayload: variables
+        ),
+        context: AdapterExecutionContext(deadline: deadline(timeoutMs: parsed.timeoutMs))
+      )
+    }
     let result = NodeRunCommandResult(
       scope: command.options.scope,
       command: command.kind.rawValue,

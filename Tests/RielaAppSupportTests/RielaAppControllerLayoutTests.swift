@@ -55,7 +55,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     XCTAssertTrue(visibleTexts.contains("Lost Instance"))
     XCTAssertTrue(visibleTexts.contains("Missing source, missing-source"))
     XCTAssertTrue(visibleTexts.contains("Relink Source"))
-    XCTAssertTrue(visibleTexts.contains("Remove Instance"))
+    XCTAssertTrue(visibleTexts.contains("実行設定を削除"))
     XCTAssertFalse(visibleTexts.contains("Start"))
     XCTAssertFalse(visibleTexts.contains("Stop"))
     XCTAssertFalse(visibleTexts.contains("Restart"))
@@ -65,12 +65,12 @@ final class RielaAppControllerLayoutTests: XCTestCase {
 
     let relinkRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Relink Source", in: root))
     XCTAssertEqual(relinkRow.accessibilityRole(), .button)
-    XCTAssertEqual(relinkRow.accessibilityHelp(), "Choose a workflow source for this saved instance.")
-    XCTAssertEqual(relinkRow.toolTip, "Choose a workflow source for this saved instance.")
+    XCTAssertEqual(relinkRow.accessibilityHelp(), "この実行設定で使うワークフローを選択します。")
+    XCTAssertEqual(relinkRow.toolTip, "この実行設定で使うワークフローを選択します。")
     XCTAssertTrue(relinkRow.acceptsFirstResponder)
-    let removeRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Remove Instance", in: root))
+    let removeRow = try XCTUnwrap(selectableRow(accessibilityLabel: "実行設定を削除", in: root))
     XCTAssertEqual(removeRow.accessibilityRole(), .button)
-    XCTAssertEqual(removeRow.toolTip, "Delete only this instance.")
+    XCTAssertEqual(removeRow.toolTip, "この実行設定を削除します。")
     XCTAssertTrue(removeRow.acceptsFirstResponder)
   }
 
@@ -195,7 +195,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     XCTAssertEqual(cell.accessibilityRole(), NSAccessibility.Role.button)
     XCTAssertEqual(cell.accessibilityLabel(), "Morning Summary")
     XCTAssertEqual(cell.accessibilityValue() as? String, "Stopped")
-    XCTAssertEqual(cell.accessibilityHelp(), "Show instance details")
+    XCTAssertEqual(cell.accessibilityHelp(), "実行設定の詳細を表示")
     XCTAssertTrue(cell.accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
 
@@ -257,7 +257,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     let detailIndicator = try XCTUnwrap(allSubviews(of: NSProgressIndicator.self, in: root).first {
-      $0.accessibilityLabel() == "Instance status progress"
+      $0.accessibilityLabel() == "実行設定の状態"
     })
     XCTAssertTrue(detailIndicator.isIndeterminate)
     XCTAssertFalse(detailIndicator.hasHiddenAncestor)
@@ -326,14 +326,14 @@ final class RielaAppControllerLayoutTests: XCTestCase {
         constant: DaemonInstancePromptViewFactory.nameEditorSize.width
       )
     )
-    XCTAssertEqual(idField.contentCompressionResistancePriority(for: .horizontal), .defaultLow)
+    XCTAssertNil(idField.superview)
     XCTAssertEqual(nameField.contentCompressionResistancePriority(for: .horizontal), .defaultLow)
-    XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "Instance Settings" })
-    XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "Instance ID" })
+    XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "実行設定" })
+    XCTAssertFalse(visibleTextFields(in: nameStack).contains { $0.stringValue == "Instance ID" })
     XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "Display Name" })
 
     let nameRows = allSubviews(of: RielaAppSettingsRow.self, in: nameStack)
-    XCTAssertEqual(nameRows.count, 2)
+    XCTAssertEqual(nameRows.count, 1)
     for row in nameRows {
       XCTAssertEqual(row.edgeInsets.left, 12)
       XCTAssertEqual(row.layer?.cornerRadius, 12)
@@ -487,7 +487,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
 
 private extension RielaAppControllerLayoutTests {
   private func makeController() -> DaemonWorkflowWindowController {
-    DaemonWorkflowWindowController(
+    let controller = DaemonWorkflowWindowController(
       onRefresh: {},
       onSelectProfile: { _ in },
       onCreateProfile: { RielaAppProfileName($0) },
@@ -513,6 +513,8 @@ private extension RielaAppControllerLayoutTests {
       environmentColumnStatus: { _ in "Ready" },
       onWindowWillClose: {}
     )
+    controller.showInstancesList()
+    return controller
   }
 
   private func firstSubview<T: NSView>(of type: T.Type, in root: NSView) -> T? {

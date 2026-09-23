@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
+source "$script_dir/lib/riela-web-packaging.sh"
 
 usage() {
   cat <<'EOF'
@@ -160,8 +161,9 @@ package_version() {
 # stdout discarded fails silently and the script "succeeds" with no binary.
 # Build output goes to stderr so CI logs keep the compiler diagnostics.
 swift_release_build() {
-  local target swift_bin developer_dir sdkroot triple
+  local target scratch_path swift_bin developer_dir sdkroot triple
   target="$1"
+  scratch_path="$2"
   swift_bin="${RIELA_SWIFT:-$(swift_bin_default)}"
   developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
   sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -171,18 +173,19 @@ swift_release_build() {
     cd "$repo_root"
     if [[ "$target" == darwin-* ]]; then
       DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-        "$swift_bin" build -c release --product riela --triple "$triple" 1>&2
+        "$swift_bin" build -c release --product riela --triple "$triple" --scratch-path "$scratch_path" 1>&2
     elif [[ "$target" == linux-* ]]; then
-      "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib 1>&2
+      "$swift_bin" build -c release --product riela --triple "$triple" --scratch-path "$scratch_path" -Xswiftc -static-stdlib 1>&2
     else
-      "$swift_bin" build -c release --product riela --triple "$triple" 1>&2
+      "$swift_bin" build -c release --product riela --triple "$triple" --scratch-path "$scratch_path" 1>&2
     fi
   )
 }
 
 swift_release_bin_path() {
-  local target swift_bin developer_dir sdkroot triple
+  local target scratch_path swift_bin developer_dir sdkroot triple
   target="$1"
+  scratch_path="$2"
   swift_bin="${RIELA_SWIFT:-$(swift_bin_default)}"
   developer_dir="${RIELA_SWIFT_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
   sdkroot="${RIELA_SWIFT_SDKROOT:-/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
@@ -192,13 +195,25 @@ swift_release_bin_path() {
     cd "$repo_root"
     if [[ "$target" == darwin-* ]]; then
       DEVELOPER_DIR="$developer_dir" SDKROOT="$sdkroot" \
-        "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
+        "$swift_bin" build -c release --product riela --triple "$triple" --scratch-path "$scratch_path" --show-bin-path
     elif [[ "$target" == linux-* ]]; then
-      "$swift_bin" build -c release --product riela --triple "$triple" -Xswiftc -static-stdlib --show-bin-path
+      "$swift_bin" build -c release --product riela --triple "$triple" --scratch-path "$scratch_path" -Xswiftc -static-stdlib --show-bin-path
     else
-      "$swift_bin" build -c release --product riela --triple "$triple" --show-bin-path
+      "$swift_bin" build -c release --product riela --triple "$triple" --scratch-path "$scratch_path" --show-bin-path
     fi
   )
+}
+
+assert_binary_version() {
+  local binary expected actual
+  binary="$1"
+  expected="$2"
+  actual="$("$binary" --version)"
+
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'staged riela version mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
+    return 1
+  fi
 }
 
 print_plan() {
@@ -224,32 +239,38 @@ print_plan() {
     printf '  release bin path command: swift build -c release --product riela --triple %s --show-bin-path\n' "$triple"
   fi
   printf '  staged binary: %s\n' "$binary"
+  printf '  staged web assets: %s/share/riela/web\n' "$work_dir"
   printf '  archive: %s\n' "$archive"
   printf '  checksum: %s.sha256\n' "$archive"
   printf '  publish side effects: false\n'
 }
 
 build_target() {
-  local version target release_dir bin_path work_dir archive binary
+  local version target release_dir bin_path work_dir archive binary scratch_path
   version="$1"
   target="$2"
   release_dir="$3"
   work_dir="$release_dir/work/riela-$version-$target"
   archive="$release_dir/riela-$version-$target.tar.gz"
   binary="$work_dir/bin/riela"
+  scratch_path="$release_dir/build/riela-$version-$target"
 
   assert_child_path "$release_dir" "$work_dir"
   assert_child_path "$release_dir" "$archive"
+  assert_child_path "$release_dir" "$scratch_path"
 
   rm -rf "$work_dir" "$archive" "$archive.sha256"
   mkdir -p "$work_dir/bin"
 
-  swift_release_build "$target"
-  bin_path="$(swift_release_bin_path "$target" | tail -n 1)"
+  swift_release_build "$target" "$scratch_path"
+  bin_path="$(swift_release_bin_path "$target" "$scratch_path" | tail -n 1)"
   test -x "$bin_path/riela"
   cp "$bin_path/riela" "$binary"
   chmod 0755 "$binary"
+  assert_binary_version "$binary" "$version"
   cp "$repo_root/README.md" "$work_dir/README.md"
+  riela_stage_web_assets "$repo_root" "$work_dir/share/riela/web"
+  riela_stage_swift_resources "$bin_path" "$work_dir/share/riela"
 
   tar -C "$work_dir" -czf "$archive" .
   write_sha256 "$archive" > "$archive.sha256"
@@ -286,6 +307,7 @@ main() {
   fi
 
   local target
+  if [[ "$dry_run" != true ]]; then riela_build_web_assets "$repo_root"; fi
   for target in "${targets[@]}"; do
     validate_target "$target"
     if [[ "$dry_run" == true ]]; then

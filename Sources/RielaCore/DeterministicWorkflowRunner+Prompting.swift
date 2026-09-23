@@ -119,7 +119,8 @@ extension DeterministicWorkflowRunner {
       renderedSystemPromptTemplates + [
       runtimeVariablesPrompt(variables: variables),
       priorReviewFeedbackPrompt(variables: variables),
-      memoryGuidance(variables: variables)
+      memoryGuidance(variables: variables),
+      outputContractGuidance(payload.output)
       ]
     )
       .compactMap { template in
@@ -144,6 +145,18 @@ extension DeterministicWorkflowRunner {
     }
     return """
     Runtime variables are available under `runtimeVariables`. Use this JSON as the authoritative runtimeVariables object:
+    \(rendered)
+    """
+  }
+
+  private func outputContractGuidance(_ output: NodeOutputContract?) -> String? {
+    guard let schema = output?.jsonSchema,
+          let rendered = try? JSONValue.object(schema).compactJSONString() else { return nil }
+    // Append after template rendering: schema examples may contain literal {{variables}}.
+    return """
+    Required output contract: your output payload must be one JSON object satisfying the following authored JSON Schema.
+    Return the object directly, without Markdown fences or explanatory prose, unless the task requires routing metadata.
+    When routing metadata is required, use {"when": {"condition": true}, "payload": {...}}; the schema applies to payload, not the routing envelope.
     \(rendered)
     """
   }

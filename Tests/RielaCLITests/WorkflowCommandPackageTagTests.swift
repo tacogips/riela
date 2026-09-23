@@ -509,6 +509,7 @@ extension WorkflowCommandTests {
 
     let siblingSearch = await app.run([
       "package", "search", "fallback",
+      "--registry-url", "https://github.com/example/sibling-packages",
       "--working-dir", workingDirectory.path,
       "--output", "json"
     ], environment: ["HOME": homeRoot.path])

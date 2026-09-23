@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "Local Riela window; no remote origins or filesystem access.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

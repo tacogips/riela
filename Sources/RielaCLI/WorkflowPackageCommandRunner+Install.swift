@@ -280,7 +280,7 @@ extension WorkflowPackageCommandRunner {
       overwrite: parsed.overwrite,
       recordCreated: transaction.recordCreatedSkillProjection
     )
-    let lockEntry = try workflowPackageLockEntry(
+    var lockEntry = try workflowPackageLockEntry(
       manifest: manifest,
       sourceReference: lockedSource?.sourceReference ?? packageLockSourceReference(
         target: target,
@@ -292,6 +292,7 @@ extension WorkflowPackageCommandRunner {
       sourceKind: lockedSource?.sourceKind ?? packageLockSourceKind(parsed: parsed, archiveURL: resolvedSource.archiveURL),
       archiveURL: resolvedSource.archiveURL
     )
+    lockEntry.source.gitRevision = expectedLockEntry?.source.gitRevision
     transaction.recordLockEntry(lockEntry)
     return WorkflowPackageInstallation(
       destination: destination,
@@ -437,6 +438,18 @@ extension WorkflowPackageCommandRunner {
       let sourceURL = absoluteURL(reference, relativeTo: workingDirectory)
       let resolved = try materializedPackageSource(sourceURL, workingDirectory: workingDirectory)
       return LockedPackageSource(resolvedSource: resolved, sourceKind: "source", sourceReference: reference)
+    case "github":
+      guard let reference = entry.source.reference,
+        let github = try GitHubPackageReference.parse(reference) else {
+        throw CLIUsageError("package ci locked GitHub source is invalid: \(entry.name)")
+      }
+      let checkout = try github.checkout(workingDirectory: workingDirectory, revision: entry.source.gitRevision)
+      let resolved = ResolvedPackageSource(
+        directory: checkout.packageDirectory,
+        temporaryRoot: checkout.temporaryRoot,
+        sourceReference: reference
+      )
+      return LockedPackageSource(resolvedSource: resolved, sourceKind: "github", sourceReference: reference)
     case "registry", "installed":
       return nil
     default:
@@ -544,6 +557,34 @@ extension WorkflowPackageCommandRunner {
   }
 
   func updatePackages(target: String?, parsed: ParsedParityOptions) async throws -> [WorkflowPackageSummary] {
+    if let target, let reference = try GitHubPackageReference.parse(target) {
+      guard !parsed.all, parsed.source == nil else {
+        throw CLIUsageError("package update GitHub URL cannot be combined with --all or --source")
+      }
+      let workingDirectory = URL(
+        fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
+        isDirectory: true
+      )
+      let checkout = try reference.checkout(workingDirectory: workingDirectory)
+      defer { try? FileManager.default.removeItem(at: checkout.temporaryRoot) }
+      let manifest = try await FileWorkflowPackageManifestLoader().loadManifest(
+        from: checkout.packageDirectory.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName)
+      )
+      var sourceOptions = parsed
+      sourceOptions.source = checkout.packageDirectory.path
+      let updates = try await updatePackages(target: manifest.name, parsed: sourceOptions)
+      if !parsed.dryRun, updates.allSatisfy({ $0.updateState != "failed" }) {
+        var entry = try workflowPackageLockEntry(
+          manifest: manifest,
+          sourceReference: target,
+          sourceKind: "github",
+          archiveURL: nil
+        )
+        entry.source.gitRevision = checkout.revision
+        try writeWorkflowPackageLock(entries: [entry], parsed: parsed, workingDirectory: workingDirectory)
+      }
+      return updates
+    }
     let workingDirectory = URL(
       fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath,
       isDirectory: true
@@ -560,9 +601,11 @@ extension WorkflowPackageCommandRunner {
       throw CLIUsageError("installed package not found")
     }
 
+    var installedOptions = parsed
+    installedOptions.source = nil
     var updates: [WorkflowPackageSummary] = []
     for packageName in installedTargets {
-      let installedDirectory = try packageDirectory(target: packageName, parsed: parsed)
+      let installedDirectory = try packageDirectory(target: packageName, parsed: installedOptions)
       guard FileManager.default.fileExists(atPath: installedDirectory.path) else {
         throw CLIUsageError("installed package not found: \(packageName)")
       }
@@ -596,15 +639,21 @@ extension WorkflowPackageCommandRunner {
         updates.append(failed)
         continue
       }
-      let sourceManifest: WorkflowPackageManifest
-      do {
-        defer {
-          if let temporaryRoot = resolvedSource.temporaryRoot {
-            try? FileManager.default.removeItem(at: temporaryRoot)
-          }
+      defer {
+        if let temporaryRoot = resolvedSource.temporaryRoot {
+          try? FileManager.default.removeItem(at: temporaryRoot)
         }
-        sourceManifest = try await FileWorkflowPackageManifestLoader()
-          .loadManifest(from: resolvedSource.directory.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName))
+      }
+      let loader = FileWorkflowPackageManifestLoader()
+      let sourceManifest = try await loader.loadManifest(
+        from: resolvedSource.directory.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName)
+      )
+      guard sourceManifest.name == installedManifest.name else {
+        throw CLIUsageError("package update source name mismatch: expected \(installedManifest.name), got \(sourceManifest.name)")
+      }
+      let issues = await loader.validate(sourceManifest, packageRoot: resolvedSource.directory, verifiesChecksum: true)
+      guard issues.isEmpty else {
+        throw CLIUsageError("package update source validation failed: \(issues.map(\.message).joined(separator: "; "))")
       }
       let isChanged = installedManifest.version != sourceManifest.version
         || installedManifest.checksum != sourceManifest.checksum

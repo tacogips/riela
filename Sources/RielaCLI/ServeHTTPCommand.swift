@@ -34,7 +34,9 @@ struct ServeHTTPCommand: Sendable {
     onReady: @escaping ReadyHandler
   ) async throws -> CLICommandResult {
     let host = parsed.host ?? "127.0.0.1"
-    let requestedPort = parsed.port ?? 8787
+    let requestedPort = parsed.port ?? ServeWebSettingsStore(
+      homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+    ).loadPort() ?? 8787
     let webRoot = try resolvedServeWebRoot(parsed: parsed)
     let configuration = RielaServerConfiguration(
       host: host,
@@ -45,14 +47,33 @@ struct ServeHTTPCommand: Sendable {
       routeHandler: listenerHandle.routeHandler,
       context: serveRequestContext(parsed: parsed)
     )
+    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let distributedHost = try environment[DistributedControllerConfiguration.environmentKey].map {
+      try DistributedControllerHost(configurationURL: URL(fileURLWithPath: $0), environment: environment)
+    }
+    let webHost = await ServeWebHost(
+      homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true),
+      workingDirectory: URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true),
+      sessionStoreRoot: parsed.sessionStore,
+      host: host,
+      port: requestedPort,
+      fallback: adapter,
+      environment: environment
+    )
     let routeHandler: any RielaHTTPRouteHandling
     if let webRoot {
-      routeHandler = RielaStaticSPAHTTPRouter(service: adapter, webRoot: webRoot)
+      routeHandler = RielaStaticSPAHTTPRouter(service: webHost, webRoot: webRoot)
     } else {
-      routeHandler = adapter
+      routeHandler = webHost
     }
     let server = RielaLocalHTTPServer(routeHandler: routeHandler)
     let boundPort = try await server.start(host: host, port: requestedPort)
+    do { try await distributedHost?.start() } catch {
+      await server.stop()
+      throw error
+    }
+    await webHost.updateBoundPort(boundPort)
+    await webHost.startConfiguredInstances()
     let endpoint = "http://\(host):\(boundPort)"
     let readyResult = ScopedParityCommandResult(
       scope: "serve",
@@ -75,6 +96,8 @@ struct ServeHTTPCommand: Sendable {
       // SIGINT and SIGTERM cancel the entry-point task.
     }
     await server.stop()
+    await webHost.shutdown()
+    await distributedHost?.stop()
     try await listenerHandle.shutdown()
     return CLICommandResult(exitCode: .success)
   }
@@ -108,7 +131,7 @@ struct ServeHTTPCommand: Sendable {
 func resolvedServeWebRoot(parsed: ParsedParityOptions) throws -> URL? {
   guard let raw = parsed.webRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
         !raw.isEmpty else {
-    return nil
+    return RielaWebAssetLocator.locate()
   }
   let root = URL(fileURLWithPath: raw, isDirectory: true)
     .standardizedFileURL

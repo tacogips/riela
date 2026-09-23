@@ -1,5 +1,7 @@
 #if os(macOS)
 import Foundation
+import RielaAppSupport
+import RielaCLI
 import RielaCore
 import RielaGraphQL
 import RielaServer
@@ -36,21 +38,34 @@ extension RielaApp {
           ),
           localManagedReferenceResolver: RielaAppWebManagedReferenceResolver()
         ),
-        fallback: RoutineAwareGraphQLFallbackExecutor(
-          routine: RoutineGraphQLDocumentExecutor(
-            provider: FileRoutineGraphQLProvider(workingDirectory: appHomeDirectory.path)
+        fallback: SessionControlGraphQLDocumentExecutor(
+          provider: RielaSessionControlProvider(
+            workingDirectory: appHomeDirectory.path,
+            sessionStore: daemonSessionStoreRoot(profileName: daemonProfileName)
           ),
-          next: RielaConfigGraphQLDocumentExecutor(
-            provider: RielaAppConfigurationGraphQLProvider(app: self)
+          next: ConsoleGraphQLDocumentExecutor(
+            provider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() },
+            next: RoutineAwareGraphQLFallbackExecutor(
+              routine: RoutineGraphQLDocumentExecutor(
+                provider: FileRoutineGraphQLProvider(workingDirectory: appHomeDirectory.path)
+              ),
+              next: RielaConfigGraphQLDocumentExecutor(
+                provider: RielaAppConfigurationGraphQLProvider(app: self)
+              )
+            )
           )
         )
       ),
       registryWorkingDirectory: appHomeDirectory.path
     )
-    return await DeterministicServerHTTPAdapter(
-      routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
-      context: ServerRequestContext(serviceName: "riela-app")
-    ).response(for: request)
+    var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    environment["HOME"] = appHomeDirectory.path
+    return await CLIRuntimeEnvironment.$overrides.withValue(environment) {
+      await DeterministicServerHTTPAdapter(
+        routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
+        context: ServerRequestContext(serviceName: "riela-app")
+      ).response(for: request)
+    }
   }
 
   private func webGraphQLProfileConflictResponse() -> RielaHTTPResponse {

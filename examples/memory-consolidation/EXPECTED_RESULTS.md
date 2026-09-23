@@ -1,8 +1,9 @@
 # memory-consolidation expected results
 
-Recorded from the bundled deterministic scenario with scratch stores
-(`memoryRoot` and `noteRoot` pointed at a temporary directory). Only
-`summarize-memories` is mocked; both memory stores are written for real.
+Recorded from the bundled deterministic scenario with a scratch Riela memory
+store. The agent and both Kaiba boundary steps are mocked; the scenario never
+uses a local Kaiba store. A live run requires an enabled default named Kaiba
+HTTP(S) instance.
 
 ## Validate and run
 
@@ -22,9 +23,8 @@ riela workflow run memory-consolidation \
   `<memoryRoot>/chat-memory.sqlite` and reports `record.recordId: 1`.
 - `riela/memory-load` returns that record as
   `recordsText: "#1 <timestamp> [chat-event] Kickoff review settled the project-atlas scope."`.
-- `kaiba/memory-consolidate` reports `entriesWritten: 1`,
-  `idempotentReplay: false`, and one `noteIds` entry prefixed
-  `note-long-term-memory-`.
+- `kaiba/memory-consolidate` scenario output reports `entriesWritten: 1`,
+  `idempotentReplay: false`, and `noteIds: ["note-long-term-memory-fixture"]`.
 - `kaiba/memory-recall` reports `resultCount: 1` with
   `results[0].isAssociation: false`.
 - The workflow output carries the consolidation counts forward through the
@@ -34,7 +34,10 @@ riela workflow run memory-consolidation \
 - `recallText` starts with
   `#note-long-term-memory-… [direct] project-atlas kickoff decisions: # project-atlas kickoff decisions …`.
 
-## kaiba store after the first run
+## Live Kaiba behavior
+
+The following describes a live run against the configured Kaiba HTTP API, not
+the bundled mock scenario.
 
 ```
 sqlite3 <noteRoot>/note-store.sqlite \

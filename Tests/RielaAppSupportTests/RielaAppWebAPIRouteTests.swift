@@ -25,19 +25,21 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     let encodedIdentity = encodePathSegment(identity)
     let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
 
+    // The instance detail read moved to GraphQL (`Query.consoleInstance`); the
+    // composite identity still has to survive the round trip unencoded, and
+    // the projection still has to redact.
     let detailRequest = try parseRawRequest(path: "/api/v1/instances/\(encodedIdentity)")
     XCTAssertEqual(detailRequest.path, "/api/v1/instances/\(identity)")
     XCTAssertEqual(detailRequest.percentEncodedPath, "/api/v1/instances/\(encodedIdentity)")
-    let detail = await router.response(for: detailRequest)
-    XCTAssertEqual(detail.status, 200)
-    let detailJSON = try jsonObject(detail)
-    let item = try XCTUnwrap(detailJSON["item"] as? [String: Any])
-    let environmentVariables = try XCTUnwrap(item["environmentVariables"] as? [[String: Any]])
-    let requiredEnvironment = try XCTUnwrap(item["requiredEnvironment"] as? [[String: Any]])
-    XCTAssertEqual(item["id"] as? String, identity)
-    XCTAssertEqual(environmentVariables.first?["masked"] as? String, "••••••••")
-    XCTAssertEqual(requiredEnvironment.first?["present"] as? Bool, true)
-    XCTAssertFalse(String(data: detail.body, encoding: .utf8)?.contains(secret) ?? true)
+    let retiredDetail = await router.response(for: detailRequest)
+    XCTAssertEqual(retiredDetail.status, 404, "the JSON detail route is retired")
+
+    let detail = fixture.app.consoleGraphQLProvider().consoleInstanceDetail(identity: identity)
+    let item = try XCTUnwrap(detail.item)
+    XCTAssertEqual(item.id, identity)
+    XCTAssertEqual(item.environmentVariables.first?.masked, "••••••••")
+    XCTAssertEqual(item.requiredEnvironment.first?.present, true)
+    XCTAssertFalse(try consoleJSONText(detail).contains(secret))
 
     let executionsRequest = try parseRawRequest(
       path: "/api/v1/instances/\(encodedIdentity)/executions"
@@ -100,7 +102,7 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
 
     let sessionStore = fixture.root.appendingPathComponent("sessions", isDirectory: true)
     fixture.app.webSessionStoreRootOverride = sessionStore.path
-    let now = Date()
+    let now = Date(timeIntervalSince1970: 100.125)
     let session = WorkflowSession(
       workflowId: "review-loop",
       sessionId: "session-web-detail",
@@ -183,6 +185,8 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertEqual(json["logsTotalCount"] as? Int, 1)
     XCTAssertEqual(json["logsTruncated"] as? Bool, false)
     XCTAssertEqual(json["stepsTotalCount"] as? Int, 1)
+    let steps = try XCTUnwrap(json["steps"] as? [[String: Any]])
+    XCTAssertEqual(steps.first?["startedAt"] as? String, "1970-01-01T00:01:40.125Z")
     let logs = try XCTUnwrap(json["logs"] as? [[String: Any]])
     XCTAssertEqual(logs.first?["communicationId"] as? String, "comm-web-detail")
     XCTAssertEqual(logs.first?["communicationIdTruncated"] as? Bool, false)
@@ -237,6 +241,52 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(session.workflowId) ?? true)
   }
 
+  func testCreatesNamedConfigurationWithoutResettingLegacyPreferences() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = fixture.app
+    let source = try XCTUnwrap(app.daemonWorkflowSources.first)
+    let original = app.daemonState.preferences
+    let revision = app.webRevision
+    let body = try JSONSerialization.data(withJSONObject: [
+      "sourceId": source.id, "name": "  Additional  ",
+      "expectedProfile": app.daemonProfileName.rawValue, "expectedRevision": revision
+    ])
+    let request = RielaHTTPRequest(method: "POST", path: "/api/v1/instances", body: body)
+    let created = await app.webAPIResponse(for: request, csrfToken: "csrf")
+    XCTAssertEqual(created.status, 201)
+    let identity = try XCTUnwrap(try jsonObject(created)["identity"] as? String)
+    let preference = try XCTUnwrap(app.daemonState.preferences[identity])
+    XCTAssertEqual(preference.displayName, "Additional")
+    XCTAssertEqual(preference.sourceIdentity, source.id)
+    XCTAssertFalse(preference.active)
+    XCTAssertFalse(preference.enabledAtLaunch)
+    for (key, value) in original { XCTAssertEqual(app.daemonState.preferences[key], value) }
+    XCTAssertEqual(app.makeDaemonStore(profileName: app.daemonProfileName).load().preferences[identity], preference)
+    let stale = await app.webAPIResponse(for: request, csrfToken: "csrf")
+    XCTAssertEqual(stale.status, 409)
+  }
+
+  func testStopActionMaterializesDefaultWithoutStartingRuntime() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let app = fixture.app
+    let source = try XCTUnwrap(app.daemonWorkflowSources.first)
+    app.daemonState = RielaAppDaemonWorkflowState()
+    app.daemonInstances = [.unconfigured(source: source)]
+    let encoded = encodePathSegment(source.id)
+    let path = "/api/v1/instances/\(encoded)/actions"
+    let response = await app.webAPIResponse(for: RielaHTTPRequest(
+      method: "POST", path: "/api/v1/instances/\(source.id)/actions", percentEncodedPath: path,
+      body: try JSONSerialization.data(withJSONObject: [
+        "action": "stop", "expectedProfile": app.daemonProfileName.rawValue, "expectedRevision": app.webRevision
+      ])
+    ), csrfToken: "csrf")
+    XCTAssertEqual(response.status, 200)
+    XCTAssertEqual(app.daemonState.preferences[source.id]?.sourceIdentity, source.id)
+    XCTAssertEqual(app.daemonState.preferences[source.id]?.active, false)
+  }
+
   func testMissingSourceInstanceIsVisibleAndRedacted() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -249,16 +299,18 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
       environmentVariables: ["MISSING_SECRET": secret]
     )
 
-    let response = await fixture.app.webAPIResponse(
+    let payload = fixture.app.consoleGraphQLProvider().consoleInstanceList()
+    let missing = try XCTUnwrap(payload.items.first(where: { $0.id == missingIdentity }))
+    XCTAssertEqual(missing.status, "needsSource")
+    XCTAssertEqual(missing.sourceKind, "missing")
+    XCTAssertEqual(missing.sourceId, "removed-source")
+    XCTAssertEqual(missing.isDefault, false)
+    XCTAssertFalse(try consoleJSONText(payload).contains(secret))
+    let retiredList = await fixture.app.webAPIResponse(
       for: RielaHTTPRequest(method: "GET", path: "/api/v1/instances"),
       csrfToken: "csrf"
     )
-    XCTAssertEqual(response.status, 200)
-    let items = try XCTUnwrap(try jsonObject(response)["items"] as? [[String: Any]])
-    let missing = try XCTUnwrap(items.first(where: { $0["id"] as? String == missingIdentity }))
-    XCTAssertEqual(missing["status"] as? String, "needsSource")
-    XCTAssertEqual(missing["sourceKind"] as? String, "missing")
-    XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(secret) ?? true)
+    XCTAssertEqual(retiredList.status, 404, "the JSON instance list is retired")
   }
 
   func testInstancesExposeTypedNodePatchesAndDefinitionsUseSourceScopedProjection() async throws {
@@ -278,15 +330,14 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
       preference.nodePatches = fixture.app.daemonState.preferences[instance.identity]?.nodePatches ?? [:]
       return .configured(identity: instance.identity, source: instance.source, preference: preference)
     }
-    let instances = await fixture.app.webAPIResponse(
-      for: RielaHTTPRequest(method: "GET", path: "/api/v1/instances"),
-      csrfToken: "csrf"
-    )
-    let items = try XCTUnwrap(try jsonObject(instances)["items"] as? [[String: Any]])
-    let projected = try XCTUnwrap(items.first?["nodePatches"] as? [String: [String: Any]])
-    XCTAssertEqual(projected["review"]?["executionBackend"] as? String, "codex-agent")
-    XCTAssertEqual(projected["review"]?["model"] as? String, "gpt-5.6")
-    XCTAssertEqual(projected["review"]?["effort"] as? String, "high")
+    let items = fixture.app.consoleGraphQLProvider().consoleInstanceList().items
+    let projected = try XCTUnwrap(items.first?.nodePatches)
+    guard case let .object(reviewPatch)? = projected["review"] else {
+      return XCTFail("the review node patch is missing from the console projection")
+    }
+    XCTAssertEqual(reviewPatch["executionBackend"], .string("codex-agent"))
+    XCTAssertEqual(reviewPatch["model"], .string("gpt-5.6"))
+    XCTAssertEqual(reviewPatch["effort"], .string("high"))
 
     let workflowDirectory = fixture.root.appendingPathComponent("workflow", isDirectory: true)
     try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
@@ -329,6 +380,46 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
     XCTAssertFalse(body.contains("PROMPT_SECRET_CANARY"))
     XCTAssertFalse(body.contains("ADDON_SECRET_CANARY"))
     XCTAssertFalse(body.contains("COMMAND_SECRET_CANARY"))
+  }
+
+  /// Transport-level coverage for the desktop console reads: the document
+  /// `web/src/console/client.ts` sends, over the desktop router's `/graphql`,
+  /// with the CSRF and profile headers the console attaches.
+  func testConsoleInstancesDocumentResolvesThroughTheDesktopRouter() async throws {
+    let fixture = try makeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let router = RielaAppWebRouter(app: fixture.app, assetRoot: fixture.root, configuredPort: 19_091)
+    let query = """
+      query WebConsoleInstances { consoleInstances { profile revision items {
+        id sourceId isDefault name workflowId source sourceKind status statusDetail
+        active enabledAtLaunch workingDirectory environmentFilePath
+        environmentVariables { name isSet masked }
+        requiredEnvironment { name description required secret source present }
+        workflowVariables nodePatchCount nodePatches
+        eventSources { id kind }
+      } } }
+      """
+    let response = await router.response(for: graphQLRequest(
+      csrfToken: router.csrfToken,
+      query: query,
+      operationName: "WebConsoleInstances",
+      variables: [:]
+    ))
+    XCTAssertEqual(response.status, 200, String(data: response.body, encoding: .utf8) ?? "")
+    XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(secret) ?? true)
+    let payload = try XCTUnwrap(
+      (try jsonObject(response)["data"] as? [String: Any])?["consoleInstances"] as? [String: Any]
+    )
+    XCTAssertEqual(payload["profile"] as? String, fixture.app.daemonProfileName.rawValue)
+    let items = try XCTUnwrap(payload["items"] as? [[String: Any]])
+    let projected = try XCTUnwrap(items.first { $0["id"] as? String == identity })
+    XCTAssertEqual(projected["workflowId"] as? String, "review-loop")
+    XCTAssertNotNil(projected["nodePatches"] as? [String: Any])
+    XCTAssertNotNil(projected["workflowVariables"] as? [String: Any])
+    let requiredEnvironment = try XCTUnwrap(projected["requiredEnvironment"] as? [[String: Any]])
+    XCTAssertEqual(requiredEnvironment.first?["present"] as? Bool, true)
+    let environmentVariables = try XCTUnwrap(projected["environmentVariables"] as? [[String: Any]])
+    XCTAssertEqual(environmentVariables.first?["masked"] as? String, "••••••••")
   }
 
   func testGraphQLConfigurationUpdatePreservesBlankSecretsAndSupportsExplicitClear() async throws {
@@ -568,53 +659,43 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
       diagnostics: []
     ))
 
-    let response = await fixture.app.webAPIResponse(
+    // The dashboard payload moved to GraphQL (`Query.opsOverview`); the JSON
+    // route is retired.
+    let retiredOverview = await fixture.app.webAPIResponse(
       for: RielaHTTPRequest(method: "GET", path: "/api/v1/ops/overview"),
       csrfToken: "csrf"
     )
-    XCTAssertEqual(response.status, 200)
-    let json = try jsonObject(response)
-    let workflows = try XCTUnwrap(json["workflows"] as? [[String: Any]])
-    XCTAssertEqual(workflows.count, 1)
-    let workflow = try XCTUnwrap(workflows.first)
-    XCTAssertEqual(workflow["workflowId"] as? String, "review-loop")
-    XCTAssertEqual(workflow["entryStepId"] as? String, "review")
-    XCTAssertEqual(workflow["stepsTruncated"] as? Bool, false)
-    let steps = try XCTUnwrap(workflow["steps"] as? [[String: Any]])
-    XCTAssertEqual(steps.count, 2)
-    let reviewStep = try XCTUnwrap(steps.first { $0["id"] as? String == "review" })
-    let transitions = try XCTUnwrap(reviewStep["transitions"] as? [[String: Any]])
-    XCTAssertEqual(transitions.first?["toStepId"] as? String, "publish")
-    XCTAssertEqual(transitions.first?["label"] as? String, "approved")
-    let nodes = try XCTUnwrap(workflow["nodes"] as? [[String: Any]])
+    XCTAssertEqual(retiredOverview.status, 404)
+    let overview = fixture.app.consoleGraphQLProvider().opsOverviewPayload()
+    XCTAssertEqual(overview.workflows.count, 1)
+    let workflow = try XCTUnwrap(overview.workflows.first)
+    XCTAssertEqual(workflow.workflowId, "review-loop")
+    XCTAssertEqual(workflow.entryStepId, "review")
+    XCTAssertEqual(workflow.stepsTruncated, false)
+    XCTAssertEqual(workflow.steps.count, 2)
+    let reviewStep = try XCTUnwrap(workflow.steps.first { $0.id == "review" })
+    XCTAssertEqual(reviewStep.transitions.first?.toStepId, "publish")
+    XCTAssertEqual(reviewStep.transitions.first?.label, "approved")
     // Materialized nodes are keyed by step id (same as the definition route).
-    let publisherNode = try XCTUnwrap(nodes.first { $0["id"] as? String == "publish" })
-    XCTAssertEqual(publisherNode["addon"] as? String, "riela/notebook-upsert")
-    XCTAssertEqual(publisherNode["kind"] as? String, "output")
-    let instances = try XCTUnwrap(json["instances"] as? [[String: Any]])
-    XCTAssertEqual(instances.first?["id"] as? String, identity)
-    XCTAssertEqual(instances.first?["workflowId"] as? String, "review-loop")
-    let runs = try XCTUnwrap(json["runs"] as? [[String: Any]])
-    XCTAssertEqual(runs.first?["sessionId"] as? String, "session-ops-overview")
-    XCTAssertEqual(runs.first?["instanceId"] as? String, identity)
-    XCTAssertEqual(runs.first?["status"] as? String, "running")
-    XCTAssertEqual(runs.first?["currentStepId"] as? String, "review")
-    XCTAssertFalse(String(data: response.body, encoding: .utf8)?.contains(secret) ?? true)
+    let publisherNode = try XCTUnwrap(workflow.nodes.first { $0.id == "publish" })
+    XCTAssertEqual(publisherNode.addon, "riela/notebook-upsert")
+    XCTAssertEqual(publisherNode.kind, "output")
+    XCTAssertEqual(overview.instances.first?.id, identity)
+    XCTAssertEqual(overview.instances.first?.workflowId, "review-loop")
+    XCTAssertEqual(overview.runs.first?.sessionId, "session-ops-overview")
+    XCTAssertEqual(overview.runs.first?.instanceId, identity)
+    XCTAssertEqual(overview.runs.first?.status, "running")
+    XCTAssertEqual(overview.runs.first?.currentStepId, "review")
+    XCTAssertFalse(try consoleJSONText(overview).contains(secret))
   }
 
   func testOpsOverviewSurvivesMissingWorkflowDefinition() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let response = await fixture.app.webAPIResponse(
-      for: RielaHTTPRequest(method: "GET", path: "/api/v1/ops/overview"),
-      csrfToken: "csrf"
-    )
-    XCTAssertEqual(response.status, 200)
-    let json = try jsonObject(response)
-    XCTAssertEqual((json["workflows"] as? [[String: Any]])?.count, 0)
-    let diagnostics = try XCTUnwrap(json["diagnostics"] as? [String])
-    XCTAssertFalse(diagnostics.isEmpty)
-    XCTAssertEqual((json["instances"] as? [[String: Any]])?.first?["id"] as? String, identity)
+    let overview = fixture.app.consoleGraphQLProvider().opsOverviewPayload()
+    XCTAssertEqual(overview.workflows.count, 0)
+    XCTAssertFalse(overview.diagnostics.isEmpty)
+    XCTAssertEqual(overview.instances.first?.id, identity)
   }
 
   private func makeFixture() throws -> (app: RielaApp, root: URL) {
@@ -721,6 +802,12 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
 
   private func jsonObject(_ response: RielaHTTPResponse) throws -> [String: Any] {
     try XCTUnwrap(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
+  }
+
+  /// The serialized console payload, for the redaction assertions that used to
+  /// read the HTTP response body.
+  private func consoleJSONText(_ value: some Encodable) throws -> String {
+    try XCTUnwrap(String(data: JSONEncoder().encode(value), encoding: .utf8))
   }
 }
 #endif

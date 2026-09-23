@@ -11,12 +11,15 @@ struct RielaClientCommandRouter: ParsableCommand {
       NodeRoute.self,
       RrunRoute.self,
       SetupRoute.self,
+      KaibaRoute.self,
       MemoryRoute.self,
       InstanceRoute.self,
       DoctorRoute.self,
       GarbageCollectionRoute.self,
+      SpecialistRoute.self,
       SessionRoute.self,
       LoopRoute.self,
+      TaskRoute.self,
       GraphQLRoute.self,
       GQLRoute.self,
       HookRoute.self,
@@ -59,6 +62,11 @@ struct SetupRoute: RielaClientPassthroughRoute {
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 
+struct KaibaRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("kaiba", abstract: "Manage named Kaiba API instances.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
 struct MemoryRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("memory", abstract: "Manage workflow memory.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
@@ -79,6 +87,11 @@ struct GarbageCollectionRoute: RielaClientPassthroughRoute {
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 
+struct SpecialistRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("specialist", abstract: "Operate durable specialist tasks.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
 struct SessionRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("session", abstract: "Inspect and continue sessions.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
@@ -86,6 +99,11 @@ struct SessionRoute: RielaClientPassthroughRoute {
 
 struct LoopRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("loop", abstract: "Inspect and control workflow loops.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct TaskRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("task", abstract: "Inspect Work Runtime tasks.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }
 

@@ -16,6 +16,23 @@ final class RielaAppAssistantModelCatalogTests: XCTestCase {
     XCTAssertTrue(catalog.models(for: .cursorCLI).contains("gpt-5.6-sol-medium"))
   }
 
+  func testFindsPackagedCatalogThroughInstalledCLISymlink() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().appendingPathComponent("tmp/packaged-model-catalog/\(UUID().uuidString)")
+    let prefix = root.appendingPathComponent("Cellar/riela/1.0")
+    let binary = prefix.appendingPathComponent("bin/riela")
+    try FileManager.default.createDirectory(at: binary.deletingLastPathComponent(), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try Data().write(to: binary)
+    let linked = root.appendingPathComponent("riela")
+    try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: binary)
+    let bundle = prefix.appendingPathComponent("share/riela/riela_RielaAppSupport.bundle")
+    try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+    let catalog = bundle.appendingPathComponent("assistant-models.json")
+    try Data("{}".utf8).write(to: catalog)
+    XCTAssertEqual(RielaAppAssistantModelCatalog.installedCatalogURL(resourceURL: nil, executableURL: linked)?.path, catalog.path)
+  }
+
   func testCatalogUsesBackendSpecificModelSuggestions() {
     let catalog = RielaAppAssistantModelCatalog.shared
 

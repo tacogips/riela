@@ -1,0 +1,42 @@
+{
+  "taskId": "agent-node-output-contract-r2",
+  "workflowMode": "feature",
+  "implementationBranch": "design/agent-node-output-contract",
+  "baseBranch": "design/agent-node-output-contract",
+  "remote": "origin",
+  "originalHead": "36285f0187862a3a7d251417f96264a309a87e90",
+  "evidenceRoot": "tmp/agent-node-output-contract-r2",
+  "designDocPaths": [
+    "design-docs/specs/design-agent-node-output-contract.md"
+  ],
+  "plans": [
+    {
+      "planId": "agent-node-output-contract",
+      "planPath": "impl-plans/active/agent-node-output-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "design-docs/specs/design-agent-node-output-contract.md",
+        "impl-plans/active/agent-node-output-contract.md"
+      ],
+      "sharedPaths": [
+        "impl-plans/README.md"
+      ],
+      "acceptanceCriteria": "Planning-only work package; all eight workflowInput acceptance criteria. AC1 the design doc states, per defect, the verified seam (file+symbol), the decision, the rejected alternatives with reasons, and the runtime-vs-bundle assignment. AC2 the agent-node output contract is stated precisely (conforming answer shape, handling of a non-conforming answer, validation-attempt budget, operator-visible failure). AC3 the workflow-validate rules are decided as ERROR for omitted agentSandbox on sandbox-consuming backends (and declared agentSandbox on API backends) and ERROR for missing output.jsonSchema on payload-referenced or label-driving nodes, with the cost of each choice stated. AC4 a template-resolution failure names the producing step, the field path and the consuming step rather than surfacing as the consumer's domain error. AC5 the impl plan carries a task table (deliverables, primary write scope, dependencies, parallelizable), per-task completion evidence, an explicit riela-runtime vs riela-packages split, and a progress log whose first entry records that no code was written. AC6 impl-plans/README.md carries the plan in the active table with unchecked count 6 and a status. AC7 zero files under Sources/ or Tests/ are added or modified. AC8 the work is committed on design/agent-node-output-contract and pushed to that branch only; main untouched. Single feature, single work package: has_feature_fanout is false.",
+      "verification": "Read-back of both documents against the eight acceptance criteria (design author's self-check: PASS for AC1-AC7; AC8 is satisfied by this checkpoint's commit and the push that follows). Machine-checked working-tree proof is recorded verbatim at tmp/agent-node-output-contract-r2/checkpoint/00-checkpoint-verification.log: branch design/agent-node-output-contract, HEAD 36285f0187862a3a7d251417f96264a309a87e90 (matches the analysis context), `git diff --cached --name-only` empty (clean index), `git status --porcelain=v1` lists exactly ` M design-docs/specs/design-agent-node-output-contract.md` and ` M impl-plans/active/agent-node-output-contract.md`, pending diff 704 insertions / 56 deletions over those two paths, `git diff --name-only | grep -cE '^(Sources|Tests)/'` = 0 and the same over ca1ce34..HEAD = 0, unchecked-box count 6 matching impl-plans/README.md:46, and `git check-ignore -v tmp/agent-node-output-contract-r2` confirming the evidence root is untracked via .gitignore:41. AC7's post-commit proof must use `git diff --stat=200 ca1ce34..HEAD` and NOT `git diff --stat main..HEAD`: local main (c33a783) has advanced past this branch's base, `git merge-base main HEAD` = ca1ce34235e5d2d358ea32a45e7d435d272763b4, so bare main..HEAD surfaces main's unrelated commits. After the commit that proof must list only the design doc, the plan, the README row and the two dispatch manifests, with no Sources/ or Tests/ path.",
+      "notes": {
+        "resumedRun": "This manifest supersedes impl-plans/active/agent-node-output-contract-dispatch.json (taskId agent-node-output-contract, originalHead ca1ce34), which was committed at 36285f0 by the attempt that the operator's machine killed with an OOM. That manifest and its evidence root are left byte-for-byte untouched as historical record; this resumed run carries its own unique taskId, originalHead and evidenceRoot.",
+        "priorEvidenceRoot": "tmp/agent-node-output-contract — holds the killed run's checkpoint log and plans/agent-node-output-contract/attempt-1..attempt-4 (four independent review rounds, findings F1-F9). Preserved, not reused, not modified.",
+        "intraPlanWaves": [
+          "wave 1 (parallel, disjoint files): T1 D1 sandbox validation (Sources/RielaCore/WorkflowValidation.swift); T3 D2b answer path + retry default (Sources/RielaAdapters/AgentGatewayNodeAdapter.swift, DeterministicWorkflowRunner+Prompting.swift); T4-scaffolding D3 error type, producer fallback chain and failure publication",
+          "wave 2 (serial): T2 D2a schema validation + new Sources/RielaCore/TemplateReferenceClassification.swift — shares Sources/RielaCore/WorkflowValidation.swift with T1, fresh read required before editing",
+          "wave 3: T4-switch (strict/lenient rendering in Sources/RielaCore/WorkflowAddonSupport.swift, consumes T2's classifier by API), then T5 example/fixture reconciliation and T6 docs/skills contract text in parallel"
+        ],
+        "sharedImplementationFile": "Sources/RielaCore/WorkflowValidation.swift is edited by T1 then T2, strictly in that order, never concurrently. The template-reference classifier is one implementation shared by D2a (validate time) and D3 (render time) so the two rules cannot diverge.",
+        "serialReconciliation": "impl-plans/README.md is a shared index and belongs to the serial checkpoint/reconciliation phase, not to a worker. Each plan keeps its own progress file; no worker edits this manifest.",
+        "outOfScopeRepository": "tacogips/riela-packages is read-only evidence here. D4/T7 bundle edits (agentSandbox on all 16 agent nodes; output.jsonSchema + maxValidationAttempts, with minLength:1 on commitMessage, on every payload-referenced or label-driving node) are a separate follow-up work package that must ship with or before the runtime release, because D1 and D2a break 11/16 and 12/16 bundle nodes on upgrade until it lands.",
+        "planningOnly": "This dispatch records an accepted planning-only deliverable. No Sources/ or Tests/ path may be created or modified under this manifest; the implementation waves above are for a future run.",
+        "testShell": "Future implementation run: swift test must be wrapped in an arm64 shell (arch -arm64 /bin/zsh -lc 'swift test'); new or edited example workflows must be registered in rielaExampleWorkflowNames() with mock counts updated, then RielaCLITests run."
+      }
+    }
+  ]
+}

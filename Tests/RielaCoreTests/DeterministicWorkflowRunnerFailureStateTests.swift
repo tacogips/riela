@@ -26,6 +26,30 @@ extension DeterministicWorkflowRunnerTests {
     XCTAssertEqual(events.last?.status, .failed)
   }
 
+  func testExplicitRetryOfFailedAdapterStepKeepsSessionHistory() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    await XCTAssertThrowsErrorAsync(try await DeterministicWorkflowRunner(
+      store: store, adapter: FailingAdapter()
+    ).run(request()))
+    let maybeFailed = await store.loadSessionForTest(id: "runner-session-1")
+    let failed = try XCTUnwrap(maybeFailed)
+
+    var resume = request()
+    resume.resumeSessionId = failed.sessionId
+    let runner = DeterministicWorkflowRunner(store: store, adapter: StaticAdapter(output: output()))
+    let unchanged = try await runner.run(resume)
+    XCTAssertEqual(unchanged.session.status, .failed)
+    XCTAssertEqual(unchanged.session.executions.count, 1)
+
+    resume.retryFailedStep = true
+    let recovered = try await runner.run(resume)
+    XCTAssertEqual(recovered.session.sessionId, failed.sessionId)
+    XCTAssertEqual(recovered.session.status, .completed)
+    XCTAssertEqual(recovered.session.executions.map(\.status), [.failed, .completed])
+    XCTAssertNotEqual(recovered.session.executions[0].executionId, recovered.session.executions[1].executionId)
+    await XCTAssertThrowsErrorAsync(try await runner.run(resume))
+  }
+
   func testInvalidInputAdapterFailureIsNotPolicyBlocked() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let runner = DeterministicWorkflowRunner(

@@ -1,31 +1,32 @@
 #if os(macOS)
 import AppKit
+import RielaCore
 
 extension DaemonWorkflowWindowController {
   func buildInstanceDetailView() -> NSView {
     let relinkRow = actionRow(
       title: "Relink Source",
-      detail: "Choose a workflow source for this saved instance.",
+      detail: "この実行設定で使うワークフローを選択します。",
       action: #selector(relinkSelectedSource)
     )
     let openWebUIRow = actionRow(
-      title: "Configure in Web Config",
-      detail: "Edit this instance's working directory, environment, and workflow variables in the browser.",
+      title: "設定",
+      detail: "作業フォルダ、環境変数、入力を設定します。",
       action: #selector(openSelectedInstanceInWebUI)
     )
     let startRow = actionRow(
       title: "Start",
-      detail: "Run this instance and include it in future app launches.",
+      detail: "この実行設定で開始し、次回のアプリ起動時も自動で開始します。",
       action: #selector(startSelectedInstance)
     )
     let stopRow = actionRow(
       title: "Stop",
-      detail: "Stop this instance while keeping it visible.",
+      detail: "設定を保存したまま停止します。",
       action: #selector(stopSelectedInstance)
     )
     let restartRow = actionRow(
       title: "Restart",
-      detail: "Stop and start this instance again.",
+      detail: "この実行設定で再起動します。",
       action: #selector(restartSelectedInstance)
     )
     let workflowRow = settingRow(
@@ -74,11 +75,12 @@ extension DaemonWorkflowWindowController {
     stopInstanceActionRow = stopRow
     restartInstanceActionRow = restartRow
     let removeRow = actionRow(
-      title: "Remove Instance",
-      detail: "Delete only this instance.",
+      title: "実行設定を削除",
+      detail: "この実行設定を削除します。",
       style: .destructive,
       action: #selector(removeSelectedInstance)
     )
+    removeInstanceActionRow = removeRow
     let settingsSection = rielaAppSettingsSection(rows: [
       statusRow,
       workflowRow,
@@ -92,18 +94,25 @@ extension DaemonWorkflowWindowController {
     ])
     let actionsSection = rielaAppSettingsSection(rows: [
       openWebUIRow,
+      actionRow(
+        title: "実行履歴",
+        detail: "この実行設定の実行結果とログを表示します。",
+        action: #selector(openSelectedConfigurationHistory)
+      ),
       relinkRow,
       startRow,
       stopRow,
       restartRow,
       removeRow
     ])
+    let kaibaBindingViews = buildKaibaNodeBindingViews()
 
     let stack = settingsDocumentStack(views: [
       workflowGraphPaneView,
       settingsSectionCaption("Current Settings"),
-      settingsSection,
-      settingsSectionCaption("Manage Instance"),
+      settingsSection
+    ] + kaibaBindingViews + [
+      settingsSectionCaption("実行設定の管理"),
       actionsSection
     ])
     return overviewPane(
@@ -118,7 +127,7 @@ extension DaemonWorkflowWindowController {
     summaryLabel.textColor = .secondaryLabelColor
     summaryLabel.lineBreakMode = .byTruncatingTail
     let scopeValue = NSTextField(
-      labelWithString: "Removes only this instance from profile \(row.profileName.rawValue). The workflow source is not deleted."
+      labelWithString: "プロファイル \(row.profileName.rawValue) の実行設定を削除します。ワークフローは保持されます。"
     )
     scopeValue.lineBreakMode = .byWordWrapping
     scopeValue.maximumNumberOfLines = 3
@@ -126,17 +135,17 @@ extension DaemonWorkflowWindowController {
       settingRow(title: "Scope", valueLabel: scopeValue, action: nil)
     ]
     if row.state == .running || row.state == .starting || row.state == .reloading {
-      let runningValue = NSTextField(labelWithString: "This instance is running and will be stopped.")
+      let runningValue = NSTextField(labelWithString: "実行中の処理を停止します。")
       messageRows.append(settingRow(title: "Status", valueLabel: runningValue, action: nil))
     }
     let cancelRow = actionRow(
       title: "Cancel",
-      detail: "Return to this instance without removing it.",
+      detail: "実行設定に戻ります。",
       action: #selector(cancelRemoveSelectedInstance)
     )
     let removeRow = actionRow(
-      title: "Remove Instance",
-      detail: "Remove this instance. The workflow source is unchanged.",
+      title: "実行設定を削除",
+      detail: "実行設定を削除します。ワークフローは保持されます。",
       style: .destructive,
       action: #selector(confirmRemoveSelectedInstance)
     )

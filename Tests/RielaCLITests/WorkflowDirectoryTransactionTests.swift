@@ -1,4 +1,8 @@
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import Foundation
 import XCTest
 @testable import RielaCLI
@@ -337,6 +341,19 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
       preOperationSnapshotId: snapshot.snapshotId
     ) { _ in })
     XCTAssertEqual(try String(contentsOf: victim), "preserve-me")
+  }
+
+  func testTargetLockUsesWorkspaceSandboxWritableTemporaryRoot() async throws {
+    let (root, _) = try await makeWorkflowVersioningFixture(self)
+    let resolved = try resolveMutableTransactionTarget(root: root)
+
+    let lock = workflowTargetLockURL(target: resolved.identity)
+
+    XCTAssertTrue(lock.path.hasPrefix("/tmp/riela-workflow-target-locks-\(geteuid())/"))
+    XCTAssertFalse(lock.path.hasPrefix("/var/tmp/"))
+    let descriptor = try acquireWorkflowTargetLock(target: resolved.identity, owner: "sandbox-compatible")
+    releaseWorkflowTargetLock(descriptor)
+    try FileManager.default.removeItem(at: lock.deletingLastPathComponent())
   }
 
   func testRecoveryRejectsNoncanonicalAndDigestMismatchedTransactionBytes() async throws {

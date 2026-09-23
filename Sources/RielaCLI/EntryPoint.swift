@@ -5,8 +5,15 @@ public enum RielaCLIMain {
     let jsonlRecordWriter: WorkflowJSONLRecordWriting = { line in
       FileHandle.standardOutput.write(Data(line.utf8))
     }
+    var runCommand = WorkflowRunCommand(jsonlRecordWriter: jsonlRecordWriter)
+    do {
+      runCommand.specialistMonitorControl = try SpecialistMonitorControl.takeLaunchEnvironment()
+    } catch {
+      FileHandle.standardError.write(Data("invalid specialist monitor launch binding\n".utf8))
+      Foundation.exit(CLIExitCode.failure.rawValue)
+    }
     let app = RielaCLIApplication(
-      runCommand: WorkflowRunCommand(jsonlRecordWriter: jsonlRecordWriter),
+      runCommand: runCommand,
       sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter),
       sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter),
       sessionInspectionCommand: SessionInspectionCommand(followRecordWriter: { line in
@@ -21,6 +28,11 @@ public enum RielaCLIMain {
     )
     let arguments = Array(CommandLine.arguments.dropFirst())
     let runTask = Task {
+      if arguments.first == "worker" {
+        return await DistributedWorkerCommand().run(arguments: arguments) { line in
+          FileHandle.standardOutput.write(Data(line.utf8))
+        }
+      }
       if ServeHTTPCommand.isLongRunningInvocation(arguments) {
         return await ServeHTTPCommand().run(arguments: arguments) { line in
           FileHandle.standardOutput.write(Data(line.utf8))

@@ -185,7 +185,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
 
     XCTAssertEqual(controller.instanceRows.first?.stateDetail, "event source failed")
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Failed - event source failed" })
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Configure in Web Config", in: root)).accessibilityPerformPress())
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Configure in Riela", in: root)).accessibilityPerformPress())
     XCTAssertEqual(openedContext, "Web Config")
   }
 

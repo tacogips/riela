@@ -25,22 +25,7 @@ final class RielaAppConfigurationGraphQLProvider: RielaConfigurationGraphQLProvi
         input.expectedRevision,
         expectedProfile: input.expectedProfile
       )
-      var settings = app.daemonState.assistant
-      if let assistance = input.assistance {
-        settings.assistance = assistance
-      }
-      if let rawVendor = input.vendor {
-        guard let vendor = RielaAppAssistantVendor(rawValue: rawVendor), vendor != .automatic else {
-          throw RielaConfigurationGraphQLError(
-            code: "INVALID_CONFIGURATION",
-            message: "assistant vendor '\(rawVendor)' is not selectable"
-          )
-        }
-        settings.vendor = vendor
-      }
-      if let model = input.model {
-        settings.setSelectedModel(model, for: settings.vendor)
-      }
+      let settings = try RielaWebConfigurationSupport.applying(input, to: app.daemonState.assistant)
       if let error = app.saveAssistantSettings(settings) {
         throw RielaConfigurationGraphQLError(code: "CONFIGURATION_IO_FAILURE", message: error)
       }
@@ -159,19 +144,7 @@ final class RielaAppConfigurationGraphQLProvider: RielaConfigurationGraphQLProvi
         throw RielaConfigurationGraphQLError(code: "INSTANCE_NOT_FOUND", message: "Workflow instance was not found")
       }
       let saved = app.updateDaemonPreference(identity: input.identity) { preference in
-        if let value = input.workingDirectory {
-          preference.workingDirectory = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let value = input.environmentFilePath {
-          preference.environmentFilePath = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        input.environmentVariableUpdates?.forEach { name, value in
-          if !value.isEmpty { preference.environmentVariables[name] = value }
-        }
-        input.environmentVariablesToClear?.forEach { preference.environmentVariables.removeValue(forKey: $0) }
-        if let workflowVariables = input.workflowVariables {
-          preference.defaultVariables = workflowVariables
-        }
+        preference = RielaWebConfigurationSupport.applying(input, to: preference)
       }
       guard saved else {
         throw RielaConfigurationGraphQLError(code: "CONFIGURATION_IO_FAILURE", message: app.status)
@@ -226,29 +199,15 @@ final class RielaAppConfigurationGraphQLProvider: RielaConfigurationGraphQLProvi
 
 extension RielaApp {
   func graphQLConfiguration() async throws -> GraphQLRielaConfiguration {
-    let settings = daemonState.assistant
-    let selectedVendor = settings.vendor.settingsSelectableVendor
-    var catalogs: [GraphQLConfigurationModelCatalog] = []
-    for vendor in RielaAppAssistantVendor.selectableVendors {
-      let models: [String]
-      if vendor == selectedVendor, vendor.supportsLiveModelListing {
-        models = (try? await RielaAppAssistantModelLoader().models(for: vendor)) ?? vendor.modelSuggestions
-      } else {
-        models = vendor.modelSuggestions
-      }
-      catalogs.append(GraphQLConfigurationModelCatalog(vendor: vendor.rawValue, models: models))
-    }
+    let current = graphQLConfigurationRevision
+    let assistant = await RielaWebConfigurationSupport.assistantConfiguration(daemonState.assistant)
+    try validateGraphQLConfigurationRevision(current.revision, expectedProfile: current.profile)
     let appearance = appearanceSettingsStore.load()
     let serverSettings = webServerController?.settings ?? RielaAppWebServerSettings()
     return GraphQLRielaConfiguration(
       profile: daemonProfileName.rawValue,
       revision: webRevision,
-      assistant: GraphQLAssistantConfiguration(
-        assistance: settings.assistance,
-        vendor: selectedVendor.rawValue,
-        model: settings.selectedModel(for: selectedVendor),
-        modelCatalogs: catalogs
-      ),
+      assistant: assistant,
       appearance: GraphQLAppearanceConfiguration(
         colorScheme: appearance.colorScheme.rawValue,
         options: RielaAppColorScheme.allCases.map(\.rawValue)
@@ -273,18 +232,10 @@ extension RielaApp {
     _ expectedRevision: Int,
     expectedProfile: String?
   ) throws {
-    if let expectedProfile, expectedProfile != daemonProfileName.rawValue {
-      throw RielaConfigurationGraphQLError(
-        code: "PROFILE_CONFLICT",
-        message: "the active profile changed after this configuration was loaded"
-      )
-    }
-    guard expectedRevision == webRevision else {
-      throw RielaConfigurationGraphQLError(
-        code: "REVISION_CONFLICT",
-        message: "expected revision \(expectedRevision), current revision is \(webRevision)"
-      )
-    }
+    try RielaWebConfigurationSupport.validateRevision(
+      expected: expectedRevision, current: webRevision,
+      expectedProfile: expectedProfile, currentProfile: daemonProfileName.rawValue
+    )
   }
 }
 #endif

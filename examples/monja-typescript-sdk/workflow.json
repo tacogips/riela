@@ -1,0 +1,22 @@
+{
+  "workflowId": "monja-typescript-sdk",
+  "description": "Run the installed Monja TypeScript SDK through a fixed Node.js command and Riela's JSONL boundary.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 90000
+  },
+  "entryStepId": "monja-command",
+  "nodes": [
+    {
+      "id": "monja-command",
+      "nodeFile": "nodes/node-monja-command.json"
+    }
+  ],
+  "steps": [
+    {
+      "id": "monja-command",
+      "nodeId": "monja-command",
+      "role": "worker"
+    }
+  ]
+}

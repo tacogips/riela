@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import RielaCore
 import RielaObservability
@@ -403,4 +402,3 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     errorPipe.fileHandleForReading.readabilityHandler = nil
   }
 }
-#endif

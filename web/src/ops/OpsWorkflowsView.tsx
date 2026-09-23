@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
-import { api, requireExpectedProfile } from '../api'
-import type { OpsOverviewResponse, OpsRunSummary, OpsWorkflowStep } from '../contracts'
+import { requireExpectedProfile } from '../api'
+import { getOpsOverview } from '../console/client'
+import type { OpsRunSummary, OpsWorkflowStep } from '../contracts'
 import { ErrorBanner, LoadingState } from '../components/Primitives'
 import { createPollingResource, pollingStatusLabel } from '../polling'
 import { backEdgePath, edgePath, layoutFan, layoutRing, ringBounds } from './layout'
@@ -17,6 +18,7 @@ import {
   type WorkflowHubVM,
 } from './overview'
 import { hubColor, kindStyle, statusStyle } from './palette'
+import { WorkflowStudio } from '../workflows/WorkflowStudio'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -33,12 +35,10 @@ export function OpsWorkflowsView(props: {
   profileName: string
   onOpenRun: (run: OpsRunSummary) => void
 }) {
+  const [studio, setStudio] = createSignal(false)
   const overview = createPollingResource(
     () => props.profileKey,
-    async (signal) => requireExpectedProfile(
-      await api.get<OpsOverviewResponse>('/api/v1/ops/overview', signal),
-      props.profileName,
-    ),
+    async (signal) => requireExpectedProfile(await getOpsOverview(signal), props.profileName),
   )
   const [lens, setLens] = createSignal(DEFAULT_LENS)
   const [query, setQuery] = createSignal('')
@@ -46,6 +46,7 @@ export function OpsWorkflowsView(props: {
   const [selection, setSelection] = createSignal<DeckSelection>()
 
   createEffect(on(() => props.profileKey, () => {
+    setStudio(false)
     setLens(DEFAULT_LENS)
     setQuery('')
     setFocusedSourceId('')
@@ -103,13 +104,16 @@ export function OpsWorkflowsView(props: {
   const totalLive = createMemo(() => hubs().reduce((total, hub) => total + hub.liveRunCount, 0))
 
   return (
-    <section class="ops-shell" aria-label="Workflow command deck">
+    <Show when={!studio()} fallback={<WorkflowStudio profileKey={props.profileKey}
+      source={focusedHub() ? { id: focusedHub()!.workflow.sourceId, name: focusedHub()!.workflow.name } : undefined}
+      onClose={() => setStudio(false)} />}><section class="ops-shell" aria-label="Workflow command deck">
       <header class="ops-topline">
         <div class="ops-topline-title">
           <span class="eyebrow">{'// CONTROL PLANE'}</span>
           <strong>Command deck<span class="ops-cursor" aria-hidden="true" /></strong>
         </div>
         <div class="ops-topline-meta">
+          <button onClick={() => setStudio(true)}>Create / edit workflow</button>
           <span role="status">{pollingStatusLabel(overview.status())}</span>
           <span class="status-chip">{props.profileName || 'riela'}</span>
           <button class="secondary" onClick={() => void overview.refresh()}>Refresh</button>
@@ -254,7 +258,7 @@ export function OpsWorkflowsView(props: {
           </Show>
         </Show>
       </div>
-    </section>
+    </section></Show>
   )
 }
 
@@ -474,8 +478,8 @@ function DeckDetailPanel(props: {
             <div><dt>manager</dt><dd>{hub().workflow.managerStepId ?? '—'}</dd></div>
             <div><dt>steps</dt><dd>{hub().workflow.steps.length}{hub().workflow.stepsTruncated ? '+' : ''}</dd></div>
           </dl>
-          <h3>Instances</h3>
-          <Show when={hub().instances.length === 0}><p>No configured instances.</p></Show>
+          <h3>実行設定</h3>
+          <Show when={hub().instances.length === 0}><p>実行設定がありません。</p></Show>
           <For each={hub().instances}>{(instance) => (
             <div class="ops-route-row">
               <span class="ops-route-glyph" style={{ color: statusStyle(instance.status === 'running' ? 'running' : undefined).color }}>●</span>

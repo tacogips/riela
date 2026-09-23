@@ -267,6 +267,17 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("sha256sum \"$file\""))
   }
 
+  func testProductionBuilderIsolatesBuildByVersionAndRejectsStaleCLI() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-release.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("scratch_path=\"$release_dir/build/riela-$version-$target\""))
+    XCTAssertTrue(script.contains("--scratch-path \"$scratch_path\""))
+    XCTAssertTrue(script.contains("assert_binary_version \"$binary\" \"$version\""))
+    XCTAssertTrue(script.contains("staged riela version mismatch"))
+  }
+
   func testCaskBuilderRequiresAppleCredentialsAndNotarizesDmg() throws {
     let rootURL = try repositoryRoot()
     let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh")
@@ -298,6 +309,17 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     XCTAssertFalse(script.contains("gh release"))
     XCTAssertFalse(script.contains("git push"))
     XCTAssertFalse(script.contains("brew tap"))
+  }
+
+  func testCaskBuilderIsolatesBuildByVersionAndRejectsStaleCLI() throws {
+    let rootURL = try repositoryRoot()
+    let scriptURL = rootURL.appendingPathComponent("scripts/build-homebrew-cask-release.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    XCTAssertTrue(script.contains("scratch_path=\"$release_dir/build/riela-$version-$target\""))
+    XCTAssertTrue(script.contains("--scratch-path \"$scratch_path\""))
+    XCTAssertTrue(script.contains("assert_binary_version \"$staged_binary\" \"$version\""))
+    XCTAssertTrue(script.contains("staged riela version mismatch"))
   }
 
   func testMenuBarAppBuilderUsesRepositoryIconAsset() throws {
@@ -342,11 +364,11 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("darwin-arm64"))
-    XCTAssertTrue(script.contains("darwin-x64"))
+    XCTAssertFalse(script.contains("darwin-x64"))
     XCTAssertTrue(script.contains("Casks/riela.rb"))
     XCTAssertTrue(script.contains("cask \"riela\" do"))
-    XCTAssertTrue(script.contains("arch arm: \"darwin-arm64\", intel: \"darwin-x64\""))
-    XCTAssertTrue(script.contains("sha256 arm:   \"$darwin_arm64_sha\","))
+    XCTAssertTrue(script.contains("arch arm: \"darwin-arm64\""))
+    XCTAssertTrue(script.contains("sha256 \"$darwin_arm64_sha\""))
     XCTAssertTrue(script.contains("riela-#{version}-#{arch}.dmg"))
     XCTAssertTrue(script.contains("desc \"Swift-native workflow runtime with a menu bar app and CLI\""))
     XCTAssertTrue(script.contains("depends_on macos: :sonoma"))
@@ -362,7 +384,7 @@ final class SwiftPackagingReadinessTests: XCTestCase {
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     XCTAssertTrue(script.contains("darwin-arm64"))
-    XCTAssertTrue(script.contains("darwin-x64"))
+    XCTAssertFalse(script.contains("darwin-x64"))
     XCTAssertFalse(script.contains("linux-arm64"))
     XCTAssertFalse(script.contains("linux-x64"))
     XCTAssertFalse(script.contains("linux_arm64_sha"))

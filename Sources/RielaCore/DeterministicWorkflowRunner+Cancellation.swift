@@ -12,6 +12,21 @@ extension DeterministicWorkflowRunner {
     stepBudgetDiagnostic: WorkflowStepBudgetDiagnostic?,
     effectiveStepBudget: Int?
   ) async {
+    if Task.isCancelled {
+      // Cancellation stops execution, but must not cancel its terminal journal
+      // writes. An explicitly awaited unstructured task inherits task-local
+      // context without inheriting the parent's cancellation flag.
+      await Task {
+        await finalizeInterruptedSessionFailed(
+          sessionId: sessionId,
+          request: request,
+          error: error,
+          stepBudgetDiagnostic: stepBudgetDiagnostic,
+          effectiveStepBudget: effectiveStepBudget
+        )
+      }.value
+      return
+    }
     guard let failedSession = try? await store.markSessionFailed(
       WorkflowSessionFailureInput(
         sessionId: sessionId,

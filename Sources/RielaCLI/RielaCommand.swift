@@ -42,10 +42,52 @@ public enum RielaCommand: Equatable, Sendable {
   case node(NodeCommand)
   case setup(CLICommandOptions)
   case memory(MemoryCommand)
+  case kaiba(CLICommandOptions)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
   case gc(CLICommandOptions)
+  case specialist(SpecialistCommand)
+  case task(TaskCommand)
   case scoped(ScopedCommand)
+}
+
+/// Work Runtime read surface. P0 ships `show` and `list` only; `submit`,
+/// `serve`, and `decide` arrive with the dispatcher in P1.
+public enum TaskCommandKind: String, Codable, CaseIterable, Sendable {
+  case show
+  case list
+}
+
+public struct TaskCommand: Equatable, Sendable {
+  public var kind: TaskCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: TaskCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
+}
+
+public enum SpecialistCommandKind: String, Codable, CaseIterable, Equatable, Sendable {
+  case catalog
+  case catalogRefresh = "catalog-refresh"
+  case serve
+  case submit
+  case status
+  case cancel
+  case execute
+  case reconcile
+  case smoke
+}
+
+public struct SpecialistCommand: Equatable, Sendable {
+  public var kind: SpecialistCommandKind
+  public var options: CLICommandOptions
+
+  public init(kind: SpecialistCommandKind, options: CLICommandOptions) {
+    self.kind = kind
+    self.options = options
+  }
 }
 
 public enum PackageHelpScope: String, Codable, Sendable {
@@ -86,7 +128,7 @@ public enum WorkflowCommand: Equatable, Sendable {
   case package(PackageCommand)
 }
 
-public enum WorkflowVersionCommandKind: String, Codable, Equatable, Sendable {
+public enum WorkflowVersionCommandKind: String, Codable, CaseIterable, Equatable, Sendable {
   case list
   case show
   case diff
@@ -115,7 +157,7 @@ public struct WorkflowVersionCommandOptions: Equatable, Sendable {
   }
 }
 
-public enum LoopCommandKind: String, Codable, Sendable {
+public enum LoopCommandKind: String, Codable, CaseIterable, Sendable {
   case status
   case evidence
   case gates
@@ -160,7 +202,7 @@ public struct WorkflowManifestValidateOptions: Equatable, Sendable {
   }
 }
 
-public enum PackageCommandKind: String, Codable, Sendable {
+public enum PackageCommandKind: String, Codable, CaseIterable, Sendable {
   case search
   case list
   case status
@@ -188,7 +230,7 @@ public struct PackageCommand: Equatable, Sendable {
   }
 }
 
-public enum NodeCommandKind: String, Codable, Sendable {
+public enum NodeCommandKind: String, Codable, CaseIterable, Sendable {
   case search
   case list
   case install
@@ -205,7 +247,7 @@ public struct NodeCommand: Equatable, Sendable {
   }
 }
 
-public enum ScopedCommandKind: String, Codable, Sendable {
+public enum ScopedCommandKind: String, Codable, CaseIterable, Sendable {
   case graphql
   case gql
   case hook
@@ -318,6 +360,9 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var supervisorMode: Bool
   public var autoImprove: Bool
   public var autoImprovePolicy: WorkflowAutoImprovePolicy
+  /// Reserved canonical session identity for durable supervisors.  Ordinary
+  /// command callers leave it nil and retain normal run semantics.
+  public var resumeSessionId: String?
 
   public init(
     target: String,
@@ -347,7 +392,8 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     fromRegistry: Bool = false,
     supervisorMode: Bool = false,
     autoImprove: Bool = false,
-    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy()
+    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy(),
+    resumeSessionId: String? = nil
   ) {
     self.target = target
     self.resolution = resolution
@@ -377,6 +423,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.supervisorMode = supervisorMode
     self.autoImprove = autoImprove
     self.autoImprovePolicy = autoImprovePolicy
+    self.resumeSessionId = resumeSessionId
   }
 }
 
@@ -479,6 +526,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .setup(try parseSetup(route.passthroughArguments))
     case let route as MemoryRoute:
       return .memory(try parseMemory(route.passthroughArguments))
+    case let route as KaibaRoute:
+      return .kaiba(try parseKaiba(route.passthroughArguments))
     case let route as InstanceRoute:
       return .instance(try parseInstance(route.passthroughArguments))
     case let route as DoctorRoute:
@@ -497,10 +546,14 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         allowTableOutput: false,
         defaultOutput: .text
       ))
+    case let route as SpecialistRoute:
+      return .specialist(try parseSpecialist(route.passthroughArguments))
     case let route as SessionRoute:
       return try parseSession(route.passthroughArguments)
     case let route as LoopRoute:
       return .loop(try parseLoop(route.passthroughArguments))
+    case let route as TaskRoute:
+      return .task(try parseTask(route.passthroughArguments))
     case let route as GraphQLRoute:
       return .scoped(try parseScoped(kind: .graphql, arguments: route.passthroughArguments))
     case let route as GQLRoute:
@@ -524,6 +577,22 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     default:
       return arguments.contains("--version") ? .version : .help
     }
+  }
+
+  private func parseSpecialist(_ arguments: [String]) throws -> SpecialistCommand {
+    guard let token = arguments.first, let kind = SpecialistCommandKind(rawValue: token) else {
+      throw CLIUsageError("usage: riela specialist catalog|catalog-refresh|serve|submit|status|cancel|execute|reconcile|smoke [target] --state-root <path>")
+    }
+    let route = try ParsedTargetAndOptions.parseCLI(Array(arguments.dropFirst()))
+    return SpecialistCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: "specialist",
+        command: kind.rawValue,
+        target: route.target,
+        arguments: route.options
+      )
+    )
   }
 
   private func parseWorkflow(_ arguments: [String]) throws -> RielaCommand {
@@ -740,6 +809,36 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     )
   }
 
+  /// `riela task show <task-id>` and `riela task list`. The shared flags are
+  /// `LoopCommand`'s, so P2 can reuse this parsing when `riela loop` is
+  /// deleted and its inspections become task reads.
+  private func parseTask(_ arguments: [String]) throws -> TaskCommand {
+    let family = try ParsedTaskFamily.parseCLI(arguments)
+    let kind = family.subcommand
+    if kind == .list {
+      return TaskCommand(
+        kind: kind,
+        options: try parseGeneric(scope: "task", command: kind.rawValue, arguments: family.remainder)
+      )
+    }
+    guard !family.remainder.isEmpty else {
+      throw CLIUsageError("task show requires a task id")
+    }
+    let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
+    guard let target = route.target else {
+      throw CLIUsageError("task show requires a task id")
+    }
+    return TaskCommand(
+      kind: kind,
+      options: try parseGeneric(
+        scope: "task",
+        command: kind.rawValue,
+        target: target,
+        arguments: route.options
+      )
+    )
+  }
+
   private func parseWorkflowManifest(_ arguments: [String]) throws -> WorkflowManifestValidateOptions {
     let family = try ParsedWorkflowManifestFamily.parseCLI(arguments)
     let parsed = try ParsedWorkflowManifestOptions(family.remainder)
@@ -840,6 +939,29 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       arguments: route.options,
       allowTableOutput: family.subcommand == .list,
       defaultOutput: family.subcommand == .list ? .table : .json
+    )
+  }
+
+  private func parseKaiba(_ arguments: [String]) throws -> CLICommandOptions {
+    guard arguments.first == "instance" else {
+      return CLICommandOptions(scope: "kaiba", command: "invalid", arguments: arguments, output: .text)
+    }
+    let remainder = Array(arguments.dropFirst())
+    guard let command = remainder.first, !["--help", "-h", "help"].contains(command) else {
+      return CLICommandOptions(scope: "kaiba", command: "help", output: .text)
+    }
+    let allowed = Set(KaibaInstanceClientAction.allRawValues)
+    guard allowed.contains(command) else {
+      return CLICommandOptions(scope: "kaiba", command: "invalid", arguments: remainder, output: .text)
+    }
+    return CLICommandOptions(
+      scope: "kaiba",
+      command: command,
+      arguments: Array(remainder.dropFirst()),
+      // Kaiba instance commands own their deliberately narrow text/JSON
+      // contract. Keep the original tokens so their runner can reject unknown
+      // options and render a contract-shaped JSON usage error.
+      output: .text
     )
   }
 

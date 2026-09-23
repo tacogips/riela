@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import RielaAddons
 import RielaCore
@@ -136,4 +135,3 @@ private struct WorkflowEnvironmentAgentBinding: Decodable {
     required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
   }
 }
-#endif

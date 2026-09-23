@@ -17,6 +17,7 @@ fi
 '''
 
 [tools]
+rust = "1.98.1"
 swift = "6.3.3"
 swiftlint = "latest"
 bun = "latest"

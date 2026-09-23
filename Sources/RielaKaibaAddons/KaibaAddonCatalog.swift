@@ -1,5 +1,7 @@
 import Foundation
+import KaibaClient
 import RielaCore
+import RielaKaibaSupport
 
 /// The riela ↔ kaiba boundary.
 ///
@@ -10,21 +12,14 @@ import RielaCore
 /// RielaCore's own model. Nothing outside this target imports `AppCore` or
 /// `AppGraphQL`.
 ///
-/// Two families live behind it, and they are deliberately separate node kinds:
-///
-/// - Local add-ons reach the store through kaiba's library API (`NoteService`),
-///   with no credential — the operator view of a store this host owns.
-/// - `kaiba/note-graphql-remote` speaks to a running `kaiba serve` over HTTP and
-///   opens nothing locally, so kaiba's own authentication and library access
-///   control decide what it may reach.
 public enum KaibaAddonCatalog {
-  /// Add-ons served from the local store through kaiba's library API.
+  /// Add-ons served exclusively through the configured Kaiba HTTP API.
   public static let localAddonNames: [String] =
     BuiltinNoteAddon.allCases.map(\.rawValue)
     + BuiltinKaibaLongTermMemoryAddon.allCases.map(\.rawValue)
 
   /// Add-ons that call a running `kaiba serve` instead of a local store.
-  public static let remoteAddonNames: [String] = [KaibaRemoteGraphQLAddon.addonName]
+  public static let remoteAddonNames: [String] = []
 
   public static var addonNames: [String] { localAddonNames + remoteAddonNames }
 
@@ -38,18 +33,85 @@ public enum KaibaAddonCatalog {
     _ input: WorkflowAddonExecutionInput,
     environment: [String: String]
   ) async throws -> AdapterExecutionOutput {
+    guard handles(input.addon.name) else {
+      throw AdapterExecutionError(
+        .providerError,
+        "missing kaiba add-on resolver for '\(input.addon.name)'"
+      )
+    }
+    // A Kaiba add-on is never permitted to choose or reload a route. The
+    // snapshot client is the only transport capability that may cross this
+    // boundary into an HTTP-backed operation.
+    let resolvedClient: KaibaExecutionSnapshot.ResolvedClient?
+    do {
+      resolvedClient = try KaibaAddonExecutionContext.resolvedClient(for: input)
+    } catch KaibaAddonExecutionContext.Error.missingSnapshot {
+      throw AdapterExecutionError(.policyBlocked, "kaiba execution requires validated instance preflight")
+    } catch KaibaAddonExecutionContext.Error.invalidBinding {
+      throw AdapterExecutionError(.policyBlocked, "kaiba execution has an invalid instance binding")
+    }
+    let compatibilityDiagnostics = try KaibaLegacyCompatibility.diagnostics(
+      input: input,
+      environment: environment,
+      resolvedClient: resolvedClient
+    )
     if let noteAddon = BuiltinNoteAddon(rawValue: input.addon.name) {
-      return try await executeNoteAddon(input, environment: environment, operation: noteAddon)
+      if noteAddon == .graphQLDocument {
+        guard let resolvedClient else {
+          throw AdapterExecutionError(.policyBlocked, "kaiba GraphQL execution requires a resolved client")
+        }
+        return KaibaLegacyCompatibility.applying(
+          compatibilityDiagnostics,
+          to: try await KaibaRemoteGraphQLAddon.execute(input, client: resolvedClient.client)
+        )
+      }
+      if noteAddon == .graphQLRemote {
+        guard let resolvedClient else {
+          throw AdapterExecutionError(.policyBlocked, "kaiba GraphQL execution requires a resolved client")
+        }
+        return KaibaLegacyCompatibility.applying(
+          compatibilityDiagnostics,
+          to: try await KaibaRemoteGraphQLAddon.execute(input, client: resolvedClient.client)
+        )
+      }
+      guard let resolvedClient else {
+        throw AdapterExecutionError(.policyBlocked, "kaiba execution requires a resolved client")
+      }
+      return KaibaLegacyCompatibility.applying(
+        compatibilityDiagnostics,
+        to: try await executeNoteAddon(input, client: resolvedClient.client, operation: noteAddon)
+      )
     }
     if let memoryAddon = BuiltinKaibaLongTermMemoryAddon(rawValue: input.addon.name) {
-      return try executeLongTermMemoryAddon(input, environment: environment, operation: memoryAddon)
+      guard let resolvedClient else {
+        throw AdapterExecutionError(.policyBlocked, "kaiba execution requires a resolved client")
+      }
+      return KaibaLegacyCompatibility.applying(
+        compatibilityDiagnostics,
+        to: try await executeLongTermMemoryAddon(input, client: resolvedClient.client, operation: memoryAddon)
+      )
     }
     if input.addon.name == KaibaRemoteGraphQLAddon.addonName {
-      return try await KaibaRemoteGraphQLAddon.execute(input, environment: environment)
+      guard let resolvedClient else {
+        throw AdapterExecutionError(.policyBlocked, "kaiba GraphQL execution requires a resolved client")
+      }
+      return KaibaLegacyCompatibility.applying(
+        compatibilityDiagnostics,
+        to: try await KaibaRemoteGraphQLAddon.execute(input, client: resolvedClient.client)
+      )
     }
-    throw AdapterExecutionError(
-      .providerError,
-      "missing kaiba add-on resolver for '\(input.addon.name)'"
-    )
+    throw AdapterExecutionError(.providerError, "missing kaiba add-on resolver")
+  }
+
+  /// Test-only dispatch seam. It never opens a local Kaiba store; tests must
+  /// provide an in-memory HTTP transport through a `KaibaClient`.
+  static func executeForTesting(
+    _ input: WorkflowAddonExecutionInput,
+    client: KaibaClient? = nil,
+    environment: [String: String]
+  ) async throws -> AdapterExecutionOutput {
+    try await KaibaAddonExecutionContext.withMockExecutionForTesting(client: client) {
+      try await execute(input, environment: environment)
+    }
   }
 }

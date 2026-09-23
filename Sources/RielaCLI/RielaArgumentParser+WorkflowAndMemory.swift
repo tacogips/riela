@@ -207,7 +207,8 @@ extension RielaArgumentParser {
       fromRegistry: parsed.fromRegistry,
       supervisorMode: parsed.supervisorMode,
       autoImprove: parsed.autoImprove,
-      autoImprovePolicy: parsed.autoImprovePolicy
+      autoImprovePolicy: parsed.autoImprovePolicy,
+      resumeSessionId: parsed.resumeSessionId
     )
   }
 

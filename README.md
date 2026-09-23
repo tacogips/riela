@@ -27,6 +27,45 @@ adapters return candidate outputs only; session ids, step execution ids,
 workflow message ids, output publication, root output selection, continuation,
 resume, rerun, replay, and GraphQL/session DTO projection are runtime-owned.
 
+Authored [node output contracts](docs/output-contracts.md) are checked before
+execution and included in agent instructions. The guide describes the supported
+JSON Schema dialect and how payload contracts interact with routing envelopes.
+
+For failed sequential agent workflows, [history-preserving recovery](docs/preserved-history-recovery.md)
+reuses accepted discussion without rerunning earlier agents and records explicit
+source lineage in the new session.
+
+Local command nodes run foreground work: their process group is reclaimed when
+the command leader exits, including background children that retain its pipes.
+Foreground exit status and captured logs remain available. Commands must not
+escape that group with `setsid`, `setpgid`, or daemonization. CLI-agent turns
+also receive a foreground-only instruction and await executor/ACP cleanup.
+The embedded agent-gateway now exposes an injectable process runner and its
+built-in runner atomically owns and drains the foreground process group before
+publishing a terminal result. It advertises that capability explicitly and
+rejects an `allDescendants` requirement before spawn; callers needing escaped
+daemon containment must inject a runner that provides it. Do not detach
+aggregate tests inside AI nodes; retain tool-session handles until terminal
+exit and record complete logs. Long-lived services need an explicitly owned
+service/workflow lifecycle.
+
+The default SQLite session-store connections wait for another process to
+release its database lock, including during WAL initialization. Parallel runs
+can share a session store without a fixed three-second contention timeout.
+An interrupted process releases its OS locks; stop a waiting CLI process with
+Ctrl-C if you do not want to wait for a long-running owner. Library callers can
+request bounded waiting with `SQLiteOpenOptions(busyTimeoutMilliseconds: ...)`.
+Only lock acquisition and WAL initialization are retried; workflow actions and
+transaction bodies are not replayed.
+
+Every workflow session entered through the production local CLI, library, or
+GraphQL surfaces also holds a session-store-scoped advisory lock for its full
+execution lifetime. A concurrent `session resume` or `session continue` for
+that session fails before any node effect starts. The operating system
+releases the lock when its owner exits, so an interrupted session can be
+resumed without waiting for a stale heartbeat timeout. Different session IDs
+remain independently executable.
+
 Installed workflow packages are local workflow sources. After
 `riela package install <name>`, package-provided workflows appear in
 `riela workflow list` and can be used with ordinary workflow commands such as
@@ -69,6 +108,55 @@ Local agent backend ids remain explicit workflow compatibility contracts:
 Riela-owned executables or targets. The `official/*` backend ids are also
 compatibility selectors; every one is dispatched through `agent-gateway`.
 
+### Web workflow studio
+
+In RielaApp's web **Command deck**, choose **Create / edit workflow** to open
+the graph editor. Node positions and the camera are stored separately in
+browser-local storage, scoped by profile and workflow origin; moving a node
+does not change the executable workflow or its saved revision.
+
+Existing inline agent nodes expose prompt/model settings in the inspector.
+Other protected configuration stays opaque, and hidden prompt/model values
+are retained unless explicitly replaced. Save refreshes the canonical revision
+and protected-value handles, preserving the canvas and chat while resetting
+Undo/Redo history. If that refresh fails, use **Reload saved workflow** before
+another save or execution. A save conflict keeps the draft until you explicitly
+confirm reloading.
+
+For a saved file-backed agent node, choose **Edit file-backed node settings**.
+Its dialog loads the prompt (including a referenced prompt file) and model.
+**Save node settings** preserves other payload fields and creates a
+content-addressed node file, updating the workflow reference in the same
+registry transaction. Original node/prompt resources are retained. Both the
+workflow revision and the loaded asset digest must still match, so an external
+file edit cannot be silently overwritten. Prompt whitespace is preserved.
+
+Save the graph, activate the workflow if necessary, then enter an absolute
+execution working directory and an input JSON object under **Run saved
+workflow**. **Run workflow** executes that exact saved revision and opens its
+session in **Run logs and values** on the same page. Unsaved edits must be
+saved before execution. You can also open an existing run by session ID.
+
+Select a graph step or an execution attempt to inspect its recorded input,
+accepted output, agent response text and failure details. Attempts remain
+separate, including retries. Old sessions without input snapshots explicitly
+show “not recorded”; values are not reconstructed from today's definition.
+The inspector shows the latest 500 attempts and refuses values above 512 KiB
+with an explicit export instruction. Actual values may contain sensitive
+workflow data, although process environment credentials are not copied into
+input snapshots. Logs from another workflow remain readable without applying
+their statuses to the current graph.
+
+Agent chat applies generated edits to the canvas as drafts. It uses bounded
+incremental provider rounds so intermediate graphs appear even when a vendor
+buffers its replies, and includes recent chat context for follow-up requests.
+Stop generation and Undo remain available; publishing still requires Save.
+
+See
+[the design](design-docs/specs/design-workflow-graph-studio.md) and
+[implementation plan](impl-plans/active/workflow-graph-studio.md), with
+[acceptance evidence](design-docs/user-qa/qa-workflow-graph-studio.md).
+
 Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,
 OpenAI, Anthropic, Gemini, and OpenRouter is supplied by the sibling
 `agent-gateway` package, which speaks the Agent Client Protocol (ACP,
@@ -97,8 +185,9 @@ bundled catalog, and an already selected live model remains usable after it is
 saved.
 
 RielaApp is a resident workflow process; its HTTP listener is optional and is
-disabled by default. Opening Web Config starts the loopback listener on demand,
-and stopping that listener does not stop RielaApp or its workflow instances.
+disabled by default. **Open Riela...** opens the Tauri dashboard through native
+IPC. **Start Web Server** starts the loopback listener explicitly; stopping that
+listener does not stop RielaApp or its workflow instances.
 This is intentionally different from bare `riela serve`, whose process exists
 to host an HTTP server and stays alive until SIGINT or SIGTERM. All other
 `riela` commands remain one-shot and read or update their configuration files
@@ -352,20 +441,31 @@ agent chat and note editing, links, file attachments (local/S3), FTS5 search,
 a note GraphQL API, a `kaiba serve` web viewer, and API-key authentication
 (`kaiba client issue`).
 
-Riela consumes kaiba as an add-on knowledge/context source, and the coupling
-stops at the add-on layer: kaiba is linked by exactly one target
-(`RielaKaibaAddons`), which exposes a RielaCore-only façade, so no kaiba type —
-its note service, its identifiers, its JSON model — reaches the rest of riela.
-Riela keeps its own short-term memory in its own store; long-term notes and
-knowledge live only in kaiba.
+Riela accesses Kaiba only through the dependency-free first-party
+`KaibaClient` HTTP(S) SDK. It never opens a Kaiba store, resolves a Kaiba
+configuration file, or falls back to an in-process service. Riela keeps its
+own short-term memory; Kaiba owns long-term notes and knowledge.
 
-Two node families sit behind that boundary, and they are separate nodes rather
-than one node with a mode flag.
+Configure a named server once, then use its stable ID in a node's
+`addon.config.kaibaInstanceId`. If the field is absent, the enabled default is
+used; an unknown, disabled, or missing ID fails before add-on transport. The
+catalog stores only an environment-variable *name*, never a bearer value.
 
-**Local nodes** reach the store through kaiba's library API. They need no
-credential: holding the store file is kaiba's operator view, which spans every
-account and every library. The note root comes from config `noteRoot`, env
-`KAIBA_NOTE_ROOT`, or `~/.kaiba`.
+```text
+riela kaiba instance add --name local --endpoint http://127.0.0.1:8787 \
+  --unauthenticated --allow-insecure-http
+riela kaiba instance test <instance-id>
+riela kaiba instance list --output json
+```
+
+Use `list`, `show`, `add`, `update`, `remove`, `test`, and `set-default` under
+`riela kaiba instance`. The RielaApp Kaiba settings surface uses the same
+user-wide catalog and readiness policy. Remote HTTP and remote unauthenticated
+servers require their explicit opt-ins. Do not put a token in workflow JSON,
+CLI arguments, logs, or `instances.json`: supply it only through the named
+process environment variable at runtime.
+
+All existing Kaiba nodes use that resolution path:
 
 - `kaiba/note-create`, `kaiba/note-update`, `kaiba/note-get`,
   `kaiba/note-search`, `kaiba/note-tag-search`,
@@ -374,43 +474,20 @@ account and every library. The note root comes from config `noteRoot`, env
   `kaiba/note-comment-add`, `kaiba/notebook-ingest-pages`,
   `kaiba/document-import`, `kaiba/note-conversation-save`
 - Long-term memory: `kaiba/memory-consolidate`, `kaiba/memory-recall`
-- Raw GraphQL against the local store: `kaiba/note-graphql-document`
+- Arbitrary GraphQL: `kaiba/note-graphql-document` and
+  `kaiba/note-graphql-remote`
 
-**The remote node** — `kaiba/note-graphql-remote` — is for kaiba running as an
-external GraphQL server. It opens no local store at all; it forwards the
-document in `config.query` (with `addon.inputs.variables`) to the `endpoint`
-and lets kaiba's own authentication and library access control decide what the
-call reaches:
+`noteRoot`, `databasePath`, `configPath`, `KAIBA_NOTE_ROOT`, and
+`RIELA_NOTE_ROOT` are inert legacy inputs. They cannot select a server. Legacy
+remote connection fields are assertions only and fail on a mismatch.
 
-- `kaiba serve` (no flag) requires a bearer key. The node reads it from the
-  env var named by `apiKeyEnv` (default `KAIBA_API_KEY`; issue one with
-  `kaiba client issue`). With no key it refuses before the request unless the
-  node sets `allowUnauthenticated: true`, and a keyless request against an
-  authenticating server surfaces as `endpoint returned status 401`.
-- `kaiba serve --allow-unauthenticated` accepts keyless requests but answers
-  only from libraries created with `--auth none` (the seeded `default` library
-  is one). A notebook moved into an `--auth required` library disappears from
-  keyless responses and comes back once a key is presented; add `--as-admin`
-  to give an open port the seeded admin's full reach.
-- An API key belongs to an account (`kaiba client issue --user <id>`, the
-  default account otherwise), so a non-admin key reaches the open libraries
-  plus the ones its account was granted.
-
-Kaiba carries no store migrations: 0.1.7 stores are schema 15 and an older
-`~/.kaiba` is rejected with `unsupportedLegacyVersion`. Recreate the note root
-(or point `noteRoot`/`KAIBA_NOTE_ROOT` at a fresh one) when upgrading. Only the
-local nodes are affected — the remote node never touches a store file.
-
-`kaiba/document-import` consumes a local `path` (normally
-`event.input.file.absolutePath` from a `file-change` source), converts PDF,
-EPUB, office, CSV, and related formats through Kaiba's in-process AnydocKit,
-and stores the original as a notebook attachment. Set node input `ocr: true`
-for Kaiba's agent-gateway image OCR, and `translate: true` plus
-`targetLanguage` for post-import notebook translation. OCR and translation
-vendor/model fields can be supplied directly (`ocrVendor`/`ocrModel`,
-`translationVendor`/`translationModel`) or loaded from the Kaiba config named
-by addon config `configPath` / `KAIBA_CONFIG_PATH`. Kaiba 0.1.6 OCR applies to
-standalone PNG/JPEG/GIF/WebP inputs; PDF and EPUB use AnydocKit conversion.
+`kaiba/document-import` reads a bounded local source path (normally a
+file-change input), sends the original as an inline attachment, and imports
+caller-supplied pages or UTF-8 text over HTTP. Non-text conversion/OCR and
+translation are caller-owned preparation inputs; the HTTP add-on refuses
+unsupported server-local paths, S3 routing, and configuration-derived
+conversion. This keeps document content and credentials on the caller side of
+the API boundary.
 
 `kaiba/note-tag-search` performs tag-only retrieval without requiring an FTS
 query. `kaiba/note-chain` returns bounded graph paths. Attachments include a
@@ -424,11 +501,6 @@ the AI-produced parameters in `addon.inputs.variables`; JSON templates retain
 the variables' JSON types. The reference bundle
 `examples/kaiba-document-intake` shows directory intake and GraphQL retrieval.
 
-Riela always accesses in-process document conversion through Kaiba's
-`AnydocKit` product from `anydoc-swift`; it does not build or invoke the native
-converter directly. On macOS, `anydoc-swift` automatically uses its published
-XCFramework, so building Riela does not require Cargo or `PKG_CONFIG_PATH`.
-Platform-specific native integration remains encapsulated by `anydoc-swift`.
 
 ## Workflow memory (short-term)
 
@@ -605,6 +677,82 @@ gateway permissions before live notification runs:
 apple-gateway permissions status --json
 ```
 
+## Work Runtime (`RielaWork`)
+
+`Sources/RielaWork` is the Work Runtime module: one lifecycle for the work
+that a single workflow run is not enough to finish. An `Intent` states what is
+wanted, a `WorkTask` carries the completion contract, guard policy and
+director policy, and each `Attempt` is one ordinary workflow session. Whether
+the work is done is decided by `CompletionEvaluator` against the task's
+contract — required gates accepted, verification passing, no open blocking
+finding, and, when the task states natural-language acceptance criteria, an
+explicit `acceptance.met` in the gate payload — never by the session's own
+status. `WorkEvidenceProjector` turns a terminal session snapshot into the
+task's evidence ledger and findings, with `causedBy` edges linking findings to
+the gates that raised them. `RielaWork` depends on `RielaCore`; the runner
+never imports it, so plain runs, tests and library callers are unaffected.
+
+`WorkStore` keeps `work_intents`, `work_tasks`, `work_attempts`,
+`work_decisions`, `work_evidence` and `work_findings` in the same runtime
+records database as the workflow snapshots, behind that store's single schema
+generation. There is no migration: a session store from an older generation is
+discarded and recreated.
+
+Two read-only commands are available today:
+
+```bash
+riela task list [--state <task-state>] [--intent <intent-id>] [--workflow <name>] [--limit <n>]
+riela task show <task-id> [--scope project|user|auto] [--session-store <dir>] [--output jsonl|json|text]
+```
+
+The dispatcher, the guard detectors, the directors and `riela task run|decide`
+land in the next phase; their `SurfaceCatalog` rows are `blocked` and name it.
+The design is `design-docs/specs/design-work-runtime-consolidation.md`.
+
+## Control Surfaces
+
+Every operation that riela exposes is declared once in `SurfaceCatalog`
+(`Sources/RielaCore/SurfaceCatalog.swift`), with one row per CLI command,
+GraphQL field, `/api/v1` route, library entry point and packaged skill command
+block. Rows that are intentionally unavailable carry an explicit reason:
+`blocked` rows cite the plan that will implement them, `excluded` rows explain
+why the surface is not offered. Five gate tests hold CLI, skills, GraphQL, web
+API and library in agreement with the catalog, so a new command cannot ship on
+one surface and silently be missing from the others.
+
+The GraphQL schema is generated from the request/response types plus the
+catalog. Regenerate it with `scripts/surface-parity/generate-sdl.sh` after
+changing a DTO or a catalog row; a freshness test requires the checked-in SDL
+to be byte-identical to the generator's output. `riela graphql`, `riela serve`,
+the desktop provider and the browser console all share one GraphQL parser.
+
+Session control is available on GraphQL as well as on the CLI. The
+`rerunSession` and `resumeSession` mutations reuse the same runner paths as
+`riela session rerun` and `riela session resume` and authenticate like
+`continueSession`, so a session driven from either surface keeps the same
+lineage; a `workflowId` that does not own the session is rejected with
+`SESSION_WORKFLOW_MISMATCH`. `stopSession` has no CLI counterpart — the command
+line cancels by signalling the running process — and it stops only sessions the
+answering process is running, addressed by the session id you entered rather
+than an id a rerun reports.
+
+Browser and desktop console reads — instance list, instance detail and the
+operations overview — go through GraphQL. The former `/api/v1/instances` read
+routes and the instance portion of `/api/v1/ops/overview` are removed with no
+compatibility shim. The surviving `/api/v1` routes — console bootstrap,
+workflow-source reads, execution reads, instance creation and instance actions,
+and the Passkey authentication routes — are declared in
+`Sources/RielaAppSupport/RielaWebAPIRouteTable.swift` and cataloged as excluded
+with reasons.
+
+Embedding callers use the `RielaLibrary` facade in
+`Sources/RielaCLI/RielaLibrary.swift`, whose entry points are
+`executeWorkflow`, `resumeSession`, `rerunSession`,
+`inspectWorkflow`, `sessionView` and `executeGraphQLDocument`. The packaged
+skills under `Resources/skills` — `riela-workflow-reference` and
+`riela-workflow-run` — are written against those real names and against the
+cataloged CLI commands, and the skills gate fails if they drift.
+
 ## Install
 
 On macOS, install the Homebrew formula when you want only the `riela` command
@@ -643,8 +791,169 @@ curl -LO "https://github.com/tacogips/riela/releases/download/v${version}/riela-
 sha256sum -c "riela-${version}-linux-x64.tar.gz.sha256"
 tar -xzf "riela-${version}-linux-x64.tar.gz"
 sudo install -m 0755 bin/riela /usr/local/bin/riela
+sudo mkdir -p /usr/local/share/riela
+sudo cp -R share/riela/. /usr/local/share/riela/
 riela --version
 ```
+
+## Desktop window
+
+Choose **Open Riela...** from the menu bar to open the shared dashboard in
+Tauri. In the desktop header, **Connection** selects **Local** (the default,
+no login or HTTP listener required) or **Web mode**. Web mode accepts a remote
+Riela server origin such as `https://riela.example` and uses Passkey sign-in
+through the system browser. Confirm the matching code in both windows; after
+sign-in the desktop connects automatically. The bundled console sends remote API requests through Tauri's HTTP
+client; the remote server does not need to allow the Tauri webview origin via CORS.
+The URL must be an origin without a path, query, or credentials. Changing mode
+reloads the console and clears authentication and loaded profile data; save edits
+first. The selected origin lasts for the window session, and tokens stay only in
+page memory. Returning to Local requires no authentication. Browser users open
+the same server URL to use the web console hosted by `riela serve`.
+
+The Swift menu-bar process owns the profile and workflow runtime;
+the Tauri child loads bundled assets and exchanges API requests over inherited
+stdin/stdout pipes. Opening the desktop window does not start an HTTP listener.
+Closing the window leaves the menu-bar app running; opening it again creates
+a new window. Repeated open actions focus the existing window.
+
+For development:
+
+```bash
+mise install
+bun run --cwd web desktop:build:debug
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --product RielaApp
+.build/debug/RielaApp --open-desktop --no-autostart-daemons
+```
+
+In **Workflows → Discovered workflows**, selecting a workflow opens a
+dedicated definition screen with its node network and directional connections.
+Select a node for details, drag the canvas to pan, or use the zoom and fit
+controls. **Back to workflows** returns to the list; browser history and
+`#/workflows/<encoded-source-id>` links also work.
+
+The desktop executable requires a parent RielaApp IPC connection; launch it
+through RielaApp. `RIELA_DESKTOP_EXECUTABLE` can point to a specific desktop
+executable for development. `scripts/build-riela-menu-bar-app.sh` builds and
+embeds `Contents/Helpers/RielaDesktop.app` in the menu-bar app.
+
+The Cask builder includes the same helper and signs it before the parent app.
+Install the matching Rust targets before building both macOS architectures:
+`mise exec -- rustup target add aarch64-apple-darwin x86_64-apple-darwin`.
+
+The explicit **Start Web Server** and **Open in Browser** menu actions remain
+available. A saved server preference does not automatically open a listening
+port when the menu-bar app starts.
+
+## Browser server development
+
+`riela serve` discovers bundled dashboard assets in the app's `Resources/Web`,
+beside the Cask CLI in `Web`, or under the installation prefix's
+`share/riela/web`. Executable symlinks are resolved before locating assets.
+Development runs also search `web/dist` in the working directory.
+CLI archives include the dashboard and Swift resource bundles in `share/riela`;
+install this directory alongside `bin/riela`. Use `--web-root` to override the
+asset directory, and `--working-dir` to include a project's workflows:
+
+```bash
+bun run --cwd web build
+.build/debug/riela serve --host 127.0.0.1 --port 8787 --working-dir /path/to/project
+```
+
+The loopback browser backend shares definition, instance and execution
+projections with RielaApp. It reads the active profile's sources and provides
+the mutable workflow registry through the same validated GraphQL contract.
+Browser mutations require the matching Host, Origin, CSRF token and profile.
+CLI and manager GraphQL requests retain the existing authenticated route.
+
+Settings supports persisted profiles, assistant preferences, native appearance,
+workflow directories, instance environment settings and event-source registration.
+RielaApp's **Settings...**, **Worker Controller Settings...**, and **ワークフロー...**
+menu items open the Tauri dashboard. Worker controller configuration is edited
+in Settings, including authorized workers and save/restart; there is no separate
+Swift settings window. The desktop uses native IPC and does not require starting
+the optional HTTP server.
+Sources refresh after configuration changes. Profile and revision conflicts reject
+stale updates. The server port is saved separately in `~/.riela/serve-web.json`;
+restart `riela serve` to apply it. An explicit `--port` overrides the saved value.
+
+Workflow studio uses the same editor runtime in the desktop and browser: copy a
+source bundle, edit definitions and file-backed node settings, generate graph
+changes with the configured assistant, save a revision, activate and run it, and
+inspect recorded inputs and outputs. Runs use `--session-store` when supplied,
+otherwise the active profile's session directory. Browser-hosted editor jobs are
+cancelled when the serve process shuts down.
+
+In the desktop and server dashboard, open **ワークフロー** (Workflows), select a
+workflow, then choose its **実行設定** (run configuration). **標準設定** (Default)
+is available immediately after discovery without a separate creation step. Use
+**実行設定を追加** only when another named configuration is needed. The selected
+configuration provides settings, start/stop/restart controls, and **履歴** (history).
+Adding a workflow or configuration does not start execution. Required environment
+values must still be supplied before running. Workflow definitions and instance
+identities remain separate internally; configurations are grouped by source
+identity so workflows with matching names or IDs do not share settings.
+
+Select a configuration to change its launch enablement. Starting marks it active and enabled; stopping clears its
+active state. `riela serve` starts saved instances that are both active and
+enabled at launch. Configuration and event-source changes restart running
+instances. Switching profiles stops the previous profile's instances before
+starting the selected profile's enabled active instances; server shutdown stops
+all owned instances. Instance runs and their browser history share the profile's
+session directory, or the explicit `--session-store` override.
+
+Remote browser and Tauri console access uses Passkeys (WebAuthn). Set
+`RIELA_WEB_ORIGIN` to the exact public HTTPS origin, including a non-default port
+when applicable, without a trailing slash. Run these commands on the server
+with the same OS user and environment:
+
+```bash
+export RIELA_WEB_ORIGIN=https://riela.example
+riela auth invite operator
+riela serve --host 0.0.0.0 --port 8787
+```
+
+Use an HTTPS reverse proxy for remote connections; `riela serve` itself speaks
+HTTP. Preserve the public Host header through the proxy. The invitation command
+prints a private, one-use registration URL that expires in 15 minutes. Open it
+in a browser to create a Passkey. No email address or password is required.
+**Every registered user has full console operator access**, including profiles,
+configuration and workflow execution. Registration is invitation-only; do not
+publish invitation links. Private keys remain with the user's authenticator.
+
+Browser users open the server URL and choose **Sign in with Passkey**. In Tauri,
+select **Connection → Web mode**, enter the same server origin, and choose
+**Sign in using browser**. Compare the displayed codes before approving. The
+browser never receives the desktop session; only the initiating desktop window
+can redeem the result, once, within five minutes. Cancel stops desktop polling
+and cancels the pending grant. No local callback HTTP server is started.
+
+Sessions expire after eight hours, and **Sign out** revokes the current session.
+Reloading or closing the console drops its in-memory session token. Restarting
+the server invalidates all sessions and pending logins. API responses are not
+cached; authenticated mutations retain Host, Origin, CSRF and profile checks.
+`RIELA_WEB_TOKEN` no longer grants console access. CLI and manager GraphQL clients
+retain their separate, existing credential contract.
+
+Use `riela auth users` to list usernames and public credential IDs. Run
+`riela auth invite operator` again to add a backup Passkey for the same user.
+`riela auth revoke-key <credential-id>` revokes a lost key and its sessions;
+issue another invitation to recover access. `riela auth revoke-user operator`
+disables that user, all their sessions and outstanding invitations. Disabled
+users cannot receive new invitations; use a new username when intentionally
+replacing a disabled account.
+
+Keys and invitation hashes are stored under `~/.riela/web-auth`, independently of
+workflow profiles. `RIELA_WEB_AUTH_ROOT` overrides this directory for both CLI
+and server. Keep a secure backup; the store is bound to its configured origin.
+Changing the origin requires a separate store and new Passkey registrations.
+Passkeys need a browser with WebAuthn support and HTTPS. For local development,
+`http://localhost:<port>` is supported. Explicit `RIELA_WEB_ORIGIN` enables
+Passkey authentication even on a loopback listener. Without it, loopback browser
+access and Tauri Local mode remain registration-free and authentication-free.
+An unconfigured public listener fails closed.
+
+Implementation and test details are in [Passkey authentication](docs/passkey-authentication.md).
 
 ## RielaApp Packages And Profiles
 
@@ -652,7 +961,7 @@ RielaApp imports workflow folders, package folders, and `.rielapkg` archives
 from the menu bar item:
 
 ```text
-Instances... > Add Workflow/Package...
+Install Workflow...
 ```
 
 The picker accepts multiple selections, so several package archives or workflow
@@ -669,31 +978,25 @@ RIELA_APP_ROOT="$PWD/tmp/rielaapp-root" \
   --open-workflows
 ```
 
-Imported packages are stored under the selected RielaApp profile. The Instances
-window separates workflow/package sources from workflow instances. An instance is
-the configured run unit RielaApp starts: a workflow source plus the saved
-environment file, inline environment values, default variables, working
-directory, enabled state, and active state. The source column shows `profile`,
-`user`, or `project` so profile-scoped imports can be separated from user-level
-or project-level workflow sources that are visible in every profile.
+Imported packages are stored under the selected RielaApp profile. The dashboard
+opens the workflow list; each workflow contains its default and named run
+configurations. A run configuration saves its environment, variables, working
+directory, model overrides, and launch preferences. Opening or importing a
+workflow makes its default configuration available without starting it. Existing
+saved configurations and their histories remain attached to the same source.
+
 On a fresh install, the default profile is seeded with inactive starter
 packages for a Discord Yuki chat bot, a Telegram Yuki chat bot, a Slack chat
-bot, and a gmail-gateway latest-mail digest. They appear in the Instances window
-with auto-start off, so new users can inspect required credentials in Web
-Config and activate only the instance they want to try.
-The Instances table uses `Active` for the saved profile preference that starts
-an instance when RielaApp launches or when the profile is started; `Status`
-shows the current runtime state. Toggling `Active` starts or stops that instance
-immediately. Selecting an instance shows its source path, event sources, profile
-scope, active preference, instance variables, and runtime detail below the
-toolbar.
-The search fields in Instances, Workflow Sources, Add Instance, and Marketplace
-filter their already-loaded lists as you type; matching is case- and
-diacritic-insensitive, and clearing a search restores the full list. The Back
-control appears only when the current pane has a real back destination, so it is
-hidden at the Instances overview root and available throughout supported detail
-panes. Configuration rows are read-only and route to Web Config; native
-instance, Assistant, and Profile panes do not expose configuration editors.
+bot, and a gmail-gateway latest-mail digest. Choose a workflow and its run
+configuration to inspect required credentials, then start it explicitly.
+Selecting a workflow opens a canvas in the center and **実行設定** in the right
+pane, with no left pane. The graph stays visible while selecting configurations
+or switching between **設定・実行** and **履歴**. Drag nodes to arrange the
+view, drag the canvas to pan, zoom, and select nodes to inspect connections.
+Node arrangement affects the current view; workflow definitions remain unchanged.
+Browser Back and configuration URLs restore the workflow and selected
+configuration. A missing source remains visible for recovery.
+
 Use `Add Project...` to attach one or more project folders containing
 `.riela/workflows` or `.riela/packages` without copying them into the profile.
 Use `Open Profile Folder` from the menu bar item or Instances window to inspect
@@ -740,6 +1043,22 @@ secret environment variables filtered); it degrades to a diagnostic when no
 container runtime is available, and static scanning always runs regardless.
 
 ### Publishing a workflow to a registry
+
+Registries are explicit: register one with `riela package registry add`, or
+pass `--registry-url` when searching, installing, or publishing. There is no
+automatically selected registry. `riela package registry list` shows the
+configured registries; `riela package search --refresh --registry <id>` fetches
+its current index.
+
+To update an installed package directly from GitHub, run
+`riela package update https://github.com/owner/repo/tree/branch/packages/name`.
+The URL must point to a directory containing `riela-package.json`. Use
+`--dry-run` to preview changes. Set `RIELA_GIT_EXECUTABLE` to a Git executable
+path when Git is not available on `PATH`.
+Repository-root packages can use `https://github.com/owner/repo`. Updates
+validate the source even with `--dry-run` or when its version is unchanged.
+GitHub updates record the resolved commit in `riela-lock.json`, so `package ci`
+reinstalls that revision even after the branch advances.
 
 `package publish <workflow-dir>` computes a real md5 checksum over the staged
 workflow, writes a normalized `riela-package.json`, and derives backend hints
@@ -879,3 +1198,10 @@ parent and a reusable `history-YYYY-MM-DD` child, for example
 Private here means isolation from Riela workflow registry, discovery, imports,
 catalogs, and reuse. It is not a security boundary against arbitrary processes
 running under the same OS account.
+
+## Distributed workers
+
+RielaApp and `riela serve` can host a worker controller, with outbound
+`riela worker --config` processes and step-level worker ID/group selection.
+See [controller and worker setup](docs/distributed-workers.md) for configuration,
+workspace mapping, verified platform coverage and operational limits.

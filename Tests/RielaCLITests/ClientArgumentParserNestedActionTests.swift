@@ -19,6 +19,7 @@ final class ClientArgumentParserNestedActionTests: XCTestCase {
   func testArgumentParserRejectsUnknownTypedNestedActions() {
     let invocations = [
       ["package", "registry", "unknown"],
+      ["package", "registry", "sync"],
       ["graphql", "unknown"],
       ["events", "unknown"],
       ["events", "schedules", "unknown"],

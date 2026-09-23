@@ -104,6 +104,36 @@ public enum WorkflowInstanceResolver {
     return patched
   }
 
+  /// Materializes Kaiba binding overrides into effective authored add-on
+  /// configuration. Execution only consults this projection; it never reads a
+  /// patch or a workflow variable as a routing instruction.
+  public static func applyKaibaInstancePatches(
+    _ patches: [String: WorkflowInstanceNodePatch],
+    to nodes: [WorkflowNodeRef]
+  ) throws -> [WorkflowNodeRef] {
+    var patched = nodes
+    let indexes = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($0.element.id, $0.offset) })
+    for nodeID in patches.keys.sorted() {
+      guard let patch = patches[nodeID],
+            patch.clearsKaibaInstanceId || patch.kaibaInstanceId != nil else { continue }
+      guard let index = indexes[nodeID] else {
+        throw WorkflowInstanceResolutionError.unknownNodeId(nodeID)
+      }
+      guard var addon = patched[index].addon, addon.name.hasPrefix("kaiba/") else {
+        throw WorkflowInstanceResolutionError.invalidFieldValue("kaibaInstanceId")
+      }
+      var config = addon.config ?? [:]
+      if patch.clearsKaibaInstanceId {
+        config.removeValue(forKey: "kaibaInstanceId")
+      } else if let instanceID = patch.kaibaInstanceId {
+        config["kaibaInstanceId"] = .string(instanceID)
+      }
+      addon.config = config.isEmpty ? nil : config
+      patched[index].addon = addon
+    }
+    return patched
+  }
+
   private static func apply(
     _ patch: WorkflowInstanceNodePatch,
     to payload: AgentNodePayload,

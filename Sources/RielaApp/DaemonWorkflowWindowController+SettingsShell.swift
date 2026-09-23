@@ -187,27 +187,27 @@ extension DaemonWorkflowWindowController {
     refreshButton.action = #selector(refresh)
     refreshButton.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
     refreshButton.bezelStyle = .toolbar
-    refreshButton.toolTip = "Refresh instances"
-    refreshButton.setAccessibilityLabel("Refresh Instances")
-    instanceSearchField.placeholderString = "Filter instances"
+    refreshButton.toolTip = "実行設定を更新"
+    refreshButton.setAccessibilityLabel("実行設定を更新")
+    instanceSearchField.placeholderString = "実行設定を検索"
     instanceSearchField.target = self
     instanceSearchField.sendsSearchStringImmediately = true
     instanceSearchField.controlSize = .large
-    instanceSearchField.setAccessibilityLabel("Filter Instances")
+    instanceSearchField.setAccessibilityLabel("実行設定を検索")
     instanceSearchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     instanceSearchField.action = #selector(instanceSearchChanged)
     addListButton.target = self
     addListButton.action = #selector(addListButtonPressed)
     addListButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
     addListButton.bezelStyle = .toolbar
-    addListButton.toolTip = "Add instance"
-    addListButton.setAccessibilityLabel("Add Instance")
+    addListButton.toolTip = "実行設定を追加"
+    addListButton.setAccessibilityLabel("実行設定を追加")
     emptyInstancesLabel.textColor = .secondaryLabelColor
     emptyInstancesLabel.alignment = .center
     emptyInstancesLabel.lineBreakMode = .byWordWrapping
     emptyInstancesLabel.maximumNumberOfLines = 2
     emptyInstancesLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    emptyInstancesLabel.setAccessibilityLabel("No instances. Press Add Instance to select a workflow and create one.")
+    emptyInstancesLabel.setAccessibilityLabel("ワークフローを選択して実行設定を表示します。")
     emptyInstancesGuideView.onViewWorkflowSources = { [weak self] in
       self?.showSourcesPane()
     }
@@ -218,7 +218,7 @@ extension DaemonWorkflowWindowController {
     emptyInstancesGuideView.autoresizingMask = []
     profilePopup.toolTip = "Switch profiles or manage profiles."
     configureAssistantControls()
-    configureInstanceStateProgressIndicator(detailStatusProgressIndicator, accessibilityLabel: "Instance status progress")
+    configureInstanceStateProgressIndicator(detailStatusProgressIndicator, accessibilityLabel: "実行設定の状態")
     detailSummaryLabel.textColor = .secondaryLabelColor
     detailSummaryLabel.lineBreakMode = .byTruncatingTail
     for label in [
@@ -235,7 +235,7 @@ extension DaemonWorkflowWindowController {
       label.lineBreakMode = .byTruncatingMiddle
       label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
-    let instancesList = workflowList(title: "Instances", table: instanceTable)
+    let instancesList = workflowList(title: "実行設定", table: instanceTable)
     instancesList.translatesAutoresizingMaskIntoConstraints = true
     instancesList.setContentHuggingPriority(.defaultLow, for: .vertical)
     instancesListView = instancesList
@@ -256,7 +256,7 @@ extension DaemonWorkflowWindowController {
     profilesOverviewView = profiles
 
     updateAssistantPanel()
-    showInstancesList()
+    showSourcesPane()
   }
 
   private func configureNavigationControls() {
@@ -299,10 +299,10 @@ extension DaemonWorkflowWindowController {
   private func buildSidebar() -> NSView {
     for button in [
       sidebarInstancesButton,
-      sidebarSourcesButton,
       sidebarMarketplaceButton,
       sidebarAssistantButton,
-      sidebarProfilesButton
+      sidebarProfilesButton,
+      sidebarKaibaButton
     ] {
       button.target = self
       button.bezelStyle = .regularSquare
@@ -323,6 +323,10 @@ extension DaemonWorkflowWindowController {
     sidebarAssistantButton.action = #selector(showAssistantPane)
     sidebarProfilesButton.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
     sidebarProfilesButton.action = #selector(showProfilesPane)
+    sidebarKaibaButton.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: nil)
+    sidebarKaibaButton.action = #selector(showKaibaPane)
+    sidebarKaibaButton.toolTip = "Manage Kaiba API instances"
+    sidebarKaibaButton.setAccessibilityLabel("Kaiba API Instances")
 
     let appTitle = NSTextField(labelWithString: "Riela")
     appTitle.font = .systemFont(ofSize: 20, weight: .bold)
@@ -330,10 +334,10 @@ extension DaemonWorkflowWindowController {
     let menuStack = NSStackView(views: [
       appTitle,
       sidebarInstancesButton,
-      sidebarSourcesButton,
       sidebarMarketplaceButton,
       sidebarAssistantButton,
-      sidebarProfilesButton
+      sidebarProfilesButton,
+      sidebarKaibaButton
     ])
     menuStack.orientation = .vertical
     menuStack.alignment = .width
@@ -348,10 +352,10 @@ extension DaemonWorkflowWindowController {
       menuStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
       appTitle.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarInstancesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
-      sidebarSourcesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarMarketplaceButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarAssistantButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
-      sidebarProfilesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor)
+      sidebarProfilesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
+      sidebarKaibaButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor)
     ])
     return container
   }

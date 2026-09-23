@@ -286,7 +286,7 @@ extension DaemonWorkflowWindowController {
     let response = withExtendedLifetime(sourceSelection.target) {
       runAddInstancePromptWindow(
         title: "Relink Source",
-        message: "Choose a workflow source for this saved instance.",
+        message: "この実行設定で使うワークフローを選択します。",
         content: stack,
         contentSize: AddInstancePromptLayout.relinkSize,
         primaryTitle: nil
@@ -298,12 +298,12 @@ extension DaemonWorkflowWindowController {
     return .selected(options[sourceSelection.target.selectedIndex])
   }
 
-  private func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
+  func promptForInstanceParameters(sourceOption option: WorkflowSourceOption) -> DaemonWorkflowAddInstanceRequest? {
     let generatedId = defaultInstanceId(option.sourceIdentity)
     let idField = NSTextField(string: generatedId)
     idField.placeholderString = "instance-id"
-    let nameField = NSTextField(string: option.candidate.displayName)
-    nameField.placeholderString = "Display name"
+    let nameField = NSTextField(string: "追加設定")
+    nameField.placeholderString = "実行設定の名前"
     let envField = NSTextField(string: "")
     envField.placeholderString = "Optional /path/to/.env"
     let directoryField = NSTextField(string: option.candidate.workingDirectory)
@@ -313,27 +313,16 @@ extension DaemonWorkflowWindowController {
     let directoryTarget = AddInstancePathFieldTarget(field: directoryField, choosesDirectories: true)
     activeAddInstancePathTargets = [envTarget, directoryTarget]
     let startCheckbox = NSButton(checkboxWithTitle: "Start immediately after creating", target: nil, action: nil)
-    startCheckbox.state = .on
+    startCheckbox.state = .off
     startCheckbox.setAccessibilityLabel("Start immediately")
-    startCheckbox.setAccessibilityHelp("Create the instance and start its workflow process immediately.")
+    startCheckbox.setAccessibilityHelp("保存後、この実行設定で直ちに開始します。")
     startCheckbox.setContentHuggingPriority(.required, for: .horizontal)
-    let parameterTitle = NSTextField(labelWithString: "Configure Instance")
+    let parameterTitle = NSTextField(labelWithString: "実行設定を追加")
     parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     parameterTitle.alignment = .left
     let workflowValue = NSTextField(labelWithString: option.title)
     workflowValue.lineBreakMode = .byTruncatingMiddle
     workflowValue.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    let helperLabel = NSTextField(
-      labelWithString: generatedId.isEmpty
-        ? "Use a stable lowercase ID for this instance."
-        : "Generated from the source name. Edit it before creating if needed."
-    )
-    helperLabel.textColor = .secondaryLabelColor
-    helperLabel.font = .systemFont(ofSize: 11)
-    let idStack = NSStackView(views: [idField, helperLabel])
-    idStack.orientation = .vertical
-    idStack.alignment = .width
-    idStack.spacing = 4
     let envStack = pathFieldStack(field: envField, target: envTarget)
     let directoryStack = pathFieldStack(field: directoryField, target: directoryTarget)
     var rows: [NSView] = [
@@ -348,8 +337,7 @@ extension DaemonWorkflowWindowController {
       rows.append(addInstanceValueRow(title: "Required Environment", valueLabel: requiredLabel))
     }
     rows.append(contentsOf: [
-      addInstanceFieldRow(title: "Instance ID", control: idStack),
-      addInstanceFieldRow(title: "Display Name", control: nameField),
+      addInstanceFieldRow(title: "名前", control: nameField),
       addInstanceFieldRow(title: ".env File", control: envStack),
       addInstanceFieldRow(title: "Working Directory", control: directoryStack),
       addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
@@ -360,12 +348,12 @@ extension DaemonWorkflowWindowController {
     )
 
     let response = runAddInstancePromptWindow(
-      title: "Configure Instance",
-      message: "Enter instance parameters.",
+      title: "実行設定を追加",
+      message: "実行設定に名前を付けて保存します。",
       content: stack,
       contentSize: AddInstancePromptLayout.parameterSize,
       primaryTitle: "Create",
-      initialFirstResponder: idField
+      initialFirstResponder: nameField
     )
     guard response == .OK else {
       activeAddInstancePathTargets = []
@@ -419,9 +407,9 @@ extension DaemonWorkflowWindowController {
   private func relinkRetryMessage(for action: AddInstanceSheetAction) -> String {
     switch action {
     case .importWorkflowOrPackageFromFile:
-      return "Imported source. Select it below to relink this instance."
+      return "追加したワークフローを選択して実行設定に関連付けます。"
     case .importWorkflowOrPackageFromURL:
-      return "Import requested. When the source appears below, select it to relink this instance."
+      return "追加したワークフローが表示されたら選択してください。"
     }
   }
 

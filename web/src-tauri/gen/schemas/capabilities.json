@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"Local Riela window; no remote origins or filesystem access.","local":true,"windows":["main"],"permissions":["core:default"]}}

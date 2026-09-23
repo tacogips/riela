@@ -7,6 +7,11 @@ final class SourceDeletionReadinessTests: XCTestCase {
   // the removed TypeScript runtime.
   // `.claude/` holds session-local agent state, including nested worktrees
   // with their own `.build` checkouts; nothing under it is repository source.
+  // `examples/monja-typescript-sdk/` is a deliberately retained external SDK
+  // interoperability example; its TypeScript sources are not the removed
+  // Riela runtime and are verified by the example's dedicated script.
+  // The Monja collaboration and project-task examples are retained Bun clients
+  // of the native Swift CLI, not implementations of the deleted runtime.
   private static let ignoredRepositoryPathPrefixes = [
     ".git/",
     ".build/",
@@ -15,7 +20,10 @@ final class SourceDeletionReadinessTests: XCTestCase {
     ".riela/",
     "dist/",
     "tmp/",
-    "web/"
+    "web/",
+    "examples/monja-typescript-sdk/",
+    "examples/monja-agent-collaboration/",
+    "examples/monja-project-task-orchestrator/"
   ]
 
   private var temporaryDirectories: [URL] = []
@@ -29,18 +37,25 @@ final class SourceDeletionReadinessTests: XCTestCase {
   }
 
   func testNoDeletionBlockingTypeScriptFamilyFilesRemain() throws {
-    let files = try collectRepositoryFiles()
-    let blocking = files.filter { file in
-      let name = URL(fileURLWithPath: file).lastPathComponent
-      return name.hasSuffix(".ts")
-        || name.hasSuffix(".tsx")
-        || name.hasSuffix(".mts")
-        || name.hasSuffix(".cts")
-        || name.hasSuffix(".mjs")
-        || name.hasSuffix(".d.ts")
-    }
+    let blocking = try deletionBlockingTypeScriptFiles(root: repositoryRoot())
 
     XCTAssertEqual(blocking, [], "TypeScript-family files must be removed or explicitly retained before deletion readiness")
+  }
+
+  func testOnlyNamedMonjaExamplesAreRetained() throws {
+    let root = try makeTemporaryRepository()
+    try writeFixture(root: root, relativePath: "examples/monja-agent-collaboration/main.ts")
+    try writeFixture(root: root, relativePath: "examples/monja-project-task-orchestrator/main.ts")
+    try writeFixture(root: root, relativePath: "examples/monja-agent-collaboration/node_modules/tool/index.mjs")
+    try writeFixture(root: root, relativePath: "examples/arbitrary/runtime.ts")
+    try writeFixture(root: root, relativePath: "examples/monja-agent-collaboration-other/main.ts")
+    try writeFixture(root: root, relativePath: "src/runtime.ts")
+
+    XCTAssertEqual(try deletionBlockingTypeScriptFiles(root: root), [
+      "examples/arbitrary/runtime.ts",
+      "examples/monja-agent-collaboration-other/main.ts",
+      "src/runtime.ts"
+    ])
   }
 
   func testBunTestWrapperIsNoOpAfterTypeScriptSourceDeletion() throws {
@@ -55,20 +70,23 @@ final class SourceDeletionReadinessTests: XCTestCase {
   }
 
   func testRunnableExamplesDoNotReferenceDeletedTypeScriptCLIEntrypoint() throws {
-    let root = try repositoryRoot()
-    let files = try collectFiles(root: root, relativePath: "examples")
-      .filter { [".json", ".md", ".sh"].contains(URL(fileURLWithPath: $0).pathExtensionWithDot) }
-      .sorted()
-    var violations: [String] = []
-
-    for file in files {
-      let text = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
-      if text.contains("packages/riela/src/bin.ts") {
-        violations.append(file)
-      }
-    }
-
+    let violations = try deletedCLIEntrypointReferences(root: repositoryRoot())
     XCTAssertEqual(violations, [], "Runnable examples must use the Swift riela CLI after TypeScript source deletion")
+  }
+
+  func testRetainedExamplesStillRejectDeletedCLIEntrypointReferences() throws {
+    let root = try makeTemporaryRepository()
+    let blocked = [
+      "examples/monja-agent-collaboration/main.ts",
+      "examples/monja-project-task-orchestrator/README.md"
+    ]
+    for path in blocked {
+      try writeFixture(root: root, relativePath: path, contents: "packages/riela/src/bin.ts")
+    }
+    try writeFixture(root: root, relativePath: "examples/native/run.sh", contents: ".build/debug/riela workflow list")
+
+    XCTAssertEqual(try deletionBlockingTypeScriptFiles(root: root), [])
+    XCTAssertEqual(try deletedCLIEntrypointReferences(root: root), blocked)
   }
 
   func testFixturesDoNotReferenceRemovedCodexNanoModel() throws {
@@ -296,13 +314,29 @@ final class SourceDeletionReadinessTests: XCTestCase {
     ]
   }
 
-  private func collectRepositoryFiles() throws -> [String] {
-    let root = try repositoryRoot()
+  private func deletionBlockingTypeScriptFiles(root: URL) throws -> [String] {
     return try collectFiles(root: root, relativePath: ".")
       .filter { file in
         !Self.ignoredRepositoryPathPrefixes.contains { file.hasPrefix($0) }
       }
+      .filter { file in
+        [".ts", ".tsx", ".mts", ".cts", ".mjs"].contains(URL(fileURLWithPath: file).pathExtensionWithDot)
+      }
       .sorted()
+  }
+
+  private func deletedCLIEntrypointReferences(root: URL) throws -> [String] {
+    // Retention only affects deletion readiness. Keep auditing retained client
+    // source and docs for attempts to invoke the removed runtime entrypoint.
+    let extensions = Set([".json", ".md", ".sh", ".ts", ".tsx", ".js", ".mjs", ".mts", ".cts"])
+    let files = try collectFiles(root: root, relativePath: "examples")
+      .filter { !URL(fileURLWithPath: $0).pathComponents.contains("node_modules") }
+      .filter { extensions.contains(URL(fileURLWithPath: $0).pathExtensionWithDot) }
+      .sorted()
+    return try files.filter { file in
+      try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
+        .contains("packages/riela/src/bin.ts")
+    }
   }
 
   private func collectFiles(root: URL, relativePath: String) throws -> [String] {

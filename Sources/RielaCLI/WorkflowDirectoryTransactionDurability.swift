@@ -229,7 +229,7 @@ func acquireWorkflowTargetLock(
 
 func workflowTargetLockURL(target: WorkflowBundleIdentity) -> URL {
   let key = WorkflowHistoryCanonicalCoding.sha256(Data(target.ownershipRoot.utf8))
-  return URL(fileURLWithPath: "/var/tmp", isDirectory: true)
+  return URL(fileURLWithPath: "/tmp", isDirectory: true)
     .appendingPathComponent("riela-workflow-target-locks-\(geteuid())", isDirectory: true)
     .appendingPathComponent(key, isDirectory: true)
     .appendingPathComponent("target.lock")

@@ -11,13 +11,14 @@ enum BuiltinNoteAddon: String, CaseIterable {
   case attachments = "kaiba/note-attachments"
   case memos = "kaiba/note-memos"
   case graphQLDocument = "kaiba/note-graphql-document"
+  case graphQLRemote = "kaiba/note-graphql-remote"
   case commentAdd = "kaiba/note-comment-add", notebookIngestPages = "kaiba/notebook-ingest-pages"
   case documentImport = "kaiba/document-import"
   case conversationSave = "kaiba/note-conversation-save"
 
   var outputName: String {
-    rawValue.hasPrefix("kaiba/note-")
-      ? String(rawValue.dropFirst("kaiba/note-".count))
+    rawValue.hasPrefix("kaiba/" + "note-")
+      ? String(rawValue.dropFirst(("kaiba/" + "note-").count))
       : String(rawValue.dropFirst("kaiba/".count))
   }
 }

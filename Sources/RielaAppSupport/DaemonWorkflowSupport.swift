@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import RielaAddons
 import RielaCore
@@ -739,6 +738,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     var candidate: RielaAppDaemonWorkflowCandidate
     var configuration: WorkflowServeRuntimeConfiguration
     var server: RielaServerConfiguration
+    var sessionStoreRoot: String
     var controller: WorkflowServingController
     var snapshot: RuntimeSnapshot
     var endpoint: String?
@@ -777,7 +777,8 @@ public final class RielaAppDaemonWorkflowRuntime {
     inheritedEnvironment: [String: String] = [:],
     defaultVariables: JSONObject = [:],
     nodePatch: JSONObject? = nil,
-    server: RielaServerConfiguration = RielaServerConfiguration()
+    server: RielaServerConfiguration = RielaServerConfiguration(),
+    sessionStoreRoot: String? = nil
   ) async {
     if runningWorkflows[candidate.id]?.snapshot.status == .running {
       return
@@ -791,6 +792,7 @@ public final class RielaAppDaemonWorkflowRuntime {
         nodePatch: nodePatch
       ),
       server: server,
+      sessionStoreRoot: sessionStoreRoot ?? Self.defaultSessionStoreRootPath,
       monitorTask: nil
     )
     scheduleMonitorIfNeeded(for: candidate.id)
@@ -798,7 +800,8 @@ public final class RielaAppDaemonWorkflowRuntime {
   public func start(
     _ candidate: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowServeRuntimeConfiguration,
-    server: RielaServerConfiguration = RielaServerConfiguration()
+    server: RielaServerConfiguration = RielaServerConfiguration(),
+    sessionStoreRoot: String? = nil
   ) async {
     if runningWorkflows[candidate.id]?.snapshot.status == .running {
       return
@@ -807,7 +810,10 @@ public final class RielaAppDaemonWorkflowRuntime {
     if runtimeConfiguration.workingDirectory == nil {
       runtimeConfiguration.workingDirectory = candidate.workingDirectory
     }
-    await startController(candidate, configuration: runtimeConfiguration, server: server, monitorTask: nil)
+    await startController(
+      candidate, configuration: runtimeConfiguration, server: server,
+      sessionStoreRoot: sessionStoreRoot ?? Self.defaultSessionStoreRootPath, monitorTask: nil
+    )
     scheduleMonitorIfNeeded(for: candidate.id)
   }
   public func refresh(identity: String) async {
@@ -825,6 +831,7 @@ public final class RielaAppDaemonWorkflowRuntime {
       running.candidate,
       configuration: running.configuration,
       server: running.server,
+      sessionStoreRoot: running.sessionStoreRoot,
       monitorTask: running.monitorTask
     )
   }
@@ -833,6 +840,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     _ candidate: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowServeRuntimeConfiguration,
     server: RielaServerConfiguration,
+    sessionStoreRoot: String,
     monitorTask: Task<Void, Never>?
   ) async {
     let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
@@ -844,6 +852,7 @@ public final class RielaAppDaemonWorkflowRuntime {
       candidate: candidate,
       configuration: configuration,
       server: server,
+      sessionStoreRoot: sessionStoreRoot,
       controller: controller,
       snapshot: RuntimeSnapshot(status: .starting, detail: "Starting"),
       endpoint: nil,
@@ -854,7 +863,7 @@ public final class RielaAppDaemonWorkflowRuntime {
         selection: candidate.serveSelection,
         server: server,
         configuration: configuration,
-        sessionStoreRoot: defaultSessionStoreRoot(),
+        sessionStoreRoot: sessionStoreRoot,
         eventRoot: candidate.eventRoot,
         startsEventSources: candidate.startsEventSources
       ))
@@ -923,10 +932,6 @@ public final class RielaAppDaemonWorkflowRuntime {
     return RuntimeSnapshot(status: state.status, detail: detail)
   }
 
-  private func defaultSessionStoreRoot() -> String {
-    Self.defaultSessionStoreRootPath
-  }
-
   public static var defaultSessionStoreRootPath: String {
     URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
       .appendingPathComponent(".riela/sessions", isDirectory: true)
@@ -950,4 +955,3 @@ private extension WorkflowPackageManifest {
     }
   }
 }
-#endif

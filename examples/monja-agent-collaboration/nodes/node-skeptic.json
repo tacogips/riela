@@ -1,0 +1,77 @@
+{
+	"id": "skeptic",
+	"description": "Flint attacks Aster's proposal, naming concrete failure modes and required corrections.",
+	"executionBackend": "codex-agent",
+	"agentSandbox": "read-only",
+	"model": "gpt-5.6-luna",
+	"modelFreeze": true,
+	"systemPromptTemplateFile": "prompts/skeptic-system.md",
+	"promptTemplateFile": "prompts/skeptic.md",
+	"variables": {},
+	"output": {
+		"description": "Flint's typed adversarial review for the Monja discussion.",
+		"jsonSchema": {
+			"type": "object",
+			"required": ["persona", "message", "details", "priorTurns"],
+			"properties": {
+				"persona": {
+					"type": "string",
+					"const": "skeptic"
+				},
+				"message": {
+					"type": "string",
+					"minLength": 1
+				},
+				"details": {
+					"type": "object",
+					"required": ["verdict", "failureModes", "requiredChanges"],
+					"properties": {
+						"verdict": {
+							"type": "string",
+							"enum": ["accept", "revise", "reject"]
+						},
+						"failureModes": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							},
+							"minItems": 1
+						},
+						"requiredChanges": {
+							"type": "array",
+							"items": {
+								"type": "string",
+								"minLength": 1
+							}
+						}
+					},
+					"additionalProperties": false
+				},
+				"priorTurns": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["persona", "message", "details"],
+						"properties": {
+							"persona": {
+								"type": "string",
+								"minLength": 1
+							},
+							"message": {
+								"type": "string",
+								"minLength": 1
+							},
+							"details": {
+								"type": "object"
+							}
+						},
+						"additionalProperties": false
+					}
+				}
+			},
+			"additionalProperties": false
+		},
+		"maxValidationAttempts": 2
+	}
+}

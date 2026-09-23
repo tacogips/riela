@@ -6,6 +6,8 @@ const opsSessionId = 'session-aurora-042'
 
 const instance = {
   id: compositeId,
+  sourceId: 'source-review-loop',
+  isDefault: true,
   name: 'Review loop',
   workflowId: 'review-loop',
   source: 'project workflow',
@@ -27,6 +29,8 @@ const instance = {
 const missingSourceInstance = {
   ...instance,
   id: 'removed-workflow',
+  sourceId: 'source-removed',
+  isDefault: false,
   name: 'Removed workflow',
   workflowId: 'removed-source',
   source: 'Missing source: removed-source',
@@ -237,7 +241,8 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   page.on('console', (message) => {
     if (message.type() !== 'error') return
     const expectedConflictNoise = options.mutationMode === 'conflict' && message.text().includes('409 (Conflict)')
-    if (!expectedConflictNoise) browserErrors.push(message.text())
+    const expectedMissingSource = message.text().includes('404 (Not Found)') && message.location().url.includes('/sources/source-removed/definition')
+    if (!expectedConflictNoise && !expectedMissingSource) browserErrors.push(message.text())
   })
   page.on('pageerror', (error) => browserErrors.push(error.message))
   page.on('requestfailed', (request) => {
@@ -246,7 +251,8 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
   page.on('response', (response) => {
     const url = new URL(response.url())
     const expectedConflict = options.mutationMode === 'conflict' && response.status() === 409 && url.pathname === '/graphql'
-    if (response.status() >= 400 && !expectedConflict) badResponses.push(`${response.status()} ${response.request().method()} ${url.pathname}`)
+    const expectedMissingSource = response.status() === 404 && url.pathname === '/api/v1/workflows/sources/source-removed/definition'
+    if (response.status() >= 400 && !expectedConflict && !expectedMissingSource) badResponses.push(`${response.status()} ${response.request().method()} ${url.pathname}`)
   })
   await page.route('**/graphql', async (route: Route) => {
     const request = route.request()
@@ -289,6 +295,19 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     if (operation === 'WebMutableWorkflows') {
       return result({ workflows: { workflows: [], errors: [] } })
     }
+    // Console reads moved off /api/v1 onto the control plane (design 2.4).
+    if (operation === 'WebConsoleInstances') {
+      if (options.instancesDelay) await new Promise((resolve) => setTimeout(resolve, options.instancesDelay))
+      return result({ consoleInstances: { profile: 'e2e', revision: 1, items: [instance, missingSourceInstance] } })
+    }
+    if (operation === 'WebConsoleInstance') {
+      const identity = (body.variables as { identity?: string } | undefined)?.identity
+      const item = [instance, missingSourceInstance].find((candidate) => candidate.id === identity) ?? null
+      return result({ consoleInstance: { profile: 'e2e', revision: 2, item } })
+    }
+    if (operation === 'WebOpsOverview') {
+      return result({ opsOverview: opsOverview })
+    }
     unexpectedRequests.push(`POST /graphql:${operation}`)
     return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected GraphQL operation' }) })
   })
@@ -297,14 +316,20 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     const url = new URL(request.url())
     requests.push(`${request.method()} ${url.pathname}`)
     const json = (value: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(value) })
+    if (url.pathname === '/api/v1/settings/workers') {
+      if (request.method() === 'PUT') {
+        const update = request.postDataJSON()
+        expect(update.expectedProfile).toBe('e2e')
+        expect(update.expectedConfiguration).toBeNull()
+        expect(update.configuration.workers[0].id).toBe('linux-builder')
+        return json({ message: 'Settings saved. Worker controller: running' })
+      }
+      return json({ profile: 'e2e', savedConfiguration: null,
+        configuration: { host: '127.0.0.1', port: 8788, storePath: 'distributed/jobs.json', workers: [
+          { id: 'worker-1', groups: [], tokenEnvironment: 'RIELA_WORKER_1_TOKEN', maxCapacity: 1 },
+        ] }, status: 'Worker controller: stopped', credentialsPath: '/profiles/e2e/controller.env' })
+    }
     if (url.pathname === '/api/v1/bootstrap') return json({ apiVersion: 'v1', profile: 'e2e', csrfToken: 'csrf', revision: 1, capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, boundPort: 19091, restartRequired: false, state: 'running' } })
-    if (url.pathname === '/api/v1/instances' && request.method() === 'GET') {
-      if (options.instancesDelay) await new Promise((resolve) => setTimeout(resolve, options.instancesDelay))
-      return json({ profile: 'e2e', revision: 1, items: [instance, missingSourceInstance] })
-    }
-    if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}` && request.method() === 'GET') {
-      return json({ profile: 'e2e', revision: 2, item: instance })
-    }
     if (url.pathname === `/api/v1/instances/${encodeURIComponent(compositeId)}/executions`) {
       return json({ revision: 1, instanceId: compositeId, items: [], diagnostics: [], truncated: false })
     }
@@ -316,9 +341,26 @@ async function installAPI(page: Page, options: FixtureOptions = {}) {
     }
     if (url.pathname === '/api/v1/workflows/sources') {
       if (options.workflowMode === 'malformed') return route.fulfill({ status: 200, contentType: 'application/json', body: '{' })
-      return json({ profile: 'e2e', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [] })
+      if (options.instancesDelay) await new Promise((resolve) => setTimeout(resolve, options.instancesDelay))
+      return json({ profile: 'e2e', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: options.workflowMode === 'empty' ? [] : [{ id: 'source-review-loop', name: 'Review loop', workflowId: 'review-loop', scope: 'project', sourceKind: 'directory' }] })
     }
-    if (url.pathname === '/api/v1/ops/overview') return json(opsOverview)
+    if (url.pathname === '/api/v1/workflows/sources/source-removed/definition') {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'source_not_found', message: 'Workflow source no longer exists' }, revision: 1 }) })
+    }
+    if (url.pathname === '/api/v1/workflows/sources/source-review-loop/definition') {
+      return json({
+        revision: 1, sourceId: 'source-review-loop', workflowId: 'review-loop', name: 'Review loop',
+        scope: 'project', sourceKind: 'directory', definitionRevision: 'definition-1',
+        definition: {
+          description: 'Review changes', descriptionTruncated: false, entryStepId: 'review', managerStepId: null,
+          steps: [{ id: 'review', nodeId: 'reviewer', role: 'worker', transitions: [], transitionsTotalCount: 0, transitionsTruncated: false }],
+          stepsTotalCount: 1, stepsTruncated: false,
+          nodes: [{ id: 'reviewer', kind: 'agent', role: 'worker' }],
+          nodesTotalCount: 1, nodesTruncated: false, transitionsTotalCount: 0, transitionsTruncated: false,
+        },
+        diagnostics: [], diagnosticsTotalCount: 0, diagnosticsTruncated: false, truncated: false,
+      })
+    }
     unexpectedRequests.push(`${request.method()} ${url.pathname}`)
     return route.fulfill({ status: 418, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unexpected_request', message: `${request.method()} ${url.pathname}` }, revision: 1 }) })
   })
@@ -344,24 +386,28 @@ async function captureEvidence(page: Page, name: string, target?: Locator) {
 test('suppresses empty ids, resolves encoded ids, and saves instance configuration', async ({ page }) => {
   const fixture = await installAPI(page)
   await page.goto('/')
-  await expect.poll(() => page.url()).toContain('#/instances')
-  await page.getByRole('button', { name: 'Run logs' }).click()
+  await expect.poll(() => page.url()).toContain('#/workflows')
+  await expect(page.getByRole('button', { name: /Removed workflow/ })).toBeVisible()
+  await page.goto('/#/logs')
   await expect.poll(() => page.url()).toContain('#/logs')
-  await expect(page.locator('.empty-state').getByText('Choose an instance', { exact: true })).toBeVisible()
+  await expect(page.locator('.empty-state').getByText('実行設定を選択', { exact: true })).toBeVisible()
   expect(fixture.requests.some((request) => request.includes('/instances//executions'))).toBe(false)
-  await page.getByLabel('Instance').selectOption(compositeId)
+  await page.getByLabel('実行設定').selectOption(compositeId)
   await expect(page.getByText('No persisted runs', { exact: true })).toBeVisible()
   expect(fixture.requests).toContain(`GET /api/v1/instances/${encodeURIComponent(compositeId)}/executions`)
   await captureEvidence(page, 'run-logs-empty-history')
 
-  await page.getByRole('button', { name: 'Instances' }).click()
-  await page.getByRole('button', { name: /Review loop/ }).click()
+  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
+  await page.getByRole('button', { name: 'ワークフローを開く Review loop', exact: true }).click()
+  await page.getByRole('button', { name: /標準設定/ }).click()
   await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText(/Saved\. Active instances/)).toBeVisible()
+  await expect(page.getByText(/Saved\. Running configurations/)).toBeVisible()
   expect(fixture.requests).toContain('POST /graphql:WebUpdateWorkflowInstanceConfiguration')
   expect(await page.locator('body').innerText()).not.toContain(plantedSecret)
+  await page.getByRole('button', { name: 'ワークフロー一覧へ', exact: true }).click()
   await page.getByRole('button', { name: /Removed workflow/ }).click()
-  await expect(page.getByText('This configured instance cannot find its workflow source.')).toBeVisible()
+  await page.getByRole('button', { name: /Removed workflow/ }).click()
+  await expect(page.getByText('This run configuration cannot find its workflow source.')).toBeVisible()
   await captureEvidence(page, 'instances-missing-source')
   fixture.assertClean()
 })
@@ -369,9 +415,8 @@ test('suppresses empty ids, resolves encoded ids, and saves instance configurati
 test('shows loading, empty, error, and mutation recovery states', async ({ page }) => {
   const fixture = await installAPI(page, { instancesDelay: 250, workflowMode: 'empty', mutationMode: 'conflict' })
   await page.goto('/')
-  await expect(page.getByText('Loading workflow instances…')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Review loop/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Workflows' }).click()
+  await expect(page.getByText('ワークフローを読み込み中…')).toBeVisible()
+  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
   await expect(page.getByText('No sources configured')).toBeVisible()
   await expect(page.getByText('Nothing discovered')).toBeVisible()
   await page.getByLabel('Additional workflow directory').fill('/tmp/workflows')
@@ -388,10 +433,28 @@ test('shows loading, empty, error, and mutation recovery states', async ({ page 
   fixture.assertClean()
 })
 
+test('opens settings directly and edits worker configuration without native windows', async ({ page }) => {
+  const fixture = await installAPI(page)
+  await page.goto('/#/settings')
+  await expect(page.getByRole('heading', { name: 'Worker Controller', exact: true })).toBeVisible()
+  const workerID = page.getByLabel('Worker ID', { exact: true })
+  await workerID.fill('')
+  await workerID.pressSequentially('linux-builder')
+  await expect(workerID).toBeFocused()
+  await expect(workerID).toHaveValue('linux-builder')
+  await page.getByRole('button', { name: 'Add worker', exact: true }).click()
+  await expect(page.getByLabel('Worker ID', { exact: true })).toHaveCount(2)
+  await page.getByRole('button', { name: 'Remove worker', exact: true }).last().click()
+  await page.getByRole('button', { name: 'Save and restart controller' }).click()
+  await expect(page.getByText('Settings saved. Worker controller: running', { exact: true })).toBeVisible()
+  await captureEvidence(page, 'tauri-unified-settings')
+  fixture.assertClean()
+})
+
 test('renders resource and settings mutation failures', async ({ page }) => {
   const fixture = await installAPI(page, { workflowMode: 'malformed', mutationMode: 'malformed' })
   await page.goto('/')
-  await page.getByRole('button', { name: 'Workflows' }).click()
+  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
   await expect(page.getByRole('alert')).toBeVisible()
   await page.getByRole('button', { name: 'Settings' }).click()
   await page.getByRole('button', { name: 'Save assistant' }).click()
@@ -474,16 +537,18 @@ test('keeps narrow navigation, focus, and content usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const fixture = await installAPI(page)
   await page.goto('/')
-  await expect(page.getByRole('button', { name: 'Instances' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('button', { name: 'ワークフロー', exact: true })).toHaveAttribute('aria-current', 'page')
   await page.keyboard.press('Tab')
   await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused()
-  // The full navigation is wider than a phone viewport, so it has to scroll
-  // inside its own strip instead of widening the document.
+  // Navigation and configuration cards remain usable without widening the document.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  expect(await page.locator('.sidebar nav').evaluate((element) =>
-    element.scrollWidth > element.clientWidth && getComputedStyle(element).overflowX === 'auto')).toBe(true)
-  const columns = await page.locator('.instance-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-  expect(columns).toBe(1)
+  expect(await page.locator('.app-header nav').evaluate((element) =>
+    element.scrollWidth <= element.clientWidth || getComputedStyle(element).overflowX === 'auto')).toBe(true)
+  await page.getByRole('button', { name: 'ワークフローを開く Review loop', exact: true }).click()
+  const configurations = page.getByRole('list', { name: '実行設定の一覧', exact: true })
+  await expect(configurations.getByRole('listitem')).toHaveCount(1)
+  await expect(configurations.getByRole('button', { name: /標準設定/ })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await captureEvidence(page, 'mobile-instances')
   fixture.assertClean()
 })

@@ -6,6 +6,7 @@ import RielaAdapters
 import RielaAddonSupport
 import RielaAddons
 import RielaCore
+import RielaKaibaAddons
 import RielaObservability
 
 public struct WorkflowRunCommand: Sendable {
@@ -14,6 +15,7 @@ public struct WorkflowRunCommand: Sendable {
   public var jsonLoader: JSONReferenceLoader
   public var graphQLTransport: any WorkflowGraphQLRunTransporting
   public var jsonlRecordWriter: WorkflowJSONLRecordWriting?
+  var specialistMonitorControl: SpecialistMonitorControl?
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
@@ -29,48 +31,31 @@ public struct WorkflowRunCommand: Sendable {
     self.jsonlRecordWriter = jsonlRecordWriter
   }
 
-  public func run(_ options: WorkflowRunOptions) async -> CLICommandResult {
-    var livePersistenceState: WorkflowRunLivePersistenceState?
-    var pendingLease: WorkflowRunPendingLease?
+  func runWithoutSpecialistMonitor(_ options: WorkflowRunOptions) async -> CLICommandResult {
+    var livePersistenceState: WorkflowRunLivePersistenceState?, pendingLease: WorkflowRunPendingLease?
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
     do {
       try rejectUnsupportedRunOptions(options)
-      if let endpoint = options.endpoint {
-        return try await runRemote(endpoint: endpoint, options: options)
-      }
+      if let result = try await remoteRunResult(options) { return result }
       let resolution = options.resolution ?? WorkflowResolutionOptions(
         workflowName: options.target,
         workingDirectory: options.workingDirectory
       )
       var bundle = try resolveRunBundle(options: options, resolution: resolution)
       let variables = try parseVariables(options.variables, workingDirectory: options.workingDirectory)
-      let instanceResolution = try resolveEffectiveInstance(
+      let prepared = try await prepareRunExecution(
         options: options,
-        workflowId: bundle.workflow.workflowId,
-        variables: variables,
-        nodePayloads: bundle.nodePayloads
+        resolution: resolution,
+        bundle: &bundle,
+        variables: variables
       )
-      bundle.nodePayloads = instanceResolution.nodePayloads
-      try validateEffectiveSessionPolicies(bundle)
-      if let saveInstance = options.saveInstance {
-        try saveEffectiveInstance(
-          identity: saveInstance,
-          workflowId: bundle.workflow.workflowId,
-          sourceIdentity: persistenceIdentity(
-            requestedResolution: resolution,
-            bundle: bundle,
-            fromRegistry: options.fromRegistry
-          ).workflowName,
-          effectiveInstance: instanceResolution.instance,
-          options: options
-        )
-      }
-      let effectiveVariables = instanceResolution.instance.configuration.defaultVariables
-      let runWorkingDirectory = effectiveRunWorkingDirectory(options: options, instance: instanceResolution.instance)
-      let runEnvironment = try effectiveRunEnvironment(
-        configuration: instanceResolution.instance.configuration,
-        workingDirectory: runWorkingDirectory
-      )
+      let effectiveInstance = prepared.instance
+      let calleeResolver = prepared.calleeResolver
+      let effectiveVariables = effectiveInstance.configuration.defaultVariables
+      let runContext = prepared.context
+      let runWorkingDirectory = runContext.workingDirectory
+      let runEnvironment = runContext.environment
+      let kaibaSnapshot = runContext.snapshot
       let adapter = try makeScenarioBackedNodeAdapter(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
@@ -100,17 +85,23 @@ public struct WorkflowRunCommand: Sendable {
           )
         }
       }
-      let runtimeStore = InMemoryWorkflowRuntimeStore()
-      try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
+      let durableRuntime = try await makeProductionDurableRuntime(
+        storeRoot: storeRoot,
+        options: options
+      )
+      let runtimeStore = durableRuntime.backingStore
       let telemetry = makeTelemetry(environment: runEnvironment)
       let runner = DeterministicWorkflowRunner(
-        store: runtimeStore,
-        adapter: adapter,
+        store: durableRuntime.runtimeStore, adapter: adapter,
+        distributedExecutor: try configuredDistributedExecutor(environment: runEnvironment),
         addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,
         telemetry: telemetry,
         simulatesCrossWorkflowDispatch: options.mockScenarioPath != nil,
-        calleeResolver: FileSystemWorkflowCalleeResolver(resolver: resolver, baseResolution: resolution)
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: runWorkingDirectory, isDirectory: true),
+        nestedInvocationPersistenceStore: durableRuntime.nestedInvocationPersistenceStore,
+        nestedInvocationRecoveryCheckpointer: durableRuntime.nestedRecoveryCheckpointer
       )
       let persistedIdentity = persistenceIdentity(
         requestedResolution: resolution,
@@ -122,6 +113,9 @@ public struct WorkflowRunCommand: Sendable {
       livePersistenceState = persistenceState
       let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
+        // The fail-closed runtime store is the canonical effect boundary.
+        // This established CLI projection remains an inspectability/event
+        // record and never determines whether a node may start.
         if await persistenceState.shouldPersist(event: event) {
           // Cross-workflow callee sessions share the runtime store and event
           // stream; persist them under the callee workflow identity so they
@@ -170,21 +164,28 @@ public struct WorkflowRunCommand: Sendable {
         disableDefaultLoopGuard: options.disableDefaultLoopGuard,
         defaultTimeoutMs: options.defaultTimeoutMs,
         timeoutMs: options.timeoutMs,
+        resumeSessionId: options.resumeSessionId,
         agentSilenceWarningMs: options.agentSilenceWarningMs,
         agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
-        effectiveInstance: instanceResolution.instance,
-        eventHandler: runEventHandler
+        effectiveInstance: effectiveInstance,
+        eventHandler: runEventHandler,
+        sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
       )
       if options.autoImprove {
-        var finalResult = try await runWithAutoImprove(
-          initialRequest: initialRequest,
-          runner: runner,
-          workflow: bundle.workflow,
-          nodePayloads: bundle.nodePayloads,
-          variables: effectiveVariables,
-          options: options,
-          runtimeStore: runtimeStore
-        )
+        var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
+          kaibaSnapshot,
+          allowsMockExecution: options.mockScenarioPath != nil
+        ) {
+          try await runWithAutoImprove(
+            initialRequest: initialRequest,
+            runner: runner,
+            workflow: bundle.workflow,
+            nodePayloads: bundle.nodePayloads,
+            variables: effectiveVariables,
+            options: options,
+            runtimeStore: runtimeStore
+          )
+        }
         return try await finalizeRun(
           &finalResult,
           context: RunFinalizeContext(
@@ -199,7 +200,12 @@ public struct WorkflowRunCommand: Sendable {
           )
         )
       }
-      var finalResult = try await runner.run(initialRequest)
+      var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
+        kaibaSnapshot,
+        allowsMockExecution: options.mockScenarioPath != nil
+      ) {
+        try await runner.run(initialRequest)
+      }
       return try await finalizeRun(
         &finalResult,
         context: RunFinalizeContext(
@@ -232,6 +238,11 @@ public struct WorkflowRunCommand: Sendable {
         jsonlRecorder: jsonlRecorder
       )
     }
+  }
+
+  private func remoteRunResult(_ options: WorkflowRunOptions) async throws -> CLICommandResult? {
+    guard let endpoint = options.endpoint else { return nil }
+    return try await runRemote(endpoint: endpoint, options: options)
   }
 
   private func applyRequiredLoopGateFailureIfNeeded(
@@ -326,7 +337,7 @@ public struct WorkflowRunCommand: Sendable {
     return try jsonLoader.object(from: reference, workingDirectory: workingDirectory)
   }
 
-  private func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws {
+  func validateEffectiveSessionPolicies(_ bundle: ResolvedWorkflowBundle) throws {
     let diagnostics = DefaultWorkflowValidator().validate(
       bundle.workflow,
       nodePayloads: bundle.nodePayloads
@@ -340,7 +351,31 @@ public struct WorkflowRunCommand: Sendable {
     RielaTelemetryFactory.make(configuration: .fromEnvironment(environment, surface: .cli))
   }
 
-  private func resolveEffectiveInstance(
+  /// Builds the sole production runtime boundary. The backing actor is an
+  /// execution cache; the fail-closed wrapper makes all effect-enabling state
+  /// durable before it returns, and nested publication owns its single SQLite
+  /// transaction through the same database root.
+  private func makeProductionDurableRuntime(
+    storeRoot: String,
+    options: WorkflowRunOptions
+  ) async throws -> WorkflowRunProductionDurableRuntime {
+    let backingStore = InMemoryWorkflowRuntimeStore()
+    try await seedRuntimeStoreFromPersistedCLIState(backingStore, sessionStoreRoot: storeRoot)
+    let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
+    let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
+      backing: backingStore,
+      rootDirectory: canonicalRoot
+    )
+    try await durableStore.hydrate()
+    return WorkflowRunProductionDurableRuntime(
+      backingStore: backingStore,
+      runtimeStore: durableStore,
+      nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRoot),
+      nestedRecoveryCheckpointer: try workflowRunNestedRecoveryCheckpointer(options: options)
+    )
+  }
+
+  func resolveEffectiveInstance(
     options: WorkflowRunOptions,
     workflowId: String,
     variables: JSONObject,
@@ -388,7 +423,7 @@ public struct WorkflowRunCommand: Sendable {
     return resolved.1
   }
 
-  private func saveEffectiveInstance(
+  func saveEffectiveInstance(
     identity: String,
     workflowId: String,
     sourceIdentity: String?,
@@ -406,7 +441,7 @@ public struct WorkflowRunCommand: Sendable {
     try stores.save(instance, scope: scope)
   }
 
-  private func effectiveRunWorkingDirectory(
+  func effectiveRunWorkingDirectory(
     options: WorkflowRunOptions,
     instance: EffectiveWorkflowInstance
   ) -> String {
@@ -417,7 +452,7 @@ public struct WorkflowRunCommand: Sendable {
     return workingDirectory
   }
 
-  private func effectiveRunEnvironment(
+  func effectiveRunEnvironment(
     configuration: WorkflowInstanceConfiguration,
     workingDirectory: String
   ) throws -> [String: String] {
@@ -565,7 +600,7 @@ public struct WorkflowRunCommand: Sendable {
     )
   }
 
-  private func persistenceIdentity(
+  func persistenceIdentity(
     requestedResolution: WorkflowResolutionOptions,
     bundle: ResolvedWorkflowBundle,
     fromRegistry: Bool
@@ -818,6 +853,13 @@ private struct TemporaryWorkflowPayload: Codable {
   var nodePayloads: [String: AgentNodePayload]
 }
 
+private struct WorkflowRunProductionDurableRuntime {
+  let backingStore: InMemoryWorkflowRuntimeStore
+  let runtimeStore: any WorkflowRuntimeStore
+  let nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore
+  let nestedRecoveryCheckpointer: (any NestedRecoveryCheckpointing)?
+}
+
 private func isTemporaryWorkflowRunTarget(_ target: String, workingDirectory: String) -> Bool {
   if target.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
     return true
@@ -841,7 +883,7 @@ private func workflowRunPath(_ child: URL, isContainedIn parent: URL) -> Bool {
   return childPath == parentPath || childPath.hasPrefix(parentPath + "/")
 }
 
-private func parseEnvironmentFile(_ url: URL) throws -> [String: String] {
+func parseEnvironmentFile(_ url: URL) throws -> [String: String] {
   guard FileManager.default.fileExists(atPath: url.path) else {
     throw CLIUsageError("instance environment file not found: \(url.path)")
   }
@@ -915,17 +957,31 @@ extension WorkflowRunCommand {
     )
     finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
     applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: context.bundle.workflow)
-    try persistSessionRecord(
-      workflowName: context.persistedIdentity.workflowName,
-      resolution: context.persistedIdentity.resolution,
-      resolvedSourceScope: context.bundle.sourceScope,
-      result: finalResult,
-      workflowMessages: workflowMessages,
-      bundle: context.bundle,
-      variables: context.effectiveVariables,
-      options: context.options,
-      loopEvidence: loopEvidence
-    )
+    let terminalResult = finalResult
+    let persist: @Sendable () throws -> Void = {
+      try persistSessionRecord(
+        workflowName: context.persistedIdentity.workflowName,
+        resolution: context.persistedIdentity.resolution,
+        resolvedSourceScope: context.bundle.sourceScope,
+        result: terminalResult,
+        workflowMessages: workflowMessages,
+        bundle: context.bundle,
+        variables: context.effectiveVariables,
+        options: context.options,
+        loopEvidence: loopEvidence
+      )
+    }
+    if Task.isCancelled {
+      // Cancellation stops workflow work, not its terminal audit record.
+      // SQLite lock/WAL setup correctly checks cancellation, so finish only
+      // this bounded persistence operation in a fresh cancellation context.
+      let environment = CLIRuntimeEnvironment.overrides
+      try await Task.detached {
+        try CLIRuntimeEnvironment.$overrides.withValue(environment, operation: persist)
+      }.value
+    } else {
+      try persist()
+    }
     await dispatchLoopNotificationsAfterTerminalPersistence(
       finalResult: finalResult,
       loopEvidence: loopEvidence,

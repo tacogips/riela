@@ -9,12 +9,14 @@ import RielaMemory
 
 func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
-  codexSupervisorModeEnabled: Bool = false
+  codexSupervisorModeEnabled: Bool = false,
+  workingDirectory: String? = nil
 ) -> any NodeAdapter {
   let gatewayFactory: NodeAdapterFactory = {
     AgentGatewayNodeAdapter(
       environment: environment,
-      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled,
+      defaultWorkingDirectory: workingDirectory
     )
   }
   return DispatchingNodeAdapter(
@@ -42,7 +44,8 @@ func makeScenarioBackedNodeAdapter(
   guard let scenarioPath else {
     return makeProductionNodeAdapter(
       environment: environment,
-      codexSupervisorModeEnabled: codexSupervisorModeEnabled
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled,
+      workingDirectory: workingDirectory
     )
   }
   let fallback = DeterministicLocalNodeAdapter()
@@ -59,7 +62,7 @@ func makeScenarioBackedStdioNodeExecutor(
   scenarioPath: String?,
   workingDirectory: String
 ) throws -> any WorkflowStdioNodeExecuting {
-  let fallback = LocalWorkflowStdioNodeExecutor()
+  let fallback = LocalWorkflowStdioNodeExecutor(defaultWorkingDirectory: workingDirectory)
   guard let scenarioPath else {
     return fallback
   }
@@ -96,6 +99,16 @@ func makeProductionAddonResolver(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
   mockScenarioPath: String? = nil
 ) async throws -> any WorkflowAddonResolving {
+  try await makeProductionAddonResolver(workingDirectory: workingDirectory, environment: environment,
+    mockScenarioPath: mockScenarioPath, processRunner: FoundationLocalProcessRunner())
+}
+
+func makeProductionAddonResolver(
+  workingDirectory: URL,
+  environment: [String: String],
+  mockScenarioPath: String?,
+  processRunner: any LocalProcessRunning
+) async throws -> any WorkflowAddonResolving {
   let workflowTaskExecutor = DefaultGeneratedWorkflowTaskExecutor(
     runner: CommandGeneratedWorkflowTaskRunner(mockScenarioPath: mockScenarioPath)
   )
@@ -111,7 +124,8 @@ func makeProductionAddonResolver(
   let container = ContainerWorkflowAddonResolver(
     registrations: registrations,
     workingDirectory: workingDirectory,
-    environment: environment
+    environment: environment,
+    runner: processRunner
   )
   return CompositeWorkflowAddonResolver(primary: builtin, fallback: container)
 }
@@ -776,8 +790,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       renderPromptTemplate($0, variables: variables)
     }?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-    var payload = input.resolvedInputPayload
-    payload.removeValue(forKey: "runtime")
+    var payload = addonForwardedApplicationPayload(input.resolvedInputPayload)
     payload["status"] = .string("ok")
     payload["addon"] = .string(input.addon.name)
     payload["stepId"] = .string(input.stepId)

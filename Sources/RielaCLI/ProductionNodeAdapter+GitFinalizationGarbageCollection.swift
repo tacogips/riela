@@ -87,11 +87,7 @@ func boundedGitFinalizationDirectoryEntries(
       }
       break
     }
-    let name = withUnsafePointer(to: entry.pointee.d_name) {
-      $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) {
-        String(cString: $0)
-      }
-    }
+    let name = try posixDirectoryEntryName(entry)
     if name == "." || name == ".." { continue }
     entryCount += 1
     guard entryCount <= maximumEntries else {

@@ -4,6 +4,8 @@ struct WorkflowGitFinalizationEvidencePolicy: Equatable, Sendable {
   var commitStepId: String
   var pushStepId: String
   var planningModeStepIds: Set<String>
+  var integrationStepId: String?
+  var implementationReviewStepId: String?
 }
 
 private enum WorkflowGitFinalizationMode: String {
@@ -38,17 +40,34 @@ extension DeterministicWorkflowRunner {
     guard pushSteps.count == 1, let pushStep = pushSteps.first else {
       return nil
     }
-    guard pushStep.transitions?.map(\.toStepId) == [terminalStep.id] else {
+    let integrationStep = workflow.steps.first { $0.id == "base-branch-integrate" }
+    let directTerminal = pushStep.transitions?.map(\.toStepId) == [terminalStep.id]
+    let integratedTerminal = integrationStep.map {
+      pushStep.transitions?.map(\.toStepId) == [$0.id] &&
+        $0.transitions?.map(\.toStepId) == [terminalStep.id]
+    } ?? false
+    guard directTerminal || integratedTerminal else {
       return nil
     }
     let commitNodes = workflow.nodes.filter {
       $0.addon?.name == "riela/git-commit" && $0.addon?.version == "1"
     }
-    guard commitNodes.count == 1, let commitNode = commitNodes.first else {
+    let commitNodeIds = Set(commitNodes.map(\.id))
+    // A planning checkpoint is not finalization. Select the unique commit
+    // directly feeding the final push instead of rejecting multiple commits.
+    let commitSteps = workflow.steps.filter {
+      commitNodeIds.contains($0.nodeId) && $0.transitions?.map(\.toStepId) == [pushStep.id]
+    }
+    guard commitSteps.count == 1, let commitStep = commitSteps.first else {
       return nil
     }
-    let commitSteps = workflow.steps.filter { $0.nodeId == commitNode.id }
-    guard commitSteps.count == 1, let commitStep = commitSteps.first else {
+    let otherCommitNodes = commitNodes.filter { $0.id != commitStep.nodeId }
+    guard otherCommitNodes.isEmpty || (
+      otherCommitNodes.count == 1 && otherCommitNodes[0].id == "plan-git-commit" &&
+      workflow.steps.filter { $0.nodeId == "plan-git-commit" }.count == 1 &&
+      workflow.steps.first { $0.id == "plan-git-commit" }?.transitions?.map(\.toStepId) == ["dispatch-plans"] &&
+      workflow.steps.contains { $0.id == "dispatch-plans" && $0.transitions?.contains { $0.fanout != nil } == true }
+    ) else {
       return nil
     }
     guard commitStep.transitions?.map(\.toStepId) == [pushStep.id] else {
@@ -70,7 +89,10 @@ extension DeterministicWorkflowRunner {
     return WorkflowGitFinalizationEvidencePolicy(
       commitStepId: commitStep.id,
       pushStepId: pushStep.id,
-      planningModeStepIds: planningModeStepIds
+      planningModeStepIds: planningModeStepIds,
+      integrationStepId: integratedTerminal ? integrationStep?.id : nil,
+      implementationReviewStepId: workflow.steps.contains { $0.id == "integration-review" }
+        ? "integration-review" : nil
     )
   }
 
@@ -135,12 +157,38 @@ extension DeterministicWorkflowRunner {
           context.payload["pushedBranch"] == .string(pushedBranch) else {
       throw invalidGitFinalizationEvidence("final output does not exactly consume accepted git evidence")
     }
+    if let integrationStepId = policy.integrationStepId {
+      let integration = try acceptedPayload(stepId: integrationStepId, session: context.session)
+      guard let mergeStatus = stringValue(integration["mergeStatus"]),
+            ["merged", "already-on-base", "already-merged"].contains(mergeStatus),
+            let pushStatus = stringValue(integration["basePushStatus"]),
+            ["pushed", "already-pushed"].contains(pushStatus),
+            integration["implementationCommit"] == .string(commitHash),
+            integration["implementationBranch"] == .string(pushedBranch),
+            integration["remote"] == .string(pushedRemote),
+            let baseBranch = stringValue(integration["baseBranch"]), !baseBranch.isEmpty,
+            context.payload["baseBranch"] == .string(baseBranch),
+            context.payload["mergeStatus"] == .string(mergeStatus),
+            context.payload["basePushStatus"] == .string(pushStatus) else {
+        throw invalidGitFinalizationEvidence("base integration evidence is missing or mismatched")
+      }
+    }
   }
 
   private static func expectedGitFinalizationMode(
     session: WorkflowSession,
     policy: WorkflowGitFinalizationEvidencePolicy
   ) throws -> WorkflowGitFinalizationMode {
+    if let reviewStepId = policy.implementationReviewStepId,
+       session.executions.contains(where: { $0.stepId == reviewStepId }) {
+      let review = try acceptedPayload(stepId: reviewStepId, session: session)
+      guard review["accepted"] == .bool(true),
+            review["needs_revision"] == .bool(false),
+            review["plans_remaining"] == .bool(false) else {
+        throw invalidGitFinalizationEvidence("combined implementation review is not complete")
+      }
+      return .issueResolution
+    }
     if session.executions.contains(where: {
       $0.stepId == "step6-implement" && $0.status == .completed && $0.acceptedOutput != nil
     }) {

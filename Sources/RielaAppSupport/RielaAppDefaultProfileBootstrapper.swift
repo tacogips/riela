@@ -114,7 +114,7 @@ private extension RielaAppDefaultProfileBootstrapper {
       discordYukiChatBot,
       telegramYukiChatBot,
       slackChatBot,
-      mailGatewayLatestMail
+      gmailGatewayLatestMail
     ]
   }
 
@@ -334,22 +334,22 @@ private extension RielaAppDefaultProfileBootstrapper {
     )
   }
 
-  static var mailGatewayLatestMail: RielaAppPreinstalledPackage {
+  static var gmailGatewayLatestMail: RielaAppPreinstalledPackage {
     RielaAppPreinstalledPackage(
-      name: "mail-gateway-latest-mail",
-      workflowId: "mail-gateway-latest-mail",
-      displayName: "Mail Gateway Latest Mail",
-      description: "Fetches the latest inbox mail through mail-gateway-reader and prepares a concise digest.",
-      tags: ["rielaapp-default", "preinstalled", "mail-gateway", "mail"],
+      name: "gmail-gateway-latest-mail",
+      workflowId: "gmail-gateway-latest-mail",
+      displayName: "Gmail Gateway Latest Mail",
+      description: "Fetches the latest inbox mail through gmail-gateway-reader and prepares a concise digest.",
+      tags: ["rielaapp-default", "preinstalled", "gmail-gateway", "mail"],
       environmentVariables: [
-        .init(name: "MAIL_GATEWAY_CONFIG", description: "mail-gateway reader configuration JSON or config path.", secret: true),
+        .init(name: "GMAIL_GATEWAY_CONFIG", description: "gmail-gateway reader configuration JSON or config path.", secret: true),
         .init(name: "OPENAI_API_KEY", description: "OpenAI API key for summarizing fetched mail.", secret: true)
       ],
       files: [
         .init(relativePath: "workflow.json", contents: """
         {
-          "workflowId": "mail-gateway-latest-mail",
-          "description": "Fetch the latest inbox mail through mail-gateway-reader and summarize what changed.",
+          "workflowId": "gmail-gateway-latest-mail",
+          "description": "Fetch the latest inbox mail through gmail-gateway-reader and summarize what changed.",
           "defaults": {
             "maxLoopIterations": 3,
             "nodeTimeoutMs": 180000,
@@ -362,16 +362,16 @@ private extension RielaAppDefaultProfileBootstrapper {
             {
               "id": "fetch-latest-mail",
               "addon": {
-                "name": "riela/mail-gateway-read",
+                "name": "riela/gmail-gateway-read",
                 "version": "1",
                 "env": {
-                  "MAIL_GATEWAY_CONFIG": {
-                    "fromEnv": "MAIL_GATEWAY_CONFIG"
+                  "GMAIL_GATEWAY_CONFIG": {
+                    "fromEnv": "GMAIL_GATEWAY_CONFIG"
                   }
                 },
                 "config": {
-                  "queryTemplate": \(jsonString(mailGatewayQueryTemplate)),
-                  "image": "ghcr.io/tacogips/mail-gateway:latest",
+                  "queryTemplate": \(jsonString(gmailGatewayQueryTemplate)),
+                  "image": "ghcr.io/tacogips/gmail-gateway:latest",
                   "runnerKind": "docker",
                   "networkPolicy": "egress-allowed"
                 }
@@ -477,7 +477,7 @@ private extension RielaAppDefaultProfileBootstrapper {
     """
   }
 
-  static var mailGatewayQueryTemplate: String {
+  static var gmailGatewayQueryTemplate: String {
     """
     query {
       threads(input: {
@@ -513,7 +513,7 @@ private extension RielaAppDefaultProfileBootstrapper {
     Summarize the latest fetched mail for the user.
     Mention sender, subject, and why it may matter.
 
-    Mail gateway output: {{inbox.latest.output.payload}}
+    Gmail gateway output: {{inbox.latest.output.payload}}
 
     Return only a concise human-readable digest.
     """

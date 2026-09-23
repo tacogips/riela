@@ -74,7 +74,7 @@ The implementation should cover:
 - validation rejects workflow-local node payload files that author runtime-only
   `nodeType: "addon"` instead of using `workflow.json.nodes[].addon`
 - validation accepts the built-in agent worker add-ons, both x-gateway add-ons,
-  both mail-gateway add-ons, `riela/apple-notes-list`, and the Apple Notes CRUD
+  both gmail-gateway add-ons, `riela/apple-notes-list`, and the Apple Notes CRUD
   add-ons `riela/apple-note-get`, `riela/apple-note-create`,
   `riela/apple-note-update-body`, `riela/apple-note-delete`, and
   `riela/apple-note-move`, plus the Apple Mail read add-ons

@@ -324,7 +324,7 @@ with `writeScope: .readOnly` and no extra roots.
   fallback for container add-ons — their entrypoints are Linux image
   binaries, not host executables.
 - Sandboxing Apple-service helper processes (apple-gateway,
-  mail-gateway-reader) and daemon/serve infrastructure — they require
+  gmail-gateway-reader) and daemon/serve infrastructure — they require
   TCC-mediated access (Notes, Contacts, Mail) that Seatbelt profiles
   would break; they also do not execute workflow-provided scripts.
 - Network allowlisting by host/domain (Seatbelt cannot filter by

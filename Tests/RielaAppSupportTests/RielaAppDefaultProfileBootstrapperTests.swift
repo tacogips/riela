@@ -22,14 +22,14 @@ final class RielaAppDefaultProfileBootstrapperTests: XCTestCase {
       "discord-yuki-chat-bot",
       "telegram-yuki-chat-bot",
       "slack-chat-bot",
-      "mail-gateway-latest-mail"
+      "gmail-gateway-latest-mail"
     ])
     let state = daemonStore.load()
     XCTAssertTrue(state.preferences.values.allSatisfy(\.available))
     XCTAssertTrue(state.preferences.values.allSatisfy { !$0.active })
     XCTAssertEqual(state.preferences.keys.sorted(), [
       "app-package:discord-yuki-chat-bot:discord-yuki-chat-bot",
-      "app-package:mail-gateway-latest-mail:mail-gateway-latest-mail",
+      "app-package:gmail-gateway-latest-mail:gmail-gateway-latest-mail",
       "app-package:slack-chat-bot:slack-chat-bot",
       "app-package:telegram-yuki-chat-bot:telegram-yuki-chat-bot"
     ])
@@ -41,7 +41,7 @@ final class RielaAppDefaultProfileBootstrapperTests: XCTestCase {
 
     XCTAssertEqual(candidates.map(\.displayName), [
       "Discord Yuki Chat Bot",
-      "Mail Gateway Latest Mail",
+      "Gmail Gateway Latest Mail",
       "Slack Chat Bot",
       "Telegram Yuki Chat Bot"
     ])
@@ -57,7 +57,7 @@ final class RielaAppDefaultProfileBootstrapperTests: XCTestCase {
       candidates.first { $0.workflowId == "slack-chat-bot" }?.eventSourceSummary,
       "slack-chat-bot:slack-gateway"
     )
-    XCTAssertEqual(candidates.first { $0.workflowId == "mail-gateway-latest-mail" }?.eventSourceSummary, "None")
+    XCTAssertEqual(candidates.first { $0.workflowId == "gmail-gateway-latest-mail" }?.eventSourceSummary, "None")
     XCTAssertTrue(candidates.first { $0.workflowId == "telegram-yuki-chat-bot" }?.requiredEnvironment.contains {
       $0.name == "RIELA_TELEGRAM_YUKI_BOT_TOKEN" && $0.secret
     } == true)

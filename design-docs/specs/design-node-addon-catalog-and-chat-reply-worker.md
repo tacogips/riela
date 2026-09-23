@@ -2,7 +2,7 @@
 
 This document defines an authored workflow add-on mechanism and the current
 built-in worker add-ons: chat reply, agent worker, workflow package sandbox
-review, x-gateway worker nodes, and mail-gateway worker nodes.
+review, x-gateway worker nodes, and gmail-gateway worker nodes.
 
 ## Split Document Index
 

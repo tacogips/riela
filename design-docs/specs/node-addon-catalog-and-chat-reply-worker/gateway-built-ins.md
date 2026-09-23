@@ -1020,7 +1020,7 @@ for the signed-in macOS Mail app. They invoke a locally installed
 `apple-gateway` process, require macOS Full Disk Access, reject `addon.env`, and
 are read-only from Mail's perspective.
 
-`riela/mail-gateway-read` and `riela/mail-gateway` remain container-backed
+`riela/gmail-gateway-read` and `riela/gmail-gateway` remain container-backed
 IMAP/SMTP add-ons. They use Docker-compatible runners, receive mail account
 credentials through explicit `addon.env` mappings, and the non-read variant can
 send mail. The two families are intentionally separate so workflows cannot turn
@@ -1486,20 +1486,20 @@ Validation rules:
 - command or binary overrides are rejected; version `1` always runs
   `x-gateway`
 
-## Built-in `riela/mail-gateway-read`
+## Built-in `riela/gmail-gateway-read`
 
 ### Purpose
 
-`riela/mail-gateway-read` runs a read-only mail-gateway GraphQL query in a
+`riela/gmail-gateway-read` runs a read-only gmail-gateway GraphQL query in a
 Docker-compatible container runner. It is intended for workflow nodes that need
-to inspect configured mail accounts without embedding mail-gateway-specific
+to inspect configured mail accounts without embedding gmail-gateway-specific
 container plumbing or credential path forwarding in each workflow-local node
 payload.
 
 The add-on is worker-only and resolves to a native add-on payload with
 `nodeType: "addon"`. The runtime always invokes the read-only
-`mail-gateway-reader` binary from the configured container image. Workflow
-authors cannot override that binary with the full `mail-gateway` client.
+`gmail-gateway-reader` binary from the configured container image. Workflow
+authors cannot override that binary with the full `gmail-gateway` client.
 
 ### Authored Example
 
@@ -1508,16 +1508,16 @@ authors cannot override that binary with the full `mail-gateway` client.
   "id": "read-mail",
   "role": "worker",
   "addon": {
-    "name": "riela/mail-gateway-read",
+    "name": "riela/gmail-gateway-read",
     "version": "1",
     "env": {
-      "MAIL_GATEWAY_CONFIG": {
-        "fromEnv": "ACCOUNT_A_MAIL_GATEWAY_CONFIG"
+      "GMAIL_GATEWAY_CONFIG": {
+        "fromEnv": "ACCOUNT_A_GMAIL_GATEWAY_CONFIG"
       }
     },
     "config": {
       "queryTemplate": "{ message(accountId: \"{{accountId}}\", messageId: \"{{messageId}}\") { id subject } }",
-      "image": "ghcr.io/tacogips/mail-gateway:latest",
+      "image": "ghcr.io/tacogips/gmail-gateway:latest",
       "runnerKind": "docker"
     },
     "inputs": {
@@ -1531,7 +1531,7 @@ authors cannot override that binary with the full `mail-gateway` client.
 ### Configuration
 
 ```typescript
-interface MailGatewayReadAddonConfig {
+interface GmailGatewayReadAddonConfig {
   readonly queryTemplate: string;
   readonly image?: string;
   readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
@@ -1542,7 +1542,7 @@ interface MailGatewayReadAddonConfig {
 
 Defaults:
 
-- `image`: runtime default mail-gateway image
+- `image`: runtime default gmail-gateway image
 - `runnerKind`: `workflow.defaults.containerRuntime.runnerKind` or `docker`
 - `runnerPath`: `workflow.defaults.containerRuntime.runnerPath` or the runner
   kind executable name
@@ -1552,9 +1552,9 @@ Execution behavior:
 
 1. render `config.queryTemplate` with the normal node template context
 2. resolve `addon.env` mappings from the riela runtime environment
-3. run `mail-gateway-reader graphql --query <rendered-query>` in the configured
+3. run `gmail-gateway-reader graphql --query <rendered-query>` in the configured
    container image
-4. parse JSON stdout into the node payload under `mailGateway`
+4. parse JSON stdout into the node payload under `gmailGateway`
 5. attach stdout/stderr as process logs
 
 Environment rules match the gateway add-ons above: only explicitly mapped target
@@ -1569,18 +1569,18 @@ Validation rules:
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - send and mutation surfaces are intentionally omitted from version `1`
 
-## Built-in `riela/mail-gateway`
+## Built-in `riela/gmail-gateway`
 
 ### Purpose
 
-`riela/mail-gateway` runs a mail-gateway GraphQL document in a
+`riela/gmail-gateway` runs a gmail-gateway GraphQL document in a
 Docker-compatible container runner. It is intended for workflow nodes that
-intentionally need the full mail-gateway client surface, including send
+intentionally need the full gmail-gateway client surface, including send
 mutations such as `sendMessage`, while still keeping credential forwarding
 explicit and scoped per add-on node.
 
 The add-on is worker-only and resolves to a native add-on payload with
-`nodeType: "addon"`. The runtime always invokes the full `mail-gateway` binary
+`nodeType: "addon"`. The runtime always invokes the full `gmail-gateway` binary
 from the configured container image. Workflow authors cannot override that
 binary or supply an arbitrary command.
 
@@ -1591,16 +1591,16 @@ binary or supply an arbitrary command.
   "id": "send-mail",
   "role": "worker",
   "addon": {
-    "name": "riela/mail-gateway",
+    "name": "riela/gmail-gateway",
     "version": "1",
     "env": {
-      "MAIL_GATEWAY_CONFIG": {
-        "fromEnv": "ACCOUNT_A_MAIL_GATEWAY_CONFIG"
+      "GMAIL_GATEWAY_CONFIG": {
+        "fromEnv": "ACCOUNT_A_GMAIL_GATEWAY_CONFIG"
       }
     },
     "config": {
       "documentTemplate": "mutation { sendMessage(input: { accountId: \"{{accountId}}\", to: [\"{{to}}\"], subject: \"{{subject}}\", textBody: \"{{body}}\" }) { message { id subject } } }",
-      "image": "ghcr.io/tacogips/mail-gateway:latest",
+      "image": "ghcr.io/tacogips/gmail-gateway:latest",
       "runnerKind": "docker"
     },
     "inputs": {
@@ -1616,7 +1616,7 @@ binary or supply an arbitrary command.
 ### Configuration
 
 ```typescript
-interface MailGatewayAddonConfig {
+interface GmailGatewayAddonConfig {
   readonly documentTemplate: string;
   readonly image?: string;
   readonly runnerKind?: "podman" | "docker" | "nerdctl" | "container";
@@ -1627,7 +1627,7 @@ interface MailGatewayAddonConfig {
 
 Defaults:
 
-- `image`: runtime default mail-gateway image
+- `image`: runtime default gmail-gateway image
 - `runnerKind`: `workflow.defaults.containerRuntime.runnerKind` or `docker`
 - `runnerPath`: `workflow.defaults.containerRuntime.runnerPath` or the runner
   kind executable name
@@ -1637,12 +1637,12 @@ Execution behavior:
 
 1. render `config.documentTemplate` with the normal node template context
 2. resolve `addon.env` mappings from the riela runtime environment
-3. run `mail-gateway graphql --query <rendered-document>` in the configured
+3. run `gmail-gateway graphql --query <rendered-document>` in the configured
    container image
-4. parse JSON stdout into the node payload under `mailGateway`
+4. parse JSON stdout into the node payload under `gmailGateway`
 5. attach stdout/stderr as process logs
 
-Environment rules match `riela/mail-gateway-read`: only explicitly mapped
+Environment rules match `riela/gmail-gateway-read`: only explicitly mapped
 target environment variable names are exposed to the container, required source
 variables are runtime readiness prerequisites, and optional bindings may set
 `required: false`.
@@ -1653,7 +1653,7 @@ Validation rules:
 - `runnerKind` must be `podman`, `docker`, `nerdctl`, or `container`
 - `networkPolicy` must be `disabled` or `egress-allowed`
 - command or binary overrides are rejected; version `1` always runs
-  `mail-gateway`
+  `gmail-gateway`
 
 ### Reply Target Metadata
 

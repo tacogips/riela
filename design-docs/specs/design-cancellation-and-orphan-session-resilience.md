@@ -50,7 +50,7 @@ whatever happened to be running when the driver killed the process
 
 30 consecutive failed sessions (145–147, 150, 154–156, 158–162, 164–177,
 179–185) in `<workspace>/kestra` and
-`<workspace>/mail-gateway`. From session 168 onward the failed
+`<workspace>/gmail-gateway`. From session 168 onward the failed
 `implement` step consistently lasted **97–110 s** before
 `workflow run cancelled`, and a new session was started every ~4 minutes.
 This is the signature of an external driver (an agent loop invoking
@@ -177,7 +177,7 @@ or when a rerun session is created during shutdown, the session record stays
 ### RC5 — No execution mode survives a short-lived driver
 
 All observed kills came from agent drivers (Claude Code / fable-and-improve
-style loops in kestra, mail-gateway, konjac, riela) whose shell tool enforces
+style loops in kestra, gmail-gateway, konjac, riela) whose shell tool enforces
 a 2–10 minute timeout, while realistic codex implement steps routinely need
 longer. `riela workflow run` only offers foreground execution, so the driver
 must hold a process for the entire workflow duration or kill it. Riela

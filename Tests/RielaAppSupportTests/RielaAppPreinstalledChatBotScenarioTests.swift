@@ -25,7 +25,7 @@ final class RielaAppPreinstalledChatBotScenarioTests: XCTestCase {
 
     XCTAssertEqual(bootstrapResult.installedPackageNames.sorted(), [
       "discord-yuki-chat-bot",
-      "mail-gateway-latest-mail",
+      "gmail-gateway-latest-mail",
       "slack-chat-bot",
       "telegram-yuki-chat-bot"
     ])

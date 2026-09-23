@@ -466,7 +466,7 @@ Initial built-in add-ons:
   `riela/memory-search`: worker nodes for file-backed workflow memory records
 - `riela/x-digest`: worker node that summarizes X/Twitter data through the
   production X digest adapter
-- `riela/gmail-digest`: worker node that summarizes Gmail/mail-gateway data
+- `riela/gmail-digest`: worker node that summarizes Gmail/gmail-gateway data
   through the production Gmail digest adapter
 - `riela/time-signal`: worker node for scheduled time-signal payloads
 - `riela/x-gateway-read`: worker node that runs the read-only
@@ -474,11 +474,11 @@ Initial built-in add-ons:
 - `riela/x-gateway`: worker node that runs the full `x-gateway graphql query`
   surface for intentional query or mutation documents in a Docker-compatible
   container
-- `riela/mail-gateway-read`: worker node that runs the read-only
-  `mail-gateway-reader graphql --query` surface in a Docker-compatible
+- `riela/gmail-gateway-read`: worker node that runs the read-only
+  `gmail-gateway-reader graphql --query` surface in a Docker-compatible
   container
-- `riela/mail-gateway`: worker node that runs the full
-  `mail-gateway graphql --query` surface for intentional query or send-mutation
+- `riela/gmail-gateway`: worker node that runs the full
+  `gmail-gateway graphql --query` surface for intentional query or send-mutation
   documents in a Docker-compatible container
 
 Detailed design:

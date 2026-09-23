@@ -1,8 +1,50 @@
 # Workflow defect detection and verified repair implementation plan
 
-Status: Step 4 activity/liveness plan revision, 2026-09-22, following accepted Step 3 review comm-000004. Ready for Step 5 independent plan review. All six runtime tasks remain unimplemented.
+Status: Planning-only finalization, 2026-09-23, following accepted current Step 3 review comm-000004. Exact final plan bytes require Step 5 independent acceptance. All six runtime tasks remain unimplemented.
 
-## Current activity extension authority
+## Current finalization authority
+
+Issue: **Finalize workflow defect detection and verified repair design and
+implementation plan**. Issue reference: `workflowInput local request`; no GitHub
+issue number/URL supplied. Mode: `planning-only`; `codexAgentReferences=[]`.
+The effective workflowInput and runner-resolved immutable user-scope workflow are
+authoritative. No workflow/package registry rediscovery is a task or readiness gate.
+
+Current Step 3 receipt: `comm-000004`,
+`step3-design-review-attempt-1-exec-4`, execution
+`codex-design-and-implement-review-loop-session-1`; `accepted=true`,
+`needs_revision=false`, findings `[]`. Accepted design:
+`design-docs/specs/design-workflow-defect-detection-and-repair.md`, SHA-256
+`1b3c0d4d8ba8112e677e5e2a3139640ec404899e48eee3e5144e35911b77c487`.
+Preserve those bytes. Earlier D1–D8 acceptance is intake-attributed; historical D9
+Step 3 accepted digest `998818586b15ab158a6dd956ef9a69de52b3bbdcd3a008702a2e96e593b45a0c`
+is superseded for current review purposes. Historical sections below retain their
+original receipts and author checks; their pending/current wording describes those
+stages, not current authority. No historical acceptance accepts this revised plan.
+
+Local `main`, `origin/main` and current branch
+`design/workflow-defect-liveness-finalize` are based at
+`0fab7f95e300ecb9e5d236813a9a6519df6025e8`; no live remote fetch is claimed.
+Only this plan and the narrow `impl-plans/README.md` status correction are edited
+in Step 4. The accepted design is preserved. The eventual documentation allowlist
+is those three files only, after exact-byte acceptance and verification. Runtime
+implementation, package edits and the separate Work Runtime P1 branch remain
+outside this run; future runtime writePaths below confer no current authorization.
+
+T1–T6 and serial W1–W6 remain the smallest supported decomposition of their coupled
+contracts. External output-contract, convergence, P1, E0/E6 and P2 ownership gates
+remain as specified below; they are future implementation prerequisites, not
+planning blockers. No new Codex mapping, abstraction or implementation task is added.
+
+Current author verification: `python3 tmp/workflow-defect-finalize/step4/verify.py`;
+complete log `tmp/workflow-defect-finalize/step4/verification.log`, requiring final
+exit 0. Historical scratch verifiers are unavailable and are not claimed as rerun.
+This check binds the accepted design, parses the manifest, checks task ownership,
+dependencies, verification references, six unchecked tasks and documentation scope.
+Step 5 must accept the final plan digest without unresolved high/mid findings before
+later workflow finalization commits or pushes accepted documentation.
+
+## Historical activity extension authority (2026-09-22)
 
 Mode: `design-plan-only`. Issue: **Expose authoritative backend activity and session
 liveness**, `workflow-input`, repository `tacogips/riela`, issue number/URL null.
@@ -104,8 +146,8 @@ Current planning mode cannot dispatch runtime implementation. A later explicitly
 requested implementation run must checkpoint the accepted design/plan first and
 supply its checkpoint commit, full review context and native trackedPaths derived
 from exact authorized paths. This manifest's runtime paths describe future work;
-the current commit/push allowlist remains only the two reviewed design/plan paths.
-The existing index registration needs no change in this extension.
+the current commit/push allowlist is the reviewed design, this plan and the narrow
+impl-plans/README.md status correction. Index registration is retained.
 
 The accepted design names `design-docs/specs/command.md` and
 `design-docs/specs/architecture.md`, but neither exists at this base. Resolve those
@@ -127,7 +169,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
   "planId": "workflow-defect-detection-and-repair",
   "planPath": "impl-plans/active/workflow-defect-detection-and-repair.md",
   "dependsOn": [],
-  "workflowMode": "design-plan-only",
+  "workflowMode": "planning-only",
   "implementationDispatchEnabled": false,
   "executionStrategy": "one-native-plan-item-with-serial-internal-tasks",
   "writePaths": [
@@ -684,7 +726,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
     }
   ],
   "acceptanceCriteria": "All D1-D9, original A1-A16 and activity L1-L8 contracts; preserve six task gates, complete foreground evidence and no unresolved high/mid findings. Design-plan-only does not authorize implementation.",
-  "verification": "Future V1-V9 and L-V1-L-V5 commands below; current Step 4 documentation author check: python3 tmp/backend-activity-plan/verify.py."
+  "verification": "Future V1-V9 and L-V1-L-V5 commands below; current Step 4 documentation author check: python3 tmp/workflow-defect-finalize/step4/verify.py."
 }
 ```
 
@@ -1274,7 +1316,7 @@ by this documentation-only revision.
 
 ### Additional future verification commands
 
-Run from `/Users/taco/gits/tacogips/riela` in the foreground. Write complete stdout,
+Run from the active repository checkout root in the foreground. Write complete stdout,
 stderr, exact command, reviewed tree/fixture hashes, positive selected-test counts
 and terminal exit code to
 `tmp/workflow-defect-implementation/verification/<attempt>/<ID>.log`. Preserve failed
@@ -1292,13 +1334,13 @@ truncated log, zero selected tests or unobserved exit is not passing evidence.
 Also run original V7a `arch -arm64 /bin/zsh -lc 'swift build'`, V7c
 `swiftlint lint --quiet --no-cache`, V7d `git diff --check`, and all original
 required V1–V9 gates. These are future implementation verification, not claimed
-passes from this planning turn. The current Step 4 author check is
+passes from this planning turn. The historical activity Step 4 author check was
 `python3 tmp/backend-activity-plan/verify.py`, complete log
 `tmp/backend-activity-plan/verification.log`; it checks the accepted design digest,
 manifest ownership/dependencies, six preserved unchecked tasks, documentation scope,
 package identity and whitespace. Independent Step 5 review is still required.
 
-## Current Step 4 author self-check and handoff
+## Historical activity Step 4 author self-check and handoff (2026-09-22)
 
 Only this plan is edited by this node. Fresh baseline and immutable intent are in
 `tmp/backend-activity-plan/intent.json`; pre-edit plan/design copies are alongside it.

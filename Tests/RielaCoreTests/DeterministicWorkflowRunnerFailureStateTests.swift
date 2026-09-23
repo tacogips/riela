@@ -50,6 +50,31 @@ extension DeterministicWorkflowRunnerTests {
     await XCTAssertThrowsErrorAsync(try await runner.run(resume))
   }
 
+  func testExplicitRetryOfPolicyBlockedStepAfterExternalRepair() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    await XCTAssertThrowsErrorAsync(try await DeterministicWorkflowRunner(
+      store: store,
+      adapter: FailingAdapter(error: AdapterExecutionError(.policyBlocked, "upstream is missing"))
+    ).run(request()))
+    let maybeFailed = await store.loadSessionForTest(id: "runner-session-1")
+    let failed = try XCTUnwrap(maybeFailed)
+    XCTAssertEqual(failed.failureKind, .policyBlocked)
+    XCTAssertNil(failed.executions.last?.acceptedOutput)
+
+    var resume = request()
+    resume.resumeSessionId = failed.sessionId
+    let runner = DeterministicWorkflowRunner(store: store, adapter: StaticAdapter(output: output()))
+    let unchanged = try await runner.run(resume)
+    XCTAssertEqual(unchanged.session.status, .failed)
+
+    resume.retryFailedStep = true
+    let recovered = try await runner.run(resume)
+    XCTAssertEqual(recovered.session.sessionId, failed.sessionId)
+    XCTAssertEqual(recovered.session.status, .completed)
+    XCTAssertEqual(recovered.session.executions.map(\.status), [.failed, .completed])
+    await XCTAssertThrowsErrorAsync(try await runner.run(resume))
+  }
+
   func testInvalidInputAdapterFailureIsNotPolicyBlocked() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let runner = DeterministicWorkflowRunner(

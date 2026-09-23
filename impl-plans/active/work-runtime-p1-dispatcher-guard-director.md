@@ -1,25 +1,18 @@
-# Work Runtime P1: Dispatcher integration and plan contract
+# Work Runtime P1: Dispatcher, guard and director completion
 
-**Status**: Step 4 reconciled for user-scope package 0.3.14; Step 5 review pending; implementation not certified.
+**Status**: Step 4 author check complete; Step 5 plan review pending. Implementation unverified.
 **Workflow mode**: issue-resolution
-**Issue reference**: workflow-input:Complete the Work Runtime P1 dependency DAG (number/url: null)
-**Design reference**: `design-docs/specs/design-work-runtime-consolidation.md`, §17.1–17.6 and the sections identified below.
-**Review source**: `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`; findings/feedback empty; no Step 5 feedback supplied.
-**Codex-agent references**: `workflowExecutionId:codex-design-and-implement-review-loop-session-1`, `issueCommunicationId:comm-000002`, `intakeExecutionId:step1-issue-intake-attempt-1-exec-2`, `communicationId:comm-000004`, `designStepId:step2-design-doc-update`, `stepId:step3-design-review`, `stepId:step4-impl-plan-create`, `designAuthorModel:gpt-6-astra`, `planAuthorModel:gpt-6-astra`, `gateModel:gpt-5.6-sol`, `implementationModel:gpt-5.6-terra`; downstream executions record actual IDs.
-**Resumption authority**: Authoritative runtimeVariables deliver `comm-000004` from `step3-design-review-attempt-1-exec-4` in `codex-design-and-implement-review-loop-session-1`, accepting `design-docs/specs/design-work-runtime-consolidation.md` with no findings. Effective workflowInput selects immutable user-scope package 0.3.14 and checkpoint `8286b20f16548354d9023c1255c12dfd4ce4f70d`. Runner preflight owns package provenance/integrity; no registry rediscovery or package-readiness commands belong to this node. No implementation predecessor is accepted by planning.
-**Planning evidence**: `tmp/work-runtime-p1/step4-plan-v0314/verification-evidence.json`; author self-check: `tmp/work-runtime-p1/step4-plan-v0314/author-self-check.json`.
-**Updated**: 2026-09-22
+**Issue reference**: Workflow input: Resume and complete Work Runtime P1 dispatcher, guard, and director; no GitHub issue URL/number. Prior checkpoints: `368a3032`, `c6a35e6`.
+**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.7, with behavioral contracts §17.2–17.5.
+**Review decision**: Step 3 accepted via `comm-000004`, `step3-design-review-attempt-1-exec-4`; findings and feedback empty. No Step 5 feedback supplied.
+**Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `comm-000002`, `comm-000003`, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
+**Updated**: 2026-09-23
 
 ```json
 {
   "planId": "p1-dispatch",
   "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-  "dependsOn": [
-    "p1-sandbox",
-    "p1-reservation",
-    "p1-lifecycle",
-    "p1-capabilities"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaWork/TaskDispatcher.swift",
     "Sources/RielaWork/AgentDirector.swift",
@@ -60,7 +53,82 @@
     "examples/supervised-mock-retry/**",
     "examples/task-repair-loop/**",
     "examples/task-agent-director/**",
-    "impl-plans/progress/p1-dispatch.md"
+    "impl-plans/progress/p1-dispatch.md",
+    "Package.swift",
+    "Sources/RielaWork/WorkModels.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/WorkGuard.swift",
+    "Sources/RielaWork/DeterministicDirector.swift",
+    "Sources/RielaWork/CompletionEvaluator.swift",
+    "Sources/RielaWork/WorkDecision.swift",
+    "Sources/RielaWork/WorkEvidence.swift",
+    "Tests/RielaWorkTests/WorkGuardTests.swift",
+    "Tests/RielaWorkTests/DeterministicDirectorTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierTests.swift",
+    "Tests/RielaWorkTests/CompletionEvaluatorTests.swift",
+    "Sources/RielaCore/BackendCapability.swift",
+    "Sources/RielaCore/WorkflowBackendPolicy.swift",
+    "Sources/RielaCore/WorkflowRequirements.swift",
+    "Sources/RielaCore/WorkflowModel.swift",
+    "Sources/RielaCore/WorkflowNodeValidation.swift",
+    "Sources/RielaCore/WorkflowValidationHelpers.swift",
+    "Sources/RielaCore/DistributedWorkerModels.swift",
+    "Sources/RielaAdapters/BackendCapabilityProbe.swift",
+    "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+    "Sources/RielaWork/BackendCapabilityPlacement.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Sources/RielaCLI/DoctorCommand.swift",
+    "Sources/RielaCLI/DistributedWorkerCommand.swift",
+    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+    "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaServer/DistributedWorkerProtocol.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPClient.swift",
+    "Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift",
+    "Tests/RielaCLITests/DoctorBackendCapabilityTests.swift",
+    "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+    "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
+    "Tests/RielaAdaptersTests/BackendCapabilityProbeTests.swift",
+    "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+    "Sources/RielaAppSupport/RielaAppDaemonWorkflowStore.swift",
+    "Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Sources/RielaCLI/WorkflowValidationOptions.swift",
+    "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+    "Sources/RielaCLI/ServeHTTPCommand.swift",
+    "Sources/RielaCore/WorkflowValidation.swift",
+    "Sources/RielaCore/DistributedJobController.swift",
+    "Sources/RielaServer/DistributedControllerHost.swift",
+    "Sources/RielaServer/DistributedWorkerLoop.swift",
+    "Sources/RielaApp/EntryPoint+DistributedController.swift",
+    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+    "Tests/RielaWorkTests/AgentDirectorTests.swift",
+    "Tests/RielaWorkTests/BudgetAdmissionStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "README.md",
+    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+    "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
+    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/README.md",
+    "impl-plans/PROGRESS.json",
+    "impl-plans/progress/plans-index.json",
+    "impl-plans/progress/meta.json",
+    "impl-plans/progress/phases.json",
+    "impl-plans/progress/plans/work-runtime-p1-dispatcher-guard-director.json",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "Package.resolved"
   ],
   "sharedPaths": [
     "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
@@ -75,25 +143,106 @@
     "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
     "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
     "examples/task-agent-director/**",
-    "examples/task-repair-loop/**"
+    "examples/task-repair-loop/**",
+    "Package.swift",
+    "Sources/RielaWork/WorkModels.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/WorkGuard.swift",
+    "Sources/RielaWork/DeterministicDirector.swift",
+    "Sources/RielaWork/CompletionEvaluator.swift",
+    "Sources/RielaWork/WorkDecision.swift",
+    "Sources/RielaWork/WorkEvidence.swift",
+    "Tests/RielaWorkTests/WorkGuardTests.swift",
+    "Tests/RielaWorkTests/DeterministicDirectorTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierTests.swift",
+    "Tests/RielaWorkTests/CompletionEvaluatorTests.swift",
+    "Sources/RielaCore/BackendCapability.swift",
+    "Sources/RielaCore/WorkflowBackendPolicy.swift",
+    "Sources/RielaCore/WorkflowRequirements.swift",
+    "Sources/RielaCore/WorkflowModel.swift",
+    "Sources/RielaCore/WorkflowNodeValidation.swift",
+    "Sources/RielaCore/WorkflowValidationHelpers.swift",
+    "Sources/RielaCore/DistributedWorkerModels.swift",
+    "Sources/RielaAdapters/BackendCapabilityProbe.swift",
+    "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+    "Sources/RielaWork/BackendCapabilityPlacement.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Sources/RielaCLI/DoctorCommand.swift",
+    "Sources/RielaCLI/DistributedWorkerCommand.swift",
+    "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+    "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaServer/DistributedWorkerProtocol.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+    "Sources/RielaServer/DistributedWorkerHTTPClient.swift",
+    "Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift",
+    "Tests/RielaCLITests/DoctorBackendCapabilityTests.swift",
+    "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+    "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
+    "Tests/RielaAdaptersTests/BackendCapabilityProbeTests.swift",
+    "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+    "Sources/RielaAppSupport/RielaAppDaemonWorkflowStore.swift",
+    "Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Sources/RielaCLI/WorkflowValidationOptions.swift",
+    "Sources/RielaCLI/WorkflowCalleeResolution.swift",
+    "Sources/RielaCLI/ServeHTTPCommand.swift",
+    "Sources/RielaCore/WorkflowValidation.swift",
+    "Sources/RielaCore/DistributedJobController.swift",
+    "Sources/RielaServer/DistributedControllerHost.swift",
+    "Sources/RielaServer/DistributedWorkerLoop.swift",
+    "Sources/RielaApp/EntryPoint+DistributedController.swift",
+    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+    "Tests/RielaWorkTests/AgentDirectorTests.swift",
+    "Tests/RielaWorkTests/BudgetAdmissionStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "README.md",
+    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+    "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
+    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/README.md",
+    "impl-plans/PROGRESS.json",
+    "impl-plans/progress/plans-index.json",
+    "impl-plans/progress/meta.json",
+    "impl-plans/progress/phases.json",
+    "impl-plans/progress/plans/work-runtime-p1-dispatcher-guard-director.json",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "Package.resolved"
   ],
   "progressLog": "impl-plans/progress/p1-dispatch.md",
   "taskIds": [
+    "P1-AUDIT",
+    "P1-PREREQ-R",
+    "P1-PREREQ-L",
+    "P1-PREREQ-C",
     "P1-6a",
     "P1-6b",
     "P1-6c",
     "P1-6d",
+    "P1-7b",
     "P1-7a",
-    "P1-7b"
+    "P1-FINAL"
   ],
   "verificationCommands": [
     "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter WorkStoreReservationTests",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|CompletionEvaluatorTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter ImplementationWorkflowSandboxTests",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'",
     "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/changed-swift-files.nul",
     "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
     "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
@@ -104,13 +253,21 @@
     "git diff --check",
     "git diff --cached --check"
   ],
-  "dependencyMode": "native-accepted-predecessor-DAG",
+  "dependencyMode": "single-plan-ordered-internal-gates",
   "taskDependencies": {
+    "P1-AUDIT": [],
+    "P1-PREREQ-R": [
+      "P1-AUDIT"
+    ],
+    "P1-PREREQ-L": [
+      "P1-PREREQ-R"
+    ],
+    "P1-PREREQ-C": [
+      "P1-PREREQ-R"
+    ],
     "P1-6a": [
-      "p1-reservation",
-      "p1-lifecycle",
-      "p1-capabilities",
-      "p1-sandbox"
+      "P1-PREREQ-L",
+      "P1-PREREQ-C"
     ],
     "P1-6b": [
       "P1-6a"
@@ -119,180 +276,213 @@
       "P1-6a"
     ],
     "P1-6d": [
-      "P1-6a",
+      "P1-6b",
       "P1-6c"
     ],
     "P1-7b": [
-      "P1-6a",
-      "P1-6b",
-      "P1-6c",
       "P1-6d"
     ],
     "P1-7a": [
       "P1-7b"
+    ],
+    "P1-FINAL": [
+      "P1-7a"
     ]
   },
   "evidenceDirectory": "tmp/work-runtime-p1/p1-dispatch/"
 }
 ```
 
+## Intent, authority and repository context
 
-## Authority, intent and context
+Complete every unchecked P1-6a–d and P1-7a–b requirement by reconciling retained
+implementation, including necessary reservation, guard, capability and shared
+applier repairs. Accepted design §17.7 governs this single plan; older six-plan
+scheduler metadata is historical. The complete effective implementation input
+is this file alone. `dependsOn: []` means no external scheduler predecessors;
+it does not waive the internal prerequisite gates below. Supporting reservation,
+guard/director, capability and finalization plans supply reference detail only;
+do not launch or implement them as additional work packages.
 
-Complete the full P1-0 through P1-8 dependency DAG from checkpoint
-`8286b20f16548354d9023c1255c12dfd4ce4f70d` on `feat/remaining-impl-plans` in
-`/Users/taco/gits/tacogips/riela-worktrees/remaining-impl-plans`.
-This plan owns P1-6/7 and supplies the common execution contract for all six
-plans. The accepted design §17.1–17.6 overrides older broad phase descriptions.
-Step 3 accepted it in `comm-000004`, `step3-design-review-attempt-1-exec-4`,
-`codex-design-and-implement-review-loop-session-1`, with no findings.
-No Step 5 feedback was supplied; Step 5 acceptance remains pending.
+Inspected HEAD is `fe4da6cdda88c4bbaeafcb5dbce49bce5dd302af` on
+`feat/remaining-impl-plans`. There are extensive retained tracked and untracked
+changes, including dispatch, capability and example code. The CLI still rejects
+`.director` dispatch in `Sources/RielaCLI/TaskDispatch.swift`; the retained
+`AgentDirector.validate` escalates all accept output. Reconcile these concrete
+P1-6d gaps; do not replace retained code wholesale or certify it from inventory.
+Step 4 edits only this plan and preserves all prior source/design/progress work.
 
-Current HEAD is `8286b20f16548354d9023c1255c12dfd4ce4f70d`, matching the
-checkpoint. §17.6 records eleven retained source/test/progress files; the
-accepted design is also modified. This planning turn changes only the six
-plans and preserves all twelve previously modified files byte-for-byte.
-Preserve unrelated state, other sessions and all Monja tenant-sharding-d48 work.
-Task CLI exposes show/list; dispatcher/director integration, capabilities,
-mutation suites and replacement examples remain implementation deliverables.
-Retained generation-8 schema, cancellation provenance and durable original
-replay repairs require current behavioral verification. Scoped causality,
-store-authoritative completion, atomic applier enqueue, stable director
-ordering and recovery budget enforcement remain lifecycle obligations.
-See `tmp/work-runtime-p1/step4-plan-v0314/verification-evidence.json` and
-`before-hashes.json`; inspection is not behavioral acceptance.
+Runtime provenance is authoritative. Effective input requires the immutable
+user-scope workflow package 0.3.5 or newer but does not give an exact version.
+No contradiction exists; do not inspect, repair or validate registries or the
+executing package from this node. No worktrees, private branches, concurrent
+Git mutations, or changes to other directories/sessions. Preserve all unrelated
+work and Monja tenant-sharding-d48. Commit/push of accepted P1 and necessary
+documentation are authorized; finalization remains gated below.
 
-Continue the runner-resolved immutable user-scope package 0.3.14. Runtime
-provenance and effective workflowInput are authoritative: do not inspect
-registries, infer linkage from sandbox visibility, repair the installation,
-or launch another workflow. No worktrees, private branches or concurrent Git
-mutations. Astra authors all plans and performs final combined-tree review;
-Terra implements/reconciles; Sol gates readiness and owns the single material
-adversarial review. Implementation/test nodes maximize independent delegated
-investigation and verification with one writer per overlapping file; this
-planning node has one author and no authoring fanout.
+Non-goals: P2–P7, loop-engineering, agent-node-output-contract, workflow defect
+detection, Tauri, note implementations, task serve, new task-create CLI, remote
+authentication, planner frameworks, compatibility/migration for removed
+auto-improve state, recursive director repair, proposals, specialist classifiers,
+optional hardening, style-only changes, broad cleanup or formatting. Preserve
+accepted workflow-defect documents. Record external dependencies rather than
+absorbing them. No external Codex reference repository was supplied;
+../../codex-agent was absent in accepted design evidence. Agent references are
+execution provenance, not parity claims. Cursor-specific invocation/auth/probe/
+heartbeat behavior stays in existing adapters; no cross-backend equivalence.
 
-Non-goals: P2–P7; loop-engineering, agent-node-output-contract, workflow-defect
-detection, Tauri and note plans; task serve, new remote authentication, new
-planner, duplicate capability registry, auto-improve state migration or
-compatibility, recursive director repair, proposals, specialist classification,
-broad cleanup/formatting, speculative flexibility and optional hardening.
-Plain workflow run stays task-free; loop/routine/specialist/event behavior and
-stores remain. No external Codex-reference source was supplied; the accepted
-design records ../../codex-agent absent. Agent references are provenance, not
-parity claims. Cursor invocation/auth/probes/heartbeat remain adapter-owned;
-no prompt translation or cross-backend equivalence promise is introduced.
+## Internal dependency gates and ownership
 
-## Dependency readiness and serial waves
+One implementation integration owner executes this plan. The DAG in metadata
+orders tasks within this package; it is not a list of missing external plans.
 
-All six plans are native implementation inputs; no predecessor is external.
-Use each JSON planId/planPath/dependsOn unchanged. Historical dispatch JSON
-files are evidence of earlier runs, not this run's scheduler input; preserve
-those files and let the installed runtime materialize this accepted DAG.
+| Wave | Tasks | Deliverable / gate |
+| --- | --- | --- |
+| 0 | P1-AUDIT | Fresh retained-diff attribution, source hashes, lint baseline, existing interface inventory; run canonical sandbox regression without editing workflow/package artifacts. |
+| 1 | P1-PREREQ-R | Verify/repair only reservation primitives needed by §17.2: atomic rollback, dependency/version race, unique exact session, single-use digest token, uncertain launch fence, pending request consumption and durable cancellation acknowledgment. V2 and relevant store tests pass. |
+| 2 | P1-PREREQ-L | Verify/repair §17.2–17.3 guard, deterministic ordering, causality, replay, store completion and budget enforcement. V3 passes against accepted reservation hashes. |
+| 2 | P1-PREREQ-C | Verify/repair §17.4 reachable requirements, bounded probes, declarations, freshness, placement and host/planner inputs. V4 passes against accepted reservation hashes. |
+| 3 | P1-6a, then P1-6b/c | Wire real exact-session dispatch, preview and human decisions; prerequisite checks must already pass. |
+| 4 | P1-6d | Bounded child execution and authoritative judged-work acceptance; focused store, director and CLI integration checks pass. |
+| 5 | P1-7b, then P1-7a | Task-backed examples and before-removal replacement evidence, then legacy removal and after-removal evidence. |
+| 6 | P1-FINAL | Serial join/repair, aggregate tests/lint, author self-review, single adversarial implementation review, combined-tree review, docs/index reconciliation and final publication handoff. |
 
-| Wave | Plan ID | Accepted predecessors | Ownership / handoff |
-| --- | --- | --- | --- |
-| 1 | p1-sandbox | none | P1-0 canonical node payloads and real-payload regression |
-| 1 | p1-reservation | none | P1-1 models/schema/SQLite atomic primitives; initial Package.swift ownership |
-| 2 | p1-lifecycle | p1-reservation | P1-2/3 guard, policy and store-authoritative decisions; no schema/model writes |
-| 2 | p1-capabilities | p1-reservation | P1-4/5 neutral values, adapter probes, schema/host placement and host authoring |
-| 3 | p1-dispatch | p1-sandbox, p1-reservation, p1-lifecycle, p1-capabilities | P1-6/7 runner/CLI integration and replacement before removal |
-| 4 | p1-finalize | all five implementation plans | P1-8 serial join/repair, aggregate evidence, docs/digest/index reconciliation |
+Independent investigation of lifecycle and capabilities may run in parallel
+only after reservation interfaces are stable. Implementation overlap in schema,
+store, CLI and tests is serialized, even within the same wave. P1-6b/c may use
+parallel read-only investigations; the integration owner writes their shared
+files. Child investigators return evidence to this plan's owner, who alone
+appends `impl-plans/progress/p1-dispatch.md`. Do not edit another worker's log.
+No additional executable plan files are created for tightly coupled repairs.
 
-After Step 5 accepts, the workflow's serial checkpoint gate commits the
-accepted design and all six plans with an exact allowlist before native fanout.
-Step 4 does not commit pending plans. The checkpoint allowlist is exactly
-`design-docs/specs/design-work-runtime-consolidation.md` plus the six
-`planPath` values; exclude retained source/test/progress changes and scratch
-evidence. Preserve the existing index and all unrelated hunks. Record the
-checkpoint hash and plan content hashes before admitting either root. Initially accepted implementation IDs
-are empty: only sandbox and reservation are eligible after that checkpoint.
-Every dependency admission requires accepted source revision/content hashes,
-exact interface signatures/owner, behavioral command logs with final exit 0
-and positive per-suite counts, and integration review with no unresolved
-high/mid finding. Sol readiness gates are not extra adversarial reviews.
-Missing evidence blocks affected descendants while independent roots continue.
-Do not substitute source inspection or invented accepted IDs for readiness.
+Each prerequisite handoff records source hashes, concrete interface signatures,
+owner, exact passing command/log/final exit, positive suite counts and review
+status. Inspect current code before deciding repair is needed. Unchanged code
+can pass with fresh behavioral evidence; never invent changes or accepted IDs.
+Failure blocks dependent tasks, while independent investigation may continue.
+The canonical sandbox check concerns checked-in real payloads only; a failure
+outside accepted P1 scope is reported as a dependency with command/log/exit,
+not repaired through package rediscovery or unrelated workflow implementation.
 
-Lifecycle and capabilities fresh-read the reservation handoff. Lifecycle must
-not edit WorkModels, WorkStore.swift, WorkStore+Schema.swift or Package.swift
-while capabilities owns its wave. Missing primitives return to reservation's
-designated owner for serial repair, invalidate affected acceptance, and require
-new tests/review before admission resumes. Dispatcher consumes accepted
-causality/completion/replay/cancellation and capability contracts; it must not
-duplicate those repairs or bypass them in CLI code. Narrow coordinator/decision
-integration changes require explicit ownership transfer and regression evidence.
+After Step 5 accepts, the serial workflow checkpoint gate commits exactly the
+accepted design and this plan before any native implementation/review fanout.
+It preserves the existing index and excludes retained source, tests, progress
+and scratch. This Step 4 neither commits nor certifies implementation. Later
+final commit/push contains only accepted P1 implementation and necessary docs.
 
-Within dispatch serialize P1-6a, then P1-6b/c, then P1-6d, then P1-7b.
-P1-7a deletion follows passing replacement tests for inactivity, bounded retry,
-gate/failure recovery, cancellation and replay. Re-run those tests after removal.
-CLI addition and legacy removal ship in the same publication cut. p1-finalize
-then owns serial shared-file repair and final aggregate verification.
+## Edit integrity and evidence ownership
 
-An unchanged or materially unverified implementation returns actionable
-blockers once (missing contract, owner, needed command/access repair, final
-exit/log), and cannot enter integrity/adversarial/reconciliation repetition.
-Retained correct code can be certified only with fresh behavioral evidence and
-independent acceptance; never invent a code edit to satisfy a change-count gate.
-If the immutable runtime cannot admit that evidence, report its concrete gate
-blocker without editing the workflow or mislabeling unchanged code as passing.
+Before EVERY edit, including deletion and retry, fresh-read the file and
+contract; record pre-edit SHA-256 (or absent sentinel), original bytes, exact
+paths, accepted requirement and intended behavior under immutable numbered
+`tmp/work-runtime-p1/p1-dispatch/intents/` directories. Recheck hash immediately
+before writing. On drift, stop, reread and create a new intent; never overwrite
+from stale buffers. Record post-hash, exact diff and preserved behaviors.
+After join, compare semantic changes to intents, repair serially and rerun
+invalidated gates. Hashing alone cannot eliminate races; runtime change evidence
+and independent combined-tree review remain required if work fans out.
 
-## Shared directory and edit integrity contract
+Materialize exact paths from metadata globs before edits; metadata is a scope
+ceiling, not permission to modify unrelated hunks. Necessary helper extractions
+require exact-path ownership and accepted-requirement evidence first. Keep
+builds/source verification stable: serialize commands against a stable source
+snapshot and compare relevant source hashes before/after each run. A source
+change during testing invalidates certification. Lockfile changes, all shared
+indexes, final commit allowlist and any archiving are serial-only. No broad
+formatting; no global archive or unrelated lockfile update is needed here.
 
-The JSON lists are ownership scopes. Example directory globs cover only the named
-P1 responsibility, not unrelated files matched by a broad suffix. Materialize
-exact paths before editing. New helper/test files must stay within the listed
-responsibility patterns. Shared paths have one writer per wave; any additional
-intersection or missing shared contract is queued for serial integration,
-recorded in the owner's log, and assigned before dependent editing resumes.
-Do not opportunistically change Package.swift from a parallel branch: the
-reservation owner audits retained module/test dependencies; dependency-owned
-changes require that owner and explicit handoff, not dispatch-worker edits. Lockfile generation, shared indexes,
-global plan archiving, digest refresh and broad formatting are serial-only.
-Avoid broad formatting entirely unless required for touched code.
+## Prerequisite file-level repair map
 
-For EVERY edit, including deletion and each retry:
+The exact paths below belong to this plan's serial integration owner only for
+necessary P1-6/7 prerequisite repair. Prefer proving retained code correct.
 
-1. Fresh-read the current file and relevant predecessor contract. Record a
-   pre-edit SHA-256 (or explicit absent sentinel) and immutable intent snapshot
-   under `tmp/work-runtime-p1/<planId>/intents/<sequence>/`. The snapshot records
-   accepted requirement, exact paths, expected semantic delta, original bytes
-   or content reference, and expected preserved behaviors. Never replace an
-   earlier snapshot; store corrections in a new sequence.
-2. Recheck the hash immediately before writing. On drift, stop that write,
-   reread/rebase the intended patch and capture a new intent; do not overwrite
-   from stale buffers. After writing, record post-edit SHA-256, exact diff and
-   tests. Hashing cannot prevent a race after the check; native runtime-owned
-   change evidence and the post-join semantic review remain mandatory.
-3. Each worker updates ONLY its `progressLog`: task status, intent paths,
-   changed-file paths/pre/post hashes, predecessor versions, behavior,
-   verification command/start/end/final exit/complete log path/test count,
-   findings and residual risks. Workers do not edit shared checkboxes, indexes
-   or another worker's log. Create the named progress log when work starts.
-4. At every join, aggregate native changeTracking evidence plus intent/hash
-   records. Compare current hashes and behavior with EVERY accepted branch,
-   detecting missing, overwritten and unexplained changes even if compilation
-   passes. A later intentional shared-path edit must explicitly preserve the
-   predecessor contract and rerun its relevant tests.
-5. One serial repair owner restores accepted intent with fresh reads; an
-   independent combined-tree reviewer then verifies the repaired tree and its
-   evidence. Repeat focused gates for affected code and the final aggregate
-   gate. No implementation branch declares the combined tree accepted alone.
+### P1-PREREQ-R
 
-Inventory and classify existing dirty/untracked changes before implementation.
-`tmp/work-runtime-p1/step4-plan-v0314/before-hashes.json` records this planning turn's
-baseline; implementation must take a fresh one. Retain correct in-scope work,
-repair incorrect work with evidence, and preserve unrelated changes. Never
-reset/clean the tree or stage all files. Plans remain unchecked until serial
-finalization can cite current behavioral evidence and accepted review.
+Atomic attempt/session/lease/decision placement commit, rollback, launch token, pending request and cancellation fencing. Preserve schema generation policy and P0 reads; use task-owned scratch stores, never reset user databases.
 
-All scratch scripts, Swift build caches, logs and fixtures live under
-`tmp/work-runtime-p1/`. Parallel builds use the plan-specific scratch paths in
-commands; any command writing a shared build/cache is serialized. Run shell
-commands in the foreground, retain yielded handles and poll through terminal
-exit. An incomplete log, timeout, missing suite or unpolled process cannot pass.
-Retain referenced evidence through review/handoff; remove only unreferenced
-scratch once the task is done.
+Exact repair/test paths:
+
+- `Package.swift`
+- `Sources/RielaWork/WorkModels.swift`
+- `Sources/RielaWork/WorkStore.swift`
+- `Sources/RielaWork/WorkStore+Schema.swift`
+- `Sources/RielaWork/WorkStore+Reservation.swift`
+- `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`
+- `Tests/RielaWorkTests/WorkStoreTests.swift`
+- `Tests/RielaWorkTests/WorkStoreReservationTests.swift`
+- `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`
+- `Sources/RielaWork/DecisionApplier.swift`
+- `Sources/RielaWork/WorkStore+Decisions.swift`
+
+### P1-PREREQ-L
+
+Persist complete guard batch before action; stable priority/tie order, exact equality boundaries, last-admitted-attempt completion, budget admission, scoped causality, original replay and store-reconstructed completion. Human acceptance waives only requiresHumanAccept.
+
+Exact repair/test paths:
+
+- `Sources/RielaWork/WorkGuard.swift`
+- `Sources/RielaWork/TaskGuardCoordinator.swift`
+- `Sources/RielaWork/DeterministicDirector.swift`
+- `Sources/RielaWork/DecisionApplier.swift`
+- `Sources/RielaWork/CompletionEvaluator.swift`
+- `Sources/RielaWork/WorkStore+Decisions.swift`
+- `Sources/RielaWork/WorkDecision.swift`
+- `Sources/RielaWork/WorkEvidence.swift`
+- `Tests/RielaWorkTests/WorkGuardTests.swift`
+- `Tests/RielaWorkTests/WorkGuardDispatcherTests.swift`
+- `Tests/RielaWorkTests/DeterministicDirectorTests.swift`
+- `Tests/RielaWorkTests/DecisionApplierTests.swift`
+- `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`
+- `Tests/RielaWorkTests/CompletionEvaluatorTests.swift`
+
+### P1-PREREQ-C
+
+One reachable/called-node requirement set and merged finite-freshness snapshot; disable wins, explicit unprobed enable stays unverified, failed refresh is not stale success, pin never falls back, declared capacity/liveness and required executables/environment are enforced. Host/profile reads stay nonmutating for dry-run.
+
+Exact repair/test paths:
+
+- `Sources/RielaCore/BackendCapability.swift`
+- `Sources/RielaCore/WorkflowBackendPolicy.swift`
+- `Sources/RielaCore/WorkflowRequirements.swift`
+- `Sources/RielaCore/WorkflowModel.swift`
+- `Sources/RielaCore/WorkflowNodeValidation.swift`
+- `Sources/RielaCore/WorkflowValidationHelpers.swift`
+- `Sources/RielaCore/DistributedWorkerModels.swift`
+- `Sources/RielaAdapters/BackendCapabilityProbe.swift`
+- `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`
+- `Sources/RielaWork/BackendCapabilityPlacement.swift`
+- `Sources/RielaWork/WorkStore+Hosts.swift`
+- `Sources/RielaWork/WorkStore+Schema.swift`
+- `Sources/RielaCLI/DoctorCommand.swift`
+- `Sources/RielaCLI/DistributedWorkerCommand.swift`
+- `Sources/RielaCLI/WorkflowValidateInspectCommands.swift`
+- `Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift`
+- `Sources/RielaCLI/HostCapabilityResolver.swift`
+- `Sources/RielaServer/DistributedWorkerProtocol.swift`
+- `Sources/RielaServer/DistributedWorkerHTTPRouter.swift`
+- `Sources/RielaServer/DistributedWorkerHTTPClient.swift`
+- `Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift`
+- `Tests/RielaCLITests/DoctorBackendCapabilityTests.swift`
+- `Tests/RielaCLITests/WorkflowHostCapabilityTests.swift`
+- `Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift`
+- `Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift`
+- `Tests/RielaAdaptersTests/BackendCapabilityProbeTests.swift`
+- `Sources/RielaAppSupport/DaemonWorkflowSupport.swift`
+- `Sources/RielaAppSupport/RielaAppDaemonWorkflowStore.swift`
+- `Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift`
+
+Additional retained integration paths are `Sources/RielaCLI/WorkflowValidationOptions.swift`,
+`WorkflowCalleeResolution.swift`, `ServeHTTPCommand.swift` (all RielaCLI),
+`Sources/RielaCore/WorkflowValidation.swift`, `DistributedJobController.swift`
+(RielaCore), `Sources/RielaServer/DistributedControllerHost.swift`,
+`DistributedWorkerLoop.swift` (RielaServer), and
+`Sources/RielaApp/EntryPoint+DistributedController.swift`. Verify only capability
+snapshot registration/forwarding and selected host/backend execution in those
+paths; no UI redesign or distributed subsystem redesign. Required matching
+regressions include `Tests/RielaServerTests/DistributedWorkerHTTPTests.swift`.
+Add retained `WorkStoreCancellationTests`, `BudgetAdmissionStoreTests` and
+`DecisionApplierCausalityStoreTests` under `Tests/RielaWorkTests` to prerequisite
+gates so aggregate filters cannot hide these new regressions.
 
 ## Intended changes and acceptance (§17.2–17.5)
 
@@ -354,25 +544,25 @@ last-attempt completion, dry-run effects, and task-free plain workflow run.
 ## File-level implementation map and preserved invariants
 
 Every row is limited to the accepted requirement named. New file names below
-are intended destinations, not assertions of existing APIs. Fresh-read existing
+identify retained code or intended repair destinations; fresh-read actual APIs. Fresh-read existing
 neighbors and accepted predecessor signatures before implementation; reuse
 existing functions and avoid a generic framework. Extra helpers are allowed
 only for necessary responsibility splits, with an exact-path serial assignment
 and intent record first. The JSON writePaths list never authorizes unrelated
-changes to a matched file. Dependency-owned files are read-only here.
+changes to a matched file. Prerequisite repair paths are assigned above; ownership transfers remain serial.
 
 | Task / files | Intended change / required evidence |
 | --- | --- |
-| P1-6a: new `Sources/RielaWork/TaskDispatcher.swift`; new `Sources/RielaCLI/TaskDispatch.swift`; existing `WorkflowRunCommand.swift`, `WorkflowRunLivePersistence.swift` in Sources/RielaCLI | Work coordinates accepted requirement/placement/reservation/decision contracts; CLI resolves canonical definition/store and bridges to existing runner using the reserved session ID and per-node host/backend. Project terminal evidence before completion/guard evaluation. Reuse runner execution; no RielaCore import of RielaWork. TaskDispatcherTests and TaskDispatcherIntegrationTests prove exact reserved ID, version/dependency races, wait without attempt/session/lease, stale launch rejection and projection-before-decision. |
-| P1-6b/c: `Sources/RielaCLI/TaskCommands.swift`, `TaskCommandModels.swift`, `RielaCommand.swift`, `RielaArgumentParser+WorkflowAndMemory.swift`, new `TaskDispatch.swift` | Add run/dry-run/decide parsing, typed result DTOs and text/JSON output. Preserve show/list and store-root precedence. Dry-run must select read-only dependency APIs before any loader that initializes/migrates/quarantines. Decide validates exactly one action, principal, expected version and stable ID. Route Ctrl-C through durable applier/runner cancellation, including pending-launch and acknowledgment windows. No second direct-mutation path. TaskCommandMutationTests and TaskCommandParsingTests assert parsing, replay and filesystem/row invariance. |
-| P1-6a/c/d shared serial handoff: `Sources/RielaWork/WorkStore+Decisions.swift`, `TaskGuardCoordinator.swift`; `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`, `WorkGuardDispatcherTests.swift` | Consume and regression-test the accepted lifecycle implementation of scoped causality, reconstructed completion, original replay, atomic pending requests and live cancellation fencing. Only add narrowly necessary real-runner coordination after ownership transfer; do not defer lifecycle acceptance repairs to this plan. Coordinator must preserve complete guard-batch persistence before decisions. If durable outcome storage needs schema/model changes, block and route to owner; do not invent parallel storage. Add negative/rollback/crash/replay tests, not CLI-only checks. |
-| P1-6d: new `Sources/RielaWork/AgentDirector.swift`; `TaskDispatcher.swift`, `Sources/RielaCLI/TaskDispatch.swift` | One ordinary child workflow only when configured escalation needs it. Reconcile judged work before .director reservation; retain its TaskView; charge child attempt/session/cost once and use the same applier. Forward the accepted capability snapshot through planner workflow variables; no new planner. TaskDispatcherTests/TaskDispatcherIntegrationTests prove host input and selected backend delivery, last-admitted-attempt completion, invalid/forbidden/failed/budget-blocked child escalation and no recursion. Deterministic ordering itself belongs to p1-lifecycle. |
+| P1-6a: retained `Sources/RielaWork/TaskDispatcher.swift`; retained `Sources/RielaCLI/TaskDispatch.swift`; existing `WorkflowRunCommand.swift`, `WorkflowRunLivePersistence.swift` in Sources/RielaCLI | Work coordinates accepted requirement/placement/reservation/decision contracts; CLI resolves canonical definition/store and bridges to existing runner using the reserved session ID and per-node host/backend. Project terminal evidence before completion/guard evaluation. Reuse runner execution; no RielaCore import of RielaWork. TaskDispatcherTests and TaskDispatcherIntegrationTests prove exact reserved ID, version/dependency races, wait without attempt/session/lease, stale launch rejection and projection-before-decision. |
+| P1-6b/c: `Sources/RielaCLI/TaskCommands.swift`, `TaskCommandModels.swift`, `RielaCommand.swift`, `RielaArgumentParser+WorkflowAndMemory.swift`, retained `TaskDispatch.swift` | Add run/dry-run/decide parsing, typed result DTOs and text/JSON output. Preserve show/list and store-root precedence. Dry-run must select read-only dependency APIs before any loader that initializes/migrates/quarantines. Decide validates exactly one action, principal, expected version and stable ID. Route Ctrl-C through durable applier/runner cancellation, including pending-launch and acknowledgment windows. No second direct-mutation path. TaskCommandMutationTests and TaskCommandParsingTests assert parsing, replay and filesystem/row invariance. |
+| P1-6a/c/d shared serial handoff: `Sources/RielaWork/WorkStore+Decisions.swift`, `TaskGuardCoordinator.swift`; `Tests/RielaWorkTests/DecisionApplierStoreTests.swift`, `WorkGuardDispatcherTests.swift` | Consume and regression-test the accepted lifecycle implementation of scoped causality, reconstructed completion, original replay, atomic pending requests and live cancellation fencing. Only add narrowly necessary real-runner coordination after ownership transfer; complete lifecycle prerequisite repairs before dispatch integration. Coordinator must preserve complete guard-batch persistence before decisions. If durable outcome storage needs schema/model changes, assign the existing store/schema files to the serial integration owner and use existing storage; do not invent parallel storage. Add negative/rollback/crash/replay tests, not CLI-only checks. |
+| P1-6d: retained `Sources/RielaWork/AgentDirector.swift`; `TaskDispatcher.swift`, `Sources/RielaCLI/TaskDispatch.swift` | One ordinary child workflow only when configured escalation needs it. Reconcile judged work before .director reservation; retain its TaskView; charge child attempt/session/cost once and use the same applier. Forward the accepted capability snapshot through planner workflow variables; no new planner. TaskDispatcherTests/TaskDispatcherIntegrationTests prove host input and selected backend delivery, last-admitted-attempt completion, invalid/forbidden/failed/budget-blocked child escalation and no recursion. Deterministic ordering is certified in P1-PREREQ-L. |
 | P1-7a: `Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift` (delete after barrier), `RielaCommand.swift`, `ParsedWorkflowOptions.swift`, `RielaArgumentParser+WorkflowAndMemory.swift`, `WorkflowCommands.swift`, `WorkflowRunCommand.swift`, `ProductionNodeAdapter.swift`, `RielaCLIApplication.swift` | Remove actual policy/mutation types in RielaCommand, flags, option plumbing, execution branch, remote serialization and scenario wrapper. SupervisedScenarioNodeAdapter actually lives in RielaCLIApplication.swift (not an Adapters file). Reject removed autoImprove/nestedSuperviser remote fields rather than ignoring or forwarding them. Keep normal run, mock scenario and authenticated remote paths intact. Rewrite legacy tests as rejection/preservation regressions only after replacement coverage passes. |
 | P1-7a conditional retained call sites: `Sources/RielaCLI/SessionCommands.swift`, `SessionCommandModels.swift`, `RielaCommand+SessionParsing.swift`, `LoopCommands.swift`; `Sources/RielaCore/DeterministicWorkflowRunner.swift` | Remove only obsolete supervision plumbing/result fields tied to the deleted workflow path. Preserve loop/routine and specialist/event behavior and their stores; do not delete symbols merely for containing supervisor. Inspect callers/consumers before removal; contradictory retained behavior is a dependency blocker, not permission to redesign another plan. A newly discovered remote decoder outside listed paths requires exact serial ownership assignment before its narrow removed-input rejection edit and tests. |
 | P1-7a regressions: `Tests/RielaCLITests/CommandParsingTests.swift`, `WorkflowCommandAutoImproveTests.swift`, `WorkflowCommandInspectionTests.swift`, `WorkflowCommandPackageLifecycleTests.swift`, `RielaExampleParityTests.swift`, `WorkflowRunHelpTests.swift` | Preserve equivalent scenarios in the four new dispatcher suites before deleting old tests. Assert removed flags/remote fields fail, plain runs create no task, help and package examples match; keep specialist supervisor, events, routines and loops green in V5. |
 | P1-7b: `examples/task-repair-loop/` and `examples/task-agent-director/` each with `workflow.json`, required referenced `nodes/` and `prompts/`, `mock-scenario.json`, `EXPECTED_RESULTS.md`, `README.md`; `Tests/RielaCLITests/TaskRuntimeExampleTests.swift` | Minimal deterministic bundles; tests create task fixtures through existing store APIs then drive actual task run/decision lifecycle with mock node execution, not merely workflow run or string assertions. Document acceptance, gate recovery, guard stop, capacity wait, bounded child output/accounting/escalation. Remove only the three legacy directories after V1 before-removal passes. No new task-create CLI. |
 
-The four required new suites are exactly
+The four required suites are exactly
 `Tests/RielaWorkTests/TaskDispatcherTests.swift`,
 `Tests/RielaCLITests/TaskCommandMutationTests.swift`,
 `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
@@ -390,7 +580,7 @@ Invariant checklist for tests and independent review:
   profile input is neither rewritten nor quarantined. Compare inventories and
   content before/after with connections closed; include missing/incompatible state.
 - Store causality cannot reference missing, foreign or stale attempt evidence.
-  Latest-attempt verification/gates and applicable blocking findings govern
+  Latest-work verification/gates (with only the persisted bounded-child exception below) and applicable blocking findings govern
   acceptance; human accept waives only requiresHumanAccept. Identical replay
   returns original outcome even after later task changes; conflicting payload
   or fresh stale-version decisions fail without side effects.
@@ -406,6 +596,49 @@ Invariant checklist for tests and independent review:
   requirement or stale success after failed refresh. Chosen per-node backend/
   host and planner snapshot reach execution; capability validation is not a token.
 
+
+## P1-6d judged-work acceptance and child execution
+
+Apply accepted §17.7 in `Sources/RielaWork/AgentDirector.swift`,
+`WorkStore+Decisions.swift`, `WorkStore+Reservation.swift`, `WorkModels.swift`,
+`WorkStore+Schema.swift`, `TaskGuardCoordinator.swift` (all RielaWork), and
+`Sources/RielaCLI/TaskDispatch.swift`, `WorkflowRunCommand+TaskReservation.swift`
+and `WorkflowRunCommand+SupervisionPersistence.swift` (RielaCLI), as required.
+Reuse existing reservation/evidence persistence, not a second task store.
+
+1. Replace the explicit director-dispatch rejection with one ordinary bounded
+   child run after work reconciliation. Persist its relation to the judged work
+   at child reservation in the same store transaction, using the existing
+   durable record model or the smallest required typed extension. Record both
+   attempt identities, child session and task identity; caller TaskView alone
+   is not authority. Schema/model edits, if necessary, are serialized and
+   covered by fresh/reopened store and rollback tests under existing policy.
+2. Keep work TaskView stable across child execution, charge child attempt/cost
+   once, and validate successful child output against configured allowed P1
+   kinds. Invalid/forbidden/failed/budget-blocked output persists escalation and
+   requires a human; never recursively invoke the director.
+3. At shared application, validate persisted linkage, producer child session,
+   same task, current version and child terminal state. Only that linked child
+   may intervene after judged work; reject newer work or foreign/stale linkage.
+   Reconstruct completion from the judged work's durable gates, verification,
+   acceptance criteria and applicable blocking findings. Child success alone
+   cannot accept work. Preserve latest-attempt enforcement for unrelated paths.
+4. Remove the validator's unconditional accept escalation only once shared
+   application can enforce those rules. Agent acceptance cannot waive human
+   acceptance. Replays return the original result; neither replay nor child
+   completion duplicates accounting or changes judged work evidence.
+5. Extend `Tests/RielaWorkTests/AgentDirectorTests.swift`,
+   `DecisionApplierStoreTests.swift`, `DecisionApplierCausalityStoreTests.swift`,
+   `WorkStoreReservationTests.swift` and, for any storage-shape change,
+   `WorkStoreTests.swift`; extend CLI `TaskDispatcherIntegrationTests.swift`
+   and `TaskRuntimeExampleTests.swift`. Prove a valid allowed accept, child-only
+   success rejection, newer-work rejection, foreign/missing linkage rejection,
+   requiresHumanAccept rejection, current-version conflict, restart/replay,
+   exact child session/cost/attempt accounting, and nonrecursive escalation.
+   Test real shared store and runner paths; validator-only assertions do not
+   establish this contract. Include passing last-admitted work and budget-blocked
+   child admission independently.
+
 ## Common lint and validation contract
 
 swift build is the Swift compile/typecheck gate. Swift edits follow the local
@@ -414,16 +647,15 @@ abstraction, and split touched non-generated files over 1000 lines by actual
 responsibility without unrelated cleanup. Include necessary extracted paths in
 serial ownership records. Do not weaken tests or lint to accept retained WIP.
 
-Before either root edits, the serial preflight owner captures repository lint
-baseline; every worker records that immutable log/hash. After edits,
+Before any implementation edit, the integration owner captures repository lint
+baseline; the integration owner records that immutable log/hash. After edits,
 materialize exact existing changed/new Swift paths from its intent records in
 `tmp/work-runtime-p1/<planId>/changed-swift-files.nul`; do not rely on git diff
-alone because it omits untracked files and predecessor commits. Replace the
-literal PLAN_ID below with the current planId and record the expanded command.
-Every plan metadata block also contains its exact expanded lint commands.
+alone because it omits untracked files and predecessor commits. The plan ID below is fixed for this package.
+The metadata above contains the exact p1-dispatch commands.
 
 ```bash
-xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/PLAN_ID/changed-swift-files.nul
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/changed-swift-files.nul
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache
 ```
 
@@ -434,31 +666,6 @@ and do not broaden edits to clear them. If a tool is unavailable, record a
 blocked gate and environment error, not success. Run required focused tests,
 then the broader V5 gate once on the joined tree; repeat only after
 new changes/failures. No web code is planned, so browser E2E is not a P1 gate.
-
-## Completion, documentation and progress
-
-Each worker appends only to its plan-owned progressLog. Preserve historical
-entries and distinguish this session's pending/blocked/implemented/verified/
-accepted states. Record dependencies, execution/review IDs, interface signatures,
-immutable intent paths, exact pre/post hashes, commands/start/end/final exits,
-complete logs and positive per-suite counts, findings and residual risks.
-No Step 4 progress log asserts implementation completion.
-
-All P1-0…P1-8 checkboxes remain unchecked until current behavioral evidence,
-self-review, Sol test-integrity and its single material adversarial review,
-and Astra combined-tree review leave no high/mid finding. p1-finalize and the
-later serial documentation owner reconcile all six plans, README, PROGRESS.json
-and P1 progress indexes from that accepted tree. Preserve non-P1 entries and
-other workers' append-only logs. Keep canonical plan IDs/paths through execution;
-archive only after acceptance with identity/source-path mappings preserved.
-
-The finalization plan owns help/SurfaceCatalog/authoring guidance and package
-ownership audit. Refresh only applicable manifest digests, never invent a
-manifest or mutate the immutable installation. Lockfiles, shared indexes and
-archiving stay serial. The authorized final workflow commit/push includes only
-accepted P1 implementation and narrowly required documentation/index updates;
-no scratch, unrelated changes or base integration. Follow the first-push
-readiness and remote-hash checks in p1-finalize. Planning is not publication.
 
 ## Verification contract
 
@@ -471,7 +678,7 @@ are failures/blocked checks, never passes. Log basenames below are mandatory;
 use immutable numbered attempt subdirectories on retries and distinct
 `before-removal/` and `after-removal/` directories for V1. Build caches remain
 `tmp/work-runtime-p1/build/p1-dispatch`. Never use shell orphaning or detached
-processes. No implementation commands below have run during Step 4.
+processes. No implementation commands below have run during Step 4; these are downstream requirements.
 
 ### Commands and evidence
 
@@ -494,10 +701,10 @@ real task-backed examples and dry-run file/row comparisons.
 **V2 reservation readiness/regression**, log `reservation-tests.log`. Require
 atomic rollback, duplicate IDs, concurrent independent connections, stale
 version/dependency, token replay, uncertainty fence, pending request consumption
-and durable cancellation tests from the accepted owner revision.
+and durable cancellation tests from the stable P1-PREREQ-R revision.
 
 ```bash
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter WorkStoreReservationTests
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'
 ```
 
 **V3 lifecycle readiness and shared-applier regression**, log
@@ -506,11 +713,11 @@ proof of the shared file map and invariant checklist, stable simultaneous
 violation ordering, gate recovery budget and latest-attempt completion.
 
 ```bash
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|CompletionEvaluatorTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'
 ```
 
 **V4 capability readiness**, log `capability-tests.log`. These suites/interfaces
-are owned by the accepted p1-capabilities predecessor, not duplicate deliverables here. Require
+are certified by this plan’s P1-PREREQ-C gate, not a separate scheduled plan. Require
 selected-entry/called-workflow resolution, deterministic placement, finite
 freshness and failed-refresh handling, host declarations, read-only profile
 loading, probe redaction and planner snapshot contract; every suite must run.
@@ -524,14 +731,14 @@ Absent suites make readiness blocked even if the test command exits 0.
 `adapter-server-graphql-tests.log`. Work/CLI/Core are mandatory for the planned
 shared changes, retaining P0 read/projection/store, plain runner, parser/help,
 loop/routine/specialist/events, surface catalog and remote forwarding behavior.
-Run the second command when adapter/Core execution or remote handling is
-changed (expected for P1-7a); record exact applicability if skipped. Do not
+Both commands are required for the retained capability/profile and planned
+shared runtime changes. Do not
 weaken unrelated failing tests: classify baseline versus caused failures and
 report blocked verification explicitly.
 
 ```bash
 /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'
 ```
 
 **V6 strict touched-file lint**, log `swiftlint-changed.log`. The NUL manifest
@@ -576,74 +783,89 @@ git diff --check
 git diff --cached --check
 ```
 
-### Step 4 author check and remaining gates
+**V10 canonical payload prerequisite**, log `sandbox-tests.log`. Require positive
+executed counts and real checked-in payload checks. Do not inspect the executing
+workflow package or registries, and do not expand this plan into workflow repairs.
 
-Planning evidence and the author self-check are under
-`tmp/work-runtime-p1/step4-plan-v0314/`. They verify six-plan coverage, DAG/ownership,
-accepted-design mapping, explicit invariants/acceptance/commands, proportion,
-progress and edit-integrity requirements. Step 5 acceptance and all actual
-implementation gates remain downstream. V0–V9 have not run in Step 4.
-Reservation/lifecycle/capability behavioral acceptance is required before
-p1-dispatch admission. No unresolved user product decision or design defect
-is known; any actual implementation/access/publication blocker must be reported.
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter ImplementationWorkflowSandboxTests
+```
 
-## Evidence-producing command contract
+At the P1-PREREQ-L gate, V3 certifies the existing lifecycle requirements;
+record bounded-director cases as pending P1-6d, never passing by omission.
+After P1-6d and at final acceptance, V3 must also prove reopened-store
+judged-work linkage and all P1-6d cases above. For V5 the AppSupport suite is required because host declarations touch
+profile/daemon loading. SurfaceCatalog, help, doctor and plain workflow behavior
+must remain covered by positive suites; classify unrelated baseline failures,
+never suppress them or report the affected gate passing. V2 also needs positive
+counts for cancellation and budget suites; V3 for causality and agent-director.
 
-Run each metadata verificationCommands entry in the foreground from repository
-root, one command per immutable log under the evidenceDirectory above; retain
-handles and poll through exit. Build establishes compile/typecheck. Focused
-filters must exercise every named suite with positive executed counts and the
-acceptance cases in this plan; missing/zero-test suites, timeout or incomplete
-logs block acceptance. Diff checks establish patch hygiene, not behavior.
-Strict lint uses the NUL manifest of surviving touched AND new Swift files from
-intent/change evidence. Capture repository lint before edits and after the final
-plan tree; compare diagnostics and fail new attributable issues while recording
-unrelated baseline findings. Do not run xargs on an empty manifest; record why
-no Swift file changed. Finalization lints the union of all accepted write sets.
+## P1-FINAL documentation, review and publication
 
-Record exact command, start/end, finalExitStatus, completeLogPath, per-suite
-testCount (null for non-tests), source hashes and review decision in
-`verification-evidence.json` in this plan's evidenceDirectory and its progressLog.
-Use numbered attempt subdirectories for reruns; retain logs through handoff.
-All common per-edit fresh-read/pre/post SHA-256, immutable intent, drift-stop,
-join/changeTracking and serial repair rules in the dispatcher contract apply.
-Only this plan's implementation owner appends to its progressLog; it may not
-mark another plan or shared index complete. Documentation refresh and final
-checkbox/index reconciliation belong to p1-finalize after independent acceptance.
+- [ ] Serially reconcile source against immutable intents and prerequisite
+  handoffs; run affected checks after repairs, then V0–V10 on the final stable
+  tree. No unresolved material high/mid finding or incomplete required evidence.
+- [ ] Perform author self-review and the workflow's single adversarial
+  implementation review, followed by required combined-tree acceptance. Review
+  material behavior/data-loss/security/regression/test gaps, not style nits or
+  speculative abstraction. Record actual review IDs, decisions and findings.
+- [ ] Refresh `README.md`, affected example READMEs/EXPECTED_RESULTS, and P1
+  status in `design-docs/specs/design-work-runtime-consolidation.md`. Update
+  `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift`, `SurfaceCatalog+Rows.swift`,
+  `SurfaceCatalog+RowSupport.swift`, `Sources/RielaCLI/CLISurfaceEnumeration.swift`
+  and `Tests/RielaCoreTests/SurfaceCatalogTests.swift` only where task CLI/removal
+  requires it. Task GraphQL/UI counterparts stay explicitly deferred.
+- [ ] Reconcile this plan, `impl-plans/README.md`, `impl-plans/PROGRESS.json`,
+  `impl-plans/progress/plans-index.json`, `meta.json`, `phases.json` and
+  `plans/work-runtime-p1-dispatcher-guard-director.json` under that progress
+  directory only where the existing index format requires it. Preserve all
+  non-P1 entries and other plans' unchecked status unless their acceptance is
+  explicitly evidenced; do not claim completion of separate work packages.
+- [ ] Append this session's status/evidence only to
+  `impl-plans/progress/p1-dispatch.md`: task state, exact changed paths/hashes,
+  retained-hunk attribution, interface ownership, commands/start/end/final exits,
+  complete log paths, positive per-suite counts, review findings/decisions,
+  invalidated evidence and deferred/external dependencies. No checkboxes close
+  on source inspection, planning acceptance or historical logs alone.
+- [ ] Audit applicable repository-owned `riela-package.json` manifests only
+  for modified workflow/prompt/script/skill artifacts; refresh actual owning
+  digests with established tooling and record exact paths serially before edit.
+  Do not invent a manifest, modify an immutable installation or inspect scoped
+  registries. Review `.codex/skills/riela-impl-workflow/SKILL.md` for directly
+  affected documentation; update only a necessary P1 contract with explicit
+  owner/path and digest audit, not unrelated workflow material. No skill edit
+  is necessary merely because this plan was authored.
+- [ ] Lockfile generation is conditional on a necessary dependency change;
+  do not opportunistically update `Package.resolved`. No archiving is necessary
+  before execution completes. Exclude tmp evidence from staging.
+- [ ] Prepare the exact accepted P1 file/hunk allowlist; retain unrelated hunks
+  even in shared files. The authorized workflow finalization gate commits and
+  pushes non-force to `origin` / `feat/remaining-impl-plans`, verifies the final
+  accepted hash remotely and records matching commit/push evidence. Freshly
+  check publication readiness at that gate; missing upstream is not a design
+  blocker. Do not fabricate tracking state, change other worktrees or integrate
+  a base branch. No broad `git add` and no concurrent Git operations.
 
-## Stable verification input and shared-file handoffs
+Shared-file documentation changes invalidate affected test/lint gates; rerun
+those gates before the final allowlist is accepted. Existing untracked files
+must be included in evidence and strict lint, not omitted by git diff. If
+commit tooling can stage only whole files, unrelated mixed hunks require an
+isolated accepted-content preparation that preserves the worktree/index; do
+not silently include them. Actual inability to publish is reported with its
+concrete failed command/log/exit, not claimed as success.
 
-Before either root edits source, the serial preflight owner captures the shared
-repository lint baseline. Workers may reference that complete log/hash rather
-than racing baseline capture against another writer. Plan-local post-edit lint
-is compared to that baseline; finalization compares the entire joined tree.
-Separate scratch builds isolate build outputs, not source. An owner may
-verify its contract only while all relevant source inputs are stable; schedule
-wave verification after writers pause, not concurrently with source mutation. Record source hashes
-before/after each verification command; if another writer changes relevant
-inputs during a run, that run cannot certify the resulting tree. Serialize
-verification on stable wave boundaries and re-run affected gates after join.
+## Planning author check and remaining gates
 
-The planned root and wave-2 write sets are disjoint. Later sharedPaths must
-include every transferred file, including tests/help/parser files. Before a
-new helper, remote decoder, digest manifest or repair path is edited, record its
-exact path/accepted requirement and serial owner. Revalidate overlapping
-predecessor behavior; do not silently widen parallel ownership.
+Step 3 accepted §17.7 in the runtime-delivered review with no findings. Step 5
+plan acceptance, implementation, behavioral tests, lint, adversarial review,
+documentation completion and final commit/push remain downstream. No Swift
+build/test/lint result is claimed in Step 4. No unresolved user decision or
+known design defect remains. The current concrete director integration gap is
+an implementation task, not a reason to reopen accepted design.
 
-Reservation owns retained `Sources/RielaWork/DecisionApplier.swift`,
-`Sources/RielaWork/WorkStore+Decisions.swift`, and
-`Tests/RielaWorkTests/DecisionApplierStoreTests.swift` verification and primitive-related repair in wave 1. Transfer its accepted
-hash and cancellation regression evidence to lifecycle only after reservation
-acceptance, then to dispatch after lifecycle acceptance. No concurrent writers.
-
-## Current acceptance boundary
-
-The current Step 3 runtime delivery accepts the resumed design with no
-findings; the design document's historical pending-review prose is not a
-new blocker and is preserved until serial documentation refresh. Step 5
-plan review remains pending. This plan certifies no predecessor or behavior.
-Read the current source and this plan's exact file map before editing; use
-current hashes and complete foreground evidence, never historical progress
-as implementation acceptance. The Step 4 author check is
-`python3 tmp/work-runtime-p1/step4-plan-v0314/self-check.py`; its complete log
-and final exit are recorded in the planning evidence above.
+Author check: `python3 tmp/work-runtime-p1/step4-resume-20260923/self-check.py`.
+Complete logs/final exits and source-preservation evidence are recorded in
+`tmp/work-runtime-p1/step4-resume-20260923/verification-evidence.json`.
+This plan's source inspections are not behavioral acceptance. The author
+checks the single-plan DAG, exact scope, file-level tasks, accepted §17.7 mapping,
+evidence commands, review/finalization gates and preservation of all prior work.

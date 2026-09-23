@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; full-DAG Step 2 design update pending independent review, 2026-09-22**. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts; §17.1 and §17.6 authorize P1-0 through P1-8 through the six existing plans and preserve their dependency gates.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; resumed Step 2 update pending independent review, 2026-09-23**. Retained implementation work is unverified; P2-P7 remain deferred. Section 17 defines the P1 contracts. **§17.7 governs the current intake and supersedes historical execution scope, package versions, model assignments, source inventories and scheduling claims in §17.1, §17.5 and §17.6**; their behavioral contracts and prerequisite verification requirements remain applicable.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -898,7 +898,7 @@ domain model or moving work from P2-P7 into P1.
   with no unresolved high- or mid-severity finding. P0 behavior remains
   preserved and P2-P7 remain deferred throughout this rollout.
 
-### 17.1 Current intake, ownership, and phase boundary
+### 17.1 Prior intake, ownership, and phase boundary (historical execution context)
 
 The authoritative issue is
 `workflow-input:Complete the Work Runtime P1 dependency DAG (issue URL/number unavailable)`,
@@ -1196,7 +1196,7 @@ user decision is required for this P1 design; implementation correctness,
 host-probe results, and independent review remain verification work.
 
 
-### 17.6 Resumption evidence and dependency readiness (2026-09-22)
+### 17.6 Historical resumption evidence and dependency readiness (2026-09-22)
 
 Current inspected HEAD is `8286b20f16548354d9023c1255c12dfd4ce4f70d` on
 `feat/remaining-impl-plans`, matching the supplied checkpoint. Initial status
@@ -1347,3 +1347,124 @@ integrity/adversarial/reconciliation gates. No fallback or checkbox update
 substitutes for readiness. No unresolved user product decision remains; source
 gaps, downstream access and publication readiness are verification/implementation
 work, so no new user-QA document is necessary.
+
+
+### 17.7 Current resumption contract (2026-09-23)
+
+**Authority and review.** Mode: `issue-resolution`. Issue reference: workflow
+input, “Resume and complete Work Runtime P1 dispatcher, guard, and director”;
+no GitHub issue URL or number was supplied. Prior checkpoints are `368a3032`
+and `c6a35e6`. Step 1 `comm-000002`, execution
+`step1-issue-intake-attempt-1-exec-2`, supplies this brief to
+`step2-design-doc-update` in
+`codex-design-and-implement-review-loop-session-1`.
+The P1 plan records prior design acceptance in `comm-000004`,
+`step3-design-review-attempt-1-exec-4`, with no findings. That is prior review
+provenance, not a new review delivery or implementation acceptance. No current
+Step 3/5 corrective feedback was supplied; this revision awaits Step 3.
+
+The complete effective `implementationPlanPaths` list is exactly:
+
+- `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`
+
+Do not silently replace it with the historical six-plan scheduler input.
+Reservation, lifecycle, capabilities and canonical sandbox behavior remain
+prerequisite contracts to verify against retained code; their existing plans
+are supporting dependency references. Step 4 reconciles the supplied plan's
+historical full-DAG scheduling language with this single intake, explicitly
+accounts for any prerequisite repair necessary for P1-6/7, and preserves
+acceptance gates without inventing accepted predecessor IDs. Independent
+investigation may be delegated during implementation; overlapping writes and
+final integration remain serialized. Actual role/execution identities come
+from the runner, not the historical model assignments above.
+
+The runner-resolved immutable user-scope package and effective input are
+accepted as authoritative; input requires version 0.3.5 or newer and supplies
+no exact resolved version here. No contradiction is present. No package or
+registry rediscovery belongs to this node. Work only in the supplied
+`feat/remaining-impl-plans` directory; preserve unrelated changes, other
+worktrees and all Monja tenant-sharding-d48 work. Excluded implementations are
+loop-engineering, agent-node-output-contract, workflow-defect detection, Tauri,
+note plans and P2–P7. Record dependencies on those efforts without implementing
+them. Accepted P1 commit and push are authorized after downstream verification,
+review and documentation gates; no publication occurs during design authoring.
+
+**Current source evidence, not acceptance.** Inspected HEAD is
+`fe4da6cdda88c4bbaeafcb5dbce49bce5dd302af`, matching the intake. Initial status
+has 49 modified tracked files, 32 untracked entries and no staged changes.
+The dated §17.6 inventory must not drive new implementation from scratch:
+
+- `Sources/RielaWork/TaskDispatcher.swift` now provides preview, reservation
+  and authorization; `Sources/RielaCLI/TaskCommands.swift` routes run/decide,
+  and `Sources/RielaCLI/TaskDispatch.swift` supplies integration.
+- `Sources/RielaWork/AgentDirector.swift`,
+  `Sources/RielaCore/BackendCapability.swift`,
+  `Sources/RielaWork/BackendCapabilityPlacement.swift` and
+  `Sources/RielaAdapters/BackendCapabilityProbe.swift` now exist, as do the
+  four required dispatch/CLI/example suites and both replacement examples.
+- `Sources/RielaWork/WorkStore+Decisions.swift` now validates causality,
+  reconstructs acceptance from the store and enqueues pending reservation
+  within application. Source presence alone proves none of the transactional,
+  cancellation, replay or concurrency requirements.
+- One concrete integration concern remains for P1-6d: `AgentDirector.validate`
+  currently escalates every `accept` output because store acceptance requires
+  the latest attempt, which is then the director child. Verify and repair this
+  against §17.3; do not declare bounded-director support complete merely because
+  its validator exists.
+
+**Judged-work acceptance clarification.** A successful director child is never
+work-completion evidence. When an allowed agent `accept` is applied, the shared
+store boundary must resolve the persisted director-to-judged-work relationship,
+validate same-task provenance and current task version, and reconstruct the
+judged work's gates, verification and blocking findings. Only the linked bounded
+child may intervene; newer work or unrelated evidence invalidates the decision.
+Do not globally relax latest-attempt validation or trust the supplied TaskView.
+Human acceptance and policy acceptance retain their completion obligations;
+agent output cannot waive `requiresHumanAccept`. Invalid/forbidden output,
+failed child execution, exhausted budget or unavailable authoritative linkage
+must record escalation and require a human. Verification must distinguish valid
+allowed acceptance of completed work, rejection of child-only success, stale
+judged work, foreign linkage, and required human acceptance. This makes the
+existing §17.3 shared-applier contract explicit, without a new director framework.
+
+**Completion and verification mapping.** Retain §17.2–17.5 behavior and the
+P1-6a through P1-7b acceptance rows: atomic exact-session dispatch; read-only
+preview; shared human decisions, durable cancellation and replay; ordered guard
+and bounded director; replacement task-backed examples before legacy removal.
+Prerequisite tests cover reservations, guard boundaries, capability freshness,
+placement and store-authoritative decisions. Plain workflow runs remain
+task-free; unrelated loop/routine/specialist/event behavior remains intact.
+Use the supplied plan's V0–V9 commands, including `swift build`, focused and
+broader `swift test` filters, `swiftlint lint --strict` on touched/new Swift,
+repository lint comparison, explicit task-example validation/mock runs,
+`git diff --check` and `git diff --cached --check`. Example commands operate on
+repository fixtures, never on the executing workflow package. The actual task
+lifecycle tests remain mandatory in addition to standalone workflow mocks.
+
+Run commands in the foreground and poll every yielded handle through terminal
+exit. Retain exact commands, complete logs, final exit statuses and positive
+per-suite test counts under `tmp/work-runtime-p1/`; incomplete logs and zero
+selected tests do not pass. One material adversarial implementation review,
+author self-check and combined-tree verification precede plan/index completion.
+Reconcile only accepted P1 evidence in the plan and `impl-plans/README.md` /
+`impl-plans/PROGRESS.json`, preserving unrelated entries and work. Existing
+source must be attributed before assembling the exact final commit allowlist.
+Documentation acceptance alone never closes an implementation checkbox.
+
+**References, questions and author evidence.** Codex-agent references above
+identify workflow executions; no external reference repository was supplied.
+`test ! -e ../../codex-agent` exited 0 in this turn. No external parity claim
+is made. Cursor invocation, authentication, probing and heartbeat behavior
+remain in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift` and adapter
+helpers; neutral Work/Core contracts do not translate prompts or promise
+cross-backend equivalence. No unresolved product decision requires user QA.
+Implementation acceptance remains downstream, including the concrete director
+concern above and current behavioral certification of retained code.
+
+Step 2 inspection and author-check records are in
+`tmp/work-runtime-p1/step2-resume-20260923/verification-evidence.json` with
+complete logs and final exits. The author self-check verifies intake mapping,
+single-plan scope, dependency boundaries, reference mapping and preservation
+of every pre-existing file. This turn changes only this design document;
+no workflow/prompt/script/skill digest refresh is triggered and no Swift
+build/test/lint or implementation-review success is claimed.

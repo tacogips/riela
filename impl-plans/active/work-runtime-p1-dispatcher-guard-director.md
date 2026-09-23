@@ -1,9 +1,9 @@
 # Work Runtime P1: P1-6b task run and read-only dry-run
 
-**Status**: P1-6b planning updated; Step 5 review and implementation acceptance pending.
+**Status**: Current Step 3 design accepted at `comm-000004`; revised Step 4 plan awaiting Step 5. Existing P1-6b implementation has source-matched host verification (194/194); independent implementation/amendment acceptance and publication remain pending.
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6b; no GitHub issue number supplied.
-**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `d80ac30d217450772a535f2308f99f87ac225aea6db0876e08d4c7a18b5ee98f`.
+**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `f83f86ceac6862d926419c791c58f52cd5010afd34f0ad973501a0cf87fc0fc2`.
 **Review decision**: Step 3 accepted, no findings or feedback, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
 **Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `step1-issue-intake`, `comm-000002`, `step2-design-doc-update`, `comm-000003`, `step3-design-review`, `comm-000004`.
 **Updated**: 2026-09-24
@@ -21,39 +21,29 @@ plan or implementation fanout is needed.
   "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
   "dependsOn": [],
   "writePaths": [
-    "Sources/RielaCLI/TaskCommands.swift",
-    "Sources/RielaCLI/TaskCommandModels.swift",
-    "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaSQLite/SQLiteDatabase.swift",
     "Sources/RielaWork/TaskDispatcher.swift",
     "Sources/RielaWork/WorkStore.swift",
-    "Sources/RielaWork/WorkStore+Hosts.swift",
     "Tests/RielaCLITests/TaskCommandParsingTests.swift",
-    "Tests/RielaCLITests/TaskCommandMutationTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
-    "Tests/RielaCLITests/TaskRunResultTests.swift",
     "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
-    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
-    "Tests/RielaWorkTests/WorkStoreTests.swift",
+    "Tests/RielaCLITests/TaskRunResultTests.swift",
     "design-docs/specs/design-work-runtime-consolidation.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
     "impl-plans/progress/p1-dispatch.md"
   ],
   "sharedPaths": [
-    "Sources/RielaCLI/TaskCommands.swift",
-    "Sources/RielaCLI/TaskCommandModels.swift",
-    "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/HostCapabilityResolver.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaSQLite/SQLiteDatabase.swift",
     "Sources/RielaWork/TaskDispatcher.swift",
     "Sources/RielaWork/WorkStore.swift",
-    "Sources/RielaWork/WorkStore+Hosts.swift",
     "Tests/RielaCLITests/TaskCommandParsingTests.swift",
-    "Tests/RielaCLITests/TaskCommandMutationTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
-    "Tests/RielaCLITests/TaskRunResultTests.swift",
     "Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift",
-    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
-    "Tests/RielaWorkTests/WorkStoreTests.swift",
+    "Tests/RielaCLITests/TaskRunResultTests.swift",
     "design-docs/specs/design-work-runtime-consolidation.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
     "impl-plans/progress/p1-dispatch.md"
@@ -72,9 +62,10 @@ plan or implementation fanout is needed.
       "P1-6b-audit"
     ],
     "P1-6b-readonly": [
-      "P1-6b-results"
+      "P1-6b-audit"
     ],
     "P1-6b-verification": [
+      "P1-6b-results",
       "P1-6b-readonly"
     ],
     "P1-6b-finalization": [
@@ -98,7 +89,9 @@ plan or implementation fanout is needed.
     "git diff --check",
     "git diff --cached --check"
   ],
-  "evidenceDirectory": "tmp/work-runtime-p1/p1-6b/"
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-6b/",
+  "verificationPolicy": "Reuse source-matched completed gates. Run affected build/test/lint commands only after code changes or a material evidence gap; always recheck hashes and diffs.",
+  "hostAggregateCommand": "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --scratch-path tmp/p1-6a-host-verify/build --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'"
 }
 ```
 
@@ -106,10 +99,12 @@ plan or implementation fanout is needed.
 
 ### Intent, context, and non-goals
 
-Finish the retained task run command and prove allocation-free dry-run using
-accepted P1-6a dispatch. Inspected branch is `feat/remaining-impl-plans`, HEAD
-`2f10916a14501af68fd7e7f63cb91f244a343f8c`; Step 4 begins with only the accepted
-design edit. Recheck actual status before implementation; never reset changes.
+Independently review and conditionally finalize the existing task-run result and
+allocation-free dry-run WIP on `feat/remaining-impl-plans`, planning checkpoint
+`f8c91887d4021ccd3ebfec5dda39cbc555b6b040`, retaining accepted P1-6a dispatch.
+The nine Swift changes and plan/progress/design edits already exist; preserve
+them. Recheck actual status before review; never reset changes. Coding may be
+re-dispatched only for an independently proven material defect.
 The supplied effective workflow input and runtime provenance are authoritative.
 Do not inspect the executing package or scoped registries.
 
@@ -124,24 +119,35 @@ Codex references are workflow identities; no Cursor adapter or source-parity tas
 
 `dependsOn: []` means no newly scheduled external plan; P1-6a is an accepted
 prerequisite at the commit above, not work to rerun or reopen. The metadata DAG
-orders audit → results → read-only boundary → verification → finalization.
+orders evidence audit → result/read-only reviews → combined verification →
+conditional finalization. Native Riela owns dependency-ready review waves;
+this node creates no implementation fanout.
 All listed paths are exclusively owned by this single implementation owner;
 reviewers inspect without edits. The write set is a ceiling, not a demand to
-change every file. Production edits to WorkStore/host reads are conditional on
-concrete P1-6b failures. Tests may live in the two named focused new files to
-avoid swelling the existing integration suite; if created, both execute in the
-explicit additional gate below. No other path is implicitly writable: a needed
+change every file. All code/test edits are conditional on an independently proven material defect.
+The two focused test files already exist and are included in host evidence. No other path is implicitly writable: a needed
 path expansion requires a concrete finding, exact path and bounded plan/review
 amendment before editing, not a blanket new abstraction or unrelated repair.
+
+Bounded Step 6 scope amendment: `TaskDryRunReadOnlyTests` observed a changed
+SQLite `-shm` byte snapshot on every seeded preview. Review the existing change to
+`Sources/RielaSQLite/SQLiteDatabase.swift` only to recognize a zero-byte WAL
+as idle for immutable reads. A nonempty WAL is diagnosed by task preview before
+opening the store, so committed WAL data is never silently ignored. Independent
+review must accept this path expansion and the final byte/row evidence.
 
 Before each edit, fresh-read the file and capture SHA256 plus an immutable
 intent snapshot under `tmp/work-runtime-p1/p1-6b/attempt-N/` recording intended
 hunks and accepted requirement. Record post-edit hashes. Compare predecessor
 hashes at every handoff; preserve unexpected changes, invalidate affected
 verification, and reconcile serially instead of restoring whole files. No
-concurrent Git operations or private implementation branches. The workflow
-must accept and commit the design and this plan before native implementation
-begins; this author node does not preempt Step 5 or commit an unreviewed plan.
+concurrent Git operations or private implementation branches. For this existing-WIP
+continuation, the design and this revised plan must be accepted before any
+conditional repair. No new pre-implementation commit is required. Commit the
+exact reviewed P1-6b file set only through downstream finalization after
+independent implementation acceptance; this author node neither commits nor
+preempts Step 5. This continuation-specific order supersedes the historical
+checkpoint procedure in the non-executable parent reference below.
 
 Workers append only to `impl-plans/progress/p1-dispatch.md`. Shared indexes,
 lockfile generation, formatting and global archiving are reserved for serial
@@ -152,74 +158,67 @@ independent combined-tree review.
 
 ### Tasks and exact deliverables
 
-- [ ] **P1-6b-audit**: Fresh-read the listed command, dispatcher, host and store
-  files plus nearby tests. Trace from `TaskCommandRunner.locateTask` through
-  pending request, dependency, host and placement reads, including constructors.
-  Record retained behavior and concrete defects in the progress log. Read-only
-  labels are not proof: `WorkStore.openReadOnlyIfPresent`,
-  `WorkStore+Hosts` and `TaskDispatcher.pendingReservation` must be checked
-  against `Sources/RielaSQLite/SQLiteDatabase.swift`, whose ordinary `.readOnly`
-  can fall back to read-write. Inspect existing strict modes before choosing the
-  smallest caller-level repair. Inspect profile initialization and controller
-  inspection for side effects; no package rediscovery or real user-state probes.
-- [ ] **P1-6b-results**: In `Sources/RielaCLI/TaskDispatch.swift` and, only where
-  needed, `TaskCommandModels.swift`/`TaskCommands.swift`, preserve existing wire
-  field names and optional-field conventions while exposing prospective
-  per-node host/backend choices in text as well as JSON. Use typed statuses
-  with existing wire spellings if touching the closed result status domain.
-  Keep exact reservation identities available once admitted, including runner
-  failures and post-reservation errors; never substitute a child or generated
-  replacement session ID. Preserve nonzero exits and diagnostic details.
-  Pre-admission structured errors use the existing task failure envelope;
-  failures before a durable terminal result must not pretend completion.
-  A ready preview has no IDs or wait reason; waits have the exact typed reason
-  and no allocated IDs. Do not change runner execution or reconciliation policy.
-  Extend `TaskCommandParsingTests` for target, dry-run/shared options, missing
-  ID, invalid options and precedence; add command-level text/JSON success,
-  ready/wait and pre-/post-admission error assertions in `TaskCommandMutationTests`
-  or `TaskRunResultTests`. Compare reported IDs with durable attempt/session rows.
-- [ ] **P1-6b-readonly**: Keep the same task/reference/entry/requirement/placement
-  resolution in both modes. At the earliest applicable read boundary in
-  `TaskCommands.swift`, `TaskDispatch.swift`, `TaskDispatcher.swift`,
-  `HostCapabilityResolver.swift`, `WorkStore.swift` and `WorkStore+Hosts.swift`,
-  select existing nonmutating APIs or add only the minimal task-preview read
-  option needed to avoid writable loaders. Preserve ordinary inspection and
-  real-run compatibility; no global SQLite semantics rewrite. No migration,
-  generation reset, checkpoint, quarantine, host cache persistence, lock-file
-  creation, pending-request consumption, reservation, launch or runner call on
-  dry-run. Absent stores remain absent; incompatible/corrupt stores fail with
-  diagnostics; absent optional profiles use in-memory defaults; corrupt profiles
-  fail without repair. Never use immutable SQLite reads over an active WAL and
-  silently ignore committed data. If a sidecar layout cannot be read safely,
-  diagnose it before opening rather than create/alter sidecars or return stale
-  readiness. Preserve current WAL contents and existing sidecars even on error.
-  Prove this with real store/profile APIs, not a stub that skips the risky read.
-- [ ] **P1-6b-verification**: In `TaskDispatcherIntegrationTests`,
-  `TaskDryRunReadOnlyTests`, `TaskDispatcherTests` and conditionally
-  `WorkStoreTests`, build controlled fixtures under repository `tmp/`. Compare
-  file inventory plus bytes and complete affected row values (not just counts)
-  before/after: tasks, attempts, sessions, decisions, leases, evidence, pending
-  requests and `work_hosts`. Include database/WAL/SHM and host/profile/controller
-  files. Cover ready and dependency/capacity waits, absent/incompatible/corrupt
-  stores, present/absent/corrupt profiles, existing and absent sidecars, and
-  committed WAL data. Disable unrelated concurrent writes during snapshots;
-  snapshot helpers must not checkpoint, migrate or mutate fixtures. For corrupt
-  data that cannot decode, require diagnostic and byte/inventory equivalence,
-  explicitly marking row comparison inapplicable. Retain P1-6a selected-host,
-  reservation/race and exact-session tests. Run the gates below to terminal exit.
-- [ ] **P1-6b-finalization**: Independent integration and adversarial reviews
-  inspect final changed bytes and actual logs. Resolve all material findings;
-  repeat only invalidated checks. Append commands, exits, positive per-suite
-  counts, complete log paths, hashes, retained-code attribution and review
-  decisions to `impl-plans/progress/p1-dispatch.md`. Update only P1-6b evidence
-  in this plan and §17.5 of the design. Review README for accuracy; an actual
-  required change needs an exact scoped amendment, not a general refresh.
-  Mark P1-6b accepted only after both independent reviews; keep parent and
-  later slices open. Final workflow gates commit the exact accepted allowlist
-  and non-force push to `origin/feat/remaining-impl-plans`; verify matching
-  accepted commit/push evidence. No broad staging, tmp files, force push or
-  main merge. No workflow/prompt/script/skill edit is planned, so no package
-  digest refresh is needed.
+All boxes below are current review/finalization gates, not instructions to redo
+prior coding. Historical completed implementation remains recorded in progress.
+
+- [ ] **P1-6b-audit** (wave 1, single owner): Fresh-read accepted §17.5, the nine
+  Swift files in `writePaths`, both exact manifests and complete host log.
+  Recompute nine hashes, inventory current diff/untracked files and record
+  source identity plus the host command/exit 0/194 tests. Preserve the earlier
+  sandbox aggregate as failed, exit 1, including intermediate assertion failures.
+  Deliver an evidence inventory and review inputs in repository-root `tmp/`.
+- [ ] **P1-6b-results** (wave 2, independent test-integrity review, read-only):
+  Inspect `Sources/RielaCLI/TaskDispatch.swift`,
+  `Tests/RielaCLITests/TaskCommandParsingTests.swift`,
+  `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`, and
+  `Tests/RielaCLITests/TaskRunResultTests.swift`. Trace text/JSON placement,
+  ready/wait without allocation, typed reasons, nonzero failure exits,
+  pre-admission failure envelopes and exact durable reserved attempt/session
+  IDs after admitted errors. Inspect read-only fixtures and snapshots in
+  `Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift` for real APIs, complete
+  row values and nonmutating observation. Deliver findings with severity,
+  paths, concrete evidence and an explicit SQLite amendment accept/reject
+  decision; no edits or inferred pass from row counts alone.
+- [ ] **P1-6b-readonly** (wave 2, independent adversarial review, read-only):
+  Trace `Sources/RielaCLI/TaskDispatch.swift`,
+  `Sources/RielaCLI/HostCapabilityResolver.swift`,
+  `Sources/RielaWork/TaskDispatcher.swift`, `Sources/RielaWork/WorkStore.swift`
+  and `Sources/RielaSQLite/SQLiteDatabase.swift`. Verify no writable fallback,
+  initialization, migration, checkpoint, quarantine, profile persistence,
+  reservation, pending-request consumption or launch on preview. Assess
+  absent/corrupt/incompatible stores, profiles and sidecars; byte/inventory and
+  row-value invariance includes `work_hosts`. Corrupt undecodable data requires
+  diagnostic and byte invariance, with row comparison explicitly inapplicable.
+  Assess zero-byte/absent WAL handling, rejection of nonempty WAL before either
+  store opens, shared-reader compatibility and concurrent-writer races. Deliver
+  a separate explicit SQLite amendment accept/reject decision and material
+  findings supported by evidence, not hypothetical hardening requests.
+- [ ] **P1-6b-verification** (wave 3, serial join and independent Astra
+  combined-tree integration review): Join both reports and recheck all hashes.
+  Astra explicitly decides the SQLite amendment and combined result/placement/
+  reservation contract against accepted §17.5 and P1-6a regression evidence.
+  All three reviews must have no unresolved material correctness, data-loss,
+  security or verification defect. Only an independently demonstrated defect
+  authorizes a serial repair: record finding, exact affected paths, pre/post
+  hashes and intent; change the smallest required behavior/test in the allowlist,
+  rerun affected compile/tests/lint below, then repeat affected independent
+  reviews on the repaired tree. If another path is necessary, obtain a bounded
+  plan/review amendment first. Preserve unexpected drift and reconcile serially.
+  Unchanged bytes reuse completed host gates; never rerun solely because this
+  is a new workflow. Deliver final hash manifest and all three review decisions.
+- [ ] **P1-6b-finalization** (wave 4, downstream serial workflow gates): After
+  acceptance, align §17.5 and P1-6b plan/progress evidence only. Review README
+  for accuracy; edit only if a concrete discrepancy warrants an exact amendment.
+  Append commands, terminal exits, positive suite counts, complete logs, hashes,
+  retained-code attribution and independent decisions to
+  `impl-plans/progress/p1-dispatch.md`. Step 9 explicitly records P1-6c/d,
+  P1-7a/b and parent P1 open and retains this active plan. Emit the exact reviewed
+  file allowlist (nine Swift files plus directly affected design/plan/progress;
+  exclude already committed checkpoint-only docs from a later commit).
+  Native commit/push gates publish only accepted files, non-force to
+  `origin/feat/remaining-impl-plans`, verifying matching accepted commit/push
+  evidence. No broad staging, tmp files, force push, main merge or unrelated
+  worktree changes. No workflow/prompt/script/skill change or digest refresh.
 
 ### Invariants and acceptance matrix
 
@@ -229,7 +228,7 @@ independent combined-tree review.
 | Exact identity and wait reason | Output IDs equal reserved durable rows on successful and failed admitted runs; ready/wait allocate nothing; wait reason matches dispatcher |
 | Read-only dry-run | Same resolution/prospective placement, all byte/inventory/row-value checks unchanged across the matrix above; no misleading stale WAL read |
 | P1-6a preserved | Final-source reservation and selected-worker/callee execution regression gates pass |
-| Bounded publication | Independent integration/adversarial acceptance without unresolved material finding, exact file allowlist, matching committed/pushed hash; later slices open |
+| Bounded publication | Independent test-integrity/adversarial/Astra integration acceptance, including the SQLite amendment, without unresolved material finding, exact file allowlist, matching committed/pushed hash; later slices open |
 
 A preview is not a launch promise: real admission still rechecks dependency,
 version, budget and capacity races. Do not add a second direct-mutation path or
@@ -246,7 +245,43 @@ never run SwiftPM gates concurrently against it. Poll every yielded session
 through terminal exit. Incomplete logs, timeouts and zero/absent selected suites
 are failed/blocked checks, never passes. Reuse only evidence matching final
 relevant sources and fixtures; unrelated documentation edits alone do not
-invalidate Swift tests. No implementation test pass is claimed by this plan.
+invalidate Swift tests. The recorded host pass is reused evidence, not a fresh run by this plan author.
+The commands below are conditional rerun gates; do not execute them all by
+default on unchanged source bytes. The host aggregate in metadata includes
+`SQLiteDatabaseTests`, both focused files, V1/V2/V4/V11 and parsing; use its
+exact command for a full affected aggregate rerun on a listener-capable host.
+A listener-denied run remains failed; retain its complete log and exit.
+
+**Always-run source identity — hash-check.log**
+
+Run this command before reviews and again before finalization. Capture its full
+output and exit; any mismatch invalidates affected evidence and requires drift
+reconciliation before acceptance. A documentation-only change does not invalidate
+these nine Swift hashes.
+
+```bash
+python3 - <<'HASHCHECK'
+import hashlib, json
+from pathlib import Path
+host = json.loads(Path("tmp/work-runtime-p1-6b-host/evidence.json").read_text())
+prior = json.loads(Path("tmp/work-runtime-p1-6b-20260924-2f10916-comm000006/plans/p1-dispatch/attempt-1/verification-evidence-exact.json").read_text())
+assert len(host["sourceHashes"]) == 9
+for path, expected in host["sourceHashes"].items():
+    actual = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    print(path, actual, flush=True)
+    assert actual == expected == prior["sourceHashes"][path], path
+print("PASS: 9/9 hashes match both manifests")
+HASHCHECK
+git diff --check
+git diff --cached --check
+```
+
+Record each command's own exit code, not only the last shell command. Inspect
+`tmp/work-runtime-p1-6b-host/aggregate.log` and the prior manifest's complete
+logs; record the host aggregate's exact metadata command, exit 0, 194/194 and
+per-suite counts separately from the failed sandbox run. The hash comparison
+alone is not behavioral acceptance. Repaired bytes require a new manifest;
+never overwrite the original evidence or claim old hashes match new code.
 
 **V0 compile/typecheck — build.log**
 
@@ -288,7 +323,8 @@ V1 retains each named suite, including existing task examples; it does not
 certify later slices. Require positive counts for each selected suite. V2 proves
 reservation/cancellation/budget compatibility. V4 proves placement and profile
 read compatibility. V11 proves real selected-host and exact-session behavior.
-If the two new focused test files are used, run their gate and require a
+The two focused test files are already present. If their evidence is invalidated,
+run their gate and require a
 positive count for each created suite (adjust the filter to the created names
 and record exact argv; never report a missing suite as passing):
 
@@ -296,10 +332,10 @@ and record exact argv; never report a missing suite as passing):
 /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'
 ```
 
-If `WorkStore.swift` or `WorkStore+Hosts.swift` changes, also run:
+If store evidence is invalidated, also run:
 
 ```bash
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreTests|TaskCommandTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'
 ```
 
 Before lint, build `tmp/work-runtime-p1/p1-6b/changed-swift-files.nul` from the
@@ -328,7 +364,7 @@ suppress them, count a failed gate as passing or repair unrelated baseline work.
 | Item | State at authoring |
 | --- | --- |
 | P1-6a | Accepted prerequisite at 2f10916; preserve |
-| P1-6b | Plan authored; Step 5 and implementation/review gates pending |
+| P1-6b | Revised plan awaits Step 5; final-source host aggregate passed 194/194, including listener-backed selected-host/HTTP cases. Independent reviews and publication remain pending. |
 | P1-6c/d, P1-7a/b | Deferred/open |
 | Parent P1 | Open; no global certification or archiving |
 
@@ -338,6 +374,18 @@ acceptance; record exact retained files, concrete repairs, hash drift and
 invalidated/reused evidence. Design/plan acceptance is not implementation
 acceptance. Finalization requires all scoped acceptance rows and reviewer
 findings resolved, matching final-source evidence and exact accepted publication.
+
+Operator-host follow-up after Step 6 terminal (2026-09-24): the nine Swift
+source/test hashes in `tmp/work-runtime-p1-6b-host/evidence.json` match Step 6's
+`verification-evidence-exact.json` before and after the host run. Using the
+already resolved SwiftPM scratch path, the full P1-6b selected aggregate,
+including listener-backed `TaskDispatcherIntegrationTests` and
+`DistributedWorkerHTTPTests`, passed 194/194 with exit 0. The complete command,
+log and exit are in `tmp/work-runtime-p1-6b-host/evidence.json` and
+`aggregate.log`; `git diff --check` passed. This replaces the sandbox-only V11
+verification gap for these unchanged source bytes, but it is not independent
+review or publication acceptance. The SQLite shared-path amendment, remaining
+P1 slices and parent P1 still require their own decisions.
 
 ## Historical parent-plan reference — not executable in this invocation
 

@@ -1159,18 +1159,31 @@ well as status; a structured invocation must not lose its typed result merely
 because a lower-level runner returns an error. Preserve existing JSON optional
 field conventions; no new streaming protocol is required.
 
-**Retained code and concrete inspection leads.** Fresh source inspection at
-the accepted commit found parsing and `TaskRunCommandResult` already present,
-`TaskDispatcher.preview` read-only in intent, and host topology requesting
-read-only profile loading. Retain behavior that passes verification.
-`Sources/RielaCLI/TaskDispatch.swift` currently omits placement from text
-rendering, catches errors into stderr even for structured output, and returns
-the runner failure directly after terminal reconciliation. These are concrete
-result-contract repair targets, not a request to rewrite dispatch. Existing
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` covers ready preview,
-absent stores and corrupt profiles; its row-count comparisons alone do not
-prove unchanged row contents. These observations are source inspection, not
-test-pass claims or a completed read-only audit.
+**Existing implementation under review.** The current continuation starts at
+pushed planning checkpoint `f8c91887d4021ccd3ebfec5dda39cbc555b6b040` plus
+the retained P1-6b WIP. The prior Step 6 owner and read-only reviewers
+`cli_audit` and `readonly_audit` identified result-channel and sidecar defects.
+The WIP addresses text placement, structured failures and exact admitted IDs
+in `Sources/RielaCLI/TaskDispatch.swift`, strict store/dispatcher reads and
+corrupt profile diagnostics. Review the existing implementation and focused
+`Tests/RielaCLITests/TaskRunResultTests.swift` and
+`Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift`; do not re-dispatch coding
+unless independent review proves a material defect. No implementation
+acceptance is implied by this design update.
+
+**Bounded SQLite amendment for review.** The prior owner observed seeded
+preview changing SHM bytes. The proposed amendment to
+`Sources/RielaSQLite/SQLiteDatabase.swift` treats an existing zero-byte WAL as
+idle for immutable reads, extending the existing absent-WAL case. Task preview
+must reject a nonempty WAL before opening either relevant store, with an
+actionable error and unchanged database/sidecar bytes. It must never report
+readiness from an immutable read that silently omits committed WAL contents.
+This is a bounded shared-helper change, not a schema or global SQLite rewrite.
+Independent test-integrity, adversarial and Astra combined-tree integration
+reviews must each explicitly accept or reject the amendment, including shared
+reader compatibility and whether WAL-state checks uphold the contract under
+concurrent writers. A material failure requires a bounded repair and affected
+gate reruns; a successful idle fixture alone does not establish that boundary.
 
 **Evidence and acceptance.** Exercise the command boundary and real retained
 read paths for ready/wait/error outcomes in text and JSON. Compare complete
@@ -1190,13 +1203,34 @@ Keep its V1/V2/V4/V11 command filters and add explicit parsing coverage:
 `swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskCommandParsingTests`.
 Run strict changed-file SwiftLint for changed Swift files and `git diff --check`.
 Record exact commands, terminal exit codes, positive counts per selected suite,
-complete foreground logs and final-source hashes under `tmp/work-runtime-p1/`.
+complete foreground logs and final-source hashes under repository-root `tmp/`.
 Reused evidence must match final relevant source bytes. Baseline failures stay
 failures and require an explicit independent bounded review decision; no
-zero-test or incomplete-log success. Independent integration and adversarial
-reviews must resolve every material finding before accepting P1-6b. Publish
+zero-test or incomplete-log success. Independent test-integrity, adversarial
+and Astra combined-tree integration reviews must resolve every material
+finding before accepting P1-6b. Publish
 only the exact reviewed file allowlist by commit and non-force push on the
 same branch; do not merge main, modify unrelated worktrees, or close parent P1.
+
+The recorded listener-capable host gate in
+`tmp/work-runtime-p1-6b-host/evidence.json` exited 0 with 194/194 tests passing;
+its complete log is `tmp/work-runtime-p1-6b-host/aggregate.log`. Recompute all
+nine Swift source/test hashes against that manifest and
+`tmp/work-runtime-p1-6b-20260924-2f10916-comm000006/plans/p1-dispatch/attempt-1/verification-evidence-exact.json`
+at review/finalization. Step 2 recomputation matched all nine against both
+manifests; the host log records 194 tests and zero failures. Reuse this evidence
+while relevant bytes remain identical; rerun affected gates after code changes
+or a material evidence gap. The earlier sandbox aggregate remains failed
+(exit 1), including its recorded intermediate assertion failures; do not
+relabel it as passing because the later host gate passed.
+
+Step 4 retains the same active plan and remaining tasks, updating its design
+reference for this amendment rather than creating a replacement plan. After
+independent acceptance, directly affected documentation and the exact reviewed
+P1-6b file set may proceed through commit and non-force push on
+`feat/remaining-impl-plans`. Preserve current WIP, checkpoint history, Monja
+`tenant-sharding-d48` and unrelated worktrees. Step 9 must explicitly record
+that P1-6c/d, P1-7a/b and parent P1 remain open; the dispatcher plan stays active.
 
 **Reference mapping and open questions.** Supplied codex-agent references are
 workflow/communication identities, not a Codex source parity requirement.

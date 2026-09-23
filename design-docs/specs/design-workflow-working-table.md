@@ -1,6 +1,7 @@
 # Workflow-private disposable JSON working table
 
-Status: accepted by independent Step 3 design review; implementation pending.
+Status: accepted by independent Step 3 design review; storage-layout amendment
+requested 2026-09-23 is pending re-review. Implementation pending.
 Mode: planning-only (`executionMode: design-plan-only`).
 Issue: workflowInput: Workflow-scoped disposable JSON working table with bounded TTL
 (no issue URL or number supplied). Intake: `comm-000002`, from
@@ -129,26 +130,33 @@ outside this scope.
 
 ## Storage, concurrency, and failures
 
-Add a dedicated working-table store in RielaMemory, backed by
-`<workspace>/.riela/working-table.sqlite`. This is one database file per
-workspace, shared by its workflows through `workflow_id`; it is not a separate
-database per workflow. Table `working_entries` contains `workflow_id TEXT`,
-`key TEXT`, `value_json BLOB`, `written_at REAL`,
+Add a dedicated working-table store in RielaMemory, backed by the existing
+default durable-KV database at `<workspace>/.riela/kv/workflow-kv.sqlite`.
+Create one additional table, `working_entries`, in that database. Do not create
+a database or SQL table per workflow: `workflow_id` separates its rows. The new
+adapter uses this fixed trusted path regardless of durable-KV `kvRoot`/`storeId`
+overrides, and neither API can read the other's table. `working_entries` contains
+`workflow_id TEXT`, `key TEXT`, `value_json BLOB`, `written_at REAL`, and
 `expires_at REAL`, all NOT NULL; primary key `(workflow_id, key)` and the expiry
 index above. Use SQLite JSONB validation like the current KV store. Reuse
 `MemoryJSONValue`, encoding and bound-SQL helpers from
 `MemoryEncodingSupport.swift` and `SQLiteMemorySupport.swift`; do not wrap the
 public durable store or generalize both stores behind a new framework.
-The separate database prevents old KV scope/root options from accidentally
-selecting working-table entries through the default durable path.
+Durable KV retains its `kv_entries` table and existing explicit root/store/scope
+overrides. Those selectors may point to this same SQLite file but cannot select
+`working_entries` through the KV API. Working-table initialization must coexist
+with an existing `kv_entries` table or an empty database, and must not alter the
+durable schema or its data.
 
 Use SQLite transactions and its existing five-second busy timeout, not an
 in-process-only lock. Acquire `BEGIN IMMEDIATE` for cleanup plus the operation,
 sample time, execute bound statements, construct the result inside the same
 transaction, then commit before reporting success. This deliberately serializes
 operations within one workspace database; the expected small cache does not need
-WAL tuning or a new concurrency service. Distinct keys retain both committed
-updates. For the same key, the last serialized successful set wins; delete/set
+WAL tuning or a new concurrency service. Durable-KV writes may contend on the
+same file; the existing busy timeout applies and failures remain visible.
+Distinct keys retain both committed updates. For the same key, the last
+serialized successful set wins; delete/set
 follow their transaction order. Reads never observe partially replaced JSON.
 Atomic schema initialization must also tolerate simultaneous first opens.
 
@@ -212,7 +220,9 @@ selection; repeated delete; missing database; workflow/workspace isolation;
 same-ID successive executions; override rejection; clock jumps; first-open race;
 separate-process competing writes/cleanup/delete; transaction-local return values;
 rollback, busy, corrupt-store and lost-response behavior; and the HN sequence.
-Keep durable shared-scope and TTL-free regression assertions alongside new tests.
+Keep durable shared-scope and TTL-free regression assertions alongside new tests,
+including either API creating the file first, and both operating on one database
+file without changing each other's rows.
 Use a fake clock instead of sleeps for TTL tests and controlled database/process
 coordination for concurrency/failure tests.
 

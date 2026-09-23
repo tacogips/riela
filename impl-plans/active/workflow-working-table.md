@@ -11,7 +11,8 @@
 - Design acceptance: Step 3 `comm-000004`, reviewed `comm-000003`, intake
   `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
   Decision: accepted, no findings or requested revisions.
-- Plan status: accepted by independent Step 5 review; implementation not started.
+- Plan status: accepted by independent Step 5 review; storage-layout amendment
+  requested 2026-09-23 is pending re-review. Implementation not started.
 - Codex-agent references / Cursor behavior mapping / intentional divergences: none.
 - One author and one future implementation owner. No parallelizable tasks or fanout.
 
@@ -31,8 +32,10 @@ The existing `RielaKeyValueStore` persists JSONB indefinitely under `.riela/kv`,
 with `(scope,key)` identity; its adapter allows explicit cross-workflow sharing.
 Keep those contracts unchanged. Reuse `MemoryJSONValue`, JSON encoding and bound
 SQLite support without introducing a generic storage abstraction or migrating
-old entries. New storage is `.riela/working-table.sqlite` under the trusted
-canonical workspace root. No new CLI, namespace override, named tables, leases,
+old entries. Add a `working_entries` table to the fixed default durable-KV
+database `.riela/kv/workflow-kv.sqlite` under the trusted canonical workspace
+root; keep `kv_entries` unchanged. Do not create per-workflow databases or SQL
+tables. No new CLI, namespace override, named tables, leases,
 CAS, background cleanup, quotas, WAL tuning, automatic migration, new dependency,
 lockfile generation, UI, or live HN network requirement is in scope.
 
@@ -112,9 +115,10 @@ make only the necessary numeric binding change in shared `SQLiteMemorySupport.sw
    defaulting to UTC Unix seconds; no authored clock input. Reject empty runtime ID.
 2. Implement schema `working_entries(workflow_id TEXT, key TEXT, value_json BLOB,
    written_at REAL, expires_at REAL)`, all NOT NULL, primary key `(workflow_id,key)`,
-   JSONB validity check, and `(workflow_id,expires_at)` index. Serialize initial
-   schema creation and subsequent operations with SQLite transactions. An existing
-   incompatible schema must fail, not be dropped or silently reinitialized.
+   JSONB validity check, and `(workflow_id,expires_at)` index in the existing
+   default KV database. Serialize initial schema creation and subsequent operations
+   with SQLite transactions. Support either API creating the file first; an
+   existing incompatible schema must fail, not be dropped or reinitialized.
 3. Add `SQLiteBinding.double(Double)` using `sqlite3_bind_double`. Existing cases
    and memory schema version stay unchanged. The shared query helper currently
    stringifies values: decode working-table times with `sqlite3_column_double` in
@@ -242,7 +246,7 @@ bundle. Test manual opt-in copy from a durable entry gets a fresh TTL without
 changing/deleting its original durable/shared entry. Show durable KV remains
 readable beyond thirty days in the clock-controlled test context, unchanged TTL-free
 schema, explicit shared scopes/root/storeId still work, and new cleanup cannot
-modify the durable database.
+modify `kv_entries` even though both APIs use the same default database file.
 
 README must show the four new names, example config with key/value and optional
 TTL, null/miss behavior, six-hour default/thirty-day bound, no caller namespace,

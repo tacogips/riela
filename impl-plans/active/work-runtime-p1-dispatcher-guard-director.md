@@ -1,9 +1,9 @@
 # Work Runtime P1: P1-6b task run and read-only dry-run
 
-**Status**: Current Step 3 design accepted at `comm-000004`; revised Step 4 plan awaiting Step 5. Existing P1-6b implementation has source-matched host verification (194/194); independent implementation/amendment acceptance and publication remain pending.
+**Status**: Revised plan awaits Step 5. Final-source host aggregate passed 198/198; independent decision confirmation, final integration acceptance, documentation, commit and push remain pending.
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6b; no GitHub issue number supplied.
-**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `f83f86ceac6862d926419c791c58f52cd5010afd34f0ad973501a0cf87fc0fc2`.
+**Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.5, “P1-6b bounded continuation (2026-09-24)”; SHA256 `a96fe110c61a901f396cd22fc35ef720dd3ef2bd34d52ad489b3680b29e010ef`.
 **Review decision**: Step 3 accepted, no findings or feedback, `comm-000004`, `step3-design-review-attempt-1-exec-4`.
 **Codex-agent references**: `codex-design-and-implement-review-loop-session-1`, `step1-issue-intake`, `comm-000002`, `step2-design-doc-update`, `comm-000003`, `step3-design-review`, `comm-000004`.
 **Updated**: 2026-09-24
@@ -91,7 +91,13 @@ plan or implementation fanout is needed.
   ],
   "evidenceDirectory": "tmp/work-runtime-p1/p1-6b/",
   "verificationPolicy": "Reuse source-matched completed gates. Run affected build/test/lint commands only after code changes or a material evidence gap; always recheck hashes and diffs.",
-  "hostAggregateCommand": "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --scratch-path tmp/p1-6a-host-verify/build --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'"
+  "hostAggregateCommand": "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'",
+  "hostAggregateEnvironment": {
+    "CLANG_MODULE_CACHE_PATH": "tmp/work-runtime-p1-6b-host-final/module-cache",
+    "SWIFTPM_MODULECACHE_OVERRIDE": "tmp/work-runtime-p1-6b-host-final/module-cache"
+  },
+  "hostEvidencePath": "tmp/work-runtime-p1-6b-host-final/evidence.json",
+  "priorEvidencePath": "tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/attempt-1/verification-evidence-final-source-v2.json"
 }
 ```
 
@@ -101,8 +107,8 @@ plan or implementation fanout is needed.
 
 Independently review and conditionally finalize the existing task-run result and
 allocation-free dry-run WIP on `feat/remaining-impl-plans`, planning checkpoint
-`f8c91887d4021ccd3ebfec5dda39cbc555b6b040`, retaining accepted P1-6a dispatch.
-The nine Swift changes and plan/progress/design edits already exist; preserve
+`788d45a44f1da19ea2a85f311ace19a8eec31202`, retaining accepted P1-6a dispatch.
+The eight Swift changes, unchanged SQLite helper and plan/progress/design edits already exist; preserve
 them. Recheck actual status before review; never reset changes. Coding may be
 re-dispatched only for an independently proven material defect.
 The supplied effective workflow input and runtime provenance are authoritative.
@@ -129,25 +135,33 @@ The two focused test files already exist and are included in host evidence. No o
 path expansion requires a concrete finding, exact path and bounded plan/review
 amendment before editing, not a blanket new abstraction or unrelated repair.
 
-Bounded Step 6 scope amendment: `TaskDryRunReadOnlyTests` observed a changed
-SQLite `-shm` byte snapshot on every seeded preview. Review the existing change to
-`Sources/RielaSQLite/SQLiteDatabase.swift` only to recognize a zero-byte WAL
-as idle for immutable reads. A nonempty WAL is diagnosed by task preview before
-opening the store, so committed WAL data is never silently ignored. Independent
-review must accept this path expansion and the final byte/row evidence.
+Current reviewed repair: the live zero-byte-WAL immutable amendment was
+withdrawn. `Sources/RielaSQLite/SQLiteDatabase.swift` has no diff and must retain
+its baseline behavior. Confirm canonical first-match store selection, private
+preview copies, rejection of nonempty WAL, and original main/WAL/SHM byte and
+inventory comparisons after copying and before ready/wait output. Confirm
+live WorkStore/TaskDispatcher reads retain their prior SQLite mode. Read the
+original test-integrity, adversarial and Astra reports under
+`tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/`; record each actual
+artifact path, reviewer identity, final hashes, findings and decision. Progress
+summaries alone are not independent acceptance. If an original decision cannot
+be substantiated, report that specific evidence gap and obtain the required
+independent review; do not infer a code defect or rerun passing tests by default.
 
 Before each edit, fresh-read the file and capture SHA256 plus an immutable
 intent snapshot under `tmp/work-runtime-p1/p1-6b/attempt-N/` recording intended
 hunks and accepted requirement. Record post-edit hashes. Compare predecessor
 hashes at every handoff; preserve unexpected changes, invalidate affected
 verification, and reconcile serially instead of restoring whole files. No
-concurrent Git operations or private implementation branches. For this existing-WIP
-continuation, the design and this revised plan must be accepted before any
-conditional repair. No new pre-implementation commit is required. Commit the
-exact reviewed P1-6b file set only through downstream finalization after
-independent implementation acceptance; this author node neither commits nor
-preempts Step 5. This continuation-specific order supersedes the historical
-checkpoint procedure in the non-executable parent reference below.
+concurrent Git operations or private implementation branches. Before native implementation/review fanout, Step 5 must accept this plan
+and the serial checkpoint gate must commit the accepted design and plan with
+an exact documentation-only allowlist, preserving all existing Swift and
+progress WIP. This author node does not commit or preempt Step 5. No coding
+fanout is requested: the default work is evidence confirmation. Any conditional
+material repair follows accepted plan/checkpoint gates. Final implementation
+commit/push remain downstream of independent acceptance. Reconcile checkpoint
+publication serially before final commit so native push gates do not receive
+an unexpected stack of unpublished commits.
 
 Workers append only to `impl-plans/progress/p1-dispatch.md`. Shared indexes,
 lockfile generation, formatting and global archiving are reserved for serial
@@ -158,14 +172,16 @@ independent combined-tree review.
 
 ### Tasks and exact deliverables
 
-All boxes below are current review/finalization gates, not instructions to redo
-prior coding. Historical completed implementation remains recorded in progress.
+All boxes below are current evidence-confirmation/finalization gates, not
+instructions to redo prior coding or discard prior reviews. Result/read-only
+review tasks first confirm the existing independent decisions on final hashes;
+new review is required only where evidence is missing or a material concern remains. Historical completed implementation remains recorded in progress.
 
 - [ ] **P1-6b-audit** (wave 1, single owner): Fresh-read accepted §17.5, the nine
   Swift files in `writePaths`, both exact manifests and complete host log.
   Recompute nine hashes, inventory current diff/untracked files and record
-  source identity plus the host command/exit 0/194 tests. Preserve the earlier
-  sandbox aggregate as failed, exit 1, including intermediate assertion failures.
+  source identity plus the host command/exit 0/198 tests. Preserve the earlier
+  sandbox aggregate as failed, exit 1, including 24 listener/dependent failures.
   Deliver an evidence inventory and review inputs in repository-root `tmp/`.
 - [ ] **P1-6b-results** (wave 2, independent test-integrity review, read-only):
   Inspect `Sources/RielaCLI/TaskDispatch.swift`,
@@ -177,7 +193,7 @@ prior coding. Historical completed implementation remains recorded in progress.
   IDs after admitted errors. Inspect read-only fixtures and snapshots in
   `Tests/RielaCLITests/TaskDryRunReadOnlyTests.swift` for real APIs, complete
   row values and nonmutating observation. Deliver findings with severity,
-  paths, concrete evidence and an explicit SQLite amendment accept/reject
+  paths, concrete evidence and an explicit private-copy repair accept/reject
   decision; no edits or inferred pass from row counts alone.
 - [ ] **P1-6b-readonly** (wave 2, independent adversarial review, read-only):
   Trace `Sources/RielaCLI/TaskDispatch.swift`,
@@ -191,11 +207,11 @@ prior coding. Historical completed implementation remains recorded in progress.
   diagnostic and byte invariance, with row comparison explicitly inapplicable.
   Assess zero-byte/absent WAL handling, rejection of nonempty WAL before either
   store opens, shared-reader compatibility and concurrent-writer races. Deliver
-  a separate explicit SQLite amendment accept/reject decision and material
+  a separate explicit private-copy repair accept/reject decision and material
   findings supported by evidence, not hypothetical hardening requests.
 - [ ] **P1-6b-verification** (wave 3, serial join and independent Astra
   combined-tree integration review): Join both reports and recheck all hashes.
-  Astra explicitly decides the SQLite amendment and combined result/placement/
+  Astra explicitly decides the private-copy repair and combined result/placement/
   reservation contract against accepted §17.5 and P1-6a regression evidence.
   All three reviews must have no unresolved material correctness, data-loss,
   security or verification defect. Only an independently demonstrated defect
@@ -213,8 +229,9 @@ prior coding. Historical completed implementation remains recorded in progress.
   retained-code attribution and independent decisions to
   `impl-plans/progress/p1-dispatch.md`. Step 9 explicitly records P1-6c/d,
   P1-7a/b and parent P1 open and retains this active plan. Emit the exact reviewed
-  file allowlist (nine Swift files plus directly affected design/plan/progress;
-  exclude already committed checkpoint-only docs from a later commit).
+  file allowlist (the eight changed Swift files plus directly affected
+  design/plan/progress; exclude reverted `SQLiteDatabase.swift` and already
+  committed checkpoint-only docs from a later commit).
   Native commit/push gates publish only accepted files, non-force to
   `origin/feat/remaining-impl-plans`, verifying matching accepted commit/push
   evidence. No broad staging, tmp files, force push, main merge or unrelated
@@ -228,7 +245,7 @@ prior coding. Historical completed implementation remains recorded in progress.
 | Exact identity and wait reason | Output IDs equal reserved durable rows on successful and failed admitted runs; ready/wait allocate nothing; wait reason matches dispatcher |
 | Read-only dry-run | Same resolution/prospective placement, all byte/inventory/row-value checks unchanged across the matrix above; no misleading stale WAL read |
 | P1-6a preserved | Final-source reservation and selected-worker/callee execution regression gates pass |
-| Bounded publication | Independent test-integrity/adversarial/Astra integration acceptance, including the SQLite amendment, without unresolved material finding, exact file allowlist, matching committed/pushed hash; later slices open |
+| Bounded publication | Independent test-integrity/adversarial/Astra integration acceptance, including the private-copy repair, without unresolved material finding, exact file allowlist, matching committed/pushed hash; later slices open |
 
 A preview is not a launch promise: real admission still rechecks dependency,
 version, budget and capacity races. Do not add a second direct-mutation path or
@@ -263,8 +280,8 @@ these nine Swift hashes.
 python3 - <<'HASHCHECK'
 import hashlib, json
 from pathlib import Path
-host = json.loads(Path("tmp/work-runtime-p1-6b-host/evidence.json").read_text())
-prior = json.loads(Path("tmp/work-runtime-p1-6b-20260924-2f10916-comm000006/plans/p1-dispatch/attempt-1/verification-evidence-exact.json").read_text())
+host = json.loads(Path("tmp/work-runtime-p1-6b-host-final/evidence.json").read_text())
+prior = json.loads(Path("tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/attempt-1/verification-evidence-final-source-v2.json").read_text())
 assert len(host["sourceHashes"]) == 9
 for path, expected in host["sourceHashes"].items():
     actual = hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -277,8 +294,8 @@ git diff --cached --check
 ```
 
 Record each command's own exit code, not only the last shell command. Inspect
-`tmp/work-runtime-p1-6b-host/aggregate.log` and the prior manifest's complete
-logs; record the host aggregate's exact metadata command, exit 0, 194/194 and
+`tmp/work-runtime-p1-6b-host-final/aggregate.log` and the prior manifest's complete
+logs; record the host aggregate's exact metadata command, exit 0, 198/198 and
 per-suite counts separately from the failed sandbox run. The hash comparison
 alone is not behavioral acceptance. Repaired bytes require a new manifest;
 never overwrite the original evidence or claim old hashes match new code.
@@ -364,7 +381,7 @@ suppress them, count a failed gate as passing or repair unrelated baseline work.
 | Item | State at authoring |
 | --- | --- |
 | P1-6a | Accepted prerequisite at 2f10916; preserve |
-| P1-6b | Revised plan awaits Step 5; final-source host aggregate passed 194/194, including listener-backed selected-host/HTTP cases. Independent reviews and publication remain pending. |
+| P1-6b | Revised plan awaits Step 5; final-source host aggregate passed 198/198, including listener-backed selected-host/HTTP cases. Independent reviews and publication remain pending. |
 | P1-6c/d, P1-7a/b | Deferred/open |
 | Parent P1 | Open; no global certification or archiving |
 
@@ -374,6 +391,17 @@ acceptance; record exact retained files, concrete repairs, hash drift and
 invalidated/reused evidence. Design/plan acceptance is not implementation
 acceptance. Finalization requires all scoped acceptance rows and reviewer
 findings resolved, matching final-source evidence and exact accepted publication.
+
+Current final-source follow-up (2026-09-24): Step 3 accepted §17.5 via
+`comm-000004`, with no findings. All nine current hashes match the final host
+and Step 6 v2 manifests. The host complete log confirms 198/198, recorded exit
+0; prior safe suites are 169/169 and 15/15, and strict changed-file SwiftLint
+records exit 0. Preserve their exact commands/log paths from the manifests.
+The sandbox aggregate remains failed, exit 1 with 24 failures. Confirm original
+independent decisions and close Astra's verification condition using this host
+evidence before publication. No remaining user decision is required.
+
+### Historical evidence chronology (superseded by current follow-up)
 
 Operator-host follow-up after Step 6 terminal (2026-09-24): the nine Swift
 source/test hashes in `tmp/work-runtime-p1-6b-host/evidence.json` match Step 6's
@@ -386,6 +414,25 @@ log and exit are in `tmp/work-runtime-p1-6b-host/evidence.json` and
 verification gap for these unchanged source bytes, but it is not independent
 review or publication acceptance. The SQLite shared-path amendment, remaining
 P1 slices and parent P1 still require their own decisions.
+
+Step 6 review continuation (2026-09-24): independent test-integrity and
+adversarial reviews rejected the live zero-byte-WAL immutable amendment after
+identifying a concurrent-writer race. `SQLiteDatabase.swift` is restored to
+the checkpoint bytes. Preview now resolves stores in canonical first-match
+order using private database copies, rejects nonempty WAL, and checks original
+main/WAL/SHM bytes before returning ready or waiting. Live WorkStore and
+TaskDispatcher reads retain their baseline SQLite mode; only private copies
+use immutable reads. New tests cover an intervening writer, first-match scope,
+and text/JSON admitted failure identities. Test-integrity, adversarial, and
+Astra combined-tree source reviews accept this repair with no remaining
+material code finding. Current-source safe suites passed 169/169 and 15/15;
+strict selected-file SwiftLint passed. The final-source sandbox aggregate ran
+198 tests and failed with 16 listener denials and eight dependent expectation
+failures (exit 1). The prior
+host 194/194 pass has six mismatched Swift hashes and cannot certify the
+repair. Final-source listener-capable aggregate, publication review, exact
+commit and non-force push remain pending. Complete logs and hashes are under
+`tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/attempt-1/`.
 
 ## Historical parent-plan reference — not executable in this invocation
 

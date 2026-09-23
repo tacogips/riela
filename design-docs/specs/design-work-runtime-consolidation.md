@@ -1160,7 +1160,7 @@ because a lower-level runner returns an error. Preserve existing JSON optional
 field conventions; no new streaming protocol is required.
 
 **Existing implementation under review.** The current continuation starts at
-pushed planning checkpoint `f8c91887d4021ccd3ebfec5dda39cbc555b6b040` plus
+pushed planning checkpoint `788d45a44f1da19ea2a85f311ace19a8eec31202` plus
 the retained P1-6b WIP. The prior Step 6 owner and read-only reviewers
 `cli_audit` and `readonly_audit` identified result-channel and sidecar defects.
 The WIP addresses text placement, structured failures and exact admitted IDs
@@ -1171,7 +1171,7 @@ corrupt profile diagnostics. Review the existing implementation and focused
 unless independent review proves a material defect. No implementation
 acceptance is implied by this design update.
 
-**Bounded SQLite amendment for review.** The prior owner observed seeded
+**Historical SQLite amendment (withdrawn).** The prior owner observed seeded
 preview changing SHM bytes. The proposed amendment to
 `Sources/RielaSQLite/SQLiteDatabase.swift` treats an existing zero-byte WAL as
 idle for immutable reads, extending the existing absent-WAL case. Task preview
@@ -1184,6 +1184,16 @@ reviews must each explicitly accept or reject the amendment, including shared
 reader compatibility and whether WAL-state checks uphold the contract under
 concurrent writers. A material failure requires a bounded repair and affected
 gate reruns; a successful idle fixture alone does not establish that boundary.
+
+**Step 6 review outcome.** Independent reviews found that a live immutable
+reader could miss a WAL commit after the size check. The zero-byte-WAL change
+to `SQLiteDatabase.swift` was withdrawn and the shared helper restored to its
+prior behavior. Dry-run now copies each candidate task database into a private
+temporary store after rejecting a nonempty WAL. It compares the original main
+database, WAL, and SHM inventory and bytes after copying and again before a
+ready or waiting result. A concurrent change yields an error instead of a
+stale preview. The private copy may use immutable reads; live task reads keep
+their prior SQLite mode. A controlled writer test covers this boundary.
 
 **Evidence and acceptance.** Exercise the command boundary and real retained
 read paths for ready/wait/error outcomes in text and JSON. Compare complete
@@ -1212,17 +1222,38 @@ finding before accepting P1-6b. Publish
 only the exact reviewed file allowlist by commit and non-force push on the
 same branch; do not merge main, modify unrelated worktrees, or close parent P1.
 
-The recorded listener-capable host gate in
-`tmp/work-runtime-p1-6b-host/evidence.json` exited 0 with 194/194 tests passing;
-its complete log is `tmp/work-runtime-p1-6b-host/aggregate.log`. Recompute all
-nine Swift source/test hashes against that manifest and
-`tmp/work-runtime-p1-6b-20260924-2f10916-comm000006/plans/p1-dispatch/attempt-1/verification-evidence-exact.json`
-at review/finalization. Step 2 recomputation matched all nine against both
-manifests; the host log records 194 tests and zero failures. Reuse this evidence
-while relevant bytes remain identical; rerun affected gates after code changes
-or a material evidence gap. The earlier sandbox aggregate remains failed
-(exit 1), including its recorded intermediate assertion failures; do not
-relabel it as passing because the later host gate passed.
+**Final-source host evidence (current intake).** The earlier 194/194 host
+pass in `tmp/work-runtime-p1-6b-host/evidence.json` is historical evidence
+only: the repair changed six of its nine source/test hashes. The current
+host manifest `tmp/work-runtime-p1-6b-host-final/evidence.json` records exit 0
+and 198/198 passing, with the complete terminal log at
+`tmp/work-runtime-p1-6b-host-final/aggregate.log`. Step 2 recomputed SHA-256
+with Python `hashlib.sha256` for all nine paths and matched both that manifest
+and `tmp/work-runtime-p1-6b-review-20260924-f8c9188-comm000008/plans/p1-dispatch/attempt-1/verification-evidence-final-source-v2.json`.
+The latter records source-matched safe suites of 169/169 and 15/15 and strict
+changed-file SwiftLint, each exit 0; their complete log paths and exact
+commands are retained in its `verification` and `lint` entries. Step 2 checked
+the suite terminal summaries and lint log availability. Its separate sandbox
+aggregate remains failed: exit 1, 198 tests with 24 failures (listener denial
+and dependent expectations). The host pass does not relabel that failed run.
+
+The host command is:
+
+```sh
+CLANG_MODULE_CACHE_PATH=tmp/work-runtime-p1-6b-host-final/module-cache SWIFTPM_MODULECACHE_OVERRIDE=tmp/work-runtime-p1-6b-host-final/module-cache /usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-sandbox --skip-update --filter 'TaskCommandParsingTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskRunResultTests|TaskDryRunReadOnlyTests|WorkStoreTests|TaskCommandTests|SQLiteDatabaseTests'
+```
+
+Reuse passing evidence on identical relevant bytes; do not rerun the host
+aggregate or redispatch coding without a material evidence gap or defect.
+Any material repair requires independent review and affected verification on
+its new final hashes. `impl-plans/progress/p1-dispatch.md` records that prior
+test-integrity, adversarial and Astra source reviews accepted the private-copy
+repair, with Astra withholding overall verification pending the host gate.
+Downstream review must confirm those independent decisions against their
+original artifacts, including canonical first-match SQLite path selection,
+read-only behavior and shared-reader compatibility, before implementation
+acceptance. This design update establishes the final-source host evidence;
+it does not substitute for those independent decisions or publish the WIP.
 
 Step 4 retains the same active plan and remaining tasks, updating its design
 reference for this amendment rather than creating a replacement plan. After

@@ -1349,122 +1349,175 @@ gaps, downstream access and publication readiness are verification/implementatio
 work, so no new user-QA document is necessary.
 
 
-### 17.7 Current resumption contract (2026-09-23)
+### 17.7 Current resumption contract (2026-09-23, checkpoint c1d779f)
 
 **Authority and review.** Mode: `issue-resolution`. Issue reference: workflow
-input, “Resume and complete Work Runtime P1 dispatcher, guard, and director”;
-no GitHub issue URL or number was supplied. Prior checkpoints are `368a3032`
-and `c6a35e6`. Step 1 `comm-000002`, execution
-`step1-issue-intake-attempt-1-exec-2`, supplies this brief to
-`step2-design-doc-update` in
-`codex-design-and-implement-review-loop-session-1`.
-The P1 plan records prior design acceptance in `comm-000004`,
-`step3-design-review-attempt-1-exec-4`, with no findings. That is prior review
-provenance, not a new review delivery or implementation acceptance. No current
-Step 3/5 corrective feedback was supplied; this revision awaits Step 3.
+input, “Complete the remaining Work Runtime P1 dispatcher and director behavior
+after the first implementation wave”; no GitHub issue URL or number supplied.
+Step 1 `comm-000002`, execution `step1-issue-intake-attempt-1-exec-2`, supplies
+this brief to `step2-design-doc-update`. Codex-agent references are
+`codex-design-and-implement-review-loop-session-1`, `comm-000002`,
+`comm-000003`, `comm-000004`, and `step3-design-review-attempt-1-exec-4`.
+The accepted plan records prior Step 3 design acceptance through the last two
+references, with no findings. No new Step 3/5 corrective feedback was supplied.
+Prior implementation ended `implementation_blocked`; design acceptance is not
+implementation acceptance. This updated design awaits independent Step 3 review.
 
-The complete effective `implementationPlanPaths` list is exactly:
+This section supersedes historical execution inventories, scheduler waves and
+publication context in §17.1/17.6. Behavioral contracts §17.2–17.5 remain in
+force. The complete effective plan input is exactly
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; supporting
+reservation, lifecycle, capability and finalization plans are references, not
+additional work packages. Reconcile prerequisite repairs inside this one plan.
+Runtime-resolved immutable user-scope workflow provenance and the effective
+input are authoritative; no contradiction is present and no provenance
+rediscovery is required. This intake supplies no minimum or exact package
+version; older documentation must not impose one.
 
-- `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`
+Inspected HEAD is `c1d779f12646e0cc4d76334c21d8d108229e46ee`.
+Implementation and base branch are both `feat/remaining-impl-plans`, with
+`origin/feat/remaining-impl-plans` supplied as upstream. Preserve all 94
+pre-existing changed/untracked files (50 tracked, 44 untracked) as owned WIP.
+Only accepted P1 files and hunks may enter finalization; no merge to main is
+requested. Exclude loop-engineering, agent-node-output-contract, workflow defect
+detection, Tauri, Note, gateway SDK, Monja and P2–P7 implementation. Use existing
+runner, store, adapter and distributed execution seams; no new planner, task
+service, authentication system or generic framework is required.
 
-Do not silently replace it with the historical six-plan scheduler input.
-Reservation, lifecycle, capabilities and canonical sandbox behavior remain
-prerequisite contracts to verify against retained code; their existing plans
-are supporting dependency references. Step 4 reconciles the supplied plan's
-historical full-DAG scheduling language with this single intake, explicitly
-accounts for any prerequisite repair necessary for P1-6/7, and preserves
-acceptance gates without inventing accepted predecessor IDs. Independent
-investigation may be delegated during implementation; overlapping writes and
-final integration remain serialized. Actual role/execution identities come
-from the runner, not the historical model assignments above.
+**Current source evidence, not acceptance.** Inspection of retained source and
+`tmp/work-runtime-p1-resume-20260923-comm000006-fe4da6cd/p1-dispatch/verification-evidence-attempt-1.json`
+confirms useful implementation but material remaining gaps:
 
-The runner-resolved immutable user-scope package and effective input are
-accepted as authoritative; input requires version 0.3.5 or newer and supplies
-no exact resolved version here. No contradiction is present. No package or
-registry rediscovery belongs to this node. Work only in the supplied
-`feat/remaining-impl-plans` directory; preserve unrelated changes, other
-worktrees and all Monja tenant-sharding-d48 work. Excluded implementations are
-loop-engineering, agent-node-output-contract, workflow-defect detection, Tauri,
-note plans and P2–P7. Record dependencies on those efforts without implementing
-them. Accepted P1 commit and push are authorized after downstream verification,
-review and documentation gates; no publication occurs during design authoring.
+| Finding | Source evidence | Required completion contract |
+| --- | --- | --- |
+| Bounded director remains unwired | `Sources/RielaCLI/TaskDispatch.swift` rejects `.director`; `Sources/RielaWork/AgentDirector.swift` escalates every `accept`. | Execute one bounded ordinary child and apply decisions against persisted judged-work linkage as below. |
+| Cancellation primitives lack proven live integration | `Sources/RielaWork/WorkStore+Reservation.swift` requires a matching cancelled snapshot; `TaskDispatch.swift` uses generic terminal reconciliation without calling cancellation acknowledgment. | Connect durable requests to running execution and acknowledge the exact reserved session before releasing its fence. Store-only tests do not establish this path. |
+| Reachable callees and selected hosts are not delivered by task dispatch | `TaskDispatch.swift` passes only the root workflow to `WorkflowRequirementResolver`, asks for local capabilities and supplies no workers; `Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift` rejects nonlocal or other-workflow placement. | Resolve reachable callees and execute the selected per-node host/backend through the existing distributed path; no silent local fallback. |
+| Replacement examples cover only part of the required behavior | `Tests/RielaCLITests/TaskRuntimeExampleTests.swift` covers acceptance, guard stop and capacity wait, but its director test runs a single ordinary task attempt and inspects recommendation output. | Add real recovery and bounded child application/accounting/escalation evidence before legacy removal. Recommendation JSON alone does not prove director behavior. |
+| Guard coverage still needs end-to-end certification | `TaskDispatch.swift` builds terminal guard input using the current session duration and gate visits; `impl-plans/progress/p1-dispatch.md` leaves cumulative wall-clock and repeated-finding coverage open. | Reinspect guard data flow and prove cumulative budgets, repeated findings, inactivity, ordering and last-admitted-attempt completion under §17.3; do not assume the four reported gaps are exhaustive. |
 
-**Current source evidence, not acceptance.** Inspected HEAD is
-`fe4da6cdda88c4bbaeafcb5dbce49bce5dd302af`, matching the intake. Initial status
-has 49 modified tracked files, 32 untracked entries and no staged changes.
-The dated §17.6 inventory must not drive new implementation from scratch:
+**Director execution and judged-work acceptance (P1-6d).** Reconcile work and
+persist its evidence before reserving one `.director` attempt. The reservation
+transaction records task identity, judged attempt, child attempt and child
+session in the existing durable store. Preserve the judged work TaskView across
+child execution. Admission consumes remaining attempt budget; completion/replay
+charges child cost and usage once. A last-admitted work attempt may finish even
+when no child can be admitted. The child does not recursively invoke a director.
 
-- `Sources/RielaWork/TaskDispatcher.swift` now provides preview, reservation
-  and authorization; `Sources/RielaCLI/TaskCommands.swift` routes run/decide,
-  and `Sources/RielaCLI/TaskDispatch.swift` supplies integration.
-- `Sources/RielaWork/AgentDirector.swift`,
-  `Sources/RielaCore/BackendCapability.swift`,
-  `Sources/RielaWork/BackendCapabilityPlacement.swift` and
-  `Sources/RielaAdapters/BackendCapabilityProbe.swift` now exist, as do the
-  four required dispatch/CLI/example suites and both replacement examples.
-- `Sources/RielaWork/WorkStore+Decisions.swift` now validates causality,
-  reconstructs acceptance from the store and enqueues pending reservation
-  within application. Source presence alone proves none of the transactional,
-  cancellation, replay or concurrency requirements.
-- One concrete integration concern remains for P1-6d: `AgentDirector.validate`
-  currently escalates every `accept` output because store acceptance requires
-  the latest attempt, which is then the director child. Verify and repair this
-  against §17.3; do not declare bounded-director support complete merely because
-  its validator exists.
+The shared applier verifies persisted linkage, producer child session, terminal
+child state, task identity and current version. Only the linked child may
+intervene after judged work; newer work or missing/foreign/stale linkage rejects
+the decision. Reconstruct completion from judged work's durable required gates,
+verification, acceptance payload and applicable blocking findings. Child success
+is never work-completion evidence. Preserve latest-attempt checks elsewhere;
+agent output cannot waive `requiresHumanAccept`. Validate allowed P1 action
+kinds and typed fields before application. Invalid/forbidden output, child
+failure, exhausted admission budget or unavailable linkage records escalation
+and requires a human. Replay returns the original application without another
+child, duplicated accounting or changed judged-work evidence. Reopened-store,
+rollback, valid accept, child-only success, stale/foreign linkage, human-required
+acceptance and exact child session/usage tests are mandatory.
 
-**Judged-work acceptance clarification.** A successful director child is never
-work-completion evidence. When an allowed agent `accept` is applied, the shared
-store boundary must resolve the persisted director-to-judged-work relationship,
-validate same-task provenance and current task version, and reconstruct the
-judged work's gates, verification and blocking findings. Only the linked bounded
-child may intervene; newer work or unrelated evidence invalidates the decision.
-Do not globally relax latest-attempt validation or trust the supplied TaskView.
-Human acceptance and policy acceptance retain their completion obligations;
-agent output cannot waive `requiresHumanAccept`. Invalid/forbidden output,
-failed child execution, exhausted budget or unavailable authoritative linkage
-must record escalation and require a human. Verification must distinguish valid
-allowed acceptance of completed work, rejection of child-only success, stale
-judged work, foreign linkage, and required human acceptance. This makes the
-existing §17.3 shared-applier contract explicit, without a new director framework.
+**Live cancellation (P1-6c).** Human cancel/reject, guard stop/replacement and
+process interruption use the shared durable decision/request path. Persist the
+request before signalling the running local or selected-host execution. Keep
+the one-live-attempt fence until the exact reserved runtime session durably
+records the matching cancelled terminal outcome and the store acknowledges it.
+Generic terminal reconciliation must not bypass a pending cancellation.
+Pre-launch cancellation prevents authorization; uncertainty after authorization,
+lost acknowledgment or interrupted persistence retains the fence for explicit
+reconciliation. Do not infer termination from timeout, expired lease or missing
+heartbeat. A replacement request is consumed once only after acknowledgment.
+Test real runner interruption before authorization, during running execution,
+during terminal persistence and on reopen/replay; assert durable cancellation,
+no stale launch, no premature replacement and no duplicate decision/accounting.
 
-**Completion and verification mapping.** Retain §17.2–17.5 behavior and the
-P1-6a through P1-7b acceptance rows: atomic exact-session dispatch; read-only
-preview; shared human decisions, durable cancellation and replay; ordered guard
-and bounded director; replacement task-backed examples before legacy removal.
-Prerequisite tests cover reservations, guard boundaries, capability freshness,
-placement and store-authoritative decisions. Plain workflow runs remain
-task-free; unrelated loop/routine/specialist/event behavior remains intact.
-Use the supplied plan's V0–V9 commands, including `swift build`, focused and
-broader `swift test` filters, `swiftlint lint --strict` on touched/new Swift,
-repository lint comparison, explicit task-example validation/mock runs,
-`git diff --check` and `git diff --cached --check`. Example commands operate on
-repository fixtures, never on the executing workflow package. The actual task
-lifecycle tests remain mandatory in addition to standalone workflow mocks.
+**Called workflows and selected-host execution (P1-6a and prerequisites).**
+The task composition boundary supplies the requirement resolver with reachable
+called bundles and add-on/environment requirements using existing callee
+resolution. Traverse from the actual selected entry, including returns and
+joins; retain workflow/step/node identity, skip reused prefixes, visit cycles
+once and fail unresolved executable targets before reservation. Unreachable
+nodes impose no requirement. Do not rediscover the executing implementation
+workflow package to establish these product behavior tests.
 
-Run commands in the foreground and poll every yielded handle through terminal
-exit. Retain exact commands, complete logs, final exit statuses and positive
-per-suite test counts under `tmp/work-runtime-p1/`; incomplete logs and zero
-selected tests do not pass. One material adversarial implementation review,
-author self-check and combined-tree verification precede plan/index completion.
-Reconcile only accepted P1 evidence in the plan and `impl-plans/README.md` /
-`impl-plans/PROGRESS.json`, preserving unrelated entries and work. Existing
-source must be attributed before assembling the exact final commit allowlist.
-Documentation acceptance alone never closes an implementation checkbox.
+Use one fresh merged capability evaluation for the existing local/registered
+worker topology, retaining explicit assignment/group rules and deterministic
+ordering from §17.4. Persist selected per-node host/backend/model and snapshot
+provenance with admission; pass the intended snapshot to existing planner inputs.
+Carry each root/callee choice into existing distributed execution with the exact
+reserved task session and existing authentication. Preserve choices across
+handoff; a remote choice cannot execute locally or discard a callee's backend.
+Unavailable capacity waits without reservation; unresolved targets are errors.
+If a selected worker becomes unavailable after admission, retain execution
+certainty/fencing rules rather than silently launch a second copy elsewhere.
+Tests must observe the selected worker executing and reporting evidence into the
+reserved session, plus explicit assignment, callee-only capability, unavailable
+host and cancellation acknowledgment cases. Placement DTO assertions alone do
+not establish execution.
 
-**References, questions and author evidence.** Codex-agent references above
-identify workflow executions; no external reference repository was supplied.
-`test ! -e ../../codex-agent` exited 0 in this turn. No external parity claim
-is made. Cursor invocation, authentication, probing and heartbeat behavior
-remain in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift` and adapter
-helpers; neutral Work/Core contracts do not translate prompts or promise
-cross-backend equivalence. No unresolved product decision requires user QA.
-Implementation acceptance remains downstream, including the concrete director
-concern above and current behavioral certification of retained code.
+**Replacement and final acceptance (P1-7b before P1-7a).** Preserve
+`examples/task-repair-loop/` and `examples/task-agent-director/`; complete real
+task-backed recovery, guard stop, capacity wait, accepted director output,
+accounting and invalid-output escalation against their `EXPECTED_RESULTS.md`.
+First record passing replacement inactivity/retry/failure/cancellation/replay
+coverage; only then remove the legacy auto-improve path, flags, remote fields
+and three obsolete example directories. Repeat affected tests after removal.
+Reject removed input fields explicitly; preserve plain task-free workflow runs
+and unrelated specialist/event supervisors, loops and routines. No publication
+occurs between replacement and removal.
 
-Step 2 inspection and author-check records are in
-`tmp/work-runtime-p1/step2-resume-20260923/verification-evidence.json` with
-complete logs and final exits. The author self-check verifies intake mapping,
-single-plan scope, dependency boundaries, reference mapping and preservation
-of every pre-existing file. This turn changes only this design document;
-no workflow/prompt/script/skill digest refresh is triggered and no Swift
-build/test/lint or implementation-review success is claimed.
+Use the supplied plan's V0–V9 commands and this intake's core gates:
+
+```bash
+swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'
+rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples
+git diff --check
+git diff --cached --check
+```
+
+Required prerequisite suites, strict touched-Swift lint, repository lint baseline
+comparison and task-example runs remain in the plan. Classify remaining legacy
+search matches against the preserved behavior rather than requiring an empty
+search indiscriminately. Retain complete logs, exact commands, final exit
+statuses, source hashes and positive counts for every required suite under this
+worktree's `tmp/`. Run foreground commands and poll yielded handles to exit.
+Prior broad failures require investigation; a zero exit with an incomplete
+XCTest aggregate is not passing evidence. These are downstream test execution
+concerns, not workflow provenance concerns. No implementation test is claimed
+as rerun by this documentation step.
+
+Final-source focused/broad tests, test-integrity review, material adversarial
+review and necessary repairs precede checkbox closure. Tie every completion
+mark to behavioral evidence. Reconcile P1 documentation and plan/progress
+indexes from the accepted tree while preserving unrelated entries. Attribute
+retained changes and prepare an exact P1 file/hunk allowlist before authorized
+commit/push to `origin` / `feat/remaining-impl-plans`; verify published hash.
+Historical progress referring to another finalization plan does not expand this
+single-plan input or waive any acceptance gate.
+
+**Reference mapping, questions and author evidence.** Step 1 names
+`../../codex-agent` and establishes it as absent; `test ! -e ../../codex-agent`
+also exited 0 in this step. No external code-parity claim is made. The
+codex-agent identifiers above map to workflow review provenance, not inspected
+reference code. Cursor invocation/authentication/probing and heartbeat behavior
+remain isolated in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift` and
+adapter helpers, including `Sources/RielaAdapters/BackendCapabilityProbe.swift`.
+Work/Core consume neutral capability and decision contracts; no cross-backend
+prompt or model equivalence is promised. No new Cursor behavior or intentional
+reference divergence is proposed.
+
+No unresolved product decision requires a user-QA file. Remaining questions are
+implementation investigations: cumulative guard coverage, actual distributed
+handoff and live cancellation behavior, and completion of final-source test
+execution. They do not permit broader design or accepting retained code.
+Step 2 inspection, preservation and author-check evidence is recorded in
+`tmp/work-runtime-p1/step2-c1d779f-resumption/verification-evidence.json`.
+Only this design document changes; no workflow/prompt/script/skill digest
+refresh is triggered. Author review checks intake/reference mapping, necessary
+scope, explicit data/validation boundaries, recorded questions and WIP
+preservation. No unresolved high/mid design finding remains; implementation
+findings and downstream review/test gates above remain open.

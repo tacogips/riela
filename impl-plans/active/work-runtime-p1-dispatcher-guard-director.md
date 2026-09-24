@@ -2,7 +2,7 @@
 
 ## Current executable contract — P1-7a only (2026-09-25)
 
-Mode `planning-only` (`design-plan-only`); issue `comm-000001`, intake `comm-000002`, execution
+Mode `issue-resolution`; issue `comm-000001`, intake `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`. Step 3 `comm-000004`
 accepted design §17.10 without findings. Stable planId `p1-dispatch`,
 planPath `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`,
@@ -13,17 +13,18 @@ Native Riela schedules the successive dependency-ready waves below.
 Prior investigation references: `/root/retry_owner`, `/root/inactivity_owner`.
 These identify diagnostic authors; no reference-repository or Cursor mapping applies.
 
-**Current intent and checkpoint:** Review and publish only the bounded ownership
-amendment after the failed before-removal V1 at
-`855a99692db80ec17cac055d3c8263473223dbd0`. The preserved receipt is
+**Current intent and checkpoint:** Resume the accepted ownership amendment at
+`e3e30ed6d609ddffe05b8ba875e57a49ee65c372` through A0–A5. Issue title:
+“Resume Work Runtime P1-7a from accepted ownership amendment”. The preserved
+receipt is
 `tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/logs/before-removal-v1-final.log`:
 **FAILED**, 60 tests, two failing retry cases, four assertions, exit 1.
-No legacy deletion occurred. Preserve both dirty Step 6 files
+No legacy deletion occurred. Preserve the existing changes in
 `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
-`impl-plans/progress/p1-dispatch.md` byte-for-byte in this planning run, plus all
-prior evidence and other sessions' work. Swift/tests/examples/progress are
-read-only now. A0–A5 below describe later implementation, not work authorized
-by this planning-only execution. P1-7a and parent P1 remain open.
+`impl-plans/progress/p1-dispatch.md`, all prior evidence and other sessions' work.
+Step 4 leaves those files byte-for-byte unchanged; the downstream integration
+owner may extend their accepted work under the exact ownership below.
+P1-7a and parent P1 remain open.
 
 **Authority:** §17.10 and this current contract supersede historical P1-7b
 execution/write-path restrictions and no-publication-between-slices wording below.
@@ -33,22 +34,26 @@ P1-7a is open. Parent P1 requires a separate completion audit.
 
 ### Planning checkpoint and non-goals
 
-Step 5 must accept this plan and
-`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json`, including the
-explicit bounded additional ownership below. Before native implementation/review
-fanout, the serial workflow checkpoint owner commits the accepted design, this
-plan and that manifest only. Record exact committed paths/hash; Step 4 does not
-stage, commit or claim Step 5 acceptance. Never dispatch against the historical
-P1-7b manifest. No other files enter the planning checkpoint. This amendment
-also needs the manifest update because its exact write allowlist and prior
-acceptance metadata otherwise describe the superseded contract. Current Step 5
-acceptance is pending; historical acceptance is not transferable. After review,
-non-force push the planning checkpoint before any later implementation dispatch.
-The checkpoint allowlist is exactly the design, this plan and this manifest;
-never stage/publish either dirty Step 6 file. Inspect `git diff --cached --name-only`
-before committing and `git show --format= --name-only HEAD` before pushing;
-both must match that allowlist, with HEAD tied to the accepted review. This
-planning run does not proceed into implementation after publication.
+The effective runtime input confirms acceptance of the design/plan amendment
+at `e3e30ed6d609ddffe05b8ba875e57a49ee65c372`. The manifest's `planReview`
+records that accepted baseline with runtime attribution, without inventing a
+review communication ID. Its previous pending/planning-only record is retained
+as history. Step 3 `comm-000004` accepts the resumed design without findings.
+Step 5 `comm-000006` accepted the single A0–A5 plan against §17.10 without
+findings; `currentRevisionReview` records that decision. It does not reopen
+the accepted behavioral or ownership contract.
+
+Before native implementation/review fanout, the serial checkpoint owner commits
+and non-force pushes the reviewed design, this plan and
+`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json` only. Record actual
+committed paths/hash and push result. Step 4 does not stage, commit, push or
+claim implementation gates have passed. Inspect `git diff --cached --name-only`
+before commit and `git show --format= --name-only HEAD` before push; require
+exactly those three reviewed paths. Never include either dirty Step 6 file in
+this planning checkpoint. `implementationDispatchAllowed=true` records Step 5
+acceptance for this manifest; native A0–A5 dispatch must wait for the exact
+scoped checkpoint receipt. Never dispatch the historical P1-7b manifest.
+Implementation changes publish only after the formal A4 reviews and A5 gate.
 
 Do not add a new framework, public API, compatibility layer, recursive director,
 task-create CLI, new schema, broad formatting, dependency/lockfile regeneration,
@@ -109,8 +114,8 @@ Do not weaken terminal immutability or alter the CLI's one-second throttle.
   Its receiving schema/service is outside this Swift repository. Record the
   unresolved owner/repository/schema paths and authorization as an external
   dependency; do not invent a server or keep searching local code for one.
-  A0 can deliver that explicit dependency record so local A1 proceeds in a later
-  implementation run. Receiving false/null field-presence rejection and ordinary
+  A0 can deliver that explicit dependency record so local A1 proceeds in this workflow’s downstream
+  implementation step. Receiving false/null field-presence rejection and ordinary
   authenticated-request acceptance need the authorized external owner's exact
   commands/results. Outbound omission or mocked errors are insufficient.
   A2/A3 acceptance and P1-7a closure remain blocked without that evidence.
@@ -431,8 +436,11 @@ tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-direct
 
 The remote filter uses the actual XCTest class `WorkflowCommandTests` even
 though its methods are declared in `WorkflowCommandInspectionTests.swift`.
-Add exact receiving-rejection tests to this selection after A0 identifies their
-real implementation; no unverified guessed test name satisfies that gate.
+Record receiving-rejection commands separately from the local Swift selection
+when the authorized external owner supplies the exact repository/schema/test
+paths. Capture external source identity, complete logs and terminal exits for
+false/null field presence and ordinary authenticated acceptance; no guessed
+local test name or outbound omission satisfies that gate.
 
 Keep `tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-2/broad-classification.json`
 as the prior baseline: exit 1, 18 assertions, owners Doctor/backend-capability
@@ -454,7 +462,20 @@ Unrelated broad failures remain **FAILED** even if formal review accepts the sli
 Each progress entry records A-task status, touched paths, source identity,
 commands/full logs/exits/counts, findings and ownership, review decisions and
 next dependency. Do not mark P1-7a complete before A5; parent P1 stays open.
-This Step 4 plan is pending Step 5 review; no implementation gate has run here.
+The accepted baseline remains accepted; this metadata revision awaits Step 5.
+No implementation gate has run in Step 4. Step 6 owns A0–A3 implementation and
+behavioral verification; A4 formal review and review-dependent A5 documentation/
+publication remain downstream workflow obligations. Their pending status alone
+must not block a complete Step 6 handoff. An actual A1 failure or missing external
+receiving evidence for A2/A3 does block implementation completeness: report the
+exact unfinished task and evidence, never enter final review or publication as
+if complete. Keep all six tasks in the progress log until their owning stage ends.
+
+Independent read-only consumer inventory, test-coverage analysis and failure
+classification may be delegated within a ready wave, with evidence under `tmp/`.
+Only the integration owner writes coupled source/tests and the progress file;
+serialize builds/tests/lint sharing scratch output. Join investigation results,
+recheck hashes and repair drift serially before advancing the task DAG.
 
 ---
 

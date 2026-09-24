@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 is the current P1-7a design proposal, pending independent review; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 is the accepted P1-7a ownership amendment resumed in issue-resolution mode at `e3e30ed6d609ddffe05b8ba875e57a49ee65c372`; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2641,8 +2641,8 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
 
-**Intake and scope.** Current mode `planning-only` (`design-plan-only`); issue
-“Review exact P1-7a ownership amendment after failed before-removal V1”;
+**Intake and scope.** Current mode `issue-resolution`; issue
+“Resume Work Runtime P1-7a from accepted ownership amendment”;
 issue reference `comm-000001`, intake
 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`,
 Step 2 `step2-design-doc-update`. The complete implementation-plan batch is
@@ -2655,15 +2655,30 @@ and `/root/inactivity_owner` identify the prior diagnostic authors, not a
 Codex-agent reference repository. No Cursor-specific behavior or adapter
 divergence is proposed.
 
-This amendment preserves checkpoint `855a99692db80ec17cac055d3c8263473223dbd0`
-on `feat/remaining-impl-plans`. Source, tests, examples and progress are read-only
-in this execution, including the dirty
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
-`impl-plans/progress/p1-dispatch.md`. Only independently accepted planning files
-may later be committed and non-force pushed; the implementation waves below
-remain future work. The existing plan's prior review does not accept this
-amendment. One design author and one plan author cover the complete batch in
-serial dependency-ready Riela waves.
+This execution resumes the accepted amendment at checkpoint
+`e3e30ed6d609ddffe05b8ba875e57a49ee65c372` on
+`feat/remaining-impl-plans`. The effective runtime input and Step 1 intake are
+current authority; the planning-only run at
+`855a99692db80ec17cac055d3c8263473223dbd0` is historical. Preserve the existing
+changes in `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
+`impl-plans/progress/p1-dispatch.md`, all failed receipts and other sessions'
+work. Step 2 updates this design only; implementation belongs to the downstream
+A0–A5 waves. One design author and one plan author retain the complete batch,
+with one integration owner for coupled Swift changes.
+
+**Accepted-review handoff.** Resume the accepted §17.10 behavioral and ownership
+contract without reopening design or narrowing A0–A5. Before implementation
+dispatch, the plan author must reconcile the active plan and
+`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json` with the effective
+`issue-resolution` mode, checkpoint above and accepted Step 5 state supplied
+by this runtime. Their `planning-only` / `design-plan-only`, pending Step 5,
+`planReview.accepted=false` and dispatch-disabled metadata describe the earlier
+planning run, not a new readiness blocker. Preserve historical review records;
+do not invent a new review communication ID or transfer acceptance to new
+behavior. This status reconciliation grants no additional write path and does
+not pass V1 or replace the required implementation reviews. Runner-resolved
+immutable user-scope workflow version `0.3.33` and effective `workflowInput`
+are authoritative; provenance rediscovery is not a node responsibility.
 
 **Failed gate and exact causal repair.** The complete source-matched receipt
 `tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/logs/before-removal-v1-final.log`
@@ -2759,7 +2774,7 @@ documentation/publication remain separate, uncompleted implementation tasks.
   `TaskRuntimeExampleTests.testRejectedGateRecoveryConsumesPendingRequestAndAcceptsSecondAttempt`.
   Preserve terminal immutability and selected-host cancellation regressions.
 
-These are required future assertions, not passing checks from this planning run.
+These are required implementation assertions, not passing checks from this design update.
 
 **Proven retained consumers and external dependency.** After A1 only, extend
 retained-callsite ownership to
@@ -2897,11 +2912,18 @@ exact reviewed files and non-force push to `origin/feat/remaining-impl-plans`.
 No reset, stash, force push, main merge, additional worktree or concurrent Git
 operation is authorized. Parent P1 and unrelated broad follow-ups remain open.
 
-**Open questions and current decision.** External receiving-boundary ownership
-and authorization above remain unresolved; no Codex-reference mapping decision
-is needed. The exact added owners and positive test contracts above are the
-bounded amendment for independent Step 3 review and subsequent plan authoring/
-Step 5 review. Author self-check does not replace either review. This planning
-run changes no implementation, test, example or progress file, passes no deletion
-gate, closes no plan and publishes no unreviewed file. Implementation-stage
-review/publication requirements above remain future gates.
+**Open questions and current decision.** The external receiving owner, repository,
+schema/test paths and authorization remain unresolved. The authorized receiving
+owner must supply actual removed-field presence tests (including false/null)
+and ordinary authenticated-request results with source identity, commands,
+complete logs and terminal exits. A0 records this dependency; local A0/A1 may
+proceed, but absent that evidence A2/A3 acceptance and P1-7a closure remain
+blocked. No Codex-reference mapping decision is needed.
+
+The accepted amendment remains in force. This Step 2 status update supplies the
+current issue-resolution handoff for downstream review and plan metadata
+reconciliation; author self-check is not formal Step 3, Step 5 or A4 acceptance.
+It changes no implementation, test, example or progress file, passes no deletion
+gate and closes no plan. A4 still requires formal test-integrity, one Sol
+adversarial and Astra combined-tree reviews with no material P1-7a finding;
+A5 publishes only exact reviewed files. Parent P1 remains open.

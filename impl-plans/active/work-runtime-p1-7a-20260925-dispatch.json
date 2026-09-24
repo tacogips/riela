@@ -1,10 +1,10 @@
 {
   "taskId": "work-runtime-p1-7a-20260925",
-  "workflowMode": "planning-only",
+  "workflowMode": "issue-resolution",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "855a99692db80ec17cac055d3c8263473223dbd0",
+  "originalHead": "e3e30ed6d609ddffe05b8ba875e57a49ee65c372",
   "designDocPaths": [
     "design-docs/specs/design-work-runtime-consolidation.md"
   ],
@@ -12,7 +12,8 @@
   "issueReference": {
     "communicationId": "comm-000001",
     "intakeCommunicationId": "comm-000002",
-    "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+    "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
+    "title": "Resume Work Runtime P1-7a from accepted ownership amendment"
   },
   "codexAgentReferences": [
     "/root/retry_owner",
@@ -22,13 +23,23 @@
     "communicationId": "comm-000004",
     "accepted": true,
     "findings": [],
-    "reviewDecision": "Step 3 accepted the bounded \u00a717.10 amendment for implementation planning; no findings.",
-    "designSha256": "aa7377b19e318641882826922246365f77470e07bbf3984171067742e54571f6"
+    "reviewDecision": "Step 3 comm-000004 accepted the resumed §17.10 design without findings.",
+    "designSha256": "04c45d7728a4c922327e5d5fb980cf33360756555810ca5238622ded615a1bf2"
   },
   "planReview": {
-    "accepted": false,
+    "communicationId": "comm-000006",
+    "accepted": true,
     "findings": [],
-    "reviewDecision": "Pending Step 5 review of this amendment; prior acceptance does not apply."
+    "reviewDecision": "Accept the single A0–A5 plan against accepted design §17.10 (comm-000004).",
+    "verification": {
+      "commands": [
+        "git status --short",
+        "git rev-parse HEAD",
+        "shasum -a 256 design-docs/specs/design-work-runtime-consolidation.md Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift impl-plans/progress/p1-dispatch.md",
+        "rg -n 'FAILED|60 tests|Executed 60 tests|error:|Assertion Failure' tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/logs/before-removal-v1-final.log"
+      ],
+      "result": "Step 5 reviewed design, plan, manifest and preserved failed V1 receipt; no implementation gate ran."
+    }
   },
   "plans": [
     {
@@ -94,7 +105,7 @@
         {
           "taskId": "A0",
           "dependsOn": [],
-          "intendedChanges": "Inventory exact consumers, protected dirty work, hashes and coverage; record external receiving owner/path/authorization dependency without inventing a local server. Explicit dependency recording permits later local A1, but not A2/A3 acceptance."
+          "intendedChanges": "Inventory exact consumers, protected dirty work, hashes and coverage; record external receiving owner/path/authorization dependency without inventing a local server. Explicit dependency recording permits downstream local A1, but not A2/A3 acceptance."
         },
         {
           "taskId": "A1",
@@ -115,7 +126,7 @@
           "dependsOn": [
             "A2"
           ],
-          "intendedChanges": "Run final-source build, V1\u2013V9, retained/cancellation gates and serial broad regression; classify exact failures."
+          "intendedChanges": "Run final-source build, V1–V9, retained/cancellation gates and serial broad regression; classify exact failures."
         },
         {
           "taskId": "A4",
@@ -136,7 +147,7 @@
         "Atomic first canonical failed snapshot and reopened evidence retain adapterFailure without weakening terminal immutability; live inactivity and progress-sensitive positive tests pass before deletion.",
         "Positive named replacement behavior and complete passing V1 before any deletion.",
         "Removed options/remote fields reject; retained paths preserve behavior.",
-        "Final-source V1\u2013V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
+        "Final-source V1–V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
         "No material P1-7a finding remains after formal reviews; only reviewed files publish; parent P1 remains open."
       ],
       "verification": [
@@ -172,7 +183,7 @@
         "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
         "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/task-agent-director-store --output json"
       ],
-      "ownershipScope": "writePaths/sharedPaths describe future implementation only; current planning mutations are limited to planningOnlyWritePaths."
+      "ownershipScope": "Exact writePaths/sharedPaths apply to downstream A0–A5; Step 4 changes only this manifest and plan. One coupled-Swift integration owner; A4/A5 belong to downstream review/finalization."
     }
   ],
   "reviewContext": {
@@ -182,7 +193,7 @@
       "acceptedDesignReview": "comm-000004",
       "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
     },
-    "userProblem": "Review and publish a bounded planning-only amendment after failed P1-7a V1 at checkpoint 855a996; implementation and deletion remain future work.",
+    "userProblem": "Resume accepted P1-7a A0–A5 at e3e30ed6 after failed V1; reconcile stale planning metadata without changing ownership or bypassing deletion/external acceptance gates.",
     "requiredOutcomes": [
       "Prove inactivity, bounded retry, gate/failure recovery, cancellation and replay in positive replacement dispatcher tests and pass the complete V1 gate before deletion.",
       "Remove only specified obsolete CLI, state/result and three legacy example paths; reject removed CLI flags and remote fields including false/null presence.",
@@ -195,7 +206,7 @@
     ],
     "constraints": [
       "Single integration owner for coupled Swift source/tests; A1 replacement tests and passing before-removal V1 precede all legacy deletion.",
-      "Preserve checkpoint 855a99692db80ec17cac055d3c8263473223dbd0, both dirty Step 6 files and all evidence; current execution edits reviewed planning files only.",
+      "Preserve checkpoint e3e30ed6d609ddffe05b8ba875e57a49ee65c372, both dirty Step 6 files and all evidence. Step 4 changes only plan/manifest; downstream owner preserves and extends accepted work.",
       "Further write paths require bounded reviewed amendment before edit; all scratch and complete receipts stay under evidenceRoot.",
       "No reset, stash, force push, additional worktree or concurrent Git operation."
     ],
@@ -231,22 +242,48 @@
       "communicationId": "comm-000006",
       "accepted": true,
       "findings": [],
-      "reviewDecision": "Accept the P1-7a implementation plan against accepted design \u00a717.10."
+      "reviewDecision": "Accept the P1-7a implementation plan against accepted design §17.10."
     }
   },
-  "executionMode": "design-plan-only",
-  "planningOnlyWritePaths": [
-    "design-docs/specs/design-work-runtime-consolidation.md",
-    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
-  ],
+  "executionMode": "issue-resolution",
   "protectedDirtyPaths": [
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
     "impl-plans/progress/p1-dispatch.md"
   ],
-  "implementationDispatchAllowed": false,
+  "implementationDispatchAllowed": true,
   "remainingDependencies": [
     "Before-removal V1 FAILED: 60 tests, two failing cases, four assertions, exit 1; no deletion allowed.",
     "External receiving ExecuteWorkflowInput owner/path authorization and false/null rejection evidence remain unresolved."
+  ],
+  "historicalPlanningRun": {
+    "workflowMode": "planning-only",
+    "executionMode": "design-plan-only",
+    "originalHead": "855a99692db80ec17cac055d3c8263473223dbd0",
+    "planReview": {
+      "accepted": false,
+      "findings": [],
+      "reviewDecision": "Pending Step 5 review of this amendment; prior acceptance does not apply."
+    },
+    "planningOnlyWritePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
+    ],
+    "implementationDispatchAllowed": false
+  },
+  "currentRevisionReview": {
+    "communicationId": "comm-000006",
+    "accepted": true,
+    "findings": [],
+    "reviewDecision": "Accept the single A0–A5 plan against accepted design §17.10 (comm-000004)."
+  },
+  "checkpointWritePaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
+  ],
+  "implementationDispatchConditions": [
+    "Step 5 comm-000006 accepted this revision without findings.",
+    "Consume this manifest for implementation only after the exact scoped checkpoint commit receipt."
   ]
 }

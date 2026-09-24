@@ -50,11 +50,11 @@ enum WorkflowSubprocessTestSupport {
       _ = kill(process.processIdentifier, SIGKILL)
       let reapDeadline = Date().addingTimeInterval(3)
       while process.isRunning, Date() < reapDeadline { Thread.sleep(forTimeInterval: 0.01) }
-      if !process.isRunning { process.waitUntilExit() }
       throw NSError(domain: "WorkflowSubprocessTestSupport", code: 1, userInfo: [
         NSLocalizedDescriptionKey: "owned subprocess \(process.processIdentifier) exceeded \(timeout) seconds"
       ])
     }
-    process.waitUntilExit()
+    // `isRunning == false` already confirms termination. Calling waitUntilExit
+    // here can block an async XCTest indefinitely after the child has exited.
   }
 }

@@ -884,3 +884,50 @@ final class WorkflowModelTests: XCTestCase {
     }
   }
 }
+
+extension WorkflowModelTests {
+  func testProtectedGitFinalizationPolicyAcceptsOnlyCheckpointPushChain() throws {
+    let fixtureURL = try repositoryRoot().appendingPathComponent(
+      ".riela/workflows/codex-design-and-implement-review-loop/workflow.json"
+    )
+    var workflow = try XCTUnwrap(validateAuthoredWorkflowData(Data(contentsOf: fixtureURL)).workflow)
+    let outputStep = try XCTUnwrap(workflow.steps.first { $0.id == "workflow-output" })
+    let commitAddon = try XCTUnwrap(workflow.nodes.first { $0.id == "step10-git-commit" }?.addon)
+    let pushAddon = try XCTUnwrap(workflow.nodes.first { $0.id == "step11-git-push" }?.addon)
+    workflow.nodes.append(WorkflowNodeRef(id: "plan-git-commit", addon: commitAddon))
+    workflow.nodes.append(WorkflowNodeRef(id: "plan-git-push", addon: pushAddon))
+    workflow.steps.append(WorkflowStepRef(
+      id: "plan-git-commit", nodeId: "plan-git-commit",
+      transitions: [WorkflowStepTransition(toStepId: "plan-git-push")]
+    ))
+    workflow.steps.append(WorkflowStepRef(
+      id: "plan-git-push", nodeId: "plan-git-push",
+      transitions: [WorkflowStepTransition(toStepId: "dispatch-plans")]
+    ))
+    workflow.steps.append(WorkflowStepRef(
+      id: "dispatch-plans", nodeId: "workflow-output",
+      transitions: [WorkflowStepTransition(
+        toStepId: "step6-implement",
+        fanout: WorkflowStepFanout(groupId: "implementation", itemsFrom: "/items", joinStepId: "workflow-output")
+      )]
+    ))
+
+    let policy = try DeterministicWorkflowRunner.requiredGitFinalizationEvidencePolicy(
+      workflow: workflow, terminalStep: outputStep
+    )
+    XCTAssertEqual(policy.planCommitStepId, "plan-git-commit")
+    XCTAssertEqual(policy.planPushStepId, "plan-git-push")
+    XCTAssertEqual(policy.commitStepId, "step10-git-commit")
+    XCTAssertEqual(policy.pushStepId, "step11-git-push")
+
+    var bypass = workflow
+    let planCommitIndex = try XCTUnwrap(bypass.steps.firstIndex { $0.id == "plan-git-commit" })
+    bypass.steps[planCommitIndex].transitions = [WorkflowStepTransition(toStepId: "dispatch-plans")]
+    try assertProtectedGitFinalizationPolicyRejected(bypass)
+
+    var detached = workflow
+    let planPushIndex = try XCTUnwrap(detached.steps.firstIndex { $0.id == "plan-git-push" })
+    detached.steps[planPushIndex].transitions = [WorkflowStepTransition(toStepId: "workflow-output")]
+    try assertProtectedGitFinalizationPolicyRejected(detached)
+  }
+}

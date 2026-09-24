@@ -102,6 +102,57 @@ final class WorkflowGitFinalizationEvidenceTests: XCTestCase {
     XCTAssertNoThrow(try validate())
   }
 
+  func testCheckpointPushEvidenceMustMatchAcceptedPlanCommitAndFinalBranch() throws {
+    var context = makeContext()
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    context.session.executions.insert(execution(
+      id: "plan-commit", stepId: "plan-git-commit",
+      payload: ["git": .object([
+        "operation": .string("commit"), "status": .string("committed"),
+        "commitHash": .string(String(repeating: "b", count: 40)),
+        "commitMessage": .string("docs: plan checkpoint"),
+        "committedFiles": .array([.string("plan.md")])
+      ])], now: now
+    ), at: 0)
+    context.session.executions.insert(execution(
+      id: "plan-push", stepId: "plan-git-push",
+      payload: ["git": .object([
+        "operation": .string("push"), "status": .string("pushed"),
+        "commitHash": .string(String(repeating: "b", count: 40)),
+        "pushedRemote": .string("origin"), "pushedBranch": .string("main")
+      ])], now: now
+    ), at: 1)
+    let policy = WorkflowGitFinalizationEvidencePolicy(
+      commitStepId: "step10-git-commit", pushStepId: "step11-git-push",
+      planningModeStepIds: ["step5-impl-plan-review"],
+      planCommitStepId: "plan-git-commit", planPushStepId: "plan-git-push"
+    )
+    let planningOnly = makeContext(workflowMode: "design-plan-only", planningOnly: true)
+    XCTAssertNoThrow(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(
+      context: planningOnly, policy: policy
+    ))
+    XCTAssertNoThrow(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(
+      context: context, policy: policy
+    ))
+
+    var mismatched = context
+    let planPushIndex = try XCTUnwrap(mismatched.session.executions.firstIndex { $0.stepId == "plan-git-push" })
+    mismatched.session.executions[planPushIndex].acceptedOutput?.payload["git"] = .object([
+      "operation": .string("push"), "status": .string("pushed"),
+      "commitHash": .string(String(repeating: "c", count: 40)),
+      "pushedRemote": .string("origin"), "pushedBranch": .string("main")
+    ])
+    XCTAssertThrowsError(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(
+      context: mismatched, policy: policy
+    ))
+
+    var missing = context
+    missing.session.executions.removeAll { $0.stepId == "plan-git-push" }
+    XCTAssertThrowsError(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(
+      context: missing, policy: policy
+    ))
+  }
+
   func testAcceptsDesignPlanOnlyOutputWithExactGitFinalizationEvidence() throws {
     XCTAssertNoThrow(try validate(makeContext(
       workflowMode: "design-plan-only",

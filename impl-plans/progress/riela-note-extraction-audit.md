@@ -20,3 +20,39 @@ Kaiba's local `main` was ahead of `origin/main` by three commits and had
 untracked `.riela/` state at audit time. That checkout belongs to another
 session and was inspected read-only; this audit neither merges nor modifies
 Kaiba. No Riela active Note plan is declared complete by this audit.
+
+## F1/F2 ownership cross-check (2026-09-24)
+
+Kaiba `2949ba7` is an ancestor of `origin/main`. Its current completed plan
+`impl-plans/completed/note-capture-and-entity-pages.md` records F1 capture
+and F2 entity-page delivery, and the local three-commit lead has no diff in
+the server, Quick Memo, tag-detail, or corresponding test files checked here.
+These are **functional ownership evidence**, not permission to mark the old
+Riela checklist complete by file name:
+
+- F1: Kaiba has a real `NWListener` server, `GET/POST /note/register`,
+  `POST /note/capture`, the SPA capture page, Quick Memo service, and route/
+  socket tests (`KaibaLocalHTTPServer.swift`, `ServerContracts.swift`,
+  `NoteCaptureRouteTests.swift`, `KaibaServerRuntimeTests.swift`). Its design
+  deliberately reuses the existing registration and listener; the Riela
+  plan's tasks to add `NWListenerHTTPTransport` and replace registration
+  pages/routes in removed `RielaServer` paths are therefore **obsolete as
+  implementation instructions**, not unfinished Riela code work. Compare
+  the accepted F1 behavior (particularly auth/error sanitization and live
+  auto-actions) against Kaiba before closing the feature-level acceptance.
+- F2: Kaiba's schema stores `tags.canonical_note_id` and extends the existing
+  tag pane, rather than adding Riela's `tags.entity_note_id` and a new
+  `RielaNoteUI` entity view. Service, GraphQL, UI, and tests exist in
+  `NoteService+TagDetail.swift`, `TagEntityPageTests.swift`,
+  `TagEntityGraphQLTests.swift`, and `web/src/components/TagPane.tsx`.
+  Treat the old Riela file/schema names as superseded; verify the accepted
+  promote/delete/query-bound behaviors before closing F2 acceptance.
+- F3: The Kaiba tree has generic `saveConversation` support, but the checked
+  `Sources/`, `Tests/`, and active plans do not show the scoped-ask types,
+  filter-corpus provider, citation validation, or scoped-ask workflow from
+  Riela TASK-007/008. F3 remains an explicit unresolved design/owner decision;
+  generic conversation saving is not evidence of Scoped Ask completion.
+
+This cross-check changes no plan checkbox or Kaiba worktree. The next plan
+revision should replace obsolete Riela path-level tasks with a behavioral
+parity matrix, then route any real F1/F2 gaps and F3 to their present owner.

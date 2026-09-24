@@ -1127,21 +1127,52 @@ publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
 `impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
 
 **Continuation boundary.** Continue the preserved implementation at intake HEAD
-`6d8d2008a1f02858f54aabac8b44758a1d3758e9` on `feat/remaining-impl-plans`.
-Preserve all 17 modified tracked files and both untracked Swift files listed in
-intake `comm-000002`, including `Sources/RielaCLI/TaskRunCancellation.swift`
-and `Tests/RielaCLITests/TaskCancellationIntegrationTests.swift`; the earlier
-five-file checkpoint is historical, not the current preservation allowlist.
-The latest implementation record is the third and fourth continuation in
-`impl-plans/progress/p1-dispatch.md`, with evidence under
-`tmp/work-runtime-p1/p1-6c/continuation-3/` and `continuation-4/`.
-The fourth continuation records 94/94 safe selected tests passing, while its
-54-test listener selection failed before worker assertions. These are bounded
-results, not slice acceptance. Complete the existing orchestration and worker
-paths with one serial owner `/root`; prior read-only agents
-`failure_matrix_audit` and `remote_evidence_audit` supply investigation history,
-not independent final acceptance. Preserve Monja and unrelated worktrees.
-No new architecture or broad audit of unchanged seams belongs to this continuation.
+`c07910feb738d1f218d8dddff2a061f437b4f886` on `feat/remaining-impl-plans`.
+Preserve all 16 modified tracked files and three untracked Swift files listed
+in the current intake, including `Sources/RielaCLI/TaskRunCancellation.swift`,
+`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift` and
+`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift`.
+The latest implementation record is the terminal Step 6 handoff in
+`impl-plans/progress/p1-dispatch.md`; its bounded continuation limit is exhausted.
+The current intake reports a newer capable-host run at 2026-09-24 13:02 JST
+that reached cancellation acknowledgment and failed the fixture's line 187:
+`listDecisions(taskId:)` returned two rows where one was expected. It exited 1
+with one XCTest failure and zero unexpected failures. The complete log and
+source manifest were not supplied. Treat this as a material observed test
+failure requiring diagnosis, not a CLI exit-code defect or listener denial.
+Earlier sandbox failures and safe selections remain historical evidence only.
+One serial owner edits coupled store/runner/worker code; independent agents may
+investigate and verify. Preserve Monja and unrelated worktrees. No new
+architecture or broad audit of unchanged seams belongs to this continuation.
+
+**Decision identity and causality diagnosis.** Before changing production or
+relaxing the fixture assertion, capture every decision for the exact task at
+reservation, after cancellation acknowledgment, and after identical CLI replay.
+Record each row's `id`, `kind`, `producer`, `taskId`, `attemptId`, `causedBy`
+evidence IDs and resolved causal meaning; correlate the reserved session,
+cancellation record's `decisionId`, and original decision application.
+The requested human cancellation ID is `decision-remote-live-cancel`.
+`Sources/RielaCLI/TaskDispatch.swift` also supplies a policy `task-run` decision
+at reservation, and `Sources/RielaWork/WorkStore+Reservation.swift` commits a
+reservation decision. This makes an admission decision a concrete candidate
+for the extra row, not an identification of either row in the reported run.
+Inspect guard/terminal decisions against their actual ordering and evidence;
+a legitimate earlier decision does not authorize ordinary terminal guard
+evaluation after cancellation acknowledgment.
+
+The accepted invariant is one application of each decision identity and exactly
+one cancellation request for this human intent, not a universal one-row task
+history. If both observed rows prove legitimate distinct decisions, correct
+both pre-replay and post-replay expectations to assert their exact identities,
+kinds and causal links, one cancel, and unchanged decision/application evidence
+across replay. Do not merely replace the count with two or filter out an
+unexplained row. If evidence instead establishes duplicate cancellation,
+reapplication, or forbidden terminal evaluation, repair only that producing or
+replay seam and retain a regression that detects the defect. Never delete or
+mutate decision rows to make the test pass. Keep the existing process-stop,
+reserved cancelled snapshot, acknowledgment, fence, attempt, outcome and
+once-only evidence/accounting assertions. Reproduce on a capable host and
+record both decision identities and causality with a passing final-source run.
 
 **Existing boundaries.** `Sources/RielaCLI/TaskCommands.swift` owns human
 parsing/application; `TaskDispatch.swift` owns reserved-session orchestration
@@ -1246,9 +1277,23 @@ positive per-suite counts and source/test hashes under
 A bounded environment failure remains a failed run and must be separated from
 source-matched capable-host evidence; P1-6b evidence cannot certify new code.
 
-**Remaining evidence decisions.** The operator log
+The reported capable-host command to repeat in the foreground is:
+
+```bash
+CLANG_MODULE_CACHE_PATH=tmp/work-runtime-p1/p1-6c/module-cache SWIFTPM_MODULECACHE_OVERRIDE=tmp/work-runtime-p1/p1-6c/module-cache swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof
+```
+
+Retain complete output and terminal exit status, positive test counts and a
+source/test manifest including untracked files under the existing evidence
+root. The supplied run has reported exit 1 and no complete log path; neither
+that report nor a static source hypothesis establishes the two row identities.
+Recheck hashes after any repair; a passing focused rerun does not replace the
+remaining final gates above. Step 2 changes documentation only and does not
+claim a behavioral rerun or resolution of the observed failure.
+
+**Remaining evidence decisions.** The historical operator log
 `tmp/work-runtime-p1/p1-6c/operator-host-listener/final-source-v1-v11.log`
-records 54/54 passing tests. Intake reports source/test diff SHA-256
+records 54/54 passing tests. The prior design recorded source/test diff SHA-256
 `1f5026acc2a7878f49f2b519cf26c80cde44a263651bc33b31fb05eaabfe7830`.
 That selection does not prove task-backed live selected-host cancellation.
 Before relying on it, establish complete source/test matching, including
@@ -1258,13 +1303,15 @@ The adjacent `final-source-aggregate.log` records 2,046 tests and 24 failures
 (7 unexpected), so the aggregate remains failed. Its
 `TaskProjectionProofTests.testTheRequiredGateFailureExampleProjectsIntoAFailedTask`
 assertion at `Tests/RielaCLITests/TaskProjectionProofTests.swift:105` reports an
-additional `acceptanceNotMet` requirement. Classify that mismatch and every
-aggregate failure by source relevance before acceptance; do not label this
-mismatch unrelated without evidence or repair unrelated baseline failures.
+additional `acceptanceNotMet` requirement. The latest progress handoff records
+`source_relevance` attributing it to unchanged failed-session fixture/evaluator
+expectations, not a demonstrated P1-6c regression. Retain that evidence and
+classify remaining final aggregate failures by source relevance; do not repair
+unrelated baselines or count a failed aggregate as passing.
 
-Open verification questions are whether the host evidence matches the complete
-current tree, whether the projection mismatch is caused by this slice, and
-whether live selected-host interruption plus persistence/acknowledgment loss,
+Open verification questions are the two observed decision IDs, kinds and
+causality, whether the capable-host evidence matches the complete current tree,
+and whether live selected-host interruption plus persistence/acknowledgment loss,
 lease/heartbeat loss, reopen/replay and replacement races pass on final source.
 These are implementation evidence questions, not unresolved user choices; no
 user-QA document is needed. Resolve material coverage and source failures before
@@ -1277,9 +1324,11 @@ integration reviewer; `gpt-6-sol` owns implementation, serial reconciliation,
 independent test-integrity and adversarial reviews. These references describe
 workflow roles, not a Codex product behavior reference: no Cursor CLI adapter
 or Codex-reference divergence is required. No unresolved user decision is
-needed for this continuation. Prior design/plan acceptance is retained;
-review of this status refresh and independent test-integrity, adversarial and
-Astra combined-tree implementation acceptance remain pending. No unresolved
+needed for this continuation. Prior design/plan acceptance is retained.
+The intake reports prior Step 3 acceptance of the design refresh with no
+findings; no new Step 3/5 revision findings were supplied. Review of this narrow
+decision-diagnosis amendment, Step 5 and independent test-integrity, adversarial
+and Astra combined-tree implementation acceptance remain pending. No unresolved
 material finding may be carried into implementation acceptance. Only accepted exact files may be committed and non-force
 pushed; no main merge, release or closure of later slices belongs to P1-6c.
 

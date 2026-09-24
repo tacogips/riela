@@ -103,6 +103,640 @@ final class TaskRuntimeExampleTests: XCTestCase {
     XCTAssertEqual(snapshot.session.executions.first?.acceptedOutput?.payload["kind"], .string("accept"))
   }
 
+  func testConfiguredDirectorChildRunsOrdinarilyAndCannotAcceptFailedWork() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    task.director.humanEscalation.escalateAfterFailedAttempts = 1
+    task.guardPolicy.budget = BudgetGuard(maxAttempts: 3)
+    try harness.store.saveTask(task)
+    let workScenario = try JSONSerialization.jsonObject(with: Data(contentsOf: harness.examples
+      .appendingPathComponent("task-repair-loop/mock-scenario.json"))) as? [String: Any]
+    let directorScenario = try JSONSerialization.jsonObject(with: Data(contentsOf: harness.examples
+      .appendingPathComponent("task-agent-director/mock-scenario.json"))) as? [String: Any]
+    let combined = try XCTUnwrap(workScenario).merging(try XCTUnwrap(directorScenario)) { _, child in child }
+    let scenario = harness.sessionStore.appendingPathComponent("director-combined-scenario.json")
+    try JSONSerialization.data(withJSONObject: combined).write(to: scenario)
+
+    let result = try await harness.dispatch(
+      "task-repair-loop", failRepairNode: true,
+      directorBundle: harness.bundle("task-agent-director"), scenarioPath: scenario.path
+    )
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let attempts = try harness.store.listAttempts(taskId: task.id)
+    XCTAssertEqual(attempts.count, 2)
+    let judged = try XCTUnwrap(attempts.first(where: { $0.entry != .director }))
+    let child = try XCTUnwrap(attempts.first(where: { $0.entry == .director }))
+    XCTAssertEqual(judged.outcome?.sessionStatus, .failed)
+    XCTAssertEqual(child.judgedAttemptId, judged.id)
+    XCTAssertEqual(child.outcome?.sessionStatus, .completed)
+    let context = try XCTUnwrap(harness.store.listEvidence(taskId: task.id).first(where: {
+      $0.attemptId == child.id && $0.payloadRef.inlinePayload?["taskView"] != nil
+    }))
+    let viewJSON = try XCTUnwrap(context.payloadRef.inlinePayload?["taskView"])
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let receivedView = try decoder.decode(AgentDirectorTaskView.self, from: JSONEncoder().encode(viewJSON))
+    XCTAssertEqual(receivedView.task.id, task.id)
+    XCTAssertEqual(receivedView.judgedAttempt.id, judged.id)
+    XCTAssertEqual(receivedView.judgedAttempt.outcome, judged.outcome)
+    XCTAssertEqual(receivedView.remainingAttempts, 1)
+    let hostJSON = try XCTUnwrap(context.payloadRef.inlinePayload?["hostCapabilityContext"])
+    let hostContext = try decoder.decode(
+      WorkflowPlanningCapabilityContext.self, from: JSONEncoder().encode(hostJSON)
+    )
+    XCTAssertEqual(hostContext.host.hostId, "local")
+    XCTAssertFalse(hostContext.requirements.isEmpty)
+    let childSnapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .load(sessionId: child.sessionId)
+    let invocation = try XCTUnwrap(childSnapshot.session.executions.first)
+    guard case let .object(nodeVariables)? = invocation.inputSnapshot?["mergedVariables"] else {
+      return XCTFail("actual director node has no captured merged variables")
+    }
+    XCTAssertEqual(nodeVariables["taskView"], viewJSON)
+    XCTAssertEqual(nodeVariables["hostCapabilityContext"], hostJSON)
+    XCTAssertEqual(invocation.backend, .codexAgent)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+    XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+  }
+
+  func testOrdinaryDirectorChildReceivesDurableGateFindingAndGuardView() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    task.guardPolicy = GuardPolicy(
+      convergence: ConvergenceGuard(maxGateVisits: 0),
+      budget: BudgetGuard(maxAttempts: 3), onViolation: .askDirector
+    )
+    try harness.store.saveTask(task)
+    let source = harness.examples.appendingPathComponent("task-repair-loop/mock-scenario.json")
+    var work = try XCTUnwrap(JSONSerialization.jsonObject(
+      with: Data(contentsOf: source)
+    ) as? [String: [String: Any]])
+    var verify = try XCTUnwrap(work["verify"])
+    var payload = try XCTUnwrap(verify["payload"] as? [String: Any])
+    var gate = try XCTUnwrap(payload["loopGate"] as? [String: Any])
+    gate["decision"] = "rejected"
+    gate["severityCounts"] = ["high": 1, "medium": 0, "low": 0, "informational": 0]
+    gate["blockingFindings"] = [[
+      "id": "judged-defect", "severity": "high", "message": "judged repair failed review"
+    ]]
+    gate["acceptance"] = ["met": false, "note": "judged repair still fails"]
+    payload["loopGate"] = gate
+    verify["payload"] = payload
+    work["verify"] = verify
+    let directorSource = harness.examples.appendingPathComponent("task-agent-director/mock-scenario.json")
+    let director = try XCTUnwrap(JSONSerialization.jsonObject(
+      with: Data(contentsOf: directorSource)
+    ) as? [String: [String: Any]])
+    let scenario = harness.sessionStore.appendingPathComponent("director-durable-view-scenario.json")
+    try JSONSerialization.data(withJSONObject: work.merging(director) { _, child in child }).write(to: scenario)
+    let result = try await harness.dispatch(
+      "task-repair-loop", directorBundle: harness.bundle("task-agent-director"),
+      scenarioPath: scenario.path
+    )
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let attempts = try harness.store.listAttempts(taskId: task.id)
+    XCTAssertEqual(attempts.count, 2)
+    let judged = try XCTUnwrap(attempts.first(where: { $0.entry != .director }))
+    let child = try XCTUnwrap(attempts.first(where: { $0.entry == .director }))
+    XCTAssertEqual(child.judgedAttemptId, judged.id)
+    let context = try XCTUnwrap(harness.store.listEvidence(taskId: task.id).first(where: {
+      $0.attemptId == child.id && $0.payloadRef.inlinePayload?["taskView"] != nil
+    }))
+    let viewJSON = try XCTUnwrap(context.payloadRef.inlinePayload?["taskView"])
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let view = try decoder.decode(AgentDirectorTaskView.self, from: JSONEncoder().encode(viewJSON))
+    XCTAssertEqual(view.task.id, task.id)
+    XCTAssertEqual(view.judgedAttempt.id, judged.id)
+    XCTAssertEqual(view.judgedAttempt.outcome, judged.outcome)
+    XCTAssertEqual(view.completion, try harness.store.currentCompletionVerdict(
+      taskId: task.id, attemptId: judged.id
+    ))
+    XCTAssertFalse(view.completion.isSatisfied)
+    XCTAssertFalse(view.guardViolations.isEmpty)
+    XCTAssertFalse(view.openFindings.isEmpty)
+    XCTAssertEqual(view.openFindings, try harness.store.listFindings(taskId: task.id, status: .open))
+    let judgedEvidence = try harness.store.listEvidence(taskId: task.id).filter { $0.attemptId == judged.id }
+    XCTAssertFalse(judgedEvidence.isEmpty)
+    XCTAssertTrue(view.evidenceSummary.contains { $0.kind == .guardViolation })
+    XCTAssertTrue(view.evidenceSummary.contains { $0.kind == .finding })
+    for delivered in view.evidenceSummary {
+      let stored = try XCTUnwrap(judgedEvidence.first(where: { $0.id == delivered.id }))
+      XCTAssertEqual(delivered.payloadRef, stored.payloadRef)
+    }
+    XCTAssertEqual(view.remainingAttempts, 1)
+    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .load(sessionId: child.sessionId)
+    guard case let .object(variables)? = snapshot.session.executions.first?.inputSnapshot?["mergedVariables"] else {
+      return XCTFail("ordinary director node has no captured merged variables")
+    }
+    XCTAssertEqual(variables["taskView"], viewJSON)
+    XCTAssertEqual(variables["hostCapabilityContext"], context.payloadRef.inlinePayload?["hostCapabilityContext"])
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+  }
+
+  func testConfiguredDirectorChildCanAcceptDurablySatisfiedJudgedWork() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    task.guardPolicy.budget = BudgetGuard(maxAttempts: 2)
+    try harness.store.saveTask(task)
+    let judged = Attempt(
+      id: AttemptID("judged-work"), taskId: task.id,
+      sessionId: "judged-session", state: .reconciled,
+      outcome: AttemptOutcome(sessionStatus: .completed)
+    )
+    try harness.store.saveAttempt(judged)
+    let evidence = Evidence(
+      id: EvidenceID("judged-success"), taskId: task.id, attemptId: judged.id,
+      kind: .contextSnapshot, producedBy: .runtime,
+      payloadRef: .inline(["status": .string("completed")]),
+      createdAt: Date(timeIntervalSince1970: 1_800_000_000)
+    )
+    try harness.store.saveEvidence(evidence)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .satisfied,
+      guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 0
+    )
+    let result = try await harness.dispatchDirector(view: view)
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let attempts = try harness.store.listAttempts(taskId: task.id)
+    XCTAssertEqual(attempts.count, 2)
+    let child = try XCTUnwrap(attempts.first(where: { $0.entry == .director }))
+    XCTAssertEqual(child.judgedAttemptId, judged.id)
+    XCTAssertEqual(child.outcome?.sessionStatus, .completed)
+    let childContext = try XCTUnwrap(harness.store.listEvidence(taskId: task.id).first(where: {
+      $0.attemptId == child.id && $0.payloadRef.inlinePayload?["taskView"] != nil
+    }))
+    let deliveredView = try XCTUnwrap(childContext.payloadRef.inlinePayload?["taskView"])
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decodedView = try decoder.decode(AgentDirectorTaskView.self, from: JSONEncoder().encode(deliveredView))
+    XCTAssertEqual(decodedView.remainingAttempts, 0)
+    XCTAssertEqual(decodedView.task, task)
+    XCTAssertEqual(decodedView.judgedAttempt, judged)
+    XCTAssertEqual(decodedView.completion, .satisfied)
+    XCTAssertEqual(decodedView.guardViolations, [])
+    XCTAssertEqual(decodedView.openFindings, [])
+    XCTAssertEqual(decodedView.evidenceSummary, [evidence])
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .succeeded)
+    XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+    XCTAssertEqual(try harness.store.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+    let decision = try XCTUnwrap(harness.store.listDecisions(taskId: task.id).first(where: {
+      $0.producer == .agent(sessionId: child.sessionId)
+    }))
+    let replay = try harness.store.applyDecision(
+      decision, expectedTaskVersion: task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-\(decision.id.rawValue)")
+    )
+    XCTAssertEqual(replay.task.state, .succeeded)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+  }
+
+  func testReservedDirectorChildResumesSameSessionAfterReopen() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    try harness.store.saveTask(task)
+    let judged = Attempt(id: AttemptID("judged-work"), taskId: task.id,
+                         sessionId: "judged-session", state: .reconciled,
+                         outcome: AttemptOutcome(sessionStatus: .completed))
+    try harness.store.saveAttempt(judged)
+    let evidence = Evidence(id: EvidenceID("judged-evidence"), taskId: task.id,
+                            attemptId: judged.id, kind: .contextSnapshot, producedBy: .runtime,
+                            payloadRef: .inline(["owner": .string("judged")]),
+                            createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+    try harness.store.saveEvidence(evidence)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .satisfied,
+      guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 0
+    )
+    do {
+      _ = try await harness.dispatchDirector(view: view, beforeExecution: { _ in
+        throw WorkStoreError("injected prelaunch interruption")
+      })
+      XCTFail("director child unexpectedly launched")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("injected prelaunch interruption"))
+    }
+    let reopened = WorkStore(rootDirectory: harness.store.rootDirectory)
+    let reserved = try XCTUnwrap(reopened.listAttempts(taskId: task.id).first(where: { $0.entry == .director }))
+    XCTAssertEqual(reserved.state, .prepared)
+    XCTAssertEqual(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .load(sessionId: reserved.sessionId).session.status, .created)
+    let originalScenario = harness.examples.appendingPathComponent("task-agent-director/mock-scenario.json")
+    var scenario = try XCTUnwrap(JSONSerialization.jsonObject(
+      with: Data(contentsOf: originalScenario)
+    ) as? [String: [String: Any]])
+    scenario["director"]?["usage"] = ["input_tokens": 3, "output_tokens": 4, "total_tokens": 7]
+    let childScenario = harness.sessionStore.appendingPathComponent("director-usage-scenario.json")
+    try JSONSerialization.data(withJSONObject: scenario).write(to: childScenario)
+    let directorBundle = try harness.bundle("task-agent-director")
+    XCTAssertNil(directorBundle.workflow.loop)
+    let completed = try await harness.dispatch(
+      "task-repair-loop", directorBundle: directorBundle,
+      scenarioPath: childScenario.path
+    )
+    XCTAssertEqual(completed.exitCode, .success, completed.stderr + completed.stdout)
+    let child = try XCTUnwrap(reopened.loadAttempt(id: reserved.id))
+    XCTAssertEqual(child.sessionId, reserved.sessionId)
+    XCTAssertEqual(child.judgedAttemptId, judged.id)
+    XCTAssertEqual(child.outcome?.sessionStatus, .completed)
+    XCTAssertEqual(child.outcome?.costs.map(\.totalTokens), [7])
+    XCTAssertNil(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .load(sessionId: child.sessionId).loopEvidence)
+    XCTAssertEqual(try reopened.loadTask(id: task.id)?.state, .succeeded)
+    XCTAssertEqual(try reopened.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+    let replay = try await harness.dispatch(
+      "task-repair-loop", directorBundle: directorBundle,
+      scenarioPath: childScenario.path
+    )
+    XCTAssertEqual(replay.exitCode, .success)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try reopened.loadAttempt(id: child.id)?.outcome?.costs, child.outcome?.costs)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter {
+      $0.producer == .policy(rule: "director-child")
+    }.count, 1)
+  }
+
+  func testAuthorizedDirectorChildWaitsForHumanAfterInterruptedLaunch() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    try harness.store.saveTask(task)
+    let judged = Attempt(id: AttemptID("judged-work"), taskId: task.id,
+                         sessionId: "judged-session", state: .reconciled,
+                         outcome: AttemptOutcome(sessionStatus: .completed))
+    try harness.store.saveAttempt(judged)
+    let evidence = Evidence(id: EvidenceID("judged-evidence"), taskId: task.id,
+                            attemptId: judged.id, kind: .contextSnapshot, producedBy: .runtime,
+                            payloadRef: .inline(["owner": .string("judged")]),
+                            createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+    try harness.store.saveEvidence(evidence)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .satisfied,
+      guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 0
+    )
+    do {
+      _ = try await harness.dispatchDirector(view: view, beforeExecution: { reservation in
+        _ = try harness.store.authorizeAttemptLaunch(
+          attemptId: reservation.attempt.id, launchToken: reservation.launchToken
+        )
+        throw WorkStoreError("injected post-authorization interruption")
+      })
+      XCTFail("director child unexpectedly launched")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("injected post-authorization interruption"))
+    }
+    let reopened = WorkStore(rootDirectory: harness.store.rootDirectory)
+    let child = try XCTUnwrap(reopened.listAttempts(taskId: task.id).first(where: { $0.entry == .director }))
+    XCTAssertEqual(child.launch?.phase, .authorized)
+    let result = try await harness.dispatch(
+      "task-repair-loop", directorBundle: harness.bundle("task-agent-director")
+    )
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    XCTAssertEqual(try reopened.loadTask(id: task.id)?.state, .waiting)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try reopened.loadAttempt(id: child.id)?.sessionId, child.sessionId)
+    XCTAssertEqual(try reopened.loadAttempt(id: child.id)?.state, .running)
+    XCTAssertEqual(try reopened.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter {
+      $0.producer == .policy(rule: "director-uncertain-launch")
+    }.count, 1)
+    let replay = try await harness.dispatch(
+      "task-repair-loop", directorBundle: harness.bundle("task-agent-director")
+    )
+    XCTAssertEqual(replay.exitCode, .success)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter {
+      $0.producer == .policy(rule: "director-uncertain-launch")
+    }.count, 1)
+  }
+
+  func testDirectorChildCancellationAcknowledgesExactTerminalSession() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let ((task, judged), (evidence, view)) = try seedJudgedDirectorView(harness)
+    let result = try await harness.dispatchDirector(view: view, beforeExecution: { reservation in
+      let decision = Decision(
+        id: DecisionID("human-cancel-child"), taskId: task.id, attemptId: reservation.attempt.id,
+        producer: .human(principal: "test"), kind: .cancel,
+        reason: "stop this child", causedBy: [EvidenceID("evidence-placement-\(reservation.attempt.id.rawValue)")],
+        createdAt: Date()
+      )
+      _ = try harness.store.applyDecision(
+        decision, expectedTaskVersion: reservation.task.version,
+        completion: .unmet([]), decisionEvidenceId: EvidenceID("human-cancel-evidence")
+      )
+    })
+    XCTAssertEqual(result.exitCode, .failure)
+    let child = try XCTUnwrap(harness.store.listAttempts(taskId: task.id).first(where: { $0.entry == .director }))
+    XCTAssertEqual(child.state, .reconciled)
+    XCTAssertEqual(child.outcome?.failureKind, .cancelled)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .cancelled)
+    XCTAssertEqual(try harness.store.attemptCancellation(
+      taskId: task.id, attemptId: child.id, sessionId: child.sessionId
+    )?.acknowledged, true)
+    XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+    XCTAssertEqual(try harness.store.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+    let replay = try await harness.dispatch(
+      "task-repair-loop", directorBundle: harness.bundle("task-agent-director")
+    )
+    XCTAssertEqual(replay.exitCode, .failure)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+  }
+
+  func testDirectorChildCannotOverwriteNewerHumanWait() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let ((task, judged), (evidence, view)) = try seedJudgedDirectorView(harness)
+    do {
+      _ = try await harness.dispatchDirector(view: view, beforeExecution: { reservation in
+        let decision = Decision(
+          id: DecisionID("human-wait-child"), taskId: task.id, attemptId: judged.id,
+          producer: .human(principal: "test"), kind: .wait(.human),
+          reason: "review before accepting", causedBy: [evidence.id], createdAt: Date()
+        )
+        _ = try harness.store.applyDecision(
+          decision, expectedTaskVersion: reservation.task.version,
+          completion: .unmet([]), decisionEvidenceId: EvidenceID("human-wait-evidence")
+        )
+      })
+      XCTFail("stale director decision unexpectedly applied")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("stale"), "\(error)")
+    }
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+    let child = try XCTUnwrap(harness.store.listAttempts(taskId: task.id).first(where: { $0.entry == .director }))
+    XCTAssertEqual(child.state, .reconciled)
+    XCTAssertEqual(try harness.store.listDecisions(taskId: task.id).filter {
+      if case .agent = $0.producer { return true }
+      return false
+    }.count, 0)
+    XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+    XCTAssertEqual(try harness.store.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+  }
+
+  func testDirectorInvalidRerunAndRecoveryTargetsEscalateWithoutPendingRequest() async throws {
+    for kind in ["rerun", "recover"] {
+      let harness = try TaskExampleHarness()
+      defer { harness.remove() }
+      let ((task, judged), (evidence, view)) = try seedJudgedDirectorView(harness)
+      let targetKey = kind == "rerun" ? "fromStepId" : "fromGateId"
+      let response: [String: Any] = ["director": [
+        "provider": "scenario-mock", "model": "gpt-5.4-mini", "when": ["always": true],
+        "payload": ["kind": kind, "reason": "try missing target", targetKey: "missing"]
+      ]]
+      let scenario = harness.sessionStore.appendingPathComponent("invalid-\(kind)-scenario.json")
+      try JSONSerialization.data(withJSONObject: response).write(to: scenario)
+      let result = try await harness.dispatchDirector(view: view, scenarioPath: scenario.path)
+      XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+      XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+      XCTAssertNil(try TaskDispatcher(store: harness.store).pendingReservation(taskId: task.id))
+      let escalation = try XCTUnwrap(harness.store.listDecisions(taskId: task.id).first(where: {
+        $0.producer == .policy(rule: "director-escalation")
+      }))
+      XCTAssertTrue(escalation.reason.contains(kind == "rerun" ? "target step" : "recovery gate"))
+      XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+      XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+      XCTAssertEqual(try harness.store.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+    }
+  }
+
+  func testDirectorRerunEscalatesWhenChildExhaustsWallClockBudget() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let (seeded, judged) = try seedJudgedDirectorView(harness).0
+    var task = seeded
+    task.guardPolicy.budget = BudgetGuard(maxAttempts: 3, maxWallClockMs: 1_000)
+    try harness.store.saveTask(task)
+    let now = Date()
+    let judgedSession = WorkflowSession(
+      workflowId: "task-repair-loop", sessionId: judged.sessionId,
+      status: .completed, entryStepId: "repair",
+      createdAt: now.addingTimeInterval(-0.1), updatedAt: now
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .save(WorkflowRuntimePersistenceSnapshot(session: judgedSession))
+    let evidence = try XCTUnwrap(harness.store.listEvidence(taskId: task.id).first)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .unmet([]),
+      guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 1
+    )
+    let response: [String: Any] = ["director": [
+      "provider": "scenario-mock", "model": "gpt-5.4-mini", "when": ["always": true],
+      "payload": ["kind": "rerun", "reason": "try repair", "fromStepId": "repair"]
+    ]]
+    let scenario = harness.sessionStore.appendingPathComponent("wall-clock-director.json")
+    try JSONSerialization.data(withJSONObject: response).write(to: scenario)
+    let root = harness.store.rootDirectory
+    let result = try await harness.dispatchDirector(
+      view: view, scenarioPath: scenario.path, beforeExecution: { reservation in
+        let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root)
+        var snapshot = try persistence.load(sessionId: reservation.attempt.sessionId)
+        snapshot.session.createdAt = Date().addingTimeInterval(-2)
+        try persistence.save(snapshot)
+      }
+    )
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+    XCTAssertNil(try TaskDispatcher(store: harness.store).pendingReservation(taskId: task.id))
+    let escalation = try XCTUnwrap(harness.store.listDecisions(taskId: task.id).first(where: {
+      $0.producer == .policy(rule: "director-escalation")
+    }))
+    XCTAssertTrue(escalation.reason.contains("wallClock"))
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+  }
+
+  func testDirectorSetupFailureEscalatesWithoutChildReservation() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(name: "missing-director")
+    try harness.store.saveTask(task)
+    let judged = Attempt(id: AttemptID("judged-work"), taskId: task.id,
+                         sessionId: "judged-session", state: .reconciled,
+                         outcome: AttemptOutcome(sessionStatus: .failed))
+    try harness.store.saveAttempt(judged)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .unmet([]),
+      guardViolations: [], openFindings: [], evidenceSummary: [], remainingAttempts: 0
+    )
+    let result = try await harness.dispatchDirector(view: view)
+    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertEqual(try harness.decode(result).statusKind, .waiting)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id), [judged])
+    XCTAssertTrue(try harness.store.listDecisions(taskId: task.id).contains {
+      $0.producer == .policy(rule: "director-escalation") && $0.kind == .wait(.human)
+    })
+  }
+
+  func testDirectorRejectReportsTerminalFailure() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    try harness.store.saveTask(task)
+    let judged = Attempt(id: AttemptID("judged-work"), taskId: task.id,
+                         sessionId: "judged-session", state: .reconciled,
+                         outcome: AttemptOutcome(sessionStatus: .completed))
+    try harness.store.saveAttempt(judged)
+    let evidence = Evidence(id: EvidenceID("judged-evidence"), taskId: task.id,
+                            attemptId: judged.id, kind: .contextSnapshot, producedBy: .runtime,
+                            payloadRef: .inline([:]), createdAt: Date())
+    try harness.store.saveEvidence(evidence)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .satisfied,
+      guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 0
+    )
+    let scenario = harness.sessionStore.appendingPathComponent("reject-director.json")
+    let source = harness.examples.appendingPathComponent("task-agent-director/mock-scenario.json")
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+    var director = try XCTUnwrap(object["director"] as? [String: Any])
+    director["payload"] = ["kind": "reject", "reason": "reviewed failure"]
+    object["director"] = director
+    try JSONSerialization.data(withJSONObject: object).write(to: scenario)
+    let result = try await harness.dispatchDirector(view: view, scenarioPath: scenario.path)
+    XCTAssertEqual(result.exitCode, .failure)
+    XCTAssertEqual(try harness.decode(result).statusKind, .failed)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .failed)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+    let replay = try await harness.dispatch(
+      "task-repair-loop", directorBundle: harness.bundle("task-agent-director"),
+      scenarioPath: scenario.path
+    )
+    XCTAssertEqual(replay.exitCode, .failure)
+    XCTAssertEqual(try harness.decode(replay).statusKind, .failed)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+  }
+
+  func testDirectorAdmissionBudgetDenialEscalatesWithoutChildCharge() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.guardPolicy.budget = BudgetGuard(maxAttempts: 1)
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    try harness.store.saveTask(task)
+    let judged = Attempt(
+      id: AttemptID("judged-work"), taskId: task.id,
+      sessionId: "judged-session", state: .reconciled,
+      outcome: AttemptOutcome(sessionStatus: .failed)
+    )
+    try harness.store.saveAttempt(judged)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .unmet([.acceptanceAbsent]),
+      guardViolations: [], openFindings: [], evidenceSummary: [], remainingAttempts: 0
+    )
+    let result = try await harness.dispatchDirector(view: view)
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id), [judged])
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+    XCTAssertTrue(try harness.store.listDecisions(taskId: task.id).contains(where: {
+      $0.producer == .policy(rule: "director-escalation") && $0.kind == .wait(.human)
+    }))
+  }
+
+  func testForbiddenOutputAndFailedDirectorChildEscalateWithoutRecursion() async throws {
+    for failedChild in [false, true] {
+      let harness = try TaskExampleHarness()
+      defer { harness.remove() }
+      var task = try harness.seed("task-repair-loop")
+      task.state = .verifying
+      task.director.agentWorkflow = WorkflowReference(
+        name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+        workflowDefinitionDir: harness.examples.path
+      )
+      try harness.store.saveTask(task)
+      let judged = Attempt(
+        id: AttemptID("judged-work"), taskId: task.id,
+        sessionId: "judged-session", state: .reconciled,
+        outcome: AttemptOutcome(sessionStatus: .completed)
+      )
+      try harness.store.saveAttempt(judged)
+      let evidence = Evidence(
+        id: EvidenceID("judged-evidence"), taskId: task.id, attemptId: judged.id,
+        kind: .contextSnapshot, producedBy: .runtime,
+        payloadRef: .inline(["status": .string("completed")]),
+        createdAt: Date(timeIntervalSince1970: 1_800_000_000)
+      )
+      try harness.store.saveEvidence(evidence)
+      let view = AgentDirectorTaskView(
+        task: task, judgedAttempt: judged, completion: .satisfied,
+        guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 0
+      )
+      let scenario = harness.sessionStore.appendingPathComponent("forbidden-director.json")
+      let source = harness.examples.appendingPathComponent("task-agent-director/mock-scenario.json")
+      var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+      var director = try XCTUnwrap(object["director"] as? [String: Any])
+      director["payload"] = failedChild
+        ? ["kind": "accept", "reason": "ignored after failure"]
+        : ["kind": "replan", "reason": "forbidden"]
+      object["director"] = director
+      try JSONSerialization.data(withJSONObject: object).write(to: scenario)
+      let result = try await harness.dispatchDirector(
+        view: view, scenarioPath: scenario.path, failChild: failedChild
+      )
+      XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+      let attempts = try harness.store.listAttempts(taskId: task.id)
+      XCTAssertEqual(attempts.count, 2)
+      let child = try XCTUnwrap(attempts.first(where: { $0.entry == .director }))
+      XCTAssertEqual(child.outcome?.sessionStatus, failedChild ? .failed : .completed)
+      XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+      XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+      let escalation = try XCTUnwrap(harness.store.listDecisions(taskId: task.id).first(where: {
+        $0.producer == .policy(rule: "director-escalation")
+      }))
+      XCTAssertEqual(escalation.kind, .wait(.human))
+      XCTAssertTrue(try harness.store.listEvidence(taskId: task.id).contains(where: {
+        $0.kind == .decision
+          && $0.payloadRef.inlinePayload?["decisionId"] == .string(escalation.id.rawValue)
+      }))
+      let replay = try await harness.dispatch(
+        "task-repair-loop", directorBundle: harness.bundle("task-agent-director"),
+        scenarioPath: scenario.path
+      )
+      XCTAssertEqual(replay.exitCode, .success)
+      XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+    }
+  }
+
   func testBothBundlesLoadAndMatchTheirDocumentedMockKeys() throws {
     let harness = try TaskExampleHarness()
     defer { harness.remove() }
@@ -122,5 +756,35 @@ final class TaskRuntimeExampleTests: XCTestCase {
         .appendingPathComponent("EXPECTED_RESULTS.md")
       XCTAssertTrue(FileManager.default.fileExists(atPath: expected.path))
     }
+  }
+
+  private func seedJudgedDirectorView(
+    _ harness: TaskExampleHarness
+  ) throws -> ((WorkTask, Attempt), (Evidence, AgentDirectorTaskView)) {
+    var task = try harness.seed("task-repair-loop")
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(
+      name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+      workflowDefinitionDir: harness.examples.path
+    )
+    try harness.store.saveTask(task)
+    let judged = Attempt(
+      id: AttemptID("judged-work"), taskId: task.id,
+      sessionId: "judged-session", state: .reconciled,
+      outcome: AttemptOutcome(sessionStatus: .completed)
+    )
+    try harness.store.saveAttempt(judged)
+    let evidence = Evidence(
+      id: EvidenceID("judged-evidence"), taskId: task.id, attemptId: judged.id,
+      kind: .contextSnapshot, producedBy: .runtime,
+      payloadRef: .inline(["owner": .string("judged")]),
+      createdAt: Date(timeIntervalSince1970: 1_800_000_000)
+    )
+    try harness.store.saveEvidence(evidence)
+    let view = AgentDirectorTaskView(
+      task: task, judgedAttempt: judged, completion: .satisfied,
+      guardViolations: [], openFindings: [], evidenceSummary: [evidence], remainingAttempts: 0
+    )
+    return ((task, judged), (evidence, view))
   }
 }

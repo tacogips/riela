@@ -6,7 +6,20 @@
 
 **Purpose**: transfer every known unfinished task without losing dirty-worktree ownership, review evidence, dependency ordering, or verification obligations
 
-**Status**: handover inventory complete; implementation workflows intentionally stopped at the user's request
+**Status**: historical handover inventory; current Work Runtime continuation is recorded below
+
+## Work Runtime P1-6d update — 2026-09-25
+
+Formal independent test-integrity, single adversarial and Astra combined-tree
+reviews accepted the retained P1-6d implementation on
+`feat/remaining-impl-plans`. Seven source-matched focused selections passed
+399/399 tests; build and touched-file strict SwiftLint passed. The complete
+serial broad gate remains **FAILED**: 2,666 tests, 19 independently classified
+historical non-slice assertions. Browser E2E was skipped because no `web/` file
+changed. D5 documentation was refreshed; exact-file commit and non-force
+push remain pending. P1-7b examples, P1-7a removal, parent P1, broad failures
+and the intermittent live-progress timing limitation remain open. See
+[`progress/p1-dispatch.md`](progress/p1-dispatch.md) for exact evidence.
 
 ## Progress update — 2026-09-21 remaining-plan continuation
 

@@ -93,13 +93,17 @@ public struct TaskDispatcher: Sendable {
     case let .workflow(reference): plannedWorkflowId = reference.name
     case let .temporaryWorkflow(temporary): plannedWorkflowId = temporary.name
     }
-    guard !workflowId.isEmpty, plannedWorkflowId == workflowId else {
+    let matchesWorkflow = entry == .director
+      ? task.director.agentWorkflow?.name == workflowId
+      : plannedWorkflowId == workflowId
+    guard !workflowId.isEmpty, matchesWorkflow else {
       throw WorkStoreError("task '\(taskId.rawValue)' plan does not match workflow '\(workflowId)'")
     }
     guard !entryStepId.isEmpty else {
       throw WorkStoreError("task '\(taskId.rawValue)' has no selected workflow entry step")
     }
-    guard WorkStore.dispatchEligibleStates.contains(task.state) else {
+    guard entry == .director ? task.state == .verifying
+      : WorkStore.dispatchEligibleStates.contains(task.state) else {
       throw WorkStoreError("task '\(taskId.rawValue)' is not eligible for dispatch from state '\(task.state.rawValue)'")
     }
     for dependencyId in task.dependsOn {
@@ -131,6 +135,7 @@ public struct TaskDispatcher: Sendable {
     decisionId: DecisionID,
     producer: DecisionProducer,
     reason: String,
+    judgedAttemptId: AttemptID? = nil,
     placementEvidence: Evidence? = nil,
     pendingRequestId: String? = nil,
     now: Date = Date()
@@ -143,6 +148,7 @@ public struct TaskDispatcher: Sendable {
       workflowId: ready.workflowId,
       entryStepId: ready.entryStepId,
       entry: ready.entry,
+      judgedAttemptId: judgedAttemptId,
       decisionId: decisionId,
       producer: producer,
       reason: reason,

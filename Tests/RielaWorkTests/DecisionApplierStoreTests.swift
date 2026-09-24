@@ -194,10 +194,17 @@ final class DecisionApplierStoreTests: XCTestCase {
 
   func testAgentDecisionReplayReturnsRecordedOutcomeAndRejectsChangedProducer() throws {
     let store = WorkStore(rootDirectory: root.path)
-    let task = WorkTask(id: TaskID("task-1"), intentId: IntentID("intent-1"), title: "Task", instruction: "Run", state: .ready)
+    let task = WorkTask(id: TaskID("task-1"), intentId: IntentID("intent-1"), title: "Task", instruction: "Run", state: .verifying)
     try store.saveTask(task)
+    let judged = Attempt(id: AttemptID("work"), taskId: task.id, sessionId: "work-session",
+                         state: .reconciled, outcome: AttemptOutcome(sessionStatus: .failed))
+    let child = Attempt(id: AttemptID("director"), taskId: task.id, generation: 2,
+                        sessionId: "director-session", entry: .director, state: .reconciled,
+                        outcome: AttemptOutcome(sessionStatus: .completed), judgedAttemptId: judged.id)
+    try store.saveAttempt(judged)
+    try store.saveAttempt(child)
     let decision = Decision(
-      id: DecisionID("agent-wait"), taskId: task.id,
+      id: DecisionID("agent-wait"), taskId: task.id, attemptId: judged.id,
       producer: .agent(sessionId: "director-session"), kind: .wait(.human),
       reason: "needs operator", createdAt: Date(timeIntervalSince1970: 1_800_000_000)
     )

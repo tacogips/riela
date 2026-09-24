@@ -11,6 +11,7 @@ public struct AttemptReservationRequest: Equatable, Sendable {
   public var workflowId: String
   public var entryStepId: String
   public var entry: AttemptEntry
+  public var judgedAttemptId: AttemptID?
   public var decisionId: DecisionID
   public var producer: DecisionProducer
   public var reason: String
@@ -29,6 +30,7 @@ public struct AttemptReservationRequest: Equatable, Sendable {
     workflowId: String,
     entryStepId: String,
     entry: AttemptEntry,
+    judgedAttemptId: AttemptID? = nil,
     decisionId: DecisionID,
     producer: DecisionProducer,
     reason: String,
@@ -45,6 +47,7 @@ public struct AttemptReservationRequest: Equatable, Sendable {
     self.workflowId = workflowId
     self.entryStepId = entryStepId
     self.entry = entry
+    self.judgedAttemptId = judgedAttemptId
     self.decisionId = decisionId
     self.producer = producer
     self.reason = reason
@@ -90,12 +93,14 @@ public struct AttemptReservation: Equatable, Sendable {
   public var attempt: Attempt
   public var decision: Decision
   public var launchToken: String
+  public var reclaimPreLaunch: Bool
 
-  public init(task: WorkTask, attempt: Attempt, decision: Decision, launchToken: String) {
+  public init(task: WorkTask, attempt: Attempt, decision: Decision, launchToken: String, reclaimPreLaunch: Bool = false) {
     self.task = task
     self.attempt = attempt
     self.decision = decision
     self.launchToken = launchToken
+    self.reclaimPreLaunch = reclaimPreLaunch
   }
 }
 
@@ -143,11 +148,32 @@ public extension WorkStore {
       guard live.isEmpty else {
         throw WorkStoreError("task '\(task.id.rawValue)' already has a live attempt")
       }
-      guard Self.dispatchEligibleStates.contains(task.state) else {
+      guard request.entry == .director ? task.state == .verifying
+        : Self.dispatchEligibleStates.contains(task.state) else {
         throw WorkStoreError("task '\(task.id.rawValue)' is not eligible for dispatch from state '\(task.state.rawValue)'")
       }
       guard task.plan != nil else {
         throw WorkStoreError("task '\(task.id.rawValue)' has no executable plan")
+      }
+      if request.entry == .director {
+        guard task.director.agentWorkflow?.name == request.workflowId,
+              let judgedId = request.judgedAttemptId else {
+          throw WorkStoreError("director reservation requires its configured workflow and judged attempt")
+        }
+        let judged = try requiredAttempt(judgedId, in: database)
+        guard judged.taskId == task.id, judged.entry != .director,
+              judged.state == .reconciled else {
+          throw WorkStoreError("director judged attempt must be reconciled work on the same task")
+        }
+        let attempts = try decodeDecisionRows(Attempt.self, from: database.query(
+          "SELECT json(record) AS record FROM work_attempts WHERE task_id = ?",
+          bindings: [.text(task.id.rawValue)]
+        ))
+        guard attempts.allSatisfy({ $0.id == judged.id || $0.generation < judged.generation }) else {
+          throw WorkStoreError("director judged attempt is stale or already has a child")
+        }
+      } else if request.judgedAttemptId != nil {
+        throw WorkStoreError("only director reservations may link a judged attempt")
       }
       guard try dependenciesAreSatisfied(of: task, in: database) else { return .wait(.dependency) }
       try requireExecutionAdmissionBudget(for: task, in: database)
@@ -189,7 +215,8 @@ public extension WorkStore {
         sessionId: request.sessionId,
         entry: request.entry,
         state: .prepared,
-        launch: launch
+        launch: launch,
+        judgedAttemptId: request.judgedAttemptId
       )
       let decision: Decision
       if request.pendingRequestId != nil {
@@ -498,7 +525,10 @@ public extension WorkStore {
         sessionId: attempt.sessionId,
         in: database
       )
-      let canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      var canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      if attempt.entry == .director, snapshot.loopEvidence == nil {
+        canonicalOutcome.costs = LoopCostAccumulator.evidence(from: snapshot.session.executions)
+      }
       guard canonicalOutcome.sessionStatus == .failed,
             canonicalOutcome.failureKind == .cancelled,
             canonicalOutcome == outcome else {
@@ -554,7 +584,7 @@ public extension WorkStore {
     }
   }
 
-  private func rejectPendingCancellation(for attemptId: AttemptID, in database: SQLiteDatabase) throws {
+  func rejectPendingCancellation(for attemptId: AttemptID, in database: SQLiteDatabase) throws {
     let cancellation = try database.query(
       "SELECT 1 FROM work_cancellations WHERE attempt_id = ? AND acknowledged_at IS NULL LIMIT 1",
       bindings: [.text(attemptId.rawValue)]
@@ -620,7 +650,10 @@ public extension WorkStore {
         sessionId: attempt.sessionId,
         in: database
       )
-      let canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      var canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      if attempt.entry == .director, snapshot.loopEvidence == nil {
+        canonicalOutcome.costs = LoopCostAccumulator.evidence(from: snapshot.session.executions)
+      }
       guard canonicalOutcome.sessionStatus == .completed || canonicalOutcome.sessionStatus == .failed,
             canonicalOutcome == outcome else {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' has no matching terminal workflow snapshot")
@@ -798,6 +831,29 @@ extension WorkStore {
       .proposals, used: proposals, limit: budget.maxProposals,
       hasExhaustedEvidence: exhaustedEvidence.contains(.proposals), task: task
     )
+  }
+
+  func requireAgentWallClockBudget(for task: WorkTask, in database: SQLiteDatabase) throws {
+    guard let limit = task.guardPolicy.budget?.maxWallClockMs else { return }
+    let attempts = try decodeDecisionRows(Attempt.self, from: database.query(
+      "SELECT json(record) AS record FROM work_attempts WHERE task_id = ?",
+      bindings: [.text(task.id.rawValue)]
+    ))
+    let sessions = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+    var used = 0
+    for attempt in attempts where attempt.state == .reconciled {
+      let session = try sessions.load(sessionId: attempt.sessionId, in: database).session
+      guard session.sessionId == attempt.sessionId,
+            session.status == .completed || session.status == .failed else {
+        throw WorkStoreError("agent budget has no durable terminal session for an attempt")
+      }
+      let duration = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
+      let (sum, overflow) = used.addingReportingOverflow(duration)
+      used = overflow ? Int.max : sum
+    }
+    guard used < limit else {
+      throw WorkStoreError("task '\(task.id.rawValue)' exhausted its wallClock budget")
+    }
   }
 
   func exhaustedBudgetEvidenceDimensions(

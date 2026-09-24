@@ -128,9 +128,12 @@ struct TaskDispatch: Sendable {
         throw WorkStoreError("task '\(taskId)' was not found")
       }
       if !dryRun { try rejectSignalledRun(store: located.store, taskId: id) }
-      guard let plan = located.task.plan else {
-        throw WorkStoreError("task '\(taskId)' has no executable plan")
+      if !dryRun, let resumed = try await resumeLinkedDirectorIfPresent(
+        located: located, options: options, output: output
+      ) {
+        return resumed
       }
+      guard let plan = located.task.plan else { throw WorkStoreError("task '\(taskId)' has no executable plan") }
       guard case let .workflow(reference) = plan else {
         throw WorkStoreError("temporary task workflows are not yet executable")
       }
@@ -278,8 +281,15 @@ struct TaskDispatch: Sendable {
           guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
             throw WorkStoreError("reserved task session did not reach a durable terminal state")
           }
-          try await reconcileTerminal(snapshot: snapshot, reservation: reservation, store: located.store,
-                                taskId: id, remoteChoices: placement.choices.filter { $0.hostId != "local" })
+          let directorView = try await reconcileTerminal(
+            snapshot: snapshot, reservation: reservation, store: located.store,
+            taskId: id, remoteChoices: placement.choices.filter { $0.hostId != "local" }
+          )
+          if let directorView {
+            return try await runDirectorChild(
+              view: directorView, located: located, options: options, output: output
+            )
+          }
           let exitCode: CLIExitCode = snapshot.session.status == .failed ? .failure : workflowResult.exitCode
           let diagnostic = workflowResult.stderr.isEmpty ? workflowResult.stdout : workflowResult.stderr
           return try render(TaskRunCommandResult(
@@ -318,7 +328,7 @@ struct TaskDispatch: Sendable {
     return try TaskCommandRunner().locateTask(id, in: options)
   }
 
-  private func executeReserved(
+  func executeReserved(
     _ reservation: AttemptReservation,
     options: WorkflowRunOptions,
     store: WorkStore,
@@ -340,7 +350,7 @@ struct TaskDispatch: Sendable {
     }
   }
 
-  private func makePlacementEvidence(
+  func makePlacementEvidence(
     for placement: BackendCapabilityPlacementResult,
     taskId: TaskID,
     attemptId: AttemptID,
@@ -364,7 +374,7 @@ struct TaskDispatch: Sendable {
     store: WorkStore,
     taskId: TaskID,
     remoteChoices: [BackendPlacementChoice]
-  ) async throws {
+  ) async throws -> AgentDirectorTaskView? {
     let id = taskId
     let attemptId = reservation.attempt.id
     let cancellation = try store.attemptCancellation(
@@ -408,7 +418,7 @@ struct TaskDispatch: Sendable {
             attempt.state == .reconciled, attempt.outcome == outcome else {
         throw WorkStoreError("acknowledged cancellation does not match the reserved terminal session")
       }
-      return
+      return nil
     }
     _ = try store.reconcileAttempt(
       attemptId: attemptId,
@@ -462,6 +472,15 @@ struct TaskDispatch: Sendable {
       decisionId: DecisionID("decision-terminal-\(attemptId.rawValue)"),
       decisionEvidenceId: EvidenceID("evidence-decision-terminal-\(attemptId.rawValue)")
     )
+    if guardApplication.requiresDirectorChild {
+      let judgedEvidence = try store.listEvidence(taskId: id).filter { $0.attemptId == attemptId }
+      let openFindings = try store.listFindings(taskId: id, status: .open)
+      return AgentDirectorTaskView(
+        task: currentTask, judgedAttempt: currentAttempt, completion: completion,
+        guardViolations: guardApplication.violations, openFindings: openFindings,
+        evidenceSummary: judgedEvidence, remainingAttempts: 0
+      )
+    }
     if guardApplication.application == nil, completion.isSatisfied {
       let decision = Decision(
         id: DecisionID("decision-warning-completion-\(attemptId.rawValue)"),
@@ -480,6 +499,7 @@ struct TaskDispatch: Sendable {
         decisionEvidenceId: EvidenceID("evidence-decision-warning-completion-\(attemptId.rawValue)")
       )
     }
+    return nil
   }
 
   private func selectedEntryStep(
@@ -507,7 +527,7 @@ struct TaskDispatch: Sendable {
     return stepId
   }
 
-  private func render(
+  func render(
     _ result: TaskRunCommandResult,
     output: WorkflowOutputFormat,
     exitCode: CLIExitCode = .success

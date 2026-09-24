@@ -75,9 +75,8 @@ public enum AgentDirector {
     let permittedKeys: Set<String>
     switch rawKind {
     case "accept":
-      // Current store acceptance reads its newest attempt, which is the child.
-      // Applying it now would judge child success instead of the work result.
-      return .needsHuman(reason: "director acceptance requires judged-attempt completion support")
+      kind = .accept
+      permittedKeys = ["kind", "reason"]
     case "reject":
       kind = .reject(reason: reason)
       permittedKeys = ["kind", "reason"]

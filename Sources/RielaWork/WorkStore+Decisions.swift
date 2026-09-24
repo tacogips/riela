@@ -56,7 +56,20 @@ public extension WorkStore {
       if let attempt, attempt.taskId != task.id {
         throw WorkStoreError("decision attempt does not match the target task")
       }
-      if case .accept = decision.kind {
+      if case let .agent(sessionId) = decision.producer {
+        guard let attempt, attempt.entry != .director, attempt.state == .reconciled,
+              let latest = try latestAttempt(for: task, in: database),
+              latest.entry == .director, latest.judgedAttemptId == attempt.id,
+              latest.taskId == task.id, latest.sessionId == sessionId,
+              latest.state == .reconciled,
+              latest.outcome?.sessionStatus == .completed,
+              latest.generation == attempt.generation + 1 else {
+          throw WorkStoreError("agent decision requires the exact successful linked director child")
+        }
+        if Self.requiresPendingReservation(for: decision.kind) {
+          try requireAgentWallClockBudget(for: task, in: database)
+        }
+      } else if case .accept = decision.kind {
         try requireLatestAttempt(attempt, for: task, action: "accept", in: database)
       } else if Self.requiresLiveCancellation(for: decision.kind) {
         try requireLatestAttempt(attempt, for: task, action: decision.kind.kindName, in: database)
@@ -247,16 +260,22 @@ extension WorkStore {
     action: String,
     in database: SQLiteDatabase
   ) throws {
+    guard let latestAttempt = try latestAttempt(for: task, in: database) else {
+      return
+    }
+    guard attempt?.id == latestAttempt.id else {
+      throw WorkStoreError("\(action) decision must target the latest attempt for task '\(task.id.rawValue)'")
+    }
+  }
+
+  func latestAttempt(for task: WorkTask, in database: SQLiteDatabase) throws -> Attempt? {
     guard let latest = try database.query(
       "SELECT json(record) AS record FROM work_attempts WHERE task_id = ? ORDER BY generation DESC, attempt_id DESC LIMIT 1",
       bindings: [.text(task.id.rawValue)]
     ).first?["record"] else {
-      return
+      return nil
     }
-    let latestAttempt = try decode(Attempt.self, json: latest)
-    guard attempt?.id == latestAttempt.id else {
-      throw WorkStoreError("\(action) decision must target the latest attempt for task '\(task.id.rawValue)'")
-    }
+    return try decode(Attempt.self, json: latest)
   }
 
   func completionVerdict(for task: WorkTask, attempt: Attempt?, in database: SQLiteDatabase) throws -> CompletionVerdict {

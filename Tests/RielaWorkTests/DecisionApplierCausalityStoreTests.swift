@@ -19,7 +19,7 @@ final class DecisionApplierCausalityStoreTests: XCTestCase {
 
   override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
-  func testDestructiveAndReplacementDecisionsRejectEmptyOrForeignCausalEvidenceForEveryProducer() throws {
+  func testDestructiveAndReplacementDecisionsRejectEmptyOrForeignCausalEvidenceForPolicyAndHuman() throws {
     let actions = [
       ActionCase(name: "cancel", kind: .cancel, entry: nil),
       ActionCase(name: "stop", kind: .stop(GuardViolationRef(evidenceId: EvidenceID("guard"), summary: "limit")), entry: nil),
@@ -30,8 +30,7 @@ final class DecisionApplierCausalityStoreTests: XCTestCase {
     for action in actions {
       for producer in [
         DecisionProducer.human(principal: "operator"),
-        .policy(rule: "guard"),
-        .agent(sessionId: "director")
+        .policy(rule: "guard")
       ] {
         for causeMode in ["empty", "foreign"] {
           let store = try makeStore("\(causeMode)-cause-\(action.name)-\(producer)")

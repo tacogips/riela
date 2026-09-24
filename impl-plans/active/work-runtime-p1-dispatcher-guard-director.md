@@ -8,11 +8,15 @@ finalization-boundary repair”, effective workflowInput,
 Step 3 accepted `design-docs/specs/design-work-runtime-consolidation.md` §17.8
 through `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
 `codex-design-and-implement-review-loop-session-1`, with no findings.
-Design SHA-256: `9a20702d522e2a0007a5168714ea799e3709aeaa2939815b1621589cddff4e99`.
-Status (2026-09-25): D0–D4 implementation and verification are retained for
-assessment from `tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/`. Formal
-workflow reviews and D5 documentation/publication remain pending. The broad
-gate remains FAILED; no formal slice acceptance is claimed.
+Accepted Step 3 design checkpoint SHA-256:
+`9a20702d522e2a0007a5168714ea799e3709aeaa2939815b1621589cddff4e99`.
+Status (2026-09-25): D0–D4 implementation and source-matched verification were
+accepted by formal independent test-integrity, single adversarial and Astra
+combined-tree review. D5 documentation was refreshed before exact-file
+commit and non-force push, which remain pending. Evidence is under
+`tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/`. The broad gate remains
+**FAILED** with 19 classified historical non-slice assertions; P1-7b, P1-7a
+and parent P1 remain open.
 
 Only this section and its first JSON block schedule this invocation. Everything
 below “Historical P1-6c contract” is retained history, including older current

@@ -104,9 +104,23 @@ extension WorkflowRunCommand {
       // root session consumes the task's one-use launch token; child sessions
       // retain the ordinary process admission fence.
       guard sessionId == reservation.attempt.sessionId else { return }
+      let launchToken: String
+      if reservation.reclaimPreLaunch {
+        let reclaimed = try store.reissueReservedDirectorLaunch(
+          attemptId: reservation.attempt.id,
+          expectedTaskVersion: reservation.task.version
+        )
+        guard reclaimed.attempt.id == reservation.attempt.id,
+              reclaimed.attempt.sessionId == sessionId else {
+          throw WorkStoreError("director prelaunch reclaim changed the reserved child")
+        }
+        launchToken = reclaimed.launchToken
+      } else {
+        launchToken = reservation.launchToken
+      }
       _ = try store.authorizeAttemptLaunch(
         attemptId: reservation.attempt.id,
-        launchToken: reservation.launchToken
+        launchToken: launchToken
       )
       _ = try store.markAttemptNodeStarted(attemptId: reservation.attempt.id)
     }

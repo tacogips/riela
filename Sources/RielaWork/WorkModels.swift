@@ -649,6 +649,9 @@ public struct Attempt: Codable, Equatable, Sendable {
   public var state: AttemptState
   public var outcome: AttemptOutcome?
   public var launch: AttemptLaunchMetadata?
+  /// Set only for a director child. The child's own ID and session complete
+  /// the durable link to the reconciled work this round judges.
+  public var judgedAttemptId: AttemptID?
 
   public init(
     id: AttemptID,
@@ -660,7 +663,8 @@ public struct Attempt: Codable, Equatable, Sendable {
     isolation: IsolationRef? = nil,
     state: AttemptState = .prepared,
     outcome: AttemptOutcome? = nil,
-    launch: AttemptLaunchMetadata? = nil
+    launch: AttemptLaunchMetadata? = nil,
+    judgedAttemptId: AttemptID? = nil
   ) {
     self.id = id
     self.taskId = taskId
@@ -672,5 +676,6 @@ public struct Attempt: Codable, Equatable, Sendable {
     self.state = state
     self.outcome = outcome
     self.launch = launch
+    self.judgedAttemptId = judgedAttemptId
   }
 }

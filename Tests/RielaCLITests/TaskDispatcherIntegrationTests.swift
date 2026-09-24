@@ -106,6 +106,9 @@ struct TaskExampleHarness {
     hostResolver: (any HostCapabilityResolving)? = nil,
     sleepDurationMs: Int? = nil,
     failWaitNode: Bool = false,
+    failRepairNode: Bool = false,
+    directorBundle: ResolvedWorkflowBundle? = nil,
+    scenarioPath: String? = nil,
     beforeReservation: (@Sendable () throws -> Void)? = nil,
     beforeExecution: (@Sendable (AttemptReservation) throws -> Void)? = nil,
     beforeTerminalPersistence: (@Sendable () throws -> Void)? = nil,
@@ -124,7 +127,16 @@ struct TaskExampleHarness {
         executable: "/bin/sh", arguments: ["-c", "exit 7"]
       )
     }
-    let resolver = TaskExampleBundleResolver(bundle: loaded)
+    if failRepairNode {
+      loaded.nodePayloads["repair"]?.nodeType = .command
+      loaded.nodePayloads["repair"]?.command = WorkflowCommandExecution(
+        executable: "/bin/sh", arguments: ["-c", "exit 7"]
+      )
+    }
+    let resolver = TaskExampleBundleResolver(
+      bundle: loaded,
+      callees: directorBundle.map { [$0.workflow.workflowId: $0] } ?? [:]
+    )
     var runner = WorkflowRunCommand(resolver: resolver)
     runner.beforeTerminalPersistence = beforeTerminalPersistence
     runner.afterTerminalPersistence = afterTerminalPersistence
@@ -132,7 +144,7 @@ struct TaskExampleHarness {
       resolver: resolver,
       hostResolver: hostResolver ?? TaskExampleHostResolver(capacity: capacity),
       runner: runner,
-      mockScenarioPath: examples.appendingPathComponent(name)
+      mockScenarioPath: scenarioPath ?? examples.appendingPathComponent(name)
         .appendingPathComponent("mock-scenario.json").path,
       beforeReservation: beforeReservation,
       beforeExecution: beforeExecution,
@@ -155,6 +167,40 @@ struct TaskExampleHarness {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(TaskRunCommandResult.self, from: Data(result.stdout.utf8))
+  }
+
+  func dispatchDirector(
+    view: AgentDirectorTaskView,
+    scenarioPath: String? = nil,
+    failChild: Bool = false,
+    beforeExecution: (@Sendable (AttemptReservation) throws -> Void)? = nil
+  ) async throws -> CLICommandResult {
+    var child = try bundle("task-agent-director")
+    if failChild {
+      child.nodePayloads["director"]?.nodeType = .command
+      child.nodePayloads["director"]?.command = WorkflowCommandExecution(
+        executable: "/bin/sh", arguments: ["-c", "exit 7"]
+      )
+    }
+    let resolver = TaskExampleBundleResolver(
+      bundle: child, callees: ["task-repair-loop": try bundle("task-repair-loop")]
+    )
+    let command = TaskDispatch(
+      resolver: resolver,
+      hostResolver: TaskExampleHostResolver(capacity: 1),
+      runner: WorkflowRunCommand(resolver: resolver),
+      mockScenarioPath: scenarioPath
+        ?? examples.appendingPathComponent("task-agent-director/mock-scenario.json").path,
+      beforeExecution: beforeExecution
+    )
+    return try await command.runDirectorChild(
+      view: view,
+      located: TaskCommandRunner.LocatedTask(task: view.task, store: store, root: store.rootDirectory),
+      options: TaskStoreOptions(
+        scope: .project, workingDirectory: repository.path, sessionStore: sessionStore.path
+      ),
+      output: .json
+    )
   }
 
   func fileBytes() throws -> [String: Data] {

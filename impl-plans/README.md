@@ -33,8 +33,9 @@ impl-plans/
 
 ## Active Plans
 
-Status and unchecked-checkbox counts below are reconciled from the actual plan
-files as of 2026-09-21. Workstream tags (W0–W13) map to
+Unchecked-checkbox counts below are reconciled from the actual plan files as of
+2026-09-21; the Work Runtime status was refreshed on 2026-09-25. Workstream tags
+(W0–W13) map to
 `impl-plans/REMAINING-WORK-HANDOVER.md`. "Unchecked" counts remaining plan
 checkboxes; zero-unchecked plans marked *archive candidate* are complete pending
 only the W13 read-through/move to `completed/`.
@@ -43,7 +44,7 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
-| `active/work-runtime-p1-dispatcher-guard-director` | 8 | Implementation in progress on `feat/remaining-impl-plans`; the P1-6a selected-host delivery slice passed independent adversarial and integration review with a bounded V5 CLI/Core exception. Parent P1, later slices and broad gate closure remain open | Work Runtime P1 |
+| `active/work-runtime-p1-dispatcher-guard-director` | 8 | P1-6d implementation accepted by formal review on `feat/remaining-impl-plans`; D5 documentation refreshed and exact-file publication pending. P1-7b, P1-7a, parent P1 and the failed broad gate remain open | Work Runtime P1 |
 | `active/gateway-sdk-addons-01`–`05` | 23 | Design and five plans accepted on `feat/gateway-sdk-addons` (`03eaee1f`, 2026-09-23); public Google Documents v0.3.3 and GatewaySDKKit v0.1.0 tags verified. Planning artifacts only; implementation, dependency resolution and tests remain open. Earlier pending-review wording in the authored documents is historical. | Gateway SDK add-ons |
 | `active/workflow-defect-detection-and-repair` | 6 | D1–D9 design and exact plan accepted by Step 3/Step 5 (2026-09-23, `d11527a`); six serial runtime tasks including backend liveness remain unimplemented. Pending-review wording inside the accepted documents records earlier author stages. | Workflow correctness |
 | `active/execution-environment-consolidation` | 13 | Planned 2026-09-21, no code written; eight implementation boxes and five final acceptance boxes remain. Zero-based definitions, workspace, policy, model, placement and runner consolidation (`design-docs/specs/design-execution-environment-consolidation.md`); supersedes intake adoptions A/C/D/F/G. | Execution environment consolidation |

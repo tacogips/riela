@@ -73,17 +73,20 @@ public struct GuardDirectorApplication: Equatable, Sendable {
   /// A warning persists evidence but deliberately does not force a decision.
   public var resolution: DirectorResolution?
   public var application: DecisionApplication?
+  public var requiresDirectorChild: Bool
 
   public init(
     violations: [GuardViolation],
     evidence: [Evidence],
     resolution: DirectorResolution?,
-    application: DecisionApplication?
+    application: DecisionApplication?,
+    requiresDirectorChild: Bool = false
   ) {
     self.violations = violations
     self.evidence = evidence
     self.resolution = resolution
     self.application = application
+    self.requiresDirectorChild = requiresDirectorChild
   }
 }
 
@@ -165,6 +168,26 @@ public struct TaskGuardCoordinator: Sendable {
       )
     } else {
       resolution = deterministicResolution
+    }
+    let guardEscalation =
+      task.director.humanEscalation.escalateOnGuardViolation
+        && task.guardPolicy.onViolation == .askDirector && !violations.isEmpty
+        && !violations.contains(where: { $0.isBudgetViolation })
+        && !completion.isSatisfied
+    let failedEscalation: Bool
+    if case .wait(.human) = resolution.kind {
+      failedEscalation = task.director.humanEscalation.escalateAfterFailedAttempts.map {
+        snapshot.attemptCount >= $0 && latestAttempt?.outcome?.sessionStatus == .failed
+      } ?? false
+    } else {
+      failedEscalation = false
+    }
+    if task.director.agentWorkflow != nil, latestAttempt?.entry != .director,
+       latestAttempt?.state == .reconciled, guardEscalation || failedEscalation {
+      return GuardDirectorApplication(
+        violations: violations, evidence: canonicalEvidence,
+        resolution: resolution, application: nil, requiresDirectorChild: true
+      )
     }
     let decision = Decision(
       id: decisionId,

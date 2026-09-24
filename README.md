@@ -735,7 +735,22 @@ accepted decision does not create another cancellation. The source-matched
 selected-host and focused checks passed, while the serial broad gate still
 fails on 19 classified non-slice assertions. See the
 [P1-6c progress record](impl-plans/progress/p1-dispatch.md) for verification.
-P1-6d, P1-7a/b and parent P1 remain open. The design is
+
+The accepted P1-6d slice runs one configured, bounded `.director` child through
+ordinary task dispatch. The shared store links the child to the judged attempt,
+retains the judged TaskView and host capability inputs, and applies the child's
+typed decision against the original work gates, verification and findings.
+Child success alone cannot accept the task. Reservation, replay and terminal
+reconciliation preserve one child attempt, session and cost charge; invalid,
+failed or budget-blocked child work escalates without recursive dispatch.
+Seven source-matched focused selections passed 399/399 tests, build and touched
+SwiftLint passed, and independent test-integrity, adversarial and combined-tree
+review accepted this slice. The serial broad run remains **FAILED** with 19
+classified historical non-slice assertions among 2,666 tests. Browser E2E was
+skipped because no `web/` file changed. See the
+[P1-6d progress record](impl-plans/progress/p1-dispatch.md) for exact commands
+and evidence. P1-7b examples, P1-7a legacy removal, parent P1 and the broad
+failure follow-ups remain open. The design is
 [Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).
 
 ## Control Surfaces

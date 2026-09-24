@@ -96,7 +96,7 @@ final class AgentDirectorTests: XCTestCase {
     )
   }
 
-  func testAcceptFailsClosedUntilStoreCanJudgeOriginalWorkAttempt() {
+  func testAllowedAcceptTargetsJudgedWorkAndRejectsExtraFields() {
     let view = taskView(completion: .satisfied)
     let output: JSONObject = ["kind": .string("accept"), "reason": .string("work passed")]
     let result = AgentDirector.validate(
@@ -107,10 +107,18 @@ final class AgentDirectorTests: XCTestCase {
       causedBy: [EvidenceID("work-failure")],
       decisionId: DecisionID("agent-decision")
     )
-    guard case let .needsHuman(reason) = result else {
-      return XCTFail("accept must not judge the child instead of work")
+    guard case let .decision(decision) = result else {
+      return XCTFail("expected a typed decision for shared-store validation")
     }
-    XCTAssertTrue(reason.contains("judged-attempt"))
+    XCTAssertEqual(decision.kind, .accept)
+    XCTAssertEqual(decision.attemptId, view.judgedAttempt.id)
+    XCTAssertEqual(decision.producer, .agent(sessionId: "director-session"))
+    let invalid = AgentDirector.validate(
+      output: output.merging(["taskId": .string("other")]) { _, new in new },
+      directorAttempt: directorAttempt(), view: view, allowedKinds: ["accept"],
+      causedBy: [EvidenceID("work-failure")], decisionId: DecisionID("invalid")
+    )
+    guard case .needsHuman = invalid else { return XCTFail("extra fields must escalate") }
   }
 
   private func XCTAssertNeedsHuman(

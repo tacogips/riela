@@ -375,6 +375,102 @@ final class WorkStoreReservationTests: XCTestCase {
     }
   }
 
+  func testDirectorLinkReservationRollsBackAndSurvivesReopenWithoutAnotherRound() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.state = .verifying
+    task.director.agentWorkflow = WorkflowReference(name: "director-workflow")
+    try store.saveTask(task)
+    let judged = Attempt(id: AttemptID("judged-work"), taskId: task.id,
+                         sessionId: "judged-session", state: .reconciled,
+                         outcome: AttemptOutcome(sessionStatus: .failed))
+    try store.saveAttempt(judged)
+    let cause = Evidence(id: EvidenceID("judged-failure"), taskId: task.id, attemptId: judged.id,
+                         kind: .finding, producedBy: .runtime,
+                         payloadRef: .inline(["owner": .string("judged")]),
+                         createdAt: Date(timeIntervalSince1970: 1_800_000_000))
+    try store.saveEvidence(cause)
+    var value = request(attemptId: "director-child", sessionId: "director-session",
+                        decisionId: "director-reservation")
+    value.entry = .director
+    value.producer = .policy(rule: "director-child")
+    value.workflowId = "director-workflow"
+    value.judgedAttemptId = judged.id
+    task.state = .waiting
+    try store.saveTask(task)
+    XCTAssertThrowsError(try store.reserveAttempt(value))
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [judged])
+    task.state = .verifying
+    try store.saveTask(task)
+    value.failurePoint = .session
+    XCTAssertThrowsError(try store.reserveAttempt(value))
+    XCTAssertEqual(try store.loadTask(id: task.id), task)
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [judged])
+    XCTAssertEqual(try store.listEvidence(taskId: task.id), [cause])
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases"), [])
+    XCTAssertThrowsError(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      .load(sessionId: value.sessionId))
+
+    value.failurePoint = nil
+    let reservation = try store.reserveAttempt(value)
+    XCTAssertEqual(reservation.attempt.judgedAttemptId, judged.id)
+    XCTAssertEqual(reservation.attempt.sessionId, "director-session")
+    let reopened = WorkStore(rootDirectory: root.path)
+    XCTAssertEqual(try reopened.loadAttempt(id: reservation.attempt.id), reservation.attempt)
+    XCTAssertEqual(try reopened.loadAttempt(id: judged.id), judged)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id).first, cause)
+    XCTAssertThrowsError(try reopened.reserveAttempt(value))
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    let reclaimed = try reopened.reissueReservedDirectorLaunch(
+      attemptId: reservation.attempt.id, expectedTaskVersion: reservation.task.version
+    )
+    XCTAssertEqual(reclaimed.attempt.id, reservation.attempt.id)
+    XCTAssertEqual(reclaimed.attempt.sessionId, reservation.attempt.sessionId)
+    XCTAssertEqual(reclaimed.task, reservation.task)
+    XCTAssertEqual(reclaimed.decision, reservation.decision)
+    XCTAssertNotEqual(reclaimed.launchToken, reservation.launchToken)
+    XCTAssertThrowsError(try reopened.authorizeAttemptLaunch(
+      attemptId: reservation.attempt.id, launchToken: reservation.launchToken
+    ))
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id), [reservation.decision])
+    _ = try reopened.authorizeAttemptLaunch(
+      attemptId: reservation.attempt.id, launchToken: reclaimed.launchToken
+    )
+    XCTAssertThrowsError(try reopened.reissueReservedDirectorLaunch(
+      attemptId: reservation.attempt.id, expectedTaskVersion: reservation.task.version
+    ))
+    let cost = LoopCostEvidence(stepExecutionId: "director-execution", totalTokens: 7)
+    let terminalSession = WorkflowSession(
+      workflowId: "director-workflow", sessionId: reservation.attempt.sessionId,
+      status: .completed, entryStepId: "start", currentStepId: "start",
+      createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+      updatedAt: Date(timeIntervalSince1970: 1_800_000_001)
+    )
+    let manifest = LoopEvidenceManifest(
+      schemaVersion: 1, manifestId: "director-cost", workflowId: "director-workflow",
+      sessionId: reservation.attempt.sessionId,
+      workflowSource: LoopWorkflowSource(scope: "project", kind: "workflow-directory", mutable: false),
+      policy: LoopPolicyEvidence(), costs: [cost], gates: [],
+      redaction: LoopRedactionSummary(policyName: "default", status: "clean"),
+      createdAt: terminalSession.updatedAt, updatedAt: terminalSession.updatedAt
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
+      WorkflowRuntimePersistenceSnapshot(session: terminalSession, loopEvidence: manifest)
+    )
+    let outcome = AttemptOutcome(sessionStatus: .completed, costs: [cost])
+    let reconciled = try reopened.reconcileAttempt(attemptId: reservation.attempt.id, outcome: outcome)
+    XCTAssertEqual(reconciled.outcome?.costs, [cost])
+    XCTAssertThrowsError(try reopened.reconcileAttempt(attemptId: reservation.attempt.id, outcome: outcome))
+    let replayed = WorkStore(rootDirectory: root.path)
+    XCTAssertEqual(try replayed.loadAttempt(id: reservation.attempt.id)?.outcome?.costs, [cost])
+    XCTAssertEqual(try replayed.loadAttempt(id: judged.id)?.outcome, judged.outcome)
+    XCTAssertEqual(try replayed.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try replayed.listEvidence(taskId: task.id).first, cause)
+  }
+
   func testFreshDispatchDecisionRollsBackAtEveryPostDecisionBoundary() throws {
     let failurePoints: [AttemptReservationFailurePoint] = [.decisionOrRequest, .lease, .evidence, .task, .session]
     for point in failurePoints {

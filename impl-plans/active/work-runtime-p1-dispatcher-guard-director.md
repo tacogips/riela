@@ -2,20 +2,21 @@
 
 ## Current executable contract — P1-7b only (2026-09-25)
 
-**Current amendment authority: planning-only.** Issue `comm-000001`, bounded
-P1-7b required-gate finalization amendment; intake `comm-000002`. Preserve
-checkpoint `380b64e2c48f5fca3ba909da0523ab1a19f929bb` and all pre-existing WIP.
-Only this current section and design §17.9 may be edited now. The retained
-issue-resolution contract below describes later implementation, not permission
-to implement, test, finalize documentation, commit or push in this run.
-Step 3 `comm-000004` (`step3-design-review-attempt-1-exec-4`) accepted this
-bounded design amendment with no findings in the runtime-delivered review.
-Step 5 independent adversarial plan acceptance remains pending; the added
-production path is executable only in a later authorized implementation run
-after that acceptance. Earlier slice review decisions below are historical.
-No codex-agent reference or Cursor behavior change applies.
+**Current authority: issue-resolution continuation.** Issue “Finish Work
+Runtime P1-7b after accepted task-gate amendment”; intake `comm-000002`.
+Effective `workflowInput` accepts the bounded amendment at pushed checkpoint
+`c8840ad4a7028c5bf22e8d61106ab3b98f505670`. Preserve all six pre-existing dirty
+P1-7b files and other session work. The proposal's former lack of production
+write authority is historical, not a current blocker.
+Step 3 `comm-000004` (`step3-design-review-attempt-1-exec-4`) accepted current
+`design-docs/specs/design-work-runtime-consolidation.md` §17.9 with no findings
+in `codex-design-and-implement-review-loop-session-1`. Step 5 review of this
+aligned plan remains pending; after acceptance, proceed to the workflow's
+serial implementation step. This Step 4 edits the plan only and claims no
+implementation, behavioral verification or formal implementation review.
+No GitHub number/URL, codex-agent reference or Cursor behavior change applies.
 
-### Bounded finalization amendment for later implementation
+### Accepted bounded finalization amendment
 
 The proposal is
 `tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-2/bounded-amendment-request.json`.
@@ -23,7 +24,8 @@ V1 `logs/before-removal-final.log` in the same directory demonstrates
 `terminalSnapshotConflict`: a rejected required gate leaves a completed
 canonical task session, then CLI finalization rewrites it as failed. SQLite
 correctly rejects the rewrite. The prior `plan_amendment_review` found no
-production write authorization; this is the proposed exact-file remedy.
+production write authorization at that time; the checkpoint above accepts this
+exact-file remedy.
 
 - Additional production ownership is limited to
   `Sources/RielaCLI/WorkflowRunCommand.swift`, under the existing serial owner.
@@ -75,24 +77,13 @@ report broad PASS without a complete passing run. Retain B4, formal test-integri
 single adversarial, Astra combined-tree, exact-file commit and non-force push
 gates; P1-7b, P1-7a and parent P1 remain open. No unresolved user decision.
 
-**Retained slice context (superseded by the amendment authority above).**
-Mode `issue-resolution`; issue “Implement Work Runtime P1-7b task-backed
-replacement examples”, effective workflowInput and intake `comm-000002`; no
-GitHub number/URL or codex-agent reference input. Step 3 `comm-000004`,
-`step3-design-review-attempt-1-exec-4`, accepted
-`design-docs/specs/design-work-runtime-consolidation.md` §17.9 with no findings
-in `codex-design-and-implement-review-loop-session-1`. Step 5 `comm-000006`
-requested removal of the early commit/push checkpoint (one mid finding); this
-revision addresses it without changing the accepted design.
-No Cursor change or reference-code divergence applies.
-
-**Later implementation scope:** only this section and its first JSON block
-schedule the later authorized run; the planning-only boundary above controls now.
-Everything after “Historical P1-6d contract” is retained history, including
-older current-contract headings, task DAGs, write allowlists and removal gates.
-Status: bounded design accepted; amended plan review and production repair
-pending. Preserve the current checkpoint named above and ancestor P1-6d commit `59f45c1a126d451fbe2eaf775306785d53b518d2` on
-`feat/remaining-impl-plans`, accepted design changes and all other session work.
+**Executable scope.** Only this current section and its first JSON block
+schedule this continuation. Everything after “Historical P1-6d contract” is
+retained history, including older authority, task DAGs, allowlists and removal
+gates. Prior review references there do not replace current runtime decisions.
+Status: design accepted; aligned plan review and production repair pending.
+Preserve the checkpoint above and ancestor P1-6d commit
+`59f45c1a126d451fbe2eaf775306785d53b518d2` on `feat/remaining-impl-plans`.
 
 ### Intent, context, boundaries and ownership
 
@@ -107,10 +98,10 @@ The old broad run failed 19 assertions, one belonging to these examples;
 Retain all legacy examples and P1-7a implementation. No deletion, new CLI/schema,
 recursive director, new orchestration abstraction, unrelated failure repair,
 Monja work, broad formatting, lockfile regeneration or global plan archiving.
-No workflow/package provenance rediscovery. No reset, force push, broad staging,
+No workflow/package provenance rediscovery. No reset, stash, revert, force push, broad staging,
 main merge, private branch, worktree or concurrent Git operation. Shared state
 and source edits are serial. The bounded amendment above adds only
-`Sources/RielaCLI/WorkflowRunCommand.swift` after formal acceptance; any further
+`Sources/RielaCLI/WorkflowRunCommand.swift`; any further
 production path needs a separately reviewed exact-path amendment.
 
 ```json
@@ -153,6 +144,10 @@ bundle scope and writes only `impl-plans/progress/p1-dispatch.md` as its progres
 log. Shared documentation is reserved for serial finalization. No independent
 implementation plan justifies splitting the shared fixture contract. Read-only
 evidence inspection can overlap only when no command mutates the source/build.
+Use independent read-only subagents for assertion inventory, failure-log
+classification and evidence audit wherever safely separable. They return
+findings to the serial owner and never edit coupled files, run concurrent Swift
+commands or substitute advisory findings for the formal downstream reviews.
 
 ### Dependency-ready waves and precise deliverables
 
@@ -170,9 +165,12 @@ Use native Riela sequencing; no nested shell orchestration or implementation
 fanout is needed. B3 implementation evidence can complete before later review
 steps; B4 and publication cannot be claimed early.
 
-After Step 5 accepts, hand this plan to a later authorized single-owner
-implementation run. Reconcile retained B0–B2 work from its existing receipts;
-do not rebuild or overwrite completed WIP. That run follows the sequence above. There is no early design/plan commit or push checkpoint in this slice.
+After Step 5 accepts, hand this plan to the current workflow’s single-owner
+implementation step. Reconcile retained B0–B2 work from its existing receipts;
+do not rebuild or overwrite completed WIP. That run follows the sequence above. The accepted bounded design/plan checkpoint is already committed and pushed
+at c8840ad4a7028c5bf22e8d61106ab3b98f505670. This continuation schedules serial
+implementation, not native implementation/review fanout; it adds no early
+commit/push gate. Do not dispatch fanout from uncommitted revised plans.
 Commit only reviewed exact paths, including the accepted design and plan, after
 implementation verification, formal reviews and B4 documentation gates; then
 non-force push that accepted commit. Preserve the user's index and exclude

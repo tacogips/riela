@@ -2401,16 +2401,17 @@ independent review remain downstream gates.
 
 ### 17.9 P1-7b task-backed replacement examples (2026-09-25)
 
-**Bounded amendment — planning only (comm-000001; intake comm-000002).**
-This amendment supersedes execution authority below for this run: only this
-subsection and the current executable section of
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` may change.
-Preserve checkpoint `380b64e2c48f5fca3ba909da0523ab1a19f929bb` and all six
-pre-existing dirty P1-7b files unchanged. No production edits, tests,
-documentation finalization, commit or push occur in this planning-only run.
-The earlier design/plan acceptance does not accept this amendment; independent
-adversarial design and plan acceptance must precede later implementation.
-No GitHub issue or codex-agent reference was supplied for this amendment.
+**Accepted bounded amendment — issue-resolution continuation (intake
+comm-000002).** Effective `workflowInput` accepts the prior planning-only
+design and plan amendment at checkpoint
+`c8840ad4a7028c5bf22e8d61106ab3b98f505670`. The current issue is “Finish Work
+Runtime P1-7b after accepted task-gate amendment”. This acceptance supersedes
+the prior planning-only execution restriction and the proposal's historical
+`proposed-not-accepted` status; it does not certify implementation or tests.
+Preserve all six pre-existing dirty P1-7b files and other session work. Step 2
+updates only this design; plan alignment, serial implementation, final-source
+verification, formal reviews, B4 documentation and publication retain their
+own downstream gates. No GitHub issue or codex-agent reference was supplied.
 
 **Demonstrated defect and one-file boundary.** The proposal at
 `tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-2/bounded-amendment-request.json`
@@ -2421,8 +2422,8 @@ applies required-gate failure, rewriting the completed session as failed.
 `SQLiteWorkflowRuntimePersistenceStore.validateTaskTerminalWrite` correctly
 rejects this terminal change with `terminalSnapshotConflict`.
 
-The only additional production write path proposed for later accepted
-implementation is `Sources/RielaCLI/WorkflowRunCommand.swift`. Carry actual
+The only additional production write path authorized by the accepted
+amendment is `Sources/RielaCLI/WorkflowRunCommand.swift`. Carry actual
 `taskReservation != nil` into `RunFinalizeContext` at both existing call sites
 (plain and auto-improve); apply `applyRequiredLoopGateFailureIfNeeded` only
 when no reservation exists. Use the internal reservation, never authored
@@ -2460,8 +2461,8 @@ passing. Formal test-integrity, single adversarial and Astra combined-tree
 reviews, B4 documentation and exact-file commit/non-force push remain later
 gates. P1-7b, P1-7a and parent P1 remain open. No user decision is unresolved.
 
-**Authority and delivery boundary.** Mode `issue-resolution`; issue “Implement
-Work Runtime P1-7b task-backed replacement examples”, from effective
+**Authority and delivery boundary.** Mode `issue-resolution`; issue “Finish
+Work Runtime P1-7b after accepted task-gate amendment”, from effective
 `workflowInput` and Step 1 `comm-000002` in
 `codex-design-and-implement-review-loop-session-1`. No GitHub issue number/URL
 or codex-agent reference input was supplied. No reference-code parity, Cursor
@@ -2480,7 +2481,7 @@ change storage schemas, or repair unrelated broad failures. Retain legacy
 example directories in this slice: deletion is unnecessary to demonstrate
 replacement and requires separately reviewed exact ownership and a passing
 current-source V1 before-removal receipt. No reset, force push, broad staging,
-main merge, or in-workflow worktree creation is permitted.
+main merge, stash, revert, or additional worktree creation is permitted.
 
 **Existing assets and minimal changes.** Both `examples/task-repair-loop/`
 and `examples/task-agent-director/` already contain `workflow.json`, referenced
@@ -2528,10 +2529,11 @@ completion second; joined final-source verification third; independent review,
 then serial documentation and publication. The test and its shared harness
 have one editor; assign disjoint bundle work only after shared fixture contracts
 are fixed. No nested orchestration framework or extra design author is needed.
-Default implementation writes are the two bundles, TaskRuntimeExampleTests and
-directly affected documentation. Any demonstrated runtime defect requires a
-bounded, explicitly owned repair and renewed affected evidence, not speculative
-runtime refactoring. Keep scratch and full verification artifacts under `tmp/`.
+Implementation writes follow the current plan's exact paths for the two
+bundles, TaskRuntimeExampleTests and the accepted WorkflowRunCommand amendment.
+Directly affected shared documentation is finalized only at B4. Any further
+production path requires another bounded reviewed amendment and renewed
+affected evidence. Keep scratch and full verification artifacts under `tmp/`.
 
 **Verification and review gates.** Use the parent plan's exact V0 build, V1
 four-suite before-removal selection, V8 four example validate/mock commands and

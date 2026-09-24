@@ -1,3 +1,298 @@
+# Work Runtime P1-6d: bounded director and judged-work acceptance
+
+## Current executable contract — P1-6d only
+
+Mode `issue-resolution`; issue “Implement Work Runtime P1-6d bounded
+agent-director child and judged-work acceptance”, effective workflowInput,
+`comm-000001`; no GitHub number/URL or codex-agent reference input.
+Step 3 accepted `design-docs/specs/design-work-runtime-consolidation.md` §17.8
+through `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
+`codex-design-and-implement-review-loop-session-1`, with no findings.
+Design SHA-256: `0569ca48a8f6898605ac7102f77d5391ef515f38baf041d90b68b2aa188b9af1`.
+Status: plan authored; Step 5 and implementation acceptance pending.
+
+Only this section and its first JSON block schedule this invocation. Everything
+below “Historical P1-6c contract” is retained history, including older current
+contract headings, JSON blocks and broader verification/removal requirements.
+
+### Intent, context and non-goals
+
+Finish the retained director seams without rebuilding accepted P1-6a/b/c.
+Baseline HEAD is `d3f78df230d1d5c289102c54660ecaec2da90e7c` on
+`feat/remaining-impl-plans`; Step 2's accepted design edit is preserved WIP.
+The child must execute through the ordinary runner and shared store, judge the
+original work, and consume attempt/cost budgets once. Its successful status
+cannot substitute for work completion. Forward existing planner capability inputs.
+
+P1-7b task-backed replacement examples, then P1-7a legacy removal, parent P1 and
+unrelated broad failures remain open. No recursive director, second task store,
+replacement planner/discovery system, speculative abstraction or unrelated repair.
+No workflow provenance rediscovery. No worktrees, private branches, resets,
+force push, broad staging, concurrent Git writes, main merge or Monja changes.
+No Cursor behavior mapping or intentional reference divergence applies.
+
+### Scheduling and ownership
+
+One plan and one serial implementation owner cover coupled store/model/CLI
+changes. Paths are authorized candidates, not a requirement to edit every file.
+Existing Core planner DTO is reused read-only. Necessary responsibility-based
+extractions have explicit candidate names below; record their exact intent before
+creation. Do not use this allowance for unrelated cleanup.
+
+```json
+{
+  "planId": "p1-dispatch",
+  "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+  "dependsOn": [],
+  "writePaths": [
+    "Sources/RielaWork/AgentDirector.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaWork/WorkModels.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift",
+    "Sources/RielaWork/TaskGuardCoordinator.swift",
+    "Sources/RielaWork/TaskDispatcher.swift",
+    "Sources/RielaWork/WorkStore+Director.swift",
+    "Sources/RielaWork/AgentDirectorModels.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/TaskDispatch+Director.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Tests/RielaWorkTests/AgentDirectorTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift",
+    "Tests/RielaWorkTests/AgentDirectorStoreTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
+    "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+    "impl-plans/progress/p1-dispatch.md"
+  ],
+  "sharedPaths": [
+    "README.md",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/README.md",
+    "impl-plans/REMAINING-WORK-HANDOVER.md"
+  ]
+}
+```
+
+Shared documentation is reserved for serial reconciliation/finalization. No
+lockfile, global formatting or plan archiving is needed. Independent agents may
+investigate source, review test integrity and inspect completed verification
+evidence read-only. Do not overlap SwiftPM runs or source writes. Formal
+test-integrity, single adversarial and Astra combined-tree reviews remain
+independent runtime steps; author/delegated advice cannot replace their decisions.
+
+### Ordered tasks and file-level deliverables
+
+1. **D0 — baseline and seam reconciliation.** Read §17.8, the retained P1-6d
+   checklist and source/test paths above. Capture current source membership/hashes,
+   Git status and repository lint before any Swift edit. Inspect
+   `Sources/RielaCore/WorkflowRequirements.swift` for
+   `WorkflowPlanningCapabilityContext.workflowVariables()` and the exact
+   `hostCapabilityContext` key. Confirm existing transaction, replay, budget,
+   reservation and terminal reconciliation helpers before extending them.
+   Deliver an immutable baseline and path intents; no predecessor repair work.
+2. **D1 — durable round reservation (after D0).** In WorkModels/AgentDirectorModels
+   define the smallest typed linkage for task ID, judged non-director attempt ID,
+   child attempt ID and exact child session ID. In WorkStore+Reservation and,
+   if useful, WorkStore+Director, persist that linkage atomically with ordinary
+   `.director` reservation. Enforce one round per judged attempt, current version,
+   reconciled judged work, no live competing attempt and existing admission
+   budgets. Repeated admission resolves the durable round rather than creating
+   another child. Adapt WorkStore+Schema only if storage shape requires it;
+   preserve old rows/identities and migration policy. Rollback must leave no child,
+   linkage, session, lease or attempt charge. Child terminal reconciliation uses
+   its exact session and existing once-only usage accounting. Add fresh-store,
+   reopen, duplicate/replay and injected transaction rollback assertions in
+   WorkStoreReservationTests, WorkStoreTests and AgentDirectorStoreTests as needed.
+3. **D2 — shared application (after D1).** Extend WorkStore+Decisions' shared
+   application boundary with a narrow linked-child exception to latest-attempt
+   checks. Validate same task, stored linkage, producer child session, reconciled
+   successful child, original reconciled work, current task version and absence
+   of newer/unrelated attempts. Reconstruct accept completion using original
+   work gates, verification, acceptance and applicable blocking findings. Preserve
+   `requiresHumanAccept`, causal-evidence scope and ordinary latest-attempt checks.
+   Keep rerun/recover target, pending-request and budget validation. AgentDirector
+   may emit allowed accept only once these protections exist; reject extra fields,
+   invalid types and forbidden kinds. Identical decision replay returns its stored
+   application; conflicting identity reuse rejects. Add real store acceptance
+   tests in DecisionApplierStoreTests/DecisionApplierCausalityStoreTests and typed
+   validator tests in AgentDirectorTests. Retain judged outcome/evidence unchanged.
+4. **D3 — ordinary child execution and planner inputs (after D2).** Extend
+   TaskGuardCoordinator and TaskDispatch (optionally TaskDispatch+Director) so only
+   configured deterministic escalation selects one child after work reconciliation.
+   Use the child workflow's ordinary resolution, admission token, placement and
+   runner session; do not recursively call the director path for its completion.
+   Construct `AgentDirectorTaskView` from the reconciled judged work and durable
+   store records, then serialize and deliver it through the ordinary child
+   workflow input variables. Include `task`, `judgedAttempt`, durable `completion`,
+   `guardViolations`, `openFindings`, `evidenceSummary` and `remainingAttempts`.
+   Retain original work identity/outcome across child reservation and execution;
+   never substitute the newest director attempt or its success into this view.
+   Remaining attempts must reflect the child admission charge when delivered,
+   so the child sees the actual budget available for any proposed next work.
+   Keep this judged context alongside the existing `hostCapabilityContext`
+   planner input, without replacing either input or unrelated workflow variables.
+   Extend TaskDispatcher and WorkflowRunCommand+TaskReservation only where needed
+   to carry this ordinary child admission. Reuse SupervisionPersistence only if
+   necessary for the existing persistence path; add no legacy supervisor behavior.
+   Persist invalid/forbidden output, child failure, missing linkage and admission
+   denial as escalation requiring a human. On stale versions preserve newer state;
+   apply any escalation through current-version validation. Persistence failure
+   is an error, not successful escalation. Replay/restart consults durable linkage
+   and reservation state, preserving uncertainty fences and cancellation rules.
+   Evaluate successful last-admitted work before trying another admission.
+   Forward the selected finite host snapshot and reachable requirements through
+   existing `hostCapabilityContext` variables; preserve other input variables and
+   ensure callers cannot replace admission's authoritative snapshot. Keep selected
+   backend/host through actual execution, without local fallback or dry-run writes.
+5. **D4 — runner matrix and verification (after D3).** In
+   TaskDispatcherIntegrationTests and optional +Director extension, run real
+   shared-store ordinary-runner fixtures proving the matrix below. Strengthen
+   one fixture to capture the actual child node's received workflow inputs and
+   decode its judged TaskView: assert exact task/judged-attempt IDs and outcome,
+   durable completion, nonempty guard violations/open findings/evidence with
+   matching identities and payloads, and remaining attempts after child admission.
+   Assert these values match the original reconciled work/store records, not
+   the director attempt, and that `hostCapabilityContext` is also delivered.
+   This must exercise dispatch and ordinary runner delivery, not DTO construction
+   or serialization alone. Strengthen
+   TaskRuntimeExampleTests only to prove this slice's child path; do not implement
+   P1-7 replacement bundles/removal. Reconcile all final changes against intents,
+   repair serially, run the commands below, and obtain independent reviews.
+6. **D5 — accepted completion record (after D4 and formal reviews).** Refresh
+   progress, this plan, design, README and shared indexes only where behavior/status
+   changed. Keep P1-7b/P1-7a/parent P1 and broad follow-ups open. Produce exact file
+   allowlist and evidence for downstream commit/non-force push; do not stage or
+   publish implementation from a worker. Planning approval alone is not completion.
+
+Task DAG: D0 → D1 → D2 → D3 → D4 → D5. No separate implementation plan is
+independent enough to justify concurrent writers.
+
+### Invariants and required test matrix
+
+| Case | Required observation at real store/runner boundary |
+| --- | --- |
+| Allowed accept | Configured child completes; decision targets judged work, producer is exact child session; all original gates/verification/findings pass. |
+| Child-only success | Missing judged gates/acceptance or failed verification still prevents accept; blocking findings also prevent accept. |
+| Human/version/linkage | Human-required accept, stale expected version, newer work, unrelated intervening attempt, missing/foreign linkage or wrong child session rejects without overwriting newer state. |
+| Invalid child | Failed child, forbidden kind, malformed/extra fields persist escalation; no director recursion. |
+| Budget boundary | Denied child admission creates no child/charge and requires human; successful last-admitted work can finish; rerun/recover cannot exceed remaining budget. |
+| Durable lifecycle | Fresh/reopened store has exact task/work/child/session relation; rollback leaves no partial state; repeated dispatch/terminal reconciliation/decision replay charges attempts and cost once. |
+| Evidence isolation | Compare judged outcome and evidence identities/payloads before child, after completion and after replay; child evidence stays scoped to child. |
+| Judged TaskView delivery | Actual child node receives task and judged-attempt identity/outcome, durable completion, guard violations, open findings, evidence identities/payloads and post-admission remaining budget matching reconciled work/store records; hostCapabilityContext remains present. |
+| Planner and placement | Observe hostCapabilityContext in actual workflow input; selected backend and host execute the child and report into its reserved session. |
+| Compatibility | Dry-run leaves store/files invariant; P1-6a selected root/callee delivery and P1-6c cancellation/fencing continue passing. |
+
+Validator-only tests and recommendation JSON alone cannot satisfy the matrix.
+Use existing deterministic fixtures and injected failure points; no sleeps as
+proof of lifecycle ordering. Each fixture owns and stops workers before exit.
+
+### Edit safety, checkpoint and progress
+
+After Step 5 accepts, the workflow's serial checkpoint stage commits the exact
+accepted design and plan before native implementation/review fanout. Step 4 does
+not self-approve or commit an unreviewed plan. Implementation starts from that
+checkpoint on the same branch; preserve predecessor commits and user changes.
+
+Before every edit, freshly read each target and save immutable preimage, SHA-256,
+intended hunks and task ID under `tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-N/`.
+Check the pre-hash immediately before writing; stop and reconcile unexpected drift
+without overwriting it. Save post-hash and actual diff. New files record absence
+as preimage. After joining read-only work, the serial owner compares intents to
+the actual combined tree and repairs missing/overwritten hunks before final-source
+checks. Keep touched non-generated Swift files at most 1000 lines by cohesive
+responsibility extraction, with exact new paths recorded in ownership evidence.
+
+Only the owner updates `impl-plans/progress/p1-dispatch.md`; append D0–D5 status,
+paths, command/log/hash/count/exit receipts, review decisions and open risks.
+No completion box advances on stale receipts or incomplete logs. All throwaway
+files stay under repository `tmp/`. Retain verification evidence for review.
+
+### Exact verification commands and evidence
+
+Run from repository root, foreground only. Use immutable attempt directories under
+`tmp/work-runtime-p1/p1-dispatch/p1-6d/` for complete stdout/stderr logs and a JSON
+manifest containing exact command, toolchain, start/end, exit status, per-suite
+test counts, log SHA-256 and before/after source manifest hashes/membership.
+Record every failed/retried command separately. Zero tests, missing named suites,
+timeouts and incomplete terminal summaries are not passing. Poll every yielded
+handle to exit. No overlapping SwiftPM processes or source changes during checks.
+
+Execute these commands with Xcode's explicit toolchain. Each numbered test filter
+must execute all its named suites with positive counts. Additional test suites
+introduced by a justified extraction must be added to the matching gate.
+
+```bash
+# V0: compile/typecheck; build.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
+# Director/store matrix; director-store.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'AgentDirectorTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|WorkStoreReservationTests|WorkStoreTests'
+# V1: ordinary runner and dry-run; focused.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskDryRunReadOnlyTests'
+# V2: admission, budgets and cancellation; reservation.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests'
+# V3: guard/shared decision regression; lifecycle.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'
+# V4: planner/capability compatibility; capability.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'
+# V11 plus accepted cancellation regression; selected-host.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskCancellationIntegrationTests'
+# V5: serial broad regression, after focused gates; broad.log
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test
+# V6: exact surviving changed/new Swift paths from intent evidence; lint-changed.log
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/changed-swift-files.nul
+# V7: run before Swift edits and after; lint-baseline.log / lint-repository.log
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache
+# Diff checks; diff-check.log / cached-diff-check.log
+git diff --check
+git diff --cached --check
+```
+
+Capture baseline first despite its listing below test commands. If
+checking cancellation coverage, `WorkStoreCancellationTests.swift` extends
+`WorkStoreReservationTests`; its filename is not a separate XCTest suite.
+`BudgetAdmissionStoreTests.swift` declares `BudgetAdmissionDecisionApplierStoreTests`.
+If
+AgentDirectorStoreTests is created, additionally run the exact command
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AgentDirectorStoreTests`
+and require positive counts in `director-store-extra.log`. Repeat affected checks
+after any repair; avoid redundant broad runs on unchanged source. Environment
+failures retain failed/blocked status; documented writable module-cache/scratch
+fallbacks may be used under repository tmp with their exact command recorded.
+Listener denial requires source-matched listener-capable-host evidence, not a
+product failure diagnosis or a waived test. No web changes: browser E2E is not
+required. Historical V8–V10 replacement/removal/package checks are not scheduled.
+
+### Completion and review gates
+
+All matrix cases, build and strict touched-file lint must pass on the reviewed
+source; classify repository lint baseline without unrelated cleanup. Broad tests
+must run serially with complete evidence. The historical P1-6c 2,059-test/19-assertion
+failure remains FAILED, and its focused receipts cannot certify P1-6d. Classify
+every current broad failure against exact test identities and source evidence;
+do not waive the broad gate or call it green. Preserve the earlier intermittent
+live-progress timing failure, even if its current case passes. If only historical
+non-slice failures remain, report them for explicit independent slice acceptance
+while leaving the broad gate and parent P1 open; new/unclassified failures block
+acceptance. Formal test-integrity, single adversarial and Astra combined-tree
+reviews must find no material P1-6d defect. Documentation and exact-file commit/
+non-force push follow acceptance only; no whole-plan archiving or parent closure.
+
+Author check: tasks map to accepted §17.8; one-plan DAG and exact path ownership
+avoid concurrent coupled writes; tests distinguish child evidence from judged
+work and cover rollback/replay. Step 5 `comm-000006` identified missing explicit
+judged TaskView delivery and runner assertions (mid); D3, D4 and the matrix now
+specify all fields and actual child input observation, preserving planner inputs.
+No unresolved user decision remains. Implementation tests are downstream, not
+claimed by this plan; renewed Step 5 acceptance is pending.
+
+## Historical P1-6c contract
+
 # Work Runtime P1-6c: selected-host late-cancellation regression repair
 
 **Mode / issue:** `issue-resolution`; Work Runtime P1-6c, no GitHub issue supplied.

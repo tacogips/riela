@@ -2243,3 +2243,127 @@ refresh is triggered. Author review checks intake/reference mapping, necessary
 scope, explicit data/validation boundaries, recorded questions and WIP
 preservation. No unresolved high/mid design finding remains; implementation
 findings and downstream review/test gates above remain open.
+
+### 17.8 P1-6d bounded director execution (2026-09-24)
+
+**Current authority and scope.** Mode `issue-resolution`; issue “Implement Work
+Runtime P1-6d bounded agent-director child and judged-work acceptance”, sourced
+from effective `workflowInput.issueTitle`/`issueBody` (`comm-000001`), delivered
+by Step 1 `comm-000002`, execution `step1-issue-intake-attempt-1-exec-2`, in
+`codex-design-and-implement-review-loop-session-1`. No GitHub number/URL or
+codex-agent reference input was supplied. Workflow execution identifiers are
+not external reference-code evidence; no Cursor behavior change or reference
+divergence is requested. Existing backend adapters retain their boundaries.
+
+This subsection scopes the present run to P1-6d and supersedes older current-run
+inventories in §17.7, without replacing its behavioral contracts. The complete
+plan input is `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`,
+especially “P1-6d judged-work acceptance and child execution”. Inspected HEAD
+matches intake `d3f78df230d1d5c289102c54660ecaec2da90e7c`; the initial worktree
+was clean. Preserve accepted P1-6a/b/c and all other worktrees. P1-7b then P1-7a,
+parent P1, and unrelated broad failures remain open. One serial owner edits
+coupled model/store/CLI code; independent investigation and review are read-only.
+No second task store, replacement planner, recursive repair, legacy removal,
+reset, broad staging, force push or main merge belongs to this slice.
+
+**Retained seams.** `Sources/RielaWork/AgentDirector.swift` already validates
+bounded typed output but deliberately refuses accept. `WorkStore+Decisions.swift`
+already reconstructs durable completion and enforces latest-attempt, causality,
+version and replay checks. `Sources/RielaCLI/TaskDispatch.swift` rejects director
+entry. `Tests/RielaWorkTests/AgentDirectorTests.swift` asserts that temporary
+refusal; `Tests/RielaCLITests/TaskRuntimeExampleTests.swift` observes recommendation
+output without proving child execution. Extend these seams; their existence or
+old passing tests do not establish P1-6d acceptance.
+
+**Execution and durable identity.** Preserve §17.3 deterministic ordering.
+Only configured escalation invokes one optional director round. First reconcile
+the judged non-director work attempt and persist its outcome and evidence.
+Successful last-admitted work may complete without needing another reservation.
+When escalation needs a child, use ordinary admission, placement and runner
+execution against the same task and store. Atomically reserve the `.director`
+attempt and persist task ID, judged attempt ID, child attempt ID and exact child
+session ID. Linkage must identify the one round for that judged attempt across
+reopen/retry; an in-memory TaskView or caller-provided identity is insufficient.
+Reservation failure leaves neither partial linkage nor a charged child attempt.
+
+Retain the judged TaskView as child input, including durable completion, guard
+findings, evidence and remaining budget. Child results and usage belong to the
+child attempt/session; they never replace judged-work outcome or evidence.
+Reconcile child usage/cost exactly once with existing shared-store accounting.
+An interrupted/repeated dispatch uses the durable round and ordinary reservation
+reconciliation, not a fresh child or an inferred successful termination. Preserve
+the existing live-attempt fence and accepted cancellation rules.
+
+**Application boundary.** A child recommendation is untrusted input. Validate
+configured allowed kinds, P1 typed fields and causal evidence before routing it
+through the shared applier. For a new application, atomically check the current
+task version, stored same-task linkage, producer's exact child session, reconciled
+successful child and reconciled judged work. Permit the linked child as the sole
+intervening attempt; newer work, an unrelated intervening attempt or missing,
+foreign or stale linkage rejects the recommendation. Keep ordinary latest-attempt
+enforcement for every unrelated decision path.
+
+An allowed accept reconstructs completion from the judged work's durable required
+gates, verification ledger, acceptance payload and applicable blocking findings.
+Neither child success nor a caller-supplied satisfied verdict proves work success.
+`requiresHumanAccept` remains binding. Rerun/recover must retain existing target,
+causality, pending-reservation and remaining-budget validation. Remove unconditional
+accept refusal only together with these shared-store protections.
+
+Invalid/forbidden output, failed child, denied admission or unusable linkage
+persists escalation evidence and requires human action; child completion must not
+trigger another director. A stale decision must not overwrite newer task state:
+record its rejection through the current-version shared path, preserving that
+newer work. Failed persistence is an error, never a claimed durable escalation.
+Identical replay returns the recorded application before evaluating a new action;
+conflicting reuse of a decision identity rejects. Replay cannot launch another
+child, duplicate attempts/cost/evidence or rewrite judged work.
+
+**Planner input and delivery.** Reuse
+`Sources/RielaCore/WorkflowRequirements.swift`'s
+`WorkflowPlanningCapabilityContext.workflowVariables()` and existing
+`hostCapabilityContext` key. Forward the finite selected host snapshot and
+reachable requirements from the accepted capability evaluation into existing
+planner workflow inputs. Keep admission's selected backend/host authoritative
+through ordinary execution; prove actual delivery, not only DTO serialization.
+No new discovery architecture is needed. Preserve dry-run invariance and P1-6a/c
+placement/cancellation behavior.
+
+**Acceptance and evidence.** Real shared-store and ordinary-runner tests must
+cover allowed accept; child-only success, missing gates, blocking findings,
+newer work, missing/foreign linkage, human-required acceptance and stale-version
+rejection; failed/invalid/forbidden/budget-blocked escalation; last-admitted
+work and nonrecursion. Fresh/reopened-store, rollback and replay cases assert
+exact task/attempt/session identities and once-only attempt/cost accounting,
+with unchanged judged-work evidence. Use the intake's Work store/director suites
+and CLI integration/example suites, plus affected plan V1–V4/V11 checks.
+
+Before Swift edits capture source manifest and lint baseline. Required downstream
+commands include `swift build`,
+`swift test --filter 'AgentDirectorTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|WorkStoreReservationTests|WorkStoreTests'`,
+`swift test --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'`,
+`swift test --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'`,
+strict touched-file SwiftLint using the plan's NUL manifest command,
+`git diff --check`, `git diff --cached --check`, and serial `swift test`.
+Record exact commands, complete logs, source/log hashes, positive test counts and
+terminal statuses under repository `tmp/`; poll all foreground sessions to exit.
+Listener denial is an environment failure, not product acceptance. P1-6c's
+selected-host 1/1, store 56/56, focused 104/104, compatibility 28/28, build and lint
+receipts predate this slice. Its 2,059-test aggregate with 19 non-slice assertions
+remains failed; retain the earlier intermittent live-progress timing limitation.
+Neither classification nor focused success makes the broad gate green.
+
+Independent test-integrity, single adversarial and Astra combined-tree review
+must find no material P1-6d defect before completion documentation and exact-file
+commit/non-force push. Refresh the plan, `impl-plans/progress/p1-dispatch.md`,
+`impl-plans/README.md` and `impl-plans/REMAINING-WORK-HANDOVER.md` only to reflect
+actual accepted evidence and remaining dependencies. No implementation or review
+acceptance is claimed by this design update.
+
+**Questions and self-check.** No unresolved user decision or Step 3/5 feedback
+was supplied; no user-QA document is needed. The minimal persisted linkage shape
+and its transaction integration are implementation-plan details constrained above,
+not permission to add a new subsystem. Author inspection confirms the one-plan
+scope, reference mapping, data flow, validation and rollout requirements cover
+the intake. No high/mid design finding remains; implementation verification and
+independent review remain downstream gates.

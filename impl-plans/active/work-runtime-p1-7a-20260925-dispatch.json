@@ -1,0 +1,205 @@
+{
+  "taskId": "work-runtime-p1-7a-20260925",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "a8516ec7e44d57f9717b2403510cfb7d6b84fec1",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-7a-20260925",
+  "issueReference": {
+    "communicationId": "comm-000001",
+    "intakeCommunicationId": "comm-000002",
+    "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+  },
+  "codexAgentReferences": [],
+  "designReview": {
+    "communicationId": "comm-000004",
+    "accepted": true,
+    "findings": []
+  },
+  "planReview": {
+    "communicationId": "comm-000006",
+    "accepted": true,
+    "findings": [],
+    "reviewDecision": "Accept the P1-7a implementation plan against accepted design §17.10."
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/SessionCommandModels.swift",
+        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
+        "Sources/RielaCLI/LoopCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/WorkflowRunResult.swift",
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandPackageLifecycleTests.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "Tests/RielaCLITests/TaskCommandMutationTests.swift",
+        "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+        "impl-plans/progress/p1-dispatch.md",
+        "examples/auto-improve/README.md",
+        "examples/default-superviser/EXPECTED_RESULTS.md",
+        "examples/default-superviser/workflow.json",
+        "examples/supervised-mock-retry/EXPECTED_RESULTS.md",
+        "examples/supervised-mock-retry/mock-scenario.json",
+        "examples/supervised-mock-retry/nodes/node-main-worker.json",
+        "examples/supervised-mock-retry/prompts/main-worker.md",
+        "examples/supervised-mock-retry/workflow.json"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "tasks": [
+        {
+          "taskId": "A0",
+          "dependsOn": [],
+          "intendedChanges": "Inventory exact consumers, source identity and coverage; establish reviewed ownership and baseline lint."
+        },
+        {
+          "taskId": "A1",
+          "dependsOn": [
+            "A0"
+          ],
+          "intendedChanges": "Prove replacement inactivity, bounded retry, gate/failure recovery, cancellation and replay in four V1 suites; record fresh passing before-removal V1."
+        },
+        {
+          "taskId": "A2",
+          "dependsOn": [
+            "A1"
+          ],
+          "intendedChanges": "Remove only legacy implementation/state/examples; reject removed CLI and remote input; preserve retained paths."
+        },
+        {
+          "taskId": "A3",
+          "dependsOn": [
+            "A2"
+          ],
+          "intendedChanges": "Run final-source build, V1–V9, retained/cancellation gates and serial broad regression; classify exact failures."
+        },
+        {
+          "taskId": "A4",
+          "dependsOn": [
+            "A3"
+          ],
+          "intendedChanges": "Obtain test-integrity, single Sol adversarial and Astra combined-tree acceptance; renew affected evidence after repairs."
+        },
+        {
+          "taskId": "A5",
+          "dependsOn": [
+            "A4"
+          ],
+          "intendedChanges": "Refresh reviewed docs/progress; exact-file commit and non-force push; leave parent P1 open."
+        }
+      ],
+      "acceptanceCriteria": [
+        "Positive named replacement behavior and complete passing V1 before any deletion.",
+        "Removed options/remote fields reject; retained paths preserve behavior.",
+        "Final-source V1–V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
+        "No material P1-7a finding remains after formal reviews; only reviewed files publish; parent P1 remains open."
+      ],
+      "verification": [
+        "swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkflowCommandTests|WorkflowRunHelpTests|CommandParsingTests|SpecialistSupervisorCommandTests|SpecialistSupervisorBoundaryTests|SpecialistSupervisorRecoveryTests|EventLiveServeTests|RoutineCommandTests|RoutineAddonTests|RoutineStoreTests|RoutineGraphQLTests|EventRoutineBindingTests|RoutineAddonCatalogTests|LoopStartPromoteCommandTests|DefaultLoopGuardRecoveryTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaExampleParityTests'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkflowCommandTests.testWorkflowRunUsesGraphQLEndpointTransport|WorkflowCommandTests.testWorkflowRunEndpointUsesRielaAuthEnvironment|WorkflowCommandTests.testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRuntimeExampleTests.testStandaloneNonAcceptedRepairGateFailsAndRetainsEvidence|WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection'",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel",
+        "xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/changed-swift-files.nul",
+        "swiftlint lint --quiet --no-cache",
+        "rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples",
+        "git diff --check",
+        "git diff --cached --check",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/task-repair-loop-store --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/task-agent-director-store --output json",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests'"
+      ]
+    }
+  ],
+  "reviewContext": {
+    "issueReference": {
+      "communicationId": "comm-000001",
+      "intakeCommunicationId": "comm-000002",
+      "acceptedDesignReview": "comm-000004",
+      "acceptedPlanReview": "comm-000006",
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+    },
+    "userProblem": "Finish P1-7a ordered legacy workflow auto-improve removal after the accepted P1-7b checkpoint while retaining Work Runtime behavior.",
+    "requiredOutcomes": [
+      "Prove inactivity, bounded retry, gate/failure recovery, cancellation and replay in positive replacement dispatcher tests and pass the complete V1 gate before deletion.",
+      "Remove only specified obsolete CLI, state/result and three legacy example paths; reject removed CLI flags and remote fields including false/null presence.",
+      "Repeat V1 and run the specified final-source gates with positive suite counts, complete logs, exact source identity and explicit failure ownership.",
+      "Obtain formal test-integrity, Sol adversarial and Astra combined-tree acceptance; update progress/docs and publish only reviewed P1-7a files while parent P1 remains open."
+    ],
+    "nonGoals": [
+      "New architecture, compatibility framework, public API, recursive director, task-create CLI or broad unknown-field policy.",
+      "Repair of unrelated broad-suite failures, completion of parent P1, main merge or release."
+    ],
+    "constraints": [
+      "Single integration owner for coupled Swift source/tests; A1 replacement tests and passing before-removal V1 precede all legacy deletion.",
+      "Use the accepted P1-7b HEAD and current branch; preserve unrelated changes and serialize mutation, verification and Git.",
+      "Further write paths require bounded reviewed amendment before edit; all scratch and complete receipts stay under evidenceRoot.",
+      "No reset, stash, force push, additional worktree or concurrent Git operation."
+    ],
+    "designDecisionsAndRationale": [
+      "Reuse task dispatch, reserved ordinary execution, canonical terminal evidence, guard/director and shared decision applier to preserve accepted Work Runtime contracts.",
+      "Keep task-free plain runs, mock workflows, authenticated remote behavior, required/optional gates, specialist/event dispatch, loops and routines.",
+      "Use a single plan with ordered A0-A5 tasks because source and tests are tightly coupled; final documentation and shared paths are serial."
+    ],
+    "intentionalTradeoffs": [
+      "The serial broad gate may remain FAILED for exact classified non-P1-7a assertions; no new slice-owned failure may remain.",
+      "Remote receiving validation must be located in A0; an unverified boundary remains an explicit acceptance gap, not inferred from outbound omission."
+    ],
+    "supportedEdgeCases": [
+      "Removed CLI aliases and remote autoImprove/nestedSuperviser fields reject even when set to false or null.",
+      "Progress avoids false inactivity, last admitted retry may succeed, cancellation waits for exact-session acknowledgment, and replay avoids duplicate durable effects."
+    ],
+    "outOfScopeEdgeCases": [
+      "Unrelated specialist/event supervisor, loop and routine removals and any new remote service or general unknown-field policy."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-2/broad-classification.json"
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; P1-6c cancellation slice accepted 2026-09-24 and P1-6d bounded director slice accepted by formal review 2026-09-25, with publication pending; P1-6a finalization design update remains pending independent review.** The serial broad gate remains failed with 19 classified non-slice assertions; P1-7a/b, parent P1 and P2-P7 remain open. Section 17 defines the P1 contracts. **Section 17.8 governs P1-6d; earlier execution scopes, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 is the current P1-7a design proposal, pending independent review; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2637,3 +2637,137 @@ not architectural unknowns. The author checked intake traceability, existing
 assets and task boundaries, minimal scope, explicit ownership/dependencies,
 and the separation of replacement evidence from legacy deletion. No unresolved
 high/mid design finding remains. Subsequent behavioral gates remain required.
+
+
+### 17.10 P1-7a ordered legacy removal (2026-09-25)
+
+**Intake and scope.** Mode `issue-resolution`; issue “Finish Work Runtime P1-7a
+ordered legacy auto-improve removal”; issue reference `comm-000001`, intake
+`comm-000002`, execution `codex-design-and-implement-review-loop-session-1`,
+Step 2 `step2-design-doc-update`. The complete implementation-plan batch is
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; preserve its
+original task IDs and file map. This section governs only P1-7a and supersedes
+historical no-publication-between-slices wording: P1-7b is already accepted at
+the checkpoint above. This slice may publish after its own gates; parent P1
+requires a separate completion audit. No Codex-agent reference repository or
+Cursor-specific behavior is supplied or needed; no adapter divergence is proposed.
+
+The prior evidence root is
+`tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-2/`.
+Its `verification-evidence.json` and `broad-classification.json` are historical
+receipts, not a new P1-7a deletion authorization. The latter records 2,668 tests,
+two skips and 18 assertions: Doctor/backend capability (7), workflow/host
+readiness (8), runner admission (1), temporary registration (2). Preserve the
+exact identities and owners when comparing fresh results; do not assume that
+a failure in a previously failing suite is unrelated to this removal.
+
+**Replacement behavior and deletion barrier.** Reuse task dispatch → reserved
+ordinary workflow execution → canonical terminal evidence → guard/director →
+shared decision applier. No parallel supervision store, new public API, task
+creation CLI, recursive repair or replacement framework is introduced.
+Before deleting implementation, legacy tests or example files, map each row
+below to named positive tests in the four V1 suites and record a fresh complete
+passing V1 receipt on the before-removal source. Supplementary suites may
+strengthen the evidence but do not replace this four-suite barrier.
+
+| Behavior | Required observable evidence |
+| --- | --- |
+| Inactivity | A configured task guard observes lack of progress through actual dispatch, persists the violation and applies the bounded decision; progress prevents a false inactivity action. |
+| Bounded retry | Recovery consumes one pending request per distinct reserved attempt/session, stops at the configured limit, and cannot bypass budget; successful completion of the last admitted attempt remains possible. |
+| Gate and failure recovery | Rejected required-gate evidence and failed execution drive the existing recovery decision; an ordinary later attempt can succeed after the controlled cause changes. Do not seed successful terminal state or mark findings resolved just to satisfy assertions. |
+| Cancellation | Durable cancellation fences replacement until exact-session terminal acknowledgment; cancelled work cannot create a new legacy incident or automatic retry. Preserve accepted local and selected-host cancellation contracts. |
+| Replay | Reapplying the same decision or reopening durable state does not duplicate attempts, sessions, pending requests, ledger entries or accounting. |
+
+Each V1 receipt records exact command, terminal exit 0, complete log, positive
+counts separately for `TaskCommandMutationTests`, `TaskDispatcherTests`,
+`TaskDispatcherIntegrationTests`, `TaskRuntimeExampleTests`, and source identity
+(HEAD plus manifest/diff covering dirty source, tests and fixtures). Old P1-7b
+57-test evidence alone cannot establish these new acceptance rows. Failure,
+missing suite, truncated log or changed relevant source leaves deletion blocked.
+
+**Removal and retained boundaries.** Use the P1-7a file-map rows in the plan:
+remove `Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift`, its policy and
+mutation types, `SupervisedScenarioNodeAdapter`, and exclusively obsolete
+supervision state/result plumbing, including `supervision-record.json` output
+and `WorkflowRunResult.supervision`. Do not delete existing user artifacts.
+Delete only the legacy example directories `examples/auto-improve/`,
+`examples/default-superviser/`, `examples/supervised-mock-retry/`; retain both
+accepted task examples and their shared catalog coverage. Section 12's broader
+routine, specialist and loop removals belong to later phases, not this slice.
+
+Removed workflow-run options must produce usage errors, including
+`--auto-improve`, `--no-auto-improve`, `--max-supervised-attempts`,
+`--max-workflow-patches`, `--monitor-interval-ms`, `--stall-timeout-ms`,
+`--workflow-mutation-mode`, `--nested-superviser` and `--nested-supervisor`.
+Preserve unrelated `--supervisor-mode` / `--no-supervisor-mode`, default loop
+guard and agent-silence controls. Inventory shared session/loop consumers before
+removing any option there; names alone are not evidence of obsolete behavior.
+Remote workflow requests containing removed `input.autoImprove` or
+`input.nestedSuperviser` must reject at the receiving validation boundary,
+including false/null values, rather than ignoring them or forwarding them.
+Ordinary authenticated remote requests must retain their authentication and
+payload contract. Existing user workflow variables with similar names are not
+new reserved fields. No broad unknown-field policy is added.
+
+Preserve task-free plain runs, mock scenarios, canonical required-gate failure
+for standalone runs, optional-gate behavior, specialist/event dispatch, loop
+and routine stores and execution. Rewrite obsolete tests as explicit rejection
+and preservation regressions only after the barrier. Keep meaningful assertions;
+remove only assertions whose specified legacy behavior is intentionally gone.
+
+**Ownership and dependency-ready waves.** One design author covers the whole
+plan batch; one integration owner owns coupled Swift source/tests. Downstream
+native Riela waves are ordered: (1) exact reference inventory, reviewed path
+ownership and replacement tests with passing before-removal V1; (2) bounded
+removal and rejection/preservation regressions; (3) final-source verification,
+formal reviews, documentation and publication. Independent read-only investigation
+may run alongside a wave; mutation and Git operations remain serial. Any newly
+found decoder, result consumer, fixture or catalog path outside the plan's
+listed ownership requires an exact-path bounded reviewed amendment before edit.
+A contradictory retained consumer blocks that removal, not permission to redesign
+another subsystem. Implementation planning must enumerate such paths and exact
+retained-path test identities before dispatching edits.
+
+**Final-source acceptance.** Repeat V1 after removal and run the plan's V0 build,
+V2 reservation/cancellation/budgets, V3 guards/directors/decisions, V4 capabilities,
+both V5 groups, V6 strict changed-file lint, V7 repository lint and V9 classified
+reference/diff audit. Preserve V8 replacement-example behavior checks; these
+exercise repository examples only. No current-workflow provenance rediscovery
+is part of verification. Run affected retained-path tests for plain/mock runs,
+authenticated remote payload/rejection, specialist/event dispatch and loops/
+routines with positive suite counts. Include event/routine suites outside V5
+where relevant, such as `EventRoutineBindingTests` and `RoutineAddonCatalogTests`.
+Use the following explicit core commands; the plan retains full V2–V9 commands:
+
+```bash
+swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel
+rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples
+git diff --check
+```
+
+The serial broad command supplements, not replaces, the two V5 groups. Keep
+broad failures explicitly **FAILED**, with exact test/assertion identity, cause,
+owner and follow-up. Resolve every new P1-7a-owned failure; previous classification
+is not automatic exemption. Slice acceptance does not turn a failed aggregate
+into a pass. Record complete foreground logs, terminal exits, per-suite positive
+counts, exact commands and before/after source manifests under this worktree's
+`tmp/`, using separate before-removal and after-removal receipts. Poll every
+yielded command through exit. Repairs invalidate affected evidence and reviews.
+
+Require formal test-integrity, single Sol adversarial and Astra combined-tree
+acceptance with no material P1-7a defect. Then refresh directly affected docs,
+the active plan and `impl-plans/progress/p1-dispatch.md`, and commit only the
+exact reviewed files and non-force push to `origin/feat/remaining-impl-plans`.
+No reset, stash, force push, main merge, additional worktree or concurrent Git
+operation is authorized. Parent P1 and unrelated broad follow-ups remain open.
+
+**Open questions and current decision.** No unresolved user decision or
+Codex-reference mapping exists. Exact additional ownership paths and named
+behavior-to-test coverage are downstream investigation deliverables, not new
+architectural choices. This section is author-checked design only, pending
+Step 3 review; no P1-7a implementation, passing deletion barrier, formal acceptance
+or publication is claimed by Step 2.

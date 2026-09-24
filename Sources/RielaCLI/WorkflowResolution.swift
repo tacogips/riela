@@ -351,7 +351,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       let ownershipRoot = (candidate.packageDirectory ?? candidate.directory).standardizedFileURL
       let marker = WorkflowTransactionStableMetadata.url(forOwnershipRoot: ownershipRoot)
       guard inspected.insert(marker.path).inserted else { continue }
-      guard try directoryExistsWithoutFollowingLinks(ownershipRoot.deletingLastPathComponent()) else {
+      let parent = ownershipRoot.deletingLastPathComponent()
+      let checkedParent = try parent.path == "/tmp" ? workflowSystemTemporaryRoot() : parent
+      guard try directoryExistsWithoutFollowingLinks(checkedParent) else {
         // No stable marker or canonical-target lock can exist without the
         // target parent. Missing discovery candidates are handled normally.
         continue

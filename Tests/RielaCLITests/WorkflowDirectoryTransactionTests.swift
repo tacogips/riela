@@ -324,7 +324,7 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     let snapshot = try WorkflowHistoryStore(root: resolved.historyRoot).createSnapshot(inventory: before)
     let victim = root.appendingPathComponent("lock-victim.txt")
     try Data("preserve-me".utf8).write(to: victim)
-    let lock = workflowTargetLockURL(target: resolved.identity)
+    let lock = try workflowTargetLockURL(target: resolved.identity)
     try FileManager.default.removeItem(at: lock)
     defer { try? FileManager.default.removeItem(at: lock.deletingLastPathComponent()) }
     try FileManager.default.createSymbolicLink(
@@ -347,13 +347,31 @@ final class WorkflowDirectoryTransactionTests: XCTestCase {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
     let resolved = try resolveMutableTransactionTarget(root: root)
 
-    let lock = workflowTargetLockURL(target: resolved.identity)
+    let lock = try workflowTargetLockURL(target: resolved.identity)
 
-    XCTAssertTrue(lock.path.hasPrefix("/tmp/riela-workflow-target-locks-\(geteuid())/"))
+    let temporaryRoot = try XCTUnwrap(realpath("/tmp", nil))
+    defer { free(temporaryRoot) }
+    XCTAssertTrue(lock.path.hasPrefix("\(String(cString: temporaryRoot))/riela-workflow-target-locks-\(geteuid())/"))
     XCTAssertFalse(lock.path.hasPrefix("/var/tmp/"))
     let descriptor = try acquireWorkflowTargetLock(target: resolved.identity, owner: "sandbox-compatible")
     releaseWorkflowTargetLock(descriptor)
     try FileManager.default.removeItem(at: lock.deletingLastPathComponent())
+  }
+
+  func testDirectResolutionThroughSystemTemporaryRootDoesNotRejectMacOSAlias() throws {
+    let options = WorkflowResolutionOptions(
+      workflowName: "riela-missing-temporary-workflow-test",
+      scope: .direct,
+      workflowDefinitionDir: "/tmp"
+    )
+
+    XCTAssertThrowsError(try FileSystemWorkflowBundleResolver().resolve(options)) { error in
+      guard let resolutionError = error as? WorkflowResolutionError,
+            case .notFound = resolutionError else {
+        XCTFail("Expected missing workflow, not unsafe /tmp rejection: \(error)")
+        return
+      }
+    }
   }
 
   func testRecoveryRejectsNoncanonicalAndDigestMismatchedTransactionBytes() async throws {

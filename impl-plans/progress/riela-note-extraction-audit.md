@@ -88,6 +88,23 @@ the old plan, still compare its TASK-001..008 acceptance matrix with current
 Kaiba traversal, GraphQL, Riela adapter and workflow tests, including the
 intentional add-on rename from `riela/` to `kaiba/` and any live-client gap.
 
+### Graph-RAG TASK-001..008 current-boundary matrix
+
+| Old task | Current owner/evidence | Acceptance still required |
+| --- | --- | --- |
+| 001 public contract/policy | Kaiba `NoteGraph.swift` defines the neighbor result and centralized caps/weights. | Compare every accepted normalization and tie-break rule with the current service contract. |
+| 002 traversal | Kaiba `NoteGraphTraversal.swift` and `NoteGraphTraversalTests.swift` cover depth, decay, IDF, caps, duplicate seeds, stronger pending paths and linked search. | Audit the full source/merge/frontier/no-backfill and path-evidence matrix against the old design; test-file presence is not full behavioral proof. |
+| 003 search and association | Kaiba `NoteSearch.swift` calls the graph seam for linked expansion; `NoteService+Relations.swift` calls it for depth-two proposals. | Verify default search, direct-hit truncation/filter/paging, bridge behavior and provenance on current source. |
+| 004 built-in add-ons | Riela `RielaKaibaAddons` exposes `kaiba/note-graph-neighbors` and `kaiba/note-search`; the old local `riela/` IDs are obsolete. | Decide explicit compatibility: current client/add-on defaults are depth 2 and limit 20, rather than the old service defaults 5 and 16; Riela's `bounded` helper clamps negative depth/limit to 1, whereas old TASK-004 required rejection. Do not check this task off by rename alone. |
+| 005 GraphQL | Kaiba owns `noteGraphNeighbors` and search-depth schema/service/client contracts and tests. | Recheck nullability, error mapping, ordered path evidence and source-matched owner-side tests. |
+| 006 example workflows | Riela `note-agent` and `note-link-extract` now use `kaiba/` add-ons; mock scenarios and expected-results files remain. | Validate both bundles and run the mocks against the installed runtime; verify citations and propose-without-confirm behavior. |
+| 007 focused verification | Kaiba traversal/GraphQL tests and Riela add-on tests exist in their respective repositories. | Run nonzero source-matched suites and lint in each owning repository; do not use removed Riela Note test paths. |
+| 008 docs/handoff | Riela examples and README describe the Kaiba boundary; the old task's local Note release-note path and no-push handoff are historical. | Review current public docs and record the explicit default/negative-input decision before archiving or replacing this plan. |
+
+This is an ownership and discrepancy inventory, not a pass of the old task
+checklist. Kaiba was inspected read-only; its other-session checkout was not
+modified.
+
 ## System-memory plan architecture cross-check (2026-09-24)
 
 The active `riela-note-system-memory` plan describes the pre-extraction

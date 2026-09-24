@@ -1,6 +1,6 @@
 import Foundation
 import RielaCore
-import RielaWork
+@testable import RielaWork
 import XCTest
 @testable import RielaCLI
 
@@ -19,7 +19,10 @@ final class TaskRuntimeExampleTests: XCTestCase {
 
     let result = try await harness.dispatch("task-repair-loop")
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+    let response = try harness.decode(result)
     let attempt = try XCTUnwrap(harness.store.listAttempts(taskId: task.id).first)
+    XCTAssertEqual(response.attemptId, attempt.id.rawValue)
+    XCTAssertEqual(response.sessionId, attempt.sessionId)
     XCTAssertEqual(attempt.state, .reconciled)
     XCTAssertEqual(attempt.outcome?.latestGateResults.first?.gateId, "verification")
     XCTAssertEqual(attempt.outcome?.latestGateResults.first?.decision, .accepted)
@@ -31,7 +34,117 @@ final class TaskRuntimeExampleTests: XCTestCase {
     )
     XCTAssertFalse(try harness.store.listEvidence(taskId: task.id).isEmpty)
     XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .succeeded)
-    XCTAssertEqual(try harness.store.listDecisions(taskId: task.id).last?.kind, .accept)
+    let accepted = try XCTUnwrap(harness.store.listDecisions(taskId: task.id).last)
+    XCTAssertEqual(accepted.kind, .accept)
+    XCTAssertFalse(accepted.causedBy.isEmpty)
+  }
+
+  func testRejectedGateRecoveryConsumesPendingRequestAndAcceptsSecondAttempt() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.guardPolicy.budget = BudgetGuard(maxAttempts: 2)
+    task.completion = CompletionContract(
+      gates: [GateDeclaration(id: "verification", stepId: "verify", required: true)],
+      acceptance: [AcceptanceCriterion(
+        id: "fixture-passes", statement: "The fixture check passes", gateIds: ["verification"]
+      )]
+    )
+    try harness.store.saveTask(task)
+    let rejectedScenario = try repairScenario(in: harness, decision: .rejected)
+
+    let first = try await harness.dispatch("task-repair-loop", scenarioPath: rejectedScenario.path)
+    XCTAssertEqual(first.exitCode, .success, first.stderr + first.stdout)
+    let firstAttempt = try XCTUnwrap(harness.store.listAttempts(taskId: task.id).first)
+    let firstSession = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .load(sessionId: firstAttempt.sessionId).session
+    XCTAssertEqual(firstSession.status, .completed)
+    XCTAssertEqual(firstAttempt.outcome?.latestGateResults.first?.decision, .rejected)
+    XCTAssertNotEqual(try harness.store.loadTask(id: task.id)?.state, .succeeded)
+    let recovery = try XCTUnwrap(harness.store.listDecisions(taskId: task.id).last)
+    XCTAssertEqual(recovery.kind, .recover(fromGateId: "verification"))
+    XCTAssertFalse(recovery.causedBy.isEmpty)
+    let dispatcher = TaskDispatcher(store: harness.store)
+    let pending = try XCTUnwrap(dispatcher.pendingReservation(taskId: task.id))
+    XCTAssertEqual(pending.decisionId, recovery.id)
+    XCTAssertEqual(pending.predecessorAttemptId, firstAttempt.id)
+    XCTAssertEqual(pending.entry, .recoverFromGate("verification"))
+
+    let second = try await harness.dispatch("task-repair-loop")
+    XCTAssertEqual(second.exitCode, .success, second.stderr + second.stdout)
+    let attempts = try harness.store.listAttempts(taskId: task.id)
+    XCTAssertEqual(attempts.count, 2)
+    let recovered = try XCTUnwrap(attempts.last)
+    XCTAssertNotEqual(recovered.id, firstAttempt.id)
+    XCTAssertNotEqual(recovered.sessionId, firstAttempt.sessionId)
+    XCTAssertEqual(recovered.entry, .recoverFromGate("verification"))
+    XCTAssertEqual(recovered.outcome?.latestGateResults.first?.decision, .accepted)
+    XCTAssertEqual(try harness.decode(second).sessionId, recovered.sessionId)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .succeeded)
+    XCTAssertNil(try dispatcher.pendingReservation(taskId: task.id))
+    let decisions = try harness.store.listDecisions(taskId: task.id)
+    let evidence = try harness.store.listEvidence(taskId: task.id)
+    XCTAssertTrue(decisions.contains { $0.kind == .accept && !$0.causedBy.isEmpty })
+    XCTAssertTrue(evidence.contains { $0.attemptId == recovered.id && $0.kind == .gate })
+
+    let replay = try await harness.dispatch("task-repair-loop")
+    XCTAssertEqual(replay.exitCode, .failure, replay.stderr + replay.stdout)
+    XCTAssertTrue(replay.stdout.contains("not eligible for dispatch from state 'succeeded'"))
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try harness.store.listDecisions(taskId: task.id), decisions)
+    XCTAssertEqual(try harness.store.listEvidence(taskId: task.id), evidence)
+    XCTAssertNil(try dispatcher.pendingReservation(taskId: task.id))
+  }
+
+  func testStandaloneNonAcceptedRepairGateFailsAndRetainsEvidence() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    for decision in [LoopGateDecision.rejected, .needsWork] {
+      let scenario = try repairScenario(in: harness, decision: decision)
+      let standaloneStore = harness.sessionStore.appendingPathComponent("standalone-\(decision.rawValue)")
+      let artifactStore = harness.sessionStore.appendingPathComponent("artifacts-\(decision.rawValue)")
+      let result = await RielaCLIApplication().run([
+        "workflow", "run", "task-repair-loop",
+        "--workflow-definition-dir", harness.examples.path,
+        "--mock-scenario", scenario.path,
+        "--session-store", standaloneStore.path,
+        "--artifact-root", artifactStore.path,
+        "--output", "json"
+      ])
+      XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
+      let run = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
+      XCTAssertEqual(run.status, .failed)
+      XCTAssertEqual(run.loopEvidence?.gateCount, 1)
+      let canonical = try SQLiteWorkflowRuntimePersistenceStore(
+        rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: standaloneStore.path)
+      ).load(sessionId: run.session.sessionId)
+      let artifact = try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactStore.path)
+        .load(sessionId: run.session.sessionId)
+      for snapshot in [canonical, artifact] {
+        XCTAssertEqual(snapshot.session.status, .failed)
+        XCTAssertEqual(snapshot.loopEvidence?.gates.first?.decision, decision)
+      }
+    }
+  }
+
+  private func repairScenario(in harness: TaskExampleHarness, decision: LoopGateDecision) throws -> URL {
+    let source = harness.examples.appendingPathComponent("task-repair-loop/mock-scenario.json")
+    var scenario = try XCTUnwrap(JSONSerialization.jsonObject(
+      with: Data(contentsOf: source)
+    ) as? [String: [String: Any]])
+    var verify = try XCTUnwrap(scenario["verify"])
+    var payload = try XCTUnwrap(verify["payload"] as? [String: Any])
+    var gate = try XCTUnwrap(payload["loopGate"] as? [String: Any])
+    gate["decision"] = decision.rawValue
+    gate["acceptance"] = ["met": false, "note": "Fixture check failed."]
+    payload["loopGate"] = gate
+    verify["payload"] = payload
+    scenario["verify"] = verify
+    let rejectedScenario = harness.sessionStore.appendingPathComponent("\(decision.rawValue)-gate.json")
+    try JSONSerialization.data(withJSONObject: scenario).write(to: rejectedScenario)
+    return rejectedScenario
   }
 
   func testRepairExampleGuardStopsAfterPersistingViolation() async throws {
@@ -53,12 +166,20 @@ final class TaskRuntimeExampleTests: XCTestCase {
       return XCTFail("terminal guard decision must stop the task")
     }
     XCTAssertEqual(reference.evidenceId, violations[0].id)
+    let attempts = try harness.store.listAttempts(taskId: task.id)
+    let decisions = try harness.store.listDecisions(taskId: task.id)
+    let replay = try await harness.dispatch("task-repair-loop")
+    XCTAssertEqual(replay.exitCode, .failure, replay.stderr + replay.stdout)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id), attempts)
+    XCTAssertEqual(try harness.store.listDecisions(taskId: task.id), decisions)
   }
 
   func testRepairExampleCapacityWaitDoesNotReserveAnAttempt() async throws {
     let harness = try TaskExampleHarness()
     defer { harness.remove() }
     let task = try harness.seed("task-repair-loop")
+    let beforeRows = try harness.rowCounts(taskId: task.id)
+    let beforeBytes = try harness.fileBytes()
 
     let result = try await harness.dispatch("task-repair-loop", capacity: 0)
     XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
@@ -68,6 +189,10 @@ final class TaskRuntimeExampleTests: XCTestCase {
     XCTAssertNil(response.attemptId)
     XCTAssertNil(response.sessionId)
     XCTAssertTrue(try harness.store.listAttempts(taskId: task.id).isEmpty)
+    XCTAssertEqual(try harness.rowCounts(taskId: task.id), beforeRows)
+    XCTAssertEqual(try harness.fileBytes(), beforeBytes)
+    let reopened = WorkStore(rootDirectory: harness.store.rootDirectory)
+    XCTAssertTrue(try reopened.openWritable().query("SELECT attempt_id FROM work_leases").isEmpty)
   }
 
   func testRepairExampleWarningPreservesEvidenceAndAllowsSatisfiedCompletion() async throws {
@@ -87,6 +212,9 @@ final class TaskRuntimeExampleTests: XCTestCase {
     XCTAssertEqual(try harness.store.listDecisions(taskId: task.id).last?.kind, .accept)
   }
 
+}
+
+extension TaskRuntimeExampleTests {
   func testDirectorExampleProducesOneRecommendationInARealTaskAttempt() async throws {
     let harness = try TaskExampleHarness()
     defer { harness.remove() }
@@ -360,6 +488,7 @@ final class TaskRuntimeExampleTests: XCTestCase {
     XCTAssertEqual(completed.exitCode, .success, completed.stderr + completed.stdout)
     let child = try XCTUnwrap(reopened.loadAttempt(id: reserved.id))
     XCTAssertEqual(child.sessionId, reserved.sessionId)
+    XCTAssertEqual(child.taskId, task.id)
     XCTAssertEqual(child.judgedAttemptId, judged.id)
     XCTAssertEqual(child.outcome?.sessionStatus, .completed)
     XCTAssertEqual(child.outcome?.costs.map(\.totalTokens), [7])
@@ -368,6 +497,8 @@ final class TaskRuntimeExampleTests: XCTestCase {
     XCTAssertEqual(try reopened.loadTask(id: task.id)?.state, .succeeded)
     XCTAssertEqual(try reopened.loadAttempt(id: judged.id)?.outcome, judged.outcome)
     XCTAssertEqual(try reopened.listEvidence(taskId: task.id).first(where: { $0.id == evidence.id }), evidence)
+    let decisionsBeforeReplay = try reopened.listDecisions(taskId: task.id)
+    let evidenceBeforeReplay = try reopened.listEvidence(taskId: task.id)
     let replay = try await harness.dispatch(
       "task-repair-loop", directorBundle: directorBundle,
       scenarioPath: childScenario.path
@@ -375,6 +506,8 @@ final class TaskRuntimeExampleTests: XCTestCase {
     XCTAssertEqual(replay.exitCode, .success)
     XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
     XCTAssertEqual(try reopened.loadAttempt(id: child.id)?.outcome?.costs, child.outcome?.costs)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id), decisionsBeforeReplay)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id), evidenceBeforeReplay)
     XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter {
       $0.producer == .policy(rule: "director-child")
     }.count, 1)
@@ -724,6 +857,10 @@ final class TaskRuntimeExampleTests: XCTestCase {
         $0.producer == .policy(rule: "director-escalation")
       }))
       XCTAssertEqual(escalation.kind, .wait(.human))
+      let reopened = WorkStore(rootDirectory: harness.store.rootDirectory)
+      let decisionsBeforeReplay = try reopened.listDecisions(taskId: task.id)
+      let evidenceBeforeReplay = try reopened.listEvidence(taskId: task.id)
+      let childCosts = child.outcome?.costs
       XCTAssertTrue(try harness.store.listEvidence(taskId: task.id).contains(where: {
         $0.kind == .decision
           && $0.payloadRef.inlinePayload?["decisionId"] == .string(escalation.id.rawValue)
@@ -733,7 +870,10 @@ final class TaskRuntimeExampleTests: XCTestCase {
         scenarioPath: scenario.path
       )
       XCTAssertEqual(replay.exitCode, .success)
-      XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
+      XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+      XCTAssertEqual(try reopened.loadAttempt(id: child.id)?.outcome?.costs, childCosts)
+      XCTAssertEqual(try reopened.listDecisions(taskId: task.id), decisionsBeforeReplay)
+      XCTAssertEqual(try reopened.listEvidence(taskId: task.id), evidenceBeforeReplay)
     }
   }
 

@@ -8,6 +8,17 @@
 
 **Status**: historical handover inventory; current Work Runtime continuation is recorded below
 
+## Work Runtime P1-7b update — 2026-09-25
+
+The `task-repair-loop` and `task-agent-director` bundles now have task-backed
+lifecycle tests and shared catalog coverage (41 deterministic mocks).
+Current-source build, focused task and catalog tests, bundle validation and
+mocks, and strict touched-file SwiftLint passed. The serial broad run is
+**FAILED** with 18 classified non-P1-7b assertions among 2,668 tests. Browser
+E2E was skipped because no `web/` path changed. P1-7b exact-file publication,
+P1-7a legacy removal, parent P1 and broad failure follow-ups remain open. See
+[`progress/p1-dispatch.md`](progress/p1-dispatch.md) for exact commands and logs.
+
 ## Work Runtime P1-6d update — 2026-09-25
 
 Formal independent test-integrity, single adversarial and Astra combined-tree

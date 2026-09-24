@@ -63,6 +63,8 @@ func rielaExampleWorkflowNames() -> [String] {
     "slack-codex-chat",
     "subworkflow-chained-simple",
     "supervised-mock-retry",
+    "task-agent-director",
+    "task-repair-loop",
     "telegram-agent-trio-chat",
     "telegram-agent-trio-time-signal",
     "telegram-sdk-trio-chat",

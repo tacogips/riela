@@ -203,7 +203,7 @@ public struct WorkflowRunCommand: Sendable {
             runtimeStore: runtimeStore,
             bundle: bundle,
             effectiveVariables: effectiveVariables,
-            options: options,
+            options: options, hasTaskReservation: taskReservation != nil,
             persistedIdentity: persistedIdentity,
             storeRoot: storeRoot,
             telemetry: telemetry,
@@ -223,7 +223,7 @@ public struct WorkflowRunCommand: Sendable {
           runtimeStore: runtimeStore,
           bundle: bundle,
           effectiveVariables: effectiveVariables,
-          options: options,
+          options: options, hasTaskReservation: taskReservation != nil,
           persistedIdentity: persistedIdentity,
           storeRoot: storeRoot,
           telemetry: telemetry,
@@ -263,7 +263,7 @@ public struct WorkflowRunCommand: Sendable {
   ) {
     guard workflow.loop?.required == true,
           let loopEvidence,
-          loopEvidence.gates.contains(where: { !$0.blockingFindings.isEmpty }) else {
+          loopEvidence.gates.contains(where: { !$0.blockingFindings.isEmpty || failsRequiredGate($0, in: workflow) }) else {
       return
     }
     result.exitCode = 1
@@ -941,10 +941,16 @@ struct RunFinalizeContext {
   var bundle: ResolvedWorkflowBundle
   var effectiveVariables: JSONObject
   var options: WorkflowRunOptions
+  var hasTaskReservation: Bool
   var persistedIdentity: (workflowName: String, resolution: WorkflowResolutionOptions)
   var storeRoot: String
   var telemetry: any RielaTelemetry
   var jsonlRecorder: WorkflowRunJSONLRecorder?
+}
+
+private func failsRequiredGate(_ gate: LoopGateResult, in workflow: WorkflowDefinition) -> Bool {
+  guard gate.decision != .accepted else { return false }
+  return workflow.loop?.gates.contains(where: { $0.required && $0.id == gate.gateId }) == true
 }
 
 extension WorkflowRunCommand {
@@ -964,7 +970,9 @@ extension WorkflowRunCommand {
       recovery: finalResult.recovery
     )
     finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
-    applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: context.bundle.workflow)
+    if !context.hasTaskReservation {
+      applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: context.bundle.workflow)
+    }
     let terminalResult = finalResult
     let persist: @Sendable () throws -> Void = {
       try persistSessionRecord(

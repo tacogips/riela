@@ -749,8 +749,22 @@ review accepted this slice. The serial broad run remains **FAILED** with 19
 classified historical non-slice assertions among 2,666 tests. Browser E2E was
 skipped because no `web/` file changed. See the
 [P1-6d progress record](impl-plans/progress/p1-dispatch.md) for exact commands
-and evidence. P1-7b examples, P1-7a legacy removal, parent P1 and the broad
-failure follow-ups remain open. The design is
+and evidence. The P1-7b replacement bundles are now available as
+[`task-repair-loop`](examples/task-repair-loop/README.md) and
+[`task-agent-director`](examples/task-agent-director/README.md). Both are in the
+shared example catalog and its 41 deterministic mock scenarios. Task-backed
+tests check rejected-gate recovery with a second attempt, guard stop, capacity
+wait, bounded director decisions, once-only child accounting and invalid-output
+escalation. A task-reserved run retains a completed canonical session when its
+required gate rejects so the task can recover; a standalone rejected required
+gate still fails the run and preserves gate evidence. The P1-7b build, catalog
+checks, 21 task example tests, 57 before-removal tests, 115 affected work tests
+and 55 selected-host tests passed. The serial broad suite remains **FAILED**
+with 18 classified non-P1-7b assertions among 2,668 tests. Browser E2E was
+skipped because no `web/` file changed. P1-7a legacy removal, parent P1 and the
+broad failure follow-ups remain open. See the
+[P1-7b progress record](impl-plans/progress/p1-dispatch.md) for exact commands
+and logs. The design is
 [Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).
 
 ## Control Surfaces

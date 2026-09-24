@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 39
+    static let expectedMockScenarioCount = 41
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -176,7 +176,7 @@ final class RielaExampleParityTests: XCTestCase {
         ]
       ]
       let data = try JSONSerialization.data(withJSONObject: payload)
-      return String(decoding: data, as: UTF8.self)
+      return try XCTUnwrap(String(bytes: data, encoding: .utf8))
     }
   }
 
@@ -192,7 +192,7 @@ final class RielaExampleParityTests: XCTestCase {
         ]
       ]
       let data = try JSONSerialization.data(withJSONObject: payload)
-      return String(decoding: data, as: UTF8.self)
+      return try XCTUnwrap(String(bytes: data, encoding: .utf8))
     }
   }
 
@@ -220,7 +220,7 @@ final class RielaExampleParityTests: XCTestCase {
         ]
       ]
       let data = try JSONSerialization.data(withJSONObject: payload)
-      return String(decoding: data, as: UTF8.self)
+      return try XCTUnwrap(String(bytes: data, encoding: .utf8))
     }
   }
 

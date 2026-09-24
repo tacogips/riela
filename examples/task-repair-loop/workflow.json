@@ -19,7 +19,6 @@
         "stepId": "verify",
         "required": true,
         "acceptWhen": {
-          "decision": "accepted",
           "maxHighFindings": 0,
           "maxMediumFindings": 0
         }

@@ -1,39 +1,41 @@
-# Work Runtime P1: P1-6c late-cancellation transactional repair
+# Work Runtime P1: P1-6c post-helper final review
 
 **Status:** Step 3 accepted the revised design for planning, without findings,
-`comm-000004`, `step3-design-review-attempt-1-exec-4`. Implementation remains
-rejected for the high-severity late-cancellation race; renewed verification and
-reviews are pending. Broad aggregate remains FAILED.
+`comm-000004`, `step3-design-review-attempt-1-exec-4`. Repaired implementation WIP is preserved; formal test-integrity, adversarial
+and Astra exact combined-tree acceptance remain pending. Broad aggregate remains FAILED.
 **Workflow mode:** `issue-resolution`.
-**Issue:** Work Runtime P1-6c — Repair late cancellation versus terminal
-persistence race; no GitHub issue URL or number supplied.
+**Issue:** Work Runtime P1-6c — Review and finalize late-cancellation repair
+on final capable-host source; no GitHub issue URL or number supplied.
 **Design:** `design-docs/specs/design-work-runtime-consolidation.md`, P1-6c
-bounded amendment: Late-cancellation arbitration, Deterministic regression
-matrix, Repaired-source command contract, Acceptance and rollout boundary.
-**Design SHA-256:** `c13dd98973c1f8af8816a31aaec9c22f58518ffd3bf9e4c7e973c9ca1d073954`.
+bounded amendment: preserved arbitration contract, deterministic regression
+matrix, current post-helper capable-host evidence, failure disposition, and
+acceptance/rollout boundary.
+**Design SHA-256:** `ada1f845a100bb7cfad5b3468c601add5ee0889478fa3f64849aef2b279a063f`.
 **Codex-agent references:** Step 2 author continuing prior `/root/design_author`;
 this Step 4 author owns the whole plan. One serial implementation owner;
 independent test-integrity and adversarial reviewers; Astra exact combined-tree
 reviewer. Implementation review decisions are pending. References denote roles,
 not Cursor behavior; no adapter or reference-repository divergence applies.
 
-## Current executable contract — bounded transactional repair
+## Current executable contract — evidence review and bounded material repair
 
 Only this section and its first JSON block schedule current work. Everything
 under “Historical preserved plan” is preserved context, not executable scope.
 
 ### Intent, context and non-goals
 
-Preserve checkpoint `2e7a264f1ec6604a72d1bbdfe80cab9f81ca6220`, all existing
-tracked and untracked WIP and branch `feat/remaining-impl-plans`. Repair the
-window where SIGINT or external cancellation commits after canonical ordinary
-terminal persistence but before attempt reconciliation. A pending request then
-cannot obtain exact cancelled-session proof. Use the existing shared runtime
-SQLite transaction boundary, not a polling-only or process-local fix.
-Read the prior terminal handoff in
-`tmp/work-runtime-p1-6c-post-sigint/workflow.jsonl`. Prior integrity acceptance
-covered historical evidence only; adversarial review rejected the race.
-Historical focused 99/99 and aggregate 2049/19 receipts do not verify repair.
+Preserve every checkpoint, helper merge
+`b06295d5c3fbc42528d0382014ded0e9118dfa88`, all tracked/untracked WIP and branch
+`feat/remaining-impl-plans`. The shared-SQLite request-first/terminal-first
+repair and deterministic regressions are already implemented as WIP. The helper
+wait deadlock was separately fixed and merged; do not reimplement either change
+without a material finding. Review the exact post-helper source against
+`tmp/work-runtime-p1-6c-after-helper-acceptance/host-evidence.json`: 973-entry
+manifest, focused 136/136 exit 0, aggregate 2057 tests / 19 assertions / 7 unexpected
+exit 1. Step 2 verified hashes, membership and assertion identities; Step 3
+accepted the design only. Formal independent acceptance is still required.
+The prior high race finding and mid real-SIGINT coverage finding require explicit
+closure against current code/tests, not automatic carry-forward acceptance.
 
 Non-goals: P1-6d, P1-7a/b, parent P1 completion; unrelated baseline repairs;
 new stores, schemas, schedulers, generalized frameworks; direct decision-row
@@ -101,7 +103,9 @@ are not requested. No new independent implementation plan is warranted.
     "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
     "Sources/RielaWork/WorkStore.swift",
     "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
-    "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift"
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+    "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+    "Sources/RielaCore/WorkflowRuntimePersistenceSnapshot.swift"
   ],
   "sharedPaths": [
     "Sources/RielaCLI/CLISurfaceEnumeration.swift",
@@ -147,7 +151,9 @@ are not requested. No new independent implementation plan is warranted.
     "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
     "Sources/RielaWork/WorkStore.swift",
     "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
-    "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift"
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+    "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+    "Sources/RielaCore/WorkflowRuntimePersistenceSnapshot.swift"
   ],
   "taskIds": [
     "P1-6c-baseline",
@@ -197,20 +203,23 @@ are not requested. No new independent implementation plan is warranted.
     "P1-6b": "7d8fc121a4f4469de7a40495282b53c9d813b8d4"
   },
   "progressLogPath": "impl-plans/progress/p1-dispatch.md",
-  "evidenceDirectory": "tmp/work-runtime-p1/p1-6c/late-cancellation/",
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-6c/after-helper-review/",
   "dependencyMode": "single-plan-serial-repair-with-independent-read-only-review"
 }
 ```
 
 ### Ordered tasks, exact deliverables and acceptance
 
-1. **P1-6c-baseline:** Fresh-read design, this contract and the preserved terminal
-   handoff. Record HEAD, status, all WIP paths and hashes; retain immutable inputs
+1. **P1-6c-baseline:** Fresh-read accepted design, this contract, current host receipt and
+   both complete logs. Record HEAD, status, all WIP paths and hashes; retain immutable inputs
    under the evidence directory. Map current insertion and canonical writer call
    paths, including both snapshot save overloads and live/final/supervision
-   persistence. Deliver a requirement-to-boundary/test matrix. Do not rerun or
-   relabel historical host logs as repaired-source evidence.
-2. **P1-6c-store**, after baseline: In
+   persistence. Deliver a requirement-to-boundary/test matrix, frozen combined-tree
+   manifest and baseline state receipt. Check current source against the supplied
+   manifest before further work; any drift requires diagnosis, not a reset.
+   Do not rerun or relabel excluded logs as current-source evidence.
+2. **P1-6c-store**, after baseline: Audit existing WIP first; edit only for a
+   documented material violation of the following contract. In
    `Sources/RielaWork/WorkStore+Decisions.swift` and
    `Sources/RielaWork/WorkStore+Reservation.swift`, read the exact reserved
    canonical session in the write transaction deciding cancellation insertion.
@@ -226,9 +235,14 @@ are not requested. No new independent implementation plan is warranted.
    terminal winner. Reuse transaction-scoped APIs and existing tables, respect
    module dependency direction, and leave plain workflows unchanged. Add only
    the minimal shared error outcome in `Sources/RielaWork/WorkStore.swift` if
-   needed to distinguish terminal-first from version conflict. Deliver atomic
+   needed to distinguish terminal-first from version conflict. Audit the existing
+   arbitration errors in `Sources/RielaCore/WorkflowRuntimePersistenceSnapshot.swift`
+   and the forwarding/terminal barrier in
+   `Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift`; preserve their
+   current API and behavior unless a concrete defect requires repair. Deliver atomic
    store/persistence behavior, not a read-then-write check across transactions.
-3. **P1-6c-runner**, after store: In
+3. **P1-6c-runner**, after store: Audit the existing winner handling and
+   owned shutdown; record evidence without edits if correct. In
    `Sources/RielaCLI/TaskRunCancellation.swift`, `TaskDispatch.swift` and
    `TaskCommands.swift`, consume the winner. External `task decide --cancel`
    reports explicit rejection after terminal-first. Late SIGINT joins observation
@@ -243,7 +257,8 @@ are not requested. No new independent implementation plan is warranted.
    allow a success result to escape. Preserve EntryPoint's real signal route.
    Deliver no pending cancellation against ordinary success, no fabricated
    acknowledgment, and no hidden terminal-success cleanup.
-4. **P1-6c-tests**, after runner: Extend
+4. **P1-6c-tests**, after runner: Map existing tests to every required assertion
+   and identify material gaps before adding tests. Only for such a gap, extend
    `Tests/RielaWorkTests/WorkStoreCancellationTests.swift` and
    `DecisionApplierStoreTests.swift` for both commit orderings across independent
    SQLite connections, both insertion APIs, rollback and accepted replay.
@@ -254,11 +269,21 @@ are not requested. No new independent implementation plan is warranted.
    Add persistence-overload/stale-save regression in the listed live persistence
    tests if not covered by the integration cases. Deliver exact test-name mapping,
    deterministic barrier events and assertions; no sleep-based ordering proof.
-5. **P1-6c-verify**, after tests: Freeze source, generate manifest and run all
-   gates below. Obtain capable-host focused and serial aggregate logs matching
-   the same final source before/after execution. Classify every failure, retain
-   environmental exits, and provide positive suite counts. This task is not
-   complete on historical logs, zero-test selections or incomplete output.
+5. **P1-6c-verify**, after tests: Inspect the supplied complete post-helper
+   logs, SHA-256 digests, manifest membership and all 19 assertion identities
+   using the evidence commands below. Record reported host exits separately
+   from this node's inspection exits. Assess source-matched earlier build, lint,
+   V0/V1/V2/V11, decisions, live and compatibility receipts against changed
+   dependencies, including helper merge b06295d; do not assume the 136-test filter
+   covers every obligation. Record exact original commands from retained run
+   receipts, logs and source relevance. If a command cannot be recovered, record
+   that gap explicitly and have the independent reviewers decide its materiality.
+   Current complete host evidence is available: do not demand a fresh host run
+   merely because this sandbox cannot run listeners. If source/tests change or
+   a material verification gap is found, generate a fresh manifest and rerun
+   affected checks on a capable host where required. Do not reuse unchanged
+   counts or old manifests to certify repaired bytes. Deliver per-requirement
+   evidence and per-assertion disposition with explicit follow-up ownership.
 6. **P1-6c-integrity** and **P1-6c-adversarial**, after verification: Independent
    read-only reviewers may work concurrently on frozen bytes. Integrity checks
    actual assertions, production boundaries, complete logs, counts, manifests,
@@ -324,12 +349,82 @@ review decisions, findings, owners, open gates and next action. Preserve history
 
 Run foreground commands below from repository root; one build/test owner, no
 concurrent SwiftPM or Git writes. Evidence root is
-`tmp/work-runtime-p1/p1-6c/late-cancellation/`; use a fresh attempt subdirectory
+`tmp/work-runtime-p1/p1-6c/after-helper-review/`; use a fresh attempt subdirectory
 for reruns and never overwrite earlier receipts. Record exact toolchain/env,
 argv, start/end source hashes, complete combined stdout/stderr path and actual
 terminal exit for each command. Poll yielded sessions through exit; no detached
 shell orphans. Build/lint/hash checks have no test count; test gates require a
 terminal suite summary and positive counts for every requested suite.
+
+#### Existing-source inspection: execute first
+
+Keep the supplied source manifest and logs immutable. Run and capture:
+
+```bash
+shasum -a 256 tmp/work-runtime-p1-6c-late-cancel-host/final-source-after-helper.sha256 tmp/work-runtime-p1-6c-late-cancel-host/focused-after-helper.log tmp/work-runtime-p1-6c-late-cancel-host/aggregate-after-helper.log
+shasum -a 256 -c tmp/work-runtime-p1-6c-late-cancel-host/final-source-after-helper.sha256
+cat tmp/work-runtime-p1-6c-after-helper-acceptance/host-evidence.json
+cat tmp/work-runtime-p1-6c-late-cancel-host/focused-after-helper.log
+cat tmp/work-runtime-p1-6c-late-cancel-host/aggregate-after-helper.log
+cat tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json
+```
+
+Save complete outputs as `digests.log`, `source-check.log`, `host-receipt.json`,
+`focused-inspection.log`, `aggregate-inspection.log` and `inventory-inspection.json`
+in a fresh evidence attempt, with each inspection exit in `verification.json`.
+Expected manifest/focused/aggregate digests, respectively:
+`b4609069880f14c0bd4f62053d39b73cd13556078fc688d763643fd243ab0f1c`,
+`b6d4dd35c487172f34542e302093e8f5908ffcb1a5da61d5c391ac7c096646e1`,
+`bceedcfbe1aaa20653088bdcdf4c37045081a0b546492f72b67dac375ac21ccd`.
+Host exits 0/1 come from the receipt; `cat` exit 0 does not make a failed test pass.
+The following exact read-only command checks membership, terminal summaries and
+assertion identity multisets. Capture its output/exit as `identity-check.log`;
+review failure messages, source history and changed dependencies separately.
+
+```bash
+python3 - <<'PYVERIFY'
+import collections, json, pathlib, re, subprocess
+root = pathlib.Path('tmp/work-runtime-p1-6c-late-cancel-host')
+manifest = (root / 'final-source-after-helper.sha256').read_text().splitlines()
+paths = [line.split('  ', 1)[1] for line in manifest]
+membership = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'Sources', 'Tests', 'Package.swift', 'Package.resolved']).decode().split('\0')
+assert len(paths) == len(set(paths)) == 973
+assert set(paths) == set(filter(None, membership))
+focused = (root / 'focused-after-helper.log').read_text()
+aggregate = (root / 'aggregate-after-helper.log').read_text()
+assert 'Executed 136 tests, with 0 failures (0 unexpected)' in focused
+assert 'Executed 2057 tests, with 19 failures (7 unexpected)' in aggregate
+assert ': error: ' not in focused
+inventory = json.loads(pathlib.Path('tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json').read_text())
+expected = collections.Counter((r['testSuite'], r['test'], r['assertionSource']) for r in inventory['records'] if r['id'] <= 8 or r['id'] >= 14)
+actual = collections.Counter()
+for number, line in enumerate(aggregate.splitlines(), 1):
+    if ': error: ' not in line:
+        continue
+    match = re.search(r'(Tests/[^:]+:\d+): error: -\[([^ ]+) ([^\]]+)\]', line)
+    assert match, (number, line)
+    actual[(match[2].split('.')[-1], match[3], match[1])] += 1
+    print(json.dumps({'logLine': number, 'assertion': line}))
+assert sum(actual.values()) == 19 and actual == expected
+print(json.dumps({'manifestEntries': 973, 'matchedAssertions': 19, 'new': [], 'missing': []}))
+PYVERIFY
+```
+
+Exclude the interrupted `tmp/work-runtime-p1-6c-late-cancel-host/aggregate.log`,
+older sandbox `tmp/work-runtime-p1-6c-late-cancel-20260924-session-1/aggregate-final-3.log`
+and pre-repair 99/2049-test logs from current acceptance. Step 2 receipts under
+`tmp/p1-6c-step2-after-helper/` are inspection evidence, not formal review decisions.
+
+#### Conditional execution: only material repair or missing evidence
+
+The remaining build/test commands are conditional rerun instructions, not a
+requirement to rerun available host checks inside this sandbox. Compilation via
+`swift build` supplies Swift typechecking; this slice adds no web/typecheck gate.
+Use the exact toolchain/cache environment appropriate to the existing host and
+record it; do not silently substitute an unrecorded command. Start with
+`repair-attempt-001` below and increment for each later repair, retaining all
+prior evidence. Obtain source-matched capable-host aggregate evidence after a
+material source/test repair; unchanged receipts cannot certify that new source.
 
 Create `final-source.sha256` from the sorted unique output of the membership
 command below: SHA-256 of every existing tracked/untracked Sources/Tests file
@@ -340,7 +435,7 @@ proposed commit allowlist; source-only test manifests do not identify that tree.
 The exact manifest-generation command is:
 
 ```bash
-python3 -c 'import hashlib,pathlib,subprocess; paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; out=pathlib.Path("tmp/work-runtime-p1/p1-6c/late-cancellation"); out.mkdir(parents=True,exist_ok=True); (out/"membership.nul").write_bytes("\0".join(paths).encode()+b"\0"); (out/"final-source.sha256").write_text("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths))'
+python3 -c 'import hashlib,pathlib,subprocess; paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; out=pathlib.Path("tmp/work-runtime-p1/p1-6c/after-helper-review/repair-attempt-001"); out.mkdir(parents=True,exist_ok=True); (out/"membership.nul").write_bytes("\0".join(paths).encode()+b"\0"); (out/"final-source.sha256").write_text("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths))'
 ```
 
 Run generation once per frozen attempt; before/after checks compare newly listed
@@ -356,14 +451,14 @@ No dependency/lockfile regeneration is requested.
 git rev-parse HEAD
 git status --short
 git ls-files --cached --others --exclude-standard -z Sources Tests Package.swift Package.resolved
-shasum -a 256 -c tmp/work-runtime-p1/p1-6c/late-cancellation/final-source.sha256
+shasum -a 256 -c tmp/work-runtime-p1/p1-6c/after-helper-review/repair-attempt-001/final-source.sha256
 swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionDecisionApplierStoreTests|DecisionApplierStoreTests|TaskCommandParsingTests'
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests|DistributedProcessCancellationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|WorkflowCommandLivePersistenceTests|WorkflowCommandLivePersistenceEventTests'
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests|SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel --filter 'RielaCLITests|RielaWorkTests|RielaCoreTests|RielaServerTests'
-xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6c/late-cancellation/changed-swift-files.nul
-shasum -a 256 -c tmp/work-runtime-p1/p1-6c/late-cancellation/final-source.sha256
+xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6c/after-helper-review/repair-attempt-001/changed-swift-files.nul
+shasum -a 256 -c tmp/work-runtime-p1/p1-6c/after-helper-review/repair-attempt-001/final-source.sha256
 git diff --check
 git diff --cached --check
 ```
@@ -380,12 +475,14 @@ New deterministic cases must appear by exact test name in passing logs.
 
 Listener-denied sandbox runs are environmental failures, not code failures or
 passes. Do not repeat the broad listener-dependent aggregate there; obtain its
-source-matched capable-host run. An unavailable capable host leaves verification
-open and publication blocked. Record any build-cache/toolchain failure verbatim;
+source-matched capable-host run. If a new capable-host run is required by changed bytes or a material gap,
+its unavailability leaves that check open and publication blocked; it does not
+invalidate the supplied unchanged-source host receipts. Record any build-cache/toolchain failure verbatim;
 a supported fallback must retain its exact command and cannot erase failed runs.
 
-Historical logs are `tmp/work-runtime-p1-6c-final-host/focused.log` (99/99, exit 0)
-and `aggregate.log` (2049 tests, 19 failures, exit 1). Compare new assertion
+Current host logs are `tmp/work-runtime-p1-6c-late-cancel-host/focused-after-helper.log`
+(136/136, reported exit 0) and `aggregate-after-helper.log` (2057 tests, 19 assertions,
+7 unexpected, reported exit 1). Compare assertion
 (test name, source path/line) multisets against IDs 1–8 and 14–24 in
 `tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json`.
 Record every new, missing or shifted assertion and evidence for its disposition;
@@ -404,12 +501,13 @@ Implementation completion separately requires both race orders for both triggers
 all preserved stop/acknowledgment/replay/fence invariants, source-matched complete
 evidence, independent integrity/adversarial and Astra acceptance with no high/mid
 P1-6c defect, accurate final docs/progress, exact-file commit and matching non-force
-push receipt. A rejection or unavailable host is an explicit incomplete outcome.
+push receipt. A material rejection or unavailable required new verification is an explicit
+incomplete outcome; no new host run is required solely for unchanged evidence.
 P1-6d, P1-7a/b and parent P1 remain open; this plan stays active.
 
 Step 3 supplied no findings; no Step 5 revision feedback was supplied. Step 4
 checks metadata, DAG, path existence, accepted design hash, historical-tail
-preservation and whitespace; logs live in `tmp/p1-6c-step4-late-cancellation/`.
+preservation and whitespace; logs live in `tmp/p1-6c-step4-after-helper/`.
 This author check makes no claim of passing Swift tests or implementation review.
 
 ---
@@ -1960,6 +2058,28 @@ cancellation locally and on the selected worker, authorization races, terminal
 persistence failure, acknowledgment loss, reopen/replay and pending replacement
 consumption. Assert no premature terminal task, stale launch or duplicate
 accounting. V1/V2/V11 must pass; store-only acknowledgment tests are insufficient.
+
+**P1-6c late-cancellation arbitration addendum (2026-09-24):** The shared
+runtime SQLite commit is the arbitration point between a new cancellation
+decision/request and the exact reserved session's ordinary terminal snapshot.
+`WorkStore+Decisions.swift` and `WorkStore+Reservation.swift` reject a new
+request when that snapshot is already terminal; both snapshot save overloads
+in `SQLiteWorkflowRuntimePersistenceStore.swift` reject ordinary terminal
+persistence while cancellation is pending. After request-first interruption
+and owned observer join, `TaskRunCancellation.swift` persists the exact
+cancelled terminal before acknowledgment. Stale live saves cannot replace a
+terminal winner. Replay of an accepted decision remains available before
+new-request validation. Production-boundary CLI tests and independent SQLite
+connections must cover SIGINT/external request in both orderings, ordinary
+success/failure, rollback, replay, exact acknowledgment and fencing.
+
+Implementation and local deterministic tests are in progress. Completion still
+requires a final-source manifest, build, affected tests, strict selected-file
+SwiftLint, listener-capable focused evidence, serial aggregate classification,
+independent test-integrity/adversarial and Astra acceptance, then documentation
+finalization and exact-file publication. The historical 99/99 focused and
+2,049/19 aggregate receipts predate this repair; the aggregate remains FAILED
+with its 19 owned non-slice assertions. P1-6d, P1-7a/b and parent P1 remain open.
 
 ### P1-7b/P1-7a and final evidence investigation
 

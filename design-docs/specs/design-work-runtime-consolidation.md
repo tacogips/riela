@@ -1120,22 +1120,22 @@ number supplied), mode `issue-resolution`, intake `comm-000002` from
 `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 This amendment and its implementation plan were accepted at checkpoint
 `0a74a070670a5cb73f6cd18e035adf61732a0b07` on `feat/remaining-impl-plans`.
-The current intake, “Repair P1-6c late cancellation versus terminal persistence
-race”, supersedes the prior evidence-only continuation. Preserve checkpoint
-`2e7a264f1ec6604a72d1bbdfe80cab9f81ca6220` and all existing WIP on
-`feat/remaining-impl-plans`. The prior terminal handoff in
-`tmp/work-runtime-p1-6c-post-sigint/workflow.jsonl` rejected implementation for
-a high-severity race; integrity accepted historical evidence only, and Astra
-combined-tree acceptance remains pending. This amendment repairs that concrete
-boundary without reopening the decision-identity contract or P1-6a/b.
-P1-6d, P1-7a/b and parent P1 remain open.
+The current intake, “Review and finalize P1-6c late-cancellation repair on final
+capable-host source”, preserves that design and the repaired implementation WIP.
+Preserve all checkpoints and helper merge `b06295d5c3fbc42528d0382014ded0e9118dfa88`
+on `feat/remaining-impl-plans`. The subprocess wait helper repair is already
+merged; this slice does not reopen it. The prior high-severity late-cancellation
+finding motivates the arbitration contract below; repaired WIP and current host
+evidence now require renewed formal review, not a new architecture. P1-6c is
+not yet accepted. P1-6d, P1-7a/b and parent P1 remain open.
 
-**Continuation boundary.** Preserve the intake's 22 modified tracked files and
-three untracked Swift files. One serial owner edits coupled store/runner files;
-independent reviewers may investigate without overlapping writes. Protect Monja
-and other worktrees. No reset, broad staging, force push, unrelated baseline
-repair or scratch outside repository-root `tmp/`. The prior two-row diagnosis
-below is historical context, not a request to reopen legitimate decision history.
+**Continuation boundary.** Preserve all 28 modified tracked files and three
+untracked Swift files listed by intake, plus the initially empty staged state.
+One serial owner edits coupled source; independent reviews are read-only.
+Protect Monja and other worktrees. No reset, broad staging, force push,
+unrelated baseline repair or scratch outside repository-root `tmp/`. The
+prior two-row diagnosis below is historical context, not a request to reopen
+legitimate decision history.
 
 **Decision identity and causality diagnosis.** Before changing production or
 relaxing the fixture assertion, capture every decision for the exact task at
@@ -1219,7 +1219,7 @@ late-signal outcome below. Preserve plain, non-task workflow behavior.
 | Terminal persistence fails or acknowledgment is lost | Keep the request and fence. Retry/reopen reads the canonical reserved snapshot and stored acknowledgment; it never substitutes an in-memory result. |
 | Ordinary terminal persistence races with the request | Serialize both writes as specified below. Request-first blocks ordinary terminal persistence; terminal-first rejects the late request without creating pending cancellation or changing terminal success. |
 
-**Late-cancellation arbitration (required repair).** The linearization point is
+**Late-cancellation arbitration (preserved acceptance contract).** The linearization point is
 the commit in the shared runtime SQLite database, not task reconciliation,
 observer polling, an in-memory lock, or signal arrival. `WorkStore` already
 shares that database with `SQLiteWorkflowRuntimePersistenceStore`; reuse the
@@ -1346,7 +1346,10 @@ and retain the accepted plan's additional filters and strict changed-file lint.
 The implementation plan must enumerate final changed Swift files explicitly for
 lint and the manifest; the manifest includes all source, tests and build inputs,
 not merely tracked diffs. Check manifest membership as well as file hashes.
-The following are required commands, not results from this design step:
+These remain the execution commands if a material repair or evidence gap
+requires new verification. For the unchanged post-helper source, inspect the
+current receipts below first; do not repeat the aggregate in this sandbox.
+These command examples are not results from this design step:
 
 ```bash
 swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
@@ -1364,34 +1367,40 @@ Obtain source-matched capable-host focused and serial aggregate logs. Preserve
 the 19 owned non-slice failures below until new evidence establishes their
 actual disposition; the broad aggregate remains FAILED until it passes.
 
-**Historical capable-host evidence (2026-09-24; not repair verification).**
-The pre-repair manifest is
-`tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256`
-(973 entries). The prior node reported matching those entries and the following
-logs; these results do not verify the repaired interleavings. After any Swift
-source/test change, create a new complete source/test/build-input manifest and
-match it before and after new focused and serial aggregate capable-host runs.
-Retain each exact command, terminal exit, positive test count and complete log
-path. Do not reuse prior checks as final-source acceptance. This design node
-changes documentation only and does not claim implementation verification.
+**Current post-helper capable-host evidence (2026-09-24).** The authoritative
+receipt is `tmp/work-runtime-p1-6c-after-helper-acceptance/host-evidence.json`.
+Its source manifest covers `Sources/`, `Tests/`, `Package.swift` and
+`Package.resolved`. Step 2 independently checked all 973 hashes and exact
+tracked/untracked membership: 973 matched, zero mismatches, no missing or extra
+paths. Documentation is outside that manifest and must also be included in the
+later exact combined-tree review.
 
-| Gate | Complete log | Reported tests / failures | Reported terminal exit | SHA-256 |
-| --- | --- | --- | --- | --- |
-| Focused, including selected-host and real SIGINT | `tmp/work-runtime-p1-6c-final-host/focused.log` | 99 / 0 | 0 | `05bdb645a4b8c3fc95b1389eb5528ef87728cb33ae47417288a8bd6ec1d37dd1` |
-| Serial affected aggregate | `tmp/work-runtime-p1-6c-final-host/aggregate.log` | 2,049 / 19 (7 unexpected) | 1 | `49d18fb95b91f96e889f97089172b1a25e66e83cb47654b6fe9c6f647b8ba115` |
+| Artifact | Path | SHA-256 | Host result |
+| --- | --- | --- | --- |
+| Source manifest | `tmp/work-runtime-p1-6c-late-cancel-host/final-source-after-helper.sha256` | `b4609069880f14c0bd4f62053d39b73cd13556078fc688d763643fd243ab0f1c` | 973 entries, zero mismatches |
+| Focused log | `tmp/work-runtime-p1-6c-late-cancel-host/focused-after-helper.log` | `b6d4dd35c487172f34542e302093e8f5908ffcb1a5da61d5c391ac7c096646e1` | 136 tests, zero failures; reported exit 0 |
+| Serial aggregate log | `tmp/work-runtime-p1-6c-late-cancel-host/aggregate-after-helper.log` | `bceedcfbe1aaa20653088bdcdf4c37045081a0b546492f72b67dac375ac21ccd` | 2,057 tests, 19 assertions, 7 unexpected; reported exit 1; **FAILED** |
 
-Read both complete logs, verify their digests and retain their terminal exit
-status and complete paths. The new
-`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift::testTaskRunSubprocessSIGINTCommitsAndAcknowledgesCancellation`
-must exercise the real EntryPoint subprocess SIGINT route; helper-only signal
-coverage cannot substitute for it. The intake reports that this test passed in
-both logs. Review its durable request-before-interruption ordering, owned stop
-proof, exact cancelled reserved session, acknowledgment and fence/replay
-assertions alongside the selected-host regression. The fixture's decision
-identities and causal linkage remain required; passing counts alone do not
-establish their integrity. Historical pre-SIGINT host logs and partial runs are
-not current-source evidence. The broad aggregate remains a **failed broad gate**;
-all supplied results remain subject to formal independent acceptance.
+Step 2 used `shasum -a 256` to verify all three digests and
+`shasum -a 256 -c` to verify source bytes (exit 0). A full-file parser consumed
+all 330 focused-log lines and 4,968 aggregate-log lines, checked XCTest summaries
+and matched every aggregate assertion's suite, test and source line against
+inventory IDs 1–8 and 14–24: 19 matches, zero new or missing assertions.
+The host exit codes above are recorded by the operator receipt, not new test
+executions or exit markers inferred from XCTest text. Inspection evidence is in
+`tmp/p1-6c-step2-after-helper/evidence-inspection.json`, `digests.log` and
+`manifest-check.log`. This establishes evidence identity, not independent
+acceptance of the non-slice classification or implementation correctness.
+
+Exclude `tmp/work-runtime-p1-6c-late-cancel-host/aggregate.log` (interrupted
+before the helper repair) and
+`tmp/work-runtime-p1-6c-late-cancel-20260924-session-1/aggregate-final-3.log`
+(older sandbox run) from current-source acceptance. Pre-repair 99-test and
+2,049-test logs are historical only. Do not rerun the listener-dependent
+aggregate inside this sandbox. Review complete current logs and source/test
+semantics downstream; passing counts alone do not prove coverage. Retain the
+real EntryPoint SIGINT test, selected-host stop proof, exact cancelled-session
+acknowledgment and deterministic ordering obligations above.
 
 **Failure disposition and bounded review.** The inventory
 `tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json`
@@ -1422,8 +1431,8 @@ session's canonical `acceptanceNotMet` reason; do not suppress assertions,
 weaken completion semantics, or repair unrelated baseline failures.
 
 **Acceptance and rollout boundary.** The next plan updates
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` for the atomic
-repair and deterministic regression matrix, preserving accepted scope and WIP. Independent
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` for final evidence review and any material bounded repair, preserving the
+accepted atomicity contract, deterministic regression matrix and WIP. Independent
 `gpt-6-sol` test-integrity and independent `gpt-6-sol` adversarial reviewers
 assess source, tests, request-before-signal ordering, owned stop proof, exact
 cancelled session, acknowledgment, fence/replay, real EntryPoint SIGINT and
@@ -1435,7 +1444,7 @@ makes no implementation acceptance decision.
 
 Retain the accepted V0/V1/V2/V11, decision, live, compatibility and changed-file
 lint obligations. Assess existing source-matched evidence first; run focused
-checks only for a concrete gap. Do not rerun the 2,049-test aggregate in a
+checks only for a concrete gap. Do not rerun the 2,057-test aggregate in a
 listener-denied sandbox to reinterpret known host failures. Any source/test
 change invalidates final-source acceptance evidence until its manifest is
 rechecked and affected tests rerun on a capable host where required. One serial
@@ -1444,14 +1453,14 @@ decision-row mutation, new framework, unrelated cleanup or package edit is in
 scope. Runtime-resolved workflow provenance and effective workflowInput are
 authoritative; this node adds no workflow readiness requirements.
 
-Historical evidence inspection commands (not repaired-source gates) include:
+Current evidence inspection commands (not new test executions) include:
 
 ```bash
-shasum -a 256 tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256
-shasum -a 256 -c tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256
-shasum -a 256 tmp/work-runtime-p1-6c-final-host/focused.log tmp/work-runtime-p1-6c-final-host/aggregate.log
-cat tmp/work-runtime-p1-6c-final-host/focused.log
-cat tmp/work-runtime-p1-6c-final-host/aggregate.log
+shasum -a 256 tmp/work-runtime-p1-6c-late-cancel-host/final-source-after-helper.sha256 tmp/work-runtime-p1-6c-late-cancel-host/focused-after-helper.log tmp/work-runtime-p1-6c-late-cancel-host/aggregate-after-helper.log
+shasum -a 256 -c tmp/work-runtime-p1-6c-late-cancel-host/final-source-after-helper.sha256
+cat tmp/work-runtime-p1-6c-after-helper-acceptance/host-evidence.json
+cat tmp/work-runtime-p1-6c-late-cancel-host/focused-after-helper.log
+cat tmp/work-runtime-p1-6c-late-cancel-host/aggregate-after-helper.log
 cat tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json
 git diff --check
 git diff --cached --check
@@ -1463,8 +1472,10 @@ material cancellation obligations. An unclassified failure, missing material
 coverage, or unresolved high/mid P1-6c finding blocks acceptance and requires a
 precise finding and bounded repair. No unresolved product choice requires a
 user-QA document. No new Step 3/5 revision feedback was supplied. The prior adversarial high
-finding is addressed by the arbitration contract above but remains an open
-implementation defect until repaired and independently verified.
+finding is addressed by the preserved arbitration contract and repaired WIP;
+its formal closure remains pending independent verification of that repair.
+The earlier mid finding about helper-only SIGINT coverage likewise requires
+renewed review of the preserved real EntryPoint subprocess test.
 
 Only after explicit independent slice-only acceptance, refresh documentation
 and `impl-plans/progress/p1-dispatch.md`, exact-file commit and non-force push

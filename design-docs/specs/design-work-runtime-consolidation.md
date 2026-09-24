@@ -2641,56 +2641,134 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
 
-**Intake and scope.** Current mode `issue-resolution`; issue
-“Resume Work Runtime P1-7a from accepted ownership amendment”;
-issue reference `comm-000001`, intake
-`comm-000002`, execution `codex-design-and-implement-review-loop-session-1`,
-Step 2 `step2-design-doc-update`. The complete implementation-plan batch is
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; preserve its
-original task IDs and file map. This section governs only P1-7a and supersedes
-historical no-publication-between-slices wording: P1-7b is already accepted at
-the checkpoint above. This slice may publish after its own gates; parent P1
-requires a separate completion audit. Investigation references `/root/retry_owner`
-and `/root/inactivity_owner` identify the prior diagnostic authors, not a
-Codex-agent reference repository. No Cursor-specific behavior or adapter
-divergence is proposed.
+**Intake and scope.** Current mode `planning-only`, effective execution mode
+`design-plan-only`; issue “Review P1-7a failure-classification regressions and
+exact cancellation-test ownership”. Issue reference: workflow input; no issue
+URL or number supplied. Intake `comm-000002`, execution
+`codex-design-and-implement-review-loop-session-1`, Step 2
+`step2-design-doc-update` are the current handoff. Codex-agent references are
+empty; no reference-repository or Cursor CLI behavior change is required.
 
-This execution resumes the accepted amendment at checkpoint
-`e3e30ed6d609ddffe05b8ba875e57a49ee65c372` on
-`feat/remaining-impl-plans`. The effective runtime input and Step 1 intake are
-current authority; the planning-only run at
-`855a99692db80ec17cac055d3c8263473223dbd0` is historical. Preserve the existing
-changes in `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
-`impl-plans/progress/p1-dispatch.md`, all failed receipts and other sessions'
-work. Step 2 updates this design only; implementation belongs to the downstream
-A0–A5 waves. One design author and one plan author retain the complete batch,
-with one integration owner for coupled Swift changes.
+The current checkpoint is `ae8ec0816f6f0638233847fe00501899c4c2e921` on
+`feat/remaining-impl-plans`. Preserve the four dirty files
+`Sources/RielaCore/RuntimePublication.swift`, `Sources/RielaCore/RuntimeStore.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
+`impl-plans/progress/p1-dispatch.md`, all failed logs and other sessions' work.
+The only planning publication paths are this design,
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` and
+`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json`. Step 2 edits this
+section only; Step 4 owns the plan and manifest. One design author and one plan
+author retain the complete serial A0–A5 batch. No implementation, test, example,
+progress edit, old-path deletion or plan closure is authorized in this run.
 
-**Accepted-review handoff.** Resume the accepted §17.10 behavioral and ownership
-contract without reopening design or narrowing A0–A5. Before implementation
-dispatch, the plan author must reconcile the active plan and
-`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json` with the effective
-`issue-resolution` mode, checkpoint above and accepted Step 5 state supplied
-by this runtime. Their `planning-only` / `design-plan-only`, pending Step 5,
-`planReview.accepted=false` and dispatch-disabled metadata describe the earlier
-planning run, not a new readiness blocker. Preserve historical review records;
-do not invent a new review communication ID or transfer acceptance to new
-behavior. This status reconciliation grants no additional write path and does
-not pass V1 or replace the required implementation reviews. Runner-resolved
-immutable user-scope workflow version `0.3.33` and effective `workflowInput`
-are authoritative; provenance rediscovery is not a node responsibility.
+**Review boundary.** The runner-resolved immutable user-scope workflow `0.3.33`
+and effective `workflowInput` are authoritative. The earlier issue-resolution
+handoff and accepted reviews at `e3e30ed6` are history, not acceptance of this
+amendment. Step 4 must retain historical receipts while setting current
+planning-only mode, checkpoint, four protected paths, pending current review and
+disabled implementation dispatch in the plan/manifest. Independent Step 3 and
+Step 5 review must accept the amended behavior and exact ownership before only
+these three planning files may be committed and non-force pushed. Never stage
+the four protected files. No reset, stash, force push, main merge, extra worktree
+or concurrent Git operation is permitted. A0–A5 below describe future
+implementation, not work authorized by this planning run.
 
-**Failed gate and exact causal repair.** The complete source-matched receipt
+**Attempt-3 evidence and causal policy amendment.** Complete logs at
+`tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/before-removal-v1.log`
+(60 tests, five assertions) and
+`tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/canonical-regression.log`
+(93 tests, three assertions) remain **FAILED**. No tests were rerun for this
+design. The first reports budget-limit human wait, historical missing-gate
+blocking of a successful last attempt, and absent director child; the second
+reports the terminal-first test's two nil-kind and one waiting assertions.
+Preserve older attempt-1/2 and per-edit evidence as history.
+
+The following policy is proposed for independent review; it retains atomic
+classification and does not infer retry eligibility from a test's desired state.
+
+| Cause / boundary | Required behavior and evidence |
+| --- | --- |
+| Command node exits nonzero through the adapter | Preserve `adapterFailure` in the first canonical failed snapshot, reconciliation and reopened store. `TaskExampleHarness.dispatch` in `TaskDispatcherIntegrationTests.swift` turns `failWaitNode` and `failRepairNode` into `/bin/sh -c 'exit 7'`; neither is a nil-kind ordinary-failure fixture. Classification records cause; the task's configured policy determines retry. No command-specific reclassification or new failure enum is needed. |
+| Retry allowed, capacity remains, no authorized escalation threshold reached | Schedule exactly one pending request and consume it into a distinct attempt/session. Preserve `testFailedTaskRetriesWithinBudgetAndStopsAtLimit` and `testLastAdmittedRecoveryAttemptCanSucceed` positive execution assertions. Retry-disabled adapter failures and unclassified/non-retry failures continue to wait for human without a pending retry. |
+| Retry-eligible terminal failure at attempt limit | Persist causal attempt-budget exhaustion evidence and stop through the shared decision applier, yielding failed with no pending request, rather than falling through to human wait. Attempt capacity remains an admission fence: never report exhaustion merely because a running or successfully completed last admitted attempt reaches the count. Do not change token, wall-clock, proposal, convergence or cancellation precedence. |
+| Authorized director threshold reached on reconciled failed work | When an agent workflow is configured, the failed-attempt threshold is reached and capacity remains, choose the existing director child before an otherwise automatic failure retry. Keep hard-stop guards and cancellation first; never bypass admission, recurse from a director attempt, or let the child accept failed judged work. Without configured authorization retain deterministic retry/wait behavior. Preserve `testConfiguredDirectorChildRunsOrdinarilyAndCannotAcceptFailedWork`, including judged/child identity, remaining budget and failed-work acceptance refusal. |
+| Earlier synthetic missing-required-gate finding, later real accepted gate | Keep immutable old session/gate/finding evidence. In terminal task reconciliation only, resolve the matching synthetic absence finding when the latest completed work attempt supplies the real accepted required gate for the same gate and step. Verify the earlier canonical synthetic record (`stepExecutionId == "missing"`, exact generated ID and gate lineage), not an ID prefix alone. Persist resolution with the new gate evidence as cause before computing completion; replay must not duplicate effects or reopen a superseded absence. Missing, rejected, needs-work or mismatched latest gates still block; substantive high/mid findings, even with a similar ID, remain open until independently resolved. Human acceptance and all other completion requirements remain mandatory. |
+| Terminal-first late SIGINT or external cancellation | The committed terminal outcome wins. Late cancellation must not rewrite failed/adapterFailure to cancelled, append cancellation records or cancel decisions, or suppress the configured failure policy. The non-retry case waits; the retry-enabled case schedules only its ordinary policy request. Cancellation-first still fences replacement until exact-session acknowledgment and never automatically retries cancelled work. |
+
+The concrete failure chain is visible in `Sources/RielaWork/DeterministicDirector.swift`:
+retry is skipped when capacity is exhausted, then `attempt-not-completed` waits.
+`Sources/RielaWork/WorkGuard.swift` intentionally omits attempt count from live
+budget violations. `Sources/RielaWork/TaskGuardCoordinator.swift` currently only
+considers failed-attempt escalation after a human-wait resolution, so new typed
+adapter failures take retry first. `Sources/RielaCLI/TaskDispatch.swift` saves
+projected findings but does not supersede synthetic absence after a later gate;
+`Sources/RielaWork/WorkStore.swift` upserts only supplied findings. These are
+causal observations, not authorization to edit every inspected file.
+
+**Smallest ownership amendment.** Implement the terminal-only attempt-capacity
+observation and synthetic-absence reconciliation in already-owned
+`Sources/RielaCLI/TaskDispatch.swift`, using existing guard evidence, finding and
+decision store operations. Keep violation identity/count consistent with
+`Sources/RielaWork/TaskGuardCoordinator.swift`, the already-owned shared policy
+application boundary, and implement authorized escalation precedence there.
+Do not fabricate success, clear all findings, mutate canonical terminal evidence,
+or make the projector hide failure kinds. The director, pure guard, evidence
+projector, finding merge and store remain read-only inspection targets; if the
+existing operations prove insufficient, stop for an exact reviewed amendment.
+
+Add only `Tests/RielaCLITests/TaskCancellationIntegrationTests.swift` to future
+writePaths, subject to independent design/plan acceptance. In
+`testTerminalFirstOrdinaryFailureSurvivesLateSIGINTAndExternalRequest`, explicitly
+configure `rerunOnAdapterFailure = false` before dispatch so “ordinary failure”
+means a deliberate non-retry policy. Assert `adapterFailure` at the terminal
+hook, reconciled outcome and reopened snapshot; retain failure exit, reconciled
+state, `.waiting`, no cancellation record and zero cancel-decision assertions
+for both signal and external-request branches. Add a paired retry-enabled case
+showing the same immutable terminal failure and one policy pending request;
+late cancellation must neither create an extra request nor suppress it.
+This corrects the fixture's unsupported nil-kind assumption without accepting
+the incidental scheduled state as the non-retry contract. All other cancellation
+and selected-host assertions remain intact. No source or test is edited here.
+
+In already-owned `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`, add
+negative coverage for retry-disabled and unclassified failures, last-attempt
+success with historical synthetic absence, latest gate still missing/rejected,
+and unrelated substantive blocking findings. Prove durable resolution causality,
+reopen and replay behavior without manually seeding success or resolved findings.
+In already-owned `Tests/RielaCLITests/TaskRuntimeExampleTests.swift`, retain the
+configured director example and cover disabled/below-threshold escalation and
+no remaining child capacity. No fixture/example or additional production write
+path is granted. This amendment must be reflected in A1 before dispatch.
+
+A1 must run the focused classification/cancellation cases, then the complete
+canonical regression and full four-suite before-removal V1 after all policy and
+live inactivity/progress edits, on the same recorded source. Commands (future
+implementation verification, not executed in this planning node):
+
+```bash
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit|TaskDispatcherIntegrationTests.testLastAdmittedRecoveryAttemptCanSucceed|TaskRuntimeExampleTests.testConfiguredDirectorChildRunsOrdinarilyAndCannotAcceptFailedWork|TaskCancellationIntegrationTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+```
+
+Record foreground terminal exits, complete logs, per-suite positive counts and
+HEAD plus dirty-source/test/fixture hashes in new receipts; never overwrite the
+attempt-3 failed logs. Include the added negative/paired cases in their full
+suites. Focused passes alone cannot authorize A2. A1's live inactivity and
+progress proof, canonical-regression pass and full source-matched V1 pass all
+precede deletion; any relevant edit invalidates those receipts.
+
+**Historical atomic-classification repair (retained).** The complete source-matched receipt
 `tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/logs/before-removal-v1-final.log`
 records 60 tests, two failing retry cases, four assertions, exit 1. No legacy
 path has been deleted. Preserve that receipt, all per-edit intents and the
 diagnostics `attempt-1/bounded-amendment-request.json` and
 `attempt-2/ownership-diagnostic.json` under the same `plans/p1-dispatch/` root.
-This **FAILED** V1 remains a deletion blocker.
+That historical V1 remains failed; attempt-3 above is the current deletion blocker.
 
-`Sources/RielaCore/RuntimePublication.swift` publishes the adapter failure using
+Before the preserved dirty repair, `Sources/RielaCore/RuntimePublication.swift` published the adapter failure using
 `WorkflowStepExecutionUpdateInput`; `Sources/RielaCore/RuntimeStore.swift`
-sets the session to failed without its failure kind. The wrapper in
+set the session to failed without its failure kind. The wrapper in
 `Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift` immediately saves
 that first terminal snapshot. The later `markSessionFailed` in
 `Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift` supplies
@@ -2748,8 +2826,8 @@ must retain the causal live violation and avoid duplicating its decision.
 No separate supervisor or task-free-run monitor is introduced.
 
 **Named positive evidence for the amendment.** Retain A0–A5 in the active plan.
-A0 records exact consumers and reviewed owners; A1 repairs atomic classification
-and proves live inactivity before a complete fresh V1; A2 deletion depends on
+A0 records exact consumers and reviewed owners; A1 preserves atomic classification,
+repairs the causal policy above and proves live inactivity before a complete fresh V1; A2 deletion depends on
 that sealed pass. A3 final-source verification, A4 independent reviews and A5
 documentation/publication remain separate, uncompleted implementation tasks.
 
@@ -2920,9 +2998,8 @@ complete logs and terminal exits. A0 records this dependency; local A0/A1 may
 proceed, but absent that evidence A2/A3 acceptance and P1-7a closure remain
 blocked. No Codex-reference mapping decision is needed.
 
-The accepted amendment remains in force. This Step 2 status update supplies the
-current issue-resolution handoff for downstream review and plan metadata
-reconciliation; author self-check is not formal Step 3, Step 5 or A4 acceptance.
+The earlier accepted invariants remain in force. This Step 2 planning-only
+amendment requires independent design and plan review; author self-check is not formal Step 3, Step 5 or A4 acceptance.
 It changes no implementation, test, example or progress file, passes no deletion
 gate and closes no plan. A4 still requires formal test-integrity, one Sol
 adversarial and Astra combined-tree reviews with no material P1-7a finding;

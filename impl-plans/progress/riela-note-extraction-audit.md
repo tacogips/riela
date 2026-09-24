@@ -97,13 +97,23 @@ intentional add-on rename from `riela/` to `kaiba/` and any live-client gap.
 | 003 search and association | Kaiba `NoteSearch.swift` calls the graph seam for linked expansion; `NoteService+Relations.swift` calls it for depth-two proposals. | Verify default search, direct-hit truncation/filter/paging, bridge behavior and provenance on current source. |
 | 004 built-in add-ons | Riela `RielaKaibaAddons` exposes `kaiba/note-graph-neighbors` and `kaiba/note-search`; the old local `riela/` IDs are obsolete. | Decide explicit compatibility: current client/add-on defaults are depth 2 and limit 20, rather than the old service defaults 5 and 16; Riela's `bounded` helper clamps negative depth/limit to 1, whereas old TASK-004 required rejection. Do not check this task off by rename alone. |
 | 005 GraphQL | Kaiba owns `noteGraphNeighbors` and search-depth schema/service/client contracts and tests. | Recheck nullability, error mapping, ordered path evidence and source-matched owner-side tests. |
-| 006 example workflows | Riela `note-agent` and `note-link-extract` now use `kaiba/` add-ons; mock scenarios and expected-results files remain. | Validate both bundles and run the mocks against the installed runtime; verify citations and propose-without-confirm behavior. |
+| 006 example workflows | Riela `note-agent` and `note-link-extract` now use `kaiba/` add-ons; mock scenarios and expected-results files remain. | Installed-runtime validation, inspection and bundled mocks passed as recorded below. Live Kaiba-client behavior and citation resolution still need owner-side verification. |
 | 007 focused verification | Kaiba traversal/GraphQL tests and Riela add-on tests exist in their respective repositories. | Run nonzero source-matched suites and lint in each owning repository; do not use removed Riela Note test paths. |
 | 008 docs/handoff | Riela examples and README describe the Kaiba boundary; the old task's local Note release-note path and no-push handoff are historical. | Review current public docs and record the explicit default/negative-input decision before archiving or replacing this plan. |
 
 This is an ownership and discrepancy inventory, not a pass of the old task
 checklist. Kaiba was inspected read-only; its other-session checkout was not
 modified.
+
+On 2026-09-24, installed Riela 0.1.52 validated and inspected both current
+bundles with zero capability gaps, then ran each bundled mock with isolated
+`tmp/` session/artifact roots (`--workflow-definition-dir examples/<bundle>`).
+Both runs returned `completed`, exit code 0. `note-agent` returned
+`sourceNoteIds: ["note-agent-source"]` and a citation for the same ID;
+`note-link-extract` returned one `related` proposal for `note-candidate` and
+did not create a link. The example `EXPECTED_RESULTS.md` files now carry those
+reproducible commands and current Kaiba ownership. This proves deterministic
+fixture behavior only, not a live server or the full TASK-001..008 contract.
 
 ## System-memory plan architecture cross-check (2026-09-24)
 

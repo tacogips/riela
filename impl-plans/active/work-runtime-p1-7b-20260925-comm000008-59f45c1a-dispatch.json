@@ -1,0 +1,171 @@
+{
+  "taskId": "work-runtime-p1-7b-20260925-comm000008-59f45c1a",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "59f45c1a126d451fbe2eaf775306785d53b518d2",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a",
+  "reviewContext": {
+    "issueReference": {
+      "communicationId": "comm-000002",
+      "number": null,
+      "title": "Implement Work Runtime P1-7b task-backed replacement examples",
+      "url": null
+    },
+    "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
+    "userProblem": "Existing replacement examples need proven task-backed lifecycle behavior before P1-7a legacy removal; the prior broad run failed 19 assertions, including one P1-7b example assertion.",
+    "requiredOutcomes": [
+      "Complete and validate both deterministic replacement bundles.",
+      "Prove seven lifecycle cases through real WorkStore, TaskDispatch, WorkflowRunCommand and decision boundaries with positive counts.",
+      "Record final-source build, before-removal V1, affected focused and V11 tests, V8 mocks, strict touched-file SwiftLint, diff checks, source identity and serial broad regression with full logs and honest failure classification.",
+      "Obtain formal test-integrity, single adversarial and Astra combined-tree acceptance; refresh docs/progress; publish only exact reviewed paths after final gates."
+    ],
+    "nonGoals": [
+      "P1-7a legacy workflow implementation removal or legacy example deletion in this slice.",
+      "Reconstruction of accepted P1-6a/b/c/d, new CLI/schema/orchestration abstraction, unrelated broad failure repairs, Monja work, broad formatting, lockfile regeneration or global plan archiving."
+    ],
+    "constraints": [
+      "Use only immutable user-scope codex-design-and-implement-review-loop on feat/remaining-impl-plans; preserve accepted P1-6d HEAD and other session work.",
+      "Keep scratch and full logs under repository tmp; use a single owner for coupled bundles/tests and serial shared-source edits.",
+      "Before any later legacy deletion, require current-source passing V1 and exact ownership; no legacy deletion is authorized by this plan.",
+      "No reset, force push, broad stage, main merge or in-workflow worktree; classify failed broad gate honestly and repair new or P1-7b-owned failures.",
+      "Runtime production source edits require a bounded plan amendment and review."
+    ],
+    "designDecisionsAndRationale": [
+      "Retain repair then required verification and one bounded director worker; these existing shapes limit change to demonstrated inconsistencies.",
+      "Use existing store fixture and real reservation, runner reconciliation and decision application; standalone mocks only supplement ledger evidence.",
+      "Keep coupled test/harness and bundles in one implementation plan; serial finalization owns shared documentation.",
+      "Defer publication until final verification, formal reviews and B4 documentation, resolving Step 5 feedback."
+    ],
+    "intentionalTradeoffs": [
+      "Retain legacy examples during P1-7b so replacement evidence can be reviewed before a separately owned removal.",
+      "Allow unrelated broad failures only as explicitly classified failed follow-ups with formal slice-only review disposition; the broad command remains failed."
+    ],
+    "supportedEdgeCases": [
+      "Rejected required gate followed by consumed recovery and bounded second attempt.",
+      "Guard stop with durable evidence and repeat dispatch.",
+      "Capacity zero with no attempt, canonical session or lease.",
+      "Child-only success against failed judged work.",
+      "Reopened-store once-only child accounting and invalid-output human escalation."
+    ],
+    "outOfScopeEdgeCases": [
+      "Repeated-finding guard behavior from the gate-visit fixture.",
+      "Recursive director repair.",
+      "P1-7a removal and unrelated broad regression fixes."
+    ],
+    "sourcePaths": [
+      "impl-plans/README.md",
+      "impl-plans/REMAINING-WORK-HANDOVER.md",
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "examples/task-repair-loop/",
+      "examples/task-agent-director/",
+      "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+      "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift"
+    ],
+    "designReview": {
+      "communicationId": "comm-000004",
+      "decision": "accepted",
+      "section": "17.9",
+      "findings": []
+    },
+    "planReview": {
+      "communicationId": "comm-000008",
+      "decision": "accepted",
+      "addressedFeedback": [
+        {
+          "communicationId": "comm-000006",
+          "reviewDecision": "resolved",
+          "resolution": "Removed early commit and push checkpoint; publication follows verification, formal reviews and B4 documentation."
+        }
+      ],
+      "findings": []
+    },
+    "codexAgentReferences": [],
+    "planningVerification": [
+      {
+        "command": "Author contract check: final-only publication, unchanged task DAG and historical body",
+        "completeLogPath": "tmp/p1-7b-step4-plan/revision-comm000006/author-check.log",
+        "exitStatus": 0
+      },
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/p1-7b-step4-plan/revision-comm000006/check-1.log",
+        "exitStatus": 0
+      },
+      {
+        "command": "git diff --cached --check",
+        "completeLogPath": "tmp/p1-7b-step4-plan/revision-comm000006/check-2.log",
+        "exitStatus": 0
+      },
+      {
+        "command": "git rev-parse HEAD",
+        "completeLogPath": "tmp/p1-7b-step4-plan/revision-comm000006/check-4.log",
+        "exitStatus": 0
+      }
+    ],
+    "evidenceLayout": "plans/p1-dispatch/attempt-<number>/; reviews/<role>/; serial/attempt-<number>/; checkpoint/"
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "examples/task-repair-loop/workflow.json",
+        "examples/task-repair-loop/nodes/node-repair.json",
+        "examples/task-repair-loop/nodes/node-verify.json",
+        "examples/task-repair-loop/prompts/repair.md",
+        "examples/task-repair-loop/prompts/verify.md",
+        "examples/task-repair-loop/mock-scenario.json",
+        "examples/task-repair-loop/README.md",
+        "examples/task-repair-loop/EXPECTED_RESULTS.md",
+        "examples/task-agent-director/workflow.json",
+        "examples/task-agent-director/nodes/node-director.json",
+        "examples/task-agent-director/prompts/director.md",
+        "examples/task-agent-director/mock-scenario.json",
+        "examples/task-agent-director/README.md",
+        "examples/task-agent-director/EXPECTED_RESULTS.md",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/README.md",
+        "impl-plans/REMAINING-WORK-HANDOVER.md"
+      ],
+      "acceptanceCriteria": [
+        "Both replacement bundles validate and deterministic mock scenarios produce expected stable outputs.",
+        "Real task lifecycle tests prove acceptance, gate recovery, guard stop, capacity wait, bounded director decision, once-only child accounting and invalid-output human escalation with positive counts.",
+        "Before-removal V1 and affected focused suites pass on final source; build, strict touched-file SwiftLint, diff checks, source identity and serial broad regression have complete evidence.",
+        "Formal test-integrity, single adversarial and Astra combined-tree reviews accept no material P1-7b defect; docs/progress leave P1-7a, parent P1 and broad follow-ups open.",
+        "Only exact reviewed paths are committed and non-force pushed after all verification, review and B4 documentation gates."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskRuntimeExampleTests",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|AgentDirectorStoreTests|CompletionEvaluatorTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-1/repair-store --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-1/director-store --output json",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+        "env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-1/changed-swift-files.nul",
+        "git diff --check",
+        "git diff --cached --check"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md"
+    }
+  ]
+}

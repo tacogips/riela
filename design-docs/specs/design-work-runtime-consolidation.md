@@ -2398,3 +2398,124 @@ not permission to add a new subsystem. Author inspection confirms the one-plan
 scope, reference mapping, data flow, validation and rollout requirements cover
 the intake. No high/mid design finding remains; implementation verification and
 independent review remain downstream gates.
+
+### 17.9 P1-7b task-backed replacement examples (2026-09-25)
+
+**Authority and delivery boundary.** Mode `issue-resolution`; issue “Implement
+Work Runtime P1-7b task-backed replacement examples”, from effective
+`workflowInput` and Step 1 `comm-000002` in
+`codex-design-and-implement-review-loop-session-1`. No GitHub issue number/URL
+or codex-agent reference input was supplied. No reference-code parity, Cursor
+CLI change, or intentional reference divergence is proposed; existing adapter
+boundaries remain unchanged. This subsection governs the current P1-7b slice
+and supersedes older combined-delivery/no-publication requirements in §17.7
+and the parent plan for this execution only. P1-7b may be committed and pushed
+after its own review/documentation gates while P1-7a and parent P1 stay open.
+
+Preserve accepted P1-6d commit
+`59f45c1a126d451fbe2eaf775306785d53b518d2` and all other session work on
+`feat/remaining-impl-plans`. The sole plan input remains
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`. Do not
+reconstruct P1-6a/b/c/d, remove P1-7a implementation, add task creation CLI,
+change storage schemas, or repair unrelated broad failures. Retain legacy
+example directories in this slice: deletion is unnecessary to demonstrate
+replacement and requires separately reviewed exact ownership and a passing
+current-source V1 before-removal receipt. No reset, force push, broad staging,
+main merge, or in-workflow worktree creation is permitted.
+
+**Existing assets and minimal changes.** Both `examples/task-repair-loop/`
+and `examples/task-agent-director/` already contain `workflow.json`, referenced
+`nodes/` and `prompts/`, `mock-scenario.json`, `README.md`, and
+`EXPECTED_RESULTS.md`. Retain their minimal shapes: repair then required
+`verification` gate; one bounded director worker returning a recommendation.
+Keep deterministic mock keys aligned with node IDs and stable business output;
+generated session IDs/timestamps are not expected-output constants. Bundle
+READMEs distinguish standalone workflow completion from task acceptance and
+describe fixture setup through existing store APIs, without inventing a CLI.
+
+`Tests/RielaCLITests/TaskRuntimeExampleTests.swift` already covers real reserved
+attempts, guards, capacity and substantial accepted P1-6d child behavior.
+`TaskExampleHarness` in `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`
+uses the real WorkStore, TaskDispatch and WorkflowRunCommand with deterministic
+node responses. Reuse it; helper edits require explicit exact-path ownership
+only if necessary. Inventory current assertions before adding tests. The
+initial guard test expects CLI success despite terminal task failure; compare
+that expectation with the accepted dispatcher contract and fresh failure
+evidence rather than weakening runtime semantics to preserve the fixture.
+
+**Behavioral acceptance matrix.** Fixtures may seed tasks and initial judged
+work through existing store APIs. Transitions being tested must pass through
+actual reservation, runner reconciliation and shared decision application;
+directly writing the expected terminal state is not evidence.
+
+| Case | Required durable observation at the real boundary |
+| --- | --- |
+| Acceptance | Repair and verify execute; required gate, verification and acceptance evidence belong to the reserved session; reconciled attempt and causal accept decision produce succeeded task. |
+| Gate recovery | A rejected required gate cannot accept work. Remaining budget produces a recover decision naming `verification`; subsequent task dispatch consumes that request, executes recovery with deterministic passing output, and persists successful completion. Assert distinct attempt/session linkage, bounded attempt count and no duplicate recovery on replay. |
+| Guard stop | A deterministic configured convergence violation persists guard evidence and a stop decision referencing it; task is failed, CLI terminal reporting agrees with the accepted contract, and repeated dispatch launches no extra work. Do not claim repeated-finding coverage from a gate-visit-only fixture. |
+| Capacity wait | Capacity denial reports waiting/capacity with no attempt/session identifiers and creates no attempt, canonical session or lease; compare store state, not only response strings. |
+| Bounded director decision | Reconciled judged work feeds one ordinarily executed linked child. An allowed recommendation is applied through shared causal/version/completion/budget validation; child success alone cannot accept failed work. |
+| Once-only child accounting | Assert exact parent/judged/child/session linkage and concrete nonzero usage/cost charged once. Reopen the store and repeat ordinary dispatch; attempts, accounting, decisions and original judged evidence remain unchanged. Reuse existing accepted cases where they already prove this. |
+| Invalid-output escalation | Invalid/forbidden output persists human-wait escalation and decision evidence. Failed or budget-blocked child cases retain accepted P1-6d behavior. Reopen/replay creates neither another child nor duplicate charges; no recursive director repair. |
+
+Mock workflow runs are supplemental: repair returns accepted `verification`
+with `acceptance.met: true`; director returns one `kind: accept` recommendation.
+They cannot satisfy any task-ledger row by themselves. Stable expected results
+must describe these distinctions and match executable tests.
+
+**Dependency-ready execution and ownership.** Carry this as one scope through
+native Riela waves: inventory and exact ownership first; minimal bundle/test
+completion second; joined final-source verification third; independent review,
+then serial documentation and publication. The test and its shared harness
+have one editor; assign disjoint bundle work only after shared fixture contracts
+are fixed. No nested orchestration framework or extra design author is needed.
+Default implementation writes are the two bundles, TaskRuntimeExampleTests and
+directly affected documentation. Any demonstrated runtime defect requires a
+bounded, explicitly owned repair and renewed affected evidence, not speculative
+runtime refactoring. Keep scratch and full verification artifacts under `tmp/`.
+
+**Verification and review gates.** Use the parent plan's exact V0 build, V1
+four-suite before-removal selection, V8 four example validate/mock commands and
+V11 selected-host selection. V8 addresses these repository example bundles,
+not the executing workflow. Run affected store/decision/guard suites where
+fixture or helper changes exercise them. Core command forms are:
+
+```bash
+swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+git diff --check
+git diff --cached --check
+```
+
+The plan's V6 strict touched-file SwiftLint command and V7 baseline comparison
+apply to exact changed Swift paths, including necessary new helper files.
+Record source identity before/after, exact command/toolchain, full log path,
+terminal exit, positive per-suite counts and the test-to-matrix mapping. Run
+broad regression serially; poll foreground handles through exit. Incomplete
+logs, missing suites and zero-test selections cannot pass. Rerun invalidated
+checks on final source. Build/lint success does not substitute for behavior.
+
+The P1-6d broad gate remains **FAILED** with 19 classified assertions; its
+“non-slice” classification was relative to P1-6d. The example assertion belongs
+to this P1-7b investigation. Fresh current-source failures need identity/cause/
+ownership classification: resolve new and P1-7b-owned failures, retain unrelated
+follow-ups explicitly, and never relabel a failed broad command as passing.
+Formal test-integrity, the workflow's single adversarial review, and Astra
+combined-tree review must accept no material P1-7b defect. Record each actual
+decision and finding; historical P1-6d acceptance does not certify this slice.
+
+After those gates, update directly affected README/design/plan/progress entries
+from evidence, leaving P1-7a, parent P1 and unresolved broad follow-ups open.
+Commit only reviewed exact paths and non-force push the accepted commit after
+documentation gates. No implementation, test or independent review acceptance
+is claimed by this design update.
+
+**Questions and author check.** No unresolved user decision or Step 3/5 review
+feedback was supplied, so no user-QA file is needed. Fresh gate-recovery coverage
+and current broad failure classification are implementation investigations,
+not architectural unknowns. The author checked intake traceability, existing
+assets and task boundaries, minimal scope, explicit ownership/dependencies,
+and the separation of replacement evidence from legacy deletion. No unresolved
+high/mid design finding remains. Subsequent behavioral gates remain required.

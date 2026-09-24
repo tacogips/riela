@@ -1,4 +1,262 @@
-# Work Runtime P1-6d: bounded director and judged-work acceptance
+# Work Runtime P1-7b: task-backed replacement examples
+
+## Current executable contract — P1-7b only (2026-09-25)
+
+Mode `issue-resolution`; issue “Implement Work Runtime P1-7b task-backed
+replacement examples”, effective workflowInput and intake `comm-000002`; no
+GitHub number/URL or codex-agent reference input. Step 3 `comm-000004`,
+`step3-design-review-attempt-1-exec-4`, accepted
+`design-docs/specs/design-work-runtime-consolidation.md` §17.9 with no findings
+in `codex-design-and-implement-review-loop-session-1`. Step 5 `comm-000006`
+requested removal of the early commit/push checkpoint (one mid finding); this
+revision addresses it without changing the accepted design.
+No Cursor change or reference-code divergence applies.
+
+**Authority:** only this section and its first JSON block schedule this run.
+Everything after “Historical P1-6d contract” is retained history, including
+older current-contract headings, task DAGs, write allowlists and removal gates.
+Status: plan authored; implementation and formal review pending. Preserve
+accepted P1-6d HEAD `59f45c1a126d451fbe2eaf775306785d53b518d2` on
+`feat/remaining-impl-plans`, accepted design changes and all other session work.
+
+### Intent, context, boundaries and ownership
+
+Complete the existing two example bundles and prove their task behavior through
+real WorkStore, TaskDispatch, WorkflowRunCommand and decision application.
+Standalone mocks supplement real task tests. Both bundles and nineteen example
+test methods already exist; inventory and strengthen them instead of rebuilding
+accepted P1-6d. TaskExampleHarness lives in TaskDispatcherIntegrationTests.swift.
+The old broad run failed 19 assertions, one belonging to these examples;
+“historical non-slice” for P1-6d is not an exemption for P1-7b.
+
+Retain all legacy examples and P1-7a implementation. No deletion, new CLI/schema,
+recursive director, new orchestration abstraction, unrelated failure repair,
+Monja work, broad formatting, lockfile regeneration or global plan archiving.
+No workflow/package provenance rediscovery. No reset, force push, broad staging,
+main merge, private branch, worktree or concurrent Git operation. Shared state
+and source edits are serial. No production source path is preauthorized: if a
+real P1-7b defect needs one, record the exact bounded repair/ownership and obtain
+the workflow's plan amendment/review before editing outside this contract.
+
+```json
+{
+  "planId": "p1-dispatch",
+  "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+  "dependsOn": [],
+  "writePaths": [
+    "examples/task-repair-loop/workflow.json",
+    "examples/task-repair-loop/nodes/node-repair.json",
+    "examples/task-repair-loop/nodes/node-verify.json",
+    "examples/task-repair-loop/prompts/repair.md",
+    "examples/task-repair-loop/prompts/verify.md",
+    "examples/task-repair-loop/mock-scenario.json",
+    "examples/task-repair-loop/README.md",
+    "examples/task-repair-loop/EXPECTED_RESULTS.md",
+    "examples/task-agent-director/workflow.json",
+    "examples/task-agent-director/nodes/node-director.json",
+    "examples/task-agent-director/prompts/director.md",
+    "examples/task-agent-director/mock-scenario.json",
+    "examples/task-agent-director/README.md",
+    "examples/task-agent-director/EXPECTED_RESULTS.md",
+    "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "impl-plans/progress/p1-dispatch.md"
+  ],
+  "sharedPaths": [
+    "README.md",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/README.md",
+    "impl-plans/REMAINING-WORK-HANDOVER.md"
+  ]
+}
+```
+
+Paths are candidates, not mandatory edits. One owner covers this coupled test/
+bundle scope and writes only `impl-plans/progress/p1-dispatch.md` as its progress
+log. Shared documentation is reserved for serial finalization. No independent
+implementation plan justifies splitting the shared fixture contract. Read-only
+evidence inspection can overlap only when no command mutates the source/build.
+
+### Dependency-ready waves and precise deliverables
+
+| Task / dependency | Exact work and acceptance evidence |
+| --- | --- |
+| B0 / none | Read accepted §17.9, this contract, progress, both bundles and existing tests/harness. Inventory each of the seven acceptance rows below against named tests; capture clean/staged/WIP status, source manifest, repository lint baseline and exact owners. Run existing example tests to identify the known failure before repair. Do not claim an uncovered row from test names alone. |
+| B1 / B0 | Retain repair → verification and one-worker director bundle shapes. In listed workflow/node/prompt/mock paths, change only proven load/output inconsistencies. Keep mock keys equal to node IDs, no credentials and stable business output. In each README/EXPECTED_RESULTS distinguish standalone completion from task acceptance, explain existing store-based fixture setup and the seven behaviors covered by tests. No new task-create command. |
+| B2 / B1 | Strengthen TaskRuntimeExampleTests using the existing harness; edit TaskDispatcherIntegrationTests only if a necessary fixture control is missing. Add a rejected-gate → consumed recovery → passing-gate real lifecycle test. Correct the guard CLI assertion only after observing the current terminal contract. Strengthen durable capacity absence, accounting and invalid-output replay assertions where missing; reuse accepted director cases. Deliver named test-to-requirement mapping with exact assertions. |
+| B3 / B2 | Serial join against intent records; run final-source build, V1 before-removal, affected focused suites, V8 mocks, V11, strict lint, diff and serial broad tests below. Classify every broad failure by exact test/assertion/cause/ownership. Repair new or slice-owned failures; rerun invalidated gates. Preserve failed evidence. Deliver complete verification manifest, counts and source identities. |
+| B4 / B3 plus formal reviews | After formal test-integrity, single adversarial and Astra combined-tree acceptance with no material P1-7b defect, refresh directly affected shared docs and progress. Prepare exact reviewed file allowlist, then downstream commit/non-force push. Leave P1-7a, parent P1 and unrelated broad follow-ups open. |
+
+Task DAG: B0 → B1 → B2 → B3 → formal test-integrity/single adversarial
+review → Astra combined-tree acceptance → B4 → final commit → non-force push.
+Use native Riela sequencing; no nested shell orchestration or implementation
+fanout is needed. B3 implementation evidence can complete before later review
+steps; B4 and publication cannot be claimed early.
+
+After Step 5 accepts, proceed with the single-owner implementation sequence
+above. There is no early design/plan commit or push checkpoint in this slice.
+Commit only reviewed exact paths, including the accepted design and plan, after
+implementation verification, formal reviews and B4 documentation gates; then
+non-force push that accepted commit. Preserve the user's index and exclude
+scratch and unrelated work. Historical checkpoint instructions below do not
+apply to this execution. Step 4 itself does not commit or push.
+
+### Invariants and executable test intent
+
+1. **Acceptance:** seed through existing WorkStore APIs, execute repair/verify
+   through task dispatch, assert exact reserved attempt/session, accepted required
+   gate, verification/acceptance evidence, causal accept and succeeded task.
+2. **Gate recovery:** deterministic first response rejects `verification` with
+   remaining attempt budget. Assert the task cannot succeed and the persisted
+   recover decision/pending request names that gate. Change only the controlled
+   mock response to passing; ordinary task dispatch must consume that request,
+   run the recovery and reconcile a distinct bounded attempt/session to success.
+   Assert durable evidence, consumed request and stable counts on repeat dispatch.
+   Never seed the expected recovered terminal state or call only the evaluator.
+3. **Guard stop:** retain a deterministic convergence violation, persisted guard
+   evidence and `.stop` reference to that evidence. Assert failed task and the
+   accepted terminal CLI result; repeat dispatch creates no new work. The current
+   gate-visit fixture is not proof of repeated-finding behavior; narrow docs to
+   actual coverage rather than adding an unrequested guard mechanism.
+4. **Capacity wait:** use capacity zero, assert waiting/capacity and absent response
+   IDs, plus unchanged attempts, canonical sessions and leases in the store.
+   Use existing read APIs or isolated fixture database observations, no product API.
+5. **Allowed director:** retain ordinary linked-child execution and successful
+   acceptance of durably satisfied judged work. Child-only success must not accept
+   failed work. Preserve version, causality, budget, human and completion checks.
+6. **Once-only accounting:** reuse the existing nonzero seven-token child case
+   where suitable; assert exact task/judged/child/session linkage and durable cost
+   entries. Reopen the store, repeat ordinary dispatch and assert no duplicate
+   attempt, decision or charge and unchanged judged evidence/outcome.
+7. **Invalid output:** drive malformed/forbidden recommendation through the real
+   child runner and application path; assert durable human-wait escalation with
+   evidence. Reopen/repeat dispatch and assert no extra child/charge/recursion.
+   Preserve existing failed-child and admission-budget coverage.
+
+Do not weaken assertions, skip failing cases, use direct terminal-state writes
+for transitions under test, or substitute workflow output strings for ledger
+observations. Preserve accepted cancellation, selected-host, task-free workflow,
+specialist/event/loop/routine behavior. All fixtures clean up owned sessions.
+Follow the Swift skill on actual Swift edits; if a touched file exceeds 1,000
+lines, assign an exact responsibility-based extraction path before its addition,
+update this allowlist and include it in lint/review. No speculative split now.
+
+### Edit integrity and progress evidence
+
+Before every edit fresh-read the file; store immutable numbered preimage,
+SHA-256 (or absent sentinel), requirement, owner and intended hunks under
+`tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-N/intents/`. Recheck the hash
+immediately before writing. On drift, stop that write, reread and create a new
+intent; never restore stale bytes. Record post-hash and exact diff. Reconcile
+all edits serially before checks and review. Preserve unrelated WIP and index.
+
+For every command record exact invocation, start/end, complete stdout/stderr log,
+terminal exit, source manifest hash and positive per-suite test counts in
+`verification-evidence.json` under that attempt. Manifest membership includes
+Sources, Tests, Package.swift, Package.resolved and both example trees, including
+new files; compare SHA-256 and membership before/after runs. A moving source
+invalidates the affected receipt. Separate B0 baseline from final-source logs.
+Update progress with task status, requirement→test mapping, commands/logs/counts,
+failure classifications, review IDs/decisions and remaining work, never intent
+as completed evidence. Preserve required evidence; delete disposable scratch.
+
+### Exact verification commands and evidence
+
+Run from repository root, foreground only; poll every yielded handle to exit.
+Create an immutable numbered attempt directory before redirecting command logs.
+Do not pipe away exit statuses. The following commands use the existing build
+root; execute serially on stable source. No command in this list ran at Step 4.
+
+```bash
+mkdir -p tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskRuntimeExampleTests
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|AgentDirectorStoreTests|CompletionEvaluatorTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json
+tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/repair-store --output json
+tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json
+tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/director-store --output json
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+git diff --check
+git diff --cached --check
+```
+
+Assign complete logs respectively: `build.log`, `examples-tests.log`,
+`before-removal/focused-tests.log`, `affected-store-tests.log`,
+`selected-host-tests.log`, `repair-validate.log`, `repair-mock.log`,
+`director-validate.log`, `director-mock.log`, `broad.log`, `diff.log`,
+`cached-diff.log`. Create nested log directories first. On retry use attempt-N
+and matching fresh session-store roots, retaining all earlier logs/exits.
+V8 operates only on these repository examples, never the executing workflow.
+Compare mock business outputs to EXPECTED_RESULTS, not just exit status.
+
+Before Swift edits and after final changes capture repository lint diagnostics;
+compare attributable new findings without fixing unrelated baseline issues:
+
+```bash
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/changed-swift-files.nul
+```
+
+Construct the NUL manifest from exact surviving changed/new Swift paths in intent
+records, excluding deleted paths; include untracked additions. Use
+`swiftlint-baseline.log`, `swiftlint-final.log`, `swiftlint-changed.log`; strict
+touched-file lint must exit 0. Only skip strict lint for a recorded empty Swift
+write set. Swift build is the typecheck gate. No web changes or browser E2E.
+If bundle workflow/prompt edits affect a checked-in package digest, refresh only
+that owning digest under a recorded exact-path amendment; documentation-only
+edits do not trigger a digest refresh. Do not inspect user registries.
+
+All V1 suites and seven behavior rows require positive execution counts and
+passing assertions. V11 preserves selected-host regression coverage. Missing
+suites, zero tests, unavailable tools, timeouts, incomplete logs or listener
+denial are failed/blocked evidence, never behavioral passes. Record any justified
+toolchain/cache adjustment with its exact command and full log; do not omit a
+required gate. The broad command is fresh and serial on final source. Classify
+each failure by test/assertion, cause, source identity and ownership, comparing
+the prior nineteen identities only as historical context. Resolve every new or
+P1-7b-owned failure. Unrelated failures remain **FAILED**, with explicit owner/
+follow-up and formal slice-only review disposition; no unrelated repair.
+
+For the final stable source snapshot, generate the membership and checksum
+receipts with these commands (substitute the current immutable attempt number).
+Before/after each verification run regenerate `current-files.txt`, compare it
+with `source-files.txt`, then run the checksum check. Log each exit; never
+regenerate the baseline checksums to hide drift.
+
+```bash
+rg --files Sources Tests examples/task-repair-loop examples/task-agent-director Package.swift Package.resolved | LC_ALL=C sort > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt
+while IFS= read -r source_path; do shasum -a 256 "$source_path" || exit; done < tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source.sha256
+rg --files Sources Tests examples/task-repair-loop examples/task-agent-director Package.swift Package.resolved | LC_ALL=C sort > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/current-files.txt
+cmp tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/current-files.txt
+shasum -a 256 -c tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source.sha256
+```
+
+Enable shell `pipefail` for the membership pipelines so a failed file inventory
+cannot appear successful merely because sorting succeeded.
+
+### Completion gates
+
+- [ ] B0 inventory/baseline and exact ownership recorded.
+- [ ] B1 minimal bundles and truthful README/EXPECTED_RESULTS agree.
+- [ ] B2 all seven rows proven at real task boundaries; retained tests preserved.
+- [ ] B3 final-source build, V1 before-removal, affected focused/V11, V8, strict
+  lint, diff and serial broad evidence complete; new/slice failures resolved.
+- [ ] Formal test-integrity, single adversarial and Astra combined-tree reviews
+  record no material P1-7b defect; repairs invalidate and renew affected checks.
+- [ ] B4 shared docs and progress reflect accepted evidence; P1-7a/parent P1 and
+  unresolved broad follow-ups remain open. Exact-path commit and non-force push
+  have matching published hash and reviewed file evidence.
+
+No user decision is unresolved. Author self-check confirms §17.9 traceability,
+the one-plan DAG, bounded writes, real-boundary tests, evidence requirements and
+separate downstream gates. Step 4 claims planning only, not implementation or
+formal Step 5 acceptance.
+
+## Historical P1-6d contract
 
 ## Current executable contract — P1-6d only
 

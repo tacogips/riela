@@ -60,7 +60,7 @@ only the W13 read-through/move to `completed/`.
 | `active/rielaapp-web-server-http-transport` | 117 | Historical plan marked Ready (2026-07-17); reconcile its checklist with current web/API implementation before treating boxes as new work | RielaApp web audit |
 | `active/rielaapp-web-server-lifecycle-packaging` | 45 | Historical plan marked Ready (2026-07-17); reconcile its checklist with current lifecycle/asset packaging before treating boxes as new work | RielaApp web audit |
 | `active/wrike-web-notebook-view` | 2 | Plan records implementation complete with independent review pending; current evidence needs reconciliation | Note web audit |
-| `active/riela-note-new-features` | 33 | Historical Riela-targeted checklist after Note extraction; F1/F2 are complete in Kaiba, F3 ownership and remaining acceptance need rebase. See `progress/riela-note-extraction-audit.md`; do not implement the old 33 items verbatim | W8 |
+| `active/riela-note-new-features` | 33 | Historical Riela-targeted checklist after Note extraction; Kaiba has completed F1 capture and F2 entity-page work, but parity with this plan's full accepted behavior remains unverified. F3 ownership and acceptance need rebase. See `progress/riela-note-extraction-audit.md`; do not implement the old 33 items verbatim | W8 |
 
 **Prose/decision/external plans (kept active, no open checkboxes or non-checkbox scope):**
 

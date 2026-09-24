@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 is the accepted P1-7a ownership amendment resumed in issue-resolution mode at `e3e30ed6d609ddffe05b8ba875e57a49ee65c372`; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 carries the previously planning-accepted P1-7a ownership amendment into issue-resolution from `37c80ecd8474ab795dc84c71fe650bba433a2c3b`; current design/plan review and implementation acceptance remain pending; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2641,37 +2641,41 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
 
-**Intake and scope.** Current mode `planning-only`, effective execution mode
-`design-plan-only`; issue “Review P1-7a failure-classification regressions and
-exact cancellation-test ownership”. Issue reference: workflow input; no issue
-URL or number supplied. Intake `comm-000002`, execution
+**Intake and scope.** Current workflow mode and effective execution mode are
+`issue-resolution`; issue “Resume P1-7a after reviewed failure-policy amendment”.
+Issue reference: effective `workflowInput`, originating `comm-000001`; no issue
+URL or number supplied. Step 1 intake `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`, Step 2
 `step2-design-doc-update` are the current handoff. Codex-agent references are
 empty; no reference-repository or Cursor CLI behavior change is required.
 
-The current checkpoint is `ae8ec0816f6f0638233847fe00501899c4c2e921` on
-`feat/remaining-impl-plans`. Preserve the four dirty files
+The current checkpoint is `37c80ecd8474ab795dc84c71fe650bba433a2c3b` on
+`feat/remaining-impl-plans`. Preserve the partial atomic adapterFailure repair in
 `Sources/RielaCore/RuntimePublication.swift`, `Sources/RielaCore/RuntimeStore.swift`,
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
-`impl-plans/progress/p1-dispatch.md`, all failed logs and other sessions' work.
-The only planning publication paths are this design,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and the dirty progress
+file `impl-plans/progress/p1-dispatch.md`, all failed logs and other sessions' work.
+Step 2 changes this design and records the publication decision under
+`design-docs/user-qa/qa-p1-7a-rielflow-publication.md`; it leaves those four files
+byte-for-byte unchanged. Step 4 owns
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` and
-`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json`. Step 2 edits this
-section only; Step 4 owns the plan and manifest. One design author and one plan
-author retain the complete serial A0–A5 batch. No implementation, test, example,
-progress edit, old-path deletion or plan closure is authorized in this run.
+`impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json`. One integration owner
+may extend the protected repair during Step 6, within reviewed exact ownership.
+No source/test/example edit, deletion or implementation acceptance occurs here.
 
 **Review boundary.** The runner-resolved immutable user-scope workflow `0.3.33`
-and effective `workflowInput` are authoritative. The earlier issue-resolution
-handoff and accepted reviews at `e3e30ed6` are history, not acceptance of this
-amendment. Step 4 must retain historical receipts while setting current
-planning-only mode, checkpoint, four protected paths, pending current review and
-disabled implementation dispatch in the plan/manifest. Independent Step 3 and
-Step 5 review must accept the amended behavior and exact ownership before only
-these three planning files may be committed and non-force pushed. Never stage
-the four protected files. No reset, stash, force push, main merge, extra worktree
-or concurrent Git operation is permitted. A0–A5 below describe future
-implementation, not work authorized by this planning run.
+and effective `workflowInput` are authoritative. Prior design acceptance covered
+planning, not implementation or deletion. Step 4 must replace stale planning-only
+metadata with this issue-resolution mode, issue, checkpoint and protected-file
+contract, retain historical receipts, and record pending current reviews.
+Keep implementation dispatch disabled until independent Step 3/Step 5 acceptance
+and the reviewed checkpoint required before Step 6; issue-resolution mode alone
+is not gate acceptance. This metadata correction is not a provenance failure.
+A0–A5 are authorized within this run only through their reviewed dependencies.
+Only formally reviewed files may be committed and non-force pushed after the
+required test-integrity, single Sol adversarial and Astra combined-tree reviews;
+record exact content identities and checkpoint/review receipts before dispatch.
+No reset, stash, force push, main merge, extra worktree or concurrent Git operation
+is permitted. Parent P1 remains open for its separate completion audit.
 
 **Attempt-3 evidence and causal policy amendment.** Complete logs at
 `tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/before-removal-v1.log`
@@ -2683,7 +2687,8 @@ blocking of a successful last attempt, and absent director child; the second
 reports the terminal-first test's two nil-kind and one waiting assertions.
 Preserve older attempt-1/2 and per-edit evidence as history.
 
-The following policy is proposed for independent review; it retains atomic
+The previously reviewed failure-policy amendment below remains the behavioral
+contract for this resumption; current review must confirm this handoff. It retains atomic
 classification and does not infer retry eligibility from a test's desired state.
 
 | Cause / boundary | Required behavior and evidence |
@@ -2743,7 +2748,7 @@ path is granted. This amendment must be reflected in A1 before dispatch.
 A1 must run the focused classification/cancellation cases, then the complete
 canonical regression and full four-suite before-removal V1 after all policy and
 live inactivity/progress edits, on the same recorded source. Commands (future
-implementation verification, not executed in this planning node):
+implementation verification, not executed in this design node):
 
 ```bash
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit|TaskDispatcherIntegrationTests.testLastAdmittedRecoveryAttemptCanSucceed|TaskRuntimeExampleTests.testConfiguredDirectorChildRunsOrdinarilyAndCannotAcceptFailedWork|TaskCancellationIntegrationTests'
@@ -2752,7 +2757,7 @@ swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCo
 ```
 
 Record foreground terminal exits, complete logs, per-suite positive counts and
-HEAD plus dirty-source/test/fixture hashes in new receipts; never overwrite the
+HEAD plus dirty-source/test/fixture hashes in a new numbered attempt after attempt-3; never overwrite the
 attempt-3 failed logs. Include the added negative/paired cases in their full
 suites. Focused passes alone cannot authorize A2. A1's live inactivity and
 progress proof, canonical-regression pass and full source-matched V1 pass all
@@ -2867,15 +2872,25 @@ and specialist/event supervisor, loop/routine and task-free plain-run contracts.
 The plan author must update exact ownership and retained-consumer verification
 before dispatch; this design does not authorize a directory-wide cleanup.
 
-The receiving `ExecuteWorkflowInput` schema/service is outside this Swift
-repository. Its owner, exact repository/schema paths and authorization remain
-unresolved external dependencies. Required evidence is receiving-side rejection
-of removed `autoImprove` and `nestedSuperviser` keys even when false or null,
-plus ordinary authenticated-request acceptance. Client omission, mocked remote
-errors and local string searches do not establish that evidence. Do not invent
-a GraphQL server or silently reduce acceptance to outbound omission. Planning
-review may accept this explicit dependency; A2/A3 acceptance and P1-7a closure
-remain blocked while receiving rejection is unverified.
+The receiving HTTP GraphQL `ExecuteWorkflowInput` owner is now identified as
+`tacogips/rielflow`, at `packages/rielflow-graphql/src/schema-contract.ts`.
+The effective input reports local branch `feat/p1-7a-remote-field-rejection`,
+commit `c2b16ab`, removing both retired schema fields; 91 related tests,
+typecheck and build passed locally, while three full-suite non-schema failures
+were separately reproduced. These are intake-reported external results, not
+checks executed by this design node. GitHub archived the repository and rejected
+push with HTTP 403: the commit is neither pushed nor deployed.
+
+Required receiving-side evidence remains rejection of removed `autoImprove`
+and `nestedSuperviser` keys even when false or null, plus ordinary authenticated
+request acceptance, tied to the actual published source/service with exact test
+paths, commands, complete logs and terminal exits. Local schema tests, client
+omission and mocked remote errors cannot establish published integration.
+Do not invent a local server or broaden this repository's edit ownership.
+Local A1 may proceed through review; A2/A3 acceptance and P1-7a closure remain
+withheld until publication and required receiving-boundary evidence are resolved.
+The pending user decision is recorded in
+`design-docs/user-qa/qa-p1-7a-rielflow-publication.md`.
 
 The prior evidence root is
 `tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-2/`.
@@ -2990,17 +3005,19 @@ exact reviewed files and non-force push to `origin/feat/remaining-impl-plans`.
 No reset, stash, force push, main merge, additional worktree or concurrent Git
 operation is authorized. Parent P1 and unrelated broad follow-ups remain open.
 
-**Open questions and current decision.** The external receiving owner, repository,
-schema/test paths and authorization remain unresolved. The authorized receiving
-owner must supply actual removed-field presence tests (including false/null)
-and ordinary authenticated-request results with source identity, commands,
-complete logs and terminal exits. A0 records this dependency; local A0/A1 may
-proceed, but absent that evidence A2/A3 acceptance and P1-7a closure remain
-blocked. No Codex-reference mapping decision is needed.
+**Open questions and current decision.** User direction on unarchiving
+`tacogips/rielflow` or selecting a replacement receiving repository/service and
+publishing local `c2b16ab` remains pending; see
+`design-docs/user-qa/qa-p1-7a-rielflow-publication.md`. Owner/schema identity is
+resolved; publication and receiving integration acceptance are not. No
+Codex-reference mapping decision is needed. Local A1 is independent of this
+publication decision but still requires its own reviewed dispatch and sealed
+source-matched before-removal evidence.
 
-The earlier accepted invariants remain in force. This Step 2 planning-only
-amendment requires independent design and plan review; author self-check is not formal Step 3, Step 5 or A4 acceptance.
-It changes no implementation, test, example or progress file, passes no deletion
-gate and closes no plan. A4 still requires formal test-integrity, one Sol
-adversarial and Astra combined-tree reviews with no material P1-7a finding;
-A5 publishes only exact reviewed files. Parent P1 remains open.
+The earlier accepted invariants remain in force. This Step 2 issue-resolution
+update requires independent design and plan review; author self-check is not
+formal Step 3, Step 5 or A4 acceptance. It changes no implementation, test,
+example or progress file, passes no deletion gate and closes no plan. A4 still
+requires formal test-integrity, one Sol adversarial and Astra combined-tree
+reviews with no material P1-7a finding; A5 publishes only exact reviewed files.
+Parent P1 remains open.

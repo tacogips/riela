@@ -1,19 +1,23 @@
 {
   "taskId": "work-runtime-p1-7a-20260925",
-  "workflowMode": "planning-only",
+  "workflowMode": "issue-resolution",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "ae8ec0816f6f0638233847fe00501899c4c2e921",
+  "originalHead": "37c80ecd8474ab795dc84c71fe650bba433a2c3b",
   "designDocPaths": [
-    "design-docs/specs/design-work-runtime-consolidation.md"
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/user-qa/qa-p1-7a-rielflow-publication.md"
   ],
   "evidenceRoot": "tmp/work-runtime-p1-7a-20260925",
   "issueReference": {
     "reference": "Workflow input; no issue URL or number supplied",
     "intakeCommunicationId": "comm-000002",
     "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
-    "title": "Review P1-7a failure-classification regressions and exact cancellation-test ownership"
+    "title": "Resume P1-7a after reviewed failure-policy amendment",
+    "communicationId": "comm-000001",
+    "issueNumber": null,
+    "issueUrl": null
   },
   "codexAgentReferences": [],
   "designReview": {
@@ -21,13 +25,23 @@
     "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
     "accepted": true,
     "findings": [],
-    "reviewDecision": "Accept section 17.10 for implementation planning; implementation and deletion remain unaccepted.",
-    "designSha256": "0d620e0dcf6d6c85badef93f58119daf0c6928213f6f9a5a5fb3eb601e1a4dc7"
+    "reviewDecision": "Accepted by Step 3 comm-000004 without findings for issue-resolution planning; implementation and deletion remain unaccepted.",
+    "designSha256": "4a4bd18175ee3bebe36cc47a6a4cc71ea4daf0881d663c2a077eff3a6ae246ac",
+    "reviewedFiles": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "design-docs/user-qa/qa-p1-7a-rielflow-publication.md"
+    ],
+    "reviewedSha256": {
+      "design-docs/specs/design-work-runtime-consolidation.md": "4a4bd18175ee3bebe36cc47a6a4cc71ea4daf0881d663c2a077eff3a6ae246ac",
+      "design-docs/user-qa/qa-p1-7a-rielflow-publication.md": "466d485b8d47c585f5e12163def3a9ed442fad223380b0969c9e13222e6755e6"
+    }
   },
   "planReview": {
-    "accepted": false,
+    "communicationId": "comm-000006",
+    "sourceStepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+    "accepted": true,
     "findings": [],
-    "reviewDecision": "Pending independent Step 5 review of this causal-policy amendment; historical acceptance does not transfer."
+    "reviewDecision": "Step 5 accepted this issue-resolution plan with no revision or design findings; implementation still requires the scoped checkpoint."
   },
   "plans": [
     {
@@ -87,15 +101,17 @@
         "README.md",
         "design-docs/specs/design-work-runtime-consolidation.md",
         "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-        "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
+        "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json",
+        "impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json",
+        "design-docs/user-qa/qa-p1-7a-rielflow-publication.md"
       ],
       "progressFile": "impl-plans/progress/p1-dispatch.md",
       "tasks": [
         {
           "taskId": "A0",
           "dependsOn": [],
-          "intendedChanges": "Inventory exact consumers, protected dirty work, hashes and coverage; record external receiving owner/path/authorization dependency without inventing a local server. Explicit dependency recording permits downstream local A1, but not A2/A3 acceptance.",
-          "deliverable": "Exact ownership/inventory, baseline hashes, immutable edit intents and unresolved external dependency record."
+          "intendedChanges": "Inventory exact consumers, protected dirty work, hashes and coverage; record identified rielflow owner/schema and unpublished c2b16ab plus pending publication decision. No external edits or provenance discovery.",
+          "deliverable": "Exact ownership/inventory, baseline hashes, immutable edit intents and publication/integration dependency record; local A1 may proceed through reviewed dispatch gates."
         },
         {
           "taskId": "A1",
@@ -110,7 +126,7 @@
           "dependsOn": [
             "A1"
           ],
-          "intendedChanges": "Only after sealed A1 pass, remove exact legacy paths and update proven SurfaceParity/catalog/Monja consumers. External receiving rejection requires authorized owner and false/null tests; no A2/A3 acceptance without evidence.",
+          "intendedChanges": "Only after sealed A1 pass, remove exact legacy paths and update proven SurfaceParity/catalog/Monja consumers. External receiving rejection requires authorized owner and false/null tests; no A2/A3 acceptance without evidence. Local c2b16ab is unpublished and cannot satisfy A2/A3 acceptance.",
           "deliverable": "Exact-path removal/rejection/preservation changes; receiving-owner rejection evidence required for acceptance."
         },
         {
@@ -118,8 +134,8 @@
           "dependsOn": [
             "A2"
           ],
-          "intendedChanges": "Run final-source build, V1\u2013V9, retained/cancellation gates and serial broad regression; classify exact failures.",
-          "deliverable": "Final-source V0\u2013V9, canonical/cancellation/retained/typecheck and serial broad receipts with exact failure classification."
+          "intendedChanges": "Run final-source build, V1–V9, retained/cancellation gates and serial broad regression; classify exact failures.",
+          "deliverable": "Final-source V0–V9, canonical/cancellation/retained/typecheck and serial broad receipts with exact failure classification."
         },
         {
           "taskId": "A4",
@@ -143,7 +159,7 @@
         "Atomic first canonical failed snapshot and reopened evidence retain adapterFailure without weakening terminal immutability; live inactivity and progress-sensitive positive tests pass before deletion.",
         "Positive named replacement behavior and complete passing V1 before any deletion.",
         "Removed options/remote fields reject; retained paths preserve behavior.",
-        "Final-source V1\u2013V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
+        "Final-source V1–V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
         "No material P1-7a finding remains after formal reviews; only reviewed files publish; parent P1 remains open."
       ],
       "verification": [
@@ -180,19 +196,19 @@
         "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
         "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-4/task-agent-director-store --output json"
       ],
-      "ownershipScope": "Exact writePaths/sharedPaths apply only to future authorized A0\u2013A5. Current Step 4 edits plan/manifest only. One coupled-Swift integration owner; no concurrent writers or Git. Sole added writePath is the design-justified cancellation test.",
-      "intent": "Implement accepted section 17.10 causal policy and live replacement proof before ordered legacy removal; current run publishes reviewed planning only.",
+      "ownershipScope": "Unchanged exact implementation writePaths; one coupled-Swift integration owner. Step 4 edits plan/manifest only. Shared documentation/checkpoint paths are serial.",
+      "intent": "Complete reviewed A1 causal policy repair and live replacement proof before ordered legacy removal; continue A2–A5 only through reviewed dependencies.",
       "nonGoals": [
-        "Implementation or deletion in planning-only mode",
+        "Implementation before current review/checkpoint gates or deletion before sealed A1 evidence.",
         "New failure enum, command-specific misclassification, terminal-fence weakening, blanket finding resolution or invented success",
         "New framework, schema/server, recursive director, broader ownership, unrelated cleanup or parent P1 closure"
       ],
       "invariants": [
-        "Four protected dirty files and failed logs unchanged in this planning run.",
+        "Step 4 preserves four protected dirty files byte-for-byte; Step 6 extends accepted partial repair without reset. All failed logs and other sessions work remain preserved.",
         "Atomic adapterFailure records cause; configured policy and capacity select retry, authorized escalation or non-retry wait.",
         "Last-admitted success remains possible; no replacement bypasses cancellation acknowledgment or admission.",
         "Resolve only canonically proven synthetic gate absence using a matching real latest completed work gate; substantive findings/human acceptance remain mandatory.",
-        "A0\u2013A5 serial; source-matched V0/canonical-regression/cancellation-host/full V1 and live inactivity/progress proof precede all deletion.",
+        "A0–A5 serial; source-matched V0/canonical-regression/cancellation-host/full V1 and live inactivity/progress proof precede all deletion.",
         "Keep task-free, required/optional gate, specialist/event/loop/routine behavior and external receiving-side evidence dependency."
       ]
     }
@@ -202,29 +218,32 @@
       "reference": "Workflow input; no issue URL or number supplied",
       "intakeCommunicationId": "comm-000002",
       "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
-      "title": "Review P1-7a failure-classification regressions and exact cancellation-test ownership"
+      "title": "Resume P1-7a after reviewed failure-policy amendment",
+      "communicationId": "comm-000001",
+      "issueNumber": null,
+      "issueUrl": null
     },
     "acceptedDesignReview": "comm-000004",
-    "userProblem": "Implement accepted section 17.10 causal policy and live replacement proof before ordered legacy removal; current run publishes reviewed planning only.",
+    "userProblem": "Complete reviewed A1 causal policy repair and live replacement proof before ordered legacy removal; continue A2–A5 only through reviewed dependencies.",
     "requiredOutcomes": [
       "New A1 policy tests prove bounded failure, last-admitted success, authorized director precedence, evidence-backed synthetic gate resolution, substantive blocking, and both terminal-first retry/non-retry cases without weakening assertions.",
       "Atomic first canonical failed snapshot and reopened evidence retain adapterFailure without weakening terminal immutability; live inactivity and progress-sensitive positive tests pass before deletion.",
       "Positive named replacement behavior and complete passing V1 before any deletion.",
       "Removed options/remote fields reject; retained paths preserve behavior.",
-      "Final-source V1\u2013V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
+      "Final-source V1–V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
       "No material P1-7a finding remains after formal reviews; only reviewed files publish; parent P1 remains open."
     ],
     "nonGoals": [
-      "Implementation or deletion in planning-only mode",
+      "Implementation before current review/checkpoint gates or deletion before sealed A1 evidence.",
       "New failure enum, command-specific misclassification, terminal-fence weakening, blanket finding resolution or invented success",
       "New framework, schema/server, recursive director, broader ownership, unrelated cleanup or parent P1 closure"
     ],
     "constraints": [
-      "Four protected dirty files and failed logs unchanged in this planning run.",
+      "Step 4 preserves four protected dirty files byte-for-byte; Step 6 extends accepted partial repair without reset. All failed logs and other sessions work remain preserved.",
       "Atomic adapterFailure records cause; configured policy and capacity select retry, authorized escalation or non-retry wait.",
       "Last-admitted success remains possible; no replacement bypasses cancellation acknowledgment or admission.",
       "Resolve only canonically proven synthetic gate absence using a matching real latest completed work gate; substantive findings/human acceptance remain mandatory.",
-      "A0\u2013A5 serial; source-matched V0/canonical-regression/cancellation-host/full V1 and live inactivity/progress proof precede all deletion.",
+      "A0–A5 serial; source-matched V0/canonical-regression/cancellation-host/full V1 and live inactivity/progress proof precede all deletion.",
       "Keep task-free, required/optional gate, specialist/event/loop/routine behavior and external receiving-side evidence dependency."
     ],
     "designDecisionsAndRationale": [
@@ -233,14 +252,24 @@
       "Keep prior immutable failure evidence and substantive findings while causally resolving proven historical synthetic absence."
     ],
     "intentionalTradeoffs": [
-      "Planning publication does not authorize implementation.",
-      "External receiving rejection remains unresolved; client omission cannot satisfy acceptance."
+      "One integration owner executes coupled changes serially; read-only investigation may run independently.",
+      "Local A1 is independent of external publication; A2/A3 acceptance requires published receiving-boundary evidence."
+    ],
+    "supportedEdgeCases": [
+      "Last admitted failed retry stops only when capacity is exhausted; last admitted success remains possible.",
+      "Terminal-first late cancellation preserves the committed outcome under explicit retry-disabled and retry-enabled policies; cancellation-first remains fenced until exact-session acknowledgment.",
+      "A later matching accepted required gate resolves only proven historical synthetic absence; substantive and mismatched findings remain open.",
+      "Live progress prevents false inactivity; replay preserves durable effects without duplicate decisions."
+    ],
+    "outOfScopeEdgeCases": [
+      "New remote service, general unknown-field policy, unrelated broad failures, and parent P1 completion audit."
     ],
     "sourcePaths": [
       "design-docs/specs/design-work-runtime-consolidation.md",
       "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
       "tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/before-removal-v1.log",
-      "tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/canonical-regression.log"
+      "tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/canonical-regression.log",
+      "design-docs/user-qa/qa-p1-7a-rielflow-publication.md"
     ]
   },
   "historicalCheckpoint": {
@@ -249,10 +278,10 @@
       "communicationId": "comm-000006",
       "accepted": true,
       "findings": [],
-      "reviewDecision": "Accept the P1-7a implementation plan against accepted design \u00a717.10."
+      "reviewDecision": "Accept the P1-7a implementation plan against accepted design §17.10."
     }
   },
-  "executionMode": "design-plan-only",
+  "executionMode": "issue-resolution",
   "protectedDirtyPaths": [
     "Sources/RielaCore/RuntimePublication.swift",
     "Sources/RielaCore/RuntimeStore.swift",
@@ -264,7 +293,7 @@
     "Before-removal V1 FAILED: attempt-3, 60 tests, five assertions; no deletion allowed.",
     "Canonical regression FAILED: attempt-3, 93 tests, three assertions.",
     "A1 live inactivity/progress proof and complete source-matched passing gates remain required.",
-    "External receiving ExecuteWorkflowInput owner/path authorization and false/null rejection evidence remain unresolved."
+    "External owner/schema identified as tacogips/rielflow packages/rielflow-graphql/src/schema-contract.ts; local c2b16ab unpublished after archived-remote 403. User publication direction and published false/null rejection/authenticated acceptance evidence pending."
   ],
   "historicalPlanningRun": {
     "workflowMode": "planning-only",
@@ -283,18 +312,24 @@
     "implementationDispatchAllowed": false
   },
   "currentRevisionReview": {
-    "accepted": false,
+    "communicationId": "comm-000006",
+    "sourceStepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+    "accepted": true,
     "findings": [],
-    "reviewDecision": "Pending independent Step 5 review of this causal-policy amendment; historical acceptance does not transfer."
+    "reviewDecision": "Step 5 accepted this issue-resolution plan with no revision or design findings; implementation still requires the scoped checkpoint."
   },
   "checkpointWritePaths": [
     "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
+    "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json",
+    "impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json"
   ],
   "implementationDispatchConditions": [
-    "Disabled throughout this planning-only run, including after accepted planning publication.",
-    "A separately authorized implementation execution must consume accepted design/plan and exact scoped checkpoint commit/push receipts before native dispatch."
+    "Current Step 5 acceptance of exact plan/manifest revision.",
+    "Test-integrity, single Sol adversarial and Astra combined-tree acceptance of checkpoint documentation; record reviewed hashes.",
+    "Exact checkpointWritePaths committed before native implementation/review fanout, preserving four dirty files; record commit/hash receipt.",
+    "Same issue-resolution execution may dispatch A0/A1 after those gates; A2 requires sealed A1 and A2/A3 acceptance requires published receiving-side evidence."
   ],
   "historicalAcceptedExecution": {
     "workflowMode": "issue-resolution",
@@ -314,14 +349,14 @@
       "communicationId": "comm-000004",
       "accepted": true,
       "findings": [],
-      "reviewDecision": "Step 3 comm-000004 accepted the resumed \u00a717.10 design without findings.",
+      "reviewDecision": "Step 3 comm-000004 accepted the resumed §17.10 design without findings.",
       "designSha256": "04c45d7728a4c922327e5d5fb980cf33360756555810ca5238622ded615a1bf2"
     },
     "planReview": {
       "communicationId": "comm-000006",
       "accepted": true,
       "findings": [],
-      "reviewDecision": "Accept the single A0\u2013A5 plan against accepted design \u00a717.10 (comm-000004).",
+      "reviewDecision": "Accept the single A0–A5 plan against accepted design §17.10 (comm-000004).",
       "verification": {
         "commands": [
           "git status --short",
@@ -336,7 +371,7 @@
       "communicationId": "comm-000006",
       "accepted": true,
       "findings": [],
-      "reviewDecision": "Accept the single A0\u2013A5 plan against accepted design \u00a717.10 (comm-000004)."
+      "reviewDecision": "Accept the single A0–A5 plan against accepted design §17.10 (comm-000004)."
     },
     "implementationDispatchAllowed": true,
     "implementationDispatchConditions": [
@@ -354,7 +389,7 @@
         "acceptedDesignReview": "comm-000004",
         "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
       },
-      "userProblem": "Resume accepted P1-7a A0\u2013A5 at e3e30ed6 after failed V1; reconcile stale planning metadata without changing ownership or bypassing deletion/external acceptance gates.",
+      "userProblem": "Resume accepted P1-7a A0–A5 at e3e30ed6 after failed V1; reconcile stale planning metadata without changing ownership or bypassing deletion/external acceptance gates.",
       "requiredOutcomes": [
         "Prove inactivity, bounded retry, gate/failure recovery, cancellation and replay in positive replacement dispatcher tests and pass the complete V1 gate before deletion.",
         "Remove only specified obsolete CLI, state/result and three legacy example paths; reject removed CLI flags and remote fields including false/null presence.",
@@ -398,9 +433,52 @@
       ]
     }
   },
-  "planningOnlyWritePaths": [
-    "design-docs/specs/design-work-runtime-consolidation.md",
-    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
-  ]
+  "historicalFailurePolicyPlanningRun": {
+    "workflowMode": "planning-only",
+    "executionMode": "design-plan-only",
+    "originalHead": "ae8ec0816f6f0638233847fe00501899c4c2e921",
+    "issueReference": {
+      "reference": "Workflow input; no issue URL or number supplied",
+      "intakeCommunicationId": "comm-000002",
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
+      "title": "Review P1-7a failure-classification regressions and exact cancellation-test ownership"
+    },
+    "designReview": {
+      "communicationId": "comm-000004",
+      "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
+      "accepted": true,
+      "findings": [],
+      "reviewDecision": "Accept section 17.10 for implementation planning; implementation and deletion remain unaccepted.",
+      "designSha256": "0d620e0dcf6d6c85badef93f58119daf0c6928213f6f9a5a5fb3eb601e1a4dc7"
+    },
+    "planReview": {
+      "accepted": false,
+      "findings": [],
+      "reviewDecision": "Pending independent Step 5 review of this causal-policy amendment; historical acceptance does not transfer."
+    },
+    "implementationDispatchConditions": [
+      "Disabled throughout this planning-only run, including after accepted planning publication.",
+      "A separately authorized implementation execution must consume accepted design/plan and exact scoped checkpoint commit/push receipts before native dispatch."
+    ],
+    "planningOnlyWritePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json"
+    ]
+  },
+  "externalReceivingBoundary": {
+    "repository": "tacogips/rielflow",
+    "schemaPath": "packages/rielflow-graphql/src/schema-contract.ts",
+    "branch": "feat/p1-7a-remote-field-rejection",
+    "localCommit": "c2b16ab",
+    "published": false,
+    "reportedVerification": "91 related tests, typecheck and build passed; three separately reproduced non-schema full-suite failures; not rerun in Step 4.",
+    "publicationStatus": "Archived remote rejected push with 403; user direction pending.",
+    "userQAPath": "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
+    "blocks": [
+      "A2 acceptance",
+      "A3 acceptance",
+      "P1-7a closure"
+    ]
+  }
 }

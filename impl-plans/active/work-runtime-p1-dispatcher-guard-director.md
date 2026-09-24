@@ -2,21 +2,21 @@
 
 ## Current executable contract — P1-7a only (2026-09-25)
 
-Mode `planning-only`, executionMode `design-plan-only`; issue “Review P1-7a
-failure-classification regressions and exact cancellation-test ownership”. Issue
-reference: workflow input; no issue URL or number supplied. Intake `comm-000002`,
+Mode `issue-resolution`, executionMode `issue-resolution`; issue “Resume P1-7a
+after reviewed failure-policy amendment”. Issue reference: effective workflowInput,
+originating `comm-000001`; no issue URL or number supplied. Intake `comm-000002`,
 execution `codex-design-and-implement-review-loop-session-1`. Step 3
-`comm-000004` accepted design §17.10 without findings for planning, not
-implementation or deletion. Stable planId `p1-dispatch`, planPath
+`comm-000004` accepted design §17.10 without findings for this issue-resolution plan;
+implementation and deletion remain unaccepted. Stable planId `p1-dispatch`, planPath
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, `dependsOn: []`,
 progressFile `impl-plans/progress/p1-dispatch.md`. Codex-agent references: none;
 no reference-repository or Cursor behavior mapping applies. One author owns this
 single plan; one later integration owner handles coupled source/tests in serial
 A0–A5 order. No independent implementation plan or concurrent writer is needed.
 
-**Current intent and checkpoint:** Prepare an executable, reviewed A1 repair
-contract at `ae8ec0816f6f0638233847fe00501899c4c2e921`; no implementation in this
-run. Attempt-3 `before-removal-v1.log` is **FAILED** (60 tests, five assertions)
+**Current intent and checkpoint:** Complete the reviewed A1 repair and live
+inactivity proof, then proceed through A2–A5 dependency gates from
+`37c80ecd8474ab795dc84c71fe650bba433a2c3b`. Step 4 updates only plan/manifest. Attempt-3 `before-removal-v1.log` is **FAILED** (60 tests, five assertions)
 and `canonical-regression.log` is **FAILED** (93 tests, three assertions), under
 `tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/logs/`.
 The failing cases are `TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit`
@@ -31,8 +31,8 @@ Preserve the four dirty files `Sources/RielaCore/RuntimePublication.swift`,
 `Sources/RielaCore/RuntimeStore.swift`,
 `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
 `impl-plans/progress/p1-dispatch.md`, all failed/per-edit evidence and other
-sessions' work. This planning run leaves them byte-for-byte unchanged; only a
-later authorized implementation owner may extend their accepted work.
+sessions' work. Step 4 leaves them byte-for-byte unchanged; the single Step 6
+integration owner may extend this partial repair within reviewed ownership.
 P1-7a and parent P1 remain open.
 
 **Authority:** §17.10 and this current contract supersede historical P1-7b
@@ -41,30 +41,34 @@ Retain original P1 task IDs and historical receipts. P1-7b is accepted at
 `a8516ec7e44d57f9717b2403510cfb7d6b84fec1`; do not reconstruct its implementation.
 P1-7a is open. Parent P1 requires a separate completion audit.
 
-### Planning checkpoint and non-goals
+### Reviewed checkpoint and non-goals
 
 The accepted source of truth is Step 3 `comm-000004` and design §17.10.
-Step 5 review of this amendment is **pending**; prior accepted implementation
-reviews remain historical in the manifest and do not accept this revision.
-`implementationDispatchAllowed=false` is mandatory throughout this
-`planning-only` run, including after planning review/publication. A0–A5 below
-are future implementation tasks and require a separately authorized execution.
+Step 5 `comm-000006` accepted this issue-resolution plan without revision or
+design findings. `implementationDispatchAllowed=false` until the reviewed,
+exact-file checkpoint commit is recorded.
+No separate execution authorization is required after these gates: effective
+workflowInput already authorizes A0–A5 in this run, subject to their dependencies.
 
-After independent Step 5 acceptance, the serial checkpoint owner may commit and
-non-force push only these exact reviewed planning files:
+The serial checkpoint owner must obtain test-integrity, one Sol adversarial and
+Astra combined-tree review of the proposed checkpoint before committing these
+exact documentation files, including the Step 3-accepted user-QA record:
 
 - `design-docs/specs/design-work-runtime-consolidation.md`
+- `design-docs/user-qa/qa-p1-7a-rielflow-publication.md`
 - `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`
 - `impl-plans/active/work-runtime-p1-7a-20260925-dispatch.json`
+- `impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json`
 
-Record reviewed content hashes, actual committed paths/hash and push result.
-Before commit run `git diff --cached --name-only` and require exactly this
-allowlist; before push run `git show --format= --name-only HEAD` and require the
-same set with no additional unpublished work. Never stage the four protected
-files. Step 4 does not stage, commit, push or claim implementation acceptance.
-Accepted planning files must be committed before any later native Riela
-implementation/review fanout; publication alone never enables implementation.
-Later implementation publishes only after formal A4 reviews and A5 finalization.
+Record reviewer identities/decisions, reviewed content hashes and actual committed
+paths/hash. Before checkpoint commit run `git diff --cached --name-only` and
+require the exact allowlist; afterward run `git show --format= --name-only HEAD`
+and verify that set. Preserve the four dirty files outside this checkpoint.
+Step 4 does not stage, commit, push or claim implementation acceptance. Accepted
+design and plans must be committed before native implementation/review fanout.
+Checkpoint reviews accept documentation only; A4 still reviews final implementation.
+Any non-force push requires the same formal review discipline and exact receipt;
+publication alone never enables dispatch. A5 finalizes implementation publication.
 
 Do not add a new framework, public API, compatibility layer, recursive director,
 task-create CLI, new schema, broad formatting, dependency/lockfile regeneration,
@@ -124,16 +128,19 @@ Do not weaken terminal immutability or alter the CLI's one-second throttle.
 - **A0 / wave 1, no task dependency:** Fresh-read accepted design and manifest;
   record HEAD, status, baseline source hashes and legacy reference inventory.
   Record each proposed edit intent and behavior-to-test mapping. Run V7 baseline.
-  Trace the remote receiving validation boundary: current repository search finds
-  `ExecuteWorkflowInput` only in the outbound query in `WorkflowCommands.swift`.
-  Its receiving schema/service is outside this Swift repository. Record the
-  unresolved owner/repository/schema paths and authorization as an external
-  dependency; do not invent a server or keep searching local code for one.
-  A0 can deliver that explicit dependency record so local A1 proceeds in a later authorized
-  implementation execution. Receiving false/null field-presence rejection and ordinary
-  authenticated-request acceptance need the authorized external owner's exact
-  commands/results. Outbound omission or mocked errors are insufficient.
-  A2/A3 acceptance and P1-7a closure remain blocked without that evidence.
+  Record the identified external HTTP GraphQL `ExecuteWorkflowInput` owner:
+  `tacogips/rielflow`, `packages/rielflow-graphql/src/schema-contract.ts`, local
+  branch `feat/p1-7a-remote-field-rejection`, commit `c2b16ab`. Intake reports 91
+  related tests plus typecheck/build passing and three separately reproduced
+  non-schema full-suite failures. These are reported local results, not published
+  integration: the archived remote rejected push with 403. Record pending user
+  direction under the accepted `design-docs/user-qa/qa-p1-7a-rielflow-publication.md`;
+  do not rediscover the owner or edit the external repository from this plan.
+  This dependency record permits local A1 after dispatch gates. A2/A3 acceptance
+  and P1-7a closure require actual published receiving-side false/null rejection
+  and ordinary authenticated acceptance, with source/service identity, exact
+  test paths/commands, complete logs and terminal exits. Outbound omission or
+  mocked errors are insufficient.
 - **A1 / wave 1, depends A0:** Complete the matrix below using real dispatch,
   canonical sessions and durable WorkStore evidence; reuse existing fixtures.
   Test missing behavior first and narrowly repair only listed integration paths.
@@ -277,9 +284,10 @@ mapping to equivalent existing tests; never report a zero-selection pass.
 
 ### Evidence, drift and command contract
 
-Evidence root: `tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-<n>/`.
-Use immutable numbered attempts and `before-removal/`, `after-removal/`,
-`intents/`, `reviews/` subdirectories. Before each edit, fresh-read the exact file,
+Evidence root: `tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-<n>/`.
+Start with attempt-1 under this new root and use `before-removal/`,
+`after-removal/`, `intents/` and `reviews/` subdirectories. Preserve historical
+attempt-3 under the prior root. Before each edit, fresh-read the exact file,
 save its preimage (or absent marker), SHA-256 and intended hunk/rationale. Recheck
 preimage hash immediately before writing; on drift stop that edit, reread and
 reconcile serially. Save postimage/hash. No overwrite of another owner's work.
@@ -298,7 +306,7 @@ not a pipe/tee exit. Missing summary, truncation, skipped-only or zero-test runs
 are incomplete, never PASS. Any necessary environment adaptation is recorded
 alongside the original failure; do not silently substitute commands.
 
-Commands below use attempt-4 as a prospective example; if occupied, choose the
+Commands below use attempt-1 as a prospective example; if occupied, choose the
 next unused attempt without overwriting any receipt. `<key>.log` and
 `<key>.exit` live under the attempt directory (V1 separately under before-removal
 and after-removal). V0 compiles/typechecks; V1 proves the deletion matrix and
@@ -315,31 +323,31 @@ runs only at the serial checkpoint/finalization gate.
 **V0**
 
 ```bash
-swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch
 ```
 
 **V1**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
 ```
 
 **V2**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'
 ```
 
 **retry-focused — diagnostic only, never a substitute for V1**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit|TaskDispatcherIntegrationTests.testLastAdmittedRecoveryAttemptCanSucceed'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit|TaskDispatcherIntegrationTests.testLastAdmittedRecoveryAttemptCanSucceed'
 ```
 
 **policy-focused — all new positive/negative cases, before full V1**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'
 ```
 
 Require positive counts and every A1 step 4–5 case, not only the four historically
@@ -348,7 +356,7 @@ failing methods. Retain complete output and the exact method-name mapping.
 **canonical-regression — before removal and final source**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'
 ```
 
 Require positive actual-suite counts, advisory/failure behavior and the existing
@@ -360,7 +368,7 @@ classification assertions belong to the already-owned V1 integration tests.
 **V2-actual-suites — mandatory supplement**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests'
 ```
 
 Planning self-check found historical filter/file-name mismatches:
@@ -374,49 +382,49 @@ never claim either nonexistent suite executed. No suite rename is required.
 **V3**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'
 ```
 
 **V4**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'
 ```
 
 **V5a**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
 ```
 
 **V5b**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'
 ```
 
 **retained**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkflowCommandTests|WorkflowRunHelpTests|CommandParsingTests|SpecialistSupervisorCommandTests|SpecialistSupervisorBoundaryTests|SpecialistSupervisorRecoveryTests|EventLiveServeTests|RoutineCommandTests|RoutineAddonTests|RoutineStoreTests|RoutineGraphQLTests|EventRoutineBindingTests|RoutineAddonCatalogTests|LoopStartPromoteCommandTests|DefaultLoopGuardRecoveryTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'WorkflowCommandTests|WorkflowRunHelpTests|CommandParsingTests|SpecialistSupervisorCommandTests|SpecialistSupervisorBoundaryTests|SpecialistSupervisorRecoveryTests|EventLiveServeTests|RoutineCommandTests|RoutineAddonTests|RoutineStoreTests|RoutineGraphQLTests|EventRoutineBindingTests|RoutineAddonCatalogTests|LoopStartPromoteCommandTests|DefaultLoopGuardRecoveryTests'
 ```
 
 **cancellation-host**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
 ```
 
 **catalog**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaExampleParityTests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RielaExampleParityTests'
 ```
 
 **retained-consumers — after A2**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'SurfaceParityCLITests'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'SurfaceParityCLITests'
 (cd examples/monja-agent-collaboration && bun run typecheck)
 (cd examples/monja-agent-collaboration && bun run test)
 (cd examples/monja-project-task-orchestrator && bun run typecheck)
@@ -436,25 +444,25 @@ must not execute external live services as an unrecorded substitute for mocks.
 **remote**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkflowCommandTests.testWorkflowRunUsesGraphQLEndpointTransport|WorkflowCommandTests.testWorkflowRunEndpointUsesRielaAuthEnvironment|WorkflowCommandTests.testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'WorkflowCommandTests.testWorkflowRunUsesGraphQLEndpointTransport|WorkflowCommandTests.testWorkflowRunEndpointUsesRielaAuthEnvironment|WorkflowCommandTests.testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus'
 ```
 
 **standalone-gate**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRuntimeExampleTests.testStandaloneNonAcceptedRepairGateFailsAndRetainsEvidence|WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection'
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskRuntimeExampleTests.testStandaloneNonAcceptedRepairGateFailsAndRetainsEvidence|WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection'
 ```
 
 **broad**
 
 ```bash
-swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel
+swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --no-parallel
 ```
 
 **V6**
 
 ```bash
-xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-4/changed-swift-files.nul
+xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-1/changed-swift-files.nul
 ```
 
 **V7**
@@ -484,32 +492,32 @@ git diff --cached --check
 **V8-task-repair-loop-validate**
 
 ```bash
-tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json
+tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json
 ```
 
 **V8-task-repair-loop-mock**
 
 ```bash
-tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-4/task-repair-loop-store --output json
+tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-1/task-repair-loop-store --output json
 ```
 
 **V8-task-agent-director-validate**
 
 ```bash
-tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json
+tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json
 ```
 
 **V8-task-agent-director-mock**
 
 ```bash
-tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-4/task-agent-director-store --output json
+tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-1/task-agent-director-store --output json
 ```
 
 The remote filter uses the actual XCTest class `WorkflowCommandTests` even
 though its methods are declared in `WorkflowCommandInspectionTests.swift`.
 Record receiving-rejection commands separately from the local Swift selection
-when the authorized external owner supplies the exact repository/schema/test
-paths. Capture external source identity, complete logs and terminal exits for
+when the identified external owner supplies exact test paths and publication
+evidence for `packages/rielflow-graphql/src/schema-contract.ts`. Capture external source identity, complete logs and terminal exits for
 false/null field presence and ordinary authenticated acceptance; no guessed
 local test name or outbound omission satisfies that gate.
 
@@ -522,7 +530,7 @@ Unrelated broad failures remain **FAILED** even if formal review accepts the sli
 
 ### Completion/progress checklist
 
-- [ ] Step 5 accepts all paths and planning checkpoint is committed before dispatch.
+- [x] Step 5 accepts the plan; the exact scoped checkpoint remains pending before dispatch.
 - [ ] A0 inventory/receiving-boundary investigation and immutable intents complete.
 - [ ] A1 causal policy, paired cancellation, live inactivity/progress, canonical-regression, cancellation-host and full four-suite V1 pass on the same source before deletion.
 - [ ] A2 scoped removal and rejection/preservation regressions complete.
@@ -533,11 +541,11 @@ Unrelated broad failures remain **FAILED** even if formal review accepts the sli
 Each progress entry records A-task status, touched paths, source identity,
 commands/full logs/exits/counts, findings and ownership, review decisions and
 next dependency. Do not mark P1-7a complete before A5; parent P1 stays open.
-Step 3 accepted this design; this plan amendment awaits independent Step 5.
-Current planning completion means accepted design/plan/manifest and exact-file
-publication only, never checked-off A0–A5 or a passing implementation gate.
-No implementation gate has run in Step 4. In a later authorized execution,
-Step 6 owns A0–A3 implementation and
+Step 3 `comm-000004` accepted this design and Step 5 `comm-000006` accepted
+this plan amendment; the exact scoped checkpoint remains pending.
+Step 4 completion means a review-ready plan/manifest, never checked-off A0–A5
+or a passing implementation gate. No implementation gate has run in Step 4.
+After current review/checkpoint gates, Step 6 owns A0–A3 implementation and
 behavioral verification; A4 formal review and review-dependent A5 documentation/
 publication remain downstream workflow obligations. Their pending status alone
 must not block a complete Step 6 handoff. An actual A1 failure or missing external

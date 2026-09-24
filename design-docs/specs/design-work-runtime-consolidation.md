@@ -1120,16 +1120,17 @@ number supplied), mode `issue-resolution`, intake `comm-000002` from
 `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 This amendment and its implementation plan were accepted at checkpoint
 `0a74a070670a5cb73f6cd18e035adf61732a0b07` on `feat/remaining-impl-plans`.
-The current intake, “Review and finalize P1-6c against final-source capable-host
-evidence” (local request; no issue URL or number), continues that accepted design
-after Step 6 returned `implementationIncomplete` and a serial operator-host run
-supplied final-source evidence. It does not reopen §17.2 or the later “Live
+The current intake, “Finalize P1-6c after real SIGINT regression and source-matched
+host verification” (local request; no issue URL or number), continues that accepted
+design after the real EntryPoint SIGINT regression was added and an operator-host
+run supplied post-regression evidence. Historical Step 6 read-only audits are
+advisory and do not constitute renewed formal acceptance. It does not reopen §17.2 or the later “Live
 cancellation (P1-6c)” contract. Preserve P1-6a/b behavior and the P1-6b accepted
 publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
 `impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
 
 **Continuation boundary.** The current intake continues preserved WIP at HEAD
-`c16e97501b5be5b6b1904c100b682c965eebba44` on `feat/remaining-impl-plans`:
+`133fdf94fe7ab249afc24884471b3d182892d42e` on `feat/remaining-impl-plans`:
 22 modified tracked files and three untracked Swift files, including
 `Sources/RielaCLI/TaskRunCancellation.swift`,
 `Tests/RielaCLITests/TaskCancellationIntegrationTests.swift` and its `+Fixtures`
@@ -1272,50 +1273,52 @@ positive per-suite counts and source/test hashes under
 A bounded environment failure remains a failed run and must be separated from
 source-matched capable-host evidence; P1-6b evidence cannot certify new code.
 
-**Final-source capable-host evidence (2026-09-24).** The current receipt is
-`tmp/work-runtime-p1-6c-host-resume/capable-host-final-source-evidence.json`.
-Its authoritative source manifest is
-`tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256`,
-SHA-256 `561db1140f6d0826250203a2746708a8f4a8b6b59265b57ac85a8ce97dea861f`.
-The manifest actually contains 973 entries; the intake's “962-file” description
-is a stale count, not a hash mismatch. Step 2 recomputed all entries with exit 0;
-complete output is `tmp/p1-6c-step2-final-source/source-match.log`.
-The original `tmp/work-runtime-p1-6c-host-resume/serial-source-match-after.log`
-also contains 973 successful checks. Documentation-only changes do not change
-these source/test bytes. No Swift tests were rerun by this design node.
+**Final-source capable-host evidence (2026-09-24).** The effective workflow input
+supplies the post-SIGINT source/test/build-input manifest
+`tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256`,
+SHA-256 `d2b675f1bd3fded858997d8345bccaa70e6c19cae8d72b09f977422fb5259140`,
+with 973 entries. Verify its digest and every current entry before treating the
+logs as current-source evidence. The operator reports matching all entries both
+before and after the host runs; that report requires independent verification.
+Step 2 independently matched all three supplied SHA-256 digests and all 973
+current entries. `shasum -a 256 -c` exited 0; its complete 973-check output is
+`tmp/p1-6c-step2-post-sigint/source-match.log`. A foreground `python3` evidence
+check exited 0 after reading all 2,288 focused and 4,953 aggregate log lines,
+matching the exact assertion `(source path:line, suite, test)` multiset to
+inventory IDs 1–8 and 14–24 with zero new or missing entries, and finding the
+named SIGINT test passing in both logs. These structural checks do not replace
+formal semantic log review or independent test-integrity acceptance. The host
+process exit statuses remain runtime-reported; terminal log summaries confirm
+the counts. Documentation-only changes do not change these source/test bytes.
+No Swift tests were rerun in this design node.
 
-Complete logs below are relative to `tmp/work-runtime-p1-6c-host-resume/`.
-Counts agree with terminal XCTest summaries; exits are recorded in the receipt.
+| Gate | Complete log | Reported tests / failures | Reported terminal exit | SHA-256 |
+| --- | --- | --- | --- | --- |
+| Focused, including selected-host and real SIGINT | `tmp/work-runtime-p1-6c-final-host/focused.log` | 99 / 0 | 0 | `05bdb645a4b8c3fc95b1389eb5528ef87728cb33ae47417288a8bd6ec1d37dd1` |
+| Serial affected aggregate | `tmp/work-runtime-p1-6c-final-host/aggregate.log` | 2,049 / 19 (7 unexpected) | 1 | `49d18fb95b91f96e889f97089172b1a25e66e83cb47654b6fe9c6f647b8ba115` |
 
-| Gate | Complete log | Tests / failures | Exit |
-| --- | --- | --- | --- |
-| Catalog/parity/projection | `capable-host-catalog-projection.log` | 17 / 0 | 0 |
-| V1 plus cancellation integration | `capable-host-v1-final-source.log` | 50 / 0 | 0 |
-| V11 plus live selected-host cancellation | `capable-host-v11-final-source.log` | 55 / 0 | 0 |
-| Serial affected aggregate | `capable-host-aggregate-final-source-serial.log` | 2,048 / 19 (7 unexpected) | 1 |
-
-The V11 log at line 135 records policy `task-run` start
-`decision-a69e731d-5cd4-4cf5-a637-6e6a49999ced` with no cause, and human
-`operator` cancellation `decision-remote-live-cancel` caused by
-`evidence-placement-attempt-89c5cef8-0c49-4a6f-bc14-0e6b78b065fe`.
-`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift` asserts
-both identities and causal linkage, exact task/attempt, worker stop proof,
-reserved cancelled snapshot, acknowledgment, held/released fence, and unchanged
-decision/evidence/outcome after identical CLI replay. Passing this test supports
-these invariants; the independent reviewers must still assess assertion quality
-and the remaining accepted coverage obligations.
-
-The earlier `capable-host-aggregate-final-source.log` is an interrupted,
-overlapping run: `aggregate-status.json` records exit 130. Its partial log is
-excluded. The serial final-source aggregate supersedes the older 24-failure
-aggregate as current evidence; it remains a **failed broad gate**.
+Read both complete logs, verify their digests and retain their terminal exit
+status and complete paths. The new
+`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift::testTaskRunSubprocessSIGINTCommitsAndAcknowledgesCancellation`
+must exercise the real EntryPoint subprocess SIGINT route; helper-only signal
+coverage cannot substitute for it. The intake reports that this test passed in
+both logs. Review its durable request-before-interruption ordering, owned stop
+proof, exact cancelled reserved session, acknowledgment and fence/replay
+assertions alongside the selected-host regression. The fixture's decision
+identities and causal linkage remain required; passing counts alone do not
+establish their integrity. Historical pre-SIGINT host logs and partial runs are
+not current-source evidence. The broad aggregate remains a **failed broad gate**;
+all supplied results remain subject to formal independent acceptance.
 
 **Failure disposition and bounded review.** The inventory
 `tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json`
 contains 24 historical assertion records. IDs 9–13 are the five catalog and
 projection assertions repaired in preserved WIP and absent from the current
-aggregate. The other 19 match current assertions by test and assertion source;
-historical log line numbers must not be mistaken for current serial-log lines.
+aggregate. The intake reports that the other 19 match current assertions by test identity
+and exact assertion source line, with zero new or missing records. Independently
+compare every assertion to IDs 1–8 and 14–24; any new P1-6c failure blocks slice
+acceptance. Historical log line numbers must not be mistaken for current log
+lines.
 Keep every record's source-history and focused-reproduction evidence available
 for independent review; unchanged filenames alone do not establish irrelevance.
 
@@ -1338,8 +1341,10 @@ weaken completion semantics, or repair unrelated baseline failures.
 **Acceptance and rollout boundary.** The next plan updates
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` around review
 of these exact bytes, preserving accepted design and WIP. Independent
-test-integrity and adversarial reviewers assess source, tests, request-before-
-signal ordering, proof/persistence/fence/replay invariants and slice-only
+`gpt-6-sol` test-integrity and independent `gpt-6-sol` adversarial reviewers
+assess source, tests, request-before-signal ordering, owned stop proof, exact
+cancelled session, acknowledgment, fence/replay, real EntryPoint SIGINT and
+selected-host behavior, and slice-only
 eligibility. Astra independently reviews the exact combined tree, including
 documentation and any serial repair. Record each decision, findings, file paths,
 commands and complete log/exit evidence. These reviews remain pending; Step 2
@@ -1347,7 +1352,7 @@ makes no implementation acceptance decision.
 
 Retain the accepted V0/V1/V2/V11, decision, live, compatibility and changed-file
 lint obligations. Assess existing source-matched evidence first; run focused
-checks only for a concrete gap. Do not rerun the 2,048-test aggregate in a
+checks only for a concrete gap. Do not rerun the 2,049-test aggregate in a
 listener-denied sandbox to reinterpret known host failures. Any source/test
 change invalidates final-source acceptance evidence until its manifest is
 rechecked and affected tests rerun on a capable host where required. One serial
@@ -1359,11 +1364,11 @@ authoritative; this node adds no workflow readiness requirements.
 Evidence inspection commands include:
 
 ```bash
-shasum -a 256 tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256
-shasum -a 256 -c tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256
-cat tmp/work-runtime-p1-6c-host-resume/capable-host-final-source-evidence.json
-cat tmp/work-runtime-p1-6c-host-resume/capable-host-catalog-projection.log tmp/work-runtime-p1-6c-host-resume/capable-host-v1-final-source.log tmp/work-runtime-p1-6c-host-resume/capable-host-v11-final-source.log
-cat tmp/work-runtime-p1-6c-host-resume/capable-host-aggregate-final-source-serial.log
+shasum -a 256 tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256
+shasum -a 256 -c tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256
+shasum -a 256 tmp/work-runtime-p1-6c-final-host/focused.log tmp/work-runtime-p1-6c-final-host/aggregate.log
+cat tmp/work-runtime-p1-6c-final-host/focused.log
+cat tmp/work-runtime-p1-6c-final-host/aggregate.log
 cat tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json
 git diff --check
 git diff --cached --check

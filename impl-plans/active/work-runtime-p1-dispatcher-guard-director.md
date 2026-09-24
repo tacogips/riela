@@ -1,16 +1,20 @@
 # Work Runtime P1: P1-6c final-source review and conditional finalization
 
-**Status:** Step 4 plan refresh; Step 3 accepted the final-source design with no
-findings (`comm-000004`, `step3-design-review-attempt-1-exec-4`). Step 5 and
-independent implementation acceptance remain pending. No slice acceptance,
-commit or push is claimed by this plan-authoring step.
+**Status:** Step 3 accepted the post-SIGINT design with no findings
+(`comm-000004`, `step3-design-review-attempt-1-exec-4`). The prior formal
+integrity finding prompted a real EntryPoint SIGINT subprocess regression.
+Post-regression source-matched operator-host logs now exist; renewed independent
+Sol integrity/adversarial review and Astra combined-tree acceptance remain
+pending. Historical Step 6 read-only audits are advisory. Documentation
+finalization, implementation commit and push remain gated. The broad aggregate
+remains FAILED.
 **Workflow mode:** `issue-resolution`.
-**Issue:** Local request: Review and finalize P1-6c against final-source
-capable-host evidence; no issue URL or number supplied.
+**Issue:** Local request: Finalize P1-6c after real SIGINT regression and source-matched
+host verification; no issue URL or number supplied.
 **Design:** `design-docs/specs/design-work-runtime-consolidation.md`, P1-6c
 bounded amendment, especially “Final-source capable-host evidence”, “Failure
 disposition and bounded review” and “Acceptance and rollout boundary”.
-**Design SHA-256:** `5597a32ae01208cfdaf66dcebc6bac7e0140ed2be3d6c5ed5519e151e39192e9`.
+**Design SHA-256:** `0c5ee8f2617550eee382dc0c12d0e31cb4ad02195330efaafe70c4c791c1f592`.
 **Codex-agent references:** single Astra design/plan author, independent Sol
 test-integrity reviewer, independent Sol adversarial reviewer, Astra exact
 combined-tree reviewer; one Sol serial implementation/reconciliation owner.
@@ -29,12 +33,15 @@ implementation plans. Separate read-only review roles may work in parallel.
 
 Decide whether preserved P1-6c WIP merits evidence-backed slice-only acceptance
 on `feat/remaining-impl-plans`, starting at intake HEAD
-`c16e97501b5be5b6b1904c100b682c965eebba44`. Preserve all 22 tracked intake
+`133fdf94fe7ab249afc24884471b3d182892d42e`. Preserve all 22 tracked intake
 modifications, three untracked Swift files and the accepted design refresh.
-The current host receipt proves catalog/parity/projection 17/17, V1 plus
-cancellation 50/50, V11 plus real selected-host 55/55, exits 0. The separate
-serial 2,048-test aggregate has 19 assertion failures (7 unexpected), exit 1.
-Review acceptance remains open; no new production change is assumed necessary.
+The supplied post-SIGINT manifest contains 973 source/test/build-input entries.
+The focused host log reports 99/99, exit 0; the separate serial 2,049-test
+aggregate reports 19 assertion failures (7 unexpected), exit 1. Step 2 verified
+all manifest hashes and membership, both log digests and the exact 19-assertion
+inventory match. These structural checks do not substitute for formal semantic
+review. Host process exit statuses are runtime-reported; log summaries confirm
+counts. Review acceptance remains open; no new production change is assumed.
 
 Non-goals: P1-6d, P1-7a/b, parent P1 completion; unrelated baseline repair;
 new abstraction, transport, scheduler or decision store; direct decision-row
@@ -172,16 +179,17 @@ this list need a recorded scope decision; do not broaden the plan silently.
     "P1-6b": "7d8fc121a4f4469de7a40495282b53c9d813b8d4"
   },
   "verificationCommands": [
-    "shasum -a 256 tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256",
-    "shasum -a 256 -c tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256",
-    "cat tmp/work-runtime-p1-6c-host-resume/capable-host-final-source-evidence.json",
-    "cat tmp/work-runtime-p1-6c-host-resume/serial-source-match-after.log tmp/work-runtime-p1-6c-host-resume/capable-host-catalog-projection.log tmp/work-runtime-p1-6c-host-resume/capable-host-v1-final-source.log tmp/work-runtime-p1-6c-host-resume/capable-host-v11-final-source.log",
-    "cat tmp/work-runtime-p1-6c-host-resume/capable-host-aggregate-final-source-serial.log tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json",
-    "cat tmp/work-runtime-p1-6c-host-resume/aggregate-status.json",
-    "git diff c16e97501b5be5b6b1904c100b682c965eebba44 -- Sources Tests",
+    "shasum -a 256 tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256",
+    "shasum -a 256 -c tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256",
+    "git ls-files --cached --others --exclude-standard -z Sources Tests Package.swift Package.resolved",
+    "shasum -a 256 tmp/work-runtime-p1-6c-final-host/focused.log tmp/work-runtime-p1-6c-final-host/aggregate.log",
+    "cat tmp/work-runtime-p1-6c-final-host/focused.log",
+    "cat tmp/work-runtime-p1-6c-final-host/aggregate.log",
+    "cat tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json",
+    "git diff 133fdf94fe7ab249afc24884471b3d182892d42e -- Sources Tests",
     "git diff --check",
     "git diff --cached --check"
-  ],
+],
   "evidenceDirectory": "tmp/work-runtime-p1-6c-final-review/"
 }
 ```
@@ -221,21 +229,33 @@ this list need a recorded scope decision; do not broaden the plan silently.
 
 ### Ordered tasks and acceptance
 
-1. **P1-6c-evidence:** Recheck the supplied manifest and inspect every complete
-   receipt log with the metadata commands. Manifest digest must equal
-   `561db1140f6d0826250203a2746708a8f4a8b6b59265b57ac85a8ce97dea861f`;
-   it contains 973 entries, correcting the input's stale 962 count. Compare
-   manifest membership with all tracked/untracked source/test and build inputs,
-   not only hashes of existing entries. Preserve immutable originals. Reuse
-   `tmp/p1-6c-step2-final-source/evidence-inspection.json` as a cross-check,
-   not a substitute for independent source/test review. Deliver current source
-   identity, requirement-to-test/evidence matrix, and assertion-to-owner map.
-   Exclude interrupted `aggregate-status.json` exit-130 evidence.
+1. **P1-6c-evidence:** Recheck every one of the 973 current manifest entries
+   and read both complete logs with the metadata commands. Manifest digest must
+   equal `d2b675f1bd3fded858997d8345bccaa70e6c19cae8d72b09f977422fb5259140`.
+   Focused log digest must equal
+   `05bdb645a4b8c3fc95b1389eb5528ef87728cb33ae47417288a8bd6ec1d37dd1`;
+   aggregate digest must equal
+   `49d18fb95b91f96e889f97089172b1a25e66e83cb47654b6fe9c6f647b8ba115`.
+   Compare manifest membership with all tracked/untracked Sources/Tests and
+   Package.swift/Package.resolved; reject missing, extra or duplicate entries.
+   Preserve immutable originals. Step 2's
+   `tmp/p1-6c-step2-post-sigint/source-match.log` is a cross-check, not independent
+   acceptance. Parse every aggregate assertion into exact test identity and
+   assertion source path/line; require multiset equality with inventory IDs
+   1–8 and 14–24, zero new/missing records. Do not compare historical log lines.
+   Deliver current source identity, requirement-to-test/evidence matrix and
+   assertion-to-owner map with complete command logs and terminal exit status.
+   Exclude pre-SIGINT and incomplete host logs from current-source acceptance.
 2. **P1-6c-integrity** and **P1-6c-adversarial**, after evidence: independent
    read-only Sol reviews may run concurrently on frozen bytes. Integrity checks
    complete logs, terminal exits, positive suite counts, test selection,
-   assertions, hashes and every disposition. Adversarial checks material
-   cancellation races, stop-proof/fence/replay and source/dependency history.
+   assertions, hashes and every disposition. Both reviews explicitly cover durable
+   request before interruption, owned stop proof, exact cancelled reserved
+   session, acknowledgment, fence/replay, real EntryPoint SIGINT and selected-
+   host behavior. Inspect
+   `Tests/RielaCLITests/TaskCancellationIntegrationTests.swift::testTaskRunSubprocessSIGINTCommitsAndAcknowledgesCancellation`
+   and its passing entries in both logs; helper-only coverage is insufficient.
+   Adversarial review also checks material races and source/dependency history.
    Each emits explicit accept/reject for slice-only disposition, exact reviewed
    manifest, findings by severity/path, commands/logs/exits, unresolved coverage
    and all 19 failure owners. No style nits or speculative architecture.
@@ -243,16 +263,21 @@ this list need a recorded scope decision; do not broaden the plan silently.
    finding or records a precise material rejection. No finding means no source
    repair. Any necessary repair uses the file map above, regression coverage
    and affected verification below. Renew affected independent review before
-   proceeding. Prepare accurate documentation/progress for final review; it
-   remains pending acceptance until Astra decides. Deliver reconciled complete
+   proceeding. Prepare a proposed documentation disposition for review without declaring
+   acceptance or finalizing progress before Astra decides. Deliver reconciled complete
    tree manifest including docs, accepted review receipts and exact proposed
    final file allowlist. Classification alone cannot waive a failure.
 4. **P1-6c-integration**, after reconciliation: Astra independently reviews the
    exact combined tree and evidence, including docs and repaired bytes; accepts
    or rejects slice-only disposition with no unresolved material finding.
    Source changes require a new reconciliation/review attempt before acceptance.
-5. **P1-6c-finalize**, after acceptance: serial workflow finalization records
-   exact accepted file list and hashes, commits and non-force pushes to
+5. **P1-6c-finalize**, only after explicit slice acceptance: serially refresh
+   README where affected, design, plan and progress to distinguish P1-6c from
+   P1-6d, P1-7a/b, parent P1 and the failed broad gate with all 19 owners. Astra
+   verifies the exact final documentation/source tree and reaffirms acceptance
+   before publication; a documentation edit is not automatically covered by an
+   earlier tree review. Record final allowlist, hashes and whitespace outcomes.
+   Serial workflow finalization then commits exact files and non-force pushes to
    `origin/feat/remaining-impl-plans`, recording matching commit/push receipts.
    Any substantive post-review edit returns to affected verification/review.
    Keep this parent plan active and P1-6d/P1-7a/b/parent P1 open.
@@ -300,11 +325,14 @@ zero-test or interrupted runs are not passing evidence. No shell orphans.
 
 First execute the metadata inspection commands; save full outputs and exits in
 new immutable attempt directories under `tmp/work-runtime-p1-6c-final-review/`.
-The receipt supplies actual host argv/environment and complete log paths;
-terminal focused summaries must agree with 17/17, 50/50, 55/55 and exit 0.
-Inspect the V11 policy-start and human-cancel IDs with causal linkage and stable
-replay in `TaskCancellationIntegrationTests+Fixtures.swift`. The serial broad
-log must retain 2,048/19/7 and exit 1 with all 19 mapped owners.
+Retain the supplied host command/environment evidence when available and record
+any missing provenance precisely; do not invent process receipts from XCTest
+summaries. Focused terminal summary must show 99/99 and aggregate 2,049/19/7;
+runtime-reported terminal exits remain respectively 0 and 1. Both complete logs
+must contain the named real SIGINT regression passing. Inspect policy-start and
+human-cancel identities and causal linkage in
+`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift`, exact
+acknowledgment and stable replay. The failed broad gate retains all 19 owners.
 
 Assess existing V0/build, V2/store, decisions, live, compatibility and strict
 changed-file lint receipts against current bytes and dependencies. Preserve
@@ -393,11 +421,11 @@ push receipt. Design/plan readiness alone completes none of those later gates.
 A precise material rejection is a valid review outcome, not implementation
 completion or authorization to publish.
 
-Step 3 supplied no revision findings. Step 4 self-check evidence is under
-`tmp/p1-6c-step4-final-source/`: accepted design hash, metadata DAG and task/path
-checks, pre/post preservation hashes for every other WIP file, unchanged staged
-index, full source-match and whitespace outcomes. No Swift tests or implementation
-reviews are claimed by this documentation-only author check.
+Step 3 supplied no revision findings. Step 4 self-check records accepted design
+hash, metadata DAG/task/path validation, unchanged historical-tail hash and
+whitespace outcome under `tmp/p1-6c-step4-post-sigint/`. No Swift tests, semantic
+host-log review or implementation acceptance are claimed by this plan-author
+check. Downstream reviewers independently verify preserved WIP and final bytes.
 
 ---
 

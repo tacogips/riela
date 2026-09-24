@@ -11,7 +11,7 @@ because its old paths are absent.
 | Active Riela plan | Current evidence | Disposition before implementation |
 | --- | --- | --- |
 | `riela-note-new-features` | Its 33 unchecked items still target the old Riela Note stack. Kaiba `impl-plans/completed/note-capture-and-entity-pages.md` closes F1 Anywhere Capture and F2 Entity Pages; its completion is on Kaiba `origin/main` via `2949ba7`. | Reconcile F1/F2 against the accepted Riela design, then split out or rebase the unresolved F3 Scoped Ask. Do not implement F1/F2 again in Riela. |
-| `riela-note-graph-rag` | The plan says ready, but Riela commits `ef43924e` and `b33f922f` implemented and hardened graph-RAG before extraction; the code/tests were removed at `d4268c34`, while examples were restored at `cb01478b`. Kaiba's active `note-retrieval-fusion` says implemented, but that status alone does not prove this plan's accepted contract. | Compare the accepted graph-RAG behavior with current Kaiba APIs/tests and Riela examples before deciding which checklist items are complete or still owned by Kaiba. |
+| `riela-note-graph-rag` | The plan says ready, but Riela commits `ef43924e` and `b33f922f` implemented and hardened graph-RAG before extraction; the code/tests were removed at `d4268c34`, while examples were restored at `cb01478b`. Kaiba `origin/main` contains the bounded graph service, traversal tests and GraphQL; Riela retains `kaiba/note-graph-neighbors` adapter/tests and examples (cross-check below). | Reconcile the accepted policy and surface contracts against these current boundaries. Do not treat Kaiba's later `note-retrieval-fusion` plan as proof of this distinct bounded-path contract, and do not replay removed Riela Note service paths. |
 | `riela-note-notebook-expand` | The plan says implemented; `40ec3428` delivered the Riela implementation and its Note tests were later extracted. Kaiba currently retains service primitives/tests, but no expansion UI/provider or compact workflow (cross-check below). | Do not archive as feature-complete. Decide whether Kaiba restores the user-facing feature or the product explicitly retires it; do not replay removed Riela paths. |
 | `riela-note-system-memory` | The old plan targets local Note system memory; `81542b5a` added it before extraction and `987c8a4` later split short-term Riela memory from Kaiba long-term memory. | Reconcile against the post-split architecture; do not replay its old removal/migration steps. |
 | `riela-note` | Its remaining baseline deferrals refer to the former local Note substrate. | Reassign each deferral to the actual current Riela or Kaiba owner and trigger before closing or moving the plan. |
@@ -71,3 +71,19 @@ service migration alone does **not** prove the accepted feature survived the
 extraction. Keep this plan out of the archive-candidate set until its present
 owner decides whether to restore the user-facing feature in Kaiba or records
 an explicit product-level retirement; do not replay old `RielaNoteUI` paths.
+
+## Bounded Graph-RAG cross-check (2026-09-24)
+
+Kaiba `origin/main` contains `Sources/AppCore/NoteGraph.swift` and
+`NoteGraphTraversal.swift` with the original depth-five/default-16/hard-20,
+frontier-40, decay-0.5 and relevance-floor-0.03 policy, plus
+`NoteGraphTraversalTests.swift`. `NoteSearch.swift`, relation proposal code,
+`noteGraphNeighbors` GraphQL, and GraphQL tests also use that service seam.
+Riela now exposes `kaiba/note-graph-neighbors` through `RielaKaibaAddons` and
+retains `note-agent`/`note-link-extract` examples and add-on tests. This is
+stronger ownership evidence than the later Kaiba `note-retrieval-fusion`
+plan, which adds PPR/RRF/context indexing on top of retrieval rather than
+defining the original bounded path result. Before checking off or archiving
+the old plan, still compare its TASK-001..008 acceptance matrix with current
+Kaiba traversal, GraphQL, Riela adapter and workflow tests, including the
+intentional add-on rename from `riela/` to `kaiba/` and any live-client gap.

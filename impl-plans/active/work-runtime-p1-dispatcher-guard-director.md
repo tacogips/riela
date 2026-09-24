@@ -2,21 +2,41 @@
 
 ## Current executable contract — P1-7b only (2026-09-25)
 
-**Current authority: issue-resolution continuation.** Issue “Finish Work
-Runtime P1-7b after accepted task-gate amendment”; intake `comm-000002`.
-Effective `workflowInput` accepts the bounded amendment at pushed checkpoint
-`c8840ad4a7028c5bf22e8d61106ab3b98f505670`. Preserve all six pre-existing dirty
-P1-7b files and other session work. The proposal's former lack of production
-write authority is historical, not a current blocker.
-Step 3 `comm-000004` (`step3-design-review-attempt-1-exec-4`) accepted current
-`design-docs/specs/design-work-runtime-consolidation.md` §17.9 with no findings
-in `codex-design-and-implement-review-loop-session-1`. Step 5 review of this
-aligned plan remains pending; after acceptance, proceed to the workflow's
-serial implementation step. This Step 4 edits the plan only and claims no
-implementation, behavioral verification or formal implementation review.
-No GitHub number/URL, codex-agent reference or Cursor behavior change applies.
+**Current authority: reviewed catalog amendment.** Issue “Finish P1-7b after
+integration review found missing example-catalog coverage”; intake `comm-000002`.
+Step 3 `comm-000004` (`step3-design-review-attempt-1-exec-4`) accepted
+`design-docs/specs/design-work-runtime-consolidation.md` §17.9 with no findings.
+Preserve checkpoint `bffa1da4ab161892ecec54784439e6148860f302`, all eight dirty
+implementation/progress files listed in §17.9 and unrelated session work.
+No GitHub number/URL, codex-agent reference or Cursor behavior mapping applies.
+Step 5 review and amendment checkpoint/push are pending; this author claims
+planning only. The earlier task-gate correction is retained WIP, not new work.
 
-### Accepted bounded finalization amendment
+### Catalog ownership repair and pre-dispatch gate
+
+Prior Astra `comm-000018` and `comm-000027` rejected the catalog omission and
+misclassification; the latter reports `blocked_on_unchanged_plan_ownership`.
+Finding `p1-7b-example-parity-misclassified` remains open until repaired and
+verified. Prior Sol acceptance does not override it.
+
+Add only these two new paths to the existing serial owner's write set:
+
+- `Tests/RielaCLITests/RielaExampleCatalog.swift`: add `task-agent-director` and
+  `task-repair-loop` once each, preserving existing catalog entries/order.
+- `Tests/RielaCLITests/RielaExampleParityTests.swift`: adjust only affected
+  expected mock counts to observed selections/results. Preserve every assertion,
+  exclusion and execution/output check. Do not dynamically derive expectations
+  from the same actual result, skip bundles or weaken equality checks.
+
+Before B0, Step 5 must accept this plan and the aligned manifest
+`impl-plans/active/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006-dispatch.json`.
+Checkpoint and non-force push exactly that manifest, this plan and
+`design-docs/specs/design-work-runtime-consolidation.md`. Keep all eight dirty
+implementation/progress files outside this planning commit. Record the actual
+commit/push hashes and exact file receipt; dispatch only after successful push.
+No implementation or unchanged reconciliation retry precedes this gate.
+
+### Retained accepted finalization amendment
 
 The proposal is
 `tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-2/bounded-amendment-request.json`.
@@ -24,12 +44,11 @@ V1 `logs/before-removal-final.log` in the same directory demonstrates
 `terminalSnapshotConflict`: a rejected required gate leaves a completed
 canonical task session, then CLI finalization rewrites it as failed. SQLite
 correctly rejects the rewrite. The prior `plan_amendment_review` found no
-production write authorization at that time; the checkpoint above accepts this
-exact-file remedy.
+production write authorization at that time; the prior accepted amendment authorized this exact-file remedy.
 
 - Additional production ownership is limited to
   `Sources/RielaCLI/WorkflowRunCommand.swift`, under the existing serial owner.
-  In B2, carry actual reservation presence from `run` to `RunFinalizeContext`
+  Preserve the implemented actual reservation presence from `run` to `RunFinalizeContext`
   at both plain and auto-improve construction sites; guard only the call to
   `applyRequiredLoopGateFailureIfNeeded` so it runs for standalone executions.
   Do not use authored inputs or task-context metadata to infer reservation.
@@ -41,10 +60,10 @@ exact-file remedy.
   Standalone required-gate failure status/exit and inspection remain unchanged.
 - No changes to SQLite, dispatcher/director policy, CLI/schema/public APIs,
   abstractions or unrelated failures. Existing test/bundle paths remain as
-  previously authorized for later work; this adds only one production file.
+  previously authorized; this continuation adds no production file.
   Reuse the standalone regression read-only; its file is not a new write path.
 - Preserve the complete existing recovery fixture and its ordinary dispatch
-  assertions. Latest V1 executed 56 tests with four failed assertions, including intermittent
+  assertions. Historical amendment-time V1 executed 56 tests with four failed assertions, including intermittent
   second-attempt/replay recovery behavior. The terminal correction is not proof
   of resolving those findings. If they persist, B2/B3 remain blocked; record
   exact evidence and seek another bounded review for any out-of-scope repair.
@@ -70,7 +89,7 @@ and artifact stores. Renew build, V1 four-suite, V11, affected suites, mocks,
 strict lint including the production file, diff and serial broad checks below;
 no mutating tests overlap edits. Capture complete logs, terminal exits and
 positive per-suite counts against identical source. Prior broad evidence is
-FAILED and predates the final fixture; classify all fresh failures by exact
+FAILED and includes the owned catalog defect; classify all fresh failures by exact
 test/assertion/cause/source/owner. Resolve new/slice failures; unrelated ones
 remain FAILED with follow-up and formal slice-only review disposition. Do not
 report broad PASS without a complete passing run. Retain B4, formal test-integrity,
@@ -81,7 +100,7 @@ gates; P1-7b, P1-7a and parent P1 remain open. No unresolved user decision.
 schedule this continuation. Everything after “Historical P1-6d contract” is
 retained history, including older authority, task DAGs, allowlists and removal
 gates. Prior review references there do not replace current runtime decisions.
-Status: design accepted; aligned plan review and production repair pending.
+Status: design accepted; catalog ownership plan review/checkpoint and repair pending.
 Preserve the checkpoint above and ancestor P1-6d commit
 `59f45c1a126d451fbe2eaf775306785d53b518d2` on `feat/remaining-impl-plans`.
 
@@ -90,7 +109,7 @@ Preserve the checkpoint above and ancestor P1-6d commit
 Complete the existing two example bundles and prove their task behavior through
 real WorkStore, TaskDispatch, WorkflowRunCommand and decision application.
 Standalone mocks supplement real task tests. Both bundles and the existing example
-test methods already exist; inventory and strengthen them instead of rebuilding
+test methods already exist; preserve them and repair only proven defects instead of rebuilding
 accepted P1-6d. TaskExampleHarness lives in TaskDispatcherIntegrationTests.swift.
 The old broad run failed 19 assertions, one belonging to these examples;
 “historical non-slice” for P1-6d is not an exemption for P1-7b.
@@ -100,8 +119,8 @@ recursive director, new orchestration abstraction, unrelated failure repair,
 Monja work, broad formatting, lockfile regeneration or global plan archiving.
 No workflow/package provenance rediscovery. No reset, stash, revert, force push, broad staging,
 main merge, private branch, worktree or concurrent Git operation. Shared state
-and source edits are serial. The bounded amendment above adds only
-`Sources/RielaCLI/WorkflowRunCommand.swift`; any further
+and source edits are serial. Retain the previously authorized
+`Sources/RielaCLI/WorkflowRunCommand.swift` correction; any further
 production path needs a separately reviewed exact-path amendment.
 
 ```json
@@ -126,6 +145,8 @@ production path needs a separately reviewed exact-path amendment.
     "examples/task-agent-director/README.md",
     "examples/task-agent-director/EXPECTED_RESULTS.md",
     "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+    "Tests/RielaCLITests/RielaExampleCatalog.swift",
+    "Tests/RielaCLITests/RielaExampleParityTests.swift",
     "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
     "impl-plans/progress/p1-dispatch.md"
   ],
@@ -153,10 +174,10 @@ commands or substitute advisory findings for the formal downstream reviews.
 
 | Task / dependency | Exact work and acceptance evidence |
 | --- | --- |
-| B0 / none | Read accepted §17.9, this contract, progress, both bundles and existing tests/harness. Inventory each of the seven acceptance rows below against named tests; capture clean/staged/WIP status, source manifest, repository lint baseline and exact owners. Run existing example tests to identify the known failure before repair. Do not claim an uncovered row from test names alone. |
-| B1 / B0 | Retain repair → verification and one-worker director bundle shapes. In listed workflow/node/prompt/mock paths, change only proven load/output inconsistencies. Keep mock keys equal to node IDs, no credentials and stable business output. In each README/EXPECTED_RESULTS distinguish standalone completion from task acceptance, explain existing store-based fixture setup and the seven behaviors covered by tests. No new task-create command. |
-| B2 / B1 and amendment plan acceptance | First apply the bounded reservation-aware finalization correction only in Sources/RielaCLI/WorkflowRunCommand.swift, including both RunFinalizeContext call sites. Preserve the existing recovery fixture; demonstrate both exact regressions above before B3. Strengthen TaskRuntimeExampleTests using the existing harness; edit TaskDispatcherIntegrationTests only if a necessary fixture control is missing. Retain and verify the existing rejected-gate → consumed recovery → passing-gate real lifecycle test. Correct the guard CLI assertion only after observing the current terminal contract. Strengthen durable capacity absence, accounting and invalid-output replay assertions where missing; reuse accepted director cases. Deliver named test-to-requirement mapping with exact assertions. |
-| B3 / B2 | Serial join against intent records; run final-source build, both exact amendment regressions, V1 before-removal, affected focused suites, V8 mocks, V11, strict lint, diff and serial broad tests below. Classify every broad failure by exact test/assertion/cause/ownership. Repair new or slice-owned failures; rerun invalidated gates. Preserve failed evidence. Deliver complete verification manifest, counts and source identities. |
+| B0 / accepted and pushed amendment checkpoint | Read §17.9, current plan/manifest, preserved WIP and prior integration receipts. Record source hashes, status, exact owners and seven-case assertion inventory. Confirm both catalog omissions and count-selection logic read-only; prior final5 evidence is historical unless identity remains valid. |
+| B1 / B0 | Reconcile and preserve existing bundle, production correction and seven lifecycle cases against their receipts. Retain existing README/EXPECTED_RESULTS behavior distinctions. Do not reimplement completed work or edit the shared harness without a demonstrated material defect within existing ownership. |
+| B2 / B1 | Under one serial owner add both names in RielaExampleCatalog.swift and update only affected expected mock counts in RielaExampleParityTests.swift based on observed execution. Keep all assertions and existing exclusions. Deliver exact diff and named test-to-requirement mapping; retain the production correction and standalone regression unchanged unless a material in-scope repair is proven. |
+| B3 / B2 | Serial join against immutable intents; run build, catalog validation and catalog mock tests, both exact regressions, TaskRuntimeExampleTests, V1 before-removal, affected suites, V8, V11, strict lint, diff and serial broad tests below. Record positive counts, observed mock counts, complete logs/final exits/source identity. Classify every failure by exact identity/cause/owner/follow-up; resolve all P1-7b failures and renew invalidated evidence. |
 | B4 / B3 plus formal reviews | After formal test-integrity, single adversarial and Astra combined-tree acceptance with no material P1-7b defect, refresh directly affected shared docs and progress. Prepare exact reviewed file allowlist, then downstream commit/non-force push. Leave P1-7a, parent P1 and unrelated broad follow-ups open. |
 
 Task DAG: B0 → B1 → B2 → B3 → formal test-integrity/single adversarial
@@ -165,17 +186,12 @@ Use native Riela sequencing; no nested shell orchestration or implementation
 fanout is needed. B3 implementation evidence can complete before later review
 steps; B4 and publication cannot be claimed early.
 
-After Step 5 accepts, hand this plan to the current workflow’s single-owner
-implementation step. Reconcile retained B0–B2 work from its existing receipts;
-do not rebuild or overwrite completed WIP. That run follows the sequence above. The accepted bounded design/plan checkpoint is already committed and pushed
-at c8840ad4a7028c5bf22e8d61106ab3b98f505670. This continuation schedules serial
-implementation, not native implementation/review fanout; it adds no early
-commit/push gate. Do not dispatch fanout from uncommitted revised plans.
-Commit only reviewed exact paths, including the accepted design and plan, after
-implementation verification, formal reviews and B4 documentation gates; then
-non-force push that accepted commit. Preserve the user's index and exclude
-scratch and unrelated work. Historical checkpoint instructions below do not
-apply to this execution. Step 4 itself does not commit or push.
+After Step 5 acceptance and successful exact-file amendment checkpoint/push,
+hand the single plan to native Riela dispatch. Reconcile prior work, then perform
+the new catalog/count repair and fresh evidence; do not repeat unchanged Step 6
+receipts. Any checkpoint push failure stops dispatch. Formal implementation
+reviews precede B4 and the final exact-file implementation commit/non-force push.
+Step 4 itself does not commit, push, implement or run behavioral tests.
 
 ### Invariants and executable test intent
 
@@ -231,7 +247,7 @@ all edits serially before checks and review. Preserve unrelated WIP and index.
 For every command record exact invocation, start/end, complete stdout/stderr log,
 terminal exit, source manifest hash and positive per-suite test counts in
 `verification-evidence.json` under that attempt. Manifest membership includes
-Sources, Tests, Package.swift, Package.resolved and both example trees, including
+Sources, Tests, Package.swift, Package.resolved and all catalog example trees, including
 new files; compare SHA-256 and membership before/after runs. A moving source
 invalidates the affected receipt. Separate B0 baseline from final-source logs.
 Update progress with task status, requirement→test mapping, commands/logs/counts,
@@ -256,7 +272,7 @@ tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-
 tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/repair-store --output json
 tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json
 tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/director-store --output json
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel
 git diff --check
 git diff --cached --check
 ```
@@ -269,6 +285,23 @@ Assign complete logs respectively: `build.log`, `examples-tests.log`,
 and matching fresh session-store roots, retaining all earlier logs/exits.
 V8 operates only on these repository examples, never the executing workflow.
 Compare mock business outputs to EXPECTED_RESULTS, not just exit status.
+
+Run the catalog commands separately after B2; each must execute at least one
+test, exit 0 and retain existing assertions. Save `catalog-validation.log` and
+`catalog-mocks.log`, recording observed total and node-runtime mock counts and
+proof both replacement bundles executed:
+
+```bash
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter RielaExampleParityTests.testAllRielaExampleWorkflowsArePortedAndValidateInSwift
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter RielaExampleParityTests.testMockScenarioExamplesRunThroughSwiftCLI
+```
+
+Run both exact recovery/standalone commands above separately with their named
+logs. Prior final5 does not replace these renewed gates. Catalog edits invalidate
+catalog/mock and broad receipts. The changed Swift lint manifest includes the
+retained WorkflowRunCommand.swift and TaskRuntimeExampleTests.swift changes plus
+both newly owned catalog/parity paths, and any other surviving authorized Swift
+change. Do not limit lint to just this continuation's edits.
 
 Before Swift edits and after final changes capture repository lint diagnostics;
 compare attributable new findings without fixing unrelated baseline issues:
@@ -294,7 +327,8 @@ denial are failed/blocked evidence, never behavioral passes. Record any justifie
 toolchain/cache adjustment with its exact command and full log; do not omit a
 required gate. The broad command is fresh and serial on final source. Classify
 each failure by test/assertion, cause, source identity and ownership, comparing
-the prior nineteen identities only as historical context. Resolve every new or
+prior failure identities only as historical context. The catalog assertion is
+P1-7b-owned even if present in older P1-6d runs. Resolve every new or
 P1-7b-owned failure. Unrelated failures remain **FAILED**, with explicit owner/
 follow-up and formal slice-only review disposition; no unrelated repair.
 
@@ -305,9 +339,9 @@ with `source-files.txt`, then run the checksum check. Log each exit; never
 regenerate the baseline checksums to hide drift.
 
 ```bash
-rg --files Sources Tests examples/task-repair-loop examples/task-agent-director Package.swift Package.resolved | LC_ALL=C sort > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt
+rg --files Sources Tests examples Package.swift Package.resolved | LC_ALL=C sort > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt
 while IFS= read -r source_path; do shasum -a 256 "$source_path" || exit; done < tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source.sha256
-rg --files Sources Tests examples/task-repair-loop examples/task-agent-director Package.swift Package.resolved | LC_ALL=C sort > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/current-files.txt
+rg --files Sources Tests examples Package.swift Package.resolved | LC_ALL=C sort > tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/current-files.txt
 cmp tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source-files.txt tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/current-files.txt
 shasum -a 256 -c tmp/work-runtime-p1/p1-dispatch/p1-7b/attempt-1/source.sha256
 ```
@@ -317,9 +351,11 @@ cannot appear successful merely because sorting succeeded.
 
 ### Completion gates
 
+- [ ] Step 5 acceptance and exact design/plan/manifest checkpoint/non-force push.
 - [ ] B0 inventory/baseline and exact ownership recorded.
 - [ ] B1 minimal bundles and truthful README/EXPECTED_RESULTS agree.
-- [ ] B2 one-file correction and both exact amendment regressions pass; all
+- [ ] B2 both catalog entries and observed expected mock counts corrected;
+  catalog validation/mock tests and both exact amendment regressions pass; all
   seven rows proven at real task boundaries; retained tests preserved.
 - [ ] B3 final-source build, V1 before-removal, affected focused/V11, V8, strict
   lint, diff and serial broad evidence complete; new/slice failures resolved.

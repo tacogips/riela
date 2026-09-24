@@ -1,8 +1,366 @@
+# Work Runtime P1-6c: selected-host late-cancellation regression repair
+
+**Mode / issue:** `issue-resolution`; Work Runtime P1-6c, no GitHub issue supplied.
+**Status:** Step 3 accepted for implementation planning with no findings via
+`comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
+`codex-design-and-implement-review-loop-session-1`. Step 5 plan review pending.
+**Accepted design:** `design-docs/specs/design-work-runtime-consolidation.md`,
+“Selected-host regression repair amendment”, “Ordering diagnosis and bounded
+repair decision”, and preserved P1-6c arbitration contract. SHA-256:
+`6eee525c2ae72de3b896cdbce0c9b5b137df270b4cb984517ff60bf2ca8f5ca6`.
+**Roles:** Single Step 2 design author; Step 3 independent design reviewer;
+single Step 4 plan author; serial implementation owner; independent test-integrity
+reviewer; single adversarial reviewer; Astra exact combined-tree reviewer.
+These codex-agent references are workflow roles, not reference behavior. Cursor
+CLI mapping and intentional divergences are not applicable.
+
+## Current executable contract
+
+Only this contract and its first JSON block schedule current work. All content
+below “Historical preserved contracts” is retained verbatim as history, including
+its obsolete scheduling metadata and evidence-readiness statements.
+
+### Intent, context, scope and invariants
+
+Repair the actual terminal/cancellation contract or its faulty deterministic
+injection, without weakening assertions. Preserve checkpoint `ce70301`, helper
+merge `b06295d`, accepted design/plan history and all pre-existing tracked and
+untracked WIP on `feat/remaining-impl-plans`. No resets, force pushes, broad
+staging, private branches, worktrees, concurrent Git writes or unrelated repairs.
+Runner-resolved provenance and effective workflowInput are authoritative; registry
+rediscovery is not work. No new schema, transport, scheduler, framework or adapter.
+P1-6d, P1-7a/b, parent P1, non-slice failures, main integration and release are out
+of scope. Do not reopen the merged subprocess helper fix.
+
+Intake source manifest:
+`tmp/work-runtime-p1-6c-after-helper-review-20260924-9fbcc7126181/final-source-after-retry.sha256`
+(SHA-256 `dc6cec7251a8607b20b65ccaddb775606352b7556556209e6985bf1328409cd6`).
+Host failure log: `tmp/work-runtime-p1-6c-final-host/selected-host.log`
+(SHA-256 `4dc832737ba4ace589f4bcf26ea0aa76d141a7cdb92a4673b3f28d6343a857b2`),
+1 test, 3 assertions, operator-reported exit 1. The before-terminal check saw a
+terminal session, `adapterFailure` replaced expected `cancelled`, and cancellation
+record unwrap failed. Historical 136/136 and 2057/19 logs cannot accept this source.
+
+Keep shared SQLite transaction arbitration: request-first blocks ordinary terminal
+commit; terminal-first rejects late cancellation without mutating the winner.
+Do not convert `adapterFailure` to cancellation or overwrite an already terminal
+snapshot. Request commits before interruption. Exact task/attempt/session identity,
+selected placement without fallback, owned worker stop proof, atomic acknowledgment
+and fence release, stable replay and once-only accounting remain mandatory. Transport
+acceptance, lost heartbeat and lease expiry are not stop proof. Uncertain stop or
+failed persistence remains fenced. Preserve real EntryPoint SIGINT coverage and
+both trigger/race-order cases. Test hooks unset must preserve production behavior.
+
+### Scheduling and path ownership
+
+One plan covers the entire requested batch. All coupled source edits have one
+serial owner. The candidate paths below are conditional repair scope, not a demand
+to edit each file. Other preserved WIP remains unchanged and enters combined review;
+its presence does not authorize unrelated changes.
+
+```json
+{
+  "planId": "p1-dispatch",
+  "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+  "dependsOn": [],
+  "writePaths": [
+    "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+    "Sources/RielaCLI/WorkflowRunCommand.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "README.md",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/progress/p1-dispatch.md"
+  ],
+  "sharedPaths": [
+    "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+    "Sources/RielaCLI/WorkflowRunCommand.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "README.md",
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/progress/p1-dispatch.md"
+  ],
+  "taskIds": [
+    "P1-6c-baseline",
+    "P1-6c-store",
+    "P1-6c-runner",
+    "P1-6c-tests",
+    "P1-6c-verify",
+    "P1-6c-integrity",
+    "P1-6c-adversarial",
+    "P1-6c-reconcile",
+    "P1-6c-astra",
+    "P1-6c-finalize"
+  ],
+  "taskDependencies": {
+    "P1-6c-baseline": [],
+    "P1-6c-store": [
+      "P1-6c-baseline"
+    ],
+    "P1-6c-runner": [
+      "P1-6c-store"
+    ],
+    "P1-6c-tests": [
+      "P1-6c-runner"
+    ],
+    "P1-6c-verify": [
+      "P1-6c-tests"
+    ],
+    "P1-6c-integrity": [
+      "P1-6c-verify"
+    ],
+    "P1-6c-adversarial": [
+      "P1-6c-verify"
+    ],
+    "P1-6c-reconcile": [
+      "P1-6c-integrity",
+      "P1-6c-adversarial"
+    ],
+    "P1-6c-astra": [
+      "P1-6c-reconcile"
+    ],
+    "P1-6c-finalize": [
+      "P1-6c-astra"
+    ]
+  },
+  "acceptedPrerequisites": {
+    "P1-6a": "2f10916a14501af68fd7e7f63cb91f244a343f8c",
+    "P1-6b": "7d8fc121a4f4469de7a40495282b53c9d813b8d4"
+  },
+  "progressLogPath": "impl-plans/progress/p1-dispatch.md",
+  "evidenceDirectory": "tmp/work-runtime-p1/p1-6c/selected-host-repair/",
+  "dependencyMode": "single-plan-serial-repair-with-independent-read-only-review"
+}
+```
+
+### Tasks, dependencies and exact deliverables
+
+1. **P1-6c-baseline**: Before source edits, read the complete failed log and check
+   the intake manifest/digests. Record HEAD/status, staged paths (initially empty),
+   every preserved WIP path and preimage hash. Preserve source drift for diagnosis;
+   never reset. Deliver `baseline.json` and requirement-to-test matrix. Identify
+   the exact writer of `adapterFailure` by tracing the reserved session through
+   initial terminal candidate, injected error, subsequent live/final saves,
+   execution/observer join, initial cancellation observation, request insertion
+   and joined persistence. Record canonical status, request presence and selected
+   job status at each boundary. Use existing seams or minimal scoped test-only
+   instrumentation, not sleeps or synthetic terminal rows. Deliver
+   `ordering-diagnosis.json` naming writer/call path and evidence, and distinguish
+   fixture timing from any demonstrated request-first arbitration defect.
+2. **P1-6c-store**, after baseline: Inspect
+   `Sources/RielaWork/WorkStore+Decisions.swift`, `WorkStore+Reservation.swift` and
+   `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`. Repair only a
+   demonstrated bypass of transaction-scoped exact-session arbitration; otherwise
+   record no change. Keep decision replay before current-state validation,
+   terminal-first rollback and proof-required joined-persistence behavior.
+   Add a targeted regression in `Tests/RielaWorkTests/WorkStoreCancellationTests.swift`
+   or `DecisionApplierStoreTests.swift` only if this seam changes. Deliver exact
+   finding-to-change mapping and evidence for unchanged/changed paths.
+3. **P1-6c-runner**, after store: Serially repair the diagnosed seam in
+   `Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift`,
+   `WorkflowRunCommand.swift`, `TaskRunCancellation.swift` or `TaskDispatch.swift`.
+   Audit alternate canonical writers in `CLIWorkflowSessionStore.swift`,
+   `WorkflowRunLivePersistence.swift` and
+   `WorkflowRunCommand+SupervisionPersistence.swift`; edit only if demonstrated
+   bypass requires it. The current one-shot throwing hook prevents one write,
+   not later error/final writes. Provide minimal deterministic fixture control of
+   those writes without bypassing the production transaction guard; retain
+   persistence-failure regression coverage. Preserve owned/joined execution and
+   proof retry. Deliver a boundary trace demonstrating the intended sequence,
+   with unchanged unset-hook behavior. No general hook framework or new public CLI.
+4. **P1-6c-tests**, after runner: Update
+   `Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift` and
+   `TaskCancellationIntegrationTests.swift`. Keep the named test
+   `testLateSelectedHostCancellationAfterObservationRetriesWithStopProof` and all
+   existing assertions. Establish these events explicitly in order: selected
+   `/bin/true` job finishes and execution joins; canonical session is nonterminal
+   and request absent; initial cancellation observation sees no request; separate
+   store connection commits exact cancellation; joined persistence rejects lack
+   of selected-host proof; owner obtains matching completed-job proof and retries;
+   dispatch acknowledges canonical cancelled result. Assert entry into the proof
+   retry, not only final state. Keep succeeded remote-job assertion, exact cancelled
+   failure kind, cancellation record, reconciled attempt and cancelled task.
+   Preserve separate running-worker leader/child stop checks and uncertain-proof
+   fencing. Retain terminal-first success and ordinary-failure preservation,
+   request-first local/remote behavior, both SIGINT/external triggers, replay and
+   once-only accounting. Deliver updated requirement-to-test matrix and exact
+   assertion/event evidence. If production persistence changed, run existing
+   live-persistence regressions and add only a missing material regression there.
+5. **P1-6c-verify**, after tests: One build/test owner freezes repaired source and
+   runs the commands below in foreground, selected host test first after build,
+   then store/focused/compatibility and serial aggregate on the same source.
+   Preserve full logs, counts, exits, toolchain/env and before/after manifests.
+   Independently classify all aggregate failures against the historical inventory;
+   no P1-6c or unclassified material failure may advance. Missing capable-host
+   execution produces a precise blocked handoff; sandbox listener denial never
+   substitutes. Historical green counts do not waive any fresh test gate.
+6. **P1-6c-integrity** and **P1-6c-adversarial**, after verify: Independent read-only
+   reviewers may run in parallel. Integrity verifies actual ordering, test selection,
+   assertions, proof retry, process stop and exact-source evidence. The single
+   adversarial reviewer assesses only material correctness/spec/regression risks
+   and coverage, including all preserved WIP. Each writes separate
+   `reviews/<role>/` artifacts with exact tree hashes, commands, evidence, findings
+   and accept/reject decision. No implementation edits or concurrent SwiftPM runs.
+7. **P1-6c-reconcile**, after both reviews: Serial owner joins hashes and intent
+   snapshots, checks overwritten/drifted bytes and repairs every high/mid finding.
+   Any source/test repair renews manifests, selected/focused/aggregate verification
+   and affected independent reviews before proceeding. Deliver reconciled exact
+   combined-tree manifest and closed finding ledger; do not hide non-slice failures.
+8. **P1-6c-astra**, after reconciliation: Astra independently reviews exact combined
+   source/tests/docs and evidence, including preserved WIP. Accept only with no
+   material P1-6c defect or verification gap. Deliver explicit decision and hashes.
+9. **P1-6c-finalize**, after Astra acceptance: Serial owner updates the P1-6c section
+   of `design-docs/specs/design-work-runtime-consolidation.md`, this active plan,
+   `impl-plans/progress/p1-dispatch.md` and affected `README.md` wording only if
+   needed. Distinguish slice completion from open P1-6d, P1-7a/b, parent P1 and the
+   failed broad gate. Obtain Astra reaffirmation on final documentation/tree.
+   Workflow finalization exact-file commits then non-force pushes; retain matching
+   commit/push hashes and actual file allowlist. No source changes after acceptance
+   without renewed gates. Do not archive the active parent plan.
+
+### Checkpoint, drift and progress contract
+
+Step 4 writes only this plan. After Step 5 accepts, runtime serial checkpointing
+commits exactly the accepted design and plan before native implementation/review
+fanout; it preserves source/progress WIP. This planning checkpoint is distinct
+from the acceptance-gated implementation commit/push. Do not checkpoint in Step 4.
+
+Before each edit fresh-read the exact path, save preimage bytes/SHA-256, requirement
+and owner under an immutable `intents/<unique-id>/` directory in the evidence root.
+Compare current bytes to preimage immediately before writing; drift stops edits
+for serial reconciliation. Save postimage/hash (or original absence for a new
+file). At joins compare actual bytes to all intent snapshots and review manifests.
+Shared indexes, lockfile generation, broad formatting and global archiving belong
+to serial reconciliation/finalization and are not requested by this slice.
+Only the serial owner updates `impl-plans/progress/p1-dispatch.md`; reviewers write
+their own evidence/progress artifacts. Record task/communication IDs, completion
+state, paths/hashes, commands, positive counts, exits, findings and next action.
+No review or completion checkbox advances on missing or unfinished evidence.
+
+### Evidence-producing verification commands
+
+Use fresh `tmp/work-runtime-p1/p1-6c/selected-host-repair/attempt-001/` (increment
+attempt number if it exists). Never overwrite prior evidence. Capture each command's
+entire stdout/stderr to a named log and record actual terminal exit, exact argv,
+start/end source hashes, toolchain/environment and XCTest counts in
+`verification.json`. Do not pipe commands in a way that loses their exit status.
+Poll yielded handles until terminal exit. No detached/background shell jobs.
+
+Baseline commands (logs: `head.log`, `status.log`, `intake-digests.log`,
+`intake-source-check.log`, `intake-host-log.txt`):
+
+```bash
+git rev-parse HEAD
+git status --short
+shasum -a 256 tmp/work-runtime-p1-6c-after-helper-review-20260924-9fbcc7126181/final-source-after-retry.sha256 tmp/work-runtime-p1-6c-final-host/selected-host.log
+shasum -a 256 -c tmp/work-runtime-p1-6c-after-helper-review-20260924-9fbcc7126181/final-source-after-retry.sha256
+cat tmp/work-runtime-p1-6c-final-host/selected-host.log
+```
+
+Expect 973 matched intake entries and the digests above, or diagnose drift before
+editing. Intake test exit 1 comes from the authoritative operator receipt; `cat`
+exit 0 is not a test pass. For repaired source, generate a new manifest once:
+
+```bash
+python3 -c 'import hashlib,pathlib,subprocess; paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; out=pathlib.Path("tmp/work-runtime-p1/p1-6c/selected-host-repair/attempt-001"); out.mkdir(parents=True,exist_ok=True); (out/"membership.nul").write_bytes("\0".join(paths).encode()+b"\0"); (out/"final-source.sha256").write_text("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths))'
+```
+
+Before and after tests run both membership and hash checks; do not regenerate the
+baseline to conceal drift. Log these as `membership-before/after.log` and
+`source-before/after.log`; record manifest SHA-256 in the receipt:
+
+```bash
+python3 -c 'import pathlib,subprocess; saved=pathlib.Path("tmp/work-runtime-p1/p1-6c/selected-host-repair/attempt-001/membership.nul").read_bytes().split(b"\0")[:-1]; current=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","Sources","Tests","Package.swift","Package.resolved"]).split(b"\0")))); assert saved==current and len(saved)==len(set(saved)); print("membership matched",len(saved))'
+shasum -a 256 -c tmp/work-runtime-p1/p1-6c/selected-host-repair/attempt-001/final-source.sha256
+shasum -a 256 tmp/work-runtime-p1/p1-6c/selected-host-repair/attempt-001/final-source.sha256
+```
+
+Include every changed Swift file (preserved WIP and untracked files included) in
+an explicit reviewed NUL-separated `changed-swift-files.nul`; reject missing or
+empty entries. Hash the combined review tree separately, including exact candidate
+commit allowlist and docs/progress, since the source manifest excludes docs.
+
+Commands below produce `build.log`, `selected-host.log`, `store-decisions.log`,
+`focused.log`, `compatibility.log`, `aggregate.log`, `swiftlint.log`, `diff-check.log`
+and `cached-diff-check.log`, respectively. Build is compile/typecheck verification.
+Swift edits follow the repository Swift skill, including strict lint and meaningful
+responsibility-based splitting for edited Swift files over 1,000 lines; no unrelated
+cleanup. No web/UI changes are planned, so browser/UI verification is inapplicable.
+
+```bash
+swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests/testLateSelectedHostCancellationAfterObservationRetriesWithStopProof'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionDecisionApplierStoreTests|DecisionApplierStoreTests|TaskCommandParsingTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests|DistributedProcessCancellationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|WorkflowCommandLivePersistenceTests|WorkflowCommandLivePersistenceEventTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests|SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel --filter 'RielaCLITests|RielaWorkTests|RielaCoreTests|RielaServerTests'
+xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6c/selected-host-repair/attempt-001/changed-swift-files.nul
+git diff --check
+git diff --cached --check
+```
+
+Selected regression, store, focused and compatibility gates require positive
+per-requested-suite counts and exit 0, with exact new regression names in logs.
+Build/lint/diff/hash checks require exit 0 but have no test count. Aggregate must
+finish with complete counts and exit; compare every failure to inventory
+`tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json`.
+Do not demand historical counts after adding tests. Historical non-slice owners:
+IDs 1–7 doctor/backend-capability, 8 P1-7b examples, 14–21 workflow-command/host
+readiness, 22 runner admission, 23–24 temporary workflow/host requirements. Keep
+IDs 9–13 repaired catalog/projection coverage. Independently justify classification
+using assertion identity, source history and changed dependencies; unknown/material
+P1-6c failures block acceptance. Broad gate remains FAILED until an actual passing
+aggregate; classification alone is not a green gate. Do not repair unrelated failures.
+
+### Completion and self-check expectations
+
+Plan readiness requires valid metadata/DAG, accepted-design mapping, concrete
+file/task ownership and evidence commands. Implementation completion additionally
+requires diagnosed writer, repaired deterministic ordering and any proven product
+fault, unchanged assertions, source-matched capable-host gates, explicit acceptance
+from integrity/adversarial/Astra reviewers, final docs/tree reaffirmation and matching
+exact-file commit/non-force push receipts. Missing host evidence means incomplete
+implementation, not missing plan work. No open user decision; diagnosis determines
+fixture versus product repair. No Step 5 feedback supplied; Step 3 has no findings.
+
+Step 4 self-check evidence is under `tmp/p1-6c-plan-repair/`: metadata/path/DAG and
+accepted-design hash checks, verbatim historical preservation, pre/post hashes,
+source manifest check and whitespace check. These are planning checks, not new
+Swift test execution or implementation acceptance.
+
+## Historical preserved contracts
+
 # Work Runtime P1: P1-6c post-helper final review
 
 **Status:** Step 3 accepted the revised design for planning, without findings,
-`comm-000004`, `step3-design-review-attempt-1-exec-4`. Repaired implementation WIP is preserved; formal test-integrity, adversarial
-and Astra exact combined-tree acceptance remain pending. Broad aggregate remains FAILED.
+`comm-000004`, `step3-design-review-attempt-1-exec-4`. Repaired implementation WIP is preserved. A bounded Step 6 selected-host stop-proof timing repair has local build, test and lint evidence; source-matched capable-host focused and aggregate verification, formal test-integrity/adversarial and Astra exact combined-tree acceptance remain pending. Broad aggregate remains FAILED.
 **Workflow mode:** `issue-resolution`.
 **Issue:** Work Runtime P1-6c — Review and finalize late-cancellation repair
 on final capable-host source; no GitHub issue URL or number supplied.

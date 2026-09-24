@@ -1120,14 +1120,110 @@ number supplied), mode `issue-resolution`, intake `comm-000002` from
 `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 This amendment and its implementation plan were accepted at checkpoint
 `0a74a070670a5cb73f6cd18e035adf61732a0b07` on `feat/remaining-impl-plans`.
-The current intake, “Review and finalize P1-6c late-cancellation repair on final
-capable-host source”, preserves that design and the repaired implementation WIP.
+The current intake, “Repair P1-6c selected-host late-cancellation regression
+exposed on capable host”, preserves that design and implementation WIP, including
+checkpoint `ce703014c3d78113897d640f85825f5115ae0376`. The repair amendment below
+supersedes prior evidence-readiness statements; it does not replace the accepted
+arbitration contract.
 Preserve all checkpoints and helper merge `b06295d5c3fbc42528d0382014ded0e9118dfa88`
 on `feat/remaining-impl-plans`. The subprocess wait helper repair is already
 merged; this slice does not reopen it. The prior high-severity late-cancellation
 finding motivates the arbitration contract below; repaired WIP and current host
-evidence now require renewed formal review, not a new architecture. P1-6c is
+evidence now require bounded regression repair, fresh verification and renewed
+formal review, not a new architecture. P1-6c is
 not yet accepted. P1-6d, P1-7a/b and parent P1 remain open.
+
+**Selected-host regression repair amendment (current intake).** The complete
+`tmp/work-runtime-p1-6c-final-host/selected-host.log` records one executed
+`testLateSelectedHostCancellationAfterObservationRetriesWithStopProof` test and
+three assertion failures at fixture lines 340, 275 and 276: canonical state was
+already terminal at injection, failure kind was `adapterFailure`, and no
+`AttemptCancellationRecord` existed. Intake reports host exit 1. Step 2 read the
+complete log and verified SHA-256
+`4dc832737ba4ace589f4bcf26ea0aa76d141a7cdb92a4673b3f28d6343a857b2`.
+Before editing this document, the check of
+`tmp/work-runtime-p1-6c-after-helper-review-20260924-9fbcc7126181/final-source-after-retry.sha256`
+exited 0 with 973/973 entries; its digest is
+`dc6cec7251a8607b20b65ccaddb775606352b7556556209e6985bf1328409cd6`.
+The check log is `tmp/p1-6c-design-repair/intake-manifest-check.log`.
+The older 136-test pass and 2,057-test/19-assertion aggregate below are historical,
+not acceptance of this failed source or its future repair. The broad gate remains
+failed. This is a capable-host regression, not a listener-denial result.
+
+**Ordering diagnosis and bounded repair decision.** The current fixture in
+`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift` uses
+`/bin/true` on the selected worker and throws from `beforeTerminalPersistence`.
+`FailClosedSQLiteWorkflowRuntimeStore.swift` marks that hook as run before calling
+it; a throw prevents that write, not every later terminal write.
+`WorkflowRunCommand.swift` also has final persistence. In
+`TaskRunCancellation.swift`, `afterCancellationObservation` runs only after
+execution and observer join and the first pending-request/stop-proof check.
+Thus the fixture's single throw does not establish a nonterminal canonical
+session at the late injection boundary. The log proves that precondition failed;
+source ordering suggests a subsequent error/final save, but the exact winning
+writer must be identified before claiming root cause or changing production.
+
+The serial owner must trace the reserved session through the initial terminal
+candidate, injected error, subsequent live/final saves, observer join, first
+cancellation observation, request commit and joined-cancellation persistence.
+Record canonical state, request presence and selected-job completion at those
+boundaries using existing seams or minimal test-only instrumentation. No sleeps
+or synthetic terminal rows establish this ordering. If the request was attempted
+after an ordinary terminal commit, retain terminal-first rejection, including
+ordinary failure; never reinterpret `adapterFailure` as cancellation or overwrite
+that winner. Repair the fixture's control of terminal writes so the named late
+regression reaches its intended nonterminal window. If a real request-first
+write is bypassed by any terminal writer, repair that existing arbitration seam
+as well. Do not remove persistence-failure coverage to hide a production defect.
+
+For this named regression the required sequence is: selected execution finishes
+and is joined; the canonical session remains nonterminal with no request; the
+initial cancellation observation finds no request; a separate store connection
+commits the exact attempt's cancellation; joined persistence discovers that
+selected-host stop proof is still required; the owner obtains matching worker
+completion proof and retries persistence; dispatch acknowledges the exact
+cancelled snapshot. A succeeded remote `/bin/true` job can prove stopped work
+without making the workflow session terminal first. Demonstrate entry into the
+proof-required retry, rather than relying only on final cancelled state. Retain
+all existing assertions and strengthen ordering evidence as necessary. Preserve
+the separate running-worker cancellation test's leader/child stop checks and
+uncertain-stop fence retention. A hook must not bypass the transaction guard or
+change ordinary production behavior when unset. No new schema, transport,
+coordinator or adapter is justified.
+
+**Current acceptance and planning handoff.** Step 4 updates the complete batch
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` in native
+dependency-ready Riela waves: ordering diagnosis precedes serial repair, then
+verification, independent test-integrity and single adversarial review, serial
+reconciliation and Astra exact combined-tree acceptance. Existing accepted plan
+history and WIP remain preserved. Run the following selected regression first
+on repaired source on a listener-capable host, followed by the affected focused
+suite and serial aggregate in the repaired-source command contract below:
+
+```bash
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests/testLateSelectedHostCancellationAfterObservationRetriesWithStopProof'
+```
+
+The selected regression and affected focused tests require positive test counts
+and exit 0. Capture all command arguments, complete logs, actual terminal exits,
+counts and a matching source/build-input manifest before and after tests under a
+fresh repository-root `tmp/` evidence directory. The serial aggregate must finish;
+classify every failure against preserved non-slice evidence independently. Any
+P1-6c failure or unclassified material failure blocks acceptance; unrelated
+failures remain visible and do not become a green broad gate. Source edits require
+new evidence and reviews. Listener denial cannot satisfy these gates. Historical
+instructions below to inspect existing receipts first do not waive these reruns.
+Only after all three formal reviews accept without material P1-6c findings may
+completion documentation distinguish this slice from P1-6d, P1-7a/b, parent P1
+and the failed broad gate, followed by exact-file commit and non-force push.
+
+**Open technical questions and design review status.** Implementation must identify
+which writer committed `adapterFailure` and whether corrected ordering exposes
+an additional arbitration defect. These are bounded diagnostic work, not unresolved
+user choices; no user-QA file is needed. No new Step 3/5 feedback was supplied.
+Step 2 approves this document for independent design review only; implementation,
+test-integrity, adversarial and Astra acceptance remain pending. No current host
+pass or closure of the prior high cancellation finding is claimed.
 
 **Continuation boundary.** Preserve all 28 modified tracked files and three
 untracked Swift files listed by intake, plus the initially empty staged state.
@@ -1367,7 +1463,7 @@ Obtain source-matched capable-host focused and serial aggregate logs. Preserve
 the 19 owned non-slice failures below until new evidence establishes their
 actual disposition; the broad aggregate remains FAILED until it passes.
 
-**Current post-helper capable-host evidence (2026-09-24).** The authoritative
+**Historical post-helper capable-host evidence (2026-09-24).** The prior
 receipt is `tmp/work-runtime-p1-6c-after-helper-acceptance/host-evidence.json`.
 Its source manifest covers `Sources/`, `Tests/`, `Package.swift` and
 `Package.resolved`. Step 2 independently checked all 973 hashes and exact

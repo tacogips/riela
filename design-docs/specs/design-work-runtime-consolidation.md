@@ -1120,26 +1120,22 @@ number supplied), mode `issue-resolution`, intake `comm-000002` from
 `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 This amendment and its implementation plan were accepted at checkpoint
 `0a74a070670a5cb73f6cd18e035adf61732a0b07` on `feat/remaining-impl-plans`.
-The current intake, “Finalize P1-6c after real SIGINT regression and source-matched
-host verification” (local request; no issue URL or number), continues that accepted
-design after the real EntryPoint SIGINT regression was added and an operator-host
-run supplied post-regression evidence. Historical Step 6 read-only audits are
-advisory and do not constitute renewed formal acceptance. It does not reopen §17.2 or the later “Live
-cancellation (P1-6c)” contract. Preserve P1-6a/b behavior and the P1-6b accepted
-publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
-`impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
+The current intake, “Repair P1-6c late cancellation versus terminal persistence
+race”, supersedes the prior evidence-only continuation. Preserve checkpoint
+`2e7a264f1ec6604a72d1bbdfe80cab9f81ca6220` and all existing WIP on
+`feat/remaining-impl-plans`. The prior terminal handoff in
+`tmp/work-runtime-p1-6c-post-sigint/workflow.jsonl` rejected implementation for
+a high-severity race; integrity accepted historical evidence only, and Astra
+combined-tree acceptance remains pending. This amendment repairs that concrete
+boundary without reopening the decision-identity contract or P1-6a/b.
+P1-6d, P1-7a/b and parent P1 remain open.
 
-**Continuation boundary.** The current intake continues preserved WIP at HEAD
-`133fdf94fe7ab249afc24884471b3d182892d42e` on `feat/remaining-impl-plans`:
-22 modified tracked files and three untracked Swift files, including
-`Sources/RielaCLI/TaskRunCancellation.swift`,
-`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift` and its `+Fixtures`
-companion. One serial owner edits coupled store/runner/worker code; independent
-agents may investigate and verify. Protect Monja and other worktrees. The
-accepted decision-identity amendment remains unchanged. The earlier two-row
-failure is superseded by the source-matched host evidence below; do not reopen
-it from an old sandbox listener failure or a universal one-row expectation.
-No new architecture or unrelated repair belongs to this continuation.
+**Continuation boundary.** Preserve the intake's 22 modified tracked files and
+three untracked Swift files. One serial owner edits coupled store/runner files;
+independent reviewers may investigate without overlapping writes. Protect Monja
+and other worktrees. No reset, broad staging, force push, unrelated baseline
+repair or scratch outside repository-root `tmp/`. The prior two-row diagnosis
+below is historical context, not a request to reopen legitimate decision history.
 
 **Decision identity and causality diagnosis.** Before changing production or
 relaxing the fixture assertion, capture every decision for the exact task at
@@ -1211,7 +1207,8 @@ stop and join observation when that owned run exits. Polling must not depend
 on workflow output or heartbeat arrival. Signals are retryable consequences
 of the stored request, never fresh decisions on each poll. Ctrl-C first commits
 its stable decision in a cancellation-safe bounded operation, then cancels the
-owned runner; preserve the existing behavior of plain, non-task workflows.
+owned runner if the request wins arbitration. Terminal-first follows the explicit
+late-signal outcome below. Preserve plain, non-task workflow behavior.
 
 | Boundary or race | Required result |
 | --- | --- |
@@ -1220,7 +1217,77 @@ owned runner; preserve the existing behavior of plain, non-task workflows.
 | Local or selected-host work is running | Interrupt the local child or existing authenticated selected-host job through the current runner path. Preserve reserved session and selected placement; no local fallback or replacement dispatch. |
 | Selected-host cancellation is sent or transport fails | Sending, HTTP acceptance, lease loss or heartbeat loss is not terminal proof. Existing worker completion must establish that the owned work stopped before the runner persists the cancelled result. Uncertainty remains fenced and visible. |
 | Terminal persistence fails or acknowledgment is lost | Keep the request and fence. Retry/reopen reads the canonical reserved snapshot and stored acknowledgment; it never substitutes an in-memory result. |
-| A completed or non-cancellation failed snapshot races with the request | It cannot acknowledge cancellation or pass generic reconciliation while cancellation is pending. Expose the conflict for explicit reconciliation; never relabel unrelated terminal evidence as cancellation. |
+| Ordinary terminal persistence races with the request | Serialize both writes as specified below. Request-first blocks ordinary terminal persistence; terminal-first rejects the late request without creating pending cancellation or changing terminal success. |
+
+**Late-cancellation arbitration (required repair).** The linearization point is
+the commit in the shared runtime SQLite database, not task reconciliation,
+observer polling, an in-memory lock, or signal arrival. `WorkStore` already
+shares that database with `SQLiteWorkflowRuntimePersistenceStore`; reuse the
+existing transaction-scoped snapshot read/write boundary. No new store, schema,
+queue or generalized coordination framework is required.
+
+- Request insertion in `WorkStore+Decisions.swift` and the cancellation primitive
+  in `WorkStore+Reservation.swift` must read the exact reserved canonical session
+  inside the same write transaction that decides whether to insert cancellation.
+  Validate task/attempt/session identity and version there; attempt state alone
+  is insufficient because it can lag session persistence. Preserve original
+  application lookup before state validation for an already accepted replay.
+- Every task-backed canonical terminal writer, including live and final saves
+  through `CLIWorkflowSessionStore.swift` and
+  `SQLiteWorkflowRuntimePersistenceStore.swift`, must check pending cancellation
+  and commit the terminal snapshot under the same database transaction. Audit
+  both snapshot save overloads and runner supervision/final persistence so no
+  alternate writer bypasses arbitration. Plain workflows retain their behavior;
+  artifact exports are downstream of the canonical commit, not stop proof.
+  Delayed live saves must not overwrite a committed terminal winner with a
+  nonterminal or contradictory terminal snapshot.
+- **Request-first:** commit the stable decision and pending request before
+  interruption. A competing ordinary terminal candidate must not commit. Return
+  control to the owning runner to join local/selected-host work and persist the
+  exact cancelled session with canonical cancelled outcome, then acknowledge via
+  the existing atomic transition. A rejected ordinary candidate is not itself
+  stop proof. Never rewrite an already committed success as cancelled. Database
+  failure, uncertain stop or failed acknowledgement keeps the fence and a visible
+  pending/error state; no success result may escape while cancellation is pending.
+- **Terminal-first:** if an ordinary terminal snapshot has committed, reject a
+  new cancellation as an explicit “already terminal; cancellation not applied”
+  outcome. Roll back decision/application/request/task-version mutations from
+  that attempted application; do not silently claim request acceptance. External
+  `task decide --cancel` reports this rejection. `TaskRunCancellation.swift`
+  treats the same outcome for a late SIGINT as a resolved late signal: join its
+  observer, continue canonical terminal reconciliation, and preserve the run's
+  original success/failure and exit result. Do not retry it as a version conflict,
+  interrupt completed work, or manufacture cancellation acknowledgement. A
+  subsequent identical late request remains rejected; an earlier accepted
+  decision replay still returns its original application. Existing cancellation
+  already acknowledged remains governed by the existing replay contract.
+- `TaskDispatch.swift` consumes the canonical winner. Request-first uses exact
+  cancellation acknowledgement; terminal-first uses ordinary reconciliation once.
+  Keep its fence until that reconciliation commits. Do not delete or mutate
+  decision rows, run hidden post-success cleanup, or retarget a stale request to
+  a newer attempt. Historical contradictory rows fail closed for explicit
+  diagnosis; this repair adds no retroactive data-repair operation.
+
+**Deterministic regression matrix.** In
+`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift` and its fixtures,
+exercise request-first and terminal-first for both SIGINT and external
+`task decide --cancel` against production persistence/application boundaries.
+Use explicit barriers before the competing commits and after canonical terminal
+commit but before dispatch reconciliation; timing sleeps are not ordering proof.
+Preserve `testTaskRunSubprocessSIGINTCommitsAndAcknowledgesCancellation` through
+real EntryPoint. Store tests in `WorkStoreCancellationTests.swift` and
+`DecisionApplierStoreTests.swift` must additionally race independent SQLite
+connections, check rollback and cover all cancellation insertion paths.
+For request-first assert durable request before interruption, owned stop proof,
+exact reserved cancelled snapshot/outcome, acknowledgment, fence release only
+after proof, stable decision/application replay and once-only accounting. For
+terminal-first assert successful work stays successful (also preserve an ordinary
+failure), explicit external rejection/late-SIGINT handling, no new pending row or
+decision/application/version mutation, ordinary reconciliation once, and unchanged
+results after reopen/replay. Include cancellation arriving between observer join
+and final signal commit. Retain selected-host stop-proof coverage; transport
+acceptance is insufficient. Never fabricate a terminal row in place of the live
+production-boundary regression.
 
 **Persistence, acknowledgment and replay.**
 `Sources/RielaCLI/WorkflowRunCommand.swift`, `WorkflowRunLivePersistence.swift`
@@ -1273,24 +1340,40 @@ positive per-suite counts and source/test hashes under
 A bounded environment failure remains a failed run and must be separated from
 source-matched capable-host evidence; P1-6b evidence cannot certify new code.
 
-**Final-source capable-host evidence (2026-09-24).** The effective workflow input
-supplies the post-SIGINT source/test/build-input manifest
-`tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256`,
-SHA-256 `d2b675f1bd3fded858997d8345bccaa70e6c19cae8d72b09f977422fb5259140`,
-with 973 entries. Verify its digest and every current entry before treating the
-logs as current-source evidence. The operator reports matching all entries both
-before and after the host runs; that report requires independent verification.
-Step 2 independently matched all three supplied SHA-256 digests and all 973
-current entries. `shasum -a 256 -c` exited 0; its complete 973-check output is
-`tmp/p1-6c-step2-post-sigint/source-match.log`. A foreground `python3` evidence
-check exited 0 after reading all 2,288 focused and 4,953 aggregate log lines,
-matching the exact assertion `(source path:line, suite, test)` multiset to
-inventory IDs 1–8 and 14–24 with zero new or missing entries, and finding the
-named SIGINT test passing in both logs. These structural checks do not replace
-formal semantic log review or independent test-integrity acceptance. The host
-process exit statuses remain runtime-reported; terminal log summaries confirm
-the counts. Documentation-only changes do not change these source/test bytes.
-No Swift tests were rerun in this design node.
+**Repaired-source command contract.** Run in the foreground, capture complete
+logs and terminal exits under `tmp/work-runtime-p1/p1-6c/late-cancellation/`,
+and retain the accepted plan's additional filters and strict changed-file lint.
+The implementation plan must enumerate final changed Swift files explicitly for
+lint and the manifest; the manifest includes all source, tests and build inputs,
+not merely tracked diffs. Check manifest membership as well as file hashes.
+The following are required commands, not results from this design step:
+
+```bash
+swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedProcessCancellationTests|TaskDispatcherIntegrationTests|WorkStoreCancellationTests|DecisionApplierStoreTests|DistributedWorkerHTTPTests|DistributedJobControllerTests'
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests|RielaServerTests'
+xargs -0 swiftlint lint --strict --no-cache < tmp/work-runtime-p1/p1-6c/late-cancellation/changed-swift-files.nul
+shasum -a 256 -c tmp/work-runtime-p1/p1-6c/late-cancellation/final-source.sha256
+git diff --check
+git diff --cached --check
+```
+
+Record zero-test selections as verification gaps; build/lint/hash checks have
+no test count. Listener-denied runs are environmental failures, not passes.
+Obtain source-matched capable-host focused and serial aggregate logs. Preserve
+the 19 owned non-slice failures below until new evidence establishes their
+actual disposition; the broad aggregate remains FAILED until it passes.
+
+**Historical capable-host evidence (2026-09-24; not repair verification).**
+The pre-repair manifest is
+`tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256`
+(973 entries). The prior node reported matching those entries and the following
+logs; these results do not verify the repaired interleavings. After any Swift
+source/test change, create a new complete source/test/build-input manifest and
+match it before and after new focused and serial aggregate capable-host runs.
+Retain each exact command, terminal exit, positive test count and complete log
+path. Do not reuse prior checks as final-source acceptance. This design node
+changes documentation only and does not claim implementation verification.
 
 | Gate | Complete log | Reported tests / failures | Reported terminal exit | SHA-256 |
 | --- | --- | --- | --- | --- |
@@ -1339,8 +1422,8 @@ session's canonical `acceptanceNotMet` reason; do not suppress assertions,
 weaken completion semantics, or repair unrelated baseline failures.
 
 **Acceptance and rollout boundary.** The next plan updates
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` around review
-of these exact bytes, preserving accepted design and WIP. Independent
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` for the atomic
+repair and deterministic regression matrix, preserving accepted scope and WIP. Independent
 `gpt-6-sol` test-integrity and independent `gpt-6-sol` adversarial reviewers
 assess source, tests, request-before-signal ordering, owned stop proof, exact
 cancelled session, acknowledgment, fence/replay, real EntryPoint SIGINT and
@@ -1361,7 +1444,7 @@ decision-row mutation, new framework, unrelated cleanup or package edit is in
 scope. Runtime-resolved workflow provenance and effective workflowInput are
 authoritative; this node adds no workflow readiness requirements.
 
-Evidence inspection commands include:
+Historical evidence inspection commands (not repaired-source gates) include:
 
 ```bash
 shasum -a 256 tmp/work-runtime-p1-6c-final-review-20260924-c16e975-comm000006/final-source-after-sigint.sha256
@@ -1379,17 +1462,19 @@ non-slice classifications and whether the preserved tests/evidence satisfy all
 material cancellation obligations. An unclassified failure, missing material
 coverage, or unresolved high/mid P1-6c finding blocks acceptance and requires a
 precise finding and bounded repair. No unresolved product choice requires a
-user-QA document. No new Step 3/5 revision feedback was supplied; prior
-accepted design/plan and decision-identity amendment remain intact.
+user-QA document. No new Step 3/5 revision feedback was supplied. The prior adversarial high
+finding is addressed by the arbitration contract above but remains an open
+implementation defect until repaired and independently verified.
 
 Only after explicit independent slice-only acceptance, refresh documentation
 and `impl-plans/progress/p1-dispatch.md`, exact-file commit and non-force push
 on `feat/remaining-impl-plans`. Preserve P1-6d, P1-7a/b, parent P1, all 19
 follow-ups and the failed broad gate as open. No main merge or release.
 
-`gpt-6-astra` is the single design author, single plan author and final
-combined-tree reviewer; separate `gpt-6-sol` roles own implementation/serial
-reconciliation, independent test-integrity and independent adversarial review.
+Single design-author role: prior `/root/design_author`, continued by this Step 2
+author only. Plan author and serial implementation owner are downstream;
+independent test-integrity, adversarial and Astra exact combined-tree reviewers
+remain pending. These are required review roles, not claims of completed review.
 These codex-agent references describe workflow roles, not a Codex behavior
 reference. No Cursor CLI change, adapter or intentional reference divergence
 is required; no reference-repository inspection is needed for this scope.

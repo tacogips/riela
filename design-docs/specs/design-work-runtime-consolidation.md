@@ -1120,15 +1120,17 @@ number supplied), mode `issue-resolution`, intake `comm-000002` from
 `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 This amendment and its implementation plan were accepted at checkpoint
 `0a74a070670a5cb73f6cd18e035adf61732a0b07` on `feat/remaining-impl-plans`.
-The current intake continues that accepted design after Step 6 returned
-`implementationIncomplete`; it does not reopen §17.2 or the later “Live
+The current intake, “Review and finalize P1-6c against final-source capable-host
+evidence” (local request; no issue URL or number), continues that accepted design
+after Step 6 returned `implementationIncomplete` and a serial operator-host run
+supplied final-source evidence. It does not reopen §17.2 or the later “Live
 cancellation (P1-6c)” contract. Preserve P1-6a/b behavior and the P1-6b accepted
 publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
 `impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
 
 **Continuation boundary.** The current intake continues preserved WIP at HEAD
-`30601aa89485436440728bf417b0156ea477f25d` on `feat/remaining-impl-plans`:
-17 modified tracked files and three untracked Swift files, including
+`c16e97501b5be5b6b1904c100b682c965eebba44` on `feat/remaining-impl-plans`:
+22 modified tracked files and three untracked Swift files, including
 `Sources/RielaCLI/TaskRunCancellation.swift`,
 `Tests/RielaCLITests/TaskCancellationIntegrationTests.swift` and its `+Fixtures`
 companion. One serial owner edits coupled store/runner/worker code; independent
@@ -1270,97 +1272,122 @@ positive per-suite counts and source/test hashes under
 A bounded environment failure remains a failed run and must be separated from
 source-matched capable-host evidence; P1-6b evidence cannot certify new code.
 
-**Current capable-host evidence (2026-09-24).** The authoritative receipt is
-`tmp/work-runtime-p1-6c-host-failure/evidence.json`. Its complete logs record
-selected-host 1/1, V11 plus live 55/55 and V1 plus cancellation 50/50, each with
-recorded exit 0. The selected-host fixture verifies one policy start and one
-human cancel with causal linkage and unchanged replay history. These results
-resolve the earlier decision-count diagnosis, not the entire slice acceptance.
-The source manifest is
-`tmp/work-runtime-p1-6c-decision-20260924-c07910f-comm000006/continuation-2/source-test.sha256`,
-SHA-256 `6d3ef8ee373d32a7ed1deac12a969a5366b71117c9019031869a3759debf5e96`.
-Step 2 rechecked its entries successfully (exit 0), with complete output in
-`tmp/p1-6c-step2-host-refresh/source-match.log`. Host terminal summaries were
-checked against the receipt; this documentation step did not rerun Swift tests.
+**Final-source capable-host evidence (2026-09-24).** The current receipt is
+`tmp/work-runtime-p1-6c-host-resume/capable-host-final-source-evidence.json`.
+Its authoritative source manifest is
+`tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256`,
+SHA-256 `561db1140f6d0826250203a2746708a8f4a8b6b59265b57ac85a8ce97dea861f`.
+The manifest actually contains 973 entries; the intake's “962-file” description
+is a stale count, not a hash mismatch. Step 2 recomputed all entries with exit 0;
+complete output is `tmp/p1-6c-step2-final-source/source-match.log`.
+The original `tmp/work-runtime-p1-6c-host-resume/serial-source-match-after.log`
+also contains 973 successful checks. Documentation-only changes do not change
+these source/test bytes. No Swift tests were rerun by this design node.
 
-The complete `tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log`
-records 2,048 tests, 24 failures (7 unexpected), recorded exit 1. Its 24 error
-lines comprise DoctorCommandTests 7, SurfaceParityCLITests 4,
-TaskProjectionProofTests 1, RielaExampleParityTests 1, WorkflowCommandTests 8,
-WorkflowTemporaryRegistrationTests 2 and WorkflowRunnerAdmissionTests 1.
-These are assertion counts, not necessarily distinct test counts. The separate
-`capable-host-projection-current.log` records 2 tests, 1 failure, exit 1.
-Neither gate is passing.
+Complete logs below are relative to `tmp/work-runtime-p1-6c-host-resume/`.
+Counts agree with terminal XCTest summaries; exits are recorded in the receipt.
 
-**Narrow repair and classification contract.** The implementation plan must
-account for every aggregate assertion with suite/test, log line, observed and
-expected behavior, source/history evidence, focused reproduction, P1 relevance
-and disposition. Do not label unchanged files baseline without checking their
-changed dependencies. Preserve unresolved classifications explicitly.
+| Gate | Complete log | Tests / failures | Exit |
+| --- | --- | --- | --- |
+| Catalog/parity/projection | `capable-host-catalog-projection.log` | 17 / 0 | 0 |
+| V1 plus cancellation integration | `capable-host-v1-final-source.log` | 50 / 0 | 0 |
+| V11 plus live selected-host cancellation | `capable-host-v11-final-source.log` | 55 / 0 | 0 |
+| Serial affected aggregate | `capable-host-aggregate-final-source-serial.log` | 2,048 / 19 (7 unexpected) | 1 |
 
-- `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift` must describe the registered
-  `task run` and `task decide` surfaces according to the accepted command
-  contracts, including their mutation and audit behavior. Confirm the existing
-  catalog schema and parity contract before adding the missing rows; do not
-  suppress parity assertions or expand command behavior.
-- `Sources/RielaWork/CompletionEvaluator.swift` requires `acceptanceNotMet` for
-  any session status other than completed. The failed-session expectation in
-  `Tests/RielaCLITests/TaskProjectionProofTests.swift` must preserve that reason
-  alongside gate and blocking-finding reasons, in canonical order. Confirm the
-  fixture outcome and accepted evaluator contract before correcting the test;
-  do not weaken production completion semantics or remove existing assertions.
-- Doctor decoding, example parity, workflow fixtures/host requirements and
-  runner admission require history and focused reproduction classification.
-  Repair only demonstrated material P1-6c defects within the accepted boundary;
-  retain unrelated failures as explicit follow-up work. A material defect that
-  exceeds this boundary requires a documented scope decision before repair.
+The V11 log at line 135 records policy `task-run` start
+`decision-a69e731d-5cd4-4cf5-a637-6e6a49999ced` with no cause, and human
+`operator` cancellation `decision-remote-live-cancel` caused by
+`evidence-placement-attempt-89c5cef8-0c49-4a6f-bc14-0e6b78b065fe`.
+`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift` asserts
+both identities and causal linkage, exact task/attempt, worker stop proof,
+reserved cancelled snapshot, acknowledgment, held/released fence, and unchanged
+decision/evidence/outcome after identical CLI replay. Passing this test supports
+these invariants; the independent reviewers must still assess assertion quality
+and the remaining accepted coverage obligations.
 
-**Acceptance and remaining evidence questions.** After any repair, rerun all
-affected gates on final source, retaining exact argv/environment, complete
-foreground logs, terminal exits, positive test counts and pre/post source
-manifests including untracked source/tests. Reuse earlier host evidence only
-when matching bytes and dependency relevance support it; changed cancellation
-or worker dependencies require new capable-host coverage. Preserve V0/V1/V2/V11,
-decision, live, compatibility, aggregate and changed-file lint obligations above.
-An unrelated failed aggregate may receive an explicit slice-only disposition
-from independent reviewers after all 24 assertions are accounted for; it remains
-a failed broad gate and must retain follow-up ownership in the plan/progress.
-An unclassified failure, missing material coverage, or unresolved material P1-6c
-finding blocks slice acceptance. Classification alone is not a waiver.
+The earlier `capable-host-aggregate-final-source.log` is an interrupted,
+overlapping run: `aggregate-status.json` records exit 130. Its partial log is
+excluded. The serial final-source aggregate supersedes the older 24-failure
+aggregate as current evidence; it remains a **failed broad gate**.
 
-Evidence-producing commands for the next plan include:
+**Failure disposition and bounded review.** The inventory
+`tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json`
+contains 24 historical assertion records. IDs 9–13 are the five catalog and
+projection assertions repaired in preserved WIP and absent from the current
+aggregate. The other 19 match current assertions by test and assertion source;
+historical log line numbers must not be mistaken for current serial-log lines.
+Keep every record's source-history and focused-reproduction evidence available
+for independent review; unchanged filenames alone do not establish irrelevance.
+
+| Current failures | Inventory IDs | Follow-up owner |
+| --- | --- | --- |
+| Doctor decoding, 7 | 1–7 | CLI doctor / backend-capability owner |
+| Example parity, 1 | 8 | P1-7b examples owner |
+| Workflow commands, 8 | 14–21 | workflow-command/host-readiness owner (outside P1-6c) |
+| Runner admission, 1 | 22 | Workflow runner admission owner |
+| Temporary workflow requirements, 2 | 23–24 | Temporary workflow/host-requirements owner |
+
+These are assertion counts, not necessarily distinct tests. The inventory's
+non-slice classifications are proposals for independent disposition, not a
+waiver. Review changed dependencies and source history, including the recorded
+limits on historical root-cause evidence for workflow-command IDs 16–21.
+Retain the catalog's actual registered mutation/audit behavior and the failed
+session's canonical `acceptanceNotMet` reason; do not suppress assertions,
+weaken completion semantics, or repair unrelated baseline failures.
+
+**Acceptance and rollout boundary.** The next plan updates
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` around review
+of these exact bytes, preserving accepted design and WIP. Independent
+test-integrity and adversarial reviewers assess source, tests, request-before-
+signal ordering, proof/persistence/fence/replay invariants and slice-only
+eligibility. Astra independently reviews the exact combined tree, including
+documentation and any serial repair. Record each decision, findings, file paths,
+commands and complete log/exit evidence. These reviews remain pending; Step 2
+makes no implementation acceptance decision.
+
+Retain the accepted V0/V1/V2/V11, decision, live, compatibility and changed-file
+lint obligations. Assess existing source-matched evidence first; run focused
+checks only for a concrete gap. Do not rerun the 2,048-test aggregate in a
+listener-denied sandbox to reinterpret known host failures. Any source/test
+change invalidates final-source acceptance evidence until its manifest is
+rechecked and affected tests rerun on a capable host where required. One serial
+owner makes coupled edits; reviewers investigate independently. No direct
+decision-row mutation, new framework, unrelated cleanup or package edit is in
+scope. Runtime-resolved workflow provenance and effective workflowInput are
+authoritative; this node adds no workflow readiness requirements.
+
+Evidence inspection commands include:
 
 ```bash
-shasum -a 256 -c tmp/work-runtime-p1-6c-decision-20260924-c07910f-comm000006/continuation-2/source-test.sha256
-rg 'Test Case .* failed \(' tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log
-swift test --disable-sandbox --skip-update --filter 'SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'
-swift test --disable-sandbox --skip-update --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof'
+shasum -a 256 tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256
+shasum -a 256 -c tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/final-source.sha256
+cat tmp/work-runtime-p1-6c-host-resume/capable-host-final-source-evidence.json
+cat tmp/work-runtime-p1-6c-host-resume/capable-host-catalog-projection.log tmp/work-runtime-p1-6c-host-resume/capable-host-v1-final-source.log tmp/work-runtime-p1-6c-host-resume/capable-host-v11-final-source.log
+cat tmp/work-runtime-p1-6c-host-resume/capable-host-aggregate-final-source-serial.log
+cat tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184/reviews/evidence/failures.json
+git diff --check
+git diff --cached --check
 ```
 
-Open evidence questions are the source relevance of every aggregate failure and
-final-source coverage/disposition after repairs, including persistence/proof
-loss, lease/heartbeat uncertainty, prelaunch/Ctrl-C, reopen/replay and once-only
-replacement. They require implementation evidence, not user product choices;
-no user-QA document is needed. Independent test-integrity, adversarial and Astra
-combined-tree acceptance must find no unresolved material P1-6c issue. Update
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` and
-`impl-plans/progress/p1-dispatch.md` to distinguish accepted P1-6c from active
-P1-6d, P1-7a/b, parent P1 and unresolved broad failures. Exact-file commit and
-non-force push remain conditional on acceptance.
+Open evidence questions are whether independent review accepts all 19
+non-slice classifications and whether the preserved tests/evidence satisfy all
+material cancellation obligations. An unclassified failure, missing material
+coverage, or unresolved high/mid P1-6c finding blocks acceptance and requires a
+precise finding and bounded repair. No unresolved product choice requires a
+user-QA document. No new Step 3/5 revision feedback was supplied; prior
+accepted design/plan and decision-identity amendment remain intact.
+
+Only after explicit independent slice-only acceptance, refresh documentation
+and `impl-plans/progress/p1-dispatch.md`, exact-file commit and non-force push
+on `feat/remaining-impl-plans`. Preserve P1-6d, P1-7a/b, parent P1, all 19
+follow-ups and the failed broad gate as open. No main merge or release.
 
 `gpt-6-astra` is the single design author, single plan author and final
-integration reviewer; `gpt-6-sol` owns implementation, serial reconciliation,
-independent test-integrity and adversarial reviews. These references describe
-workflow roles, not a Codex product behavior reference: no Cursor CLI adapter
-or Codex-reference divergence is required. No unresolved user decision is
-needed for this continuation. Prior design/plan acceptance is retained.
-The intake reports Step 3 acceptance of the decision-identity amendment with no
-findings (`comm-000004`, `step3-design-review-attempt-1-exec-4`); no new Step 3/5
-revision findings were supplied. Review of this host-evidence/classification
-refresh, Step 5 and independent test-integrity, adversarial and Astra
-combined-tree implementation acceptance remain pending. No unresolved
-material finding may be carried into implementation acceptance. Only accepted exact files may be committed and non-force
-pushed; no main merge, release or closure of later slices belongs to P1-6c.
+combined-tree reviewer; separate `gpt-6-sol` roles own implementation/serial
+reconciliation, independent test-integrity and independent adversarial review.
+These codex-agent references describe workflow roles, not a Codex behavior
+reference. No Cursor CLI change, adapter or intentional reference divergence
+is required; no reference-repository inspection is needed for this scope.
 
 #### P1-6b bounded continuation (2026-09-24)
 

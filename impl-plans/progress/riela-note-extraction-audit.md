@@ -118,3 +118,17 @@ Kaiba's owner-side contract. Do not infer that `987c8a40` proves every old
 behavior was preserved, and do not delete the historical plan or its evidence
 until the replacement disposition is reviewed. Kaiba's checkout remains owned
 by another session and was not modified for this audit.
+
+### Current-contract evidence inventory (not acceptance)
+
+| Boundary | Present source/test evidence | Remaining acceptance question |
+| --- | --- | --- |
+| Riela short-term persistence and workflow scope | `Packages/RielaMemory` and its `RielaMemoryTests` cover per-memory SQLite files, save/load/search, shared-workflow search, file references and concurrent saves; `DeterministicWorkflowRunnerMemoryTests` covers workflow/node recording and declarations. | Run source-matched tests and decide which old Note-only expectations are intentionally retired rather than replaying the old deletion tasks. |
+| Persona context | `ProductionNodeAdapter+PersonaMemory.swift`, `PersonaMemoryAddonTests` and `MemoryAddonFileTests` cover current `riela/chat-persona-memory-*` handoff and file behavior. | Compare accepted old persona-context isolation, bounds, relation/error and replay requirements against the current contract; test presence alone does not prove parity. |
+| Retained Telegram SDK example | `examples/telegram-sdk-trio-chat/workflow.json` uses `riela/memory-save`/`riela/memory-load`; `RielaExampleParityTests` contains Telegram SDK routing cases. | Verify the accepted five-case example matrix under the current short-term model and classify any changed behavior explicitly. |
+| Kaiba long-term bridge | `KaibaLongTermMemoryAddons.swift` and `KaibaLongTermMemoryAddonTests` cover consolidate/recall payload and idempotency behavior. Kaiba has `appendLongTermMemory`, `notebook-kind:long-term-memory`, `Kaiba Long-Term Memory` and owner-side tests. | Verify the current Riela↔Kaiba live-client boundary and notebook identity; neither old `notebook-kind:system-memory` nor a local Note append is the current seam. |
+| Notebook lock and UI | Kaiba exposes `setNotebookReadOnly` through its GraphQL/service/client contracts; Riela's extracted Note UI paths are absent. | Determine whether the old Riela web Lock/Unlock feature is represented by Kaiba's current UI/contract or was intentionally retired; no Riela browser-artifact rebuild should be dispatched from the old plan. |
+
+This inventory is read-only. The Kaiba local checkout has other-session state;
+no Kaiba source, test, plan, or branch was changed. No row is a passed test or
+plan-completion claim.

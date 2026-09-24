@@ -1,11 +1,11 @@
 # Work Runtime P1: P1-6c durable decisions and live cancellation
 
-**Status**: Historical design/plan checkpoint `0a74a070670a5cb73f6cd18e035adf61732a0b07` retained. Step 3 accepted the decision-identity amendment; this plan refresh awaits Step 5. P1-6c implementation and publication remain incomplete.
+**Status**: Historical design/plan checkpoint `0a74a070670a5cb73f6cd18e035adf61732a0b07` retained. Step 3 accepted the host-evidence/classification refresh; this plan refresh awaits Step 5. P1-6c implementation and publication remain incomplete.
 **Workflow mode**: issue-resolution
 **Issue reference**: Work Runtime P1-6c; no GitHub issue URL or number supplied.
 **Accepted design**: `design-docs/specs/design-work-runtime-consolidation.md` §17.2 and §17.5 “P1-6c bounded amendment (2026-09-24)”.
-**Design SHA256**: `80bc6f537a85495516ee4dcf755b511843fbbf55da02d4de16ee7fac4e7020ce`.
-**Review decision**: Step 3 accepted the narrow decision-identity amendment with no findings, `comm-000004`, `step3-design-review-attempt-1-exec-4`. Step 5 acceptance of this plan refresh and implementation acceptance remain pending.
+**Design SHA256**: `f1ea157a0547fc3df77be2c1c510654539f4368e373be47d3e062098fc0cf9a0`.
+**Review decision**: Step 3 accepted the host-evidence/classification design with no findings, `comm-000004`, `step3-design-review-attempt-1-exec-4`. Step 5 acceptance of this plan refresh and implementation acceptance remain pending.
 **Codex-agent references**: `gpt-6-astra` single design/plan author and final integration reviewer; `gpt-6-sol` implementation, serial reconciliation, independent test-integrity and adversarial review. Execution `codex-design-and-implement-review-loop-session-1`.
 **Updated**: 2026-09-24
 
@@ -18,8 +18,8 @@ signal and selected-host acknowledgment form one coupled safety contract;
 there is no independent implementation plan to fan out.
 The accepted design/plan checkpoint is
 `0a74a070670a5cb73f6cd18e035adf61732a0b07`; the current implementation baseline
-is intake HEAD `c07910feb738d1f218d8dddff2a061f437b4f886` plus all 19
-intake WIP files (16 modified tracked and three untracked), as enumerated in
+is intake HEAD `30601aa89485436440728bf417b0156ea477f25d` plus all 20
+intake WIP files (17 modified tracked and three untracked), as enumerated in
 `comm-000002`. Preserve the accepted Step 2 design update as well. The five-file
 checkpoint is historical, not the current preservation allowlist. Step 3
 accepted the refreshed design via `comm-000004`; no Step 5 revision feedback
@@ -38,25 +38,27 @@ handoff; incomplete implementation never enters review or finalization.
 
 ### Current continuation and historical progress
 
-Current status follows the terminal Step 6 handoff in
-`impl-plans/progress/p1-dispatch.md`, superseded for the live failure diagnosis
-by intake `comm-000002`: the 2026-09-24 13:02 JST capable-host selected-host
-run reached acknowledgment, then failed at
-`Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift:187`
-(two decisions versus one, exit 1, one XCTest failure, zero unexpected).
-Its complete log and source manifest were not supplied. This is a material
-assertion failure, not a CLI exit-code defect or listener denial. Both row
-identities and causes remain unknown. The reservation path already records a
-policy decision; that is a candidate explanation, not proof of the observed rows.
-The existing live fixture, observer, prelaunch snapshots, signal ordering,
-worker receipts and proof-gated acknowledgment are WIP to preserve, not rebuild.
-The latest safe selection passed 65/65; its selected-host run failed before
-worker registration. Historical 54/54 host evidence and failed aggregates do
-not certify the current tree. Lease/heartbeat uncertainty, remaining final
-verification, reviews and publication remain open. The prior workflow exhausted
-its bounded continuations; this accepted new intake does not retroactively
-accept that work. Earlier paragraphs below are historical observations only.
+Current status follows accepted Step 3 `comm-000004`, execution
+`step3-design-review-attempt-1-exec-4`. The complete receipt
+`tmp/work-runtime-p1-6c-host-failure/evidence.json` records capable-host
+selected-live 1/1, V11 plus live 55/55 and V1 plus cancellation 50/50, all exit 0.
+The fixture proves one policy start and one human cancel with causal evidence
+and unchanged replay history. The prior two-row failure is resolved by this
+source-matched evidence; do not rebuild the implemented cancellation seams or
+repeat obsolete listener diagnosis. The manifest SHA-256 is
+`6d3ef8ee373d32a7ed1deac12a969a5366b71117c9019031869a3759debf5e96`;
+Step 3 independently matched its 962 entries. Evidence verification remains an
+explicit task; these results alone do not accept P1-6c.
 
+The complete `tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log`
+is failed: 2,048 tests, 24 assertions (7 unexpected), exit 1. Assertion counts:
+Doctor 7, surface parity 4, projection 1, example parity 1, workflow commands 8,
+temporary workflow registration 2 and runner admission 1. The separate
+`capable-host-projection-current.log` is failed: 2 tests, 1 assertion, exit 1.
+Classify every assertion, repair only demonstrated slice defects, rerun affected
+final-source gates and obtain independent disposition of remaining unrelated
+failures. Earlier continuation observations below are historical, not current
+missing-feature claims or substitutes for these receipts.
 
 The owner audited the accepted store, runner, signal and selected-host seams.
 `WorkStore+Reservation.swift` now exposes an exact task/attempt/session scoped
@@ -145,7 +147,10 @@ completion is claimed.
     "README.md",
     "design-docs/specs/design-work-runtime-consolidation.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "impl-plans/progress/p1-dispatch.md"
+    "impl-plans/progress/p1-dispatch.md",
+    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+    "Tests/RielaCLITests/SurfaceParityCLITests.swift"
   ],
   "sharedPaths": [
     "Sources/RielaCLI/TaskCommands.swift",
@@ -183,7 +188,10 @@ completion is claimed.
     "README.md",
     "design-docs/specs/design-work-runtime-consolidation.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "impl-plans/progress/p1-dispatch.md"
+    "impl-plans/progress/p1-dispatch.md",
+    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+    "Tests/RielaCLITests/SurfaceParityCLITests.swift"
   ],
   "progressLog": "impl-plans/progress/p1-dispatch.md",
   "taskIds": [
@@ -191,6 +199,7 @@ completion is claimed.
     "P1-6c-decision-diagnosis",
     "P1-6c-decision-repair",
     "P1-6c-evidence",
+    "P1-6c-catalog-projection",
     "P1-6c-store",
     "P1-6c-remote",
     "P1-6c-live",
@@ -204,7 +213,7 @@ completion is claimed.
   "taskDependencies": {
     "P1-6c-audit": [],
     "P1-6c-store": [
-      "P1-6c-decision-repair"
+      "P1-6c-catalog-projection"
     ],
     "P1-6c-remote": [
       "P1-6c-store"
@@ -240,6 +249,10 @@ completion is claimed.
     ],
     "P1-6c-decision-repair": [
       "P1-6c-decision-diagnosis"
+    ],
+    "P1-6c-catalog-projection": [
+      "P1-6c-evidence",
+      "P1-6c-decision-repair"
     ]
   },
   "dependencyMode": "single-plan-ordered-internal-gates",
@@ -248,11 +261,17 @@ completion is claimed.
     "P1-6b": "7d8fc121a4f4469de7a40495282b53c9d813b8d4"
   },
   "verificationCommands": [
+    "shasum -a 256 -c tmp/work-runtime-p1-6c-decision-20260924-c07910f-comm000006/continuation-2/source-test.sha256",
+    "rg -n 'Test Case .* failed \\(| error: ' tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log",
+    "swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'",
+    "swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'DoctorCommandTests|RielaExampleParityTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests|WorkflowRunnerAdmissionTests'",
+    "git log -n 12 --format=oneline -- Sources/RielaCore/SurfaceCatalog+RowsCLI.swift Sources/RielaWork/CompletionEvaluator.swift Tests/RielaCLITests/TaskProjectionProofTests.swift",
+    "git diff 30601aa89485436440728bf417b0156ea477f25d -- Sources Tests",
     "CLANG_MODULE_CACHE_PATH=tmp/work-runtime-p1/p1-6c/module-cache SWIFTPM_MODULECACHE_OVERRIDE=tmp/work-runtime-p1/p1-6c/module-cache swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
-    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+    "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests|DecisionApplierStoreTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedProcessCancellationTests'",
     "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'",
@@ -270,8 +289,8 @@ completion is claimed.
 
 ### Intent, boundaries and invariants
 
-Resolve the observed two-decision assertion from runtime identities and causal
-evidence, preserving all accepted cancellation behavior. Complete actual task
+Complete P1-6c using verified host evidence, repair confirmed catalog/projection
+defects and classify the failed aggregate while preserving accepted behavior. Complete actual task
 cancellation, not just request storage: human cancel/reject,
 guard stop/replacement and Ctrl-C must commit the shared decision before
 interrupting the exact local or selected-host execution. Reuse the WorkStore
@@ -306,7 +325,7 @@ itself does not commit an unreviewed plan. Record checkpoint hash and changed
 file list; retain baseline and accepted P1-6b evidence separately. Checkpoint
 only the accepted design and plan documents; do not stage the preserved partial
 Swift implementation or its progress log as completed implementation. Preserve
-all 19 intake WIP files through checkpointing and later edits; the existing plan WIP
+all 20 intake WIP files through checkpointing and later edits; the existing plan WIP
 is retained within this revised plan, not reverted to the old committed version.
 
 All writePaths are exclusive to the single implementation owner; listed files
@@ -338,68 +357,59 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
 - [x] **P1-6c-audit**: Accepted seam audit is complete. Fresh-read only files
   being edited and reconcile current hashes with the terminal handoff;
   do not restart a broad audit. `/root` remains the sole source/test editor.
-- [ ] **P1-6c-decision-diagnosis** after audit: The serial owner fresh-reads
-  `Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift` and
-  `TaskCancellationIntegrationTests.swift`, then the reservation/terminal paths
-  in `Sources/RielaCLI/TaskDispatch.swift`, `Sources/RielaWork/WorkStore+Reservation.swift`
-  and `WorkStore+Decisions.swift`. Before changing semantics or count assertions,
-  collect runtime decision snapshots at reservation, after acknowledgment and
-  after identical CLI replay. If the original store/log is unavailable, add
-  bounded test diagnostics in the existing fixture and rerun **selected-live**;
-  diagnostics must not mutate store rows or weaken existing assertions.
-  Record every row's ID, kind, producer, task/attempt, `causedBy` evidence IDs
-  and resolved causal meaning, plus cancellation decision ID, reserved session
-  and application linkage in `tmp/work-runtime-p1/p1-6c/<attempt>/decision-diagnosis.json`.
-  Correlate `decision-remote-live-cancel` with the actual human request. Identify
-  any reservation decision and any guard/terminal decision by observed ordering;
-  a policy producer alone does not prove legitimacy. Evidence must distinguish
-  earlier legitimate history from terminal evaluation forbidden after cancellation.
-  Deliver both observed identities and a supported repair decision; source-only
-  hypotheses or listener failures leave this task open. Capture even a failing
-  diagnostic run's complete output, manifest, positive count and terminal exit.
-- [ ] **P1-6c-decision-repair** after diagnosis: For proven legitimate distinct
-  rows, edit only the existing fixture's assertions before/after replay to check
-  exact IDs, kinds and causal links, exactly one cancel application, and unchanged
-  complete decision history/application evidence across replay. Never substitute
-  a bare count of two or discard an unexplained row. For proven duplicate intent,
-  reapplication or forbidden terminal evaluation, repair the demonstrated seam
-  in `TaskDispatch.swift`, `TaskRunCancellation.swift`, `WorkStore+Decisions.swift`
-  or `WorkStore+Reservation.swift` as evidence requires; add the corresponding
-  regression in existing CLI/Work tests. Other coupled paths remain conditional
-  on a demonstrated defect under the tasks below. Do not mutate decision rows.
-  Preserve real worker/process stop, exact cancelled snapshot, acknowledgment,
-  lease, attempt, evidence, outcome and usage assertions. Deliver a passing
-  capable-host **selected-live** rerun with both identities explained and matching
-  pre/post source manifests. An unavailable host leaves this gate pending;
-  independent evidence classification may proceed, but review may not.
-- [ ] **P1-6c-evidence** after audit: An independent read-only investigator may
-  run alongside serial store/remote/live work. Deliver a failure table under
-  `tmp/work-runtime-p1/p1-6c/reviews/evidence/` with every operator aggregate
-  failure's suite/test, log line, observed/expected result, source relevance
-  and supporting source/history or reproduction evidence. Retain the terminal handoff
-  `source_relevance` classification of `TaskProjectionProofTests.swift:105` as
-  unchanged failed-session fixture/evaluator expectations; verify its supporting
-  evidence before reuse rather than repeating a broad audit. The owner may amend that
-  test only when the accepted semantics and source evidence demonstrate a
-  slice-relevant defect; never weaken assertions just to pass. Any production
-  repair must stay within listed coupled files and have a demonstrated cause.
-  No unrelated baseline repairs are authorized. Run the focused projection
-  command below and retain complete output, exit and count. Distinguish source,
-  environment and pre-existing failures; classification alone never turns a
-  failed aggregate into a pass. An unresolved non-environment aggregate failure
-  remains a gate requiring an explicit downstream disposition, not an implicit
-  waiver or permission to enter implementation review.
-
-  Verify the operator evidence against a sorted complete source/test manifest,
-  including tracked and untracked `Sources/` and `Tests/` files, plus HEAD,
-  `Package.swift` and `Package.resolved` when present. Record SHA-256 per path
-  and a manifest hash before/after each accepted run. Recover actual argv,
-  environment and terminal exits from existing receipts; if unavailable or
-  bytes differ, label that evidence historical and obtain a new capable-host
-  run with full receipts. Do not infer command success from an incomplete log
-  or the reported diff hash. Investigator writes only its own evidence, and
-  the serial owner records the disposition in the progress log.
-- [ ] **P1-6c-store** after decision-repair: Verify the preserved implementation, repairing
+- [ ] **P1-6c-decision-diagnosis** after audit: Reconcile the supplied receipt
+  against each complete host log and the unchanged manifest. Fresh-read
+  `TaskCancellationIntegrationTests.swift` and `+Fixtures.swift`; map exact
+  policy-start/human-cancel IDs, kinds, producer, task/attempt, causal evidence,
+  reserved session and application/replay assertions to the passing selected-live
+  test. Record this mapping and source-match exit/count under this attempt's
+  evidence directory. Reuse valid evidence; only an actual inconsistency requires
+  new diagnostics. Never infer causality merely from a row count or producer.
+- [ ] **P1-6c-decision-repair** after diagnosis: Record the evidence-supported
+  no-new-repair decision for the now-passing fixture, unless diagnosis exposes
+  an actual contradiction. If one exists, only the serial owner may repair the
+  demonstrated fixture/producer seam in the already listed CLI/Work files and
+  rerun selected-live. Preserve exact identity, cancellation, process-stop,
+  proof, lease, outcome, replay and accounting assertions. No direct decision-row
+  mutation, unexplained filtering or bare count substitution.
+- [ ] **P1-6c-evidence** after audit: Independent read-only investigation may run
+  alongside receipt reconciliation. Write `reviews/evidence/failures.json` under
+  this attempt's evidence root with exactly 24 assertion records, each containing
+  suite/test, original log line, expected/actual, source and dependency history,
+  focused reproduction command/log/exit/count, relevance and disposition.
+  Multiple assertions in one test retain separate records. Reconcile the seven
+  suite-group counts above and explicitly retain the seven unexpected failures.
+  Use the history, diff and classification commands below; trace fixtures and
+  affected production dependencies, not just whether a test file changed.
+  Classify as slice defect, evidenced baseline/unrelated, environment, or unknown;
+  unknown blocks acceptance. This task delivers the initial classification and
+  pre-repair reproduction; regressions updates the same records with final-source
+  results before calling an earlier failure resolved. Baseline claims need concrete historical semantics or
+  reproduction evidence; do not reset this shared tree or create worktrees.
+  Read-only `git show <commit>:<path>` may inspect the identified history.
+  Each unresolved unrelated failure gets an explicit follow-up owner (parent P1
+  maintainer or the evidenced later slice), affected paths and reproduction.
+  The implementation owner records proposed slice-only disposition in progress;
+  independent reviewers must accept it. Classification never makes aggregate green.
+- [ ] **P1-6c-catalog-projection** after evidence and decision-repair: The serial
+  owner confirms catalog schema/parity from `SurfaceCatalog.swift`,
+  `SurfaceCatalog+RowSupport.swift`, `SurfaceCatalog+RowsCLI.swift`, registered
+  `TaskCommands.swift` and existing catalog/parity tests. Add only missing task
+  run/decide rows in `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift`, matching
+  actual command capabilities, mutation and audit behavior. Retain full parity
+  assertions; extend `Tests/RielaCoreTests/SurfaceCatalogTests.swift` or
+  `Tests/RielaCLITests/SurfaceParityCLITests.swift` only if existing coverage cannot
+  detect the demonstrated omission. No registration removal to hide a mismatch.
+  Verify failed-session semantics in read-only
+  `Sources/RielaWork/CompletionEvaluator.swift` and the fixture, then add the
+  required `acceptanceNotMet` reason in canonical order to
+  `Tests/RielaCLITests/TaskProjectionProofTests.swift`; retain all gate/finding
+  reasons and task-state assertions. Do not weaken the evaluator or example.
+  Deliver before/after intent hashes, focused failing/passing evidence and the
+  exact repair rationale. Run catalog-projection below with positive counts for
+  all three suites. Other failures authorize no unrelated edits; a material
+  issue beyond listed scope needs a documented scope decision before repair.
+- [ ] **P1-6c-store** after catalog-projection: Verify the preserved implementation, repairing
   only demonstrated gaps. In `WorkStore+Decisions.swift` and
   `WorkStore+Reservation.swift`, preserve and consume the existing
   `attemptCancellation(taskId:attemptId:sessionId:)` read and
@@ -409,7 +419,8 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
   only canonical exact cancelled snapshots; atomically update attempt, lease,
   task and acknowledgment. Reopen recognizes already committed acknowledgment
   without applying it twice. Keep pending replacement consumption in the existing
-  reservation transaction. Extend the three Work test files listed above.
+  reservation transaction. Extend the three Work test files listed above only
+  for demonstrated missing coverage.
 - [ ] **P1-6c-remote** after store: Preserve implemented receipts and proof
   consumption; repair only defects exposed by the required live/race tests. In `DistributedNodeExecution.swift`,
   `DistributedJobController.swift`, `DistributedWorkerModels.swift`,
@@ -428,8 +439,8 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
   The task-backed caller awaits that proof before canonical cancellation
   persistence; failed/lost transport keeps the attempt fenced. Bound individual
   waits and surface uncertainty without releasing the fence. Preserve plain
-  distributed cancellation and worker reuse; add Core controller and Server HTTP
-  tests plus the existing distributed process regression.
+  distributed cancellation and worker reuse; reuse Core controller, Server HTTP
+  and distributed process regressions, extending only demonstrated coverage gaps.
 - [ ] **P1-6c-live** after remote: Verify and complete the preserved connection of `TaskDispatch.swift` and
   `WorkflowRunCommand+TaskReservation.swift` to a run-owned bounded poll of exact
   durable pending requests. Use `TaskRunCancellation.swift` only as a cohesive
@@ -456,7 +467,7 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
   in the cohesive helper; if the file exceeds 1000, move only existing finalization
   responsibility to `WorkflowRunCommand+Finalization.swift`, preserving access
   boundaries. No broad file splitting is authorized.
-- [ ] **P1-6c-regressions** after live and evidence: Complete the matrix below. Keep new live
+- [ ] **P1-6c-regressions** after live and evidence: Verify the preserved matrix below. Keep new live
   tests in `TaskCancellationIntegrationTests.swift` and its fixtures file to
   avoid enlarging the existing integration suite unnecessarily. Extend existing
   selected-host fixtures only where needed. Run all commands below on final
@@ -489,28 +500,37 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
   shared-applier decisions and owned teardown; no direct decision-row mutation.
   Existing passing cases need final-source reruns, not duplicate test bodies.
 
-  Step 6 continuation 3 added exact prelaunch cancelled snapshot persistence,
+  Historical context only: Step 6 continuation 3 added exact prelaunch cancelled snapshot persistence,
   task-run request-before-signal decision application and selected-host controller
   stop-proof consumption. Focused local and controller tests pass. Keep store,
   remote, live and regression boxes open. Continuation 4 adds passing focused
   acknowledgment-loss, terminal-projection failure, empty-controller proof and
   once-only replacement tests. Real selected-host dispatch, complete race and
   failure matrix, final-source V1/V11 and aggregate acceptance, reviews and
-  publication remain pending.
+  publication remained pending then; current host evidence supersedes those
+  historical listener failures. At this gate require all 24 assertions classified,
+  material slice defects repaired and affected gates rerun on final source.
+  Unrelated failed broad tests may proceed only as an explicit proposed slice-only
+  disposition for independent review; unknown or material failures cannot.
 - [ ] **P1-6c-integrity** and **P1-6c-adversarial** after regressions: Independent
   Sol read-only reviews may run concurrently. Integrity verifies test selection,
   positive counts, meaningful ordering/process assertions, final-source hashes,
-  actual terminal exits and complete logs. Adversarial review exercises material
+  actual terminal exits, complete logs and every aggregate disposition. Both
+  reviews explicitly accept or reject slice-only treatment of unrelated failures.
+  Adversarial review exercises material
   races/failure cases against design; no style-only or speculative scope.
 - [ ] **P1-6c-reconcile** after both reviews: Single Sol owner repairs all high/mid
   findings and shared-file drift, preserves accepted changes, reruns affected
   focused/aggregate/lint gates and obtains renewed independent acceptance where
-  repairs invalidate review. Shared indexes and documentation edits are serial.
+  repairs invalidate review. Refresh design, plan, owner progress and directly
+  affected README usage here, before final combined-tree review. Record unresolved
+  broad failures and owners separately from P1-6c and active later slices. Shared
+  indexes and documentation edits are serial; no unrelated README changes.
 - [ ] **P1-6c-integration** after reconciliation: Independent Astra review accepts
   the exact combined tree, evidence and accepted design with no material open
   finding. Any repair repeats affected verification/review before acceptance.
-- [ ] **P1-6c-finalize** after integration: Serial docs refresh in design, this
-  plan, progress and README's directly affected task decision/cancellation usage.
+- [ ] **P1-6c-finalize** after integration: Verify the reviewed docs and unchanged
+  accepted source tree; any substantive new edit repeats affected review.
   Record exact changed-file allowlist and accepted hashes; workflow finalization
   commits and non-force pushes that exact accepted result to
   `origin/feat/remaining-impl-plans`. Record commit/push receipts. Keep parent
@@ -523,8 +543,8 @@ historical entries and P1-6b hashes. Do not mark parent/later slices complete.
 | Selected-host decision identities | Existing CLI fixture: record every reservation/acknowledgment/replay decision ID, kind and causality; exactly one human cancel, stable complete history/application and accounting on replay; explain both observed rows and pass capable-host rerun. |
 | CLI validation/replay | `TaskCommandParsingTests.swift`, `TaskCommandMutationTests.swift`, `DecisionApplierStoreTests.swift`: absent/conflicting actions, blank principal/ID/reason, negative/missing version, step without rerun, valid actions; rejected inputs leave rows/version unchanged; identical replay returns original result; conflicting replay/stale new decision rejects. |
 | Prelaunch and authorization race | Work reservation/cancellation tests plus `TaskCancellationIntegrationTests.swift`: deterministic barriers before authorization and node start; no worker/process launch if request wins; exact reserved cancellation snapshot; authorized uncertainty stays fenced. |
-| Live local and separate-process decisions | New CLI live tests: real owned command/process blocked at a deterministic fixture barrier, request from another store connection/process using CLI decision path, durable row observed before signal, process exit observed before acknowledgment, IDs match reservation. Cover cancel, reject, guard stop and replacement. |
-| Ctrl-C | New CLI live tests drive the actual EntryPoint signal path in an owned subprocess; prove durable request before interruption, repeated signals stable, pre-reservation signal does not launch work, ordinary non-task command cancellation unchanged. |
+| Live local and separate-process decisions | Preserved CLI live tests: real owned command/process blocked at a deterministic fixture barrier, request from another store connection/process using CLI decision path, durable row observed before signal, process exit observed before acknowledgment, IDs match reservation. Cover cancel, reject, guard stop and replacement. |
+| Ctrl-C | Preserved CLI live tests drive the actual EntryPoint signal path in an owned subprocess; prove durable request before interruption, repeated signals stable, pre-reservation signal does not launch work, ordinary non-task command cancellation unchanged. |
 | Live selected host | CLI selected-host fixtures, `DistributedProcessCancellationTests.swift`, `DistributedWorkerHTTPTests.swift`, `DistributedJobControllerTests.swift`: authenticated chosen worker actually runs/stops, exact session/job linkage, no local fallback, no acknowledgment merely on HTTP acceptance, delayed worker-stop proof holds fence, stale lease/incarnation proof rejected. |
 | Persistence and acknowledgment loss | Work and CLI live tests inject failure at terminal persistence and after snapshot/before acknowledgment; reopen store and reconcile exact snapshot; after committed acknowledgment simulate lost response and prove no duplicate transition, evidence, usage or replacement. |
 | Negative terminal evidence | Wrong session, created/nonterminal snapshot, success and non-cancelled failure cannot release pending fence; generic reconcile blocked. No rewriting an unrelated outcome as cancellation. |
@@ -553,12 +573,55 @@ substitute for these implementation gates.
 CLANG_MODULE_CACHE_PATH=tmp/work-runtime-p1/p1-6c/module-cache SWIFTPM_MODULECACHE_OVERRIDE=tmp/work-runtime-p1/p1-6c/module-cache swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof
 ```
 
-This is the exact operator command. Run first with diagnostic evidence before
-semantic repair, then on repaired final source; record one selected test and
-its terminal summary. The reported original exit is 1; complete original log
-path is unknown. Keep diagnostic failures separate from passing reruns and
-retain decision snapshots with each source manifest. A failed listener start
-cannot identify the observed two rows or satisfy the passing rerun gate.
+This retained planned command selects the same test as the passing host receipt;
+it is not a claim about the operator's exact argv. Recover actual argv/environment
+from `evidence.json` and its logs (the supplied host prefix has no scratch-path
+flag). Reuse matching capable-host evidence only with explicit dependency/source
+justification. Any changed cancellation or worker dependency requires a new host
+run; never treat listener refusal as a behavioral failure or passing coverage.
+
+**source-match, failure inventory and history** — complete logs under the new
+attempt directory (`source-match.log`, `failure-inventory.log`, `history.log`,
+`source-diff.log` respectively):
+
+```bash
+shasum -a 256 -c tmp/work-runtime-p1-6c-decision-20260924-c07910f-comm000006/continuation-2/source-test.sha256
+rg -n 'Test Case .* failed \(| error: ' tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log
+git log -n 12 --format=oneline -- Sources/RielaCore/SurfaceCatalog+RowsCLI.swift Sources/RielaWork/CompletionEvaluator.swift Tests/RielaCLITests/TaskProjectionProofTests.swift
+git diff 30601aa89485436440728bf417b0156ea477f25d -- Sources Tests
+```
+
+The original manifest is immutable baseline evidence: do not overwrite it after
+repairs. Produce a new sorted manifest of every tracked/untracked `Sources/` and
+`Tests/` file, `Package.swift`, `Package.resolved` when present and the HEAD ID;
+record SHA-256 for each path and the manifest, then check it before/after every
+accepted run. Compare its path set too, so newly added files are not omitted.
+Record the diff from the host manifest and gate dependency relevance when reusing
+historical evidence; unchanged cancellation sources alone do not prove unchanged
+build inputs. A mismatching old manifest after authorized repairs is expected,
+not permission to claim the old run used final source.
+
+**catalog-projection** — log `<attempt>/catalog-projection.log`:
+
+```bash
+swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'
+```
+
+Must pass all three suites with positive counts, preserving full catalog parity
+and failed-session completion requirements.
+
+**classification** — log `<attempt>/classification.log`:
+
+```bash
+swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'DoctorCommandTests|RielaExampleParityTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests|WorkflowRunnerAdmissionTests'
+```
+
+Capture all selected suite counts and each failed assertion. This can remain
+failed for evidenced unrelated defects; it cannot silently skip tests or serve
+as passing P1-6c evidence. History command paths above cover proposed repairs;
+repeat `git log -n 12 --format=oneline -- <exact-affected-paths>` and
+`git show <identified-commit>:<exact-path>` for every other failure's fixture and
+production dependency, recording resolved commands/commits in its record.
 
 **V0** — log `tmp/work-runtime-p1/p1-6c/V0.log`
 
@@ -569,7 +632,7 @@ cannot identify the observed two rows or satisfy the passing rerun gate.
 **V1** — log `tmp/work-runtime-p1/p1-6c/V1.log`
 
 ```bash
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'
 ```
 
 **V2** — log `tmp/work-runtime-p1/p1-6c/V2.log`
@@ -581,7 +644,7 @@ cannot identify the observed two rows or satisfy the passing rerun gate.
 **V11** — log `tmp/work-runtime-p1/p1-6c/V11.log`
 
 ```bash
-/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof'
 ```
 
 **decisions** — log `tmp/work-runtime-p1/p1-6c/decisions.log`
@@ -665,11 +728,15 @@ subsequently accepted edit actually changes a packaged workflow/prompt/skill.
 
 ### Completion criteria
 
-Both live-test decisions are identified by ID, kind and causal evidence; the
-justified production or expectation correction passes a capable-host rerun
+Both live-test decisions retain verified ID, kind and causal evidence; any
+new justified production or expectation correction passes an affected capable-host rerun
 without weakening replay/accounting assertions. All matrix behaviors have
 passing final-source evidence, or bounded environment
 failures are recorded alongside passing source-matched capable-host evidence.
+Catalog/projection gates pass. All 24 original assertions and any new failures
+have explicit evidence-backed dispositions; no unknown or material slice failure
+remains. Broad failures stay failed with follow-up ownership, and unrelated
+residuals require independent slice-only acceptance.
 Strict lint and compile pass; independent integrity/adversarial/Astra decisions
 accept the exact tree without high/mid findings. Documentation accurately reports
 request acceptance versus terminal acknowledgment. Progress records review/log/
@@ -677,21 +744,25 @@ hash evidence and exact committed/pushed files. Only then mark P1-6c complete;
 P1-6d, P1-7a/b and parent P1 remain open. Do not reuse the historical P1-6b task
 checkboxes, hash comparison or host receipt as new-slice completion evidence.
 
+**Current status:** Source-matched capable-host cancellation selections pass;
+catalog/projection repairs, complete assertion classification, final-source
+affected gates, reviews and publication are pending. No implementation task is
+marked complete solely by this planning refresh.
+
 ### Current planning author self-check
 
-Step 3 `comm-000004` accepted the decision-identity amendment with empty
+Step 3 `comm-000004` accepted the host-evidence/classification design with empty
 findings/feedback. Step 5 has not reviewed these revised plan bytes. One plan
-`p1-dispatch` retains `dependsOn: []`; its internal DAG orders runtime diagnosis
-before conditional repair, then existing coupled implementation, final gates,
-independent reviews, serial reconciliation and publication. No user decision,
-new architecture, package change or new implementation branch is required.
+`p1-dispatch` retains `dependsOn: []`; its internal DAG orders receipt checks and
+classification, serial conditional repair, preserved seam verification, final
+gates, independent reviews, serial reconciliation/docs and Astra acceptance
+before publication. No user decision, new architecture or branch is introduced.
 
-Run `python3 tmp/p1-6c-step4-plan/self-check.py`; its complete log is
-`tmp/p1-6c-step4-plan/self-check.log`. It checks accepted design hash, JSON
-metadata/DAG, task and command coverage, unchanged existing WIP/design, unchanged
-index and whitespace. Planning checks do not claim Swift behavioral or lint
-acceptance. The observed two-decision failure and remaining implementation
-verification remain open under the tasks above.
+Run `python3 tmp/p1-6c-step4-host-refresh/self-check.py`; complete log:
+`tmp/p1-6c-step4-host-refresh/self-check.log`. It checks design hash, metadata/DAG,
+write paths, task and command coverage, preservation of every other tracked and
+untracked input file, unchanged index and whitespace. Planning checks do not
+claim Swift, lint, implementation-review or publication acceptance.
 
 ---
 

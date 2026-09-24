@@ -2,7 +2,7 @@
 
 ## Current executable contract — P1-7a only (2026-09-25)
 
-Mode `issue-resolution`; issue `comm-000001`, intake `comm-000002`, execution
+Mode `planning-only` (`design-plan-only`); issue `comm-000001`, intake `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`. Step 3 `comm-000004`
 accepted design §17.10 without findings. Stable planId `p1-dispatch`,
 planPath `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`,
@@ -10,7 +10,20 @@ planPath `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`,
 The complete batch remains this one plan. Its single integration owner handles
 all coupled source/tests; do not fan out writers for sequential tasks.
 Native Riela schedules the successive dependency-ready waves below.
-No Codex-reference or Cursor mapping applies.
+Prior investigation references: `/root/retry_owner`, `/root/inactivity_owner`.
+These identify diagnostic authors; no reference-repository or Cursor mapping applies.
+
+**Current intent and checkpoint:** Review and publish only the bounded ownership
+amendment after the failed before-removal V1 at
+`855a99692db80ec17cac055d3c8263473223dbd0`. The preserved receipt is
+`tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/logs/before-removal-v1-final.log`:
+**FAILED**, 60 tests, two failing retry cases, four assertions, exit 1.
+No legacy deletion occurred. Preserve both dirty Step 6 files
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` and
+`impl-plans/progress/p1-dispatch.md` byte-for-byte in this planning run, plus all
+prior evidence and other sessions' work. Swift/tests/examples/progress are
+read-only now. A0–A5 below describe later implementation, not work authorized
+by this planning-only execution. P1-7a and parent P1 remain open.
 
 **Authority:** §17.10 and this current contract supersede historical P1-7b
 execution/write-path restrictions and no-publication-between-slices wording below.
@@ -26,7 +39,16 @@ explicit bounded additional ownership below. Before native implementation/review
 fanout, the serial workflow checkpoint owner commits the accepted design, this
 plan and that manifest only. Record exact committed paths/hash; Step 4 does not
 stage, commit or claim Step 5 acceptance. Never dispatch against the historical
-P1-7b manifest. No other files enter the planning checkpoint.
+P1-7b manifest. No other files enter the planning checkpoint. This amendment
+also needs the manifest update because its exact write allowlist and prior
+acceptance metadata otherwise describe the superseded contract. Current Step 5
+acceptance is pending; historical acceptance is not transferable. After review,
+non-force push the planning checkpoint before any later implementation dispatch.
+The checkpoint allowlist is exactly the design, this plan and this manifest;
+never stage/publish either dirty Step 6 file. Inspect `git diff --cached --name-only`
+before committing and `git show --format= --name-only HEAD` before pushing;
+both must match that allowlist, with HEAD tied to the accepted review. This
+planning run does not proceed into implementation after publication.
 
 Do not add a new framework, public API, compatibility layer, recursive director,
 task-create CLI, new schema, broad formatting, dependency/lockfile regeneration,
@@ -48,10 +70,14 @@ All paths are repository-relative. No directory glob authorizes extra edits.
 | `Sources/RielaCLI/WorkflowCommands.swift`, `WorkflowRunCommand.swift`, `ProductionNodeAdapter.swift`, `RielaCLIApplication.swift` | Remove old execution branch, request serialization and scenario wrapper; preserve plain/mock, remote authentication, actual task reservation and required/optional gate finalization behavior. |
 | `Sources/RielaCLI/SessionCommands.swift`, `SessionCommandModels.swift`, `RielaCommand+SessionParsing.swift`, `LoopCommands.swift`; `Sources/RielaCore/DeterministicWorkflowRunner.swift` | Conditional obsolete consumers only; fresh-read callers first. Preserve session resume/rerun, loops, routines and specialist/event stores/dispatch. |
 | Additional: `Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift`, `WorkflowRunCommand+TaskReservation.swift`; `Sources/RielaCore/WorkflowRunResult.swift` | Delete obsolete record writer after A1; remove `!options.autoImprove` from reservation guard without weakening other admission checks; remove optional supervision result and its callers. Do not delete existing user artifacts. |
-| Replacement-only additional: `Sources/RielaCLI/TaskDispatch.swift`, `WorkflowRunLivePersistence.swift`; `Sources/RielaWork/TaskGuardCoordinator.swift` | Only if positive A1 tests demonstrate missing inactivity/recovery wiring: connect existing runner progress observations to existing task guard/shared applier with exact-session fencing. No new polling framework or public API; preserve atomic persistence, cancellation and terminal arbitration. |
+| Atomic failure repair: `Sources/RielaCore/RuntimePublication.swift`, `Sources/RielaCore/RuntimeStore.swift` | Carry typed failure classification in the existing step-update input and apply it with failed status before the first canonical save. Preserve other callers and advisory routing. No TaskDispatch-only projection workaround. |
+| Live inactivity: `Sources/RielaCLI/TaskRunCancellation.swift`; existing `Sources/RielaCLI/TaskDispatch.swift`, `Sources/RielaWork/TaskGuardCoordinator.swift` | Extend the existing observer, use canonical progress and the existing guard/shared applier, use step creation time before the first heartbeat, preserve cancellation acknowledgment and terminal reconciliation; exact A1 sequence below. No second polling loop. |
 | `Tests/RielaWorkTests/TaskDispatcherTests.swift`; `Tests/RielaCLITests/TaskCommandMutationTests.swift`, `TaskDispatcherIntegrationTests.swift`, `TaskRuntimeExampleTests.swift` | A1 replacement behavior and durable invariants, then unchanged regression coverage after removal. |
 | `Tests/RielaCLITests/CommandParsingTests.swift`, `WorkflowCommandAutoImproveTests.swift`, `WorkflowCommandInspectionTests.swift`, `WorkflowCommandPackageLifecycleTests.swift`, `WorkflowRunHelpTests.swift` | After A1, replace obsolete assertions with rejection/preservation cases; retain cancellation without auto-improve, plain/mock and authenticated remote regressions. |
 | Additional: `Tests/RielaCLITests/RielaExampleCatalog.swift`; retained `RielaExampleParityTests.swift` | Remove deleted catalog entries; retain both task examples; reconcile observed mock counts without deriving expectations from actual output or dropping assertions. |
+| `Tests/RielaCLITests/SurfaceParityCLITests.swift` | After A1, change `testOptionUniverseContainsRealFlagsAndRejectsRetiredOnes` to reject the removed auto-improve option while preserving max-steps/mock-scenario assertions. |
+| `examples/catalog/chat-persona-and-agent-trio.md` | After A1, replace obsolete invocation and links with the accepted task-example guidance; retain specialist/event guidance. |
+| `examples/monja-project-task-orchestrator/executor.ts`, `examples/monja-agent-collaboration/riela.ts`, `examples/monja-agent-collaboration/verify-workflow.ts` | After A1, remove only the proven `--no-auto-improve` argument; preserve all other command arguments and behavior. |
 | Eight exact files in the manifest under `examples/auto-improve/`, `examples/default-superviser/`, `examples/supervised-mock-retry/` | Delete after A1 only. No edit to replacement bundles is planned. |
 | `impl-plans/progress/p1-dispatch.md` | Only this owner writes task status and evidence receipts; historical receipts remain intact. |
 
@@ -64,6 +90,15 @@ exact-path reviewed amendment to this plan/manifest before edit. If a Swift file
 would exceed the project's size limit, request the narrow responsibility split
 in that amendment; do not silently expand ownership.
 
+Inspection/regression-only owners are
+`Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift`,
+`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`,
+`Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift`,
+`Sources/RielaWork/WorkEvidenceProjector.swift`, and
+`Sources/RielaCLI/WorkflowRunLivePersistence.swift`. The accepted causal repair
+requires no change to these paths; remove the prior live-persistence write grant.
+Do not weaken terminal immutability or alter the CLI's one-second throttle.
+
 ### Dependency waves, deliverables and invariants
 
 - **A0 / wave 1, no task dependency:** Fresh-read accepted design and manifest;
@@ -71,12 +106,14 @@ in that amendment; do not silently expand ownership.
   Record each proposed edit intent and behavior-to-test mapping. Run V7 baseline.
   Trace the remote receiving validation boundary: current repository search finds
   `ExecuteWorkflowInput` only in the outbound query in `WorkflowCommands.swift`.
-  Determine the actual supported decoder/schema from repository code/tests,
-  without introducing a remote service or querying workflow registries. Record
-  exact existing rejection behavior and tests, or obtain a reviewed narrow path
-  amendment. Outbound omission or a mocked error alone does not prove receiving
-  rejection. If the boundary cannot be verified, retain this explicit acceptance
-  gap and do not declare A2/A3 complete.
+  Its receiving schema/service is outside this Swift repository. Record the
+  unresolved owner/repository/schema paths and authorization as an external
+  dependency; do not invent a server or keep searching local code for one.
+  A0 can deliver that explicit dependency record so local A1 proceeds in a later
+  implementation run. Receiving false/null field-presence rejection and ordinary
+  authenticated-request acceptance need the authorized external owner's exact
+  commands/results. Outbound omission or mocked errors are insufficient.
+  A2/A3 acceptance and P1-7a closure remain blocked without that evidence.
 - **A1 / wave 1, depends A0:** Complete the matrix below using real dispatch,
   canonical sessions and durable WorkStore evidence; reuse existing fixtures.
   Test missing behavior first and narrowly repair only listed integration paths.
@@ -86,9 +123,12 @@ in that amendment; do not silently expand ownership.
   and fresh V1 with every named suite positive. Seal `before-removal` source
   manifest, logs, command, exit and row-to-test evidence before proceeding.
   No legacy implementation/test/example deletion or disabling occurs in A0/A1.
+  Execute the detailed A1 sequence below serially; neither retry-only success
+  nor supplementary suites replace the complete four-suite V1 barrier.
 - **A2 / wave 2, depends A1:** Recheck the sealed source and legacy file presence;
   remove only authorized obsolete files/plumbing. Implement removed CLI aliases
-  and remote-field rejection, test false/null values as presence, and prove plain
+  and coordinate externally owned remote-field rejection only after owner/path
+  authorization; test false/null values as presence, and prove plain
   runs create no task/store. Preserve similarly named user runtime variables.
   Rewrite legacy tests after the barrier and update catalog/help expectations.
   Shared session/loop options must reject obsolete paths while retained commands
@@ -113,13 +153,61 @@ in that amendment; do not silently expand ownership.
 | A1 behavior | Exact existing or proposed test intent |
 | --- | --- |
 | Inactivity | Add `TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt` and `testTaskProgressPreventsInactivityAction`: drive a real reserved running session through controlled backend progress, prove durable guard decision and exact terminal acknowledgment; progress case must not falsely stop. These are proposed tests, not existing passes. |
-| Bounded retry / failure recovery | Add `TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit` and `testLastAdmittedRecoveryAttemptCanSucceed`: controlled runner failure, ordinary pending-request consumption, distinct sessions and no over-budget launch; success on last admitted attempt is allowed. |
+| Bounded retry / failure recovery | Preserve and extend existing dirty `TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit` and `testLastAdmittedRecoveryAttemptCanSucceed`: both failed in V1. Assert first canonical failed snapshot and reopened evidence contain `adapterFailure`, controlled runner failure, ordinary pending-request consumption, distinct sessions and no over-budget launch; success on last admitted attempt is allowed. |
 | Gate recovery | Retain `TaskRuntimeExampleTests.testRejectedGateRecoveryConsumesPendingRequestAndAcceptsSecondAttempt`: no direct success seeding, rejected required gate retained, ordinary second attempt and stable refused replay. |
-| Cancellation | Retain `TaskRuntimeExampleTests.testDirectorChildCancellationAcknowledgesExactTerminalSession`; add `TaskDispatcherIntegrationTests.testCancelledTaskDoesNotRetryOrCreateLegacyIncident` for ordinary task cancellation/fence and stable retry/incident counts. Run the separate accepted cancellation-host suite too. |
+| Cancellation | Retain `TaskRuntimeExampleTests.testDirectorChildCancellationAcknowledgesExactTerminalSession` and existing dirty `TaskDispatcherIntegrationTests.testCancelledTaskDoesNotRetryOrCreateLegacyIncident` for ordinary task cancellation/fence and stable retry/incident counts. Run the separate accepted cancellation-host suite too. |
 | Replay | Retain `TaskDispatcherIntegrationTests.testCLIRerunConsumesOnePendingRequestAndReplayDoesNotDuplicate`; reopen store and compare attempts, sessions, pending requests, ledger/accounting, not only CLI text. |
 
 All proposed names must be implemented or replaced by an explicit reviewed
 mapping to equivalent existing tests; never report a zero-selection pass.
+
+### A1 exact serial repair and proof sequence
+
+1. Preserve existing failing assertions; use the integration harness and existing
+   persistence observation seams to inspect the first canonical failed snapshot,
+   not merely the post-finalization task projection. Reopen SQLite/WorkStore and
+   assert the same classification, causal evidence and retry/accounting counts.
+   The failed publication currently saves terminal nil before the later suppressed
+   `markSessionFailed` correction encounters `terminalSnapshotConflict`.
+2. In `RuntimeStore.swift`, extend `WorkflowStepExecutionUpdateInput` with an
+   optional typed failure classification using a source-compatible default;
+   apply supplied classification in the same failed-status mutation. In
+   `RuntimePublication.swift`, supply `adapterFailure` for adapter-failure
+   publication, including repeated/advisory updates where applicable. Do not
+   classify unrelated failures or require a later correction. Preserve advisory
+   routing, required-gate failure, cancellation precedence and task-free runs.
+   Run the retry cases and canonical-regression selection below before proceeding.
+3. Add the two proposed live tests in `TaskDispatcherIntegrationTests.swift`.
+   `testTaskInactivityPersistsViolationAndStopsExactAttempt` covers a backend
+   with no heartbeat and a backend that stops after progress; observe it running
+   through actual dispatch, then durable violation/decision and exact-session
+   acknowledgment before replacement. `testTaskProgressPreventsInactivityAction`
+   emits progress more frequently than the timeout, with a timeout below one
+   second, and proves normal completion without false violation/cancellation.
+   Use controlled execution/clock synchronization, not synthetic terminal seeds.
+4. Extend the 100 ms observer in `TaskRunCancellation.swift` to read the exact
+   running canonical session at `store.rootDirectory`. Canonical backend-event
+   writes are unthrottled; the CLI projection is unsuitable. Use
+   `TaskGuardSnapshotAdapter`/`TaskGuardCoordinator`; in the latter file, make
+   `createdAt` the no-event baseline, otherwise use `lastBackendEventAt`.
+   Polling does not reset progress. Missing, stale or failed reads authorize no
+   interruption. Recheck progress, task version and reservation identity before
+   applying; reload after conflicts or terminal completion rather than forcing
+   cancellation. Persist immutable evidence and the shared policy decision first.
+5. Reuse stable attempt/step observation identities and original payloads on
+   replay; never rewrite immutable idle durations/timestamps. Warnings produce
+   evidence without cancellation. Recovery/stop uses the existing cancellation
+   record, interruption, join, selected-host stop proof and terminal acknowledgment.
+   No replacement may launch before acknowledgment. In `TaskDispatch.swift`,
+   retain the causal live violation at terminal reconciliation without a duplicate
+   decision. Cover warning/repeated observation, progress/terminal races,
+   cancellation precedence and reopened replay in the same owned fixtures.
+6. Run V0, canonical-regression, cancellation-host and the complete V1 on the
+   stable before-removal tree. Capture positive counts for all four V1 suites,
+   named row assertions, complete logs, exit 0 and source hashes. The historical
+   60-test failure remains preserved; no test disabling/deletion is permitted.
+   If any assertion, suite or source identity is missing, A1 remains incomplete
+   and A2 cannot start. Repairs invalidate affected receipts.
 
 ### Evidence, drift and command contract
 
@@ -144,7 +232,8 @@ not a pipe/tee exit. Missing summary, truncation, skipped-only or zero-test runs
 are incomplete, never PASS. Any necessary environment adaptation is recorded
 alongside the original failure; do not silently substitute commands.
 
-Commands below use attempt-1; increment paths for retries. `<key>.log` and
+Commands below use attempt-3 as a prospective example; if occupied, choose the
+next unused attempt without overwriting any receipt. `<key>.log` and
 `<key>.exit` live under the attempt directory (V1 separately under before-removal
 and after-removal). V0 compiles/typechecks; V1 proves the deletion matrix and
 existing four-suite behavior; V2–V4 preserve accepted store/guard/capability
@@ -174,6 +263,23 @@ swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCo
 ```bash
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'
 ```
+
+**retry-focused — diagnostic only, never a substitute for V1**
+
+```bash
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit|TaskDispatcherIntegrationTests.testLastAdmittedRecoveryAttemptCanSucceed'
+```
+
+**canonical-regression — before removal and final source**
+
+```bash
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'
+```
+
+Require positive actual-suite counts, advisory/failure behavior and the existing
+canonical terminal/cancellation arbitration assertions. Do not edit these
+read-only regression files to accommodate a failure. Required new first-write
+classification assertions belong to the already-owned V1 integration tests.
 
 **V2-actual-suites — mandatory supplement**
 
@@ -231,6 +337,26 @@ swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCa
 swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaExampleParityTests'
 ```
 
+**retained-consumers — after A2**
+
+```bash
+swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'SurfaceParityCLITests'
+(cd examples/monja-agent-collaboration && bun run typecheck)
+(cd examples/monja-agent-collaboration && bun run test)
+(cd examples/monja-project-task-orchestrator && bun run typecheck)
+(cd examples/monja-project-task-orchestrator && bun run test)
+rg -n -- '--no-auto-improve|--auto-improve|examples/auto-improve/|examples/supervised-mock-retry/|examples/default-superviser/' examples/catalog/chat-persona-and-agent-trio.md examples/monja-project-task-orchestrator/executor.ts examples/monja-agent-collaboration/riela.ts examples/monja-agent-collaboration/verify-workflow.ts
+```
+
+Require the real `SurfaceParityCLITests.testOptionUniverseContainsRealFlagsAndRejectsRetiredOnes`
+assertions and positive Monja test counts. Typechecks must exit 0; missing local
+dependencies are an explicit verification gap, not permission to regenerate
+lockfiles. Review the three argument-array diffs to prove only the obsolete
+argument changed, and verify replacement catalog links exist. For this targeted
+reference audit require no remaining obsolete invocation/link (rg exit 1 means
+no matches); retained historical context needs explicit classification. Tests
+must not execute external live services as an unrecorded substitute for mocks.
+
 **remote**
 
 ```bash
@@ -252,7 +378,7 @@ swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel
 **V6**
 
 ```bash
-xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/changed-swift-files.nul
+xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/changed-swift-files.nul
 ```
 
 **V7**
@@ -288,7 +414,7 @@ tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-
 **V8-task-repair-loop-mock**
 
 ```bash
-tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/task-repair-loop-store --output json
+tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/task-repair-loop-store --output json
 ```
 
 **V8-task-agent-director-validate**
@@ -300,7 +426,7 @@ tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-d
 **V8-task-agent-director-mock**
 
 ```bash
-tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-1/task-agent-director-store --output json
+tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7a-20260925/plans/p1-dispatch/attempt-3/task-agent-director-store --output json
 ```
 
 The remote filter uses the actual XCTest class `WorkflowCommandTests` even

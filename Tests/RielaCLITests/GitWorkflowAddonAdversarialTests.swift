@@ -5,6 +5,69 @@ import XCTest
 @testable import RielaCore
 
 final class GitWorkflowAddonAdversarialTests: XCTestCase {
+  func testGitHubCLICredentialHelperRequiresExactAllowlistedCommand() {
+    XCTAssertEqual(
+      GitExecutablePolicy.allowedGitHubCLIPath(for: "!/opt/homebrew/bin/gh auth git-credential"),
+      "/opt/homebrew/bin/gh"
+    )
+    XCTAssertEqual(
+      GitExecutablePolicy.allowedGitHubCLIPath(for: "!/usr/local/bin/gh auth git-credential"),
+      "/usr/local/bin/gh"
+    )
+    for untrusted in [
+      "!gh auth git-credential",
+      "!/opt/homebrew/bin/gh auth git-credential; touch /tmp/unsafe",
+      "!/opt/homebrew/bin/gh auth git-credential --extra",
+      "!/tmp/gh auth git-credential"
+    ] {
+      XCTAssertNil(GitExecutablePolicy.allowedGitHubCLIPath(for: untrusted))
+    }
+  }
+
+  func testHTTPSPushUsesExactGitHubCLIHelperWithOperatorHomeOnlyForTransport() async throws {
+    let helperPath = "/opt/homebrew/bin/gh"
+    guard FileManager.default.fileExists(atPath: helperPath) else {
+      throw XCTSkip("Homebrew GitHub CLI is not installed on this test host")
+    }
+    let repository = try GitTestRepository(withBareRemote: true)
+    _ = try repository.git([
+      "config", "credential.https://github.com.helper", "!\(helperPath) auth git-credential"
+    ])
+    _ = try repository.git([
+      "remote", "set-url", "--push", "origin", "https://github.com/example/repository.git"
+    ])
+    let head = try repository.git(["rev-parse", "HEAD"]).trimmed
+    let runner = ScriptedGitCommandRunner(mode: .fixedLiveTip(head))
+    let operatorHome = ProcessInfo.processInfo.environment["HOME"] ?? ""
+    let output = try await repository.makeResolver(commandRunner: runner).execute(
+      pushInput(repository: repository),
+      context: AdapterExecutionContext()
+    )
+
+    XCTAssertEqual(gitPayload(output.payload)["status"], .string("already-pushed"))
+    XCTAssertTrue(runner.liveArguments.contains("credential.helper=!\(URL(fileURLWithPath: helperPath).resolvingSymlinksInPath().path) auth git-credential"))
+    XCTAssertEqual(runner.liveEnvironment["HOME"], operatorHome)
+    XCTAssertEqual(runner.liveEnvironment["GIT_CONFIG_GLOBAL"], "/dev/null")
+    XCTAssertEqual(runner.liveEnvironment["GIT_CONFIG_NOSYSTEM"], "1")
+  }
+
+  func testHTTPSPushRejectsUntrustedURLSpecificCredentialSnippet() async throws {
+    let repository = try GitTestRepository(withBareRemote: true)
+    _ = try repository.git([
+      "config", "credential.https://github.com.helper", "!/tmp/gh auth git-credential"
+    ])
+    _ = try repository.git([
+      "remote", "set-url", "--push", "origin", "https://github.com/example/repository.git"
+    ])
+
+    await XCTAssertThrowsErrorAsync(
+      try await repository.resolver.execute(pushInput(repository: repository), context: AdapterExecutionContext())
+    ) { error in
+      XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked)
+      XCTAssertTrue((error as? AdapterExecutionError)?.message.contains("untrusted URL-specific") == true)
+    }
+  }
+
   func testCompositeResolverAcknowledgesAndCleansAcceptedCommitArtifacts() async throws {
     let repository = try GitTestRepository()
     try repository.write("composite", to: "composite.txt")
@@ -497,6 +560,8 @@ final class ScriptedGitCommandRunner: GitCommandRunning, @unchecked Sendable {
   private let mode: Mode
   private var liveQueries = 0
   private var actionRan = false
+  private var capturedLiveArguments: [String] = []
+  private var capturedLiveEnvironment: [String: String] = [:]
   private let underlying = FoundationGitCommandRunner()
 
   init(mode: Mode) {
@@ -507,10 +572,15 @@ final class ScriptedGitCommandRunner: GitCommandRunning, @unchecked Sendable {
     lock.withLock { liveQueries }
   }
 
+  var liveArguments: [String] { lock.withLock { capturedLiveArguments } }
+  var liveEnvironment: [String: String] { lock.withLock { capturedLiveEnvironment } }
+
   func run(_ invocation: GitCommandInvocation) throws -> GitCommandResult {
     if invocation.arguments.contains("ls-remote") {
       let query = lock.withLock { () -> Int in
         liveQueries += 1
+        capturedLiveArguments = invocation.arguments
+        capturedLiveEnvironment = invocation.environment
         return liveQueries
       }
       if case let .beforeLiveQuery(targetQuery, action) = mode, query == targetQuery {

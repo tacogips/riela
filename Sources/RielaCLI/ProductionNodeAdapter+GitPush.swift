@@ -97,7 +97,8 @@ extension BuiltinWorkflowAddonResolver {
         "HEAD:\(snapshot.mergeRef)"
       ],
       environment: snapshot.transportEnvironment,
-      executableURL: repository.executableURL
+      executableURL: repository.executableURL,
+      diagnosticStage: "git push transport"
     )
     let verifiedTip = try liveRemoteTip(snapshot: snapshot, repository: repository)
     guard verifiedTip == head else {
@@ -181,7 +182,7 @@ extension BuiltinWorkflowAddonResolver {
     try gitFinalizationStore.requireOwnedTransportRepository(transportRepository)
     var result = snapshot
     result.transportArguments = [gitDirectoryArgument] + snapshot.transportArguments
-    result.transportEnvironment.merge(commandEnvironment) { _, runtimeOwned in runtimeOwned }
+    result.transportEnvironment = commandEnvironment.merging(snapshot.transportEnvironment) { _, helperOwned in helperOwned }
     return result
   }
 
@@ -243,6 +244,7 @@ extension BuiltinWorkflowAddonResolver {
     try gitPushTransportPolicy.validate(transport)
     let transportPolicy = try transportPolicy(
       transport,
+      pushURL: pushURL,
       repository: repository
     )
     return GitPushSnapshot(
@@ -430,6 +432,7 @@ extension BuiltinWorkflowAddonResolver {
 
   private func transportPolicy(
     _ transport: GitPushTransport,
+    pushURL: String,
     repository: GitRepositoryContext
   ) throws -> (arguments: [String], environment: [String: String]) {
     switch transport {
@@ -449,6 +452,12 @@ extension BuiltinWorkflowAddonResolver {
         within: helperRoot,
         repository: repository
       )
+      if let githubCLI = try configuredGitHubCLIHelper(pushURL: pushURL, repository: repository) {
+        return (
+          ["-c", "credential.helper=", "-c", "credential.helper=!\(githubCLI.path) auth git-credential"],
+          try githubCLIEnvironment(repository: repository)
+        )
+      }
       let credentialHelpers = try configuredCredentialHelpers(
         helperRoot: helperRoot,
         repository: repository
@@ -479,6 +488,39 @@ extension BuiltinWorkflowAddonResolver {
         ["GIT_SSH": ssh.path, "GIT_SSH_COMMAND": sshCommand]
       )
     }
+  }
+
+  private func configuredGitHubCLIHelper(pushURL: String, repository: GitRepositoryContext) throws -> URL? {
+    guard URLComponents(string: pushURL)?.host?.lowercased() == "github.com" else { return nil }
+    let result = try runRepositoryGitResult(
+      ["config", "--get-urlmatch", "credential.helper", pushURL],
+      repository: repository
+    )
+    guard result.exitCode == 0 else { return nil }
+    let helper = try requiredSingleLine(result.output, name: "matched credential helper")
+    guard helper.hasPrefix("!") else { return nil }
+    guard let path = GitExecutablePolicy.allowedGitHubCLIPath(for: helper) else {
+      throw policyError("riela/git-push refuses untrusted URL-specific credential helper snippets")
+    }
+    return try gitExecutablePolicy.validateOperatorGitHubCLI(
+      at: URL(fileURLWithPath: path),
+      repositoryRoot: repository.root
+    )
+  }
+
+  private func githubCLIEnvironment(repository: GitRepositoryContext) throws -> [String: String] {
+    guard let home = environment["HOME"], home.hasPrefix("/"),
+          !isURL(URL(fileURLWithPath: home).resolvingSymlinksInPath(), inside: repository.root) else {
+      throw policyError("riela/git-push requires an external user home for GitHub CLI authentication")
+    }
+    let configRoot = environment["GH_CONFIG_DIR"]
+      ?? environment["XDG_CONFIG_HOME"].map { "\($0)/gh" }
+      ?? "\(home)/.config/gh"
+    guard configRoot.hasPrefix("/"),
+          !isURL(URL(fileURLWithPath: configRoot).resolvingSymlinksInPath(), inside: repository.root) else {
+      throw policyError("riela/git-push GitHub CLI configuration must be outside the repository")
+    }
+    return ["HOME": home, "GH_CONFIG_DIR": configRoot]
   }
 
   private func configuredCredentialHelpers(
@@ -572,7 +614,8 @@ extension BuiltinWorkflowAddonResolver {
     let result = try runGit(
       snapshot.transportArguments + ["ls-remote", snapshot.pushURL, snapshot.mergeRef],
       environment: snapshot.transportEnvironment,
-      executableURL: repository.executableURL
+      executableURL: repository.executableURL,
+      diagnosticStage: "git push remote probe"
     )
     let lines = result.output.split(whereSeparator: { $0.isNewline }).map(String.init)
     guard lines.count <= 1 else {

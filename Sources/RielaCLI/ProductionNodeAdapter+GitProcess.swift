@@ -321,6 +321,11 @@ struct GitExecutablePolicy: Sendable {
   static let macOSCredentialHelperURL = URL(fileURLWithPath: "/usr/bin/git-credential-osxkeychain")
   static let sshURL = URL(fileURLWithPath: "/usr/bin/ssh")
 
+  static func allowedGitHubCLIPath(for helper: String) -> String? {
+    ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
+      .first(where: { helper == "!\($0) auth git-credential" })
+  }
+
   func validateGit(at selectedURL: URL, repositoryRoot: URL) throws -> URL {
     guard selectedURL.standardizedFileURL.path == Self.versionOneURL.path else {
       throw policyError("git executable is outside the version 1 system allowlist")
@@ -343,6 +348,35 @@ struct GitExecutablePolicy: Sendable {
       throw policyError("trusted helper root resolves inside the repository")
     }
     try validateTrustedPath(canonical, requiresExecutableFile: false)
+    return canonical
+  }
+
+  func validateOperatorGitHubCLI(at selectedURL: URL, repositoryRoot: URL) throws -> URL {
+    let canonical = selectedURL.resolvingSymlinksInPath().standardizedFileURL
+    let expectedRoot: String
+    switch selectedURL.standardizedFileURL.path {
+    case "/opt/homebrew/bin/gh":
+      expectedRoot = "/opt/homebrew/Cellar/gh/"
+    case "/usr/local/bin/gh":
+      expectedRoot = "/usr/local/Cellar/gh/"
+    default:
+      throw policyError("GitHub CLI credential helper path is not allowlisted")
+    }
+    let expectedPattern = "^\(NSRegularExpression.escapedPattern(for: expectedRoot))[A-Za-z0-9._+-]+/bin/gh$"
+    guard canonical.path.range(of: expectedPattern, options: .regularExpression) != nil,
+          !isURL(canonical, inside: repositoryRoot),
+          FileManager.default.isExecutableFile(atPath: canonical.path) else {
+      throw policyError("GitHub CLI credential helper is not a trusted Homebrew executable")
+    }
+    let attributes = try FileManager.default.attributesOfItem(atPath: canonical.path)
+    guard (attributes[.type] as? FileAttributeType) == .typeRegular,
+          let owner = (attributes[.ownerAccountID] as? NSNumber)?.intValue,
+          owner == 0 || owner == Int(getuid()),
+          let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue,
+          permissions & 0o111 != 0,
+          permissions & 0o022 == 0 else {
+      throw policyError("GitHub CLI credential helper ownership or permissions are unsafe")
+    }
     return canonical
   }
 
@@ -398,7 +432,8 @@ extension BuiltinWorkflowAddonResolver {
     standardInput: Data? = nil,
     standardInputFileDescriptor: Int32? = nil,
     executableURL: URL? = nil,
-    workingDirectory selectedWorkingDirectory: URL? = nil
+    workingDirectory selectedWorkingDirectory: URL? = nil,
+    diagnosticStage: String? = nil
   ) throws -> GitCommandResult {
     let result = try runGitResult(
       arguments,
@@ -411,7 +446,7 @@ extension BuiltinWorkflowAddonResolver {
     guard result.exitCode == 0 else {
       throw AdapterExecutionError(
         .providerError,
-        "git command failed with exit code \(result.exitCode)",
+        "\(diagnosticStage ?? "git command") failed with exit code \(result.exitCode)",
         isRetryable: true
       )
     }

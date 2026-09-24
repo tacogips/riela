@@ -51,8 +51,11 @@ The accepted workflow contract is:
 - Production uses only the trusted `/usr/bin/git` executable, argument arrays,
   a minimal environment, disabled hooks/signing/prompts, validated HTTPS or SSH
   transport, and bounded path-free diagnostics. It does not search `PATH`, run
-  shell command strings, expose remote URLs or credentials, or accept local and
-  file transports.
+  arbitrary shell command strings, expose remote URLs or credentials, or accept
+  local and file transports. For GitHub HTTPS, an exact URL-matched Homebrew
+  `gh auth git-credential` helper is allowed after executable validation; only
+  that transport receives the operator's GitHub CLI authentication context,
+  while system/global Git configuration remains disabled.
 - The runtime owns execution identity, predecessor linkage, finalization
   tokens, durable output acceptance, reconciliation, and terminal-session
   cleanup. Authored workflow data cannot override those identities.

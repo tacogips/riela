@@ -1126,24 +1126,22 @@ cancellation (P1-6c)” contract. Preserve P1-6a/b behavior and the P1-6b accept
 publication `7d8fc121a4f4469de7a40495282b53c9d813b8d4`, recorded in
 `impl-plans/progress/p1-dispatch.md`. P1-6d, P1-7a/b and parent P1 remain open.
 
-**Continuation boundary.** Continue checkpoints `0a74a07` and `de64316`,
-preserving all five uncommitted files: `Sources/RielaCLI/TaskDispatch.swift`,
-`Sources/RielaWork/WorkStore+Reservation.swift`,
-`Tests/RielaWorkTests/WorkStoreCancellationTests.swift`,
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, and
-`impl-plans/progress/p1-dispatch.md`. The store seam reads cancellation for the
-exact task/attempt/session across reopened connections. Its recorded focused
-1/1 and reservation 23/23 passes under
-`tmp/work-runtime-p1-6c-2c7cf9334b26/` cover only matching store/test bytes.
-The later continuation under `tmp/work-runtime-p1/p1-6c/continuation/` adds
-pending-request fencing and exact acknowledged replay in dispatch; its V2
-23/23 and decisions 27/27 passes do not establish live interruption, worker-stop
-proof or slice acceptance. Its V1 listener-denied run remains failed and cannot
-replace final-source capable-host evidence.
-Complete the existing orchestration and worker paths below with one serial
-owner; independent audits remain read-only. Preserve Monja and unrelated
-worktrees. No new behavior or architectural amendment is introduced by this
-continuation.
+**Continuation boundary.** Continue the preserved implementation at intake HEAD
+`6d8d2008a1f02858f54aabac8b44758a1d3758e9` on `feat/remaining-impl-plans`.
+Preserve all 17 modified tracked files and both untracked Swift files listed in
+intake `comm-000002`, including `Sources/RielaCLI/TaskRunCancellation.swift`
+and `Tests/RielaCLITests/TaskCancellationIntegrationTests.swift`; the earlier
+five-file checkpoint is historical, not the current preservation allowlist.
+The latest implementation record is the third and fourth continuation in
+`impl-plans/progress/p1-dispatch.md`, with evidence under
+`tmp/work-runtime-p1/p1-6c/continuation-3/` and `continuation-4/`.
+The fourth continuation records 94/94 safe selected tests passing, while its
+54-test listener selection failed before worker assertions. These are bounded
+results, not slice acceptance. Complete the existing orchestration and worker
+paths with one serial owner `/root`; prior read-only agents
+`failure_matrix_audit` and `remote_evidence_audit` supply investigation history,
+not independent final acceptance. Preserve Monja and unrelated worktrees.
+No new architecture or broad audit of unchanged seams belongs to this continuation.
 
 **Existing boundaries.** `Sources/RielaCLI/TaskCommands.swift` owns human
 parsing/application; `TaskDispatch.swift` owns reserved-session orchestration
@@ -1155,9 +1153,12 @@ interruption. No second decision store, replacement scheduler, transport or
 framework is introduced. Current store guards and matching-snapshot checks are
 present. `TaskDispatch.swift` now fences pending cancellation before generic
 `reconcileAttempt` and replays only a matching acknowledged terminal snapshot.
-The run-owned observer, request-before-signal Ctrl-C, selected-host worker-stop
-proof, prelaunch cancelled snapshot and first exact terminal acknowledgment
-remain implementation gaps; the guard alone does not establish live cancellation.
+The preserved implementation now includes the run-owned observer and prelaunch
+snapshot in `TaskRunCancellation.swift`, request-before-signal routing through
+`EntryPoint.swift` and `TaskCommands.swift`, controller/worker stop receipts, and
+proof-gated exact acknowledgment in dispatch. These seams are implemented WIP;
+their presence does not establish task-backed live selected-host acceptance or
+complete failure, replay and replacement-race coverage.
 
 **Human command contract.** `task decide` accepts exactly one of `--accept`,
 `--reject <reason>`, `--rerun [step-id]` or `--cancel`, with nonempty
@@ -1244,6 +1245,32 @@ positive per-suite counts and source/test hashes under
 `tmp/work-runtime-p1/p1-6c/`.
 A bounded environment failure remains a failed run and must be separated from
 source-matched capable-host evidence; P1-6b evidence cannot certify new code.
+
+**Remaining evidence decisions.** The operator log
+`tmp/work-runtime-p1/p1-6c/operator-host-listener/final-source-v1-v11.log`
+records 54/54 passing tests. Intake reports source/test diff SHA-256
+`1f5026acc2a7878f49f2b519cf26c80cde44a263651bc33b31fb05eaabfe7830`.
+That selection does not prove task-backed live selected-host cancellation.
+Before relying on it, establish complete source/test matching, including
+untracked files and terminal command exits; a reported diff hash alone does
+not replace the accepted manifest requirement. Recheck hashes after edits.
+The adjacent `final-source-aggregate.log` records 2,046 tests and 24 failures
+(7 unexpected), so the aggregate remains failed. Its
+`TaskProjectionProofTests.testTheRequiredGateFailureExampleProjectsIntoAFailedTask`
+assertion at `Tests/RielaCLITests/TaskProjectionProofTests.swift:105` reports an
+additional `acceptanceNotMet` requirement. Classify that mismatch and every
+aggregate failure by source relevance before acceptance; do not label this
+mismatch unrelated without evidence or repair unrelated baseline failures.
+
+Open verification questions are whether the host evidence matches the complete
+current tree, whether the projection mismatch is caused by this slice, and
+whether live selected-host interruption plus persistence/acknowledgment loss,
+lease/heartbeat loss, reopen/replay and replacement races pass on final source.
+These are implementation evidence questions, not unresolved user choices; no
+user-QA document is needed. Resolve material coverage and source failures before
+implementation review; independent test-integrity, adversarial and Astra
+combined-tree acceptance remain mandatory. A bounded environment failure needs
+passing source-matched capable-host evidence and cannot waive a material gate.
 
 `gpt-6-astra` is the single design author, single plan author and final
 integration reviewer; `gpt-6-sol` owns implementation, serial reconciliation,

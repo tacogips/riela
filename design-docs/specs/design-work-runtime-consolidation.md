@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; P1-6c cancellation slice accepted after source-matched host verification and independent reviews, 2026-09-24; P1-6a finalization design update remains pending independent review.** The serial broad gate remains failed with 19 classified non-slice assertions; P1-6d, P1-7a/b, parent P1 and P2-P7 remain open. Section 17 defines the P1 contracts. **The current-execution scope clarification at the start of §17.7 governs this P1-6a intake; the earlier parent-run execution scope, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; P1-6c cancellation slice accepted after source-matched host verification and independent reviews, 2026-09-24; P1-6a finalization design update remains pending independent review.** The serial broad gate remains failed with 19 classified non-slice assertions; P1-6d, P1-7a/b, parent P1 and P2-P7 remain open. Section 17 defines the P1 contracts. **Section 17.8 governs the current P1-6d continuation; earlier execution scopes, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2246,8 +2246,8 @@ findings and downstream review/test gates above remain open.
 
 ### 17.8 P1-6d bounded director execution (2026-09-24)
 
-**Current authority and scope.** Mode `issue-resolution`; issue “Implement Work
-Runtime P1-6d bounded agent-director child and judged-work acceptance”, sourced
+**Current authority and scope (continuation 2026-09-25).** Mode `issue-resolution`;
+issue “Complete Work Runtime P1-6d after Step 6 finalization-boundary repair”, sourced
 from effective `workflowInput.issueTitle`/`issueBody` (`comm-000001`), delivered
 by Step 1 `comm-000002`, execution `step1-issue-intake-attempt-1-exec-2`, in
 `codex-design-and-implement-review-loop-session-1`. No GitHub number/URL or
@@ -2258,22 +2258,31 @@ divergence is requested. Existing backend adapters retain their boundaries.
 This subsection scopes the present run to P1-6d and supersedes older current-run
 inventories in §17.7, without replacing its behavioral contracts. The complete
 plan input is `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`,
-especially “P1-6d judged-work acceptance and child execution”. Inspected HEAD
-matches intake `d3f78df230d1d5c289102c54660ecaec2da90e7c`; the initial worktree
-was clean. Preserve accepted P1-6a/b/c and all other worktrees. P1-7b then P1-7a,
+especially its first-section D0–D5 matrix. The accepted plan checkpoint and
+current HEAD are `79eea8114b7d407e3fb7ed18faf5de5d86bce1ab` on
+`feat/remaining-impl-plans`. The earlier clean
+`d3f78df230d1d5c289102c54660ecaec2da90e7c` baseline is historical, not this
+execution's starting state. Preserve all current tracked and untracked P1-6d
+changes, accepted P1-6a/b/c and other sessions' work. Reuse the accepted design
+and plan; repair only demonstrated material deficiencies. P1-7b then P1-7a,
 parent P1, and unrelated broad failures remain open. One serial owner edits
 coupled model/store/CLI code; independent investigation and review are read-only.
 No second task store, replacement planner, recursive repair, legacy removal,
 reset, broad staging, force push or main merge belongs to this slice.
 
-**Retained seams.** `Sources/RielaWork/AgentDirector.swift` already validates
-bounded typed output but deliberately refuses accept. `WorkStore+Decisions.swift`
-already reconstructs durable completion and enforces latest-attempt, causality,
-version and replay checks. `Sources/RielaCLI/TaskDispatch.swift` rejects director
-entry. `Tests/RielaWorkTests/AgentDirectorTests.swift` asserts that temporary
-refusal; `Tests/RielaCLITests/TaskRuntimeExampleTests.swift` observes recommendation
+**Historical starting seams.** Before the retained implementation,
+`Sources/RielaWork/AgentDirector.swift` validated
+bounded typed output but deliberately refused accept. `WorkStore+Decisions.swift`
+already reconstructed durable completion and enforced latest-attempt, causality,
+version and replay checks. `Sources/RielaCLI/TaskDispatch.swift` rejected director
+entry. `Tests/RielaWorkTests/AgentDirectorTests.swift` asserted that temporary
+refusal; `Tests/RielaCLITests/TaskRuntimeExampleTests.swift` observed recommendation
 output without proving child execution. Extend these seams; their existence or
-old passing tests do not establish P1-6d acceptance.
+old passing tests do not establish P1-6d acceptance. These descriptions are the
+original design baseline, not claims that the current implementation still
+refuses linked acceptance or director execution. Current retained work and
+evidence are recorded in the plan's continuation-3 entry and
+`impl-plans/progress/p1-dispatch.md`.
 
 **Execution and durable identity.** Preserve §17.3 deterministic ordering.
 Only configured escalation invokes one optional director round. First reconcile
@@ -2352,6 +2361,28 @@ selected-host 1/1, store 56/56, focused 104/104, compatibility 28/28, build and 
 receipts predate this slice. Its 2,059-test aggregate with 19 non-slice assertions
 remains failed; retain the earlier intermittent live-progress timing limitation.
 Neither classification nor focused success makes the broad gate green.
+
+For this continuation, intake and retained evidence under
+`tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/` report build exit 0,
+seven focused selections passing 55, 81, 43, 30, 80, 55 and 55 tests, and
+strict 18-file SwiftLint exit 0. `source-final9.sha256` identifies the Swift
+source; `final7-focused-exits.txt` records filters and exits. The complete
+`broad-final4.log` ran 2,666 tests and exited 1 with 19 assertions;
+`broad4-classification.json` reports exact historical non-slice identity equality.
+The broad gate remains **FAILED**. Independent reviewers must verify this
+classification before explicit slice-only acceptance; any new or unclassified
+failure blocks acceptance. Reuse unchanged-source evidence where valid, rerun
+checks invalidated by material edits, and avoid another broad run on unchanged
+source. Read-only advice from `final_integrity3`, `final_adversarial3` and
+`astra_combined3` reported no remaining material high/mid P1-6d defect; it does
+not replace the formal workflow reviews.
+
+Step 6 assesses the retained D0–D4 implementation and behavioral verification.
+Formal review, review-dependent D5 documentation, commit and push are downstream
+gates, not reasons by themselves to label Step 6 implementation incomplete.
+D5 remains required after formal acceptance; completion cannot be claimed until
+documentation and exact-file commit/non-force push finish. The current intake
+requires no new product behavior or expansion of the accepted D0–D5 matrix.
 
 Independent test-integrity, single adversarial and Astra combined-tree review
 must find no material P1-6d defect before completion documentation and exact-file

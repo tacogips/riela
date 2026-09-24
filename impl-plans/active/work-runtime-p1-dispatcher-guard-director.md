@@ -2,14 +2,17 @@
 
 ## Current executable contract — P1-6d only
 
-Mode `issue-resolution`; issue “Implement Work Runtime P1-6d bounded
-agent-director child and judged-work acceptance”, effective workflowInput,
+Mode `issue-resolution`; issue “Complete Work Runtime P1-6d after Step 6
+finalization-boundary repair”, effective workflowInput,
 `comm-000001`; no GitHub number/URL or codex-agent reference input.
 Step 3 accepted `design-docs/specs/design-work-runtime-consolidation.md` §17.8
 through `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
 `codex-design-and-implement-review-loop-session-1`, with no findings.
-Design SHA-256: `0569ca48a8f6898605ac7102f77d5391ef515f38baf041d90b68b2aa188b9af1`.
-Status: plan authored; Step 5 and implementation acceptance pending.
+Design SHA-256: `9a20702d522e2a0007a5168714ea799e3709aeaa2939815b1621589cddff4e99`.
+Status (2026-09-25): D0–D4 implementation and verification are retained for
+assessment from `tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/`. Formal
+workflow reviews and D5 documentation/publication remain pending. The broad
+gate remains FAILED; no formal slice acceptance is claimed.
 
 Only this section and its first JSON block schedule this invocation. Everything
 below “Historical P1-6c contract” is retained history, including older current
@@ -17,9 +20,12 @@ contract headings, JSON blocks and broader verification/removal requirements.
 
 ### Intent, context and non-goals
 
-Finish the retained director seams without rebuilding accepted P1-6a/b/c.
-Baseline HEAD is `d3f78df230d1d5c289102c54660ecaec2da90e7c` on
-`feat/remaining-impl-plans`; Step 2's accepted design edit is preserved WIP.
+Assess retained P1-6d work and repair only concrete material deficiencies,
+without rebuilding accepted P1-6a/b/c. Current HEAD and accepted plan checkpoint
+are `79eea8114b7d407e3fb7ed18faf5de5d86bce1ab` on
+`feat/remaining-impl-plans`. Preserve all tracked/untracked source, tests and
+documentation, including other sessions' work. The old clean d3f78df baseline
+is historical. Step 3 accepted the current §17.8 update with no findings.
 The child must execute through the ordinary runner and shared store, judge the
 original work, and consume attempt/cost budgets once. Its successful status
 cannot substitute for work completion. Forward existing planner capability inputs.
@@ -87,6 +93,13 @@ test-integrity, single adversarial and Astra combined-tree reviews remain
 independent runtime steps; author/delegated advice cannot replace their decisions.
 
 ### Ordered tasks and file-level deliverables
+
+The D0–D4 requirements below are assessment criteria for retained work, not an
+instruction to recreate it. First map current source/tests and complete receipts
+to every row. A satisfied requirement needs an evidence reference, not a new edit.
+Only a demonstrated material defect or missing material verification triggers
+repair and affected reruns. Report concrete deficiencies with severity and paths.
+
 
 1. **D0 — baseline and seam reconciliation.** Read §17.8, the retained P1-6d
    checklist and source/test paths above. Capture current source membership/hashes,
@@ -163,14 +176,17 @@ independent runtime steps; author/delegated advice cannot replace their decision
    or serialization alone. Strengthen
    TaskRuntimeExampleTests only to prove this slice's child path; do not implement
    P1-7 replacement bundles/removal. Reconcile all final changes against intents,
-   repair serially, run the commands below, and obtain independent reviews.
+   repair serially, validate or renew the evidence below, and hand off to formal
+   independent review. Obtaining those downstream decisions is not a D4 task.
 6. **D5 — accepted completion record (after D4 and formal reviews).** Refresh
    progress, this plan, design, README and shared indexes only where behavior/status
    changed. Keep P1-7b/P1-7a/parent P1 and broad follow-ups open. Produce exact file
    allowlist and evidence for downstream commit/non-force push; do not stage or
    publish implementation from a worker. Planning approval alone is not completion.
 
-Task DAG: D0 → D1 → D2 → D3 → D4 → D5. No separate implementation plan is
+Task DAG: D0 → D1 → D2 → D3 → D4 → formal test-integrity/single adversarial
+review → Astra combined-tree acceptance → D5 → exact-file commit → non-force
+push. No separate implementation plan is
 independent enough to justify concurrent writers.
 
 ### Invariants and required test matrix
@@ -194,10 +210,14 @@ proof of lifecycle ordering. Each fixture owns and stops workers before exit.
 
 ### Edit safety, checkpoint and progress
 
-After Step 5 accepts, the workflow's serial checkpoint stage commits the exact
-accepted design and plan before native implementation/review fanout. Step 4 does
-not self-approve or commit an unreviewed plan. Implementation starts from that
-checkpoint on the same branch; preserve predecessor commits and user changes.
+Reuse accepted checkpoint `79eea8114b7d407e3fb7ed18faf5de5d86bce1ab` for
+this serial continuation; do not restart implementation from a clean tree.
+Step 4 does not stage, commit or self-approve its plan revision. After Step 5
+acceptance, any required refreshed planning checkpoint belongs to the runtime's
+serial checkpoint stage before native fanout, with only exact accepted design/
+plan paths. Never include retained implementation/progress changes merely to
+clean the worktree. Preserve all predecessor commits and WIP. Final implementation
+commit and non-force push require downstream review and documentation gates.
 
 Before every edit, freshly read each target and save immutable preimage, SHA-256,
 intended hunks and task ID under `tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-N/`.
@@ -223,7 +243,41 @@ Record every failed/retried command separately. Zero tests, missing named suites
 timeouts and incomplete terminal summaries are not passing. Poll every yielded
 handle to exit. No overlapping SwiftPM processes or source changes during checks.
 
-Execute these commands with Xcode's explicit toolchain. Each numbered test filter
+Before deciding to rerun, verify retained evidence with:
+
+```bash
+git status --short
+git rev-parse HEAD
+shasum -a 256 -c tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/source-final9.sha256
+shasum -a 256 tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/broad-final4.log
+cat tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/broad-final4.exit
+cat tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/final7-focused-exits.txt
+cat tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/broad4-classification.json
+```
+
+The 964-file Swift manifest must match hashes AND current Swift file membership;
+check Package.swift/Package.resolved and other relevant fixture/toolchain changes
+against retained command evidence separately. The manifest alone does not prove
+all dependencies unchanged. Expected broad log SHA-256 is
+`b5f07276c78ac3481e29bf353074e6f12fde0cb29c068011a775660bcfa5baa6`, exit 1,
+2,666 tests, 19 assertions. Verify all 19 identities against historical evidence;
+classification is input to independent review, never a passing broad result.
+Retain build-final9.log, swiftlint-final9.log, changed-swift-files-final2.nul,
+final7-focused-{1..7}.log and their exact command/exit receipts.
+
+Map suite coverage explicitly: retained focused selection 4 names
+WorkStoreCancellationTests and BudgetAdmissionStoreTests, which are filenames,
+not standalone suite names. Do not claim that filter ran the budget suite.
+The complete broad-final4.log separately reports
+BudgetAdmissionDecisionApplierStoreTests 5/5, TaskDryRunReadOnlyTests 6/6 and
+TaskCancellationIntegrationTests 17/17 passing. Record these as individual suite
+evidence inside a FAILED aggregate, subject to independent integrity acceptance.
+If a required focused receipt is still missing, run only the corresponding
+explicit filter below. Reuse valid build/lint/test receipts; do not rerun the
+broad gate merely for documentation edits or refreshed workflow execution.
+
+Execute invalidated or missing checks below with Xcode's explicit toolchain.
+Each numbered test filter
 must execute all its named suites with positive counts. Additional test suites
 introduced by a justified extraction must be added to the matching gate.
 
@@ -257,8 +311,8 @@ Capture baseline first despite its listing below test commands. If
 checking cancellation coverage, `WorkStoreCancellationTests.swift` extends
 `WorkStoreReservationTests`; its filename is not a separate XCTest suite.
 `BudgetAdmissionStoreTests.swift` declares `BudgetAdmissionDecisionApplierStoreTests`.
-If
-AgentDirectorStoreTests is created, additionally run the exact command
+AgentDirectorStoreTests already exists. Its retained positive-count result in
+focused selection 2 may be reused; otherwise run the exact command
 `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AgentDirectorStoreTests`
 and require positive counts in `director-store-extra.log`. Repeat affected checks
 after any repair; avoid redundant broad runs on unchanged source. Environment
@@ -269,6 +323,25 @@ product failure diagnosis or a waived test. No web changes: browser E2E is not
 required. Historical V8–V10 replacement/removal/package checks are not scheduled.
 
 ### Completion and review gates
+
+**Step 6 implementation completion:** D0–D4 matrix is satisfied on the retained
+or repaired source; build, required behavioral suites, strict touched-file lint
+and diff checks have complete valid receipts. A completed failed broad run may
+be submitted with exact historical non-slice classification for independent
+slice-only disposition. New/unclassified failures or material implementation/
+verification gaps keep Step 6 incomplete. Pending formal review, D5, commit or
+push alone must not set implementationIncomplete. Emit the precise pending gates
+and evidence references rather than claiming final slice acceptance.
+
+**Final workflow completion:** formal test-integrity, single adversarial and
+Astra combined-tree reviewers explicitly accept the slice with no material
+high/mid finding, D5 documents the accepted result and remaining failures, and
+exact accepted files are committed and non-force pushed. D5 reviews README.md,
+this design/plan, progress and shared indexes; update only changed behavior/status.
+Review `.codex/skills/riela-impl-workflow/SKILL.md` for consistency; the unchanged
+workflow contract needs no edit. Shared documentation remains serial. Record
+commit hash, exact file allowlist and push result; no parent-plan archival.
+
 
 All matrix cases, build and strict touched-file lint must pass on the reviewed
 source; classify repository lint baseline without unrelated cleanup. Broad tests
@@ -290,6 +363,41 @@ judged TaskView delivery and runner assertions (mid); D3, D4 and the matrix now
 specify all fields and actual child input observation, preserving planner inputs.
 No unresolved user decision remains. Implementation tests are downstream, not
 claimed by this plan; renewed Step 5 acceptance is pending.
+
+**P1-6d Step 6 continuation 2 status (2026-09-24):** D1/D2 linkage and shared
+acceptance are implemented with real-store tests. D3 ordinary child execution,
+judged TaskView and `hostCapabilityContext` delivery, and fail-closed escalation
+are partially implemented and tested. D4 remains open: an interrupted child
+between reservation and terminal snapshot cannot safely reclaim its original
+launch token or resume the same attempt/session; read-only adversarial review
+classified this as material. Exact child cost replay and the full runner matrix
+also need proof. Current final-source focused V1/V2/V3/V4/V11 selections pass,
+but the serial broad run on earlier continuation source was interrupted during
+an unrelated parity test and cannot certify the slice. D5, formal independent
+reviews, documentation acceptance, exact-file commit and non-force push remain
+pending. Keep P1-7b, P1-7a, parent P1 and broad follow-ups open.
+Read-only test-integrity review also leaves selected-host execution, exact
+child cost/reopened dispatch replay, full nonempty judged TaskView assertions,
+isolated wrong-session rejection, and persisted escalation/repeat dispatch open.
+
+**P1-6d Step 6 continuation 3 status (2026-09-24):** D1–D4 source and
+behavioral tests now cover a bounded ordinary director child, durable judged
+linkage, exact prelaunch recovery, uncertain-launch human fencing, judged-work
+acceptance and refusal, nonrecursive escalation, selected remote worker input,
+and non-loop child token/wall-clock accounting through reopen and replay.
+Transactional shared-store admission now rejects an agent rerun/recover after
+the child exhausts durable wall-clock time. Seven final focused selections pass
+55/55, 81/81, 43/43, 30/30, 80/80, 55/55 and 55/55; final build and exact
+18-file strict SwiftLint pass. The complete source-matched serial broad gate
+ran 2,666 tests, exited 1 with 19 failures matching the exact historical
+non-slice identities; the broad gate remains **FAILED**. Read-only Codex
+test-integrity (`final_integrity3`), adversarial (`final_adversarial3`) and Astra
+combined-tree (`astra_combined3`) reviews accept the repaired tree with no
+remaining material high/mid P1-6d finding. Evidence, exact logs/hashes and
+per-edit intentions are under `tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/`.
+Formal workflow acceptance, D5 documentation/publication and the separate
+P1-7b, P1-7a, parent P1 and broad follow-ups remain open; no staging, commit
+or push occurred in Step 6.
 
 ## Historical P1-6c contract
 

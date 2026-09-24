@@ -62,6 +62,10 @@ public extension WorkStore {
         try requireLatestAttempt(attempt, for: task, action: decision.kind.kindName, in: database)
       }
       try validateCausality(of: decision, attempt: attempt, in: database)
+      if Self.requiresLiveCancellation(for: decision.kind), let attempt,
+         attempt.state == .prepared || attempt.state == .running {
+        try rejectTerminalCancellation(for: attempt, in: database)
+      }
       let effectiveCompletion: CompletionVerdict
       if case .accept = decision.kind {
         effectiveCompletion = try completionVerdict(for: task, attempt: attempt, in: database)

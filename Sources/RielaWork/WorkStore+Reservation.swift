@@ -77,6 +77,14 @@ public struct PendingAttemptReservation: Equatable, Sendable {
   }
 }
 
+public struct AttemptCancellationRecord: Equatable, Sendable {
+  public let taskId: TaskID
+  public let attemptId: AttemptID
+  public let sessionId: String
+  public let decisionId: DecisionID
+  public let acknowledged: Bool
+}
+
 public struct AttemptReservation: Equatable, Sendable {
   public var task: WorkTask
   public var attempt: Attempt
@@ -339,6 +347,7 @@ public extension WorkStore {
         attemptId: attempt.id,
         in: database
       )
+      try rejectTerminalCancellation(for: attempt, in: database)
       try database.execute(
         "INSERT INTO work_cancellations (attempt_id, task_id, decision_id, requested_at) VALUES (?, ?, ?, ?)",
         bindings: [
@@ -346,6 +355,114 @@ public extension WorkStore {
           .text(decisionId.rawValue), .text(Self.timestamp(now))
         ]
       )
+    }
+  }
+
+  /// Reads the durable request for one exact reserved execution. Callers must
+  /// retain the fence when this read fails or a requested cancellation lacks
+  /// worker-stop and terminal-session proof.
+  func attemptCancellation(
+    taskId: TaskID, attemptId: AttemptID, sessionId: String
+  ) throws -> AttemptCancellationRecord? {
+    let database = try openWritable()
+    return try database.transaction { database in
+      let attempt = try requiredAttempt(attemptId, in: database)
+      guard attempt.taskId == taskId, attempt.sessionId == sessionId else {
+        throw WorkStoreError("cancellation read does not match the reserved task session")
+      }
+      guard let row = try database.query(
+        "SELECT decision_id, acknowledged_at FROM work_cancellations WHERE task_id = ? AND attempt_id = ? LIMIT 1",
+        bindings: [.text(taskId.rawValue), .text(attemptId.rawValue)]
+      ).first else { return nil }
+      guard let decisionId = row["decision_id"] else {
+        throw WorkStoreError("cancellation request has no decision")
+      }
+      return AttemptCancellationRecord(
+        taskId: taskId, attemptId: attemptId, sessionId: sessionId,
+        decisionId: DecisionID(decisionId), acknowledged: row["acknowledged_at"] != nil
+      )
+    }
+  }
+
+  /// Persists the reserved session's cancellation only while authorization is
+  /// still impossible. A nil result means the request or prelaunch phase is
+  /// absent; a caller must then await ordinary owned execution-stop proof.
+  func persistPreLaunchCancellation(
+    taskId: TaskID, attemptId: AttemptID, sessionId: String, now: Date = Date()
+  ) throws -> WorkflowRuntimePersistenceSnapshot? {
+    let database = try openWritable()
+    return try database.transaction { database in
+      let attempt = try requiredAttempt(attemptId, in: database)
+      guard attempt.taskId == taskId, attempt.sessionId == sessionId else {
+        throw WorkStoreError("prelaunch cancellation does not match the reserved task session")
+      }
+      guard let row = try database.query(
+        "SELECT decision_id FROM work_cancellations WHERE task_id = ? AND attempt_id = ? AND acknowledged_at IS NULL",
+        bindings: [.text(taskId.rawValue), .text(attemptId.rawValue)]
+      ).first else { return nil }
+      guard let decisionId = row["decision_id"] else {
+        throw WorkStoreError("prelaunch cancellation has no decision")
+      }
+      try validateCancellationDecision(DecisionID(decisionId), taskId: taskId, attemptId: attemptId, in: database)
+      guard attempt.launch?.phase == .reserved, attempt.state == .prepared else { return nil }
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+      var snapshot = try persistence.load(sessionId: sessionId, in: database)
+      if snapshot.session.status == .failed && snapshot.session.failureKind == .cancelled
+        && snapshot.session.executions.isEmpty { return snapshot }
+      guard snapshot.session.status == .created, snapshot.session.executions.isEmpty else {
+        throw WorkStoreError("prelaunch cancellation cannot replace an active or terminal session")
+      }
+      snapshot.session.status = .failed
+      snapshot.session.failureKind = .cancelled
+      snapshot.session.failureReason = "workflow run cancelled before launch"
+      snapshot.session.failedAt = now
+      snapshot.session.updatedAt = now
+      try persistence.save(snapshot, in: database)
+      return snapshot
+    }
+  }
+
+  /// Called only after the task owner has joined its execution. A pending
+  /// request may have beaten ordinary terminal persistence by one transaction.
+  func persistJoinedCancellation(
+    taskId: TaskID, attemptId: AttemptID, sessionId: String,
+    selectedHostStopProven: Bool, now: Date = Date()
+  ) throws -> WorkflowRuntimePersistenceSnapshot? {
+    let database = try openWritable()
+    return try database.transaction { database in
+      let attempt = try requiredAttempt(attemptId, in: database)
+      guard attempt.taskId == taskId, attempt.sessionId == sessionId else {
+        throw WorkStoreError("joined cancellation does not match the reserved task session")
+      }
+      guard let cancellation = try database.query(
+        "SELECT decision_id FROM work_cancellations WHERE task_id = ? AND attempt_id = ? AND acknowledged_at IS NULL",
+        bindings: [.text(taskId.rawValue), .text(attemptId.rawValue)]
+      ).first else { return nil }
+      guard selectedHostStopProven else {
+        throw WorkStoreError(
+          "joined cancellation requires proven selected-host stop",
+          isSelectedHostStopProofRequired: true
+        )
+      }
+      guard let decisionId = cancellation["decision_id"] else {
+        throw WorkStoreError("joined cancellation has no decision")
+      }
+      try validateCancellationDecision(DecisionID(decisionId), taskId: taskId, attemptId: attemptId, in: database)
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+      var snapshot = try persistence.load(sessionId: sessionId, in: database)
+      if snapshot.session.status == .failed && snapshot.session.failureKind == .cancelled {
+        return snapshot
+      }
+      guard snapshot.session.status == .created || snapshot.session.status == .running else {
+        throw WorkStoreError("joined cancellation cannot replace an ordinary terminal session")
+      }
+      snapshot.session.status = .failed
+      snapshot.session.failureKind = .cancelled
+      snapshot.session.failureReason = "workflow run cancelled after owned execution stopped"
+      snapshot.session.failedAt = now
+      snapshot.session.updatedAt = now
+      try persistence.save(snapshot, in: database)
+      return snapshot
     }
   }
 
@@ -768,6 +885,17 @@ extension WorkStore {
         .text(try encode(request.entry)), .text(Self.timestamp(now))
       ]
     )
+  }
+
+  func rejectTerminalCancellation(for attempt: Attempt, in database: SQLiteDatabase) throws {
+    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+      .load(sessionId: attempt.sessionId, in: database)
+    guard snapshot.session.sessionId == attempt.sessionId else {
+      throw WorkStoreError("cancellation session does not match the reserved attempt")
+    }
+    if snapshot.session.status == .completed || snapshot.session.status == .failed {
+      throw WorkStoreError.alreadyTerminal(sessionId: attempt.sessionId)
+    }
   }
 
   func failIfRequested(_ point: AttemptReservationFailurePoint, request: AttemptReservationRequest) throws {

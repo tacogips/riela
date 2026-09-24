@@ -713,6 +713,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   private func upsertSnapshot(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
+    try validateTaskTerminalWrite(snapshot, in: db)
     let rootOutputJSON = try snapshot.rootOutput.map(jsonString)
     let loopEvidenceJSON = try snapshot.loopEvidence.map(jsonString)
     let loopSummaryJSON = try snapshot.loopEvidence.map {
@@ -746,6 +747,43 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       ]
       )
       try touchLoopConcurrencyLease(db, snapshot)
+    }
+  }
+
+  private func validateTaskTerminalWrite(
+    _ snapshot: WorkflowRuntimePersistenceSnapshot,
+    in db: SQLiteDatabase
+  ) throws {
+    guard try db.tableExists("work_attempts") else { return }
+    let sessionId = snapshot.session.sessionId
+    guard let attemptId = try db.query(
+      "SELECT attempt_id FROM work_attempts WHERE session_id = ? LIMIT 1",
+      bindings: [.text(sessionId)]
+    ).first?["attempt_id"] else { return }
+    let status = snapshot.session.status
+    let isTerminal = status == .completed || status == .failed
+    if isTerminal, try db.tableExists("work_cancellations") {
+      let pending = try db.query(
+        "SELECT attempt_id FROM work_cancellations WHERE attempt_id = ? AND acknowledged_at IS NULL LIMIT 1",
+        bindings: [.text(attemptId)]
+      ).first != nil
+      if pending && !(status == .failed && snapshot.session.failureKind == .cancelled) {
+        throw WorkflowRuntimePersistenceStoreError.cancellationPending(sessionId)
+      }
+    }
+    guard let existing = try db.query(
+      "SELECT session_status, updated_at, json_extract(session_json, '$.failureKind') AS failure_kind "
+        + "FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
+      bindings: [.text(sessionId)]
+    ).first, let previousStatus = existing["session_status"] else { return }
+    if previousStatus == WorkflowSessionStatus.completed.rawValue
+      || previousStatus == WorkflowSessionStatus.failed.rawValue {
+      let sameTerminal = isTerminal && status.rawValue == previousStatus
+        && snapshot.session.failureKind?.rawValue == existing["failure_kind"]
+      let notOlder = (existing["updated_at"] ?? "") <= Self.dateString(snapshot.session.updatedAt)
+      if !sameTerminal || !notOlder {
+        throw WorkflowRuntimePersistenceStoreError.terminalSnapshotConflict(sessionId)
+      }
     }
   }
 

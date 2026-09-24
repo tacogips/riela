@@ -4,7 +4,211 @@ import RielaSQLite
 import XCTest
 @testable import RielaWork
 
+private final class CancellationReservationRaceResults: @unchecked Sendable {
+  private let lock = NSLock()
+  private var attempts: [AttemptID] = []
+
+  func append(_ attemptId: AttemptID) {
+    lock.lock()
+    attempts.append(attemptId)
+    lock.unlock()
+  }
+
+  var succeeded: [AttemptID] {
+    lock.lock()
+    defer { lock.unlock() }
+    return attempts
+  }
+}
+
 extension WorkStoreReservationTests {
+  func testLiveRerunConsumesOneReplacementOnlyAfterCancellationAcknowledgment() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let reservation = try store.reserveAttempt(request(token: "replacement-fence"))
+    let evidenceId = EvidenceID("evidence-live-rerun")
+    try store.saveEvidence(Evidence(
+      id: evidenceId, taskId: task.id, attemptId: reservation.attempt.id,
+      kind: .contextSnapshot, producedBy: .runtime,
+      payloadRef: .inline(["reason": .string("rerun")]), createdAt: Date()
+    ))
+    let decision = Decision(
+      id: DecisionID("decision-live-rerun"), taskId: task.id,
+      attemptId: reservation.attempt.id, producer: .human(principal: "operator"),
+      kind: .rerun(fromStepId: "start"), reason: "replace live run",
+      causedBy: [evidenceId], createdAt: Date()
+    )
+    let pending = PendingAttemptReservation(
+      id: "pending-live-rerun", taskId: task.id, decisionId: decision.id,
+      predecessorAttemptId: reservation.attempt.id, entry: .rerunFromStep("start")
+    )
+    _ = try store.applyDecision(
+      decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-live-rerun"), pendingReservation: pending
+    )
+    var successor = request(
+      expectedVersion: try XCTUnwrap(store.loadTask(id: task.id)).version,
+      attemptId: "replacement-attempt", sessionId: "replacement-session",
+      decisionId: decision.id.rawValue
+    )
+    successor.entry = .rerunFromStep("start")
+    successor.pendingRequestId = pending.id
+    XCTAssertThrowsError(try store.reserveAttempt(successor))
+    XCTAssertEqual(try store.listAttempts(taskId: task.id).count, 1)
+    let snapshot = try XCTUnwrap(store.persistPreLaunchCancellation(
+      taskId: task.id, attemptId: reservation.attempt.id, sessionId: reservation.attempt.sessionId
+    ))
+    _ = try store.acknowledgeAttemptCancellation(
+      attemptId: reservation.attempt.id, outcome: WorkEvidenceProjector.outcome(from: snapshot)
+    )
+    let reopened = WorkStore(rootDirectory: root.path)
+    successor.expectedTaskVersion = try XCTUnwrap(reopened.loadTask(id: task.id)).version
+    _ = try reopened.reserveAttempt(successor)
+    XCTAssertThrowsError(try reopened.reserveAttempt(successor))
+    _ = try reopened.applyDecision(
+      decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-live-rerun"), pendingReservation: pending
+    )
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter { $0.id == decision.id }.count, 1)
+    XCTAssertNil(try TaskDispatcher(store: reopened).pendingReservation(taskId: task.id))
+  }
+
+  func testLostAcknowledgmentResponseAllowsOnlyOneIndependentReplacement() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let reservation = try store.reserveAttempt(request(token: "lost-ack-response"))
+    let evidenceId = EvidenceID("evidence-lost-ack-response")
+    try store.saveEvidence(Evidence(
+      id: evidenceId, taskId: task.id, attemptId: reservation.attempt.id,
+      kind: .contextSnapshot, producedBy: .runtime,
+      payloadRef: .inline(["reason": .string("rerun")]), createdAt: Date()
+    ))
+    let decision = Decision(
+      id: DecisionID("decision-lost-ack-response"), taskId: task.id,
+      attemptId: reservation.attempt.id, producer: .human(principal: "operator"),
+      kind: .rerun(fromStepId: "start"), reason: "replace live run",
+      causedBy: [evidenceId], createdAt: Date()
+    )
+    let pending = PendingAttemptReservation(
+      id: "pending-lost-ack-response", taskId: task.id, decisionId: decision.id,
+      predecessorAttemptId: reservation.attempt.id, entry: .rerunFromStep("start")
+    )
+    _ = try store.applyDecision(
+      decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-lost-ack-response"), pendingReservation: pending
+    )
+    let snapshot = try XCTUnwrap(store.persistPreLaunchCancellation(
+      taskId: task.id, attemptId: reservation.attempt.id, sessionId: reservation.attempt.sessionId
+    ))
+    _ = try store.acknowledgeAttemptCancellation(
+      attemptId: reservation.attempt.id, outcome: WorkEvidenceProjector.outcome(from: snapshot)
+    ) // The caller loses this successful response.
+
+    let reopened = WorkStore(rootDirectory: root.path)
+    XCTAssertTrue(try XCTUnwrap(reopened.attemptCancellation(
+      taskId: task.id, attemptId: reservation.attempt.id, sessionId: reservation.attempt.sessionId
+    )).acknowledged)
+    XCTAssertEqual(try reopened.loadTask(id: task.id)?.state, .scheduled)
+    XCTAssertEqual(try reopened.openWritable().query("SELECT attempt_id FROM work_leases").count, 0)
+    let predecessorOutcome = try reopened.loadAttempt(id: reservation.attempt.id)?.outcome
+    let predecessorEvidenceCount = try reopened.listEvidence(taskId: task.id).count
+    _ = try reopened.applyDecision(
+      decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-lost-ack-response"), pendingReservation: pending
+    )
+
+    let expectedVersion = try XCTUnwrap(reopened.loadTask(id: task.id)).version
+    let contenders = (0..<2).map { index -> AttemptReservationRequest in
+      var candidate = request(
+        expectedVersion: expectedVersion, attemptId: "replacement-\(index)",
+        sessionId: "replacement-session-\(index)", decisionId: decision.id.rawValue
+      )
+      candidate.entry = .rerunFromStep("start")
+      candidate.pendingRequestId = pending.id
+      return candidate
+    }
+    let connections = [WorkStore(rootDirectory: root.path), WorkStore(rootDirectory: root.path)]
+    let queue = DispatchQueue(label: "cancel-replacement-race", attributes: .concurrent)
+    let group = DispatchGroup()
+    let results = CancellationReservationRaceResults()
+    for index in 0..<2 {
+      group.enter()
+      queue.async {
+        defer { group.leave() }
+        if let replacement = try? connections[index].reserveAttempt(contenders[index]) {
+          results.append(replacement.attempt.id)
+        }
+      }
+    }
+    group.wait()
+    let succeeded = results.succeeded
+    XCTAssertEqual(succeeded.count, 1)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 2)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter { $0.id == decision.id }.count, 1)
+    XCTAssertEqual(try reopened.loadAttempt(id: reservation.attempt.id)?.outcome, predecessorOutcome)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id).count, predecessorEvidenceCount)
+    let consumed = try reopened.openWritable().query(
+      "SELECT consumed_attempt_id FROM work_pending_reservations WHERE request_id = ?",
+      bindings: [.text(pending.id)]
+    )
+    XCTAssertEqual(consumed.first?["consumed_attempt_id"], succeeded.first?.rawValue)
+    XCTAssertNil(try TaskDispatcher(store: reopened).pendingReservation(taskId: task.id))
+  }
+
+  func testApplierCancellationAcknowledgmentFailureRetainsFenceAndReplaysOnce() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let reservation = try store.reserveAttempt(request(token: "ack-failure"))
+    let evidenceId = EvidenceID("evidence-ack-failure")
+    try store.saveEvidence(Evidence(
+      id: evidenceId, taskId: task.id, attemptId: reservation.attempt.id,
+      kind: .contextSnapshot, producedBy: .runtime,
+      payloadRef: .inline(["reason": .string("cancel")]), createdAt: Date()
+    ))
+    let decision = Decision(
+      id: DecisionID("decision-ack-failure"), taskId: task.id,
+      attemptId: reservation.attempt.id, producer: .human(principal: "operator"),
+      kind: .cancel, reason: "cancel running task", causedBy: [evidenceId], createdAt: Date()
+    )
+    _ = try store.applyDecision(
+      decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-ack-failure")
+    )
+    let snapshot = try XCTUnwrap(store.persistPreLaunchCancellation(
+      taskId: task.id, attemptId: reservation.attempt.id, sessionId: reservation.attempt.sessionId
+    ))
+    let outcome = WorkEvidenceProjector.outcome(from: snapshot)
+    let database = try store.openWritable()
+    try database.execute("""
+      CREATE TRIGGER fail_ack BEFORE UPDATE ON work_cancellations
+      BEGIN SELECT RAISE(ABORT, 'injected acknowledgment failure'); END
+      """)
+    XCTAssertThrowsError(try store.acknowledgeAttemptCancellation(
+      attemptId: reservation.attempt.id, outcome: outcome
+    ))
+    XCTAssertEqual(try store.loadAttempt(id: reservation.attempt.id)?.state, .prepared)
+    XCTAssertEqual(try store.loadTask(id: task.id)?.state, .running)
+    XCTAssertFalse(try XCTUnwrap(store.attemptCancellation(
+      taskId: task.id, attemptId: reservation.attempt.id, sessionId: reservation.attempt.sessionId
+    )).acknowledged)
+    XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases").count, 1)
+    try database.execute("DROP TRIGGER fail_ack")
+    let reopened = WorkStore(rootDirectory: root.path)
+    _ = try reopened.acknowledgeAttemptCancellation(attemptId: reservation.attempt.id, outcome: outcome)
+    _ = try reopened.applyDecision(
+      decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-decision-ack-failure")
+    )
+    XCTAssertEqual(try reopened.loadTask(id: task.id)?.state, .cancelled)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id).count, 1)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id).filter { $0.id == decision.id }.count, 1)
+    XCTAssertEqual(try database.query("SELECT attempt_id FROM work_leases").count, 0)
+  }
+
   private struct TerminalSnapshotRejection {
     let status: WorkflowSessionStatus; let failureKind: WorkflowSessionFailureKind?; let outcome: AttemptOutcome
   }
@@ -26,6 +230,8 @@ extension WorkStoreReservationTests {
       attemptId: reservation.attempt.id,
       decisionId: DecisionID("cancel-decision")
     )
+    let reopened = WorkStore(rootDirectory: root.path)
+    try assertCancellationRead(reopened, reservation: reservation, acknowledged: false)
     XCTAssertThrowsError(try store.reconcileAttempt(
       attemptId: reservation.attempt.id,
       outcome: AttemptOutcome(sessionStatus: .failed)
@@ -60,9 +266,9 @@ extension WorkStoreReservationTests {
       createdAt: Date(timeIntervalSince1970: 1_800_000_000),
       updatedAt: Date(timeIntervalSince1970: 1_800_000_001)
     )
-    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
+    XCTAssertThrowsError(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
       WorkflowRuntimePersistenceSnapshot(session: completedSession)
-    )
+    ))
     XCTAssertThrowsError(try store.acknowledgeAttemptCancellation(
       attemptId: reservation.attempt.id,
       outcome: AttemptOutcome(sessionStatus: .failed)
@@ -87,9 +293,9 @@ extension WorkStoreReservationTests {
       updatedAt: Date(timeIntervalSince1970: 1_800_000_001),
       failureKind: .adapterFailure
     )
-    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
+    XCTAssertThrowsError(try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
       WorkflowRuntimePersistenceSnapshot(session: unrelatedFailureSession)
-    )
+    ))
     XCTAssertThrowsError(try store.acknowledgeAttemptCancellation(
       attemptId: reservation.attempt.id,
       outcome: AttemptOutcome(sessionStatus: .failed)
@@ -196,9 +402,25 @@ extension WorkStoreReservationTests {
     XCTAssertEqual(persisted?.outcome?.gateResults, [gate])
     XCTAssertEqual(persisted?.outcome?.costs, [cost])
     XCTAssertEqual(try store.loadTask(id: reservation.task.id)?.state, .cancelled)
+    try assertCancellationRead(reopened, reservation: reservation, acknowledged: true)
     XCTAssertEqual(try SQLiteDatabase.open(
       path: store.databasePath, mode: .readOnly, options: .readOnlyDefault
     ).query("SELECT attempt_id FROM work_leases").count, 0)
+  }
+
+  private func assertCancellationRead(
+    _ store: WorkStore, reservation: AttemptReservationResult, acknowledged: Bool
+  ) throws {
+    let record = try store.attemptCancellation(
+      taskId: reservation.task.id, attemptId: reservation.attempt.id,
+      sessionId: reservation.attempt.sessionId
+    )
+    XCTAssertEqual(record?.decisionId, DecisionID("cancel-decision"))
+    XCTAssertEqual(record?.acknowledged, acknowledged)
+    XCTAssertThrowsError(try store.attemptCancellation(
+      taskId: reservation.task.id, attemptId: reservation.attempt.id,
+      sessionId: "foreign-session"
+    ))
   }
 
   func testCancellationRequiresMatchingCancelDecisionAndAcknowledgmentFailsClosed() throws {
@@ -339,7 +561,6 @@ extension WorkStoreReservationTests {
     let rejectedSnapshots = [
       TerminalSnapshotRejection(status: .created, failureKind: nil, outcome: AttemptOutcome(sessionStatus: .completed)),
       TerminalSnapshotRejection(status: .running, failureKind: nil, outcome: AttemptOutcome(sessionStatus: .completed)),
-      TerminalSnapshotRejection(status: .completed, failureKind: nil, outcome: AttemptOutcome(sessionStatus: .failed)),
       TerminalSnapshotRejection(
         status: .failed,
         failureKind: .adapterFailure,
@@ -426,6 +647,144 @@ extension WorkStoreReservationTests {
     XCTAssertEqual(persisted?.outcome?.failureKind, .adapterFailure)
     XCTAssertEqual(persisted?.outcome?.gateResults, [gate])
     XCTAssertEqual(persisted?.outcome?.costs, [cost])
+  }
+
+  func testTerminalFirstRejectsBothCancellationInsertionPathsWithoutMutation() throws {
+    let cases: [(Bool, WorkflowSessionStatus)] = [
+      (false, .completed), (true, .completed), (false, .failed), (true, .failed)
+    ]
+    for (useApplier, terminalStatus) in cases {
+      let caseRoot = root.appendingPathComponent("terminal-first-\(useApplier)-\(terminalStatus.rawValue)", isDirectory: true)
+      let owner = WorkStore(rootDirectory: caseRoot.path)
+      let requester = WorkStore(rootDirectory: caseRoot.path)
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: caseRoot.path)
+      try owner.saveTask(sampleTask())
+      let reservation = try owner.reserveAttempt(request(token: "terminal-first-\(useApplier)"))
+      var decision = cancellationDecision(for: reservation)
+      let cause = EvidenceID("cause-terminal-first")
+      try owner.saveEvidence(Evidence(
+        id: cause, taskId: reservation.task.id, attemptId: reservation.attempt.id,
+        kind: .contextSnapshot, producedBy: .runtime,
+        payloadRef: .inline(["reason": .string("cancel")]), createdAt: decision.createdAt
+      ))
+      decision.causedBy = [cause]
+      if !useApplier { try owner.saveDecision(decision) }
+      var snapshot = try persistence.load(sessionId: reservation.attempt.sessionId)
+      snapshot.session.status = terminalStatus
+      snapshot.session.failureKind = terminalStatus == .failed ? .adapterFailure : nil
+      snapshot.session.updatedAt = Date()
+      try persistence.save(snapshot)
+      let version = try XCTUnwrap(owner.loadTask(id: reservation.task.id)).version
+      if useApplier {
+        XCTAssertThrowsError(try requester.applyDecision(
+          decision, expectedTaskVersion: version, completion: .unmet([]),
+          decisionEvidenceId: EvidenceID("evidence-terminal-first")
+        )) { error in
+          XCTAssertTrue((error as? WorkStoreError)?.isAlreadyTerminal == true)
+        }
+        XCTAssertFalse(try owner.listDecisions(taskId: reservation.task.id).contains(decision))
+      } else {
+        XCTAssertThrowsError(try requester.requestAttemptCancellation(
+          attemptId: reservation.attempt.id, decisionId: decision.id
+        )) { error in
+          XCTAssertTrue((error as? WorkStoreError)?.isAlreadyTerminal == true)
+        }
+      }
+      XCTAssertEqual(try owner.loadTask(id: reservation.task.id)?.version, version)
+      XCTAssertNil(try owner.attemptCancellation(
+        taskId: reservation.task.id, attemptId: reservation.attempt.id,
+        sessionId: reservation.attempt.sessionId
+      ))
+      XCTAssertEqual(try persistence.load(sessionId: reservation.attempt.sessionId).session.status, terminalStatus)
+      var stale = snapshot
+      stale.session.status = .running
+      XCTAssertThrowsError(try persistence.save(stale))
+      XCTAssertEqual(try persistence.load(sessionId: reservation.attempt.sessionId).session.status, terminalStatus)
+    }
+  }
+
+  func testRequestFirstBlocksBothOrdinarySnapshotSaveOverloadsAcrossConnections() throws {
+    for useApplier in [false, true] {
+      let caseRoot = root.appendingPathComponent("request-first-\(useApplier)", isDirectory: true)
+      let requester = WorkStore(rootDirectory: caseRoot.path)
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: caseRoot.path)
+      try requester.saveTask(sampleTask())
+      let reservation = try requester.reserveAttempt(request(token: "request-first-\(useApplier)"))
+      var decision = cancellationDecision(for: reservation)
+      let cause = EvidenceID("cause-request-first")
+      try requester.saveEvidence(Evidence(
+        id: cause, taskId: reservation.task.id, attemptId: reservation.attempt.id,
+        kind: .contextSnapshot, producedBy: .runtime,
+        payloadRef: .inline(["reason": .string("cancel")]), createdAt: decision.createdAt
+      ))
+      decision.causedBy = [cause]
+      if useApplier {
+        _ = try requester.applyDecision(
+          decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+          decisionEvidenceId: EvidenceID("evidence-request-first")
+        )
+      } else {
+        try requester.saveDecision(decision)
+        try requester.requestAttemptCancellation(attemptId: reservation.attempt.id, decisionId: decision.id)
+      }
+      var snapshot = try persistence.load(sessionId: reservation.attempt.sessionId)
+      snapshot.session.status = .completed
+      snapshot.session.updatedAt = Date()
+      XCTAssertThrowsError(try persistence.save(snapshot)) { error in
+        XCTAssertEqual(error as? WorkflowRuntimePersistenceStoreError, .cancellationPending(snapshot.session.sessionId))
+      }
+      XCTAssertThrowsError(try persistence.save(snapshot, appendingWorkflowMessages: []))
+      XCTAssertEqual(try persistence.load(sessionId: reservation.attempt.sessionId).session.status, .created)
+      XCTAssertFalse(try XCTUnwrap(WorkStore(rootDirectory: caseRoot.path).attemptCancellation(
+        taskId: reservation.task.id, attemptId: reservation.attempt.id,
+        sessionId: reservation.attempt.sessionId
+      )).acknowledged)
+      snapshot.session.status = .failed
+      snapshot.session.failureKind = .cancelled
+      try persistence.save(snapshot)
+      let replay = WorkStore(rootDirectory: caseRoot.path)
+      if useApplier {
+        _ = try replay.applyDecision(
+          decision, expectedTaskVersion: reservation.task.version, completion: .unmet([]),
+          decisionEvidenceId: EvidenceID("evidence-request-first")
+        )
+      }
+      XCTAssertEqual(try replay.listDecisions(taskId: reservation.task.id).filter { $0.id == decision.id }.count, 1)
+    }
+  }
+
+  func testLateRequestCannotPersistJoinedCancellationWithoutSelectedHostStopProof() throws {
+    let owner = WorkStore(rootDirectory: root.path)
+    let requester = WorkStore(rootDirectory: root.path)
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try owner.saveTask(sampleTask())
+    let reservation = try owner.reserveAttempt(request(token: "late-selected-host-request"))
+    XCTAssertNil(try owner.attemptCancellation(
+      taskId: reservation.task.id, attemptId: reservation.attempt.id,
+      sessionId: reservation.attempt.sessionId
+    ))
+
+    let decision = cancellationDecision(for: reservation)
+    try requester.saveDecision(decision)
+    try requester.requestAttemptCancellation(attemptId: reservation.attempt.id, decisionId: decision.id)
+    XCTAssertThrowsError(try owner.persistJoinedCancellation(
+      taskId: reservation.task.id, attemptId: reservation.attempt.id,
+      sessionId: reservation.attempt.sessionId, selectedHostStopProven: false
+    )) { error in
+      XCTAssertTrue((error as? WorkStoreError)?.isSelectedHostStopProofRequired == true)
+    }
+    XCTAssertEqual(try persistence.load(sessionId: reservation.attempt.sessionId).session.status, .created)
+    XCTAssertFalse(try XCTUnwrap(owner.attemptCancellation(
+      taskId: reservation.task.id, attemptId: reservation.attempt.id,
+      sessionId: reservation.attempt.sessionId
+    )).acknowledged)
+
+    let cancelled = try XCTUnwrap(owner.persistJoinedCancellation(
+      taskId: reservation.task.id, attemptId: reservation.attempt.id,
+      sessionId: reservation.attempt.sessionId, selectedHostStopProven: true
+    ))
+    XCTAssertEqual(cancelled.session.status, .failed)
+    XCTAssertEqual(cancelled.session.failureKind, .cancelled)
   }
 
   private func cancellationDecision(for reservation: AttemptReservation) -> Decision {

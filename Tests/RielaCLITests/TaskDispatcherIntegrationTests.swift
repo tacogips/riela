@@ -104,17 +104,40 @@ struct TaskExampleHarness {
     capacity: Int = 1,
     dryRun: Bool = false,
     hostResolver: (any HostCapabilityResolving)? = nil,
-    beforeReservation: (@Sendable () throws -> Void)? = nil
+    sleepDurationMs: Int? = nil,
+    failWaitNode: Bool = false,
+    beforeReservation: (@Sendable () throws -> Void)? = nil,
+    beforeExecution: (@Sendable (AttemptReservation) throws -> Void)? = nil,
+    beforeTerminalPersistence: (@Sendable () throws -> Void)? = nil,
+    afterTerminalPersistence: (@Sendable () throws -> Void)? = nil,
+    afterObserverJoin: (@Sendable () throws -> Void)? = nil,
+    signalState: TaskRunSignalState? = nil
   ) async throws -> CLICommandResult {
-    let loaded = try bundle(name)
+    var loaded = try bundle(name)
+    if let sleepDurationMs {
+      loaded.nodePayloads["wait-node"]?.sleep = WorkflowSleepExecution(durationMs: sleepDurationMs)
+    }
+    if failWaitNode {
+      loaded.nodePayloads["wait-node"]?.nodeType = .command
+      loaded.nodePayloads["wait-node"]?.sleep = nil
+      loaded.nodePayloads["wait-node"]?.command = WorkflowCommandExecution(
+        executable: "/bin/sh", arguments: ["-c", "exit 7"]
+      )
+    }
     let resolver = TaskExampleBundleResolver(bundle: loaded)
+    var runner = WorkflowRunCommand(resolver: resolver)
+    runner.beforeTerminalPersistence = beforeTerminalPersistence
+    runner.afterTerminalPersistence = afterTerminalPersistence
     let command = TaskDispatch(
       resolver: resolver,
       hostResolver: hostResolver ?? TaskExampleHostResolver(capacity: capacity),
-      runner: WorkflowRunCommand(resolver: resolver),
+      runner: runner,
       mockScenarioPath: examples.appendingPathComponent(name)
         .appendingPathComponent("mock-scenario.json").path,
-      beforeReservation: beforeReservation
+      beforeReservation: beforeReservation,
+      beforeExecution: beforeExecution,
+      afterObserverJoin: afterObserverJoin,
+      signalState: signalState
     )
     return await command.run(
       taskId: "task-\(name)",

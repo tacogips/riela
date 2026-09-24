@@ -2,7 +2,7 @@ import Foundation
 import RielaCore
 
 public enum DistributedWorkerOperation: String, Codable, Sendable {
-  case register, claim, renew, complete, events
+  case register, claim, renew, complete, events, stopped
 }
 
 public struct DistributedWorkerCapabilityObservation: Sendable {

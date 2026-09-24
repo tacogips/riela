@@ -3,7 +3,8 @@
 **Mode / issue:** `issue-resolution`; Work Runtime P1-6c, no GitHub issue supplied.
 **Status:** Step 3 accepted for implementation planning with no findings via
 `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
-`codex-design-and-implement-review-loop-session-1`. Step 5 plan review pending.
+`codex-design-and-implement-review-loop-session-1`. Step 5 accepted; Step 6
+repair and source-matched verification complete for independent review.
 **Accepted design:** `design-docs/specs/design-work-runtime-consolidation.md`,
 “Selected-host regression repair amendment”, “Ordering diagnosis and bounded
 repair decision”, and preserved P1-6c arbitration contract. SHA-256:
@@ -200,7 +201,7 @@ its presence does not authorize unrelated changes.
    `TaskCancellationIntegrationTests.swift`. Keep the named test
    `testLateSelectedHostCancellationAfterObservationRetriesWithStopProof` and all
    existing assertions. Establish these events explicitly in order: selected
-   `/bin/true` job finishes and execution joins; canonical session is nonterminal
+   shell builtin `true` job finishes and execution joins; canonical session is nonterminal
    and request absent; initial cancellation observation sees no request; separate
    store connection commits exact cancellation; joined persistence rejects lack
    of selected-host proof; owner obtains matching completed-job proof and retries;
@@ -354,6 +355,35 @@ Step 4 self-check evidence is under `tmp/p1-6c-plan-repair/`: metadata/path/DAG 
 accepted-design hash checks, verbatim historical preservation, pre/post hashes,
 source manifest check and whitespace check. These are planning checks, not new
 Swift test execution or implementation acceptance.
+
+### Step 6 implementation checkpoint — 2026-09-24
+
+The diagnostic trace in `tmp/work-runtime-p1-6c-repair-0a3605e9eafe/p1-dispatch/attempt-001/`
+identified `FailClosedSQLiteWorkflowRuntimeStore.markSessionFailed` as the first
+`adapterFailure` canonical writer after the throwing hook was consumed. Live CLI
+persistence also attempted that terminal candidate. The selected worker's `/bin/true`
+failed with exit 127 because the capable macOS host has no such path. The fixture
+now uses the POSIX shell builtin `true`, defers its canonical terminal writes
+without failing the worker, fences live/final CLI projection for that test seam,
+and asserts one proof-required retry. Production behavior with the hook unset and
+shared SQLite arbitration remain unchanged. No store transaction repair was needed.
+
+Final source manifest `tmp/work-runtime-p1-6c-repair-0a3605e9eafe/p1-dispatch/attempt-003/final-source.sha256`
+has 973 entries and SHA-256
+`7883cb40b4c4678588a79071dada6044bec3c38ad2c7cd099183a630eb955ddb`.
+The source-matched build exited 0; selected-host 1/1, store 56/56, affected focused
+104/104 and compatibility 28/28 exited 0. Strict selected-file SwiftLint and
+diff checks exited 0. Complete logs and terminal exits are recorded in
+`attempt-003/verification.json`. The serial aggregate exited 1 after 2,059 tests
+and 19 assertion failures; all 19 test identities exactly match historical
+non-slice inventory IDs 1–8 and 14–24. The broad gate remains **FAILED**.
+
+Step 6 read-only test-integrity and adversarial Codex agents recommended acceptance
+with no material P1-6c finding on the repaired source. Formal workflow test-integrity,
+single adversarial and Astra exact combined-tree decisions remain pending, followed
+by completion documentation, exact-file commit and non-force push. P1-6d, P1-7a/b
+and parent P1 remain open. This checkpoint does not mark those downstream gates
+or the broad aggregate complete.
 
 ## Historical preserved contracts
 

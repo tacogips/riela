@@ -723,8 +723,19 @@ loss of that worker does not trigger a local fallback or duplicate launch. See
 [controller and worker setup](docs/distributed-workers.md) for placement and
 workspace configuration and the
 [P1-6a plan](impl-plans/completed/work-runtime-p1-selected-host-delivery.md) for
-the accepted slice and verification limits. Parent P1 and later slices remain
-open. The design is
+its accepted slice and verification limits.
+
+The accepted P1-6c cancellation slice makes a cancel request and terminal
+session write arbitrate
+in the shared SQLite transaction: an accepted request waits for the owned run
+and selected host to stop before cancelled state and acknowledgment persist;
+an already terminal session rejects a later cancel. If stop cannot be proved,
+the request stays pending and the terminal write stays fenced. Replaying an
+accepted decision does not create another cancellation. The source-matched
+selected-host and focused checks passed, while the serial broad gate still
+fails on 19 classified non-slice assertions. See the
+[P1-6c progress record](impl-plans/progress/p1-dispatch.md) for verification.
+P1-6d, P1-7a/b and parent P1 remain open. The design is
 [Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).
 
 ## Control Surfaces

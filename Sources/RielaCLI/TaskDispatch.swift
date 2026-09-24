@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaServer
 import RielaWork
 
 enum TaskRunStatus: String, Codable, Sendable {
@@ -104,7 +105,12 @@ struct TaskDispatch: Sendable {
   var runner: WorkflowRunCommand = WorkflowRunCommand()
   var mockScenarioPath: String?
   var beforeReservation: (@Sendable () throws -> Void)?
+  var beforeExecution: (@Sendable (AttemptReservation) throws -> Void)?
+  var afterObserverJoin: (@Sendable () throws -> Void)?
+  var afterCancellationObservation: (@Sendable () throws -> Void)?
+  var afterSelectedHostProofRequired: (@Sendable () async -> Void)?
   var nodePatch: String?
+  var signalState: TaskRunSignalState?
 
   func run(
     taskId: String,
@@ -121,6 +127,7 @@ struct TaskDispatch: Sendable {
       guard let located = try locateTask(id, options: options, previewSnapshot: previewSnapshot) else {
         throw WorkStoreError("task '\(taskId)' was not found")
       }
+      if !dryRun { try rejectSignalledRun(store: located.store, taskId: id) }
       guard let plan = located.task.plan else {
         throw WorkStoreError("task '\(taskId)' has no executable plan")
       }
@@ -192,6 +199,7 @@ struct TaskDispatch: Sendable {
       )
       switch preview {
       case let .wait(reason):
+        if !dryRun { try rejectSignalledRun(store: located.store, taskId: id) }
         try previewSnapshot?.verifyUnchanged()
         return try render(TaskRunCommandResult(
           taskId: taskId, statusKind: .waiting, attemptId: nil,
@@ -224,24 +232,12 @@ struct TaskDispatch: Sendable {
           }
         }
         let attemptId = AttemptID.generate()
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let placementRecord = try JSONDecoder().decode(
-          JSONValue.self, from: encoder.encode(ready.placement)
-        )
-        let placementEvidence = Evidence(
-          id: EvidenceID("evidence-placement-\(attemptId.rawValue)"),
-          taskId: id,
-          attemptId: attemptId,
-          kind: .contextSnapshot,
-          producedBy: .runtime,
-          payloadRef: .inline([
-            "placement": placementRecord,
-            "workflowId": .string(bundle.workflow.workflowId)
-          ]),
-          createdAt: Date()
+        let placementEvidence = try makePlacementEvidence(
+          for: ready.placement, taskId: id, attemptId: attemptId,
+          workflowId: bundle.workflow.workflowId
         )
         try beforeReservation?()
+        try rejectSignalledRun(store: located.store, taskId: id)
         let reserved = try dispatcher.reserve(
           ready,
           attemptId: attemptId,
@@ -256,6 +252,7 @@ struct TaskDispatch: Sendable {
           guard case let .wait(reason) = reserved else {
             throw WorkStoreError("task reservation returned no attempt or wait reason")
           }
+          try rejectSignalledRun(store: located.store, taskId: id)
           return try render(TaskRunCommandResult(
             taskId: taskId, statusKind: .waiting, attemptId: nil,
             sessionId: nil, waitReason: reason, placement: placement
@@ -272,16 +269,17 @@ struct TaskDispatch: Sendable {
           workingDirectory: options.workingDirectory,
           resumeSessionId: reservation.attempt.sessionId
         )
-        let workflowResult = await runner.runTaskReservation(
-          runOptions, reservation: reservation, store: located.store, context: taskContext
-        )
         do {
+          let workflowResult = try await executeReserved(
+            reservation, options: runOptions, store: located.store, context: taskContext
+          )
           let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
             .load(sessionId: reservation.attempt.sessionId)
           guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
             throw WorkStoreError("reserved task session did not reach a durable terminal state")
           }
-          try reconcileTerminal(snapshot: snapshot, reservation: reservation, store: located.store, taskId: id)
+          try await reconcileTerminal(snapshot: snapshot, reservation: reservation, store: located.store,
+                                taskId: id, remoteChoices: placement.choices.filter { $0.hostId != "local" })
           let exitCode: CLIExitCode = snapshot.session.status == .failed ? .failure : workflowResult.exitCode
           let diagnostic = workflowResult.stderr.isEmpty ? workflowResult.stdout : workflowResult.stderr
           return try render(TaskRunCommandResult(
@@ -320,14 +318,72 @@ struct TaskDispatch: Sendable {
     return try TaskCommandRunner().locateTask(id, in: options)
   }
 
+  private func executeReserved(
+    _ reservation: AttemptReservation,
+    options: WorkflowRunOptions,
+    store: WorkStore,
+    context: TaskPlacementExecutionContext
+  ) async throws -> CLICommandResult {
+    try beforeExecution?(reservation)
+    return try await TaskRunCancellation.run(
+      runner: runner, options: options, reservation: reservation,
+      store: store, context: context, signalState: signalState,
+      afterObserverJoin: afterObserverJoin,
+      afterCancellationObservation: afterCancellationObservation,
+      afterSelectedHostProofRequired: afterSelectedHostProofRequired
+    )
+  }
+
+  private func rejectSignalledRun(store: WorkStore, taskId: TaskID) throws {
+    if try signalState?.commitIfRequested(store: store, taskId: taskId) == true {
+      throw WorkStoreError("task cancellation requested before reservation")
+    }
+  }
+
+  private func makePlacementEvidence(
+    for placement: BackendCapabilityPlacementResult,
+    taskId: TaskID,
+    attemptId: AttemptID,
+    workflowId: String
+  ) throws -> Evidence {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let record = try JSONDecoder().decode(JSONValue.self, from: encoder.encode(placement))
+    return Evidence(
+      id: EvidenceID("evidence-placement-\(attemptId.rawValue)"),
+      taskId: taskId, attemptId: attemptId, kind: .contextSnapshot,
+      producedBy: .runtime,
+      payloadRef: .inline(["placement": record, "workflowId": .string(workflowId)]),
+      createdAt: Date()
+    )
+  }
+
   private func reconcileTerminal(
     snapshot: WorkflowRuntimePersistenceSnapshot,
     reservation: AttemptReservation,
     store: WorkStore,
-    taskId: TaskID
-  ) throws {
+    taskId: TaskID,
+    remoteChoices: [BackendPlacementChoice]
+  ) async throws {
     let id = taskId
     let attemptId = reservation.attempt.id
+    let cancellation = try store.attemptCancellation(
+      taskId: id, attemptId: attemptId, sessionId: reservation.attempt.sessionId
+    )
+    let outcome = WorkEvidenceProjector.outcome(from: snapshot)
+    if let cancellation {
+      if cancellation.acknowledged {
+        guard let attempt = try store.loadAttempt(id: attemptId),
+              attempt.state == .reconciled, attempt.outcome == outcome else {
+          throw WorkStoreError("acknowledged cancellation does not match the reserved terminal session")
+        }
+      }
+      if !cancellation.acknowledged {
+        try await TaskRunCancellation.proveSelectedHostStop(
+          choices: remoteChoices, sessionId: reservation.attempt.sessionId, store: store
+        )
+      }
+    }
     let projection = WorkEvidenceProjector().project(
       snapshot: snapshot,
       task: reservation.task,
@@ -344,9 +400,19 @@ struct TaskDispatch: Sendable {
     )
     try store.saveEvidence(projection.evidence + [terminalEvidence])
     try store.saveFindings(projection.findings, taskId: id)
+    if let cancellation {
+      if !cancellation.acknowledged {
+        _ = try store.acknowledgeAttemptCancellation(attemptId: attemptId, outcome: outcome)
+      }
+      guard let attempt = try store.loadAttempt(id: attemptId),
+            attempt.state == .reconciled, attempt.outcome == outcome else {
+        throw WorkStoreError("acknowledged cancellation does not match the reserved terminal session")
+      }
+      return
+    }
     _ = try store.reconcileAttempt(
       attemptId: attemptId,
-      outcome: WorkEvidenceProjector.outcome(from: snapshot)
+      outcome: outcome
     )
     let currentTask = try store.loadTask(id: id)
     let currentAttempt = try store.loadAttempt(id: attemptId)

@@ -19,6 +19,11 @@ struct ParsedTaskFamily: RielaClientFamilyArguments {
 /// inspections become task reads.
 public struct TaskCommandRunner: Sendable {
   public init() {}
+  var signalState: TaskRunSignalState?
+
+  init(signalState: TaskRunSignalState) {
+    self.signalState = signalState
+  }
 
   public func run(_ command: TaskCommand) async -> CLICommandResult {
     do {
@@ -32,7 +37,7 @@ public struct TaskCommandRunner: Sendable {
           throw CLIUsageError("task run requires a task id")
         }
         let parsed = try ParsedTaskRunOptions.resolve(command.options.arguments)
-        return await TaskDispatch().run(
+        return await TaskDispatch(signalState: signalState).run(
           taskId: taskId, options: parsed.shared, dryRun: parsed.dryRun, output: command.options.output
         )
       case .decide:

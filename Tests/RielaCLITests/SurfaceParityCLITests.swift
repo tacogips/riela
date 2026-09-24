@@ -88,7 +88,7 @@ final class SurfaceParityCLITests: XCTestCase {
       "workflow run", "workflow manifest validate", "session rerun", "session continue",
       "loop gates", "package install", "node run", "memory save", "instance list",
       "specialist submit", "graphql schema", "events schedules cancel", "routine create",
-      "task show", "task list",
+      "task show", "task list", "task run", "task decide",
       "serve", "serve status", "hook codex", "kaiba instance list", "auth invite",
       "worker", "worker status", "call-step", "workflow-call", "rrun", "gql", "version"
     ] {

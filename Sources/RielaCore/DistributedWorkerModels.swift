@@ -157,6 +157,8 @@ public struct DistributedJob: Codable, Equatable, Sendable {
   public var events: [DistributedJobEvent]?
   public var eventCount: Int?
   public var archived: Bool?
+  /// Set only after the claimed worker has joined its executor after cancellation.
+  public var stoppedAt: Date?
 
   public init(
     id: String, target: DistributedWorkerTarget, payload: JSONObject, status: DistributedJobStatus,

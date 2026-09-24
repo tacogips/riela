@@ -23,6 +23,41 @@ final class DistributedWorkerHTTPTests: XCTestCase {
     ])
   }
 
+  func testStoppedReceiptRequiresAuthenticatedOriginalWorkerLease() async throws {
+    let controller = try controller()
+    let route = try router(controller)
+    let worker = try await controller.register(workerId: "mac", groups: ["apple"], capacity: 1)
+    _ = try await controller.enqueue(id: "stop", target: .init(workerId: "mac"), payload: [:])
+    let claimed = try await controller.claim(worker: worker, now: Date(), leaseDuration: 10)
+    let token = try XCTUnwrap(claimed?.lease?.token)
+    try await controller.cancel(jobId: "stop")
+
+    func response(_ bearer: String, _ leaseToken: String) async throws -> Int {
+      let body = try JSONEncoder().encode(DistributedWorkerRequest(
+        operation: .stopped, registration: worker, jobId: "stop", leaseToken: leaseToken
+      ))
+      return await route.response(for: RielaHTTPRequest(
+        method: "POST", path: DistributedWorkerHTTPRouter.path,
+        headers: ["content-type": "application/json", "authorization": "Bearer " + bearer], body: body
+      )).status
+    }
+
+    let foreignStatus = try await response(tokenB, token)
+    let staleStatus = try await response(tokenA, "stale")
+    let pendingStop = try await controller.job(id: "stop", now: Date())
+    XCTAssertEqual(foreignStatus, 403)
+    XCTAssertEqual(staleStatus, 409)
+    XCTAssertNil(pendingStop?.stoppedAt)
+    let acceptedStatus = try await response(tokenA, token)
+    XCTAssertEqual(acceptedStatus, 200)
+    let acknowledged = try await controller.job(id: "stop", now: Date())?.stoppedAt
+    XCTAssertNotNil(acknowledged)
+    let replayStatus = try await response(tokenA, token)
+    let replayedStop = try await controller.job(id: "stop", now: Date())?.stoppedAt
+    XCTAssertEqual(replayStatus, 200)
+    XCTAssertEqual(replayedStop, acknowledged)
+  }
+
   func testTwoLiveHTTPWorkersRouteAndPublishResults() async throws {
     let controller = try controller()
     let server = RielaLocalHTTPServer(routeHandler: try router(controller))

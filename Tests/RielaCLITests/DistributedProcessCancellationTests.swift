@@ -56,7 +56,12 @@ final class DistributedProcessCancellationTests: XCTestCase {
     let deadline = Date().addingTimeInterval(8)
     var completed = false
     while Date() < deadline {
-      completed = try await controller.jobs(now: Date()).contains { $0.id == "next" && $0.status == .succeeded }
+      let jobs = try await controller.jobs(now: Date())
+      completed = jobs.contains { $0.id == "next" && $0.status == .succeeded }
+      if jobs.first(where: { $0.id == "cancel" })?.stoppedAt != nil {
+        XCTAssertFalse(isExecuting(leader), "Stop receipt preceded leader termination")
+        XCTAssertFalse(isExecuting(child), "Stop receipt preceded child termination")
+      }
       if completed && !isExecuting(leader) && !isExecuting(child) { break }
       try await Task.sleep(for: .milliseconds(20))
     }
@@ -65,6 +70,7 @@ final class DistributedProcessCancellationTests: XCTestCase {
     XCTAssertTrue(completed, "Cancelling a job must leave its worker available for subsequent work")
     let cancelled = try await controller.jobs(now: Date()).first { $0.id == "cancel" }
     XCTAssertEqual(cancelled?.status, .cancelled)
+    XCTAssertNotNil(cancelled?.stoppedAt, "Cancelled claimed work needs a durable worker-stop receipt")
     XCTAssertNil(cancelled?.result, "Cancelled work must not publish a late result")
   }
 

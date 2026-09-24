@@ -6,10 +6,17 @@ public struct WorkStoreError: Error, Equatable, Sendable, CustomStringConvertibl
   public var message: String
   /// Set when an optimistic-concurrency update lost the race.
   public var isVersionConflict: Bool
+  public var isAlreadyTerminal: Bool
+  public var isSelectedHostStopProofRequired: Bool
 
-  public init(_ message: String, isVersionConflict: Bool = false) {
+  public init(
+    _ message: String, isVersionConflict: Bool = false, isAlreadyTerminal: Bool = false,
+    isSelectedHostStopProofRequired: Bool = false
+  ) {
     self.message = message
     self.isVersionConflict = isVersionConflict
+    self.isAlreadyTerminal = isAlreadyTerminal
+    self.isSelectedHostStopProofRequired = isSelectedHostStopProofRequired
   }
 
   public var description: String { message }
@@ -19,6 +26,10 @@ public struct WorkStoreError: Error, Equatable, Sendable, CustomStringConvertibl
       "task '\(taskId.rawValue)' was not at version \(expected); reload it and retry",
       isVersionConflict: true
     )
+  }
+
+  static func alreadyTerminal(sessionId: String) -> WorkStoreError {
+    WorkStoreError("session '\(sessionId)' is already terminal; cancellation not applied", isAlreadyTerminal: true)
   }
 }
 

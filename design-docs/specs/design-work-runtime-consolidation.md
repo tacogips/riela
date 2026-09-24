@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; P1-6a finalization design update pending independent review, 2026-09-24**. Source-matched host verification is recorded; independent slice acceptance remains pending and P2-P7 remain deferred. Section 17 defines the P1 contracts. **The current-execution scope clarification at the start of §17.7 governs this P1-6a intake; the earlier parent-run execution scope, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented 2026-09-21** (§4 model, §8 projection, §11 `work_*` tables, §13 P0 read commands). **P1 incomplete; P1-6c cancellation slice accepted after source-matched host verification and independent reviews, 2026-09-24; P1-6a finalization design update remains pending independent review.** The serial broad gate remains failed with 19 classified non-slice assertions; P1-6d, P1-7a/b, parent P1 and P2-P7 remain open. Section 17 defines the P1 contracts. **The current-execution scope clarification at the start of §17.7 governs this P1-6a intake; the earlier parent-run execution scope, package versions, model assignments, source inventories and scheduling claims do not expand it.** Applicable behavioral contracts and prerequisite verification requirements remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -1128,10 +1128,11 @@ arbitration contract.
 Preserve all checkpoints and helper merge `b06295d5c3fbc42528d0382014ded0e9118dfa88`
 on `feat/remaining-impl-plans`. The subprocess wait helper repair is already
 merged; this slice does not reopen it. The prior high-severity late-cancellation
-finding motivates the arbitration contract below; repaired WIP and current host
-evidence now require bounded regression repair, fresh verification and renewed
-formal review, not a new architecture. P1-6c is
-not yet accepted. P1-6d, P1-7a/b and parent P1 remain open.
+finding motivated the arbitration contract below. P1-6c was accepted after
+the later source-matched host verification and formal reviews recorded in
+`impl-plans/progress/p1-dispatch.md`. The earlier failed regression and
+pending-review statements in this amendment describe the intake history.
+P1-6d, P1-7a/b and parent P1 remain open.
 
 **Selected-host regression repair amendment (current intake).** The complete
 `tmp/work-runtime-p1-6c-final-host/selected-host.log` records one executed

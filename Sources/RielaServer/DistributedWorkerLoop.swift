@@ -88,8 +88,14 @@ public struct DistributedWorkerLoop: Sendable {
       } catch DistributedWorkerError.staleLease {
         // Cancellation or lease loss ends this invocation, not other capacity
         // lanes. The structured execution group has already stopped its work.
+        _ = try? await client.send(.init(
+          operation: .stopped, registration: registration, jobId: job.id, leaseToken: lease.token
+        ))
         try Task.checkCancellation()
       } catch DistributedWorkerTransportError.rejected(status: 409) {
+        _ = try? await client.send(.init(
+          operation: .stopped, registration: registration, jobId: job.id, leaseToken: lease.token
+        ))
         try Task.checkCancellation()
         // If the registration itself was fenced, the next claim will reject
         // it and terminate the worker. Never silently re-register live work.
@@ -130,7 +136,7 @@ public struct DistributedWorkerLoop: Sendable {
         let clock = ContinuousClock()
         var renewalDeadline = claimStarted.advanced(by: .seconds(duration))
         while true {
-          try await clock.sleep(until: min(clock.now.advanced(by: .seconds(duration / 3)), renewalDeadline))
+          try await clock.sleep(until: min(clock.now.advanced(by: .seconds(min(duration / 3, 1))), renewalDeadline))
           guard clock.now < renewalDeadline else { throw DistributedWorkerError.staleLease }
           let renewalStarted = clock.now
           // Stop the executor if the last acknowledged lease can no longer be

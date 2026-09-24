@@ -17,6 +17,9 @@ public struct WorkflowRunCommand: Sendable {
   public var graphQLTransport: any WorkflowGraphQLRunTransporting
   public var jsonlRecordWriter: WorkflowJSONLRecordWriting?
   var specialistMonitorControl: SpecialistMonitorControl?
+  var beforeTerminalPersistence: (@Sendable () throws -> Void)?
+  var deferTerminalPersistence: (@Sendable () -> Bool)?
+  var afterTerminalPersistence: (@Sendable () throws -> Void)?
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
@@ -30,6 +33,9 @@ public struct WorkflowRunCommand: Sendable {
     self.jsonLoader = jsonLoader
     self.graphQLTransport = graphQLTransport
     self.jsonlRecordWriter = jsonlRecordWriter
+    beforeTerminalPersistence = nil
+    deferTerminalPersistence = nil
+    afterTerminalPersistence = nil
   }
 
   func runWithoutSpecialistMonitor(
@@ -112,7 +118,7 @@ public struct WorkflowRunCommand: Sendable {
         fromRegistry: options.fromRegistry
       )
       let persistenceState = WorkflowRunLivePersistenceState()
-      await persistenceState.configure(storeRoot: storeRoot)
+      await persistenceState.configure(storeRoot: storeRoot, requiresCanonicalTerminal: deferTerminalPersistence != nil)
       livePersistenceState = persistenceState
       let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
@@ -368,8 +374,9 @@ public struct WorkflowRunCommand: Sendable {
     try await seedRuntimeStoreFromPersistedCLIState(backingStore, sessionStoreRoot: storeRoot)
     let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
     let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
-      backing: backingStore,
-      rootDirectory: canonicalRoot
+      backing: backingStore, rootDirectory: canonicalRoot,
+      beforeTerminalPersistence: beforeTerminalPersistence,
+      deferTerminalPersistence: deferTerminalPersistence
     )
     try await durableStore.hydrate()
     return WorkflowRunProductionDurableRuntime(
@@ -527,6 +534,7 @@ public struct WorkflowRunCommand: Sendable {
       recovery: result.recovery,
       loopEvidence: loopEvidence
     )
+    if deferTerminalPersistence != nil { try requireCommittedCanonicalTerminal(snapshot, sessionStoreRoot: storeRoot) }
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
       PersistedCLIWorkflowSession(
         workflowName: workflowName,
@@ -972,9 +980,6 @@ extension WorkflowRunCommand {
       )
     }
     if Task.isCancelled {
-      // Cancellation stops workflow work, not its terminal audit record.
-      // SQLite lock/WAL setup correctly checks cancellation, so finish only
-      // this bounded persistence operation in a fresh cancellation context.
       let environment = CLIRuntimeEnvironment.overrides
       try await Task.detached {
         try CLIRuntimeEnvironment.$overrides.withValue(environment, operation: persist)
@@ -982,6 +987,7 @@ extension WorkflowRunCommand {
     } else {
       try persist()
     }
+    try afterTerminalPersistence?()
     await dispatchLoopNotificationsAfterTerminalPersistence(
       finalResult: finalResult,
       loopEvidence: loopEvidence,

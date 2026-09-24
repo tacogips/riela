@@ -71,6 +71,39 @@ extension SurfaceCatalog {
   static let registryClientRows: [SurfaceOperation] =
     packageRows + nodeRows + memoryRows + instanceRows + specialistRows
       + localToolRows + eventRows + routineCLIRows + serveRows + graphQLClientRows + operatorRows
+      + taskMutationRows
+
+  private static var taskMutationRows: [SurfaceOperation] {
+    let p5Evidence = "the GraphQL task API and task board land in work-runtime P5"
+    let defaults = SurfaceRowDefaults(
+      cli: SurfaceExclusion.localProcess("this task operation"),
+      graphql: .blocked(evidence: p5Evidence),
+      webAPI: SurfaceExclusion.notAConsoleOperation("a Work Runtime operation"),
+      library: .blocked(evidence: p5Evidence),
+      design: SurfaceCatalog.workRuntimeDesign
+    )
+    let sharedOptions = ["--scope", "--session-store", "--working-dir", "--output"]
+    return [
+      surfaceRow(
+        defaults,
+        id: "task.run",
+        family: "task",
+        kind: .process,
+        cli: "task run",
+        cliOptions: sharedOptions + ["--dry-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.decide",
+        family: "task",
+        kind: .mutation,
+        cli: "task decide",
+        cliOptions: sharedOptions + [
+          "--accept", "--reject", "--rerun", "--cancel", "--principal", "--expected-version", "--decision-id"
+        ]
+      )
+    ]
+  }
 
   private static var packageRows: [SurfaceOperation] {
     [

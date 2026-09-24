@@ -115,7 +115,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
       let job = try await controller.claim(worker: registration, now: clock.now(), leaseDuration: leaseDuration)
       try await publishCapabilities(registration, observation: observation)
       return reply(job: job)
-    case .renew, .complete, .events:
+    case .renew, .complete, .events, .stopped:
       let observation = message.operation == .renew ? try refreshObservation(message, now: clock.now()) : nil
       guard message.operation == .renew || (
         message.capabilities == nil && message.environment == nil
@@ -135,6 +135,13 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
         return reply(job: DistributedJob(id: completed.id, target: completed.target, payload: [:], status: completed.status, lease: completed.lease))
       }
       guard message.result == nil else { throw DistributedWorkerTransportError.invalidConfiguration }
+      if message.operation == .stopped {
+        guard message.events == nil else { throw DistributedWorkerTransportError.invalidConfiguration }
+        _ = try await controller.acknowledgeStopped(
+          jobId: jobId, worker: registration, token: token, now: clock.now()
+        )
+        return reply()
+      }
       if message.operation == .events {
         guard let events = message.events else { throw DistributedWorkerTransportError.invalidConfiguration }
         try await controller.appendEvents(jobId: jobId, worker: registration, token: token, events: events, now: clock.now())

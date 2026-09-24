@@ -87,3 +87,34 @@ defining the original bounded path result. Before checking off or archiving
 the old plan, still compare its TASK-001..008 acceptance matrix with current
 Kaiba traversal, GraphQL, Riela adapter and workflow tests, including the
 intentional add-on rename from `riela/` to `kaiba/` and any live-client gap.
+
+## System-memory plan architecture cross-check (2026-09-24)
+
+The active `riela-note-system-memory` plan describes the pre-extraction
+architecture. Its header still says Step 6 remediation and pre-browser artifact
+gate pending, and TASK-011 remains in progress. Its checked completion criteria
+include removing `RielaMemory`, `riela memory`, workflow `memories`, and
+`riela/memory-*` add-ons in favor of a Note-only system-memory notebook. Those
+checks record the outcome of the old work package, **not** acceptance of the
+current product architecture.
+
+Commit `987c8a40` deliberately restored `Packages/RielaMemory`, the memory CLI,
+workflow-memory schema/runtime, and the short-term memory add-ons after Note
+extraction. Current `README.md` defines the split: Riela owns short-term SQLite
+workflow memory; Kaiba owns long-term notes, with
+`kaiba/memory-consolidate`/`kaiba/memory-recall` bridging the two. Current
+`examples/telegram-sdk-trio-chat/workflow.json` uses `riela/memory-save` and
+`riela/memory-load`, rather than the old plan's Note-backed
+`riela/note-memory-save`/`riela/note-memory-load` successors. The old plan's
+removal, migration, and browser-artifact instructions must therefore **not** be
+dispatched as current implementation tasks.
+
+Before closing or replacing that plan, make a current-architecture acceptance
+matrix for: short-term persistence and workflow scope; persona-context add-ons;
+the retained Telegram SDK parity cases; Kaiba consolidation/recall and notebook
+identity; and the treatment of the former Note system-memory notebook and web
+Lock/Unlock behavior. Verify each against current tests and, where applicable,
+Kaiba's owner-side contract. Do not infer that `987c8a40` proves every old
+behavior was preserved, and do not delete the historical plan or its evidence
+until the replacement disposition is reviewed. Kaiba's checkout remains owned
+by another session and was not modified for this audit.

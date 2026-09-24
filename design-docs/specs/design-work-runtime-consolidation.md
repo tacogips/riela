@@ -2401,6 +2401,65 @@ independent review remain downstream gates.
 
 ### 17.9 P1-7b task-backed replacement examples (2026-09-25)
 
+**Bounded amendment — planning only (comm-000001; intake comm-000002).**
+This amendment supersedes execution authority below for this run: only this
+subsection and the current executable section of
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` may change.
+Preserve checkpoint `380b64e2c48f5fca3ba909da0523ab1a19f929bb` and all six
+pre-existing dirty P1-7b files unchanged. No production edits, tests,
+documentation finalization, commit or push occur in this planning-only run.
+The earlier design/plan acceptance does not accept this amendment; independent
+adversarial design and plan acceptance must precede later implementation.
+No GitHub issue or codex-agent reference was supplied for this amendment.
+
+**Demonstrated defect and one-file boundary.** The proposal at
+`tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-2/bounded-amendment-request.json`
+and failed V1 log at that directory's `logs/before-removal-final.log` show a
+reserved task's rejected required gate reaching a completed canonical session.
+`WorkflowRunCommand.finalizeRun` projects gate evidence, then unconditionally
+applies required-gate failure, rewriting the completed session as failed.
+`SQLiteWorkflowRuntimePersistenceStore.validateTaskTerminalWrite` correctly
+rejects this terminal change with `terminalSnapshotConflict`.
+
+The only additional production write path proposed for later accepted
+implementation is `Sources/RielaCLI/WorkflowRunCommand.swift`. Carry actual
+`taskReservation != nil` into `RunFinalizeContext` at both existing call sites
+(plain and auto-improve); apply `applyRequiredLoopGateFailureIfNeeded` only
+when no reservation exists. Use the internal reservation, never authored
+variables, workflow names, task-context payloads or a new public option.
+Preserve gate projection, loop-evidence summary, canonical persistence,
+notifications, telemetry and rendering order. This does not convert real
+runner failures or cancellations to success. Keep the completed task-backed
+session and rejected gate/finding evidence intact so ordinary TaskDispatch
+reconciliation and DeterministicDirector can reject acceptance and persist a
+causal recovery request under existing budget rules. A completed workflow
+session is not successful task acceptance. Standalone runs retain failed
+status, failure exit and inspectable rejected-gate evidence. SQLite terminal
+immutability, schemas, dispatcher/director policy and public APIs stay unchanged.
+
+**Amendment evidence and remaining gates.** The existing exact regressions are
+`TaskRuntimeExampleTests.testRejectedGateRecoveryConsumesPendingRequestAndAcceptsSecondAttempt`
+and `WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection`.
+Run each separately with a positive executed count after later implementation;
+then renew final-source V1, V11 and serial broad verification using the current
+plan's commands and full logs/final exits. Recovery must prove completed first
+canonical session, retained rejection, no premature acceptance, causal pending
+`verification` recovery, distinct second attempt/session, passing gate and task
+success, request consumption and duplicate-free replay. Standalone verification
+must prove failure exit/status and rejected evidence in canonical and artifact
+stores. Do not clear findings manually, preseed success or weaken assertions.
+The latest V1 has 56 tests and four failed assertions, including intermittent
+second-attempt/replay recovery failures; this one-file amendment does not claim
+those resolved. Preserve them as implementation acceptance blockers if they
+persist; a repair outside this boundary needs a separately reviewed amendment.
+The prior broad receipt predates the last fixture edit and is not final-source
+acceptance. Classify every final-source failure by test/assertion, cause, source
+identity and owner; new/slice failures block, unrelated failures retain FAILED
+status and explicit follow-up. Only a complete passing broad run can be called
+passing. Formal test-integrity, single adversarial and Astra combined-tree
+reviews, B4 documentation and exact-file commit/non-force push remain later
+gates. P1-7b, P1-7a and parent P1 remain open. No user decision is unresolved.
+
 **Authority and delivery boundary.** Mode `issue-resolution`; issue “Implement
 Work Runtime P1-7b task-backed replacement examples”, from effective
 `workflowInput` and Step 1 `comm-000002` in

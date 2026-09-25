@@ -80,12 +80,18 @@ extension BuiltinWorkflowAddonResolver {
     if liveTip == head {
       return pushOutput(status: "already-pushed", revision: head, remote: snapshot.remote, branch: snapshot.branch)
     }
-    guard liveTip == snapshot.trackingRevision else {
-      throw policyError("riela/git-push live remote state diverged from the validated tracking snapshot")
+    let authorizedParent: String
+    if liveTip != snapshot.trackingRevision {
+      guard let parent = try? singleParentRevision(head, repository: repository),
+            liveTip == parent else {
+        throw policyError("riela/git-push live remote state diverged from the validated tracking snapshot")
+      }
+      authorizedParent = parent
+    } else {
+      authorizedParent = try singleParentRevision(head, repository: repository)
     }
-    let authorizedParent = try singleParentRevision(head, repository: repository)
     guard liveTip == authorizedParent,
-          counts.ahead == 1 else {
+          counts.ahead >= 1 else {
       throw policyError("riela/git-push refuses an unauthorized local commit range")
     }
 

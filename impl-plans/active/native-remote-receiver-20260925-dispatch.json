@@ -1,6 +1,6 @@
 {
   "taskId": "native-remote-receiver-20260925",
-  "workflowMode": "issue-resolution",
+  "workflowMode": "planning-only",
   "implementationBranch": "feat/native-remote-workflow-execution",
   "baseBranch": "feat/native-remote-workflow-execution",
   "remote": "origin",
@@ -11,11 +11,12 @@
   "evidenceRoot": "tmp/native-remote-receiver-20260925",
   "reviewContext": {
     "issueReference": "Local request on feat/native-remote-workflow-execution; no GitHub issue URL or number supplied",
-    "userProblem": "The remote CLI sends executeWorkflow followed by workflowExecution, but the Riela GraphQL server has no matching authenticated receiving roots.",
+    "userProblem": "NRE-03 requires a source-backed paused-result correction, persisted-result agreement, missing boundary coverage and source-matched App failure attribution.",
     "requiredOutcomes": [
-      "Implement the three accepted plans in dependency order with ordinary authenticated execution and a persisted summary through the actual Riela HTTP composition.",
-      "Reject absent or wrong bearer and unsupported top-level autoImprove or nestedSuperviser keys by presence, including false and null, without run side effects.",
-      "Pass relevant Swift tests, source build, strict changed-file SwiftLint and independent test-integrity, adversarial and integration reviews; commit and non-force push reviewed code and docs."
+      "Publish only the reviewed design, NRE-03 plan and dispatch amendment; preserve checkpoint 72a9dae and every dirty/untracked implementation file.",
+      "Retain NRE-01/NRE-02 acceptance and ownership; keep NRE-03 pending until the later implementation and aggregate review gates pass.",
+      "No ordinary paused status: preserve failed/maxStepsExceeded and failed/cancelled; require command/persisted status and identity agreement and actual exit codes.",
+      "Establish the 11 App assertion failures through bounded source-matched comparison before proposing any baseline disposition."
     ],
     "nonGoals": [
       "No parallel server or runner, queue, polling protocol, new library facade, legacy auto-improve compatibility or client timeout forwarding.",
@@ -23,7 +24,7 @@
     ],
     "constraints": [
       "Preserve planning commit 9b1c935bc7e9fe4d586142e4ead035f84ef18ee7, local runs, existing GraphQL and browser authorization, and failure semantics.",
-      "Before implementation fanout, the serial owner must commit this accepted checkpoint, non-force push it, and verify live remote hash equals local HEAD; no such command has run in this node.",
+      "Step 5 must accept this amendment before planning-only commit and non-force push of the exact three planning paths; verify live remote hash and preserve dirty implementation. No implementation dispatch in this run.",
       "Run foreground verification with explicit Xcode Swift toolchain, complete logs and exit statuses under evidenceRoot per plan and attempt; serialize shared SwiftPM build/test use.",
       "Workers keep separate progress files and do not edit this manifest; one serial owner handles shared catalog, indexes, reconciliation, reviews and final Git actions."
     ],
@@ -32,7 +33,8 @@
       "Add typed GraphQL executeWorkflow and workflowExecution roots matching the existing CLI mutation-then-summary wire contract, with strict input validation before permissive decoding.",
       "Verify a nonempty startup-configured operator bearer in an execution-specific wrapper before composite credential stripping; keep registry and browser authorization independent.",
       "Add a strict read-only CLI session-record seam so corrupt stored rows yield storage errors while truly absent IDs yield null; pair it with the existing strict runtime snapshot read.",
-      "Use WorkflowRunCommand.run in the existing serve and browser compositions, await its persisted result, and keep host-selected working directory and store fixed for each request."
+      "Use WorkflowRunCommand.run in the existing serve and browser compositions, await its persisted result, and keep host-selected working directory and store fixed for each request.",
+      "Correct unsupported paused-result acceptance using ordinary runner evidence; no Core ownership, enum, schema or migration changes. NRE-03 owns failure/profile/cancellation tests and bounded App baseline attribution."
     ],
     "intentionalTradeoffs": [
       "Mutation stays synchronous; a client timeout can precede completion and retry may start a second run.",
@@ -43,7 +45,7 @@
       "Forbidden keys reject by top-level presence for false, null, zero, objects and true across variables, inline inputs and defaults; nested opaque runtimeVariables remain allowed.",
       "Missing, mismatched or unconfigured bearer and spoofed manager-session/client metadata fail closed before starts or reads.",
       "Absent summary ID returns null; corrupt CLI record, missing or corrupt runtime snapshot, and ID mismatch return execution errors.",
-      "Failed or paused persisted runs return actual status and exit code; server stop cancels and drains listener-owned route work."
+      "Persisted failed results retain actual command exit codes with status/identity agreement; maxSteps exhaustion is failed/maxStepsExceeded and stop cancellation is failed/cancelled, never paused. Listener-owned work is drained."
     ],
     "outOfScopeEdgeCases": [
       "Legacy auto-improve receiver behavior, timeoutMs wire forwarding, automatic retry or idempotency, and profile-wide lookup for unknown IDs."
@@ -62,21 +64,24 @@
       "Sources/RielaCLI/ServeWebHost.swift",
       "Sources/RielaApp/RielaAppWebGraphQL.swift"
     ],
-    "reviewDecision": "Step 5 implementation-plan review accepted; prior mid finding resolved in all three plans, with no high or mid findings remaining.",
-    "reviewCommunicationId": "comm-000008",
-    "codexAgentReferences": [],
+    "reviewDecision": "Current Step 3 design accepted without findings; amended plan awaits Step 5. Integration comm-000039 retains NRE-01/NRE-02 acceptance; NRE-03 remains pending.",
+    "reviewCommunicationId": "comm-000004",
+    "codexAgentReferences": [
+      "/root \u2014 Step 6 NRE-03 integration review, comm-000039"
+    ],
     "planningVerification": [
       {
-        "command": "python3 tmp/native-remote-plan-step4-revision-1/check_plans.py",
-        "completeLogPath": "tmp/native-remote-plan-step4-revision-1/check-1.log",
+        "command": "python3 tmp/native-remote-plan-amendment-step4/check_plans.py",
+        "completeLogPath": "tmp/native-remote-plan-amendment-step4/self-check.log",
         "exitStatus": 0
       },
       {
         "command": "git diff --check",
-        "completeLogPath": "tmp/native-remote-plan-step4-revision-1/check-2.log",
+        "completeLogPath": "tmp/native-remote-plan-amendment-step4/diff-check.log",
         "exitStatus": 0
       }
-    ]
+    ],
+    "integrationReviewCommunicationId": "comm-000039"
   },
   "plans": [
     {
@@ -159,8 +164,9 @@
       "acceptanceCriteria": [
         "Reconcile both predecessor interfaces and strict reads, then execute ordinary workflows through the existing CLI runner and host-selected store.",
         "Actual Riela HTTP composition rejects unauthorized and malformed requests without effects and returns an authenticated persisted execution plus summary via the existing URLSession transport.",
-        "Provider, host, browser and cancellation tests pass; serial catalog/schema parity, source build, strict changed-file SwiftLint and aggregate tests pass with complete logs.",
-        "Independent test-integrity, adversarial and integration reviews accept source-matched evidence with no high or mid findings; directly related docs and progress records are finalized."
+        "Provider result agreement, real failure/pre-session, browser/profile and persisted cancellation tests pass; source build, strict changed-file SwiftLint and full aggregate complete with source-matched logs. Aggregate requires clean results or independent approval of individually proven baseline failures with every other test passing; never relabel nonzero exit as passing.",
+        "Independent test-integrity, adversarial and integration reviews accept source-matched evidence with no high or mid findings; directly related docs and progress records are finalized.",
+        "No paused fixture or Core status/migration expansion; retain NRE-01/NRE-02 acceptance and writePaths. Follow NRE-03 I7a bounded baseline procedure; unresolved evidence keeps NRE-03 pending."
       ],
       "verification": [
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkflowExecutionProviderTests|CLIWorkflowSessionStoreResilienceTests'",
@@ -170,7 +176,17 @@
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint --quiet --no-cache",
         "python3 - <<'PY'\nimport os\nimport subprocess\nimport sys\nchanged = subprocess.check_output([\n    'git', 'diff', '--name-only', '--diff-filter=ACMRT', '-z', '9b1c935',\n    '--', '*.swift'\n])\nuntracked = subprocess.check_output([\n    'git', 'ls-files', '--others', '--exclude-standard', '-z', '--', '*.swift'\n])\npaths = sorted({os.fsdecode(p) for p in (changed + untracked).split(b'\\0')\n                if p and os.path.isfile(os.fsdecode(p))})\nif not paths:\n    sys.exit('FAIL: no changed Swift files selected')\nenv = dict(os.environ)\nenv.update(DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer',\n           SDKROOT='/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk',\n           TOOLCHAINS='com.apple.dt.toolchain.XcodeDefault')\nenv['PATH'] = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:' + env.get('PATH', '')\nenv['SCRIPT_INPUT_FILE_COUNT'] = str(len(paths))\nfor index, path in enumerate(paths):\n    print(path, flush=True)\n    env[f'SCRIPT_INPUT_FILE_{index}'] = os.path.abspath(path)\nsys.exit(subprocess.run([\n    '/usr/bin/xcrun', 'swiftlint', 'lint', '--strict', '--quiet', '--no-cache',\n    '--use-script-input-files'\n], env=env).returncode)\nPY",
         "git diff --check"
-      ]
+      ],
+      "baselineVerificationProcedure": "impl-plans/active/native-remote-03-provider-host-integration.md#i7a--source-matched-app-attribution-nre-03-serial-owner"
     }
-  ]
+  ],
+  "preservedCheckpoint": "72a9dae65c6ca99cd06746d2100dcf3465fc3e8f",
+  "acceptedPlanIds": [
+    "NRE-01",
+    "NRE-02"
+  ],
+  "pendingPlanIds": [
+    "NRE-03"
+  ],
+  "dispatchDisposition": "Planning amendment only; no dispatch in this run. Resume only NRE-03 in a later authorized issue-resolution run after reviewed planning publication."
 }

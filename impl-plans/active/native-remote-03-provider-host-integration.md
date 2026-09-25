@@ -40,21 +40,26 @@
 
 Implement the smallest Riela-owned receiving path for the existing remote CLI,
 using the accepted design at `design-docs/specs/design-native-remote-workflow-execution.md`.
-Mode: `issue-resolution`. Current Step 3 design acceptance is `comm-000004`,
-source execution `step3-design-review-attempt-1-exec-4`, decision `accepted`,
-with no findings. Issue reference: local request on
-`feat/native-remote-workflow-execution`; no GitHub issue URL or number supplied.
-Issue title: Implement native Riela remote workflow execution receiver.
-Codex-agent references: none; Cursor/reference divergence: not applicable.
-Preserve planning commit `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7` and its
-accepted strict-decoding correction. The earlier design's `comm-000004`
-revision and `comm-000006` acceptance belong to the historical planning phase;
-they are not the current Step 3 review decision.
+Mode: `planning-only` (`executionMode: design-plan-only`). Step 3 accepted the
+amended design in current `comm-000004`, source execution
+`step3-design-review-attempt-1-exec-4`, with no findings. Issue reference: local
+request on `feat/native-remote-workflow-execution`; no GitHub issue supplied.
+Issue title: Amend NRE-03 paused-result contract and aggregate verification ownership.
+Codex-agent reference: `/root` — Step 6 NRE-03 integration review `comm-000039`.
+Cursor CLI mapping is not applicable: this is a review reference, not a reference
+repository requirement. Integration review retained NRE-01/NRE-02 acceptance;
+NRE-03 remains pending. Preserve checkpoint
+`72a9dae65c6ca99cd06746d2100dcf3465fc3e8f`, prior planning history and every existing
+dirty/untracked implementation file.
 
-This node revises plans only. Later implementation executes the source/test tasks
-below under the effective issue-resolution input. Do not edit the separate P1
-checkout or remove historical references. The runner-resolved workflow provenance
-is authoritative; registry rediscovery/repair is not work.
+The existing writePaths/sharedPaths and runtime change-tracking scope remain
+unchanged; no additional trackedPaths or Core ownership is introduced.
+
+This amendment authorizes planning artifacts only; no source/test edits or test
+execution that mutates implementation, reset, stash, force push, or unrelated
+cleanup. The implementation tasks below apply only in the later issue-resolution
+run. The current workflow ends with reviewed planning publication, not fanout.
+No workflow/package provenance rediscovery is required.
 
 Non-goals: another server, runner, queue, polling protocol, credential framework,
 new library facade, legacy auto-improve compatibility, client timeout forwarding,
@@ -65,18 +70,21 @@ No external service is a dependency or publication target.
 
 ## Same-directory execution and evidence protocol
 
-Before native Riela implementation/review fanout, Step 5 must accept this revised
-plan set, and the serial workflow owner must commit the accepted design update
-and all revised plans on `feat/native-remote-workflow-execution`, preserving
-`9b1c935`. Before dispatch, the serial owner must non-force push this checkpoint
-and verify that the live remote branch hash equals the accepted checkpoint hash.
-Stop dispatch if the push fails, remote verification fails, or the hashes differ;
-do not start implementation/review fanout with an unpublished checkpoint. Record
-the checkpoint hash, verified remote hash, commands, complete log paths and
-terminal exit statuses in the implementation handoff. This keeps the checkpoint
-published before the final implementation commit, satisfying the final git-push
-gate's limit of one unpublished commit. Do not rewrite the earlier planning
-commit. This authoring node does not commit or push.
+Step 5 must accept this amended plan and dispatch manifest before the serial
+workflow owner commits and non-force pushes exactly these planning artifacts:
+
+- `design-docs/specs/design-native-remote-workflow-execution.md`
+- `impl-plans/active/native-remote-03-provider-host-integration.md`
+- `impl-plans/active/native-remote-receiver-20260925-dispatch.json`
+
+Preserve checkpoint `72a9dae`, all implementation bytes and the existing untracked
+progress files; never stage them with the planning commit. This node does not
+commit or push. Verify the planning commit's exact file list and unchanged
+implementation hashes before publication. Current publication must not dispatch
+implementation; a subsequent authorized issue-resolution run may resume only
+NRE-03 after verifying the published checkpoint and retained predecessor evidence.
+Record commit/live remote hashes and full logs/statuses. Stop publication on any
+failure or mismatch; no force push or history rewrite.
 
 After the checkpoint commit, run these commands serially in the foreground:
 
@@ -90,10 +98,11 @@ Require each command to exit 0; compare the single returned remote ref hash to
 the recorded accepted checkpoint hash and confirm local HEAD still matches.
 A successful push alone is insufficient evidence. Stop on any failure; never
 force-push or dispatch workers while publication remains unverified.
-Final reviewed code/docs are committed and non-force pushed by serial workflow
-finalization after integration and review. No worktrees, private branches,
-concurrent Git operations or worker commits. Wave 1 comprises NRE-01 and NRE-02;
-wave 2 comprises NRE-03 after both pass their assigned gates. One integration
+In the later issue-resolution run, reviewed code/docs are committed and non-force
+pushed by serial workflow finalization after integration and review. No worktrees, private branches,
+concurrent Git operations or worker commits. NRE-01/NRE-02 are already accepted; do not redispatch them.
+The remaining implementation wave contains only NRE-03, dependent on their
+accepted interfaces and preserved evidence. One integration
 owner runs all serial reconciliation and finalization.
 
 Before each edit, freshly read the target and dependency interfaces, record
@@ -144,9 +153,9 @@ real-HTTP evidence and combined-tree verification.
    store method and both worker intent/hash records. Compare every post-hash
    with the current tree; inspect differences and restore lost required behavior
    serially, never wholesale snapshots. If repair requires a NRE-01/NRE-02-owned
-   file, record that repair path and responsibility transfer in this progress
-   log; workers have stopped editing. Rerun that plan's targeted tests after a
-   repair. Do not edit another worker's progress log. No overlapping live writes.
+   file, stop for a narrowly reviewed ownership amendment; this plan grants
+   no transfer of predecessor writePaths. Rerun affected targeted tests after
+   an independently authorized repair. Do not edit another worker's progress log. No overlapping live writes.
 2. **I2 — Provider.** Add WorkflowExecutionProvider.swift conforming to NRE-01's
    protocol. Capture immutable host resolution, working directory, environment
    and resolved store root in provider construction. Map workflowName to target
@@ -160,7 +169,15 @@ real-HTTP evidence and combined-tree verification.
    failure envelope with a session ID, strict-load that persisted result before
    mapping status/exit code; pre-session failures are GraphQL errors. Missing,
    incompatible output or failed persistence must never fabricate a payload.
-   Preserve real nonzero run exit codes and paused/failed status.
+   For both result and failure-envelope branches, strict-read the CLI record and
+   canonical snapshot and require session/workflow identity and status agreement
+   with command evidence before returning a payload. If the failure envelope lacks
+   workflow identity, establish it from the two strict records; never invent it.
+   Reject contradictions as WORKFLOW_EXECUTION_FAILED with bounded diagnostics.
+   Preserve actual command exit code, including nonzero failure; exit code is not
+   a new persisted field. Ordinary execution has no paused status: budget exhaustion
+   is failed/maxStepsExceeded, cancellation is failed/cancelled. No RuntimeSession,
+   runner, storage schema, status consumers or migration changes are authorized.
 3. **I3 — Strict summary.** Use the NRE-02 strict CLI record read on the captured
    store; only its notFound returns nil. Load the same ID with canonical
    SQLiteWorkflowRuntimePersistenceStore.loadStrictReadOnly; after a CLI record
@@ -202,7 +219,13 @@ real-HTTP evidence and combined-tree verification.
    test-only initializer hook for the existing command is allowed, no new public
    runtime abstraction or remote mock option. Test every supported field and
    ordinary defaults, invalid patch, mismatched saved instance, missing/deactivated
-   workflow, successful/failed/paused persisted result and pre-session failure.
+   workflow, completed/0, persisted failure/nonzero and pre-session failure.
+   Add a real two-step workflow with maxSteps=1; assert failed/maxStepsExceeded,
+   nonzero exit, both persisted records and immediate summary. Pre-session failure
+   must return an error without invented IDs. Controlled contradictory-result
+   tests cover both decode branches and fail closed; label injected mismatch
+   tests separately from real-run fixtures. Do not fabricate paused JSON or
+   introduce stop-after/stop-before inputs. Retain existing resume/rerun semantics.
    Read summaries using a fresh provider over the same store. Cover real ordered
    arrays, empty arrays and cross-workflow/fanout count distinction. Corrupt a
    CLI record with valid-but-undecodable JSON while retaining its runtime snapshot:
@@ -234,7 +257,11 @@ real-HTTP evidence and combined-tree verification.
    limitation, do not count source assertions as real HTTP execution evidence.
    Use a barrier-controlled slow fixture to prove mutation remains pending,
    disconnect does not orphan the listener-owned route, and server.stop cancels
-   and drains execution with persisted cancellation. Await start/cancel/exit
+   and drains execution with persisted failed status and failureKind cancelled
+   verified through strict reads. Do not demand an HTTP response after disconnect.
+   Profile-switch barriers must prove active writes stay in the original store
+   and a summary in the new profile cannot discover the old session.
+   Await start/cancel/persistence/exit
    signals, not guessed sleeps. A bounded XCTest timeout fails rather than
    disguises a stuck task. No polling job, new cancellation registry or detached
    shell lifecycle. If cancellation fails, report the concrete defect for repair
@@ -247,8 +274,8 @@ real-HTTP evidence and combined-tree verification.
    increasing the gap allowlist. Update only affected DTO/schema expectations in
    SurfaceParityDTOSchemaTests/GraphQLContractsTests as tests require. Run all
    commands below after drift repair; inspect every failure. Fix only material
-   regressions in scope, documenting baseline failures rather than suppressing
-   tests. Re-run affected checks after repairs and final combined gates when
+   regressions in scope. Execute I7a below before attributing the 11 App assertions
+   to baseline; no test suppression or speculative App source/test changes. Re-run affected checks after repairs and final combined gates when
    necessary. No dependency updates or broad formatting.
 8. **I8 — Review/documentation handoff.** Record exact changed files, accepted
    design mapping, remaining risks, all logs/statuses and test counts in this
@@ -273,6 +300,8 @@ real-HTTP evidence and combined-tree verification.
 
 No unauthenticated execution or summary read; operator bearer authorizes only
 execution in the fixed host store. No local-trust/registry privilege escalation.
+No paused result, status enum addition, schema migration or fabricated fixture.
+Command/CLI-record/runtime-snapshot status and identity must agree.
 Both forbidden keys reject by presence, while ordinary requests work and local
 CLI/resume/rerun remain compatible. A successful mutation returns only persisted
 IDs/result; summary corruption is an error, not nil. Existing browser profile
@@ -283,6 +312,92 @@ URLSession/proxy timeout is not a workflow timeout; a retry can create another
 run. Keep those accepted limitations explicit. Server owns and drains route
 work. Integration proof must use a real authenticated Riela server, not merely
 executor mocks, and include unauthorized/malformed-input rejection.
+
+## I7a — Source-matched App attribution (NRE-03 serial owner)
+
+The complete log `tmp/native-remote-implementation/NRE-03/attempt-2/app-failures-rerun.log`
+records 11 XCTest tests and 11 assertion failures (1 unexpected); review
+`comm-000039` records exit 1. They span RielaAppSettingsEditorNavigationTests,
+RielaAppUXOnboardingControllerTests and RielaAppWindowContentInsetTests. The trailing
+Swift Testing zero-test success does not supersede XCTest failure. No source-matched
+baseline result has been established.
+
+NRE-03's serial integration owner must perform the following bounded comparison
+in the next implementation run, retaining full logs and actual terminal statuses:
+
+1. Record HEAD, dirty diff, untracked file hashes, source/test hashes, Package.resolved,
+   Swift/Xcode/SDK/architecture and test environment. Freeze source during comparison.
+   Export the preserved pre-implementation checkpoint `72a9dae65c6ca99cd06746d2100dcf3465fc3e8f`
+   using `git archive` into repository `tmp/native-remote-baseline/source/`; verify
+   exported relevant source/test hashes against the commit. Use an archive, not a
+   worktree, reset, stash or edits to the current checkout. Confirm the checkpoint
+   contains no NRE implementation before treating it as the baseline.
+2. Build baseline and current source into distinct fresh scratch directories using
+   the same toolchain, dependency versions, architecture and environment; never use
+   `--skip-build` or a pre-existing App executable. Run each side once with:
+
+   ```sh
+   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-automatic-resolution --scratch-path <side-specific-build-path> --filter 'RielaAppSettingsEditorNavigationTests|RielaAppUXOnboardingControllerTests|RielaAppWindowContentInsetTests'
+   ```
+
+   Execute from the respective source root; log that root and exact expanded command.
+   No lockfile/dependency changes are allowed to make the comparison pass. If fresh
+   builds cannot resolve identical dependencies, report attribution blocked.
+3. Compare named test/assertion signatures and counts, not just exit 1. Permit one
+   additional run per side only for differing/flaky signatures. Bound each command
+   to 15 minutes under a foreground owner that terminates and waits for timed-out
+   work; retain timeout status, never a passing partial log. No endless reruns.
+4. Identical source-matched baseline failures may be proposed to independent review
+   for a named, explicit baseline disposition; they are not automatically excluded.
+   New/different failures remain regressions or unresolved. If an out-of-scope fix
+   is necessary, return its evidence for narrow ownership review; do not suppress
+   assertions, widen writePaths or edit those three App test files speculatively.
+5. Run the full aggregate command listed above on the final combined source, plus
+   the NRE-03 focused/build/lint gates. No filters or skips may hide these failures.
+   Record the full aggregate's real nonzero status if failures persist; acceptance
+   requires either a clean gate or independent approval of individually proven
+   baseline failures with all remaining tests passing. Unfinished, mismatched or
+   timed-out evidence leaves the aggregate gate and NRE-03 pending.
+
+Exact initial export commands, from the repository root (require a new empty
+scratch destination; do not overwrite prior evidence):
+
+```sh
+mkdir -p tmp/native-remote-baseline/source
+git archive --format=tar --output=tmp/native-remote-baseline/checkpoint.tar 72a9dae65c6ca99cd06746d2100dcf3465fc3e8f
+tar -xf tmp/native-remote-baseline/checkpoint.tar -C tmp/native-remote-baseline/source
+git rev-parse HEAD
+git diff --binary 72a9dae65c6ca99cd06746d2100dcf3465fc3e8f
+git ls-files --others --exclude-standard
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift --version
+xcodebuild -version
+xcrun --show-sdk-path
+uname -m
+```
+
+Record SHA-256 of all compiled source/test inputs, Package.swift and
+Package.resolved for both sides and verify exported bytes against `git show
+72a9dae:<path>`. Inspect the checkpoint diff and absent receiver source files to
+confirm a pre-implementation baseline. Record only relevant test environment
+settings, never credential values. Run these exact commands serially under the
+15-minute foreground deadline described above, capturing each complete log and
+exit status. Baseline command cwd is `tmp/native-remote-baseline/source`:
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-automatic-resolution --scratch-path ../baseline-build --filter 'RielaAppSettingsEditorNavigationTests|RielaAppUXOnboardingControllerTests|RielaAppWindowContentInsetTests'
+```
+
+Current command cwd is the repository root:
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-automatic-resolution --scratch-path tmp/native-remote-baseline/current-build --filter 'RielaAppSettingsEditorNavigationTests|RielaAppUXOnboardingControllerTests|RielaAppWindowContentInsetTests'
+```
+
+If one permitted repeat is needed, use separate baseline-build-repeat/current-build-repeat
+scratch paths and logs. Record test/assertion signatures and counts in the NRE-03
+progress log; preserve complete output and timeout status. The final full aggregate
+command in the verification section still runs without exclusions. A baseline
+comparison is not a replacement for build, lint, focused tests or the full aggregate.
 
 ## Verification commands and required evidence
 
@@ -346,11 +461,12 @@ lint log as passing. If macOS-only source-policy checks are the desktop evidence
 name that limit in final verification. Logs are local test evidence, not live
 deployment evidence.
 
-I1–I7 are complete only with successful integrated checks and no unresolved
-high/mid defect. I8 prepares evidence for downstream independent review and
-documentation finalization; it cannot self-approve those review gates. The work
-package completes only after required reviews accept the source-matched evidence,
-reviewed code/docs are committed and non-force pushed, and the final handoff
-records hashes and exact paths. Parent P1 remains open for separate merge and
-cleanup. This plan-authoring node completes with all three revised plans and
-its self-check; Step 5 review and the pre-fanout checkpoint remain downstream.
+I1–I7 are complete only with source-matched integrated evidence and no unresolved
+high/mid defect. Aggregate acceptance requires a clean run or independently
+approved, individually proven baseline failures with all other tests passing;
+a nonzero result stays recorded as nonzero. I8 prepares downstream reviews and
+cannot self-approve them. NRE-03 remains pending until all implementation and
+aggregate gates receive acceptance. This planning workflow completes only after
+Step 5 acceptance and reviewed planning-only commit/non-force push. Existing
+implementation remains dirty for the next issue-resolution run. P1 A2/A3 remains
+open. No implementation acceptance, commit or publication is claimed here.

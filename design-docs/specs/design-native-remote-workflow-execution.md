@@ -1,23 +1,25 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted technical design carried forward; issue-resolution alignment awaits independent review.
-Mode: issue-resolution (`executionMode: issue-resolution`); this node updates design only.
+Status: NRE-03 planning amendment awaiting independent design review; NRE-01/NRE-02 acceptance retained.
+Mode: planning-only (`executionMode: design-plan-only`); this node updates design only.
 Issue reference: local request on `feat/native-remote-workflow-execution`; no GitHub issue URL or number supplied.
-Issue title: Implement native Riela remote workflow execution receiver.
+Issue title: Amend NRE-03 paused-result contract and aggregate verification ownership.
 Intake: `comm-000002`, `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 Accepted planning baseline: `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7`, branch `feat/native-remote-workflow-execution`; preserve this commit.
-Codex-agent references: none supplied; Cursor CLI mapping: not applicable.
+Preserved implementation checkpoint: `72a9dae65c6ca99cd06746d2100dcf3465fc3e8f`.
+Codex-agent reference: `/root` — Step 6 NRE-03 integration review, `comm-000039`; Cursor CLI mapping: not applicable (workflow review reference, not reference-repository input).
 
 ## Scope and evidence
 
 Add the smallest authenticated receiving path for the existing CLI's
 `executeWorkflow` mutation and `workflowExecution` summary query. This document
 uses dedicated detail for the execution input, authorization and persistence
-contract. The current intake authorizes implementing the three accepted plans,
-verifying their combined behavior, and committing reviewed code and directly
-related documentation followed by a non-force push. Historical-reference cleanup
-and edits to the separate P1 checkout remain outside scope. This node performs
-only the design update; implementation and finalization belong to later steps.
+contract. The current intake authorizes only the narrow design, NRE-03 plan and dispatch
+amendment, followed by independent review and publication of reviewed planning
+artifacts. Preserve all existing dirty/untracked implementation and the checkpoint.
+No source/test edits, reset, stash, force push, P1 checkout edits or A2/A3 completion
+claim are authorized. This Step 2 edits only this existing design; Step 4 owns
+plan/manifest alignment and later workflow steps own review, commit and push.
 
 Source observations at the baseline:
 
@@ -104,8 +106,9 @@ option forwarding or historical feature restoration is added here.
 Mutation payload fields are `workflowExecutionId: String!`, `sessionId: String!`,
 `status: String!`, `exitCode: Int!`. Both IDs equal the actual persisted session
 ID, consistent with Riela's existing execution/session identity mapping. Return
-the runner's status and exit code, including failed or paused results with a
-persisted session; do not invent successful completion.
+the runner's actual status and exit code after agreement with durable records,
+including failed results; do not invent completion or a paused status. The
+NRE-03 disposition below explicitly corrects the earlier paused-result requirement.
 
 Summary fields are:
 
@@ -248,9 +251,10 @@ Use the accepted plans without expanding scope:
   provider, authenticated host composition and integrated tests, after both
   NRE-01 and NRE-02 pass their gates.
 
-Their planning-only statements record the prior authoring phase; the effective
-issue-resolution input now authorizes implementation. Preserve their technical
-requirements and single integration owner. Exact intended locations:
+The effective input authorizes planning only. Preserve NRE-01/NRE-02 acceptance
+and writePaths from integration review `comm-000039`; NRE-03 remains pending.
+Step 4 must align only NRE-03 and dispatch review context with the disposition
+below before independent review. Existing implementation locations:
 
 1. `Sources/RielaGraphQL/GraphQLSchemaGenerator.swift` for the additive schema;
    new `GraphQLWorkflowExecutionContracts.swift`, `GraphQLWorkflowExecutionValidation.swift`
@@ -339,34 +343,141 @@ Run foreground checks through exit and retain complete logs and statuses under
 repository `tmp/` while handing off evidence. Passing planning checks are not
 passing implementation checks or publication evidence.
 
+## NRE-03 paused-result disposition and verification ownership
+
+Integration review `comm-000039` reports three mid findings: paused-result
+contract/ownership mismatch, missing provider/browser/cancellation evidence, and
+incomplete aggregate verification. Its decision retains NRE-01/NRE-02 acceptance
+and leaves NRE-03 pending. Read-only evidence is the `workflow_messages` row in
+`tmp/native-remote-workflow-execution-implementation/sessions/runtime-records/runtime-message-log.sqlite`;
+the extracted payload is retained at
+`tmp/native-remote-design-amendment-step2/integration-review.log`.
+
+**Disposition: correct the contract, do not add a persisted paused status.**
+This is an explicit revision of the former acceptance case, requiring independent
+review, not a passing implementation claim. Evidence extends beyond the enum:
+
+- `Sources/RielaCore/RuntimeSession.swift:3` defines created/running/completed/failed.
+  `WorkflowSession` decodes that enum directly; no paused decoding exists.
+- `Sources/RielaCore/DeterministicWorkflowRunner.swift:323` throws on maxSteps
+  exhaustion; its catch finalizes interruption as failure. The final result at
+  lines 426–435 reads the stored session, with exit 0 for completed or the internal
+  stop-after-step path, otherwise 1. It creates no paused result.
+- `Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift` maps cancellation
+  to `cancelled` and step exhaustion to `maxStepsExceeded`, marks the session failed
+  and emits exit 1. `Sources/RielaCore/RuntimeStore.swift:549` persists failed status
+  and the failure kind. `DeterministicWorkflowRunner+Recovery.swift:61` resumes a
+  maxSteps failure using this existing representation.
+- The internal `stopAfterStepId` path retains the stored status and can return 0;
+  its CLI caller is `Sources/RielaCLI/ScopedParityCommands.swift`, not ordinary
+  `WorkflowRunCommand`. Neither it nor `stopBeforeStepId` is an execution input.
+  A sleep node remains an in-flight run, not a persisted paused result.
+- `Sources/RielaCLI/WorkflowRunCommand.swift` persists the final record/snapshot
+  before rendering its result; its failure envelope uses live-persistence identity.
+  The current `Sources/RielaCLI/WorkflowExecutionProvider.swift` checks identity
+  but does not establish status agreement, which remains NRE-03 implementation work.
+
+No RuntimeSession, runner, storage-schema or status-consumer ownership expansion
+is justified. No enum value, migration, schema version or rewritten historical
+record is required; old record decoding, resume and rerun behavior remain unchanged.
+Do not use a handwritten paused JSON record or inject an impossible runner result
+to meet acceptance. Step 4 must replace paused claims in NRE-03 I2/I5 and manifest
+`supportedEdgeCases`, keeping NRE-01/NRE-02 entries and writePaths unchanged.
+Keep NRE-03 writePaths/trackedPaths unchanged unless a concrete implementation
+need is independently reviewed; baseline diagnosis grants no App test/source edits.
+
+Required NRE-03 invariants and deterministic evidence:
+
+1. Successful payload IDs, workflow identity and status agree across command
+   result, strict CLI record and canonical snapshot in the captured store. Return
+   the actual command exit code; reject missing/corrupt records or contradictory
+   status/identity with WORKFLOW_EXECUTION_FAILED rather than normalizing success.
+   Apply this to both normal result and failure-envelope branches. Exit code is
+   command evidence, not a newly persisted field; no storage expansion is needed.
+2. In `Tests/RielaCLITests/WorkflowExecutionProviderTests.swift`, use real ordinary
+   runner fixtures for completed/0, persisted failure/nonzero, and a two-step
+   workflow with maxSteps=1 yielding failed/maxStepsExceeded/nonzero. Verify both
+   persisted stores and the immediate summary; pre-session resolution failure
+   produces an error with no invented IDs. Add controlled contradictory-result
+   rejection coverage without calling that a real-run acceptance fixture.
+3. Existing `ServeHTTPCommandTests.swift`/`ServeWebHostTests.swift` ownership covers
+   real HTTP failure mapping, gated browser execution and barrier-controlled
+   profile switching: active run writes stay in the captured store and a summary
+   in another profile cannot discover it. Desktop source-policy evidence in
+   `Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift` remains labeled.
+4. Use a barrier-controlled running node to prove disconnect leaves a listener-owned
+   task and server stop cancels/drains it. Strict reads must establish failed with
+   failureKind cancelled, not paused/completed. Await cancellation/persistence/exit;
+   do not require delivery of an HTTP payload after disconnect. Preserve bounded
+   errors and cancellation persistence; incomplete evidence keeps NRE-03 pending.
+
+### Bounded App baseline attribution
+
+The complete log `tmp/native-remote-implementation/NRE-03/attempt-2/app-failures-rerun.log`
+records 11 XCTest tests and 11 assertion failures (1 unexpected); review
+`comm-000039` records exit 1. They span RielaAppSettingsEditorNavigationTests,
+RielaAppUXOnboardingControllerTests and RielaAppWindowContentInsetTests. The trailing
+Swift Testing zero-test success does not supersede XCTest failure. No source-matched
+baseline result has been established.
+
+NRE-03's serial integration owner must perform the following bounded comparison
+in the next implementation run, retaining full logs and actual terminal statuses:
+
+1. Record HEAD, dirty diff, untracked file hashes, source/test hashes, Package.resolved,
+   Swift/Xcode/SDK/architecture and test environment. Freeze source during comparison.
+   Export the preserved pre-implementation checkpoint `72a9dae65c6ca99cd06746d2100dcf3465fc3e8f`
+   using `git archive` into repository `tmp/native-remote-baseline/source/`; verify
+   exported relevant source/test hashes against the commit. Use an archive, not a
+   worktree, reset, stash or edits to the current checkout. Confirm the checkpoint
+   contains no NRE implementation before treating it as the baseline.
+2. Build baseline and current source into distinct fresh scratch directories using
+   the same toolchain, dependency versions, architecture and environment; never use
+   `--skip-build` or a pre-existing App executable. Run each side once with:
+
+   ```sh
+   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --disable-automatic-resolution --scratch-path <side-specific-build-path> --filter 'RielaAppSettingsEditorNavigationTests|RielaAppUXOnboardingControllerTests|RielaAppWindowContentInsetTests'
+   ```
+
+   Execute from the respective source root; log that root and exact expanded command.
+   No lockfile/dependency changes are allowed to make the comparison pass. If fresh
+   builds cannot resolve identical dependencies, report attribution blocked.
+3. Compare named test/assertion signatures and counts, not just exit 1. Permit one
+   additional run per side only for differing/flaky signatures. Bound each command
+   to 15 minutes under a foreground owner that terminates and waits for timed-out
+   work; retain timeout status, never a passing partial log. No endless reruns.
+4. Identical source-matched baseline failures may be proposed to independent review
+   for a named, explicit baseline disposition; they are not automatically excluded.
+   New/different failures remain regressions or unresolved. If an out-of-scope fix
+   is necessary, return its evidence for narrow ownership review; do not suppress
+   assertions, widen writePaths or edit those three App test files speculatively.
+5. Run the full aggregate command listed above on the final combined source, plus
+   the NRE-03 focused/build/lint gates. No filters or skips may hide these failures.
+   Record the full aggregate's real nonzero status if failures persist; acceptance
+   requires either a clean gate or independent approval of individually proven
+   baseline failures with all remaining tests passing. Unfinished, mismatched or
+   timed-out evidence leaves the aggregate gate and NRE-03 pending.
+
 ## Rollout, open questions and review
 
-No unresolved user decision is required for this bounded design. The accepted
-plans record prior Step 3 design acceptance as `comm-000006`, decision `accepted`,
-with no findings. The current alignment still requires downstream independent
-review; author self-check is not reviewer acceptance. Implementation,
-test-integrity, adversarial and integration review remain pending. No
-implementation or deployment is claimed by this design update.
+No unresolved user decision blocks design authoring. Whether the 11 App assertions
+are baseline remains an implementation verification question governed by the bounded
+procedure above. Provider failure agreement, browser/profile isolation and persisted
+cancellation are unverified implementation requirements, not accepted results.
 
-The separate A1 checkout remains untouched. P1 A2/A3 stays open until the native
-receiving tests pass on integrated source and receive independent review.
-Implement and verify this receiver in the current work package, then commit
-reviewed code/docs and push without force. Leave parent P1 open for its separate
-merge and cleanup; do not claim A2/A3 acceptance early. Branch integration and
-historical-reference removal remain separate downstream work. No external
-service is a publication target or dependency.
+Step 3 must independently review this contract correction; Step 4 must amend only
+`impl-plans/active/native-remote-03-provider-host-integration.md` and
+`impl-plans/active/native-remote-receiver-20260925-dispatch.json`, including aggregate
+ownership and the corrected edge case. Step 5 reviews the resulting plan/manifest.
+Only reviewed planning artifacts may then be committed and non-force pushed,
+preserving checkpoint `72a9dae` and every dirty/untracked implementation file.
+This design step neither commits nor pushes. NRE-01/NRE-02 remain accepted;
+NRE-03 remains pending until implementation and aggregate gates receive review.
+No P1 A2/A3 completion is claimed.
 
-Residual operational risks are the existing transport timeout ambiguity,
-operator-wide access within the configured store, and long-running route
-resource use. They are explicitly bounded by existing host access and listener
-lifecycle, not grounds for a new scheduler or permission framework. No high/mid
-author finding remains after resolving credential stripping, CLI-only field
-compatibility and durable-summary ambiguity in this document.
-
-Review revision: `comm-000004` (Step 3, revision_required) identified one mid
-finding: strictReadOnly did not preserve CLI record-decoding errors. Addressed
-by the explicit strict-decoding store seam, provider error mapping, exact store
-file/test targets and corrupt-versus-absent acceptance case above. The accepted
-plans record subsequent acceptance in `comm-000006`; this update retains that
-resolution. No new Step 3 or Step 5 revision feedback was supplied for this turn,
-and no implementation evidence is claimed.
+Residual operational risks remain synchronous timeout ambiguity, operator-wide
+store access and long-running route resource use. Existing integration findings
+remain open at implementation level; the design disposition does not close them.
+Historical strict-decoding feedback (`comm-000004`, subsequently accepted in
+`comm-000006` during prior planning) remains addressed by the unchanged strict-read
+contract. The current amendment responds to integration review `comm-000039`;
+there is no new Step 3/Step 5 review decision yet.

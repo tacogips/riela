@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A2–A5 after accepted A1 and native receiving integration at `a373a6040bff11ef7e86b8f6789321fefc7596f1`. A2–A5 remain unverified in this design step. P1-7b exact-file publication and parent P1 closure are separate dependencies, not completed here. Section 17.10's current continuation below supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
+Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A2–A5 after accepted A1 and native receiving integration at `a373a6040bff11ef7e86b8f6789321fefc7596f1`. A2–A5 remain unverified in this design step. P1-7b commit `a8516ec` is incorporated; its remote publication needs confirmation before any pending/completed claim. Parent P1 closure remains separate. Section 17.10's current continuation below supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2643,8 +2643,8 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 #### Current continuation: native receiving boundary, A2–A5
 
-Issue: “Finish Work Runtime P1-7a legacy supervision removal on native Riela
-receiving boundary”; repository `tacogips/riela`, no issue number or URL supplied.
+Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment”;
+repository `tacogips/riela`, no issue number or URL supplied.
 Authority: Step 1 `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`, effective `workflowInput`.
 Branch and handoff: `feat/remaining-impl-plans`, Draft PR #109. Accepted A1 and
@@ -2654,10 +2654,24 @@ continuation supersedes the A1-only execution limits below and the archived
 receiving-owner dependency. Earlier logs and rejected reviews remain historical,
 not evidence of current failure or current acceptance.
 
+**Continuation after amendment `13267c9`.** Preserve the 36 dirty tracked A2
+paths recorded by intake, except intentional in-scope repair. The reviewed
+`impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json` now authorizes
+`Resources/skills/riela-workflow-run/SKILL.md`. Remove its stale documented
+`--auto-improve` form while retaining the other remote restrictions; do not
+restore parser compatibility or weaken parity tests. Run
+`swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter SurfaceParitySkillTests`
+on repaired source, requiring positive executed tests and zero failures.
+Include the skill in renewed source hashes, affected V5 and changed-file checks.
+Reuse accepted A0 and completed A2 work with source-matched receipts under
+`tmp/work-runtime-p1-7a-native-a2-a5`; repeat only checks invalidated by changes
+or concrete evidence gaps. The earlier planning-only limits describe the
+completed amendment, not this issue-resolution continuation.
+
 **Removal boundary.** Delete only obsolete workflow auto-improve and
 nested-superviser execution, options, remote serialization, supervision result
-and persistence plumbing, and their obsolete examples after refreshing the
-accepted before-removal replacement proof. Reject retired CLI spellings and
+and persistence plumbing, and their obsolete examples under the accepted
+before-removal replacement proof. Reject retired CLI spellings and
 aliases, including negative forms, rather than silently ignoring them. Shared
 session/loop options must not retain a back door. Ordinary local workflows
 remain task-free; task-backed repair/director examples, cancellation, guard and
@@ -2686,10 +2700,10 @@ resolved in `design-docs/user-qa/qa-p1-7a-rielflow-publication.md`.
 
 **Ordered acceptance and ownership.** Step 4 must reconcile
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, its active
-write-path manifest and `impl-plans/progress/p1-dispatch.md` to this continuation
-before implementation: retain accepted A1, refresh replacement evidence before
-A2 deletion, replace external receiver owners/commands with the native paths
-above and their tests, and retain A2 → A3 → A4 → A5 ordering. Do not reopen A1 or
+write-path manifest to this continuation before implementation; the implementation
+owner retains ownership of `impl-plans/progress/p1-dispatch.md`. Retain accepted
+A1/A0, confirm existing exact owners and evidence against current source, and
+retain A2 → A3 → A4 → A5 ordering. Do not reopen A1 or
 NRE design without a demonstrated material regression. A3 runs final-source
 P1-7a V0–V9, retained-consumer, remote, cancellation and serial broad gates. In
 addition to the existing plan commands, explicitly run:
@@ -2713,6 +2727,10 @@ terminal exits and before/after HEAD plus source/test/example/package membership
 and SHA-256 identity. Poll every owned foreground command to exit. Renew affected
 checks after relevant edits; record exact failing test/assertion identities and
 causes for unrelated baseline failures without calling broad failed gates green.
+For every nonzero V5, guard/CLI or Monja gate, compare exact failing tests and
+causes against checkpoint and final source, recording source identity, owner and
+follow-up. Missing Monja dependencies are verification gaps, not passing tests;
+unsupported baseline attribution stays unresolved for review.
 V9 references must be classified as rejection coverage, retained opaque data,
 retained unrelated supervision, history, or an actual obsolete callsite.
 
@@ -2722,7 +2740,12 @@ mid finding may advance. This author self-check does not substitute for A4.
 A5 refreshes README, both affected designs, the active plan and progress record,
 then publishes only the exact reviewed file allowlist through commit and
 non-force push to `feat/remaining-impl-plans`, handing off on Draft PR #109.
-Do not mark P1-7b exact-file publication or parent P1 closure complete. Preserve
+Check the live remote tip before publication; the stale local tracking ref is
+not publication evidence. Verify `a8516ec` inclusion in the published branch
+before reporting P1-7b status; no P1-7b reimplementation is authorized. Any plan
+checkpoint stages only reviewed design/plan/manifest paths, leaving A2 dirty
+until final review. No worktree, stash, reset or unreviewed commit is permitted.
+Do not mark parent P1 closure complete. Preserve
 Monja and all unrelated sessions/worktrees; no base-branch merge, force push,
 release or App Store artifact. No new abstraction or broader cleanup is needed.
 

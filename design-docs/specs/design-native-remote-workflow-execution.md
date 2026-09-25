@@ -2,7 +2,7 @@
 
 Status: accepted NRE-01/NRE-02/NRE-03 contracts incorporated into the P1 branch at `a373a6040bff11ef7e86b8f6789321fefc7596f1`, per current effective intake. Current work is P1-7a A2–A5; fresh removal verification and reviews remain pending.
 Mode: `issue-resolution`; Step 2 updates design only.
-Issue: “Finish Work Runtime P1-7a legacy supervision removal on native Riela receiving boundary”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
+Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.
 
 ## Current P1-7a receiving integration

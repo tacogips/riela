@@ -1,6 +1,67 @@
 # Work Runtime P1-7a: native receiving integration and A2–A5
 
-## Exact skill-path amendment — planning-only (2026-09-25)
+## Current continuation after reviewed amendment 13267c9 (2026-09-25)
+
+Mode `issue-resolution`. Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed
+exact-path amendment”; `tacogips/riela`, no issue number/URL supplied, Draft PR
+#109. Step 3 accepted both design documents in `comm-000004` with no findings.
+No codex-agent reference input or Cursor CLI mapping applies. Current Step 5
+plan review and checkpoint publication remain pending; prior acceptance does
+not substitute for either gate.
+
+This section and the current executable contract below supersede the historical
+planning-only amendment and old execution limits. Preserve the 36 existing dirty
+A2 source/test/example/progress paths and all prior receipts. HEAD at intake is
+`13267c9ef1e9843188b71c5e79fc6f9db9b1c6e3`; preserve native integration `a373a60`
+and incorporated P1-7b `a8516ec`. The manifest's exact implementation writePaths
+remain unchanged, including `Resources/skills/riela-workflow-run/SKILL.md`.
+One stable owner, `p1-dispatch`, resumes the coupled contract. No new plan or
+architecture is needed.
+
+The immediate A2 repair removes only stale `--auto-improve` documentation from
+that skill, preserving the other remote restrictions. Do not reintroduce parser
+compatibility, weaken `SurfaceParitySkillTests`, or redo completed removal.
+A3 must renew SurfaceParitySkillTests, affected V5, build/lint/diff checks and
+source hashes after repair. All other manifest gates need complete source-matched
+receipts: reuse only demonstrably unaffected evidence and record the rationale;
+execute missing, incomplete or invalidated gates. Keep the skill in the source
+seal even though it is outside Sources/Tests/examples.
+
+A0 is accepted chronological before-removal proof under
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1/before-removal/`.
+Its missing per-command environment snapshots remain an explicit historical
+metadata limitation; do not fabricate them or repeat A0 automatically. Current
+source-matched gates and independent review must assess that limitation.
+Use `attempt-1/verification-evidence.json`, immutable source seals and actual
+logs as evidence, not the progress summary alone. Do not repeat accepted work
+without a material source change or concrete evidence gap.
+
+For each nonzero gate produce a classification row with exact command, terminal
+exit, complete log, failing test/assertion or prerequisite diagnostic, checkpoint
+`911428e2ab6df6776627a64edd7c1d76e4622c26` source identity, final source identity,
+comparison evidence, classification, owner/follow-up and review disposition.
+V5 Work/CLI/Core, V3 guard, CLI and both Monja projects require explicit rows.
+Counts alone cannot prove baseline equivalence. Monja missing binary or
+`@types/bun` evidence is a dependency gap, never a pass or permission to regenerate
+lockfiles. Reuse existing checkpoint logs when exact causes are established;
+if new comparison execution is necessary, use an isolated source snapshot and
+build/evidence under repository tmp, never a worktree or another session.
+Keep all failed receipts. Owned regressions require repair and affected checks;
+unsupported attribution or missing material evidence remains incomplete.
+
+Before dispatch, fresh Step 5 acceptance and serial checkpoint commit/non-force
+push cover exactly both design documents, this plan and the active manifest.
+Implementation stays dirty. Compare staged paths with checkpointWritePaths and
+preserved dirty hashes; stop on drift or an unexpected staged file. Current
+checkpoint publication is required because the accepted design and plan changed.
+Check the live remote before pushing; do not rely on the stale tracking ref or
+force through divergence. After publication, fetch the named branch serially
+and verify `git merge-base --is-ancestor a8516ec origin/feat/remaining-impl-plans`
+against that fetched remote identity before reporting P1-7b publication status.
+Parent P1 closure is outside this package. Step 4 prepares, but does not stage,
+commit or publish. A4/A5 remain downstream of Step 6 completion.
+
+## Historical exact skill-path amendment — planning-only (2026-09-25)
 
 Issue: “Authorize exact Riela workflow skill path for P1-7a A2-A5 repair”;
 `tacogips/riela`, no issue number supplied; Draft PR #109. Step 3 accepted
@@ -75,13 +136,12 @@ never reuse stale final-source acceptance. A0–A5 dependencies remain unchanged
 Planning completion means M1–M3 only; C1 and implementation acceptance remain
 pending for the subsequent execution. No unresolved user question.
 
-## Current executable contract — accepted design comm-000004 (2026-09-25)
+## Current executable contract — continuation accepted design comm-000004 (2026-09-25)
 
-Mode `issue-resolution`. Issue: “Finish Work Runtime P1-7a legacy supervision
-removal on native Riela receiving boundary”; `tacogips/riela`, no issue number
+Mode `issue-resolution`. Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment”; `tacogips/riela`, no issue number
 supplied; intake `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`. Step 3 accepted the design
-with no findings. Step 5 plan review accepted in comm-000006 with no findings. No codex-agent reference input
+with no findings. Current Step 5 plan review is pending; prior comm-000006 acceptance is historical. No codex-agent reference input
 or Cursor CLI divergence applies. Accepted A1 and Native Remote NRE-01/02/03
 are incorporated at `a373a6040bff11ef7e86b8f6789321fefc7596f1`.
 
@@ -102,21 +162,21 @@ contract. Independent investigation may run read-only with isolated evidence;
 no parallel edits, builds, tests, stores or Git operations. Multiple implementation
 plans would overlap shared CLI options without an independent deliverable.
 
-Intent: remove obsolete auto-improve/nested-superviser workflow execution after
-fresh replacement proof, retain ordinary workflows and task replacements, then
+Intent: remove obsolete auto-improve/nested-superviser workflow execution under
+accepted replacement proof, retain ordinary workflows and task replacements, then
 prove native rejection and retained behavior on final source. No new framework,
 protocol, abstraction, A1/NRE redesign, unrelated repair, broad formatting,
 dependency/lockfile regeneration, specialist/event/loop/routine removal, worktree,
 private branch, base merge, force push, release or App Store artifact. Preserve
-Monja and unrelated sessions. P1-7b publication and parent P1 closure stay open.
+Monja and unrelated sessions. P1-7b publication is checked against the live remote; parent P1 closure stays open.
 
 ### Tasks, dependencies and completion
 
 | Task | Depends on | Deliverable and completion |
 | --- | --- | --- |
 | checkpoint | Step 5 acceptance | Serial owner commits and non-force pushes exactly manifest checkpointWritePaths before implementation fanout; record reviewed hashes and matching remote tip. Failed push stops dispatch. Step 4 does not commit. |
-| A0 | checkpoint | Record HEAD/source membership and hashes; audit legacy consumers and refresh V0, full four-suite V1, policy, canonical, cancellation-host and atomic-race proof before deletion. Accepted A1 is not reimplemented. |
-| A2 | A0 | Remove bounded legacy path; retire CLI aliases/options; update shared callers and tests/examples; prove native rejection and ordinary execution. |
+| A0 | checkpoint | Reconcile accepted before-removal receipts and preserved dirty hashes; retain the environment-metadata limitation. Do not repeat A0 or A1 without a material reason. |
+| A2 | A0 | Preserve completed removal; repair only the authorized stale skill documentation and any demonstrated in-scope regression. Prove retired input rejection and retained ordinary execution. |
 | A3 | A2 | Complete final-source V0–V9 plus every supplemental manifest command; positive per-suite counts, full logs/exits and unchanged source identity; named baseline failure attribution. |
 | A4 | A3 | Independent test-integrity, one Sol adversarial and Astra combined-tree review; no unresolved high/mid finding. Serial repairs renew affected checks and reviews. |
 | A5 | A4 | Serial README/design/plan/progress refresh, exact unique reviewed-file allowlist commit/non-force push to feat/remaining-impl-plans, Draft PR #109 handoff. |
@@ -184,7 +244,7 @@ only the implementation owner appends its progress file during A0–A3.
 
 ### Evidence and commands
 
-Use every command in the current manifest `plans[0].verification`; these retain
+Account for every command in the current manifest `plans[0].verification`; these retain
 V0–V9 and supplemental gates from the historical plan with a new scratch root,
 plus explicit native GraphQL, HTTP, provider and atomic-race filters. All Swift
 commands use the explicit Xcode toolchain. Create a fresh unused numbered
@@ -195,9 +255,10 @@ actual terminal exit in paired `.command`, `.log`, `.exit` files. All execution
 is foreground; retain/poll session handles until terminal exit. No incomplete
 log, skipped-only run, discovery listing or zero-selected suite is a pass.
 
-Before removal run V0/V1, policy, canonical, cancellation-host, the named atomic
-race and discovery. Seal those results before A2. After A2 run the entire manifest
-serially, including final V1 and all retained tests. V2's historical filter names
+Preserve accepted before-removal proof. After A2, reconcile the entire manifest
+serially: renew affected and incomplete commands, including V5 and build/lint,
+and source-match unaffected receipts with explicit dependency rationale. Final
+V1 and all retained tests still require positive behavioral evidence. V2's historical filter names
 include files extending other suites: require its actual-suite supplement
 `WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests` and actual
 cancellation method execution; never claim nonexistent suite counts. V8 validates
@@ -207,7 +268,8 @@ output. Run native `WorkflowExecutionGraphQLTests`, `ServeHTTPCommandTests`
 and `WorkflowExecutionProviderTests` with positive execution counts.
 
 Generate sorted before/after SHA-256 membership manifests for all files beneath
-Sources, Tests and examples plus Package.swift/Package.resolved; record HEAD and
+Sources, Tests and examples plus Package.swift/Package.resolved and
+Resources/skills/riela-workflow-run/SKILL.md; record HEAD and
 changed-file hashes, compare membership and content with `cmp`, and verify with
 `shasum -a 256 -c`. Include additions/deletions. Any relevant source edit renews
 affected gates and the seal. Derive surviving changed Swift files from actual
@@ -243,7 +305,7 @@ Record `git rev-parse HEAD` and
 match before dispatch. Preserve a373a60 as ancestor. Final A5 uses the workflow's
 exact-file commit/push gates for reviewed implementation/docs, with both diff
 checks and matching published hash. No broad staging or acceptance of unrelated
-changes. Keep P1-7b publication and parent P1 closure explicitly open.
+changes. Report P1-7b publication only from live-remote ancestry evidence; parent P1 closure remains open.
 
 ## Historical contracts and receipts (superseded execution scope)
 

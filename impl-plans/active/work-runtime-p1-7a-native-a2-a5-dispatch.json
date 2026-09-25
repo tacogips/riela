@@ -2,9 +2,9 @@
   "taskId": "work-runtime-p1-7a-native-a2-a5",
   "workflowMode": "issue-resolution",
   "executionMode": "issue-resolution",
-  "issueReference": "tacogips/riela; no issue number supplied; Draft PR #109; intake comm-000002",
+  "issueReference": "tacogips/riela; Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment; no issue number supplied; Draft PR #109; intake comm-000002",
   "codexAgentReferences": [],
-  "originalHead": "a373a6040bff11ef7e86b8f6789321fefc7596f1",
+  "originalHead": "13267c9ef1e9843188b71c5e79fc6f9db9b1c6e3",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
@@ -27,27 +27,23 @@
     "codexAgentReferences": []
   },
   "planReview": {
-    "accepted": false,
-    "reviewDecision": "pending",
+    "communicationId": "comm-000006",
+    "accepted": true,
+    "reviewDecision": "Step 5 implementation plan accepted; implementation remains gated on the specified checkpoint publication.",
     "findings": [],
     "codexAgentReferences": []
   },
-  "planningAmendment": {
-    "workflowMode": "planning-only",
-    "issueTitle": "Authorize exact Riela workflow skill path for P1-7a A2-A5 repair",
-    "baselineHead": "911428e2ab6df6776627a64edd7c1d76e4622c26",
-    "designReviewCommunicationId": "comm-000004",
-    "scope": "Only checkpointWritePaths may be edited or published in this run. Preserve dirty A2 bytes and existing tmp evidence. No source tests or progress edits. Implementation writePaths and commands apply only to a subsequent issue-resolution continuation."
-  },
   "evidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5",
   "checkpointWritePaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
     "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
   ],
   "implementationDispatchAllowed": false,
   "implementationDispatchConditions": [
-    "Step 5 accepts this plan/manifest.",
-    "Serial owner commits and non-force pushes only the two checkpointWritePaths; records local and remote matching hashes. Implementation requires a subsequent issue-resolution execution; never dispatch during this planning-only amendment."
+    "Current Step 5 accepts this continuation plan/manifest with no unresolved high/mid finding.",
+    "Serial checkpoint owner commits and non-force pushes exactly checkpointWritePaths, verifies matching live remote hash, and preserves all dirty implementation bytes. Then resume implementation in this issue-resolution execution."
   ],
   "plans": [
     {
@@ -123,21 +119,21 @@
         {
           "taskId": "A0",
           "dependsOn": [],
-          "deliverable": "Record accepted source baseline, audit exact consumers and refresh before-removal V0/V1, policy, canonical, cancellation-host and atomic-race proof."
+          "deliverable": "Reconcile accepted A0 source-sealed chronological receipts and current preserved dirty hashes; retain historical environment-metadata limitation. Repeat only for material source/evidence reasons."
         },
         {
           "taskId": "A2",
           "dependsOn": [
             "A0"
           ],
-          "deliverable": "Remove only obsolete workflow supervision, reject retired CLI forms, preserve native receiver contract and update directly coupled consumers/tests."
+          "deliverable": "Preserve completed removal; remove only stale --auto-improve documentation from Resources/skills/riela-workflow-run/SKILL.md, retaining other restrictions; repair demonstrated in-scope regressions only."
         },
         {
           "taskId": "A3",
           "dependsOn": [
             "A2"
           ],
-          "deliverable": "Run all final-source verification commands serially, classify failures/references and seal source-matched evidence."
+          "deliverable": "Account for every verification command with complete final-source evidence. Renew SurfaceParitySkillTests, affected V5, build/lint/diff and skill-inclusive hashes. Reuse only demonstrably unaffected complete receipts; classify every nonzero gate against checkpoint/final causes."
         },
         {
           "taskId": "A4",
@@ -155,9 +151,9 @@
         }
       ],
       "acceptanceCriteria": [
-        "In the subsequent continuation, remove only stale --auto-improve documentation from Resources/skills/riela-workflow-run/SKILL.md; preserve other restrictions. SurfaceParitySkillTests must execute positive tests with zero failures; renew affected V5, changed-file checks and source hashes including the skill before A4/A5 acceptance.",
+        "Remove only stale --auto-improve documentation from Resources/skills/riela-workflow-run/SKILL.md; preserve other restrictions. SurfaceParitySkillTests must execute positive tests with zero failures; renew affected V5, changed-file checks and source hashes including the skill before A4/A5 acceptance.",
         "All A2 removal and retained behavior requirements have final-source positive behavioral proof.",
-        "Every verification command has complete log, final exit, exact command/environment and source identity; baseline failures have named causes and independent disposition.",
+        "Every current verification command has complete log, final exit, exact command/environment and source identity; baseline failures have named causes and independent disposition. Preserve the accepted historical A0 environment-metadata limitation explicitly; never fabricate missing metadata.",
         "A4 has no unresolved material finding; A5 publishes only reviewed files and reports actual commit/remote hashes."
       ],
       "verification": [
@@ -200,12 +196,17 @@
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch list"
       ],
-      "executionScope": "Step 6 owns A0/A2/A3. A4/A5 are mandatory downstream gates, not Step 6 self-blockers."
+      "executionScope": "Step 6 reconciles accepted A0 and completes remaining A2/A3. A4/A5 are mandatory downstream gates, not Step 6 self-blockers; owned failures or missing material A3 evidence remain incomplete.",
+      "fileLevelChanges": {
+        "Resources/skills/riela-workflow-run/SKILL.md": "Remove stale --auto-improve documentation only; retain other remote restrictions.",
+        "impl-plans/progress/p1-dispatch.md": "Owner appends continuation source identity, receipts, classifications and remaining dependencies; preserves historical failed outcomes.",
+        "remainingWritePaths": "Preserve completed A2 bytes/deletions; only concrete in-scope repair as specified in current executable contract. No automatic repetition of removal."
+      }
     }
   ],
   "reviewContext": {
-    "issueReference": "tacogips/riela; no issue number supplied; Draft PR #109; intake comm-000002",
-    "userProblem": "Finish P1-7a A2–A5 after accepted A1 and native remote integration: remove obsolete workflow supervision while proving retained task and native receiving behavior.",
+    "issueReference": "tacogips/riela; Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment; no issue number supplied; Draft PR #109; intake comm-000002",
+    "userProblem": "Continue preserved A2 implementation after reviewed exact skill-path amendment 13267c9; repair stale skill documentation, renew/classify final-source evidence, then obtain A4 reviews and publish A5 reviewed files.",
     "requiredOutcomes": [
       "Reject retired CLI options and native top-level autoImprove/nestedSuperviser input by presence, including false and null, before provider effects.",
       "Preserve ordinary authenticated remote execution, opaque runtimeVariables, task-backed replacement examples, cancellation, guard/director behavior, and specialist/event/loop/routine paths.",
@@ -219,7 +220,7 @@
     "constraints": [
       "Use the immutable user-scope codex-design-and-implement-review-loop package and preserve Monja plus unrelated sessions and worktrees.",
       "Keep throwaway evidence under the untracked evidenceRoot, separated by plan and attempt; do not treat zero-test, incomplete-log or failing broad gates as passing.",
-      "A0 before-removal proof precedes A2 deletion; A3 final-source verification precedes A4 reviews and A5 publication.",
+      "Accepted A0 chronological proof remains preserved with its environment-metadata limitation; resume remaining A2/A3 without automatic repetition. A3 evidence precedes A4 reviews and A5 publication.",
       "One plan owner handles coupled CLI and receiver changes; shared docs and indexes are reconciled serially."
     ],
     "designDecisionsAndRationale": [
@@ -255,5 +256,33 @@
       "Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift",
       "Tests/RielaCLITests/ServeHTTPCommandTests.swift"
     ]
-  }
+  },
+  "historicalPlanningAmendment": {
+    "workflowMode": "planning-only",
+    "issueTitle": "Authorize exact Riela workflow skill path for P1-7a A2-A5 repair",
+    "baselineHead": "911428e2ab6df6776627a64edd7c1d76e4622c26",
+    "designReviewCommunicationId": "comm-000004",
+    "scope": "Only checkpointWritePaths may be edited or published in this run. Preserve dirty A2 bytes and existing tmp evidence. No source tests or progress edits. Implementation writePaths and commands apply only to a subsequent issue-resolution continuation.",
+    "status": "Completed and published at 13267c9 per effective workflowInput; restrictions apply only to that historical execution."
+  },
+  "continuation": {
+    "acceptedDesignCommunicationId": "comm-000004",
+    "priorEvidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1",
+    "preExistingDirtyPaths": 36,
+    "a0Disposition": "Reuse accepted chronological proof; preserve missing per-command environment metadata as historical limitation. No automatic A0 rerun.",
+    "evidencePolicy": "Renew SurfaceParitySkillTests, affected V5, build/lint/diff and hashes including the skill. Account for every command; reuse only complete unaffected source-matched receipts with written rationale. Classify all nonzero gates by exact checkpoint/final causes.",
+    "publicationPolicy": "Verify live remote and a8516ec ancestry before P1-7b status claims. No worktree, stash, reset, force push or unreviewed commit."
+  },
+  "checkpointVerification": [
+    "git diff --check",
+    "git diff --cached --check",
+    "git diff --cached --name-only",
+    "git status --porcelain=v1 -uall",
+    "git ls-remote --heads origin refs/heads/feat/remaining-impl-plans",
+    "git push origin HEAD:feat/remaining-impl-plans",
+    "git rev-parse HEAD",
+    "git ls-remote --heads origin refs/heads/feat/remaining-impl-plans",
+    "git fetch origin refs/heads/feat/remaining-impl-plans:refs/remotes/origin/feat/remaining-impl-plans",
+    "git merge-base --is-ancestor a8516ec origin/feat/remaining-impl-plans"
+  ]
 }

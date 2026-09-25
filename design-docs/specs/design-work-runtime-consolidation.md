@@ -3696,13 +3696,26 @@ record contract evidence and obtain review of the changed repair decision.
   `Tests/RielaCLITests/WorkflowCommandInspectionTests.swift`. Preserve callable
   step, role and both descriptions; avoid any dependency on the executing
   workflow's installation. This test dependency is unrelated to runner provenance.
-- **U — usage/add-on contract investigation.** In
-  `Tests/RielaCLITests/WorkflowCommandTests.swift`, preserve successful usage
-  discovery for a valid add-on workflow and its add-on source summary. Determine
-  the failing `matrix-chat-reply` diagnostic with isolated fixture inputs.
-  `design-docs/specs/design-workflow-usage-discovery.md` defines usage as callable
-  metadata discovery. Repair an invalid fixture or a proven command/resolver
-  violation at that boundary; do not assert failure merely because it occurs.
+- **U — built-in catalog repair (historical ID 14).** The captured usage
+  diagnostic is `workflow.requirements / unresolvedAddonExecutable`, not an
+  invalid Matrix example. `Sources/RielaCLI/ProductionNodeAdapter.swift`
+  dispatches `riela/chat-reply-worker` and accepts version `1` or no version.
+  `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` projects built-ins
+  through `RielaBuiltinAddonCatalog.supports`; the missing descriptor in
+  `Sources/RielaAddons/RielaAddons.swift` prevents that projection, so
+  `Sources/RielaCore/WorkflowRequirements.swift` correctly rejects the unresolved
+  executable. Add the exact `riela/chat-reply-worker` descriptor at version `1`
+  to the existing catalog. Preserve catalog lookup/version semantics and adapter
+  execution; no resolver bypass, external executable or new abstraction is needed.
+  In `Tests/RielaAddonsTests/AddonExecutionContractsTests.swift`, prove exact
+  descriptor identity/version, support for version `1` and omitted version,
+  rejection of an unsupported version and unknown name, and retain the existing
+  unknown-resolver failure control. Preserve
+  `Tests/RielaCLITests/WorkflowCommandTests.swift`'s successful usage and
+  `reply-to-matrix:riela/chat-reply-worker` metadata assertions against the real
+  `examples/matrix-chat-reply/workflow.json`. Do not substitute unrelated behavior
+  or weaken unresolved-add-on diagnostics. Usage discovery remains read-only;
+  successful metadata resolution does not itself send a chat message.
 - **A — admission fixture.** In
   `Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift`, the
   codex-agent payload omits its sandbox. Validation precedes session creation
@@ -3788,11 +3801,81 @@ counts/skips, complete log references, review decisions and residual risks.
 Commit exact accepted files, non-force push only this branch, verify local,
 remote and PR head equality, and keep PR #113 Draft. No merge or release.
 
-**Open questions and risks.** No unresolved user decision or new architectural
-component. The exact usage failure cause (U) and any additional fixture defects
-surfaced after fixing preflight inputs remain bounded implementation diagnosis;
-record actual diagnostics before selecting edits. Broad tests and the three
-independent reviews are pending. Fixture fixes can conceal production bugs if
-only result codes are checked; specific diagnostics, positive controls and
-side-effect assertions are mandatory. Historical failed logs remain historical
-failures until replaced by current-source passing evidence, never relabeled.
+**Catalog ownership continuation (2026-09-26).** This amendment follows Step 1
+`comm-000002`, issue “Complete P1 release remediation after chat reply catalog
+ownership finding”, execution `codex-design-and-implement-review-loop-session-1`.
+The continuation checkpoint is `32163111b6e9f31b91d1e95e535c115e9f798890`;
+`a026356eeddcff94eaa82db2cfec09090620c81f` above remains historical context.
+The prior run ended at `implementation-blocked-output`, not release acceptance.
+The accepted first-run design review is `comm-000004`; this amendment still
+requires Step 3 review and an accepted Step 5 plan amendment before production
+edits. The supplied runtime resolution and effective workflow input are
+accepted authority; this continuation adds no workflow discovery requirement.
+
+Preserve all nine dirty test files listed in the intake and both progress files.
+`impl-plans/progress/p1-release-runtime.md` records IDs 08/19 implemented and
+16/16 focused tests, zero skips, exit 0 in
+`tmp/p1-release-remediation/p1-release-runtime/attempt-1/focused-final.log`.
+The intake carries independent runtime acceptance, including test-integrity,
+Sol adversarial and Astra partial integration; carry it forward as predecessor
+acceptance, not a new final-tree review. Do not redispatch runtime implementation.
+`impl-plans/progress/p1-release-cli.md` records 18 repaired historical assertions,
+but `tmp/p1-release-remediation/p1-release-cli/attempt-1/focused.log` remains
+**FAILED**, exit 1, 165 tests, 164 passed, one failed, zero skips. ID 14 is still
+open. `usage-diagnostic.log` in that same directory records exit 1 and the
+unresolved executable. Earlier source-specific passes do not certify final source.
+
+Step 4 must amend `impl-plans/active/work-runtime-p1-release-cli.md` and
+`impl-plans/active/p1-release-remediation-dispatch.json` consistently: retain
+all existing CLI write paths and add exactly
+`Sources/RielaAddons/RielaAddons.swift` and
+`Tests/RielaAddonsTests/AddonExecutionContractsTests.swift`. Replace C6's open
+fixture investigation with the proven catalog repair above. Update stale
+not-started status and ownership language to reflect the accepted runtime and
+pending CLI continuation. Amend
+`impl-plans/active/work-runtime-p1-release-integration.md` and matching dispatch
+shared paths for serial reconciliation of those same two new paths only after
+the CLI worker finishes. Carry `p1-release-runtime` as an accepted dependency;
+`p1-release-cli` remains pending, and `p1-release-integration` requires both.
+Native Riela scheduling must use these actual acceptance states, with one
+serial verification owner for the shared build. Do not replay accepted edits
+or require a clean source/test diff: the dirty continuation is intentional.
+Any required accepted-plan checkpoint must stage only reviewed documentation;
+retained implementation edits remain preserved until their current-source gates
+and reviews pass. A checkpoint push failure stops dependent dispatch.
+
+Before broad verification, run these additional explicit gates on stable source:
+
+```sh
+swift test --scratch-path tmp/p1-release-remediation/build --filter AddonExecutionContractsTests
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests'
+swift test --scratch-path tmp/p1-release-remediation/build --filter WorkflowHostCapabilityTests
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'WorkGuardDispatcherTests|WorkflowRunnerAdmissionTests'
+```
+
+The host-capability suite retains the unresolved-add-on inspect/usage negative
+control in `Tests/RielaCLITests/WorkflowHostCapabilityTests.swift`. Then execute
+all native/integration and both broad commands above against final source;
+record all 21 ledger results, actual counts and named skips. Extend the strict
+changed-file lint allowlist with the two new Swift paths, preserving every
+retained changed Swift file. Store its exact NUL-delimited list under `tmp/`
+and run `xargs -0 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache`
+with that list as stdin. No baseline-matched failure counts as passing.
+
+Final independent test-integrity, Sol adversarial and Astra combined-tree reviews,
+documentation refresh and Draft PR #113 publication remain mandatory downstream
+gates. Update PR evidence only from complete terminal receipts; commit exact
+reviewed changes and non-force push, proving local, remote and PR heads equal.
+Keep the PR Draft. Branch-diff minimization against main is not an acceptance
+criterion. No x64, App Store, release or unrelated work is authorized.
+
+**Open questions and risks.** No unresolved user decision or architectural
+ambiguity remains for the catalog repair. No codex-agent reference input exists
+and Cursor mapping remains not applicable. Remote/PR head equality has not yet
+been checked and belongs to publication verification. The ownership amendment,
+ID 14 repair, final-source suites and independent combined reviews are pending
+implementation/review work, not completed results of this design step. Catalog
+registration must not admit unknown names or unsupported versions; positive and
+negative regressions and unchanged requirement validation enforce that boundary.
+Preserve historical failed receipts and source identities; rerun affected gates
+after any source change rather than relabeling previous failures.

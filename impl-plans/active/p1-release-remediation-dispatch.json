@@ -4,7 +4,7 @@
   "implementationBranch": "fix/work-runtime-p1-release",
   "baseBranch": "main",
   "remote": "origin",
-  "originalHead": "a026356eeddcff94eaa82db2cfec09090620c81f",
+  "originalHead": "32163111b6e9f31b91d1e95e535c115e9f798890",
   "designDocPaths": [
     "design-docs/specs/design-work-runtime-consolidation.md"
   ],
@@ -15,10 +15,10 @@
       "draftPR": 113,
       "intakeCommunication": "comm-000002",
       "acceptedDesignReview": "comm-000004",
-      "acceptedPlanReview": "comm-000006",
-      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
+      "acceptedPlanReview": "comm-000006"
     },
-    "userProblem": "The P1-only release branch has 21 historical assertions across 19 cases in both broad Swift aggregates; matching baseline failures is not a release pass.",
+    "userProblem": "Continue dirty release branch: runtime accepted, 18 CLI assertions repaired, ID 14 blocked by missing version-1 chat reply catalog registration and omitted ownership.",
     "requiredOutcomes": [
       "Classify and repair all 21 assertions at the intended contract boundaries with focused regressions and a complete ledger.",
       "Pass focused P1 and native remote integration suites, current-source Work/CLI/Core and full nonparallel Swift suites, strict changed-file SwiftLint and diff checks; report exact counts and skips.",
@@ -31,17 +31,17 @@
     "constraints": [
       "Use the immutable user-scope codex-design-and-implement-review-loop package 0.3.44 or newer and work only on fix/work-runtime-p1-release and Draft PR #113.",
       "Keep all throwaway artifacts under repository tmp/p1-release-remediation with per-plan and per-attempt directories, complete foreground logs and terminal exit statuses.",
-      "Workers own disjoint test and progress paths, capture immutable edit preimages and hashes, and perform no Git writes; the serial integration owner audits and reconciles all intent after both workers finish.",
+      "Workers own exact source/test and progress paths, capture immutable edit preimages and hashes, and perform no Git writes; the serial integration owner audits and reconciles all intent after both workers finish.",
       "Production repair needs a proven contract violation, an exact ownership amendment and focused review; broad suites run on the stable combined tree."
     ],
     "designDecisionsAndRationale": [
-      "Section 17.13 classifies the historical failures as date consumer, live inactivity, executable discovery, sandbox, CLI diagnostic, callable metadata, usage/add-on investigation, admission and add-on availability boundaries.",
-      "Two independent first-wave plans cover CLI fixtures and Work/Core fixtures; one dependent serial plan joins evidence, reconciles edits and verifies the combined tree.",
-      "Specific diagnostics, positive and negative controls and side-effect assertions prevent fixture repairs from hiding production failures."
+      "Accepted §17.13 identifies the missing version-1 built-in catalog descriptor; repair only catalog and focused regression paths.",
+      "Carry accepted runtime predecessor without redispatch; repair pending CLI, then serial integration.",
+      "Preserve all dirty work and require current-source positive and negative gates plus both broad suites."
     ],
     "intentionalTradeoffs": [
-      "The exact usage/add-on failure cause remains an implementation investigation until its diagnostic is captured.",
-      "Historical aggregate failures remain failed evidence until replaced by current-source exit-zero logs; implementation, independent reviews and publication are pending."
+      "Earlier runtime acceptance is predecessor evidence, not final-source acceptance.",
+      "Historical failing CLI and broad receipts remain failed; no baseline waiver."
     ],
     "supportedEdgeCases": [
       "Scratch-path executable discovery must launch the current built CLI in a separate process with an isolated home.",
@@ -61,14 +61,38 @@
       "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-comparison.json",
       "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-comparison.json",
       "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-work-cli-core.log",
-      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-suite-no-parallel.log"
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-suite-no-parallel.log",
+      "Sources/RielaAddons/RielaAddons.swift",
+      "Tests/RielaAddonsTests/AddonExecutionContractsTests.swift",
+      "impl-plans/progress/p1-release-cli.md",
+      "impl-plans/progress/p1-release-runtime.md"
     ],
-    "reviewDecision": "Step 5 comm-000006 accepted all three plans with no findings; 21 IDs, two-wave DAG, disjoint writes, immutable edit evidence and serial reconciliation were reviewed.",
+    "reviewDecision": "Step 3 comm-000004 accepted the catalog continuation design without findings; Step 5 comm-000006 accepted the amended CLI, runtime and integration plans without findings. Runtime remains carried accepted work; CLI and integration remain pending implementation.",
     "findings": [],
     "codexAgentReferences": [],
-    "acceptedPlanReviewVerification": [
-      {"command": "python3 tmp/p1-release-remediation/plan/self-check.py", "completeLogPath": "tmp/p1-release-remediation/plan/author-self-check.log", "exitCode": 0},
-      {"command": "git diff --check", "completeLogPath": "tmp/p1-release-remediation/plan/check-1.log", "exitCode": 0}
+    "priorPlanReviewVerification": [
+      {
+        "command": "python3 tmp/p1-release-remediation/plan/self-check.py",
+        "completeLogPath": "tmp/p1-release-remediation/plan/author-self-check.log",
+        "exitCode": 0
+      },
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/p1-release-remediation/plan/check-1.log",
+        "exitCode": 0
+      }
+    ],
+    "planAmendmentReviewVerification": [
+      {
+        "command": "python3 tmp/p1-release-remediation/plan-catalog-continuation/self-check.py",
+        "completeLogPath": "tmp/p1-release-remediation/plan-catalog-continuation/author-self-check.log",
+        "exitCode": 0
+      },
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/p1-release-remediation/plan-catalog-continuation/diff-check.log",
+        "exitCode": 0
+      }
     ]
   },
   "plans": [
@@ -85,20 +109,29 @@
         "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
         "Tests/RielaCLITests/WorkflowCommandTests.swift",
         "Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift",
-        "impl-plans/progress/p1-release-cli.md"
+        "impl-plans/progress/p1-release-cli.md",
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Tests/RielaAddonsTests/AddonExecutionContractsTests.swift"
       ],
       "sharedPaths": [],
       "acceptanceCriteria": [
         "Resolve historical IDs 01–07, 09–18 and 20–21 with contract proof and focused regression results, retaining strict diagnostics and positive/negative controls.",
         "Current built CLI subprocess, valid sandbox and add-on fixtures, canonical date decoding and callable metadata behavior pass without skips masking owned rows.",
-        "Record immutable edit evidence, complete command logs and exit statuses in this plan's separate progress file."
+        "Record immutable edit evidence, complete command logs and exit statuses in this plan's separate progress file.",
+        "ID 14 resolves the real chat-reply built-in; exact version/unknown-name catalog regressions and unresolved-addon CLI negative controls pass."
       ],
       "verification": [
         "swift build --scratch-path tmp/p1-release-remediation/build --product riela",
+        "swift test --scratch-path tmp/p1-release-remediation/build --filter AddonExecutionContractsTests",
+        "swift test --scratch-path tmp/p1-release-remediation/build --filter WorkflowHostCapabilityTests",
         "swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests'",
-        "/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaCLITests/DoctorCommandTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests.swift Tests/RielaCLITests/WorkflowCommandRuntimeCapabilityDiagnosticsTests.swift Tests/RielaCLITests/WorkflowCommandInspectionTests.swift Tests/RielaCLITests/WorkflowCommandTests.swift Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift",
-        "git diff --check"
-      ]
+        "/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaCLITests/DoctorCommandTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests.swift Tests/RielaCLITests/WorkflowCommandRuntimeCapabilityDiagnosticsTests.swift Tests/RielaCLITests/WorkflowCommandInspectionTests.swift Tests/RielaCLITests/WorkflowCommandTests.swift Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift Sources/RielaAddons/RielaAddons.swift Tests/RielaAddonsTests/AddonExecutionContractsTests.swift",
+        "git diff --check",
+        "xargs -0 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/p1-release-remediation/p1-release-cli/catalog-continuation/changed-swift.nul"
+      ],
+      "progressLogPath": "impl-plans/progress/p1-release-cli.md",
+      "status": "pending",
+      "dispatchImplementation": true
     },
     {
       "planId": "p1-release-runtime",
@@ -119,12 +152,18 @@
         "swift test --scratch-path tmp/p1-release-remediation/build --filter 'WorkGuardDispatcherTests|WorkflowRunnerAdmissionTests'",
         "/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaWorkTests/WorkGuardDispatcherTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift",
         "git diff --check"
-      ]
+      ],
+      "progressLogPath": "impl-plans/progress/p1-release-runtime.md",
+      "status": "accepted",
+      "dispatchImplementation": false
     },
     {
       "planId": "p1-release-integration",
       "planPath": "impl-plans/active/work-runtime-p1-release-integration.md",
-      "dependsOn": ["p1-release-cli", "p1-release-runtime"],
+      "dependsOn": [
+        "p1-release-cli",
+        "p1-release-runtime"
+      ],
       "writePaths": [
         "README.md",
         "design-docs/specs/design-work-runtime-consolidation.md",
@@ -136,7 +175,8 @@
         "impl-plans/active/work-runtime-p1-release-integration.md",
         "impl-plans/completed/work-runtime-p1-release-cli.md",
         "impl-plans/completed/work-runtime-p1-release-runtime.md",
-        "impl-plans/completed/work-runtime-p1-release-integration.md"
+        "impl-plans/completed/work-runtime-p1-release-integration.md",
+        "impl-plans/active/p1-release-remediation-dispatch.json"
       ],
       "sharedPaths": [
         "Tests/RielaCLITests/DoctorCommandTests.swift",
@@ -148,7 +188,9 @@
         "Tests/RielaCLITests/WorkflowCommandTests.swift",
         "Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift",
         "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
-        "Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift"
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift",
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Tests/RielaAddonsTests/AddonExecutionContractsTests.swift"
       ],
       "acceptanceCriteria": [
         "After both predecessors finish, audit immutable intents and postimages, reconcile the combined tree and complete a 21-row cause/contract/path/regression ledger.",
@@ -157,19 +199,54 @@
       ],
       "verification": [
         "swift build --scratch-path tmp/p1-release-remediation/build --product riela",
+        "swift test --scratch-path tmp/p1-release-remediation/build --filter AddonExecutionContractsTests",
+        "swift test --scratch-path tmp/p1-release-remediation/build --filter WorkflowHostCapabilityTests",
+        "swift test --scratch-path tmp/p1-release-remediation/build --filter 'WorkGuardDispatcherTests|WorkflowRunnerAdmissionTests'",
+        "swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests'",
         "swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkGuardDispatcherTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests|WorkflowRunnerAdmissionTests'",
         "swift test --scratch-path tmp/p1-release-remediation/build --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskDispatcherTests|WorkGuardDispatcherTests|AgentDirectorTests|AgentDirectorStoreTests|DeterministicDirectorTests'",
         "swift test --scratch-path tmp/p1-release-remediation/build --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests'",
         "swift test --scratch-path tmp/p1-release-remediation/build --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
         "swift test --scratch-path tmp/p1-release-remediation/build --no-parallel",
-        "/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaCLITests/DoctorCommandTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests.swift Tests/RielaCLITests/WorkflowCommandRuntimeCapabilityDiagnosticsTests.swift Tests/RielaCLITests/WorkflowCommandInspectionTests.swift Tests/RielaCLITests/WorkflowCommandTests.swift Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift Tests/RielaWorkTests/WorkGuardDispatcherTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift",
-        "git diff --check",
-        "git diff --cached --check",
+        "/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaCLITests/DoctorCommandTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests.swift Tests/RielaCLITests/WorkflowCommandRuntimeCapabilityDiagnosticsTests.swift Tests/RielaCLITests/WorkflowCommandInspectionTests.swift Tests/RielaCLITests/WorkflowCommandTests.swift Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift Tests/RielaWorkTests/WorkGuardDispatcherTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift Sources/RielaAddons/RielaAddons.swift Tests/RielaAddonsTests/AddonExecutionContractsTests.swift",
         "git branch --show-current",
         "git rev-parse HEAD",
         "git ls-remote --heads origin fix/work-runtime-p1-release",
-        "gh pr view 113 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid,baseRefName"
-      ]
+        "gh pr view 113 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid,baseRefName",
+        "xargs -0 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/p1-release-remediation/p1-release-integration/catalog-continuation/changed-swift.nul",
+        "git diff --check",
+        "git diff --cached --check"
+      ],
+      "progressLogPath": "impl-plans/progress/p1-release-integration.md",
+      "status": "pending",
+      "dispatchImplementation": true
     }
-  ]
+  ],
+  "continuation": {
+    "acceptedPlanIds": [
+      "p1-release-runtime"
+    ],
+    "pendingPlanIds": [
+      "p1-release-cli",
+      "p1-release-integration"
+    ],
+    "implementationWaves": [
+      [
+        "p1-release-cli"
+      ],
+      [
+        "p1-release-integration"
+      ]
+    ],
+    "checkpointPaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-release-cli.md",
+      "impl-plans/active/work-runtime-p1-release-runtime.md",
+      "impl-plans/active/work-runtime-p1-release-integration.md",
+      "impl-plans/active/p1-release-remediation-dispatch.json"
+    ],
+    "runtimeEvidence": "impl-plans/progress/p1-release-runtime.md",
+    "preserveDirtyChanges": true,
+    "schedulingInstruction": "Supply carried runtime acceptance to native dependency scheduling; never redispatch runtime implementation. These fields are handoff metadata, not an assertion of runtime state."
+  }
 }

@@ -1,6 +1,6 @@
 # p1-release-integration
 
-Status: authored; Step 5 review pending; implementation not started.
+Status: pending CLI acceptance; runtime dependency already accepted. Amendment awaits Step 5.
 
 ```json
 {
@@ -21,7 +21,8 @@ Status: authored; Step 5 review pending; implementation not started.
     "impl-plans/active/work-runtime-p1-release-integration.md",
     "impl-plans/completed/work-runtime-p1-release-cli.md",
     "impl-plans/completed/work-runtime-p1-release-runtime.md",
-    "impl-plans/completed/work-runtime-p1-release-integration.md"
+    "impl-plans/completed/work-runtime-p1-release-integration.md",
+    "impl-plans/active/p1-release-remediation-dispatch.json"
   ],
   "sharedPaths": [
     "Tests/RielaCLITests/DoctorCommandTests.swift",
@@ -33,7 +34,9 @@ Status: authored; Step 5 review pending; implementation not started.
     "Tests/RielaCLITests/WorkflowCommandTests.swift",
     "Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift",
     "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
-    "Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift"
+    "Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift",
+    "Sources/RielaAddons/RielaAddons.swift",
+    "Tests/RielaAddonsTests/AddonExecutionContractsTests.swift"
   ],
   "progressLogPath": "impl-plans/progress/p1-release-integration.md"
 }
@@ -45,7 +48,7 @@ Make the accepted P1 runtime release-ready by resolving the 21 historical
 assertions in 19 cases, without weakening the tested contracts. Mode:
 `issue-resolution`. Issue: local request for `tacogips/riela`, Draft PR #113,
 no GitHub issue number supplied. Branch: `fix/work-runtime-p1-release`;
-original checkpoint: `a026356eeddcff94eaa82db2cfec09090620c81f`.
+continuation checkpoint: `32163111b6e9f31b91d1e95e535c115e9f798890`.
 Source of truth: `design-docs/specs/design-work-runtime-consolidation.md`
 §17.13, accepted by Step 3 `comm-000004`, decision `accept`, no findings,
 in `codex-design-and-implement-review-loop-session-1`. Codex-agent references:
@@ -65,14 +68,50 @@ Read the historical assertion arrays and complete logs under
 The old 2,061-test aggregate and 2,717-case full suite (two skips) exited 1;
 baseline equality is not a pass. Ledger IDs below are §17.13 IDs.
 
+## Continuation state and dispatch contract
+
+Step 3 `comm-000004` accepted the catalog amendment without findings. Step 5
+review of this plan amendment is pending. Issue title: “Complete P1 release
+remediation after chat reply catalog ownership finding”. Preserve all nine
+dirty test files and both progress files from the intake; do not reset or
+reimplement them. No x64 or App Store work is authorized. Diff minimization
+against main is not a gate. Runtime acceptance is carried from the intake and
+`impl-plans/progress/p1-release-runtime.md`: IDs 08/19, 16/16 focused tests,
+zero skips, exit 0, plus independent test-integrity/Sol/Astra partial acceptance.
+That acceptance is a predecessor result, not final-tree acceptance.
+CLI retains 18 repaired assertions but its previous focused gate exited 1:
+165 tests, 164 passed, ID 14 failed, zero skips. The complete prior logs are
+`tmp/p1-release-remediation/p1-release-cli/attempt-1/focused.log` and
+`tmp/p1-release-remediation/p1-release-cli/attempt-1/usage-diagnostic.log`.
+
+Carry `p1-release-runtime` into native scheduling as already accepted; never
+redispatch its implementation. Dispatch only pending `p1-release-cli`, then
+`p1-release-integration` after CLI acceptance and the carried runtime acceptance.
+The dispatch manifest's continuation fields document this handoff; the serial
+owner must supply the accepted predecessor through the runtime's native
+accepted-dependency mechanism, not treat metadata alone as runtime acceptance.
+Keep actual execution references and prior evidence attached to that handoff.
+No parallel source edits are useful in this bounded continuation. Read-only
+investigation may overlap; build, lint, source changes and Git remain serial.
+
 ## Ownership, execution and evidence protocol
 
 Before native implementation dispatch, the serial workflow owner must obtain
-Step 5 acceptance, commit the accepted design and all three plans as an exact
-allowlist, and non-force push that checkpoint on this same branch. Record the
-hash and clean source/test diff against the original P1 checkpoint. A failed
-checkpoint push stops dispatch. This Step 4 authors plans only, without
-premature publication. Workers never perform Git writes.
+Step 5 acceptance, commit and non-force push only this reviewed checkpoint
+allowlist on `fix/work-runtime-p1-release`:
+
+- `design-docs/specs/design-work-runtime-consolidation.md`
+- `impl-plans/active/work-runtime-p1-release-cli.md`
+- `impl-plans/active/work-runtime-p1-release-runtime.md`
+- `impl-plans/active/work-runtime-p1-release-integration.md`
+- `impl-plans/active/p1-release-remediation-dispatch.json`
+
+Record HEAD, the retained dirty source/test diff hash and untracked progress
+hashes before and after checkpoint publication. Do not require a clean tree,
+include retained implementation edits in this checkpoint, or run concurrent Git
+operations. A failed checkpoint push stops dispatch. Step 4 authors only;
+workers never perform Git writes. Final implementation publication follows
+current-source tests and independent reviews.
 
 Before each edit, freshly read the file; capture its SHA-256 and immutable
 preimage plus a separate intent snapshot under
@@ -85,7 +124,7 @@ all pre/post hashes, intents and runtime change evidence, repairs any lost
 intent, and re-verifies the combined tree. Disjoint paths alone do not prove
 that overwrites did not occur.
 
-Each worker writes only its listed test paths and its own progress log. New
+Each worker writes only its exact listed source/test paths and its own progress log. New
 paths or production repairs require a recorded ownership amendment with exact
 paths, cause and contract proof, followed by serial scheduling and focused
 review; do not silently expand scope or stop at a fixture-only workaround.
@@ -114,9 +153,8 @@ swift --version
 ```
 
 Use one serial verification owner for the shared scratch build; never run
-concurrent SwiftPM or lint processes against it. Independent edits may run in
-parallel, but each focused gate uses a quiescent source snapshot and records
-its hash. A source edit during a test invalidates that receipt and requires
+concurrent SwiftPM or lint processes against it. This continuation uses serial edits; each focused gate uses a quiescent
+source snapshot and records its hash. A source edit during a test invalidates that receipt and requires
 rerunning that gate. Swift build/tests provide typechecking; there is no web
 or UI change requiring browser verification.
 
@@ -128,7 +166,7 @@ with evidence; do not count future reviews or publication as already complete.
 The serial owner may edit `sharedPaths` only after both predecessors finish,
 solely to reconcile accepted intents or reviewed repairs. `writePaths` holds
 its exclusive docs/progress/archival ownership. It must not overwrite workers
-while they are active. Wave 1 contains `p1-release-cli` and `p1-release-runtime`;
+while they are active. Runtime is already accepted; wave 1 contains only pending `p1-release-cli`;
 wave 2 contains `p1-release-integration`. No other historical active plan is
 part of this dispatch.
 
@@ -136,17 +174,16 @@ part of this dispatch.
 
 - [ ] I1 / serial join: Wait for both accepted predecessor plan outcomes.
   Audit runtime change evidence, every pre/post hash and immutable intent.
-  Re-read all ten test paths; reconcile any overwritten or omitted intent.
+  Re-read all twelve shared source/test paths; reconcile any overwritten or omitted intent.
   Consolidate a 21-row ledger under this plan's evidence directory mapping
   IDs to causes, contract proof, changed paths, regression test and command.
   Do not treat the worker's status alone as evidence. No row may be unclassified.
-- [ ] I2 / bounded production repair, only if needed: Resolve any cause
-  escalated by a predecessor. For each proven production violation, append an
-  exact source/test write-path amendment and rationale to this plan before
-  editing, obtain the affected contract review if the accepted decision changes,
-  make only that correction, and rerun its regression. Expected initial edits
-  are test-only; do not pre-author a usage redesign or grant a broad source
-  allowlist. A repair remaining unresolved keeps implementation incomplete.
+- [ ] I2 / serial reconciliation: Confirm CLI's catalog descriptor and catalog
+  regression survived join alongside every retained fixture change. Only the
+  twelve exact shared paths are authorized for necessary reconciliation after
+  workers stop. No new production boundary is pre-authorized. If a new material
+  defect needs another path, stop that repair for an exact reviewed amendment;
+  never weaken tests. Rerun affected regressions after any reconciliation.
 - [ ] I3 / current combined-source gates: Run the commands below serially on
   a stable combined tree. Require every gate to exit 0 and report actual test
   totals, failures, named skips and reasons. Historical matching failures are
@@ -165,7 +202,8 @@ part of this dispatch.
   `impl-plans/progress/p1-dispatch.md` with current evidence and remaining release
   constraints. Update `impl-plans/README.md` with these plans' actual status.
   Read `.codex/skills/riela-impl-workflow/SKILL.md`; no change is anticipated.
-  Archive only these three plans under `impl-plans/completed/` once the workflow
+  Update `impl-plans/active/p1-release-remediation-dispatch.json` planPath
+  references and actual statuses when archiving. Archive only these three plans under `impl-plans/completed/` once the workflow
   reaches its documentation/finalization gate; leave unrelated plans/indexes
   untouched. Maintain links and exact publication status, not premature claims.
 - [ ] I6 / downstream publication: Prepare a Draft PR #113 description with
@@ -187,6 +225,10 @@ Use the common Xcode environment and foreground log/status protocol. Run:
 
 ```sh
 swift build --scratch-path tmp/p1-release-remediation/build --product riela
+swift test --scratch-path tmp/p1-release-remediation/build --filter AddonExecutionContractsTests
+swift test --scratch-path tmp/p1-release-remediation/build --filter WorkflowHostCapabilityTests
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'WorkGuardDispatcherTests|WorkflowRunnerAdmissionTests'
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests'
 swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkGuardDispatcherTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests|WorkflowRunnerAdmissionTests'
 swift test --scratch-path tmp/p1-release-remediation/build --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskDispatcherTests|WorkGuardDispatcherTests|AgentDirectorTests|AgentDirectorStoreTests|DeterministicDirectorTests'
 swift test --scratch-path tmp/p1-release-remediation/build --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests'
@@ -197,7 +239,7 @@ swift test --scratch-path tmp/p1-release-remediation/build --no-parallel
 Run the combined strict lint gate:
 
 ```sh
-/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaCLITests/DoctorCommandTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests.swift Tests/RielaCLITests/WorkflowCommandRuntimeCapabilityDiagnosticsTests.swift Tests/RielaCLITests/WorkflowCommandInspectionTests.swift Tests/RielaCLITests/WorkflowCommandTests.swift Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift Tests/RielaWorkTests/WorkGuardDispatcherTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift
+/usr/bin/xcrun swiftlint lint --strict --no-cache Tests/RielaCLITests/DoctorCommandTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift Tests/RielaCLITests/WorkflowCommandCatalogTests.swift Tests/RielaCLITests/WorkflowCommandRuntimeCapabilityDiagnosticsTests.swift Tests/RielaCLITests/WorkflowCommandInspectionTests.swift Tests/RielaCLITests/WorkflowCommandTests.swift Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift Tests/RielaWorkTests/WorkGuardDispatcherTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift Sources/RielaAddons/RielaAddons.swift Tests/RielaAddonsTests/AddonExecutionContractsTests.swift
 ```
 
 Append any changed Swift paths from an accepted amendment. Preserve the concrete argv in evidence; this is the
@@ -227,7 +269,18 @@ strict changed-file lint and diff checks pass. No failed assertion becomes
 successful by baseline attribution or a broad skip. Explain the historical
 opt-in provider and SDL-regeneration skips if they recur; any new skip requires
 specific justification and cannot conceal these 21 assertions. Record exact
-current counts rather than assuming historical totals. The usage cause remains
-an investigation item until C6 supplies diagnostic proof. Fixture-only repairs
+current counts rather than assuming historical totals. The proven usage cause is the missing version-1 catalog descriptor. Retained fixture repairs
 still require independent integrity review. There is no new user decision,
 external reference mapping or architecture task.
+
+Catalog and host-capability gates must select positive test counts and exit 0.
+`WorkflowHostCapabilityTests.testInspectProjectionFailureIsVisibleAndUsageAliasIsEquivalent`
+preserves unknown-add-on rejection for inspect and usage. Catalog regression
+proves version matching without injecting an allowlist. The CLI ID 14 gate
+proves real Matrix usage resolution and source metadata without network sends.
+For strict lint, also save the exact changed Swift path list as NUL-delimited
+`tmp/p1-release-remediation/p1-release-integration/catalog-continuation/changed-swift.nul`, then run
+`xargs -0 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/p1-release-remediation/p1-release-integration/catalog-continuation/changed-swift.nul`. Include every
+changed retained Swift path and both new paths; exclude no changed file by
+baseline attribution. The explicit positional lint command above covers the
+full owned/shared Swift allowlist, including unchanged contract anchors.

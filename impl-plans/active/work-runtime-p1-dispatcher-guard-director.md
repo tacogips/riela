@@ -10,29 +10,50 @@ plan review and checkpoint publication remain pending; prior acceptance does
 not substitute for either gate.
 
 This section and the current executable contract below supersede the historical
-planning-only amendment and old execution limits. Preserve the 36 existing dirty
-A2 source/test/example/progress paths and all prior receipts. HEAD at intake is
-`13267c9ef1e9843188b71c5e79fc6f9db9b1c6e3`; preserve native integration `a373a60`
+planning-only amendment and old execution limits. Preserve the 37 existing dirty
+A2 skill/source/test/example/progress paths and all prior receipts. HEAD at intake is
+`c97370cee30857068654c4323fa0c7a60bf3f9ee`; preserve native integration `a373a60`
 and incorporated P1-7b `a8516ec`. The manifest's exact implementation writePaths
 remain unchanged, including `Resources/skills/riela-workflow-run/SKILL.md`.
 One stable owner, `p1-dispatch`, resumes the coupled contract. No new plan or
 architecture is needed.
 
-The immediate A2 repair removes only stale `--auto-improve` documentation from
-that skill, preserving the other remote restrictions. Do not reintroduce parser
-compatibility, weaken `SurfaceParitySkillTests`, or redo completed removal.
-A3 must renew SurfaceParitySkillTests, affected V5, build/lint/diff checks and
-source hashes after repair. All other manifest gates need complete source-matched
-receipts: reuse only demonstrably unaffected evidence and record the rationale;
-execute missing, incomplete or invalidated gates. Keep the skill in the source
-seal even though it is outside Sources/Tests/examples.
+The skill repair is already present; attempt-2 records SurfaceParitySkillTests
+exit 0, 7/7 tests. Preserve it and completed A2 removal. Reconcile
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json`
+and attempt-1 receipts against current source. Reuse complete unaffected receipts
+only with source hashes and dependency rationale. Execute missing, incomplete or
+invalidated checks; renew affected V5/build/lint/diff checks and skill-inclusive
+source seals after repairs. Do not restore parser compatibility or weaken tests.
+The exact changes below specify the required end state, not repeated edits.
+
+Attempt-2 V5 remains FAILED: exit 1, 2,060 tests, 21 failures. Its
+`V5-work-cli-core/comparison-shortbuild.json` and
+`full-suite-no-parallel/comparison-full.json` report identical assertion sets;
+A4 must independently assess exact causes. Preserve earlier unequal comparisons,
+Monja dependency failures and later source-matched snapshot recovery receipts.
+Record every manifest command's receipt or explicit disposition. Repository-wide
+`swiftlint lint --quiet --no-cache` was not run because attempt-2 instructions
+required explicit file paths. That historical gap does not waive V7. A3 must run
+`swiftlint lint --quiet --no-cache` from the repository root on final source,
+in addition to strict changed-file lint. Capture the exact command, SwiftLint
+version, environment/cwd, source identity, complete stdout/stderr and actual
+terminal exit. Compare baseline and final diagnostics by file, rule and cause,
+not counts alone. Reuse a complete source-matched checkpoint receipt or run the
+same command from the byte-verified checkpoint source snapshot under repository
+`tmp/`, using the same SwiftLint version and configuration; record both source
+and configuration hashes and explain any configuration differences. Preserve all
+nonzero receipts as FAILED with named causes, owner/follow-up and A4 disposition.
+Missing or incomplete baseline/final evidence leaves V7 incomplete; changed-file
+lint cannot substitute for this comparison. Do not alter unrelated source,
+configuration or exclusions to silence diagnostics.
 
 A0 is accepted chronological before-removal proof under
 `tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1/before-removal/`.
 Its missing per-command environment snapshots remain an explicit historical
 metadata limitation; do not fabricate them or repeat A0 automatically. Current
 source-matched gates and independent review must assess that limitation.
-Use `attempt-1/verification-evidence.json`, immutable source seals and actual
+Use both attempt-1 and attempt-2 `verification-evidence.json`, immutable source seals and actual
 logs as evidence, not the progress summary alone. Do not repeat accepted work
 without a material source change or concrete evidence gap.
 
@@ -176,7 +197,7 @@ Monja and unrelated sessions. P1-7b publication is checked against the live remo
 | --- | --- | --- |
 | checkpoint | Step 5 acceptance | Serial owner commits and non-force pushes exactly manifest checkpointWritePaths before implementation fanout; record reviewed hashes and matching remote tip. Failed push stops dispatch. Step 4 does not commit. |
 | A0 | checkpoint | Reconcile accepted before-removal receipts and preserved dirty hashes; retain the environment-metadata limitation. Do not repeat A0 or A1 without a material reason. |
-| A2 | A0 | Preserve completed removal; repair only the authorized stale skill documentation and any demonstrated in-scope regression. Prove retired input rejection and retained ordinary execution. |
+| A2 | A0 | Preserve completed removal and skill repair; repair only demonstrated in-scope regressions. Prove retired input rejection and retained ordinary execution. |
 | A3 | A2 | Complete final-source V0–V9 plus every supplemental manifest command; positive per-suite counts, full logs/exits and unchanged source identity; named baseline failure attribution. |
 | A4 | A3 | Independent test-integrity, one Sol adversarial and Astra combined-tree review; no unresolved high/mid finding. Serial repairs renew affected checks and reviews. |
 | A5 | A4 | Serial README/design/plan/progress refresh, exact unique reviewed-file allowlist commit/non-force push to feat/remaining-impl-plans, Draft PR #109 handoff. |
@@ -188,7 +209,7 @@ assertion/cause attribution and independent review, never a green label.
 
 ### Exact changes and preserved invariants
 
-The manifest enumerates individual authorized files. Apply these bounded changes:
+The manifest enumerates individual authorized files. Confirm this end state; edit only demonstrated gaps within these bounded changes:
 
 - Delete `Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift` and obsolete
   `WorkflowRunCommand+SupervisionPersistence.swift` only after A0. Remove
@@ -264,8 +285,9 @@ include files extending other suites: require its actual-suite supplement
 cancellation method execution; never claim nonexistent suite counts. V8 validates
 and mock-runs only explicit repository examples; it is not workflow provenance
 discovery. Assert repair-loop two-node acceptance and director one-node accept
-output. Run native `WorkflowExecutionGraphQLTests`, `ServeHTTPCommandTests`
-and `WorkflowExecutionProviderTests` with positive execution counts.
+output. Require native `WorkflowExecutionGraphQLTests`, `ServeHTTPCommandTests`
+and `WorkflowExecutionProviderTests` with positive execution counts; source-match
+complete unaffected receipts or execute missing/invalidated checks.
 
 Generate sorted before/after SHA-256 membership manifests for all files beneath
 Sources, Tests and examples plus Package.swift/Package.resolved and

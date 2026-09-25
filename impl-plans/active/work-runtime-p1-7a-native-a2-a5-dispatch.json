@@ -4,7 +4,7 @@
   "executionMode": "issue-resolution",
   "issueReference": "tacogips/riela; Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment; no issue number supplied; Draft PR #109; intake comm-000002",
   "codexAgentReferences": [],
-  "originalHead": "13267c9ef1e9843188b71c5e79fc6f9db9b1c6e3",
+  "originalHead": "c97370cee30857068654c4323fa0c7a60bf3f9ee",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
@@ -27,9 +27,9 @@
     "codexAgentReferences": []
   },
   "planReview": {
-    "communicationId": "comm-000006",
+    "communicationId": "comm-000008",
     "accepted": true,
-    "reviewDecision": "Step 5 implementation plan accepted; implementation remains gated on the specified checkpoint publication.",
+    "reviewDecision": "Accepted. The revision addresses the mid finding in comm-000006.",
     "findings": [],
     "codexAgentReferences": []
   },
@@ -40,9 +40,9 @@
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
     "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
   ],
-  "implementationDispatchAllowed": false,
+  "implementationDispatchAllowed": true,
   "implementationDispatchConditions": [
-    "Current Step 5 accepts this continuation plan/manifest with no unresolved high/mid finding.",
+    "Step 5 accepted this continuation plan/manifest in comm-000008 with no unresolved high/mid finding.",
     "Serial checkpoint owner commits and non-force pushes exactly checkpointWritePaths, verifies matching live remote hash, and preserves all dirty implementation bytes. Then resume implementation in this issue-resolution execution."
   ],
   "plans": [
@@ -104,7 +104,7 @@
         "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
       ],
       "progressFile": "impl-plans/progress/p1-dispatch.md",
-      "intent": "Finish P1-7a A2–A5 after accepted A1 and Native Remote integration; remove obsolete workflow supervision without regressing retained paths.",
+      "intent": "Finish P1-7a A2\u2013A5 after accepted A1 and Native Remote integration; remove obsolete workflow supervision without regressing retained paths.",
       "nonGoals": [
         "No A1/NRE redesign, archived rielflow operation, specialist/event/loop/routine removal, new framework, unrelated repair, dependency/lockfile regeneration or broad formatting.",
         "No worktree, private branch, concurrent Git, base merge, force push, release, App Store artifact, P1-7b publication completion or parent P1 closure."
@@ -117,8 +117,15 @@
       ],
       "tasks": [
         {
-          "taskId": "A0",
+          "taskId": "checkpoint",
           "dependsOn": [],
+          "deliverable": "After current Step 5 acceptance, serial owner commits and non-force pushes exactly checkpointWritePaths, verifies matching live remote hash and preserved dirty implementation bytes before dispatch. Step 4 does not publish."
+        },
+        {
+          "taskId": "A0",
+          "dependsOn": [
+            "checkpoint"
+          ],
           "deliverable": "Reconcile accepted A0 source-sealed chronological receipts and current preserved dirty hashes; retain historical environment-metadata limitation. Repeat only for material source/evidence reasons."
         },
         {
@@ -126,14 +133,14 @@
           "dependsOn": [
             "A0"
           ],
-          "deliverable": "Preserve completed removal; remove only stale --auto-improve documentation from Resources/skills/riela-workflow-run/SKILL.md, retaining other restrictions; repair demonstrated in-scope regressions only."
+          "deliverable": "Preserve completed removal and already repaired Resources/skills/riela-workflow-run/SKILL.md. Confirm current bytes; repair only demonstrated in-scope regressions within exact writePaths."
         },
         {
           "taskId": "A3",
           "dependsOn": [
             "A2"
           ],
-          "deliverable": "Account for every verification command with complete final-source evidence. Renew SurfaceParitySkillTests, affected V5, build/lint/diff and skill-inclusive hashes. Reuse only demonstrably unaffected complete receipts; classify every nonzero gate against checkpoint/final causes."
+          "deliverable": "Reconcile every command with attempt-1/attempt-2 receipts and current source. Reuse complete unaffected source-matched receipts with rationale; execute missing/invalidated checks. Preserve failed exits and compare exact checkpoint/final causes; seal skill-inclusive hashes."
         },
         {
           "taskId": "A4",
@@ -151,7 +158,7 @@
         }
       ],
       "acceptanceCriteria": [
-        "Remove only stale --auto-improve documentation from Resources/skills/riela-workflow-run/SKILL.md; preserve other restrictions. SurfaceParitySkillTests must execute positive tests with zero failures; renew affected V5, changed-file checks and source hashes including the skill before A4/A5 acceptance.",
+        "Preserve repaired skill and remaining restrictions. Require positive zero-failure SurfaceParitySkillTests final-source evidence; renew affected checks after edits, source-match unaffected receipts and include skill in hashes before A4/A5.",
         "All A2 removal and retained behavior requirements have final-source positive behavioral proof.",
         "Every current verification command has complete log, final exit, exact command/environment and source identity; baseline failures have named causes and independent disposition. Preserve the accepted historical A0 environment-metadata limitation explicitly; never fabricate missing metadata.",
         "A4 has no unresolved material finding; A5 publishes only reviewed files and reports actual commit/remote hashes."
@@ -201,16 +208,25 @@
         "Resources/skills/riela-workflow-run/SKILL.md": "Remove stale --auto-improve documentation only; retain other remote restrictions.",
         "impl-plans/progress/p1-dispatch.md": "Owner appends continuation source identity, receipts, classifications and remaining dependencies; preserves historical failed outcomes.",
         "remainingWritePaths": "Preserve completed A2 bytes/deletions; only concrete in-scope repair as specified in current executable contract. No automatic repetition of removal."
+      },
+      "verificationEvidenceRequirements": {
+        "V7": {
+          "command": "swiftlint lint --quiet --no-cache",
+          "required": true,
+          "execution": "A3 final source at repository root plus complete source-matched checkpoint receipt or same command from byte-verified checkpoint snapshot under repository tmp; same SwiftLint version/configuration, with differences explained.",
+          "evidence": "Exact command, tool version, environment/cwd, source/configuration hashes, complete stdout/stderr, terminal exit, baseline/final diagnostic comparison by file/rule/cause, owner/follow-up.",
+          "nonzeroDisposition": "FAILED pending independent A4 review; no green label. Missing/incomplete comparison leaves V7 incomplete; strict changed-file lint is additional, not a substitute."
+        }
       }
     }
   ],
   "reviewContext": {
     "issueReference": "tacogips/riela; Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment; no issue number supplied; Draft PR #109; intake comm-000002",
-    "userProblem": "Continue preserved A2 implementation after reviewed exact skill-path amendment 13267c9; repair stale skill documentation, renew/classify final-source evidence, then obtain A4 reviews and publish A5 reviewed files.",
+    "userProblem": "Continue preserved A2 and completed skill repair; reconcile attempt-2 evidence and nonzero gates, obtain A4 reviews, then publish exact reviewed A5 files.",
     "requiredOutcomes": [
       "Reject retired CLI options and native top-level autoImprove/nestedSuperviser input by presence, including false and null, before provider effects.",
       "Preserve ordinary authenticated remote execution, opaque runtimeVariables, task-backed replacement examples, cancellation, guard/director behavior, and specialist/event/loop/routine paths.",
-      "Run final-source P1-7a V0–V9, native GraphQL/HTTP tests, strict changed-file SwiftLint and diff checks with complete source-matched receipts.",
+    "Run final-source P1-7a V0\u2013V9, native GraphQL/HTTP tests, strict changed-file SwiftLint, repository-wide swiftlint lint --quiet --no-cache with baseline/final comparison, and diff checks with complete source-matched receipts.",
       "Obtain independent test-integrity, adversarial and integration review decisions with no unresolved material finding; refresh directly affected docs and progress; commit and non-force push exact reviewed files to Draft PR #109."
     ],
     "nonGoals": [
@@ -268,10 +284,14 @@
   "continuation": {
     "acceptedDesignCommunicationId": "comm-000004",
     "priorEvidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1",
-    "preExistingDirtyPaths": 36,
+    "preExistingDirtyPaths": 37,
     "a0Disposition": "Reuse accepted chronological proof; preserve missing per-command environment metadata as historical limitation. No automatic A0 rerun.",
-    "evidencePolicy": "Renew SurfaceParitySkillTests, affected V5, build/lint/diff and hashes including the skill. Account for every command; reuse only complete unaffected source-matched receipts with written rationale. Classify all nonzero gates by exact checkpoint/final causes.",
-    "publicationPolicy": "Verify live remote and a8516ec ancestry before P1-7b status claims. No worktree, stash, reset, force push or unreviewed commit."
+    "evidencePolicy": "Preserve completed skill repair and A2. Reconcile every command; reuse complete unaffected source-matched receipts with rationale; renew missing or invalidated checks and skill-inclusive seals. Keep V5 exit 1 / 2060 tests / 21 failures and all other failed gates pending independent exact-cause disposition.",
+    "publicationPolicy": "Verify live remote and a8516ec ancestry before P1-7b status claims. No worktree, stash, reset, force push or unreviewed commit.",
+    "priorEvidenceRoots": [
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2"
+    ]
   },
   "checkpointVerification": [
     "git diff --check",

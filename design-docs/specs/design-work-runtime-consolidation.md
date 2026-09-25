@@ -2654,8 +2654,9 @@ continuation supersedes the A1-only execution limits below and the archived
 receiving-owner dependency. Earlier logs and rejected reviews remain historical,
 not evidence of current failure or current acceptance.
 
-**Continuation after amendment `13267c9`.** Preserve the 36 dirty tracked A2
-paths recorded by intake, except intentional in-scope repair. The reviewed
+**Continuation after amendment `13267c9`.** Preserve all dirty tracked A2
+paths recorded by intake at `c97370cee30857068654c4323fa0c7a60bf3f9ee`,
+including the already repaired skill, except intentional in-scope repair. The reviewed
 `impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json` now authorizes
 `Resources/skills/riela-workflow-run/SKILL.md`. Remove its stale documented
 `--auto-improve` form while retaining the other remote restrictions; do not
@@ -2667,6 +2668,20 @@ Reuse accepted A0 and completed A2 work with source-matched receipts under
 `tmp/work-runtime-p1-7a-native-a2-a5`; repeat only checks invalidated by changes
 or concrete evidence gaps. The earlier planning-only limits describe the
 completed amendment, not this issue-resolution continuation.
+
+**Existing continuation evidence, pending independent disposition.** The
+attempt-2 `verification-evidence.json` under
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/` records the skill
+suite at exit 0 (7 tests) and V5 Work/CLI/Core at exit 1 (2,060 tests,
+21 failures). Its `V5-work-cli-core/comparison-shortbuild.json` and
+`full-suite-no-parallel/comparison-full.json` are comparison evidence for A4,
+not acceptance decisions. Preserve the reported Monja recovery receipts and
+earlier dependency failures; assess source identity and exact causes before
+reuse. A0's missing per-command environment snapshots remain a historical
+evidence limitation. Do not rerun completed removal or repair the skill again
+solely because an earlier plan describes them as pending. Step 4 reconciles
+checkpoint and completion wording with current source and receipts; any needed
+checkpoint remains confined to reviewed design/plan/manifest paths.
 
 **Removal boundary.** Delete only obsolete workflow auto-improve and
 nested-superviser execution, options, remote serialization, supervision result
@@ -2706,7 +2721,9 @@ A1/A0, confirm existing exact owners and evidence against current source, and
 retain A2 → A3 → A4 → A5 ordering. Do not reopen A1 or
 NRE design without a demonstrated material regression. A3 runs final-source
 P1-7a V0–V9, retained-consumer, remote, cancellation and serial broad gates. In
-addition to the existing plan commands, explicitly run:
+addition to the existing plan commands, require complete source-matched receipts
+for the following commands (reuse unaffected receipts with an explicit source
+comparison; run missing or invalidated checks):
 
 ```sh
 swift test --filter WorkflowExecutionGraphQLTests

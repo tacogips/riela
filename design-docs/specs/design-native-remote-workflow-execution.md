@@ -1,6 +1,6 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted NRE-01/NRE-02/NRE-03 contracts incorporated into the P1 branch at `a373a6040bff11ef7e86b8f6789321fefc7596f1`, per current effective intake. Current work is P1-7a A2–A5; fresh removal verification and reviews remain pending.
+Status: accepted NRE-01/NRE-02/NRE-03 contracts incorporated into the P1 branch at `a373a6040bff11ef7e86b8f6789321fefc7596f1`, per current effective intake. Current work is P1-7a A2–A5; preserved removal receipts require source reconciliation and independent A4 review before A5 publication.
 Mode: `issue-resolution`; Step 2 updates design only.
 Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.
@@ -18,10 +18,15 @@ including false/null and all accepted input forms. Opaque `runtimeVariables`
 remain permitted. Preserve authenticated ordinary execution, strict persisted
 summaries, host-owned paths, cancellation and actual terminal outcomes.
 
-Use fresh `swift test --filter WorkflowExecutionGraphQLTests` and
-`swift test --filter ServeHTTPCommandTests` receipts on the final removal source,
-alongside P1-7a V0–V9 and independent reviews. Existing source/tests establish
-where the contract lives, not a new passing receipt. No archived `rielflow`
+Require `swift test --filter WorkflowExecutionGraphQLTests` and
+`swift test --filter ServeHTTPCommandTests` receipts matched to final removal
+source, alongside P1-7a V0–V9 and independent reviews. Reuse complete unaffected
+receipts only after source comparison; renew missing or invalidated checks.
+The attempt-2 evidence index is
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json`.
+Its passing checks and baseline comparisons do not substitute for A4 acceptance.
+Existing source/tests establish where the contract lives, not a new passing
+receipt. No archived `rielflow`
 publication is a dependency. Historical NRE aggregate failures and unavailable
 browser evidence retain their recorded outcomes; do not transplant historical
 baseline attribution onto new failures without comparing their causes.

@@ -4,7 +4,7 @@
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "6e2caa334fa77404d95377cdfc777384c7cd8db8",
+  "originalHead": "c5c72c62726b1527494ac85f2c234fdd60c37638",
   "designDocPaths": [
     "design-docs/specs/design-workflow-defect-detection-and-repair.md"
   ],
@@ -14,7 +14,7 @@
       "repository": "tacogips/riela",
       "draftPR": 109,
       "intakeCommunication": "comm-000002",
-      "checkpoint": "6e2caa334fa77404d95377cdfc777384c7cd8db8"
+      "checkpoint": "c5c72c62726b1527494ac85f2c234fdd60c37638"
     },
     "userProblem": "T2 all-referenced-control validation exposed an existing completion-review producer that omits accepted; the failed V2 run must be repaired within narrowly reviewed ownership before continuing T3–T6.",
     "requiredOutcomes": [
@@ -201,15 +201,23 @@
       "impl-plans/completed/loop-engineering-convergence-and-operations.md",
       "impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md"
     ],
-    "reviewDecision": "Step 3 comm-000004 accepted amended design; Step 5 comm-000006 accepted revised T2 ownership plan, findings=[], needs_revision=false. T1 evidence remains valid; V2 is failed at 25/26 and awaits repair.",
+    "reviewDecision": "Step 3 comm-000004 accepted current design; Step 5 comm-000006 accepted current plan, findings=[], needs_design_revision=false, needs_revision=false. T1 evidence remains valid; historical V2 failed at 25/26 and awaits repair.",
     "codexAgentReferences": [],
     "planningVerification": {
-      "command": "python3 tmp/workflow-defect-step4-t2-continuation/verify.py",
-      "completeLogPath": "tmp/workflow-defect-step4-t2-continuation/verification.log",
+      "command": "python3 tmp/workflow-defect-step4-corrected-dispatch/verify.py",
+      "completeLogPath": "tmp/workflow-defect-step4-corrected-dispatch/verification.log",
       "terminalExit": 0,
       "includedCommand": "git diff --check",
       "includedCommandTerminalExit": 0,
       "runtimeTests": "Pending renewed V2/V2b, T3–T6 gates; prior V2 FINAL_EXIT_STATUS=1 at tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-2/V2-runtime.log."
+    },
+    "acceptedReview": {
+      "designCommunicationId": "comm-000004",
+      "planCommunicationId": "comm-000006",
+      "decision": "accepted",
+      "findings": [],
+      "designSHA256": "20d691ef2d8d7d13df4858eef3b262cad826dcf150212fb9ae77dc97467253e7",
+      "planSHA256": "dfeecf226698f512b4cee59eb23de5c824e442501c82f7dc8421771d187a485c"
     }
   },
   "plans": [

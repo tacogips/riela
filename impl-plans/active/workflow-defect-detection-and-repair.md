@@ -1,33 +1,39 @@
 # Workflow defect detection and verified repair implementation plan
 
 Status: T2 continuation plan handoff, 2026-09-26. Step 3 accepted the amended
-design via `comm-000004`; Step 5 review of this plan amendment is pending.
+design via `comm-000004`; Step 5 review of this continuation refresh is pending.
 T1 implementation evidence remains valid; T2 is partial and V2 failed; T3–T6
 remain pending. No implementation acceptance is claimed by this authoring step.
 
 ## Current implementation authority
 
-Issue: **Continue workflow defect T2 after bounded routing-reconciler ownership
-repair**, `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+Issue: **Continue T2-T6 workflow defect repair from corrected dispatch contract**, `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
 Issue number/URL null; mode `issue-resolution`; `codexAgentReferences=[]`.
-Effective `workflowInput` and runner-resolved immutable user-scope provenance are
-authoritative. No registry rediscovery or package-readiness task is required.
+Effective `workflowInput` and runner-resolved immutable user-scope
+`codex-design-and-implement-review-loop` package 0.3.44 are authoritative. No registry rediscovery or package-readiness task is required.
 Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
 `codex-design-and-implement-review-loop-session-1`: accepted=true,
 needs_revision=false, findings=[]. Accepted design:
 `design-docs/specs/design-workflow-defect-detection-and-repair.md`, SHA-256
-`0506ae708c4dfbcf00c8dd80ed7ea67762cec7fc2a4fd5bf8eaa89169733af4a`.
+`20d691ef2d8d7d13df4858eef3b262cad826dcf150212fb9ae77dc97467253e7`.
 Preserve its bytes. No current Step 5 feedback was supplied. Historical receipts,
 digests, absent-source observations and disabled-dispatch statements below do not
 override this continuation.
 
-Checkpoint HEAD is `6e2caa334fa77404d95377cdfc777384c7cd8db8` on
+Checkpoint HEAD is `c5c72c62726b1527494ac85f2c234fdd60c37638` on
 `feat/remaining-impl-plans`. Dirty T1/T2 implementation and progress are separate
 from that checkpoint. Preserve them and all existing tmp evidence; no reset,
 stash, broad rewrite, T1 reimplementation or unrelated source edits. Step 4 edits
 only this plan. The stable planId remains `workflow-defect-detection-and-repair`;
 its plan-level dependsOn is empty, with serial internal T1 → T2 → T3 → T4 → T5 →
 T6 dependencies. No independent implementation wave is added for this seam.
+
+The bounded T2 ownership amendment was accepted at `0e96c61`; the dispatch array
+correction was pushed at `c5c72c6`. Preserve the corrected continuation artifact
+`impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`
+as the input contract. Its older originalHead/review context is historical; bind
+fresh dispatch evidence to the current accepted design and newly reviewed plan.
+Use the full parent inbox, not a standalone dispatch workflow.
 
 After Step 5 acceptance, the owning workflow commits and non-force pushes only
 accepted design/plan documentation before native continuation dispatch, preserving
@@ -93,11 +99,28 @@ review finding, accurate docs/index, exact reviewed-file commit, non-force push 
 `origin/feat/remaining-impl-plans`, matching remote and Draft PR #109 tips, and no
 unaccounted worktree changes.
 
-Author self-check: `python3 tmp/workflow-defect-step4-t2-continuation/verify.py`;
-complete log `tmp/workflow-defect-step4-t2-continuation/verification.log`.
-This checks accepted design identity, preservation of dirty work and historical
-dispatch, exact ownership delta, DAG, verification coverage and whitespace. It does
-not claim runtime passes or Step 5 acceptance.
+### Dispatch encoding and checkpoint contract
+
+Retain `acceptanceCriteria` as a nonempty string array in this manifest and each
+dispatch plan entry; every element is a nonempty string. Do not stringify or join
+it. Preserve planId, planPath, dependsOn, exact writePaths/sharedPaths and the
+verification command array in dispatch. This plan's verification summary points
+to the exact V1–V9/L-V1–L-V5 commands below; it is not a replacement for that array.
+
+Before checkpoint, the owning dispatcher validates the actual outgoing JSON with
+its runtime-supplied exact dispatch schema, verifies the ownership union and DAG,
+and binds current Step 3/Step 5 receipts and document hashes. Record the validator
+command or runtime validation operation, complete evidence path and final status.
+Do not checkpoint or dispatch an invalid shape. This is payload validation, not
+workflow/package readiness rediscovery. This node preserves the corrected dispatch;
+it checks its array types and plan ownership correspondence without claiming to
+have rerun the runner's complete schema validator.
+
+Author self-check: `python3 tmp/workflow-defect-step4-corrected-dispatch/verify.py`;
+complete log `tmp/workflow-defect-step4-corrected-dispatch/verification.log`.
+Checks cover accepted design identity, preservation of dirty work and corrected
+dispatch, unchanged task contracts, DAG, array shape, verification coverage and
+whitespace. No runtime passes, current Step 5 acceptance or checkpoint are claimed.
 
 ## Historical activity extension authority (2026-09-22)
 
@@ -805,7 +828,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
     "Preserve six task gates, complete foreground evidence and no unresolved high/mid findings.",
     "Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push."
   ],
-  "verification": "V1 evidence retained; V2/V2b renewed; V3-V9 and L-V1-L-V5 plus source-matched dependency gates; author check: python3 tmp/workflow-defect-step4-t2-continuation/verify.py."
+  "verification": "V1 evidence retained; V2/V2b renewed; V3-V9 and L-V1-L-V5 plus source-matched dependency gates; author check: python3 tmp/workflow-defect-step4-corrected-dispatch/verify.py."
 }
 ```
 

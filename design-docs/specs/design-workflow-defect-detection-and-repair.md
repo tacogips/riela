@@ -1,22 +1,22 @@
 # Workflow defect detection and verified repair
 
 Status: Issue-resolution T2 continuation design handoff, 2026-09-26. This revision
-preserves accepted D1–D9 behavior and serial T1–T6 execution, and specifies the
-bounded completion-review routing ownership amendment. Step 3 independent review
+preserves accepted D1–D9 behavior, the accepted bounded T2 ownership amendment,
+and serial T1–T6 execution from the corrected dispatch checkpoint. Step 3 independent review
 of these revised bytes is pending; implementation repair and verification are pending.
 
 ## Current implementation authority and review status
 
-Issue: **Continue workflow defect T2 after bounded routing-reconciler ownership
-repair**, repository `tacogips/riela`, Draft PR
+Issue: **Continue T2-T6 workflow defect repair from corrected dispatch contract**, repository `tacogips/riela`, Draft PR
 [#109](https://github.com/tacogips/riela/pull/109). Issue number/URL are null;
 `codexAgentReferences=[]`. Mode: `issue-resolution`. Authoritative intake:
 `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
 `codex-design-and-implement-review-loop-session-1`. The effective `workflowInput`
-and runner-resolved immutable user-scope workflow are authoritative. No workflow
+and runner-resolved immutable user-scope `codex-design-and-implement-review-loop`
+package **0.3.44** are authoritative. No workflow
 or package registry rediscovery is required inside this node.
 
-Current local HEAD is checkpoint `6e2caa334fa77404d95377cdfc777384c7cd8db8` on
+Current local HEAD is checkpoint `c5c72c62726b1527494ac85f2c234fdd60c37638` on
 `feat/remaining-impl-plans`. The dirty T1/T2 source, tests and progress record are
 continuation inputs, not part of that checkpoint. Preserve them and all existing
 `tmp/` evidence; no reset, stash, broad rewrite or T1 reimplementation. The progress
@@ -63,9 +63,11 @@ requirements and envelope/payload Boolean agreement still apply. No special
 exemption for `accepted`, silent false default, changed retry policy or weakened
 negative test is permitted.
 
-Step 4 must narrowly amend T2 ownership and the plan's aggregate writePaths and
-review/dispatch tracking, using the existing serial owner. Review the resulting
-amendment before implementation resumes. Exact paths and inspected justification:
+The intake accepts the amended design and revised T2 ownership plan; checkpoint
+`0e96c61` expanded ownership and `c5c72c6` corrected the dispatch contract. Retain
+that ownership and the existing serial owner. Step 4 must preserve the corrected
+plan/dispatch contract and bind subsequent handoff evidence to newly reviewed
+document bytes, without reopening this accepted amendment. Exact paths and rationale:
 
 | Path | T2 ownership justification |
 | --- | --- |
@@ -113,7 +115,7 @@ rielflow, main, release paths or unrelated plans.
 | --- | --- |
 | Preserve completed T1 and partial T2 | Current authority distinguishes checkpoint from dirty work; no reimplementation or reset. |
 | Repair missing accepted without weakening validation | Bounded T2 amendment above and D1/D8; renewed V2 plus affected loop/adapter tests. |
-| Amend only proven ownership | Exact five-path table; Step 4 plan/manifest amendment and independent review before repair. |
+| Retain accepted ownership and corrected dispatch | Exact five-path table; preserve nonempty string-array acceptanceCriteria and refresh source-matched review context. |
 | Complete remaining accepted work | D2/T3 analysis; D3/D6/D9/T4 progress/activity; D4/D5/T5 repair; D7/D8/D9.6/T6 deterministic gates. |
 | Reviewed publication | Accurate design/plan/index, independent reviews with no material finding, exact reviewed commit and matching remote/PR tip. |
 
@@ -124,14 +126,33 @@ normalization in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; this
 amendment changes no adapter protocol. Historical provenance, review receipts and
 source observations below are not fresh evidence for this continuation.
 
+### Corrected dispatch and review boundary
+
+Continue from
+`impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`
+and `impl-plans/active/workflow-defect-detection-and-repair.md`. The dispatch's older
+originalHead and review hashes describe its earlier authoring context; they do not
+replace the effective input's c5c72c6 continuation checkpoint. Preserve the existing
+corrected artifact; downstream review/checkpoint preparation binds new review
+context to the exact accepted document bytes.
+
+`acceptanceCriteria` must remain a nonempty array of nonempty strings in the plan
+manifest and each dispatch plan entry, matching the effective workflow input's
+array type. A prose string is not an equivalent encoding. Before checkpoint or
+dispatch, the owning planning step checks the exact dispatch schema and ownership
+union; it must not infer validity from prose alone. Use the full parent workflow
+inbox for continuation; the prior standalone dispatch attempt lacked that context.
+This node neither starts another workflow nor changes the dispatch artifact.
+
 Step 2 edits only this leading design section and preserves the historical D1–D9
 body and every pre-existing dirty file. Author self-check:
-`python3 tmp/workflow-defect-step2-t2-continuation/verify.py`; complete log:
-`tmp/workflow-defect-step2-t2-continuation/verification.log`. These checks cover
-scope, preservation, checkpoint identity, failure evidence and whitespace, not
-implementation acceptance. Step 3 design review and Step 5 ownership review remain
-required. The runtime regression and exact-map compatibility risks remain pending
-until the implementation gates above pass.
+`python3 tmp/workflow-defect-step2-corrected-dispatch/verify.py`; complete log:
+`tmp/workflow-defect-step2-corrected-dispatch/verification.log`. These checks cover
+scope, preservation, checkpoint identity, array shape, failure evidence and
+whitespace. Independent Step 3 review of this documentation refresh and downstream
+Step 5 plan review remain required; prior amendment acceptance is not revoked.
+The runtime regression and exact-map compatibility risks remain pending until V2
+and V2b pass. T3–T6 and formal reviews remain pending, not blocked design checks.
 
 ## Historical D9 extension authority (2026-09-22)
 

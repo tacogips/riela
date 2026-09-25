@@ -174,6 +174,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   public var acceptedOutput: WorkflowAcceptedOutputMetadata?
   public var adapterOutput: WorkflowAdapterOutputMetadata?
   public var failureReason: String?
+  public var failureKind: WorkflowSessionFailureKind?
   public var usage: AdapterUsage?
   public var completesRootWithoutOutput: Bool
   public var currentStepId: String?
@@ -186,6 +187,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     acceptedOutput: WorkflowAcceptedOutputMetadata? = nil,
     adapterOutput: WorkflowAdapterOutputMetadata? = nil,
     failureReason: String? = nil,
+    failureKind: WorkflowSessionFailureKind? = nil,
     usage: AdapterUsage? = nil,
     completesRootWithoutOutput: Bool = false,
     currentStepId: String? = nil,
@@ -197,6 +199,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     self.acceptedOutput = acceptedOutput
     self.adapterOutput = adapterOutput
     self.failureReason = failureReason
+    self.failureKind = failureKind
     self.usage = usage
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.currentStepId = currentStepId
@@ -529,6 +532,11 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.updatedAt = date
     switch input.status {
     case .failed:
+      if session.status != .failed, let failureKind = input.failureKind {
+        session.failureReason = input.failureReason
+        session.failureKind = failureKind
+        session.failedAt = date
+      }
       session.status = .failed
     case .completed where input.acceptedOutput?.isRootOutput == true || input.completesRootWithoutOutput:
       session.status = .completed

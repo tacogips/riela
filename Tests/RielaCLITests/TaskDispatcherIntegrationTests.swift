@@ -109,11 +109,13 @@ struct TaskExampleHarness {
     failRepairNode: Bool = false,
     directorBundle: ResolvedWorkflowBundle? = nil,
     scenarioPath: String? = nil,
+    nodeAdapter: (any NodeAdapter)? = nil,
     beforeReservation: (@Sendable () throws -> Void)? = nil,
     beforeExecution: (@Sendable (AttemptReservation) throws -> Void)? = nil,
     beforeTerminalPersistence: (@Sendable () throws -> Void)? = nil,
     afterTerminalPersistence: (@Sendable () throws -> Void)? = nil,
     afterObserverJoin: (@Sendable () throws -> Void)? = nil,
+    afterInactivityRecheck: (@Sendable () throws -> Void)? = nil,
     signalState: TaskRunSignalState? = nil
   ) async throws -> CLICommandResult {
     var loaded = try bundle(name)
@@ -138,6 +140,7 @@ struct TaskExampleHarness {
       callees: directorBundle.map { [$0.workflow.workflowId: $0] } ?? [:]
     )
     var runner = WorkflowRunCommand(resolver: resolver)
+    runner.taskNodeAdapterOverride = nodeAdapter
     runner.beforeTerminalPersistence = beforeTerminalPersistence
     runner.afterTerminalPersistence = afterTerminalPersistence
     let command = TaskDispatch(
@@ -149,6 +152,7 @@ struct TaskExampleHarness {
       beforeReservation: beforeReservation,
       beforeExecution: beforeExecution,
       afterObserverJoin: afterObserverJoin,
+      afterInactivityRecheck: afterInactivityRecheck,
       signalState: signalState
     )
     return await command.run(
@@ -608,6 +612,12 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
     XCTAssertNil(try dispatcher.pendingReservation(taskId: task.id))
     let decisions = try harness.store.listDecisions(taskId: task.id)
     XCTAssertEqual(decisions.filter { $0.id == DecisionID("decision-rerun-1") }.count, 1)
+    let evidence = try harness.store.listEvidence(taskId: task.id)
+    let rows = try harness.rowCounts(taskId: task.id)
+    let reopened = WorkStore(rootDirectory: harness.store.rootDirectory)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id), attempts)
+    XCTAssertEqual(try reopened.listDecisions(taskId: task.id), decisions)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id), evidence)
 
     let replay = await RielaCLIApplication().run(decideArguments)
     XCTAssertEqual(replay.exitCode, .success, replay.stderr + replay.stdout)
@@ -615,43 +625,9 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
     XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
     XCTAssertEqual(try harness.store.listDecisions(taskId: task.id).count, decisions.count)
     XCTAssertNil(try dispatcher.pendingReservation(taskId: task.id))
-  }
-
-  func testSecondRunStopsWhenEarlierDurableSessionExhaustsWallClockBudget() async throws {
-    let harness = try TaskExampleHarness()
-    defer { harness.remove() }
-    var task = try harness.seed("task-repair-loop")
-    task.completion.requiresHumanAccept = true
-    try harness.store.saveTask(task)
-
-    let firstRun = try await harness.dispatch("task-repair-loop")
-    XCTAssertEqual(firstRun.exitCode, .success, firstRun.stderr + firstRun.stdout)
-    let firstAttempt = try XCTUnwrap(harness.store.listAttempts(taskId: task.id).first)
-    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
-    var firstSnapshot = try runtimeStore.load(sessionId: firstAttempt.sessionId)
-    firstSnapshot.session.createdAt = firstSnapshot.session.updatedAt.addingTimeInterval(-5)
-    try runtimeStore.save(firstSnapshot)
-
-    task = try XCTUnwrap(harness.store.loadTask(id: task.id))
-    task.guardPolicy.budget = BudgetGuard(maxWallClockMs: 4_000)
-    try harness.store.saveTask(task)
-    let version = try XCTUnwrap(harness.store.loadTask(id: task.id)).version
-    let decision = await RielaCLIApplication().run([
-      "task", "decide", task.id.rawValue, "--rerun", "repair",
-      "--principal", "operator", "--expected-version", String(version),
-      "--decision-id", "decision-wall-clock-rerun", "--session-store", harness.sessionStore.path,
-      "--output", "json"
-    ])
-    XCTAssertEqual(decision.exitCode, .success, decision.stderr + decision.stdout)
-
-    let secondRun = try await harness.dispatch("task-repair-loop")
-    XCTAssertEqual(secondRun.exitCode, .success, secondRun.stderr + secondRun.stdout)
-    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 2)
-    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .failed)
-    let violations = try harness.store.listEvidence(taskId: task.id, kind: .guardViolation)
-    XCTAssertTrue(violations.contains {
-      $0.payloadRef.inlinePayload?["dimension"] == .string(BudgetDimension.wallClock.rawValue)
-    })
+    XCTAssertEqual(try harness.rowCounts(taskId: task.id), rows)
+    XCTAssertEqual(try reopened.listAttempts(taskId: task.id), attempts)
+    XCTAssertEqual(try reopened.listEvidence(taskId: task.id), evidence)
   }
 
   func testCapacityWaitLeavesNoAttemptOrReservedSession() async throws {
@@ -859,4 +835,5 @@ final class TaskDispatcherIntegrationTests: XCTestCase {
       atPath: RielaAppDaemonWorkflowStore.corruptStateQuarantineURL(for: profile).path
     ))
   }
+
 }

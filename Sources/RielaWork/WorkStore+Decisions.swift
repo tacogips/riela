@@ -2,6 +2,29 @@ import Foundation
 import RielaCore
 import RielaSQLite
 
+public struct LiveInactivityObservation: Equatable, Sendable {
+  public let taskId: TaskID
+  public let attemptId: AttemptID
+  public let sessionId: String
+  public let executionId: String
+  public let createdAt: Date
+  public let lastBackendEventAt: Date?
+
+  public init(
+    taskId: TaskID, attemptId: AttemptID, sessionId: String,
+    executionId: String, createdAt: Date, lastBackendEventAt: Date?
+  ) {
+    self.taskId = taskId
+    self.attemptId = attemptId
+    self.sessionId = sessionId
+    self.executionId = executionId
+    self.createdAt = createdAt
+    self.lastBackendEventAt = lastBackendEventAt
+  }
+}
+
+public struct StaleInactivityObservation: Error, Sendable {}
+
 public extension WorkStore {
   /// Reconstructs completion from the durable attempt, gates, findings, and
   /// verification ledger. Dispatch uses this before policy evaluation.
@@ -25,7 +48,8 @@ public extension WorkStore {
     expectedTaskVersion: Int,
     completion: CompletionVerdict,
     decisionEvidenceId: EvidenceID,
-    pendingReservation: PendingAttemptReservation? = nil
+    pendingReservation: PendingAttemptReservation? = nil,
+    liveInactivityObservation: LiveInactivityObservation? = nil
   ) throws -> DecisionApplication {
     let database = try openWritable()
     return try database.transaction { database in
@@ -55,6 +79,40 @@ public extension WorkStore {
       let attempt = try decision.attemptId.map { try requiredAttempt($0, in: database) }
       if let attempt, attempt.taskId != task.id {
         throw WorkStoreError("decision attempt does not match the target task")
+      }
+      let causalInactivity = try decision.causedBy.contains { evidenceId in
+        guard let record = try database.query(
+          "SELECT json(record) AS record FROM work_evidence WHERE evidence_id = ? LIMIT 1",
+          bindings: [.text(evidenceId.rawValue)]
+        ).first?["record"] else { return false }
+        let evidence = try decode(Evidence.self, json: record)
+        return evidence.kind == .guardViolation
+          && evidence.payloadRef.inlinePayload?["kind"] == .string("inactivity")
+      }
+      if causalInactivity {
+        guard let liveInactivityObservation,
+              let attempt,
+              liveInactivityObservation.taskId == task.id,
+              liveInactivityObservation.attemptId == attempt.id,
+              liveInactivityObservation.sessionId == attempt.sessionId,
+              attempt.state == .running,
+              try latestAttempt(for: task, in: database)?.id == attempt.id,
+              try database.query(
+                "SELECT attempt_id FROM work_cancellations WHERE attempt_id = ? LIMIT 1",
+                bindings: [.text(attempt.id.rawValue)]
+              ).isEmpty else {
+          throw StaleInactivityObservation()
+        }
+        let session = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
+          .load(sessionId: attempt.sessionId, in: database).session
+        guard session.sessionId == attempt.sessionId,
+              session.status == .running,
+              let execution = session.executions.last(where: { $0.status == .running }),
+              execution.executionId == liveInactivityObservation.executionId,
+              execution.createdAt == liveInactivityObservation.createdAt,
+              execution.lastBackendEventAt == liveInactivityObservation.lastBackendEventAt else {
+          throw StaleInactivityObservation()
+        }
       }
       if case let .agent(sessionId) = decision.producer {
         guard let attempt, attempt.entry != .director, attempt.state == .reconciled,

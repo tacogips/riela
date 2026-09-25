@@ -77,6 +77,7 @@ enum TaskRunCancellation {
     context: TaskPlacementExecutionContext,
     signalState: TaskRunSignalState? = nil,
     afterObserverJoin: (@Sendable () throws -> Void)? = nil,
+    afterInactivityRecheck: (@Sendable () throws -> Void)? = nil,
     afterCancellationObservation: (@Sendable () throws -> Void)? = nil,
     afterSelectedHostProofRequired: (@Sendable () async -> Void)? = nil
   ) async throws -> CLICommandResult {
@@ -98,6 +99,7 @@ enum TaskRunCancellation {
     }
     if pendingAtStart { execution.cancel() }
     let observer = Task {
+      var observedInactivity: Set<String> = []
       while !Task.isCancelled {
         do {
           try signalState?.commitIfRequested(
@@ -108,6 +110,13 @@ enum TaskRunCancellation {
             attemptId: reservation.attempt.id,
             sessionId: reservation.attempt.sessionId
           ), !cancellation.acknowledged {
+            execution.cancel()
+            return
+          }
+          if try observeInactivity(
+            reservation: reservation, store: store, observedKeys: &observedInactivity,
+            afterRecheck: afterInactivityRecheck
+          ) {
             execution.cancel()
             return
           }
@@ -166,6 +175,71 @@ enum TaskRunCancellation {
       return CLICommandResult(exitCode: .failure, stderr: "task cancellation completed")
     }
     return result
+  }
+
+  private static func observeInactivity(
+    reservation: AttemptReservation,
+    store: WorkStore,
+    observedKeys: inout Set<String>,
+    afterRecheck: (@Sendable () throws -> Void)?
+  ) throws -> Bool {
+    let sessionStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
+    let snapshot = try sessionStore.loadStrictReadOnly(sessionId: reservation.attempt.sessionId)
+    guard snapshot.session.sessionId == reservation.attempt.sessionId,
+          snapshot.session.status == .running,
+          let execution = snapshot.session.executions.last(where: { $0.status == .running }),
+          let task = try store.loadTask(id: reservation.task.id),
+          let attempt = try store.loadAttempt(id: reservation.attempt.id),
+          attempt.sessionId == reservation.attempt.sessionId,
+          attempt.state == .running else { return false }
+    let progressAt = execution.lastBackendEventAt ?? execution.createdAt
+    let observationKey = "\(execution.executionId)-\(String(progressAt.timeIntervalSinceReferenceDate.bitPattern, radix: 16))"
+    guard !observedKeys.contains(observationKey) else { return false }
+    let attempts = try store.listAttempts(taskId: task.id)
+    let guardSnapshot = TaskGuardSnapshotAdapter.make(
+      attempts: attempts, session: snapshot.session, wallClockMs: 0
+    )
+    let violations = TaskGuardCoordinator.violations(
+      task: task, latestAttempt: attempt, snapshot: guardSnapshot
+    )
+    guard violations.contains(where: {
+      if case .inactivity = $0 { return true }
+      return false
+    }) else { return false }
+    let rechecked = try sessionStore.loadStrictReadOnly(sessionId: reservation.attempt.sessionId)
+    guard rechecked.session.status == .running,
+          rechecked.session.executions.last(where: { $0.executionId == execution.executionId })?
+            .lastBackendEventAt == execution.lastBackendEventAt,
+          try store.loadTask(id: task.id)?.version == task.version,
+          try store.loadAttempt(id: attempt.id)?.state == .running else { return false }
+    try afterRecheck?()
+    let observation = LiveInactivityObservation(
+      taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId,
+      executionId: execution.executionId, createdAt: execution.createdAt,
+      lastBackendEventAt: execution.lastBackendEventAt
+    )
+    let suffix = "\(attempt.id.rawValue)-\(observationKey)"
+    let result: GuardDirectorApplication
+    do {
+      result = try TaskGuardCoordinator(store: store).evaluateAndApply(
+      task: task, latestAttempt: attempt, snapshot: guardSnapshot,
+      completion: .unmet([]), failedStepId: execution.stepId,
+      violationEvidenceIds: violations.indices.map {
+        EvidenceID("evidence-live-guard-\(suffix)-\($0)")
+      },
+      decisionId: DecisionID("decision-live-guard-\(suffix)"),
+      decisionEvidenceId: EvidenceID("evidence-live-decision-\(suffix)"),
+      liveInactivityObservation: observation
+      )
+    } catch is StaleInactivityObservation {
+      observedKeys.insert(observationKey)
+      return false
+    }
+    observedKeys.insert(observationKey)
+    guard result.application != nil else { return false }
+    return try store.attemptCancellation(
+      taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId
+    ) != nil
   }
 
   static func proveSelectedHostStop(

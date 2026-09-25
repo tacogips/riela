@@ -107,6 +107,7 @@ struct TaskDispatch: Sendable {
   var beforeReservation: (@Sendable () throws -> Void)?
   var beforeExecution: (@Sendable (AttemptReservation) throws -> Void)?
   var afterObserverJoin: (@Sendable () throws -> Void)?
+  var afterInactivityRecheck: (@Sendable () throws -> Void)?
   var afterCancellationObservation: (@Sendable () throws -> Void)?
   var afterSelectedHostProofRequired: (@Sendable () async -> Void)?
   var nodePatch: String?
@@ -339,6 +340,7 @@ struct TaskDispatch: Sendable {
       runner: runner, options: options, reservation: reservation,
       store: store, context: context, signalState: signalState,
       afterObserverJoin: afterObserverJoin,
+      afterInactivityRecheck: afterInactivityRecheck,
       afterCancellationObservation: afterCancellationObservation,
       afterSelectedHostProofRequired: afterSelectedHostProofRequired
     )
@@ -430,6 +432,10 @@ struct TaskDispatch: Sendable {
       throw WorkStoreError("reconciled task attempt is missing")
     }
     let attempts = try store.listAttempts(taskId: id)
+    try resolveHistoricalMissingGates(
+      task: currentTask, latestAttempt: currentAttempt, attempts: attempts,
+      projection: projection, store: store
+    )
     let completion = try store.currentCompletionVerdict(taskId: id, attemptId: attemptId)
     let gateEvidence = projection.evidence.reduce(into: [String: EvidenceID]()) { result, evidence in
       guard evidence.kind == .gate,
@@ -456,7 +462,9 @@ struct TaskDispatch: Sendable {
       wallClockMs: cumulativeWallClockMs,
       signals: RunnerGuardSignals(gateResults: gateResults)
     )
-    let violations = WorkGuard.evaluate(policy: currentTask.guardPolicy, snapshot: snapshotInput)
+    let violations = TaskGuardCoordinator.violations(
+      task: currentTask, latestAttempt: currentAttempt, snapshot: snapshotInput, terminal: true
+    )
     let guardApplication = try TaskGuardCoordinator(store: store).evaluateAndApply(
       task: currentTask,
       latestAttempt: currentAttempt,
@@ -470,7 +478,8 @@ struct TaskDispatch: Sendable {
         EvidenceID("evidence-guard-\(attemptId.rawValue)-\($0)")
       },
       decisionId: DecisionID("decision-terminal-\(attemptId.rawValue)"),
-      decisionEvidenceId: EvidenceID("evidence-decision-terminal-\(attemptId.rawValue)")
+      decisionEvidenceId: EvidenceID("evidence-decision-terminal-\(attemptId.rawValue)"),
+      terminal: true
     )
     if guardApplication.requiresDirectorChild {
       let judgedEvidence = try store.listEvidence(taskId: id).filter { $0.attemptId == attemptId }
@@ -500,6 +509,57 @@ struct TaskDispatch: Sendable {
       )
     }
     return nil
+  }
+
+  private func resolveHistoricalMissingGates(
+    task: WorkTask,
+    latestAttempt: Attempt,
+    attempts: [Attempt],
+    projection: WorkProjection,
+    store: WorkStore
+  ) throws {
+    guard latestAttempt.entry != .director,
+          latestAttempt.outcome?.sessionStatus == .completed else { return }
+    let prior = attempts.filter { $0.id != latestAttempt.id && $0.entry != .director }
+    guard !prior.isEmpty else { return }
+    let sessionStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
+    let openFindings = try store.listFindings(taskId: task.id, status: .open)
+    for accepted in latestAttempt.outcome?.latestGateResults ?? []
+    where accepted.stepExecutionId != "missing" && accepted.decision == .accepted
+      && accepted.blockingFindings.isEmpty {
+      guard let gateEvidence = projection.evidence.first(where: {
+        $0.kind == .gate && $0.payloadRef.inlinePayload?["gateId"] == .string(accepted.gateId)
+          && $0.payloadRef.inlinePayload?["stepExecutionId"] == .string(accepted.stepExecutionId)
+      }) else { continue }
+      let syntheticId = "missing-required-gate-\(accepted.gateId)"
+      guard var finding = openFindings.first(where: {
+        $0.id == syntheticId && $0.gateId == accepted.gateId && $0.sourceStepExecutionId == "missing"
+      }) else { continue }
+      var proven = false
+      for attempt in prior {
+        let canonical = try sessionStore.loadStrictReadOnly(sessionId: attempt.sessionId)
+        guard canonical.session.sessionId == attempt.sessionId,
+              canonical.loopEvidence?.gates.contains(where: {
+                $0.gateId == accepted.gateId && $0.stepId == accepted.stepId
+                  && $0.stepExecutionId == "missing" && $0.decision == .rejected
+                  && $0.blockingFindings.contains(where: { $0.id == syntheticId })
+              }) == true else { continue }
+        proven = true
+        break
+      }
+      guard proven else { continue }
+      let cause = Evidence(
+        id: EvidenceID("evidence-resolve-missing-gate-\(latestAttempt.id.rawValue)-\(accepted.gateId)"),
+        taskId: task.id, attemptId: latestAttempt.id, kind: .contextSnapshot,
+        producedBy: .runtime, causedBy: [gateEvidence.id],
+        payloadRef: .inline(["resolvedFindingId": .string(syntheticId),
+                             "gateId": .string(accepted.gateId)]),
+        createdAt: gateEvidence.createdAt
+      )
+      try store.saveEvidence([cause])
+      finding.status = .superseded
+      try store.saveFindings([finding], taskId: task.id)
+    }
   }
 
   private func selectedEntryStep(

@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 scopes the current issue-resolution run to the accepted atomic inactivity amendment at preserved checkpoint `290cd483827af37d4f6725534e42676c7198bb85`; fresh A1 implementation verification and formal acceptance remain pending; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a A1 implementation and reviews accepted; A2–A5 and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 scopes the current issue-resolution run to the accepted atomic inactivity amendment at preserved checkpoint `290cd483827af37d4f6725534e42676c7198bb85`; its final-source A1 verification and Codex Sol/Astra reviews have accepted the implementation. Exact-file commit and non-force push remain downstream. Historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2652,11 +2652,12 @@ No GitHub issue URL/number or Codex reference repository was supplied. The
 Codex-agent references are review roles, not external code-parity requirements;
 no Cursor CLI behavior change or adapter divergence applies to this WorkStore
 race. Existing backend-specific behavior stays behind the adapter boundary.
-Codex Sol's Step 7 `comm-000013` adversarial review **rejected A1** with one mid
-finding; Codex Astra's accepted §17.10 intent is retained, with integration review
-pending; Codex `/root` is the prior A1 edit owner. This update addresses design
-handoff only and does not clear the implementation finding or claim new review
-acceptance.
+Codex Sol's earlier Step 7 rejection found a mid-severity observer-to-decision
+progress race; the repaired A1 implementation was accepted by Codex Sol in
+`comm-000013` and Codex Astra in `comm-000018`, with no material finding
+remaining. Codex `/root` owned the A1 edits. The earlier rejection and its
+attempt-3/attempt-4 logs remain historical evidence; the final-source passing
+receipts are in `tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-8/`.
 
 Preserve checkpoint `290cd483827af37d4f6725534e42676c7198bb85` on
 `feat/remaining-impl-plans`, all ten dirty tracked paths and the untracked

@@ -292,6 +292,47 @@ extension TaskRuntimeExampleTests {
     XCTAssertEqual(try harness.store.loadAttempt(id: judged.id)?.outcome, judged.outcome)
   }
 
+  func testDirectorEscalationRequiresConfigurationThresholdAndCapacity() throws {
+    for caseName in ["unconfigured", "below-threshold", "no-capacity", "director-child"] {
+      let harness = try TaskExampleHarness()
+      defer { harness.remove() }
+      var task = try harness.seed("task-repair-loop")
+      task.state = .verifying
+      task.guardPolicy.budget = BudgetGuard(maxAttempts: caseName == "no-capacity" ? 1 : 3)
+      if caseName != "unconfigured" {
+        task.director.agentWorkflow = WorkflowReference(
+          name: "task-agent-director", scope: WorkflowScope.project.rawValue,
+          workflowDefinitionDir: harness.examples.path
+        )
+      }
+      task.director.humanEscalation.escalateAfterFailedAttempts = caseName == "below-threshold" ? 2 : 1
+      try harness.store.saveTask(task)
+      let attempt = Attempt(
+        id: AttemptID("judged-\(caseName)"), taskId: task.id,
+        sessionId: "session-\(caseName)", entry: caseName == "director-child" ? .director : .start,
+        state: .reconciled,
+        outcome: AttemptOutcome(sessionStatus: .failed, failureKind: .adapterFailure)
+      )
+      try harness.store.saveAttempt(attempt)
+      let violationIds = caseName == "no-capacity" ? [EvidenceID("budget-\(caseName)")] : []
+      let result = try TaskGuardCoordinator(store: harness.store).evaluateAndApply(
+        task: task, latestAttempt: attempt, snapshot: GuardSnapshot(attemptCount: 1),
+        completion: .unmet([]), failedStepId: "repair", violationEvidenceIds: violationIds,
+        decisionId: DecisionID("decision-\(caseName)"),
+        decisionEvidenceId: EvidenceID("decision-evidence-\(caseName)"), terminal: true
+      )
+      XCTAssertFalse(result.requiresDirectorChild, caseName)
+      XCTAssertEqual(try harness.store.listAttempts(taskId: task.id).count, 1, caseName)
+      XCTAssertFalse(try harness.store.listDecisions(taskId: task.id).contains {
+        $0.producer == .policy(rule: "director-escalation")
+      }, caseName)
+      if caseName == "no-capacity" {
+        XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .failed)
+        XCTAssertNil(try TaskDispatcher(store: harness.store).pendingReservation(taskId: task.id))
+      }
+    }
+  }
+
   func testOrdinaryDirectorChildReceivesDurableGateFindingAndGuardView() async throws {
     let harness = try TaskExampleHarness()
     defer { harness.remove() }

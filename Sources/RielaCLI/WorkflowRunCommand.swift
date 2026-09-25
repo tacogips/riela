@@ -20,6 +20,7 @@ public struct WorkflowRunCommand: Sendable {
   var beforeTerminalPersistence: (@Sendable () throws -> Void)?
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
+  var taskNodeAdapterOverride: (any NodeAdapter)?
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
@@ -33,9 +34,8 @@ public struct WorkflowRunCommand: Sendable {
     self.jsonLoader = jsonLoader
     self.graphQLTransport = graphQLTransport
     self.jsonlRecordWriter = jsonlRecordWriter
-    beforeTerminalPersistence = nil
+    (beforeTerminalPersistence, afterTerminalPersistence, taskNodeAdapterOverride) = (nil, nil, nil)
     deferTerminalPersistence = nil
-    afterTerminalPersistence = nil
   }
 
   func runWithoutSpecialistMonitor(
@@ -65,7 +65,7 @@ public struct WorkflowRunCommand: Sendable {
       let runWorkingDirectory = runContext.workingDirectory
       let runEnvironment = runContext.environment
       let kaibaSnapshot = runContext.snapshot
-      let adapter = try makeScenarioBackedNodeAdapter(
+      let adapter = try taskNodeAdapterOverride ?? makeScenarioBackedNodeAdapter(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
         autoImprove: options.autoImprove,

@@ -764,7 +764,22 @@ with 18 classified non-P1-7b assertions among 2,668 tests. Browser E2E was
 skipped because no `web/` file changed. P1-7a legacy removal, parent P1 and the
 broad failure follow-ups remain open. See the
 [P1-7b progress record](impl-plans/progress/p1-dispatch.md) for exact commands
-and logs. The design is
+and logs.
+
+The reviewed P1-7a A1 dispatcher guard now checks the exact running attempt,
+session, execution and canonical progress inside the SQLite decision
+transaction before an inactivity stop or bounded rerun. Progress committed
+after the observer recheck makes that observation stale, so it cannot create a
+decision, cancellation or replacement reservation. A genuinely idle attempt
+still follows its configured policy; committed decisions replay once. The
+deterministic race regression and source-matched Xcode build, policy (75/75),
+before-removal (69/69), canonical (94/94), cancellation-host (49/49) and live
+(5/5) test selections passed with strict changed-file SwiftLint. Codex Sol
+(`comm-000013`) and Codex Astra (`comm-000018`) accepted A1. Browser E2E was
+skipped because no `web/` file changed. A2–A5 legacy removal and parent P1
+remain open; A2/A3 require native Riela receiving evidence and separate review.
+See the [P1-7a progress record](impl-plans/progress/p1-dispatch.md) for commands,
+logs and review history. The design is
 [Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).
 
 ## Control Surfaces

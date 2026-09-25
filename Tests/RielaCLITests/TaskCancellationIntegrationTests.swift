@@ -486,24 +486,27 @@ final class TaskCancellationIntegrationTests: XCTestCase {
     for signalDriven in [false, true] {
       let harness = try TaskExampleHarness()
       defer { harness.remove() }
-      let task = try harness.seed("scheduled-sleep")
+      var task = try harness.seed("scheduled-sleep")
+      task.director.deterministic.rerunOnAdapterFailure = false
+      try harness.store.saveTask(task)
+      let taskId = task.id
       let store = harness.store
       let signal = signalDriven ? TaskRunSignalState() : nil
       let result = try await harness.dispatch(
         "scheduled-sleep", failWaitNode: true,
         afterTerminalPersistence: {
-          let attempt = try XCTUnwrap(store.listAttempts(taskId: task.id).first)
+          let attempt = try XCTUnwrap(store.listAttempts(taskId: taskId).first)
           let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
             .load(sessionId: attempt.sessionId)
           XCTAssertEqual(snapshot.session.status, .failed)
-          XCTAssertNil(snapshot.session.failureKind)
+          XCTAssertEqual(snapshot.session.failureKind, .adapterFailure)
           if signalDriven {
             XCTAssertFalse(try boundaryCancellation(
-              store: store, taskId: task.id, attemptId: attempt.id, signal: signal
+              store: store, taskId: taskId, attemptId: attempt.id, signal: signal
             ))
           } else {
             XCTAssertThrowsError(try boundaryCancellation(
-              store: store, taskId: task.id, attemptId: attempt.id, signal: nil
+              store: store, taskId: taskId, attemptId: attempt.id, signal: nil
             )) { error in
               XCTAssertTrue((error as? WorkStoreError)?.isAlreadyTerminal == true)
             }
@@ -514,16 +517,70 @@ final class TaskCancellationIntegrationTests: XCTestCase {
       let attempt = try XCTUnwrap(store.listAttempts(taskId: task.id).first)
       XCTAssertEqual(attempt.state, .reconciled)
       XCTAssertEqual(attempt.outcome?.sessionStatus, .failed)
-      XCTAssertNil(attempt.outcome?.failureKind)
+      XCTAssertEqual(attempt.outcome?.failureKind, .adapterFailure)
       let persisted = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
         .load(sessionId: attempt.sessionId)
       XCTAssertEqual(persisted.session.status, .failed)
-      XCTAssertNil(persisted.session.failureKind)
+      XCTAssertEqual(persisted.session.failureKind, .adapterFailure)
       XCTAssertEqual(try store.loadTask(id: task.id)?.state, .waiting)
+      XCTAssertNil(try TaskDispatcher(store: store).pendingReservation(taskId: task.id))
       XCTAssertNil(try store.attemptCancellation(
         taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId
       ))
       XCTAssertEqual(try store.listDecisions(taskId: task.id).filter { $0.kind == .cancel }.count, 0)
+    }
+  }
+
+  func testTerminalFirstRetryableFailurePreservesOnePendingRequestAfterLateCancellation() async throws {
+    for signalDriven in [false, true] {
+      let harness = try TaskExampleHarness()
+      defer { harness.remove() }
+      var task = try harness.seed("scheduled-sleep")
+      task.director.deterministic.rerunOnAdapterFailure = true
+      try harness.store.saveTask(task)
+      let taskId = task.id
+      let store = harness.store
+      let signal = signalDriven ? TaskRunSignalState() : nil
+      let result = try await harness.dispatch(
+        "scheduled-sleep", failWaitNode: true,
+        afterTerminalPersistence: {
+          let attempt = try XCTUnwrap(store.listAttempts(taskId: taskId).first)
+          let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
+            .load(sessionId: attempt.sessionId)
+          XCTAssertEqual(snapshot.session.status, .failed)
+          XCTAssertEqual(snapshot.session.failureKind, .adapterFailure)
+          if signalDriven {
+            XCTAssertFalse(try boundaryCancellation(
+              store: store, taskId: taskId, attemptId: attempt.id, signal: signal
+            ))
+          } else {
+            XCTAssertThrowsError(try boundaryCancellation(
+              store: store, taskId: taskId, attemptId: attempt.id, signal: nil
+            )) { error in
+              XCTAssertTrue((error as? WorkStoreError)?.isAlreadyTerminal == true)
+            }
+          }
+        }, signalState: signal
+      )
+      XCTAssertEqual(result.exitCode, .failure, result.stdout + result.stderr)
+      let attempt = try XCTUnwrap(store.listAttempts(taskId: task.id).first)
+      XCTAssertEqual(attempt.state, .reconciled)
+      XCTAssertEqual(attempt.outcome?.failureKind, .adapterFailure)
+      let reopened = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
+        .load(sessionId: attempt.sessionId)
+      XCTAssertEqual(reopened.session.status, .failed)
+      XCTAssertEqual(reopened.session.failureKind, .adapterFailure)
+      XCTAssertEqual(try store.loadTask(id: task.id)?.state, .scheduled)
+      XCTAssertEqual(try TaskDispatcher(store: store).pendingReservation(taskId: task.id)?
+        .predecessorAttemptId, attempt.id)
+      XCTAssertEqual(try store.listDecisions(taskId: task.id).filter {
+        if case .rerun = $0.kind { return true }
+        return false
+      }.count, 1)
+      XCTAssertEqual(try store.listDecisions(taskId: task.id).filter { $0.kind == .cancel }.count, 0)
+      XCTAssertNil(try store.attemptCancellation(
+        taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId
+      ))
     }
   }
 

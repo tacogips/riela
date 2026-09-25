@@ -50,8 +50,9 @@ public enum TaskGuardSnapshotAdapter {
     let totalTokens = costsByExecution.values
       .compactMap(\.totalTokens)
       .reduce(0, +)
-    let idleMs = running?.lastBackendEventAt.map {
-      max(0, Int(now.timeIntervalSince($0) * 1_000))
+    let idleMs = running.map {
+      let lastProgress = $0.lastBackendEventAt ?? $0.createdAt
+      return max(0, Int(now.timeIntervalSince(lastProgress) * 1_000))
     }
     return GuardSnapshot(
       attemptCount: attempts.count,
@@ -97,6 +98,24 @@ public struct TaskGuardCoordinator: Sendable {
     self.store = store
   }
 
+  public static func violations(
+    task: WorkTask, latestAttempt: Attempt?, snapshot: GuardSnapshot, terminal: Bool = false
+  ) -> [GuardViolation] {
+    var violations = WorkGuard.evaluate(policy: task.guardPolicy, snapshot: snapshot)
+    if terminal, let attempt = latestAttempt, attempt.state == .reconciled,
+       attempt.outcome?.sessionStatus == .failed,
+       let limit = task.guardPolicy.budget?.maxAttempts,
+       snapshot.attemptCount >= limit {
+      let rules = task.director.deterministic
+      let kind = attempt.outcome?.failureKind
+      if (kind == .adapterFailure && rules.rerunOnAdapterFailure)
+        || (kind == .nodeTimeout && rules.rerunOnNodeTimeout) {
+        violations.append(.budget(.attempts, used: snapshot.attemptCount, limit: limit))
+      }
+    }
+    return violations
+  }
+
   /// Persists every violation before director evaluation, then routes the
   /// resulting policy decision through the same durable applier humans use.
   public func evaluateAndApply(
@@ -111,9 +130,13 @@ public struct TaskGuardCoordinator: Sendable {
     violationEvidenceIds: [EvidenceID],
     decisionId: DecisionID,
     decisionEvidenceId: EvidenceID,
+    liveInactivityObservation: LiveInactivityObservation? = nil,
+    terminal: Bool = false,
     now: Date = Date()
   ) throws -> GuardDirectorApplication {
-    let violations = WorkGuard.evaluate(policy: task.guardPolicy, snapshot: snapshot)
+    let violations = Self.violations(
+      task: task, latestAttempt: latestAttempt, snapshot: snapshot, terminal: terminal
+    )
     guard violations.count == violationEvidenceIds.count else {
       throw WorkStoreError("one evidence id is required for every guard violation")
     }
@@ -174,14 +197,16 @@ public struct TaskGuardCoordinator: Sendable {
         && task.guardPolicy.onViolation == .askDirector && !violations.isEmpty
         && !violations.contains(where: { $0.isBudgetViolation })
         && !completion.isSatisfied
-    let failedEscalation: Bool
-    if case .wait(.human) = resolution.kind {
-      failedEscalation = task.director.humanEscalation.escalateAfterFailedAttempts.map {
-        snapshot.attemptCount >= $0 && latestAttempt?.outcome?.sessionStatus == .failed
-      } ?? false
-    } else {
-      failedEscalation = false
+    let permitsFailedEscalation: Bool
+    switch resolution.kind {
+    case .wait(.human), .rerun: permitsFailedEscalation = true
+    default: permitsFailedEscalation = false
     }
+    let hasCapacity = task.guardPolicy.budget?.maxAttempts.map { snapshot.attemptCount < $0 } ?? true
+    let failedEscalation = permitsFailedEscalation && hasCapacity
+      && (task.director.humanEscalation.escalateAfterFailedAttempts.map {
+        snapshot.attemptCount >= $0 && latestAttempt?.outcome?.sessionStatus == .failed
+      } ?? false)
     if task.director.agentWorkflow != nil, latestAttempt?.entry != .director,
        latestAttempt?.state == .reconciled, guardEscalation || failedEscalation {
       return GuardDirectorApplication(
@@ -213,7 +238,8 @@ public struct TaskGuardCoordinator: Sendable {
       expectedTaskVersion: task.version,
       completion: completion,
       decisionEvidenceId: decisionEvidenceId,
-      pendingReservation: pendingReservation
+      pendingReservation: pendingReservation,
+      liveInactivityObservation: liveInactivityObservation
     )
     return GuardDirectorApplication(
       violations: violations,

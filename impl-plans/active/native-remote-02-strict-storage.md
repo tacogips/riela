@@ -19,16 +19,21 @@
 
 Implement the smallest Riela-owned receiving path for the existing remote CLI,
 using the accepted design at `design-docs/specs/design-native-remote-workflow-execution.md`.
-Design acceptance is `comm-000006`, Step 3, decision `accepted`, no findings,
-execution `codex-design-and-implement-review-loop-session-1`. Issue reference:
-none supplied; title: Move remote workflow execution receiving boundary into
-Riela. Codex-agent references: none; Cursor/reference divergence: not applicable.
-The accepted strict-decoding revision from `comm-000004` is mandatory.
+Mode: `issue-resolution`. Current Step 3 design acceptance is `comm-000004`,
+source execution `step3-design-review-attempt-1-exec-4`, decision `accepted`,
+with no findings. Issue reference: local request on
+`feat/native-remote-workflow-execution`; no GitHub issue URL or number supplied.
+Issue title: Implement native Riela remote workflow execution receiver.
+Codex-agent references: none; Cursor/reference divergence: not applicable.
+Preserve planning commit `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7` and its
+accepted strict-decoding correction. The earlier design's `comm-000004`
+revision and `comm-000006` acceptance belong to the historical planning phase;
+they are not the current Step 3 review decision.
 
-This artifact is authored in planning-only mode. All source/test tasks below
-are deferred to implementation. Do not edit Swift, tests, README, historical
-docs or the separate A1 checkout during this planning run. The runner-resolved
-workflow provenance is authoritative; registry rediscovery/repair is not work.
+This node revises plans only. Later implementation executes the source/test tasks
+below under the effective issue-resolution input. Do not edit the separate P1
+checkout or remove historical references. The runner-resolved workflow provenance
+is authoritative; registry rediscovery/repair is not work.
 
 Non-goals: another server, runner, queue, polling protocol, credential framework,
 new library facade, legacy auto-improve compatibility, client timeout forwarding,
@@ -39,10 +44,33 @@ No external service is a dependency or publication target.
 
 ## Same-directory execution and evidence protocol
 
-Before native Riela implementation/review fanout, independent reviewers must
-accept this entire plan set and the accepted design plus all plans must be
-committed and non-force pushed on `feat/native-remote-workflow-execution`.
-This authoring step does not commit or push. No worktrees, private branches,
+Before native Riela implementation/review fanout, Step 5 must accept this revised
+plan set, and the serial workflow owner must commit the accepted design update
+and all revised plans on `feat/native-remote-workflow-execution`, preserving
+`9b1c935`. Before dispatch, the serial owner must non-force push this checkpoint
+and verify that the live remote branch hash equals the accepted checkpoint hash.
+Stop dispatch if the push fails, remote verification fails, or the hashes differ;
+do not start implementation/review fanout with an unpublished checkpoint. Record
+the checkpoint hash, verified remote hash, commands, complete log paths and
+terminal exit statuses in the implementation handoff. This keeps the checkpoint
+published before the final implementation commit, satisfying the final git-push
+gate's limit of one unpublished commit. Do not rewrite the earlier planning
+commit. This authoring node does not commit or push.
+
+After the checkpoint commit, run these commands serially in the foreground:
+
+```sh
+git rev-parse HEAD
+git push origin HEAD:refs/heads/feat/native-remote-workflow-execution
+git ls-remote --exit-code origin refs/heads/feat/native-remote-workflow-execution
+```
+
+Require each command to exit 0; compare the single returned remote ref hash to
+the recorded accepted checkpoint hash and confirm local HEAD still matches.
+A successful push alone is insufficient evidence. Stop on any failure; never
+force-push or dispatch workers while publication remains unverified.
+Final reviewed code/docs are committed and non-force pushed by serial workflow
+finalization after integration and review. No worktrees, private branches,
 concurrent Git operations or worker commits. Wave 1 comprises NRE-01 and NRE-02;
 wave 2 comprises NRE-03 after both pass their assigned gates. One integration
 owner runs all serial reconciliation and finalization.

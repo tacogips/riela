@@ -1,0 +1,176 @@
+{
+  "taskId": "native-remote-receiver-20260925",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/native-remote-workflow-execution",
+  "baseBranch": "feat/native-remote-workflow-execution",
+  "remote": "origin",
+  "originalHead": "9b1c935bc7e9fe4d586142e4ead035f84ef18ee7",
+  "designDocPaths": [
+    "design-docs/specs/design-native-remote-workflow-execution.md"
+  ],
+  "evidenceRoot": "tmp/native-remote-receiver-20260925",
+  "reviewContext": {
+    "issueReference": "Local request on feat/native-remote-workflow-execution; no GitHub issue URL or number supplied",
+    "userProblem": "The remote CLI sends executeWorkflow followed by workflowExecution, but the Riela GraphQL server has no matching authenticated receiving roots.",
+    "requiredOutcomes": [
+      "Implement the three accepted plans in dependency order with ordinary authenticated execution and a persisted summary through the actual Riela HTTP composition.",
+      "Reject absent or wrong bearer and unsupported top-level autoImprove or nestedSuperviser keys by presence, including false and null, without run side effects.",
+      "Pass relevant Swift tests, source build, strict changed-file SwiftLint and independent test-integrity, adversarial and integration reviews; commit and non-force push reviewed code and docs."
+    ],
+    "nonGoals": [
+      "No parallel server or runner, queue, polling protocol, new library facade, legacy auto-improve compatibility or client timeout forwarding.",
+      "No historical-reference cleanup, separate P1 checkout edit, deployment, or P1 A2/A3 acceptance claim."
+    ],
+    "constraints": [
+      "Preserve planning commit 9b1c935bc7e9fe4d586142e4ead035f84ef18ee7, local runs, existing GraphQL and browser authorization, and failure semantics.",
+      "Before implementation fanout, the serial owner must commit this accepted checkpoint, non-force push it, and verify live remote hash equals local HEAD; no such command has run in this node.",
+      "Run foreground verification with explicit Xcode Swift toolchain, complete logs and exit statuses under evidenceRoot per plan and attempt; serialize shared SwiftPM build/test use.",
+      "Workers keep separate progress files and do not edit this manifest; one serial owner handles shared catalog, indexes, reconciliation, reviews and final Git actions."
+    ],
+    "sharedPathIntent": "NRE-03 alone performs serial catalog bindings, executor/DTO/schema parity adjustments, and directly related design refresh after NRE-01 and NRE-02 join; no concurrent worker edits these shared paths. No lockfile or index edit is planned.",
+    "designDecisionsAndRationale": [
+      "Add typed GraphQL executeWorkflow and workflowExecution roots matching the existing CLI mutation-then-summary wire contract, with strict input validation before permissive decoding.",
+      "Verify a nonempty startup-configured operator bearer in an execution-specific wrapper before composite credential stripping; keep registry and browser authorization independent.",
+      "Add a strict read-only CLI session-record seam so corrupt stored rows yield storage errors while truly absent IDs yield null; pair it with the existing strict runtime snapshot read.",
+      "Use WorkflowRunCommand.run in the existing serve and browser compositions, await its persisted result, and keep host-selected working directory and store fixed for each request."
+    ],
+    "intentionalTradeoffs": [
+      "Mutation stays synchronous; a client timeout can precede completion and retry may start a second run.",
+      "Execution bearer grants operator access within the selected host store, without per-user session isolation.",
+      "Desktop browser source-policy assertions may supplement but cannot replace real headless HTTP execution evidence."
+    ],
+    "supportedEdgeCases": [
+      "Forbidden keys reject by top-level presence for false, null, zero, objects and true across variables, inline inputs and defaults; nested opaque runtimeVariables remain allowed.",
+      "Missing, mismatched or unconfigured bearer and spoofed manager-session/client metadata fail closed before starts or reads.",
+      "Absent summary ID returns null; corrupt CLI record, missing or corrupt runtime snapshot, and ID mismatch return execution errors.",
+      "Failed or paused persisted runs return actual status and exit code; server stop cancels and drains listener-owned route work."
+    ],
+    "outOfScopeEdgeCases": [
+      "Legacy auto-improve receiver behavior, timeoutMs wire forwarding, automatic retry or idempotency, and profile-wide lookup for unknown IDs."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-native-remote-workflow-execution.md",
+      "impl-plans/active/native-remote-01-graphql-contract.md",
+      "impl-plans/active/native-remote-02-strict-storage.md",
+      "impl-plans/active/native-remote-03-provider-host-integration.md",
+      "Sources/RielaCLI/WorkflowCommands.swift",
+      "Sources/RielaCLI/WorkflowRunCommand.swift",
+      "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+      "Sources/RielaGraphQL/WorkflowRegistryGraphQL.swift",
+      "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+      "Sources/RielaCLI/ServeHTTPCommand.swift",
+      "Sources/RielaCLI/ServeWebHost.swift",
+      "Sources/RielaApp/RielaAppWebGraphQL.swift"
+    ],
+    "reviewDecision": "Step 5 implementation-plan review accepted; prior mid finding resolved in all three plans, with no high or mid findings remaining.",
+    "reviewCommunicationId": "comm-000008",
+    "codexAgentReferences": [],
+    "planningVerification": [
+      {
+        "command": "python3 tmp/native-remote-plan-step4-revision-1/check_plans.py",
+        "completeLogPath": "tmp/native-remote-plan-step4-revision-1/check-1.log",
+        "exitStatus": 0
+      },
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/native-remote-plan-step4-revision-1/check-2.log",
+        "exitStatus": 0
+      }
+    ]
+  },
+  "plans": [
+    {
+      "planId": "NRE-01",
+      "planPath": "impl-plans/active/native-remote-01-graphql-contract.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLDocumentExecuting.swift",
+        "Sources/RielaGraphQL/GraphQLWorkflowExecutionContracts.swift",
+        "Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift",
+        "Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift",
+        "Sources/RielaGraphQL/GraphQLVariableValidation.swift",
+        "Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift",
+        "impl-plans/active/native-remote-nre-01-progress.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Typed receiving schema and provider protocol match the existing ordinary CLI wire fields and selection shapes.",
+        "Strict predecode validation rejects forbidden or unknown keys and invalid types; execution-only authorization fails closed before provider effects and preserves other domains.",
+        "Targeted GraphQL tests cover the positive response and forbidden-presence, authorization, selection and preflight negative matrix with nonzero discovered tests."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowExecutionGraphQLTests",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "NRE-02",
+      "planPath": "impl-plans/active/native-remote-02-strict-storage.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+        "Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift",
+        "impl-plans/active/native-remote-nre-02-progress.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "A narrow loadStrictReadOnly read distinguishes absent records from corrupt records and preserves legacy tolerant load behavior.",
+        "Deterministic store tests cover valid, absent, corrupt, mismatched and storage-failure records without read-side writes and with nonzero discovered tests."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter CLIWorkflowSessionStoreResilienceTests",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "NRE-03",
+      "planPath": "impl-plans/active/native-remote-03-provider-host-integration.md",
+      "dependsOn": [
+        "NRE-01",
+        "NRE-02"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowExecutionProvider.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaApp/RielaAppWebGraphQL.swift",
+        "Sources/RielaServer/ServerContracts.swift",
+        "Tests/RielaCLITests/WorkflowExecutionProviderTests.swift",
+        "Tests/RielaCLITests/ServeHTTPCommandTests.swift",
+        "Tests/RielaCLITests/ServeWebHostTests.swift",
+        "Tests/RielaServerTests/ServerContractsTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppWebRegistryProviderTests.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
+        "Tests/RielaGraphQLTests/GraphQLContractsTests.swift",
+        "impl-plans/active/native-remote-nre-03-progress.md",
+        "design-docs/specs/design-native-remote-workflow-execution.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift",
+        "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
+        "Tests/RielaGraphQLTests/GraphQLContractsTests.swift"
+      ],
+      "acceptanceCriteria": [
+        "Reconcile both predecessor interfaces and strict reads, then execute ordinary workflows through the existing CLI runner and host-selected store.",
+        "Actual Riela HTTP composition rejects unauthorized and malformed requests without effects and returns an authenticated persisted execution plus summary via the existing URLSession transport.",
+        "Provider, host, browser and cancellation tests pass; serial catalog/schema parity, source build, strict changed-file SwiftLint and aggregate tests pass with complete logs.",
+        "Independent test-integrity, adversarial and integration reviews accept source-matched evidence with no high or mid findings; directly related docs and progress records are finalized."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkflowExecutionProviderTests|CLIWorkflowSessionStoreResilienceTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkflowExecutionGraphQLTests|ServeHTTPCommandTests|ServeWebHostTests|ServerContractsTests|RielaAppWebRegistryProviderTests|SurfaceParity'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'RielaGraphQLTests|RielaServerTests|RielaCLITests|RielaAppSupportTests'",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "python3 - <<'PY'\nimport os\nimport subprocess\nimport sys\nchanged = subprocess.check_output([\n    'git', 'diff', '--name-only', '--diff-filter=ACMRT', '-z', '9b1c935',\n    '--', '*.swift'\n])\nuntracked = subprocess.check_output([\n    'git', 'ls-files', '--others', '--exclude-standard', '-z', '--', '*.swift'\n])\npaths = sorted({os.fsdecode(p) for p in (changed + untracked).split(b'\\0')\n                if p and os.path.isfile(os.fsdecode(p))})\nif not paths:\n    sys.exit('FAIL: no changed Swift files selected')\nenv = dict(os.environ)\nenv.update(DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer',\n           SDKROOT='/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk',\n           TOOLCHAINS='com.apple.dt.toolchain.XcodeDefault')\nenv['PATH'] = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:' + env.get('PATH', '')\nenv['SCRIPT_INPUT_FILE_COUNT'] = str(len(paths))\nfor index, path in enumerate(paths):\n    print(path, flush=True)\n    env[f'SCRIPT_INPUT_FILE_{index}'] = os.path.abspath(path)\nsys.exit(subprocess.run([\n    '/usr/bin/xcrun', 'swiftlint', 'lint', '--strict', '--quiet', '--no-cache',\n    '--use-script-input-files'\n], env=env).returncode)\nPY",
+        "git diff --check"
+      ]
+    }
+  ]
+}

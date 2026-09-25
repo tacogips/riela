@@ -1,20 +1,23 @@
 # Native remote workflow execution receiving boundary
 
-Status: authored for independent design review; implementation is deferred.
-Mode: planning-only (`executionMode: design-plan-only`).
-Issue reference: none supplied. Issue title: Move remote workflow execution receiving boundary into Riela.
+Status: accepted technical design carried forward; issue-resolution alignment awaits independent review.
+Mode: issue-resolution (`executionMode: issue-resolution`); this node updates design only.
+Issue reference: local request on `feat/native-remote-workflow-execution`; no GitHub issue URL or number supplied.
+Issue title: Implement native Riela remote workflow execution receiver.
 Intake: `comm-000002`, `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
-Source baseline: `07f1ac0787fc08bfd0f520e1dca3fc0f88b4b518`, branch `feat/native-remote-workflow-execution`.
+Accepted planning baseline: `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7`, branch `feat/native-remote-workflow-execution`; preserve this commit.
 Codex-agent references: none supplied; Cursor CLI mapping: not applicable.
 
 ## Scope and evidence
 
 Add the smallest authenticated receiving path for the existing CLI's
 `executeWorkflow` mutation and `workflowExecution` summary query. This document
-is new because the execution input, authorization and persistence contract need
-dedicated detail; existing historical documentation must remain untouched in
-this planning run. Only new reviewed design and implementation-plan artifacts
-may subsequently be committed and non-force pushed. This step does neither.
+uses dedicated detail for the execution input, authorization and persistence
+contract. The current intake authorizes implementing the three accepted plans,
+verifying their combined behavior, and committing reviewed code and directly
+related documentation followed by a non-force push. Historical-reference cleanup
+and edits to the separate P1 checkout remain outside scope. This node performs
+only the design update; implementation and finalization belong to later steps.
 
 Source observations at the baseline:
 
@@ -235,8 +238,19 @@ preflight forwarding using the existing executor pattern.
 
 ## Implementation handoff and acceptance
 
-Order the downstream plan as contract/validation, provider, authenticated host
-composition, then integrated tests. Exact intended locations:
+Use the accepted plans without expanding scope:
+
+- `impl-plans/active/native-remote-01-graphql-contract.md` (NRE-01): contract,
+  validation and authorization.
+- `impl-plans/active/native-remote-02-strict-storage.md` (NRE-02): strict read-only
+  storage; independent of NRE-01.
+- `impl-plans/active/native-remote-03-provider-host-integration.md` (NRE-03):
+  provider, authenticated host composition and integrated tests, after both
+  NRE-01 and NRE-02 pass their gates.
+
+Their planning-only statements record the prior authoring phase; the effective
+issue-resolution input now authorizes implementation. Preserve their technical
+requirements and single integration owner. Exact intended locations:
 
 1. `Sources/RielaGraphQL/GraphQLSchemaGenerator.swift` for the additive schema;
    new `GraphQLWorkflowExecutionContracts.swift`, `GraphQLWorkflowExecutionValidation.swift`
@@ -312,7 +326,7 @@ Required deterministic evidence:
   a listener-owned task; server stop cancels/drains it and records cancellation.
   No test relies on a guessed wall-clock sleep or an orphan subprocess.
 
-Later implementation verification commands (not executed by this planning step):
+Later implementation verification commands (not executed by this design step):
 
 ```sh
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build
@@ -327,16 +341,20 @@ passing implementation checks or publication evidence.
 
 ## Rollout, open questions and review
 
-No unresolved user decision is required for this bounded design. Independent
-design review and implementation-plan review remain pending; author self-check
-is not acceptance by those reviewers. No implementation or deployment is claimed.
+No unresolved user decision is required for this bounded design. The accepted
+plans record prior Step 3 design acceptance as `comm-000006`, decision `accepted`,
+with no findings. The current alignment still requires downstream independent
+review; author self-check is not reviewer acceptance. Implementation,
+test-integrity, adversarial and integration review remain pending. No
+implementation or deployment is claimed by this design update.
 
 The separate A1 checkout remains untouched. P1 A2/A3 stays open until the native
-receiving tests pass on integrated source. Implementation, branch integration
-and removal of obsolete external-service references from historical tracked
-material are downstream, after verified integration. No external service is a
-publication target or dependency. Planning commits and non-force push follow
-independent acceptance of both new artifacts.
+receiving tests pass on integrated source and receive independent review.
+Implement and verify this receiver in the current work package, then commit
+reviewed code/docs and push without force. Leave parent P1 open for its separate
+merge and cleanup; do not claim A2/A3 acceptance early. Branch integration and
+historical-reference removal remain separate downstream work. No external
+service is a publication target or dependency.
 
 Residual operational risks are the existing transport timeout ambiguity,
 operator-wide access within the configured store, and long-running route
@@ -348,5 +366,7 @@ compatibility and durable-summary ambiguity in this document.
 Review revision: `comm-000004` (Step 3, revision_required) identified one mid
 finding: strictReadOnly did not preserve CLI record-decoding errors. Addressed
 by the explicit strict-decoding store seam, provider error mapping, exact store
-file/test targets and corrupt-versus-absent acceptance case above. Independent
-re-review remains pending; no implementation evidence is claimed.
+file/test targets and corrupt-versus-absent acceptance case above. The accepted
+plans record subsequent acceptance in `comm-000006`; this update retains that
+resolution. No new Step 3 or Step 5 revision feedback was supplied for this turn,
+and no implementation evidence is claimed.

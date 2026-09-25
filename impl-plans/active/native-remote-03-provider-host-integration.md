@@ -23,7 +23,8 @@
     "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift",
     "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
     "Tests/RielaGraphQLTests/GraphQLContractsTests.swift",
-    "impl-plans/active/native-remote-nre-03-progress.md"
+    "impl-plans/active/native-remote-nre-03-progress.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md"
   ],
   "sharedPaths": [
     "Sources/RielaCore/SurfaceCatalog+Rows.swift",
@@ -39,16 +40,21 @@
 
 Implement the smallest Riela-owned receiving path for the existing remote CLI,
 using the accepted design at `design-docs/specs/design-native-remote-workflow-execution.md`.
-Design acceptance is `comm-000006`, Step 3, decision `accepted`, no findings,
-execution `codex-design-and-implement-review-loop-session-1`. Issue reference:
-none supplied; title: Move remote workflow execution receiving boundary into
-Riela. Codex-agent references: none; Cursor/reference divergence: not applicable.
-The accepted strict-decoding revision from `comm-000004` is mandatory.
+Mode: `issue-resolution`. Current Step 3 design acceptance is `comm-000004`,
+source execution `step3-design-review-attempt-1-exec-4`, decision `accepted`,
+with no findings. Issue reference: local request on
+`feat/native-remote-workflow-execution`; no GitHub issue URL or number supplied.
+Issue title: Implement native Riela remote workflow execution receiver.
+Codex-agent references: none; Cursor/reference divergence: not applicable.
+Preserve planning commit `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7` and its
+accepted strict-decoding correction. The earlier design's `comm-000004`
+revision and `comm-000006` acceptance belong to the historical planning phase;
+they are not the current Step 3 review decision.
 
-This artifact is authored in planning-only mode. All source/test tasks below
-are deferred to implementation. Do not edit Swift, tests, README, historical
-docs or the separate A1 checkout during this planning run. The runner-resolved
-workflow provenance is authoritative; registry rediscovery/repair is not work.
+This node revises plans only. Later implementation executes the source/test tasks
+below under the effective issue-resolution input. Do not edit the separate P1
+checkout or remove historical references. The runner-resolved workflow provenance
+is authoritative; registry rediscovery/repair is not work.
 
 Non-goals: another server, runner, queue, polling protocol, credential framework,
 new library facade, legacy auto-improve compatibility, client timeout forwarding,
@@ -59,10 +65,33 @@ No external service is a dependency or publication target.
 
 ## Same-directory execution and evidence protocol
 
-Before native Riela implementation/review fanout, independent reviewers must
-accept this entire plan set and the accepted design plus all plans must be
-committed and non-force pushed on `feat/native-remote-workflow-execution`.
-This authoring step does not commit or push. No worktrees, private branches,
+Before native Riela implementation/review fanout, Step 5 must accept this revised
+plan set, and the serial workflow owner must commit the accepted design update
+and all revised plans on `feat/native-remote-workflow-execution`, preserving
+`9b1c935`. Before dispatch, the serial owner must non-force push this checkpoint
+and verify that the live remote branch hash equals the accepted checkpoint hash.
+Stop dispatch if the push fails, remote verification fails, or the hashes differ;
+do not start implementation/review fanout with an unpublished checkpoint. Record
+the checkpoint hash, verified remote hash, commands, complete log paths and
+terminal exit statuses in the implementation handoff. This keeps the checkpoint
+published before the final implementation commit, satisfying the final git-push
+gate's limit of one unpublished commit. Do not rewrite the earlier planning
+commit. This authoring node does not commit or push.
+
+After the checkpoint commit, run these commands serially in the foreground:
+
+```sh
+git rev-parse HEAD
+git push origin HEAD:refs/heads/feat/native-remote-workflow-execution
+git ls-remote --exit-code origin refs/heads/feat/native-remote-workflow-execution
+```
+
+Require each command to exit 0; compare the single returned remote ref hash to
+the recorded accepted checkpoint hash and confirm local HEAD still matches.
+A successful push alone is insufficient evidence. Stop on any failure; never
+force-push or dispatch workers while publication remains unverified.
+Final reviewed code/docs are committed and non-force pushed by serial workflow
+finalization after integration and review. No worktrees, private branches,
 concurrent Git operations or worker commits. Wave 1 comprises NRE-01 and NRE-02;
 wave 2 comprises NRE-03 after both pass their assigned gates. One integration
 owner runs all serial reconciliation and finalization.
@@ -223,12 +252,20 @@ real-HTTP evidence and combined-tree verification.
    necessary. No dependency updates or broad formatting.
 8. **I8 — Review/documentation handoff.** Record exact changed files, accepted
    design mapping, remaining risks, all logs/statuses and test counts in this
-   plan's progress log. Independent combined-tree review is mandatory after
-   implementation. Any required behavior change returns to design/plan review;
-   it is not hidden in code. Refresh only these new planning artifacts/progress
-   with outcomes during downstream finalization. README and historical-reference
-   cleanup remain a distinct post-integration task, not this implementation's
-   prerequisite. No implementation commit/publication or A2/A3 completion claim
+   plan's progress log. Independent test-integrity, adversarial and integration
+   reviews of the combined tree are mandatory after implementation. Reviewers
+   must inspect assertions and production composition, confirm negative cases
+   have zero side effects and positive cases use the real runner and persisted
+   records, and trace complete logs to the reviewed source hashes. Record each
+   decision and resolve every high/mid finding, rerunning affected checks after
+   repairs. Any required behavior change returns to design/plan review; it is
+   not hidden in code. Refresh the native-remote design's status, receiving
+   usage (serve token configuration and existing CLI endpoint/auth options),
+   verified behavior and limitations from actual evidence. Keep credentials out
+   of examples. Serial documentation finalization records plan outcomes; each
+   worker still owns its progress log. Review README for directly affected
+   claims; historical-reference cleanup remains separate, and this plan adds
+   no broad README rewrite. No implementation commit/publication or A2/A3 completion claim
    before corresponding review and integrated evidence. Global archiving and
    final Git actions belong to serial workflow finalization, never workers.
 
@@ -261,6 +298,45 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/X
 git diff --check
 ```
 
+Additionally run this exact changed-file strict lint gate from the repository
+root after all workers stop. It includes new untracked Swift files and records
+the selected paths; the command's complete log and exit status are required.
+The baseline is the preserved planning commit, so the documentation checkpoint
+cannot hide implementation changes. The repository-wide lint command above
+retains baseline diagnostics; it does not replace this strict gate.
+
+```sh
+python3 - <<'PY'
+import os
+import subprocess
+import sys
+changed = subprocess.check_output([
+    'git', 'diff', '--name-only', '--diff-filter=ACMRT', '-z', '9b1c935',
+    '--', '*.swift'
+])
+untracked = subprocess.check_output([
+    'git', 'ls-files', '--others', '--exclude-standard', '-z', '--', '*.swift'
+])
+paths = sorted({os.fsdecode(p) for p in (changed + untracked).split(b'\0')
+                if p and os.path.isfile(os.fsdecode(p))})
+if not paths:
+    sys.exit('FAIL: no changed Swift files selected')
+env = dict(os.environ)
+env.update(DEVELOPER_DIR='/Applications/Xcode.app/Contents/Developer',
+           SDKROOT='/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk',
+           TOOLCHAINS='com.apple.dt.toolchain.XcodeDefault')
+env['PATH'] = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:' + env.get('PATH', '')
+env['SCRIPT_INPUT_FILE_COUNT'] = str(len(paths))
+for index, path in enumerate(paths):
+    print(path, flush=True)
+    env[f'SCRIPT_INPUT_FILE_{index}'] = os.path.abspath(path)
+sys.exit(subprocess.run([
+    '/usr/bin/xcrun', 'swiftlint', 'lint', '--strict', '--quiet', '--no-cache',
+    '--use-script-input-files'
+], env=env).returncode)
+PY
+```
+
 `swift build` is the Swift typecheck/compile gate including host composition;
 no web code changes, so no unrelated frontend build/typecheck is required.
 Tests must be discovered and executed, not just compile: capture counts and
@@ -271,7 +347,10 @@ name that limit in final verification. Logs are local test evidence, not live
 deployment evidence.
 
 I1–I7 are complete only with successful integrated checks and no unresolved
-high/mid defect. I8 produces the implementation review handoff; later review,
-commit/push, branch integration, historical cleanup and P1 gate updates retain
-their own pending states. The planning run completes only after plan review and
-its authorized planning-artifact commit/push, which are later workflow steps.
+high/mid defect. I8 prepares evidence for downstream independent review and
+documentation finalization; it cannot self-approve those review gates. The work
+package completes only after required reviews accept the source-matched evidence,
+reviewed code/docs are committed and non-force pushed, and the final handoff
+records hashes and exact paths. Parent P1 remains open for separate merge and
+cleanup. This plan-authoring node completes with all three revised plans and
+its self-check; Step 5 review and the pre-fanout checkpoint remain downstream.

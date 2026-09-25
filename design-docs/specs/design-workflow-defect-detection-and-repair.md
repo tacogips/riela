@@ -1,162 +1,200 @@
 # Workflow defect detection and verified repair
 
-Status: Issue-resolution bounded T2–T6 design handoff, 2026-09-26.
-Accepted D1–D9, A1–A16 and L1–L8 behavior remains unchanged. Independent review
-of this revision is pending; implementation is incomplete.
+Status: T2 ownership design amendment, 2026-09-26; independent review pending.
+D1–D9, A1–A16 and L1–L8 remain normative and unchanged below.
 
 ## Current implementation authority and review status
 
-Issue: **Split and finish bounded workflow defect implementation T2-T6**,
-repository `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
-No GitHub issue number or URL was supplied; #109 is a PR, not an issue.
-Mode: `issue-resolution`; `codexAgentReferences=[]`.
-Intake: `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
-`codex-design-and-implement-review-loop-session-1`.
-The effective `workflowInput` and runner-resolved immutable user-scope
-`codex-design-and-implement-review-loop` **0.3.44** are authoritative.
-No contradiction is present in that supplied authority. Runner preflight owns
-workflow resolution and package integrity; this node does not rediscover them.
+Issue: **Repair bounded T2 provenance ownership and continue serial defect implementation**,
+`tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+No issue number supplied. Mode: `issue-resolution`; `codexAgentReferences=[]`.
+Intake `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
+`codex-design-and-implement-review-loop-session-1` is authoritative together with
+the effective `workflowInput` and runner-resolved immutable user-scope
+`codex-design-and-implement-review-loop` 0.3.44. No supplied contradiction exists.
+Runner preflight owns workflow resolution and integrity; no rediscovery is needed.
 
-Current HEAD: `e04c1c124a5a5370ff56e2785ff01b6d6f8e67a3`, branch
-`feat/remaining-impl-plans`. Preserve all dirty T1/T2 source, tests, progress and
-passing source-matched evidence. No reset, stash, broad rewrite, T1 reimplementation,
-new worktree or global continuation-limit increase. All scratch stays under root
-`tmp/`. Protect main, Monja and other branches/worktrees.
+HEAD is `8341d09671d501fa687343c418917c96fbb49770` on
+`feat/remaining-impl-plans`. Intake reports accepted prior Step 3/5 reviews;
+that acceptance does not cover this amendment. Preserve all dirty T1/T2 source,
+tests, shared progress and prior evidence. No reset, stash, broad rewrite, new
+worktree, global continuation-limit increase, or work in main/Monja/archived
+rielflow. Scratch stays under repository-root `tmp/`.
 
-This current section supersedes older checkpoint, incomplete-task and dispatch
-instructions below and in the existing plan. Historical behavior contracts remain
-normative; historical execution observations are not current completion evidence.
-The Step 4 revision must update the plan's stale leading instructions accordingly.
+This section supersedes stale execution/checkpoint instructions in the historical
+sections and plan; it does not replace their behavioral requirements. Step 4 must
+refresh the plan and matching dispatch against the newly reviewed design bytes.
+No implementation or plan changes are made by this Step 2 author.
 
-### Preserved implementation and evidence boundary
+### Existing API evidence and bounded decision
 
-T1 is complete per intake and the preserved progress record
-`impl-plans/active/workflow-defect-detection-and-repair-progress.md`.
-T2 reconciliation and producer-proof work is real but partial. Its existing
-completion-review normalization derives `accepted = !needs_replan && !needs_work`
-only for already-recognized review payloads, preserving decision/goal precedence,
-idempotence, non-review passthrough and unrelated controls on the non-rewrite path.
-Retain the all-referenced-control check, including short-circuited expressions.
-Normalization/reconciliation must precede strict validation of the effective
-candidate, which precedes reservation, finalization, persistence and publication.
+The active dispatch is
+`impl-plans/active/workflow-defect-repair-20260926-comm000006-a8e1beb-dispatch.json`:
+five serial items already exist; T2 has 18 exact writePaths. Do not split again.
+The child receipt in
+`tmp/workflow-defect-serial-split/artifacts/nested-v1-353ac2cb068ca66cb9c7acb73abe6fd8a0dd5875d031db407c73ff8bbfbb3076/runtime-snapshot.json`
+records a provenance ownership stop and incomplete publication/location coverage.
+Its successful test counts are historical evidence, not acceptance of missing work.
 
-Read complete logs in `tmp/workflow-defect-implementation/T2-terminal/`:
+Read-only source inspection establishes why the current APIs do not suffice:
 
-| Log | Recorded result |
+| Existing source | Evidence and necessary boundary |
 | --- | --- |
-| `V2.log` | 32 tests, zero failures, FINAL_EXIT_STATUS=0 |
-| `V2b.log` | 38 tests, zero failures, FINAL_EXIT_STATUS=0 |
-| `raw-model.log` | 35 tests, zero failures, FINAL_EXIT_STATUS=0 |
-| `T2-validation-attempt-3.log` | 14 tests, zero failures, FINAL_EXIT_STATUS=0 |
-| `all-changed-lint.log` | strict changed-Swift lint, FINAL_EXIT_STATUS=0 |
+| `Sources/RielaCore/WorkflowNodeContracts.swift` | `NodeOutputContract` has schema, attempts and payload projection, but no explicit when guarantee. `latest-input-payload` cannot declare an envelope when control. |
+| `Sources/RielaCore/WorkflowValidation.swift` | `requiredProducerNodeIds` walks through add-ons without proving forwarding/overwrites; current route analysis reports add-on provenance incomplete. Reuse the walk, but never treat traversal as proof. |
+| `Sources/RielaAddons/RielaAddons.swift` | `RielaAddonDescriptor` exposes name/version only; catalog membership is not a routing guarantee. |
+| `Sources/RielaAddons/WorkflowPackageManifest.swift` | `WorkflowPackageNodeAddon` has no route descriptor and rejects unsupported keys; authored metadata cannot be smuggled into capabilities. |
+| `Sources/RielaCLI/ContainerWorkflowAddonResolver.swift` | Registration carries identity/digest/capabilities, not output guarantees; execution decodes payload only. Do not invent container when forwarding. |
+| `Sources/RielaCLI/ProductionNodeAdapter.swift` | Registration copies manifest fields; chat reply forwards application payload then overwrites status/addon/stepId/text/replyText/dispatchStatus and sometimes replyAs. SDK output also overwrites fields. A predecessor schema alone is insufficient. |
+| `Sources/RielaAddonSupport/WorkflowAddonSupport.swift` | Forwarding removes `_rielaInput`, `upstream`, `runtime`; retain this implementation unchanged and account for those exclusions in proof. |
+| `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` | Existing bundle-aware validator calls are the composition seam for resolved catalog evidence; Core must not discover packages. |
 
-These are preserved prior runs, not fresh tests performed by this design step.
-Earlier failures remain failures. Current intake's generic dependency/raw labels
-are resolved by the exact commands and suite names in the progress record.
-T2 still needs typed `WorkflowDefectDiagnostic`, captured-source digest binding,
-raw/typed integration, explicit when-only/add-on guarantee provenance and rejection
-coverage for ordinary, inline, fanout-join, callee-resume and recovered pending
-publication. Rejection must have zero downstream effects; producer tool effects
-already performed are not claimed rolled back. Retain bounded two-total-attempt
-agent correction and single-execution add-on/direct-call semantics.
+A narrow ownership amendment is therefore necessary, subject to Step 3/5 review.
+The following are proposed additions, not permission for a child to edit before
+review and checkpoint. Retain the existing 18 T2 paths and their dirty contents.
 
-### Five bounded serial dispatch items
+| Proposed exact writePath | Required purpose |
+| --- | --- |
+| `Sources/RielaCore/WorkflowNodeContracts.swift` | Add explicit authored when-control declaration and the shared route-proof value types. |
+| `Sources/RielaAddons/RielaAddons.swift` | Attach explicit built-in route/forwarding metadata to the existing catalog. |
+| `Sources/RielaAddons/WorkflowPackageManifest.swift` | Decode and validate optional package add-on route metadata. |
+| `Sources/RielaCLI/ContainerWorkflowAddonResolver.swift` | Carry selected registration metadata with exact identity/digest; retain payload-only execution semantics. |
+| `Sources/RielaCLI/ProductionNodeAdapter.swift` | Preserve manifest-to-registration evidence and describe only proven built-in forwarding/overwrites. |
+| `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` | Supply resolved evidence at existing validation composition points. |
+| `Tests/RielaCoreTests/WorkflowModelTests.swift` | Round-trip when declaration and compatibility of absent metadata. |
+| `Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift` | Package metadata validation and malformed declarations. |
+| `Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift` | Catalog metadata identity and unknown-default behavior. |
+| `Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift` | Registration propagation and payload-only/identity mismatch negatives. |
+| `Tests/RielaCLITests/WorkflowOutputContractPreflightTests.swift` | End-to-end resolved proof, forwarding exclusions and overwrite rejection. |
 
-The existing artifacts each have one oversized item:
-`impl-plans/active/workflow-defect-repair-20260926-comm000006-a8e1beb-dispatch.json`
-has 113 write paths; the corrected continuation artifact
-`impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`
-has 115. Step 4 must split the requested dispatch using the corrected ownership
-baseline and the exact task contracts in
-`impl-plans/active/workflow-defect-detection-and-repair.md`. In particular preserve
-`Sources/RielaCore/LoopCompletionReviewRouting.swift` and
-`Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift` in T2 ownership.
-Do not regress to the older 113-path baseline or infer an ownership mismatch from
-prompt prose. Before any mismatch finding, inspect actual dispatch, child
-`fanoutItem` and `runtimeVariables` arrays in the owned session evidence under
-`tmp/workflow-defect-t2-owned/sessions/`. No ownership mismatch is asserted here.
+Already-owned route, raw-validation, runner and publication files implement the
+consumer side and core negative coverage. Existing dirty agent-contract tests are
+preserved; new coverage can use owned route tests. No new service, registry,
+producer framework or blanket ownership expansion is required. Any further exact
+path discovered during planning must have concrete code evidence and review before
+editing; do not silently bypass an owner or weaken the requirement.
 
-Use exactly these five unique plan IDs and native dependencies. Completed T1 is
-preserved input, not a new dispatch item or an unresolved dependency ID.
+### D1/D8 provenance contract refinement
 
-| planId | dependsOn | Existing behavior and completion evidence |
-| --- | --- | --- |
-| `workflow-defect-t2-remaining` | `[]` | D1/D8, A2/A5; remaining diagnostic/digest/provenance/publication matrix, fresh V2/V2b and producer/raw validation tests |
-| `workflow-defect-t3` | `["workflow-defect-t2-remaining"]` | D2, A3–A7; bounded branch/SCC/guard diagnostics, V3 |
-| `workflow-defect-t4` | `["workflow-defect-t3"]` | D3/D6/D9, A8–A12/A16, L1–L8; durable semantic progress separate from activity/responsiveness, V4 and L-V1–L-V5 |
-| `workflow-defect-t5` | `["workflow-defect-t4"]` | D4/D5, A13–A15; digest-bound reviewed proposals and staged transactions, V5 |
-| `workflow-defect-t6` | `["workflow-defect-t5"]` | D6–D9, A1–A16/L1–L8 integration; incident fixtures, V6–V9 and combined activity regressions |
+An optional `output.guaranteedWhen` string array declares controls the agent must
+supply as Boolean members of `when`. Absence means no additional guarantee;
+empty is valid, empty names, duplicate names and reserved constants are invalid.
+It does not create values or coerce missing controls to false. Runtime validates
+these declarations, including controls not used by a route. Required payload
+schema properties remain mandatory independently. Same-name Boolean payload and
+when values must agree; invalid payload types remain errors. Existing schema-only
+workflows preserve their encoding and behavior.
 
-Every item carries exact repository-relative file `writePaths`, explicit owner,
-`planPath`, `dependsOn`, and nonempty string arrays `acceptanceCriteria` and
-`verification`. Derive the exact files from the accepted task ownership, including
-D9's T4/T6 extension; no directory globs or unspecified helper files. Retain the
-accepted aggregate ownership while assigning each task only its required files.
-Shared publication, validation, loop, test and progress paths are serialized by
-the dependency chain. Shared final design/plan/index changes stay with the later
-serial documentation owner. The plan must distinguish implementation-phase T6
-deliverables from formal-review-dependent documentation and publication tasks.
+Catalog evidence identifies the exact add-on name/version and, for package
+registrations, content digest. Its bounded descriptor states explicit guaranteed
+Boolean payload/when controls, which application payload fields are forwarded,
+and which are removed or overwritten. Unspecified forwarding/overwrite behavior
+is unknown, not universal pass-through. Built-in descriptors must match actual
+execution; package declarations are checked against emitted values at publication.
+Do not treat arbitrary workflow fields, capabilities, a matching name alone, or
+an upstream agent schema as catalog authority. Container descriptors cannot claim
+when controls while their adapter produces only payload.
 
-Native dependency scheduling releases a successor only after predecessor acceptance;
-failed/incomplete items remain pending. Review and checkpoint the revised design,
-plan and dispatch before T2-remaining starts, excluding dirty Swift/progress work
-from that planning checkpoint. Bind review evidence to exact revised bytes and
-verify manifest shape, five IDs, dependency references/order, ownership coverage,
-and string arrays before checkpoint. A blocked checkpoint push stops dispatch.
-Do not claim the existing single-item dispatch already satisfies this contract.
+Resolved evidence is supplied as a Core value to the existing validator and
+execution setup, bound to the captured workflow and selected producer identity;
+Core does not import CLI/Addons or discover registries. Bundle-less validation
+reports `analysis_incomplete` for unavailable evidence. Unknown/ambiguous versions,
+digest mismatch, unsupported producer or unresolved forwarding never prove safety.
+Existing runtime input mapping determines the forwarded source; ambiguous multiple
+inputs require proof on every possible selected source or remain incomplete.
+Walk predecessors with the existing visited/bounded traversal, stopping at unknown
+or destructive transformations. A field survives only if its source guarantee and
+every hop's forwarding, removals and overwrite behavior prove a Boolean remains.
+An explicit independently guaranteed Boolean overwrite can establish a new producer;
+a non-Boolean or unknown overwrite invalidates inherited proof. Do not transfer
+upstream when fields through payload-only forwarding.
 
-### Verification, review and delivery
+Normalization and authorized completion-review reconciliation precede validation
+of the effective candidate. Schema/declaration/all-referenced-control checks precede
+reservation, finalization, accepted persistence, outgoing routing and enqueue.
+Retain recognized-review `accepted = !needs_replan && !needs_work`, all-control
+checking even for short-circuited expressions, two-total-attempt agent correction,
+and single execution for add-ons/direct calls. Ordinary, inline, fanout-join,
+callee-resume and recovered pending publication must reject missing, wrong-type
+and conflicting controls with zero downstream effects. Already-performed producer
+tool effects are not rolled back. Typed diagnostics bind captured-source digest and
+exact escaped JSON pointers, including typed step IDs; never guess an array index
+from a step name. Raw/typed locations must agree on the same source.
 
-Fresh T2 gates on the completed combined source:
+### Serial review, verification and delivery
+
+Preserve exactly:
+`workflow-defect-t2-remaining` → `workflow-defect-t3` → `workflow-defect-t4` →
+`workflow-defect-t5` → `workflow-defect-t6`.
+T2 depends on `[]`; each successor depends on its immediate predecessor. T1 is
+complete preserved input. Keep D2–D9, A1–A16/L1–L8 and all V3–V9/L-V1–L-V5 gates.
+
+Step 3 reviews this amendment adversarially. Step 4 updates exact ownership,
+matching embedded plan/dispatch arrays and verification; Step 5 reviews the exact
+amended bytes. Before checkpoint verify five unique IDs, dependencies, nonempty
+string-array acceptanceCriteria, ownership and plan/manifest consistency. Then
+checkpoint and non-force push only reviewed design/plan/dispatch files to
+`feat/remaining-impl-plans`, excluding dirty source/tests/progress. Failed push
+prevents redispatch. No global continuation-limit increase is authorized.
+
+Fresh T2 commands on completed source, with added ownership-specific coverage:
 
 ```bash
 arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'"
 arch -arm64 /bin/zsh -lc "swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'"
 arch -arm64 /bin/zsh -lc "swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'"
 arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowModelTests|AgentNodeOutputContractValidationTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowPackageManifestTests|RoutineAddonCatalogTests|ContainerWorkflowAddonResolverTests'"
+xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/workflow-defect-t2-remaining/changed-swift.nul
 git diff --check
 ```
 
-Retain the plan's changed-file strict SwiftLint and V3–V9/L-V1–L-V5 commands.
-Record exact command, cwd, source/fixture digests, positive selected-test counts,
-complete log path and terminal exit status. Foreground execution only; poll yielded
-handles to terminal exit. Incomplete logs and zero selected tests cannot pass.
-The bounded child continuation correctly stopped an incomplete oversized item;
-productive prior passes do not authorize weakening completion or raising limits.
+Cover when-only true/false, missing declared when, required payload despite when,
+matching/conflicting dual values, catalog identity/digest mismatch, unknown add-on,
+all predecessor alternatives, retained/removed/overwritten fields and declarations
+violated at runtime. Retain the complete publication matrix and exact-pointer tests.
+Record command, cwd, tested source/fixture hashes, positive counts, complete log
+path and terminal status. Run foreground only and poll every yielded handle through
+exit. Zero selected tests or an incomplete log cannot pass.
 
-Independent test-integrity, adversarial and combined-tree review must have no
-unresolved material findings. Refresh docs/index against reviewed behavior, then
-commit and non-force push only exact reviewed files to `feat/remaining-impl-plans`;
-verify the resulting remote tip and Draft PR #109 reflect that tree. Formal review,
-review-dependent docs and Git publication are downstream gates, not conditions for
-an individual Step 6 child to self-block after its implementation tests pass.
+T6 must rerun on final combined source after later adapter changes:
 
-| Intake requirement | Design mapping |
+```bash
+arch -arm64 /bin/zsh -lc "swift test --filter 'AdapterUtilitiesTests'"
+```
+
+After serial implementation, independent adversarial/test-integrity/combined review
+must resolve all high/mid findings. Finish docs/index and exact-reviewed-file commit
+and non-force push to `feat/remaining-impl-plans`, verifying the remote tip and Draft
+PR #109. Downstream formal review/publication are not individual child self-blockers.
+
+### Issue mapping, unresolved work and author self-check
+
+| Intake requirement / feedback | Design resolution |
 | --- | --- |
-| Preserve completed T1 and dirty T2 | Preserved implementation boundary; no rewrite/reset; historical evidence retained |
-| Split oversized dispatch only | Five native serial items, exact ownership and schema checks before checkpoint |
-| Finish T2 without weakened routing | D1/D8 diagnostic/digest/provenance/publication matrix and fresh V2/V2b |
-| Complete accepted T3–T6 | D2–D9, A1–A16/L1–L8 and unchanged V3–V9/L-V1–L-V5 |
-| Reviewed exact-file publication | Formal review gates, docs/index, same-branch non-force push and PR matching |
+| Prove existing APIs before expanding ownership | Source evidence table establishes missing declaration/catalog seams; eleven exact proposed additions only. |
+| Preserve D1/D8 when-only, schema and add-on proof | Explicit independent when declaration, catalog-bound forwarding/overwrite proof and runtime checks. |
+| Child mid: incomplete provenance/publication matrix | Required implementation and negative gates above; implementation finding remains open until tested. |
+| Child mid: typed step-ID JSON pointers | Captured-source exact-pointer contract and raw/typed tests remain mandatory. |
+| Prior Step 5 final adapter regression finding | Explicit T6 final combined-source AdapterUtilitiesTests retained. |
+| Preserve serial scope and dirty evidence | Five unchanged IDs/dependencies, no limit increase, review/checkpoint before redispatch. |
 
-### Open questions and author self-check
+No unresolved user decision: no user-QA file is needed. Implementation findings
+above are downstream work, not completed fixes. `codexAgentReferences=[]`,
+`cursorCliBehaviorMapping=[]`, `intentionalDivergences=[]` for this intake. Historical
+D9 references remain historical; Cursor normalization stays isolated in
+`Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`. No new reference investigation
+or protocol divergence is required.
 
-No unresolved user decision or new Codex-reference input exists.
-`cursorCliBehaviorMapping=[]`; `intentionalDivergences=[]` for this revision.
-D9's historical behavioral references remain historical; its Cursor normalization
-stays isolated in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`. No new
-reference repository investigation or adapter protocol change is required.
-Historical missing incident artifacts limit exact causal replay; the accepted
-synthetic fixture remains the verification contract, not a new blocker.
-
-Author self-check: intake/issue mapping, unchanged D1–D9 body, five serial scopes,
-T2 incompleteness, preserved dirty files and evidence, and bounded design scope.
-Verification: `python3 tmp/workflow-defect-step2-bounded/verify.py`;
-complete log `tmp/workflow-defect-step2-bounded/verification.log`, exit 0.
-This is documentation verification only. No high/mid author finding, blocked
-design check or unresolved user decision remains. Shared-path regression and
-durable-state/repair risks remain subject to the specified implementation gates;
-no runtime acceptance or independent review acceptance is claimed.
+Author verification: `python3 tmp/workflow-defect-step2-ownership/verify.py`, complete
+log `tmp/workflow-defect-step2-ownership/verification.log`, terminal exit 0.
+It checks preservation, unchanged historical D1–D9 body, exact proposed path existence,
+five serial IDs/dependencies and nonempty acceptance arrays, plus design whitespace.
+This is design verification only, not fresh Swift tests or review acceptance.
+No unresolved high/mid design-author finding or blocked design check remains.
+Residual implementation risks are unsound metadata/forwarding claims and cross-task
+publication/adapter regressions; the explicit negative tests and final gates above
+remain required before implementation acceptance.
 
 ## Historical D9 extension authority (2026-09-22)
 

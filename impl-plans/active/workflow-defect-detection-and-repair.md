@@ -2,16 +2,15 @@
 
 Status: Five-item serial plan, 2026-09-26. Step 3 accepted the design via
 `comm-000004`, `step3-design-review-attempt-1-exec-4`; findings=[]. Step 5 pending.
-Mode `issue-resolution`; issue **Split and finish bounded workflow defect implementation
-T2-T6**, `tacogips/riela`, Draft PR #109; no issue number supplied.
+Mode `issue-resolution`; issue **Repair bounded T2 provenance ownership and continue serial defect implementation**, `tacogips/riela`, Draft PR #109; no issue number supplied.
 `codexAgentReferences=[]`; no new Cursor mapping or intentional divergence.
 Accepted design: `design-docs/specs/design-workflow-defect-detection-and-repair.md`;
-SHA-256 `269a9030892e9ff6da2765776d677b9bff08e0a2cf374d407730900a07b66915`. Do not edit those accepted bytes.
-HEAD `e04c1c124a5a5370ff56e2785ff01b6d6f8e67a3`, branch `feat/remaining-impl-plans`.
+SHA-256 `964ae3e65d452ae421e86ca07a34bc84a086561c31e717d3802d17e897e23221`. Do not edit those accepted bytes.
+HEAD `8341d09671d501fa687343c418917c96fbb49770`, branch `feat/remaining-impl-plans`.
 Runner-resolved immutable user-scope workflow 0.3.44 and effective input are authority;
 no registry discovery or readiness work is included.
 
-## Step 5 review correction — comm-000006
+## Preserved prior Step 5 correction — comm-000006
 
 The mid finding requires final adapter reconciliation coverage after T4 adapter
 writes. T6 must additionally run the following on the final combined source:
@@ -24,7 +23,7 @@ Require a positive selected-test count, zero failures, source hashes, complete
 foreground log and terminal exit 0. This rechecks T2 completion-review controls
 after later adapter changes. The same command is in T6's manifest and dispatch.
 All five IDs, exact ownership and native serial dependencies remain unchanged.
-Step 5 re-review is pending; the design remains accepted without revision.
+That earlier correction was accepted. Current Step 5 ownership-amendment review is pending.
 Author verification: `python3 tmp/workflow-defect-step4-review-revision/verify.py`;
 complete log `tmp/workflow-defect-step4-review-revision/verification.log`, exit 0.
 No implementation test pass is claimed by this plan correction.
@@ -41,9 +40,9 @@ raw/typed integration and the full publication-entry rejection matrix.
 
 Authoritative dispatch:
 `impl-plans/active/workflow-defect-repair-20260926-comm000006-a8e1beb-dispatch.json`.
-This revision replaces its oversized item using the corrected 115-path baseline in
-`impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`,
-which remains historical evidence. The manifest below and outgoing plans must match.
+This amendment preserves its five items and adds exactly eleven accepted paths to
+T2 (18 → 29). The older continuation dispatch remains historical evidence only.
+The embedded manifest and outgoing dispatch plans must match.
 Five stable IDs: `workflow-defect-t2-remaining` → `workflow-defect-t3` →
 `workflow-defect-t4` → `workflow-defect-t5` → `workflow-defect-t6`.
 The first item has no native dependency; T1 is preserved input, not a missing plan ID.
@@ -55,7 +54,7 @@ consume the activity extension. T2's reconciliation amendment is already impleme
 fresh-read and preserve it, do not repeat it. Existing dirty agent-contract tests are
 preserved read-only input; add remaining coverage in T2's owned tests. Before alleging
 ownership mismatch inspect actual dispatch, fanoutItem and runtimeVariables arrays
-in `tmp/workflow-defect-t2-owned/sessions/`, not a prose summary.
+in `tmp/workflow-defect-serial-split/` for this ownership stop, not older child arrays or prose alone.
 
 Non-goals: T1 rewrite, weakened route checks, generic rewriter, new scheduler/store,
 provider-auth repair, activity-as-progress, global limit changes, broad formatting,
@@ -92,8 +91,8 @@ outgoing payload-schema validation remains mandatory before checkpoint/dispatch;
 local structural checks do not replace that runtime operation. A failed checkpoint
 push prevents native dispatch. No commit or push occurs in this author node.
 
-Author check: `python3 tmp/workflow-defect-step4-bounded/verify.py`;
-complete log `tmp/workflow-defect-step4-bounded/verification.log`, final exit 0.
+Author check: `python3 tmp/workflow-defect-step4-ownership/verify.py`;
+complete log `tmp/workflow-defect-step4-ownership/verification.log`, final exit 0.
 This current header and five-item manifest supersede historical single-item,
 checkpoint and incomplete-task observations below; accepted behavior is unchanged.
 
@@ -192,7 +191,7 @@ No missing upstream feature may be marked implemented by this plan.
 Five native items share this coupled plan document. Select the task by nativePlanId;
 read its T2–T6 section and, for T4/T6, the activity extension below. Never execute the
 whole task list for each item. Native dependsOn, not internal prose, controls release.
-The aggregate writePaths below preserve the corrected 115-path ownership baseline;
+The aggregate writePaths preserve the earlier baseline plus eleven accepted T2 additions;
 only each dispatched item's writePaths grant worker edits. Completed T1 is read-only
 input. The existing shared progress file belongs to serial finalization; each worker
 writes only its own tmp progressLogPath. SharedPaths are coordination, not grants.
@@ -211,10 +210,14 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
   "writePaths": [
     "Package.swift",
     "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+    "Sources/RielaAddons/RielaAddons.swift",
+    "Sources/RielaAddons/WorkflowPackageManifest.swift",
+    "Sources/RielaCLI/ContainerWorkflowAddonResolver.swift",
     "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
     "Sources/RielaCLI/ParityCommandSupport.swift",
     "Sources/RielaCLI/ParityCommands.swift",
     "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+    "Sources/RielaCLI/ProductionNodeAdapter.swift",
     "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
     "Sources/RielaCLI/RielaCLIApplication.swift",
     "Sources/RielaCLI/RielaCommand.swift",
@@ -258,6 +261,7 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
     "Sources/RielaCore/WorkflowGraphAnalysis.swift",
     "Sources/RielaCore/WorkflowLoopGuardEligibility.swift",
     "Sources/RielaCore/WorkflowLoopValidation.swift",
+    "Sources/RielaCore/WorkflowNodeContracts.swift",
     "Sources/RielaCore/WorkflowRawValidation.swift",
     "Sources/RielaCore/WorkflowRouteContract.swift",
     "Sources/RielaCore/WorkflowRunEvent.swift",
@@ -271,6 +275,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
     "Sources/RielaServer/DistributedWorkerEventSender.swift",
     "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift",
     "Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift",
+    "Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift",
+    "Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift",
+    "Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift",
     "Tests/RielaCLITests/SessionCommandJSONLStreamingTests.swift",
     "Tests/RielaCLITests/SessionObservabilityCommandTests.swift",
     "Tests/RielaCLITests/WorkflowCommandLivePersistenceEventTests.swift",
@@ -279,6 +286,7 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
     "Tests/RielaCLITests/WorkflowDirectoryTransactionBoundaryTests.swift",
     "Tests/RielaCLITests/WorkflowDirectoryTransactionTests+DetachedRecovery.swift",
     "Tests/RielaCLITests/WorkflowDirectoryTransactionTests.swift",
+    "Tests/RielaCLITests/WorkflowOutputContractPreflightTests.swift",
     "Tests/RielaCLITests/WorkflowRepairProposalTests.swift",
     "Tests/RielaCLITests/WorkflowSelfImproveVersioningTests.swift",
     "Tests/RielaCLITests/WorkflowStagedVerificationTests.swift",
@@ -315,6 +323,7 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
     "Tests/RielaCoreTests/WorkflowDefectIncidentTests.swift",
     "Tests/RielaCoreTests/WorkflowGraphAnalysisTests.swift",
     "Tests/RielaCoreTests/WorkflowLoopValidationTests.swift",
+    "Tests/RielaCoreTests/WorkflowModelTests.swift",
     "Tests/RielaCoreTests/WorkflowRouteContractTests.swift",
     "Tests/RielaGraphQLTests/GraphQLContractsTests.swift",
     "Tests/RielaGraphQLTests/SessionObservabilityGraphQLTests.swift",
@@ -339,9 +348,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
       "repository": "tacogips/riela",
       "draftPR": 109,
       "intakeCommunication": "comm-000002",
-      "checkpoint": "e04c1c124a5a5370ff56e2785ff01b6d6f8e67a3"
+      "checkpoint": "8341d09671d501fa687343c418917c96fbb49770"
     },
-    "userProblem": "Split the oversized item into bounded serial T2-remaining, T3, T4, T5 and T6; preserve completed T1 and dirty partial T2.",
+    "userProblem": "Repair bounded T2 provenance ownership and continue serial defect implementation; preserve dirty T1/T2 and the five accepted serial IDs.",
     "requiredOutcomes": [
       "Fresh T2 diagnostic/digest/provenance/publication matrix and V2/V2b.",
       "D1-D9, A1-A16 and L1-L8 acceptance with V3-V9/L-V1-L-V5.",
@@ -364,7 +373,8 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
       "D2 bounds assignment enumeration to 12 identifiers; reachable SCC/gate analysis uses effective loop policy.",
       "D3/D6 compare persisted completed authoritative cycle projections and reuse existing convergence/persistence/retry ownership.",
       "D9 records correlated activity and liveness without treating activity as semantic progress or proof of responsiveness.",
-      "D4/D5 classify digest-bound proposals; meaning-changing edits require review and existing staged transaction verification."
+      "D4/D5 classify digest-bound proposals; meaning-changing edits require review and existing staged transaction verification.",
+      "Accepted D1/D8 amendment adds exactly eleven T2 paths for explicit guaranteedWhen and catalog-bound forwarding/overwrite proof; absent evidence stays incomplete, never inferred from upstream schema alone."
     ],
     "intentionalTradeoffs": [
       "Analysis above 12 identifiers and unresolved cross-workflow composition remains explicitly incomplete.",
@@ -385,10 +395,14 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
     "sourcePaths": [
       "Package.swift",
       "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+      "Sources/RielaAddons/RielaAddons.swift",
+      "Sources/RielaAddons/WorkflowPackageManifest.swift",
+      "Sources/RielaCLI/ContainerWorkflowAddonResolver.swift",
       "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
       "Sources/RielaCLI/ParityCommandSupport.swift",
       "Sources/RielaCLI/ParityCommands.swift",
       "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter.swift",
       "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
       "Sources/RielaCLI/RielaCLIApplication.swift",
       "Sources/RielaCLI/RielaCommand.swift",
@@ -440,6 +454,7 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
       "Sources/RielaCore/WorkflowGraphAnalysis.swift",
       "Sources/RielaCore/WorkflowLoopGuardEligibility.swift",
       "Sources/RielaCore/WorkflowLoopValidation.swift",
+      "Sources/RielaCore/WorkflowNodeContracts.swift",
       "Sources/RielaCore/WorkflowRawValidation.swift",
       "Sources/RielaCore/WorkflowRouteContract.swift",
       "Sources/RielaCore/WorkflowRunEvent.swift",
@@ -456,6 +471,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
       "Sources/RielaWork/WorkStore+Director.swift",
       "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift",
       "Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift",
+      "Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift",
+      "Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift",
+      "Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift",
       "Tests/RielaCLITests/SessionCommandJSONLStreamingTests.swift",
       "Tests/RielaCLITests/SessionObservabilityCommandTests.swift",
       "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
@@ -503,6 +521,7 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
       "Tests/RielaCoreTests/WorkflowDefectIncidentTests.swift",
       "Tests/RielaCoreTests/WorkflowGraphAnalysisTests.swift",
       "Tests/RielaCoreTests/WorkflowLoopValidationTests.swift",
+      "Tests/RielaCoreTests/WorkflowModelTests.swift",
       "Tests/RielaCoreTests/WorkflowOutputContractPreflightTests.swift",
       "Tests/RielaCoreTests/WorkflowRouteContractTests.swift",
       "Tests/RielaGraphQLTests/GraphQLContractsTests.swift",
@@ -526,16 +545,18 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
       "impl-plans/completed/loop-engineering-convergence-and-operations.md",
       "impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md"
     ],
-    "reviewDecision": "Step 3 comm-000004 accepted design with no findings. Step 5 review and checkpoint pending.",
+    "reviewDecision": "Step 3 comm-000004 accepted the T2 ownership design amendment with findings=[]. Step 5 amendment review and plan-only checkpoint/push pending.",
     "codexAgentReferences": [],
     "planningVerification": {
-      "command": "python3 tmp/workflow-defect-step4-bounded/verify.py",
-      "completeLogPath": "tmp/workflow-defect-step4-bounded/verification.log"
+      "command": "python3 tmp/workflow-defect-step4-ownership/verify.py",
+      "completeLogPath": "tmp/workflow-defect-step4-ownership/verification.log",
+      "finalExitStatus": 0
     },
     "acceptedReview": {
       "designCommunicationId": "comm-000004",
+      "designStepExecutionId": "step3-design-review-attempt-1-exec-4",
       "designDecision": "accepted",
-      "designSHA256": "269a9030892e9ff6da2765776d677b9bff08e0a2cf374d407730900a07b66915",
+      "designSHA256": "964ae3e65d452ae421e86ca07a34bc84a086561c31e717d3802d17e897e23221",
       "planDecision": "pending",
       "findings": []
     }
@@ -592,7 +613,18 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Sources/RielaCore/LoopCompletionReviewRouting.swift",
         "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
         "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift",
-        "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift"
+        "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift",
+        "Sources/RielaCore/WorkflowNodeContracts.swift",
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Sources/RielaAddons/WorkflowPackageManifest.swift",
+        "Sources/RielaCLI/ContainerWorkflowAddonResolver.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Tests/RielaCoreTests/WorkflowModelTests.swift",
+        "Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift",
+        "Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift",
+        "Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift",
+        "Tests/RielaCLITests/WorkflowOutputContractPreflightTests.swift"
       ],
       "planPath": "impl-plans/active/workflow-defect-detection-and-repair.md",
       "sharedPaths": [
@@ -600,11 +632,15 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Sources/RielaCore/RuntimePublication.swift",
         "Sources/RielaCore/DeterministicWorkflowRunner.swift",
         "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
-        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift"
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"
       ],
       "verificationIds": [
         "V2",
-        "V2b"
+        "V2b",
+        "V2c",
+        "V2d",
+        "V2e"
       ],
       "nativePlanId": "workflow-defect-t2-remaining",
       "progressLogPath": "tmp/workflow-defect-implementation/workflow-defect-t2-remaining/progress.md"
@@ -726,7 +762,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift",
         "Sources/RielaCore/DeterministicWorkflowRunner.swift",
         "Sources/RielaCore/RuntimePublication+Routing.swift",
-        "Sources/RielaCore/RuntimePublication.swift"
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift"
       ],
       "verificationIds": [
         "V4",
@@ -774,7 +812,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Tests/RielaCLITests/WorkflowDirectoryTransactionTests+DetachedRecovery.swift"
       ],
       "planPath": "impl-plans/active/workflow-defect-detection-and-repair.md",
-      "sharedPaths": [],
+      "sharedPaths": [
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"
+      ],
       "verificationIds": [
         "V5"
       ],
@@ -865,6 +905,7 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
     "arch -arm64 /bin/zsh -lc \"swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'\"",
     "arch -arm64 /bin/zsh -lc \"swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'\"",
     "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowModelTests|AgentNodeOutputContractValidationTests'\"",
+    "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowPackageManifestTests|RoutineAddonCatalogTests|ContainerWorkflowAddonResolverTests'\"",
     "xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/workflow-defect-t2-remaining/changed-swift.nul",
     "git diff --check",
     "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowGraphAnalysisTests|WorkflowLoopValidationTests|DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests'\"",
@@ -913,26 +954,42 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Sources/RielaCore/LoopCompletionReviewRouting.swift",
         "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
         "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift",
-        "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift"
+        "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift",
+        "Sources/RielaCore/WorkflowNodeContracts.swift",
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Sources/RielaAddons/WorkflowPackageManifest.swift",
+        "Sources/RielaCLI/ContainerWorkflowAddonResolver.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Tests/RielaCoreTests/WorkflowModelTests.swift",
+        "Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift",
+        "Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift",
+        "Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift",
+        "Tests/RielaCLITests/WorkflowOutputContractPreflightTests.swift"
       ],
       "sharedPaths": [
         "Sources/RielaCore/WorkflowValidation.swift",
         "Sources/RielaCore/RuntimePublication.swift",
         "Sources/RielaCore/DeterministicWorkflowRunner.swift",
         "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
-        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift"
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"
       ],
       "acceptanceCriteria": [
         "Typed WorkflowDefectDiagnostic binds the captured source digest and stable sorted raw/typed locations; unknown guarantees remain incomplete, never proved safe.",
         "Explicit when-only and catalog-backed add-on provenance retain payload schema requirements and forwarding/overwrite proof.",
         "Ordinary, inline, fanout-join, callee-resume and recovered publication reject missing/type/conflicting controls before downstream effects; two-total-attempt agent correction and one-shot add-on/direct calls remain bounded.",
-        "Fresh V2/V2b and producer/raw tests pass with positive counts; preserve completed T1 and passing T2 reconciliation."
+        "Fresh V2/V2b and producer/raw tests pass with positive counts; preserve completed T1 and passing T2 reconciliation.",
+        "output.guaranteedWhen round-trips; missing declarations preserve compatibility; empty/duplicate/reserved names reject; every declared when control is Boolean at runtime even if unused by a route; required payload schema remains independent.",
+        "Catalog proof binds exact name/version and package digest, validates every possible forwarded source and removals/overwrites, and remains analysis_incomplete for absent or ambiguous evidence. Container output remains payload-only.",
+        "Captured-source diagnostics resolve exact escaped JSON pointers for typed step IDs; raw and typed locations agree. Catalog/manifest/registration/preflight negative tests pass with complete source-matched logs."
       ],
       "verification": [
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'\"",
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'\"",
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'\"",
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowModelTests|AgentNodeOutputContractValidationTests'\"",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowPackageManifestTests|RoutineAddonCatalogTests|ContainerWorkflowAddonResolverTests'\"",
         "xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/workflow-defect-t2-remaining/changed-swift.nul",
         "git diff --check"
       ]
@@ -1031,7 +1088,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift",
         "Sources/RielaCore/DeterministicWorkflowRunner.swift",
         "Sources/RielaCore/RuntimePublication+Routing.swift",
-        "Sources/RielaCore/RuntimePublication.swift"
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift"
       ],
       "acceptanceCriteria": [
         "D3/D6 A8-A12/A16 compare authoritative completed cycles, atomically persist decisions and preserve deduplication, recovery and attempt fences; V4 passes.",
@@ -1077,7 +1136,9 @@ Package.swift has only the T6 fixture resource change; Package.resolved is uncha
         "Tests/RielaCLITests/WorkflowDirectoryTransactionBoundaryTests.swift",
         "Tests/RielaCLITests/WorkflowDirectoryTransactionTests+DetachedRecovery.swift"
       ],
-      "sharedPaths": [],
+      "sharedPaths": [
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"
+      ],
       "acceptanceCriteria": [
         "D4/D5 A13-A15 proposals bind source, dependency and review digests and use existing transaction/review authorities.",
         "Only proven formatting equivalence is automatic; stale input, escape, mock failure and recovery leave live bytes unchanged; V5 passes without shell/provider fallback."
@@ -1198,6 +1259,64 @@ reference parsing change. Record exported API names for T2/T3; do not mark T1 do
 until its own tests and changed-file lint pass.
 
 ## T2 — Boolean guarantees and rejection before routing
+
+### Accepted provenance ownership amendment — executable T2 sequence
+
+Step 3 `comm-000004` accepted the current design with no findings. This is the
+only ownership expansion: retain eighteen prior paths and add the eleven below.
+Use the design's existing API evidence; do not repeat registry discovery. Preserve
+all dirty code and prior logs, including the serial child's partial diagnostic and
+recovery changes. Historical green runs do not close its remaining mid findings.
+
+| Exact added writePath | Intended change and required assertions |
+| --- | --- |
+| `Sources/RielaCore/WorkflowNodeContracts.swift` | Add optional `output.guaranteedWhen` and shared route-proof value types. Omitted/empty array is compatible; reject empty, duplicate and reserved names. Do not invent defaults for controls. |
+| `Sources/RielaAddons/RielaAddons.swift` | Extend existing descriptors with explicit guaranteed Boolean locations and known forwarding/removal/overwrite metadata. Unknown remains unknown; populate only code-proven built-in behavior. |
+| `Sources/RielaAddons/WorkflowPackageManifest.swift` | Decode/encode and validate optional equivalent package metadata, preserving unsupported-key rejection and absent-metadata compatibility. |
+| `Sources/RielaCLI/ContainerWorkflowAddonResolver.swift` | Carry selected descriptor with exact name/version/content digest; reject inconsistent selection evidence. Preserve payload-only output and single execution. |
+| `Sources/RielaCLI/ProductionNodeAdapter.swift` | Carry manifest metadata into registrations; ensure catalog assertions match actual chat/SDK forwarding and overwritten fields. No upstream schema alone proves add-on output. |
+| `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` | Supply resolved catalog evidence at both bundle-aware validation paths; Core must not discover registries or depend on CLI/Addons. |
+| `Tests/RielaCoreTests/WorkflowModelTests.swift` | Round-trip declaration; absent/empty compatibility; invalid names; independent required payload behavior. |
+| `Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift` | Round-trip metadata and reject malformed declarations without relaxing unrelated unsupported-key checks. |
+| `Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift` | Assert exact identity and explicit/unknown descriptor behavior; no implicit all-add-on forwarding. |
+| `Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift` | Registration metadata propagation, identity/digest mismatch, and payload-only behavior; no synthetic when forwarding. |
+| `Tests/RielaCLITests/WorkflowOutputContractPreflightTests.swift` | Exercise actual resolved validation composition, surviving/removed/overwritten controls, unknown evidence and multiple possible input sources. |
+
+Execute these coupled deliverables in order within T2, with fresh reads and immutable
+intent/pre/post hashes for each edit:
+
+1. Add declaration/descriptor representation and decoding tests. In already-owned
+   `WorkflowRawValidation.swift` and `WorkflowValidation.swift`, recognize and
+   validate the same authored shape. Required payload schemas remain independent.
+2. Carry selected catalog identity into existing validation/execution composition.
+   Use the same Core evidence value for captured producer identity; no new registry,
+   service or dependency cycle. Missing bundle evidence is `analysis_incomplete`.
+3. In owned `WorkflowRouteContract.swift` and `WorkflowValidation.swift`, reuse the
+   bounded predecessor walk but require proof for every possible mapped source and
+   every forwarding hop. Account for `_rielaInput`, `upstream`, `runtime` removal;
+   non-Boolean/unknown overwrite kills inherited proof. Independently guaranteed
+   Boolean overwrite establishes a new producer. Never transfer upstream when
+   through payload-only forwarding. Unknown version/digest/source stays incomplete.
+4. In owned `RuntimeOutputValidation.swift`, runner/add-on/input-filter paths and
+   `RuntimePublication.swift`, validate every declared when control, including unused
+   ones, and all route references after authorized reconciliation but before downstream
+   effects. Preserve two total agent attempts and one-shot add-on/direct calls.
+   Test when-only true/false, missing/wrong type, required payload despite when and
+   dual-location agreement/conflict in owned route/output/publication tests.
+5. In owned `WorkflowDefectDiagnostic.swift`, route and raw/typed validation, bind
+   captured-source digest and exact escaped JSON pointers. Test non-index step IDs
+   and raw/typed agreement. Complete ordinary, inline, fanout-join, callee-resume and
+   recovered publication missing/type/conflict matrix with zero downstream effects.
+6. Run V2/V2b/V2c/V2d/V2e and exact changed-file strict SwiftLint on the combined
+   source. Save selected counts, terminal exit, source hashes and complete logs in
+   a new attempt folder under `tmp/workflow-defect-implementation/workflow-defect-t2-remaining/`.
+   Update only that worker's progress.md; leave shared progress/index to finalization.
+
+T2 closes only when every matrix row and declaration/catalog negative above has
+asserted evidence. Do not mark absent catalog evidence as proven or satisfy payload
+requirements using when. Do not edit further paths without reviewed exact ownership.
+T3–T6 retain their existing sections, acceptance, dependencies and verification;
+T6's final AdapterUtilitiesTests remains mandatory after all adapter edits.
 
 ### Preserved bounded reconciliation amendment (already implemented)
 
@@ -1516,6 +1635,9 @@ Keep failed attempts immutable in attempt-numbered directories.
 | V1 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowBranchEvaluationTests|WorkflowConditionAnalysisTests'"` | A1/A3 parser negatives and complete-input equivalence; positive test count |
 | V2 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'"` | A2/A5 exact errors, schema/when behavior, two-attempt bound, all publication paths, no downstream effects |
 | V2b | `arch -arm64 /bin/zsh -lc "swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'"` | Three-control exact maps, loop termination/policy and adapter reconciliation retain behavior; positive test count and exit 0 |
+| V2c | `arch -arm64 /bin/zsh -lc "swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'"` | Producer/preflight composition, independent schema and declaration checks, bounded retries; positive selected counts |
+| V2d | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowModelTests|AgentNodeOutputContractValidationTests'"` | Model round-trip, raw/typed compatibility and declaration validation |
+| V2e | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowPackageManifestTests|RoutineAddonCatalogTests|ContainerWorkflowAddonResolverTests'"` | Metadata round-trip, exact catalog identity, registration propagation and unknown/mismatch negatives |
 | V3 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowGraphAnalysisTests|WorkflowLoopValidationTests|DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests'"` | A3–A7 witnesses, incomplete bounds, routing semantics and policy/eligibility parity |
 | V4 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowCycleProgressTests|WorkflowCycleProgressPersistenceTests|LoopConvergenceTrackerTests|DefaultLoopGuardTests|DefaultLoopGuardRecoveryTests|DeterministicWorkflowRunnerLoopPolicyTests'"` | A9–A12/A16 authoritative comparison, liveness, retries, file/SQLite crash and concurrent recovery |
 | V5 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRepairProposalTests|WorkflowSelfImproveVersioningTests|WorkflowStagedVerificationTests|WorkflowDirectoryTransaction'"` | A13–A15 source/review binding, unchanged live bytes on rejection, no shell/provider fallback |

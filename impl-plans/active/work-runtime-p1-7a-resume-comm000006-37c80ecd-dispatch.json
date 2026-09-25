@@ -1,10 +1,10 @@
 {
   "taskId": "work-runtime-p1-7a-resume-comm000006-37c80ecd",
-  "workflowMode": "planning-only",
+  "workflowMode": "issue-resolution",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "352291aca2cd4af6eefd71ca81600c658e03eb13",
+  "originalHead": "290cd483827af37d4f6725534e42676c7198bb85",
   "designDocPaths": [
     "design-docs/specs/design-work-runtime-consolidation.md"
   ],
@@ -14,13 +14,13 @@
       "reference": "comm-000001; no GitHub issue URL or number supplied",
       "intakeCommunicationId": "comm-000002",
       "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
-      "title": "Amend P1-7a A1 ownership for atomic inactivity decision",
+      "title": "Implement atomic P1-7a A1 inactivity progress decision",
       "communicationId": "comm-000001",
       "issueNumber": null,
       "issueUrl": null
     },
     "acceptedDesignReview": "comm-000004",
-    "userProblem": "Progress can commit after observer recheck but before durable inactivity action. Plan the smallest atomic exact-attempt precondition and deterministic regression; preserve checkpoint 352291aca2cd4af6eefd71ca81600c658e03eb13 and dirty A1 bytes during planning.",
+    "userProblem": "Implement the accepted exact-attempt transaction precondition for progress arriving after observer recheck. Preserve checkpoint 290cd48, retained A1 changes and historical evidence; run fresh gates before formal reviews.",
     "requiredOutcomes": [
       "Reconcile the existing seven moved tests and two private helpers; original <1000 lines and new <=1000. Each moved/added test is discovered once and executes once per suite run; helpers have one definition and are exercised by callers.",
       "All six accepted A1 matrix rows and named subcases retain meaningful assertions, exact owner/method mapping and complete behavioral evidence.",
@@ -39,7 +39,7 @@
       "New framework, schema/server, recursive director, broader ownership, unrelated cleanup or parent P1 closure"
     ],
     "constraints": [
-      "Preserve checkpoint 352291aca2cd4af6eefd71ca81600c658e03eb13 and all eleven dirty/untracked A1 paths during planning. No Swift edits, reset, stash, deletion, force push or external repository operation. Later reviewed A1 implementation uses fresh-read intents and source hashes.",
+      "Preserve checkpoint 290cd483827af37d4f6725534e42676c7198bb85 and all eleven dirty/untracked A1 paths. Step 4 edits only plan/manifest; later A1 owner uses exact writePaths, fresh-read intents and source hashes. No reset, stash, force push, deletion or external repository operation.",
       "Atomic adapterFailure records cause; configured policy and capacity select retry, authorized escalation or non-retry wait.",
       "Last-admitted success remains possible; no replacement bypasses cancellation acknowledgment or admission.",
       "Resolve only canonically proven synthetic gate absence using a matching real latest completed work gate; substantive findings/human acceptance remain mandatory.",
@@ -81,15 +81,16 @@
     "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
     "accepted": true,
     "findings": [],
-    "reviewDecision": "Accepted atomic exact-attempt ownership and race-test design; A1 implementation acceptance remains open.",
-    "designSha256": "ff6f6bdeaa1f710e9e29b6e77fad7313c56ca198b8cc81ba2600957c74ab9afa"
+    "reviewDecision": "Step 3 comm-000004 accepted current issue-resolution §17.10 without findings; implementation acceptance remains pending.",
+    "designSha256": "0560bf21038e70f58baee63405efd89a96cee8df8321ec5d5bf4a796f647491c"
   },
   "planReview": {
-    "accepted": false,
-    "status": "pending",
-    "communicationId": null,
+    "accepted": true,
+    "status": "accepted",
+    "communicationId": "comm-000006",
+    "sourceStepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
     "findings": [],
-    "reviewDecision": "Current atomicity amendment awaits independent Step 5 review; prior plan acceptance is historical."
+    "reviewDecision": "Step 5 accepts the active A1 plan and manifest against the design accepted in comm-000004, §17.10. A1 implementation and formal reviews remain pending."
   },
   "plans": [
     {
@@ -130,6 +131,7 @@
         "Planning publication includes only the reviewed design, plan and manifest; A1 acceptance and A2-A5/P1 remain open."
       ],
       "verification": [
+        "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 before",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch list",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'",
@@ -140,7 +142,6 @@
         "swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift Sources/RielaWork/WorkStore+Decisions.swift",
         "wc -l Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
         "git diff --check",
-        "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 before",
         "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 after",
         "shasum -a 256 -c tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256",
         "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256 tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-after.sha256",
@@ -151,7 +152,7 @@
         {
           "taskId": "A0",
           "dependsOn": [],
-          "intendedChanges": "Read accepted design/plan, comm-000013 rejection and attempt-4 ownership audit. Preserve the existing split/matrix; record current HEAD and source baseline. Reconcile later-run authorization and exact owners before edits.",
+          "intendedChanges": "Read accepted design/plan, comm-000013 rejection and attempt-4 ownership audit. Preserve the existing split/matrix; record current HEAD and source baseline. Use current effective authorization and reconcile exact owners before edits.",
           "deliverable": "Current-source reconciliation and historical-versus-fresh evidence classification; one owner, exact path intents.",
           "executionStatus": "pending"
         },
@@ -204,7 +205,7 @@
           "executionStatus": "deferred"
         }
       ],
-      "executionScope": "Planning-only now. A0/A1 execute only in a later issue-resolution run after current Step 5 acceptance and exact planning checkpoint publication; A2-A5 remain deferred.",
+      "executionScope": "Current issue-resolution run: A0/A1 after Step 5 acceptance and reviewed planning checkpoint publication. A1 reviews/finalization follow; A2-A5 remain deferred.",
       "evidencePolicy": "Use new attempt-5 or next unused number; never overwrite attempt-1 through attempt-4. Substitute the chosen root consistently in commands and receipts. Source-before runs after edits and before build; source-after follows gates. Every command needs a complete combined log, exact command and terminal exit. Counts 74/68/94/49/4 are historical, not acceptance. No implementation gate ran in Step 4.",
       "deferredWritePaths": [
         "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
@@ -490,7 +491,7 @@
           "exitStatus": null
         }
       ],
-      "intent": "Implement the accepted minimal atomic inactivity precondition in a later A1 run; preserve existing split/matrix and prove race/replay behavior with fresh source-matched gates.",
+      "intent": "Implement the accepted minimal atomic inactivity precondition in this A1 run; preserve existing split/matrix and prove race/replay behavior with fresh source-matched gates.",
       "nonGoals": [
         "No legacy removal, external edits or execution of deferred A2–A5 in this A1-only run.",
         "Implementation before current review/checkpoint gates or deletion before sealed A1 evidence.",
@@ -594,7 +595,7 @@
       "executionPrerequisites": [
         "P2 current independent plan acceptance",
         "P3 reviewed three-path planning publication",
-        "Later issue-resolution execution authorization"
+        "Current effective issue-resolution input authorizes A0/A1 (satisfied)"
       ]
     }
   ],
@@ -613,9 +614,9 @@
   ],
   "implementationDispatchAllowed": false,
   "implementationDispatchConditions": [
-    "Current Step 3 accepted atomicity design comm-000004.",
-    "Independent Step 5 accepts current atomicity plan/manifest; planning owner commits and non-force pushes only checkpointWritePaths.",
-    "A separate later issue-resolution run explicitly authorizes A0/A1 on the published planning checkpoint. This planning-only execution never dispatches implementation."
+    "Step 3 comm-000004 accepted current issue-resolution design.",
+    "Independent Step 5 accepts current plan/manifest; serial checkpoint owner commits and non-force pushes only checkpointWritePaths before native implementation fanout.",
+    "Current effective workflowInput already authorizes A0/A1; no separate future issue-resolution run is required. A2-A5 remain deferred."
   ],
   "checkpointWritePaths": [
     "design-docs/specs/design-work-runtime-consolidation.md",
@@ -653,7 +654,7 @@
       "reviewDecision": "Step 5 accepted this issue-resolution plan with no revision or design findings; implementation still requires the scoped checkpoint."
     }
   },
-  "executionMode": "design-plan-only",
+  "executionMode": "issue-resolution",
   "workflowVersion": "0.3.35",
   "planningTasks": [
     {
@@ -673,7 +674,7 @@
       "dependsOn": [
         "P1"
       ],
-      "deliverable": "Independent Step 5 acceptance of current atomicity amendment; pending, no receipt yet."
+      "deliverable": "Independent Step 5 acceptance of current atomicity amendment; complete at comm-000006."
     },
     {
       "taskId": "P3",
@@ -702,5 +703,30 @@
       "findings": [],
       "reviewDecision": "Step 5 accepted the A1-only implementation plan against the Step 3 design without findings or revision; fresh implementation checks and formal reviews remain pending."
     }
+  },
+  "priorAtomicPlanningContext": {
+    "workflowMode": "planning-only",
+    "executionMode": "design-plan-only",
+    "originalHead": "352291aca2cd4af6eefd71ca81600c658e03eb13",
+    "designReview": {
+      "communicationId": "comm-000004",
+      "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
+      "accepted": true,
+      "findings": [],
+      "reviewDecision": "Accepted atomic exact-attempt ownership and race-test design; A1 implementation acceptance remains open.",
+      "designSha256": "ff6f6bdeaa1f710e9e29b6e77fad7313c56ca198b8cc81ba2600957c74ab9afa"
+    },
+    "planReview": {
+      "accepted": false,
+      "status": "pending",
+      "communicationId": null,
+      "findings": [],
+      "reviewDecision": "Current atomicity amendment awaits independent Step 5 review; prior plan acceptance is historical."
+    },
+    "implementationDispatchConditions": [
+      "Current Step 3 accepted atomicity design comm-000004.",
+      "Independent Step 5 accepts current atomicity plan/manifest; planning owner commits and non-force pushes only checkpointWritePaths.",
+      "A separate later issue-resolution run explicitly authorizes A0/A1 on the published planning checkpoint. This planning-only execution never dispatches implementation."
+    ]
   }
 }

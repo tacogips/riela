@@ -1,15 +1,15 @@
-# Work Runtime P1-7a: atomic inactivity ownership amendment
+# Work Runtime P1-7a A1: atomic inactivity progress decision
 
-## Current executable contract — planning amendment for later A1 (2026-09-25)
+## Current executable contract — A1 issue-resolution (2026-09-25)
 
-Issue `comm-000001`, intake `comm-000002`; no GitHub issue supplied. Mode `planning-only`,
-executionMode `design-plan-only`; execution
+Issue `comm-000001`, intake `comm-000002`; no GitHub issue supplied. Mode `issue-resolution`,
+executionMode `issue-resolution`; execution
 `codex-design-and-implement-review-loop-session-1`. Runtime-resolved immutable
 user-scope workflow `0.3.35` and effective input are authoritative.
 Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, accepted
 `design-docs/specs/design-work-runtime-consolidation.md` §17.10 without findings.
-Step 5 review of this amendment is pending. Prior `comm-000006` acceptance
-belongs to the evidence-seal plan and does not accept this atomicity amendment.
+Step 5 review of this executable plan is pending. Historical review receipts
+do not accept the current implementation or replace this run's formal gates.
 Codex Sol rejected A1 in Step 7 `comm-000013` with one mid race finding.
 Fresh implementation checks and formal reviews remain pending.
 Codex Astra authored accepted intent and owns pending integration review; Codex
@@ -21,18 +21,19 @@ Stable planId `p1-dispatch`; dependsOn `[]`; planPath
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; progressFile
 `impl-plans/progress/p1-dispatch.md`; current manifest
 `impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json`.
-Its exact `writePaths` and `sharedPaths` bound the later A1 implementation;
+Its exact `writePaths` and `sharedPaths` bound this A1 implementation;
 current planning writes are limited to this plan and manifest.
 One coupled implementation owner maintains this plan's progress log.
 
-Intent: amend ownership and the test plan for the accepted §17.10 atomic
-exact-attempt inactivity check. Progress can commit after the observer recheck
+Intent: implement and verify the accepted §17.10 atomic exact-attempt inactivity
+check, closing the Sol comm-000013 observer-to-decision race. Progress can commit after the observer recheck
 but before the WorkStore decision transaction; a second observer read cannot
-close that gap. Preserve checkpoint `352291aca2cd4af6eefd71ca81600c658e03eb13`
+close that gap. Preserve checkpoint `290cd483827af37d4f6725534e42676c7198bb85`
 on `feat/remaining-impl-plans`, all eleven `protectedDirtyPaths`, and prior logs.
 Planning edits only this plan and manifest; the accepted design is unchanged.
-No Swift source/test edit or implementation dispatch occurs in this execution.
-The future A1 owner retains the existing seven-test/two-helper split and six-row
+No Swift source/test edit or implementation dispatch occurs in Step 4.
+The current effective input authorizes subsequent A0/A1 after review/checkpoint gates.
+The A1 owner retains the existing seven-test/two-helper split and six-row
 matrix. Attempt-3 build/policy 74/74, V1 68/68, canonical 94/94,
 cancellation-host 49/49 and live 4/4 receipts remain historical, not race-fix proof.
 
@@ -64,13 +65,14 @@ reviews/docs/commit/push must be reported but do not self-block that handoff.
 
 P3 stages only `design-docs/specs/design-work-runtime-consolidation.md`, this
 plan and the current manifest. Verify `git diff --cached --name-only` against
-those three paths, preserve 352291a as ancestor, record
+those three paths, preserve 290cd48 as ancestor, record
 `git show --format= --name-only HEAD`, then publish with
 `git push origin HEAD:feat/remaining-impl-plans`. No concurrent Git commands;
 never stage the protected implementation files in the planning checkpoint.
-`implementationDispatchAllowed` remains false until P2/P3 receipts exist; the
-later issue-resolution runner must also explicitly authorize A0/A1. Publication
-of planning artifacts alone never authorizes implementation in this execution.
+`implementationDispatchAllowed` remains false until current P2/P3 receipts exist.
+The current effective issue-resolution input supplies A0/A1 authorization; no
+separate future run is required. P3 publishes only the current reviewed planning
+delta on top of 290cd48 and preserves all dirty implementation files.
 A failed checkpoint push stops dispatch. Step 4 itself does not commit or push.
 
 ### Ownership, drift and invariants
@@ -80,8 +82,9 @@ diff. Store immutable preimage, SHA-256, intended exact delta and justification
 under the new attempt's `intents/`; compare the preimage hash immediately before
 writing. On drift, stop that edit, reread and reconcile serially; never replace
 another owner's work with a stale whole-file snapshot. Save postimage/hash.
-This amendment uses no parallel task or agent dispatch;
-one owner edits coupled files/progress. Run gates serially against the shared
+One owner edits coupled files/progress. Safely independent read-only investigation
+of replay/cancellation boundaries or test-integrity may run in parallel; delegate
+bounded checks only with isolated scratch outputs and no shared build/store mutation. Run gates serially against the shared
 build/store resources. After joining, compare intents and current hashes and
 repair drift serially, then rerun affected checks before formal review.
 
@@ -91,9 +94,9 @@ first-terminal cancellation arbitration and exact-session acknowledgment intact.
 Task-free, specialist/event/loop/routine and required/optional gate behavior is
 unchanged. No source repair is required merely because old metadata differs.
 
-### Atomic repair: serial file-level tasks for the later A1 run
+### Atomic repair: serial file-level tasks for A1
 
-The manifest retains every existing `writePaths` entry and adds
+The manifest retains every existing `writePaths` entry, including
 `Sources/RielaWork/WorkStore+Decisions.swift`. `trackedPaths` explicitly covers
 all those paths, including the untracked GuardPolicy extension as evidence
 membership; it is not an instruction to stage files. Shared documentation remains

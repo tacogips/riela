@@ -6,6 +6,40 @@ import XCTest
 @testable import RielaCLI
 
 final class ContainerWorkflowAddonResolverTests: XCTestCase {
+  func testSelectedRegistrationBindsVersionDigestAndPayloadOnlyProof() throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+    let digest = "sha256:" + String(repeating: "a", count: 64)
+    let registration = ContainerAddonRegistration(
+      packageName: "package", addonName: "example/relay", version: "1", packageRoot: root,
+      addonRoot: root, entrypoint: nil, containerfilePath: nil, image: "image", imageDigest: nil,
+      contentDigest: digest, capabilities: [],
+      outputProvenance: .init(guaranteedPayload: ["flag"], forwardsPayload: true,
+                              removedPayload: ["runtime"], overwrittenPayload: ["status"])
+    )
+    let resolver = ContainerWorkflowAddonResolver(registrations: [registration], workingDirectory: root)
+    XCTAssertEqual(try resolver.selectedRegistration(for: .init(name: "example/relay", version: "1")), registration)
+    XCTAssertThrowsError(try resolver.selectedRegistration(for: .init(name: "example/relay", version: "2")))
+    var invalid = registration
+    invalid.contentDigest = "sha256:short"
+    let invalidResolver = ContainerWorkflowAddonResolver(registrations: [invalid], workingDirectory: root)
+    XCTAssertThrowsError(try invalidResolver.selectedRegistration(for: .init(name: "example/relay", version: "1")))
+    XCTAssertNoThrow(try resolver.validateProvenance(
+      ["flag": .bool(false), "status": .string("ok")],
+      input: ["flag": .bool(false), "runtime": .object([:]), "status": .string("old")],
+      registration: registration
+    ))
+    XCTAssertThrowsError(try resolver.validateProvenance(
+      ["flag": .string("false")], input: ["flag": .bool(false)], registration: registration
+    ))
+    XCTAssertThrowsError(try resolver.validateProvenance(
+      ["flag": .bool(false), "runtime": .object([:])],
+      input: ["flag": .bool(false), "runtime": .object([:])], registration: registration
+    ))
+    XCTAssertThrowsError(try resolver.validateProvenance(
+      ["flag": .bool(true)], input: ["flag": .bool(false)], registration: registration
+    ))
+  }
+
   func testContainerRuntimeDiscoveryPrefersAppleContainerThenDockerThenPodman() throws {
     let root = try makeRielaCLITestTemporaryDirectory("riela-container-runtime-discovery")
     defer { try? FileManager.default.removeItem(at: root) }

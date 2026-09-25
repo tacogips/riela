@@ -55,7 +55,10 @@ public struct WorkflowValidateCommand: Sendable {
       }
       let hostDiagnostics = await hostDiagnostics(bundle: bundle, options: options)
       let diagnostics = bundle.diagnostics +
-        DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
+        DefaultWorkflowValidator().validate(
+          bundle.workflow, nodePayloads: bundle.nodePayloads,
+          addonEvidence: resolvedAddonRouteEvidence(bundle.workflow, packageManifest: bundle.packageManifest)
+        ) +
         patchedProviderDiagnostics +
         (await runtimeCapabilityDiagnostics(
           bundle: bundle,
@@ -734,7 +737,10 @@ public struct WorkflowInspectCommand: Sendable {
     }
     let callable = buildCallableInspection(workflow, nodePayloads: bundle.nodePayloads)
     var capabilityGaps = bundle.diagnostics
-      + DefaultWorkflowValidator().validate(workflow, nodePayloads: bundle.nodePayloads)
+      + DefaultWorkflowValidator().validate(
+        workflow, nodePayloads: bundle.nodePayloads,
+        addonEvidence: resolvedAddonRouteEvidence(workflow, packageManifest: bundle.packageManifest)
+      )
       + (await runtimeCapabilityDiagnostics(
       bundle: bundle,
       resolution: resolution,

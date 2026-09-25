@@ -103,7 +103,7 @@ final class DefaultLoopGuardTests: XCTestCase {
     XCTAssertEqual(result.status, .completed)
     XCTAssertEqual(
       result.session.executions.first?.acceptedOutput?.when,
-      ["needs_replan": false, "needs_work": true]
+      ["needs_replan": false, "needs_work": true, "accepted": false]
     )
     XCTAssertEqual(result.session.executions.map(\.stepId), ["review", "review", "finalize", "done"])
     guard case let .object(outcome)? = result.rootOutput?["loopGuardOutcome"] else {
@@ -617,6 +617,7 @@ private extension DefaultLoopGuardTests {
       promptText: "prompt",
       completionPassed: true,
       when: [
+        "needs_replan": false,
         "needs_work": decision == "needs_work",
         "accepted": decision == "accepted"
       ],

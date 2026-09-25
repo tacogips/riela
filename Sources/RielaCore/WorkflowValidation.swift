@@ -25,10 +25,20 @@ public protocol WorkflowValidating: Sendable {
 public struct AuthoredWorkflowValidationResult: Equatable, Sendable {
   public var workflow: WorkflowDefinition?
   public var diagnostics: [WorkflowValidationDiagnostic]
+  public var defectDiagnostics: [WorkflowDefectDiagnostic]
 
-  public init(workflow: WorkflowDefinition?, diagnostics: [WorkflowValidationDiagnostic]) {
+  public init(
+    workflow: WorkflowDefinition?,
+    diagnostics: [WorkflowValidationDiagnostic],
+    sourceDigest: String? = nil,
+    stepIds: [String] = [],
+    nodeIds: [String] = []
+  ) {
     self.workflow = workflow
     self.diagnostics = diagnostics
+    self.defectDiagnostics = sourceDigest.map {
+      WorkflowDefectDiagnostic.project(diagnostics, sourceDigest: $0, stepIds: stepIds, nodeIds: nodeIds)
+    } ?? []
   }
 }
 
@@ -101,12 +111,19 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
 
   public func validate(
     _ workflow: WorkflowDefinition,
-    nodePayloads: [String: AgentNodePayload]
+    nodePayloads: [String: AgentNodePayload],
+    addonEvidence: [String: WorkflowAddonRouteEvidence] = [:]
   ) -> [WorkflowValidationDiagnostic] {
     var diagnostics = validate(workflow)
     for nodeId in nodePayloads.keys.sorted() {
       guard let payload = nodePayloads[nodeId] else { continue }
       diagnostics += validateAgentNodePayload(payload, path: "workflow.nodes.\(nodeId)")
+      if let index = payload.output?.invalidGuaranteedWhenIndex {
+        diagnostics.append(error(
+          "workflow.nodes.\(nodeId).output.guaranteedWhen[\(index)]",
+          "must be a non-empty unique control name and cannot be a reserved Boolean constant"
+        ))
+      }
       validateAgentSandbox(payload, nodeId: nodeId, diagnostics: &diagnostics)
       if let schema = payload.output?.jsonSchema,
          let reason = DefaultWorkflowOutputValidator().validateContractSchema(schema) {
@@ -114,6 +131,9 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
       }
     }
     validateAgentOutputDependencies(workflow, nodePayloads: nodePayloads, diagnostics: &diagnostics)
+    validateRouteControlGuarantees(
+      workflow, nodePayloads: nodePayloads, addonEvidence: addonEvidence, diagnostics: &diagnostics
+    )
     let stepIds = Set(workflow.steps.map(\.id))
     for step in workflow.steps {
       if step.placement != nil, nodePayloads[step.nodeId]?.output?.projection != nil {
@@ -128,6 +148,95 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
       )
     }
     return diagnostics
+  }
+}
+
+private func validateRouteControlGuarantees(
+  _ workflow: WorkflowDefinition,
+  nodePayloads: [String: AgentNodePayload],
+  addonEvidence: [String: WorkflowAddonRouteEvidence],
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  let routeContract = WorkflowRouteContract()
+  let registry = Dictionary(grouping: workflow.nodeRegistry, by: \.id).mapValues { $0[0] }
+  let steps = Dictionary(grouping: workflow.steps, by: \.id).mapValues { $0[0] }
+  let predecessors = Dictionary(grouping: workflow.steps.flatMap { source in
+    (source.transitions ?? []).map { ($0.toStepId, source.id) }
+  }, by: { $0.0 }).mapValues { $0.map(\.1) }
+
+  func provePayload(_ identifier: String, at stepId: String, visited: Set<String>) -> WorkflowBooleanGuarantee {
+    guard visited.count < 4_096, !visited.contains(stepId), let step = steps[stepId] else {
+      return .analysisIncomplete(pointer: "", reason: "producer walk is cyclic, exhausted or unresolved")
+    }
+    if let payload = nodePayloads[step.nodeId] {
+      guard let schema = payload.output?.jsonSchema else {
+        return .analysisIncomplete(pointer: "", reason: "producer schema is absent")
+      }
+      return routeContract.provePayloadBoolean(identifier: identifier, schema: schema)
+    }
+    guard let addon = registry[step.nodeId]?.addon,
+          let selected = addonEvidence[step.nodeId],
+          let version = addon.version,
+          selected.name == addon.name, selected.version == version else {
+      return .analysisIncomplete(pointer: "", reason: "exact add-on catalog identity is unavailable")
+    }
+    let output = selected.output
+    if output.guaranteedPayload.contains(identifier) || output.booleanOverwrites.contains(identifier) {
+      return .proven
+    }
+    guard output.forwardsPayload == true,
+          !output.removedPayload.contains(identifier),
+          !output.overwrittenPayload.contains(identifier),
+          let upstream = predecessors[stepId], !upstream.isEmpty else {
+      return .analysisIncomplete(pointer: "", reason: "add-on forwarding or overwrite proof is unavailable")
+    }
+    for source in Set(upstream).sorted() {
+      let proof = provePayload(identifier, at: source, visited: visited.union([stepId]))
+      guard proof == .proven else { return proof }
+    }
+    return .proven
+  }
+
+  for step in workflow.steps {
+    for (index, transition) in (step.transitions ?? []).enumerated() {
+      guard let label = transition.label else { continue }
+      let condition: ParsedWorkflowCondition
+      do {
+        condition = try ParsedWorkflowCondition(label)
+      } catch let WorkflowConditionError.syntax(span) {
+        diagnostics.append(error(
+          "workflow.steps.\(step.id).transitions[\(index)].label",
+          "route.invalidCondition characters[\(span.start)..<\(span.end)]"
+        ))
+        continue
+      } catch {
+        continue
+      }
+      for identifier in Set(condition.identifiers.map(\.name)).sorted() {
+        if nodePayloads[step.nodeId]?.output?.guaranteedWhen?.contains(identifier) == true {
+          continue
+        }
+        if let addon = registry[step.nodeId]?.addon,
+           let selected = addonEvidence[step.nodeId],
+           selected.name == addon.name, selected.version == addon.version,
+           selected.output.guaranteedWhen.contains(identifier) {
+          continue
+        }
+        switch provePayload(identifier, at: step.id, visited: []) {
+        case .proven:
+          break
+        case let .analysisIncomplete(pointer, reason):
+          let path = nodePayloads[step.nodeId] != nil
+            ? "workflow.nodes.\(step.nodeId).output.jsonSchema\(pointer)"
+            : "workflow.steps.\(step.id).transitions[\(index)].label"
+          diagnostics.append(WorkflowValidationDiagnostic(
+            severity: .warning,
+            path: path,
+            message: "analysis_incomplete: route control '\(identifier)' at step '\(step.id)' transition \(index): \(reason)"
+          ))
+        }
+      }
+    }
   }
 }
 
@@ -203,6 +312,15 @@ private func validateAgentOutputDependencies(
     return label != "always"
   }) {
     guard let payload = nodePayloads[step.nodeId], payload.output?.jsonSchema == nil else { continue }
+    if let output = payload.output, output.invalidGuaranteedWhenIndex == nil {
+      let declared = Set(output.guaranteedWhen ?? [])
+      let coversRoutes = (step.transitions ?? []).allSatisfy { transition in
+        guard let label = transition.label else { return true }
+        guard let condition = try? ParsedWorkflowCondition(label) else { return false }
+        return condition.identifiers.allSatisfy { declared.contains($0.name) }
+      }
+      if coversRoutes { continue }
+    }
     diagnostics.append(error(
       "workflow.nodes.\(step.nodeId).output.jsonSchema",
       "agent node '\(step.nodeId)' drives conditional transition labels from step '\(step.id)' and must declare output.jsonSchema"
@@ -298,6 +416,7 @@ public func validateAuthoredWorkflowData(
   validator: any WorkflowValidating = DefaultWorkflowValidator()
 ) -> AuthoredWorkflowValidationResult {
   var diagnostics: [WorkflowValidationDiagnostic] = []
+  let sourceDigest = WorkflowHistoryCanonicalCoding.sha256(data)
 
   let jsonObject: Any
   do {
@@ -305,40 +424,56 @@ public func validateAuthoredWorkflowData(
   } catch {
     return AuthoredWorkflowValidationResult(
       workflow: nil,
-      diagnostics: [WorkflowValidationDiagnostic(severity: .error, path: "workflow", message: "must be valid JSON")]
+      diagnostics: [WorkflowValidationDiagnostic(severity: .error, path: "workflow", message: "must be valid JSON")],
+      sourceDigest: sourceDigest
     )
   }
 
   guard let raw = jsonObject as? [String: Any] else {
     return AuthoredWorkflowValidationResult(
       workflow: nil,
-      diagnostics: [WorkflowValidationDiagnostic(severity: .error, path: "workflow", message: "must be an object")]
+      diagnostics: [WorkflowValidationDiagnostic(severity: .error, path: "workflow", message: "must be an object")],
+      sourceDigest: sourceDigest
     )
   }
 
   diagnostics.append(contentsOf: validateRawAuthoredWorkflow(raw))
+  let sourceStepIds = (raw["steps"] as? [Any] ?? []).map { ($0 as? [String: Any])?["id"] as? String ?? "" }
+  let sourceNodeIds = (raw["nodes"] as? [Any] ?? []).map { ($0 as? [String: Any])?["id"] as? String ?? "" }
 
   let decoded: AuthoredWorkflowJSON?
   do {
     decoded = try JSONDecoder().decode(AuthoredWorkflowJSON.self, from: data)
   } catch let decodeError {
     diagnostics.append(error("workflow", "failed to decode authored workflow JSON: \(decodeError.localizedDescription)"))
-    return AuthoredWorkflowValidationResult(workflow: nil, diagnostics: diagnostics)
+    return AuthoredWorkflowValidationResult(
+      workflow: nil, diagnostics: diagnostics, sourceDigest: sourceDigest,
+      stepIds: sourceStepIds, nodeIds: sourceNodeIds
+    )
   }
 
   guard let authoredWorkflow = decoded else {
-    return AuthoredWorkflowValidationResult(workflow: nil, diagnostics: diagnostics)
+    return AuthoredWorkflowValidationResult(
+      workflow: nil, diagnostics: diagnostics, sourceDigest: sourceDigest,
+      stepIds: sourceStepIds, nodeIds: sourceNodeIds
+    )
   }
 
   let hasBlockingErrors = diagnostics.contains { $0.severity == .error }
   guard !hasBlockingErrors, let workflow = materializeWorkflowDefinition(from: authoredWorkflow) else {
-    return AuthoredWorkflowValidationResult(workflow: nil, diagnostics: diagnostics)
+    return AuthoredWorkflowValidationResult(
+      workflow: nil, diagnostics: diagnostics, sourceDigest: sourceDigest,
+      stepIds: sourceStepIds, nodeIds: sourceNodeIds
+    )
   }
 
   diagnostics.append(contentsOf: validator.validate(workflow))
   return AuthoredWorkflowValidationResult(
     workflow: diagnostics.contains { $0.severity == .error } ? nil : workflow,
-    diagnostics: diagnostics
+    diagnostics: diagnostics,
+    sourceDigest: sourceDigest,
+    stepIds: sourceStepIds,
+    nodeIds: sourceNodeIds
   )
 }
 
@@ -346,22 +481,36 @@ public func validateAuthoredWorkflowJSON(
   _ workflow: AuthoredWorkflowJSON,
   validator: any WorkflowValidating = DefaultWorkflowValidator()
 ) -> AuthoredWorkflowValidationResult {
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  let sourceDigest = (try? encoder.encode(workflow)).map(WorkflowHistoryCanonicalCoding.sha256)
+  let sourceStepIds = (workflow.steps ?? workflow.nodes.map { WorkflowStepRef(id: $0.id, nodeId: $0.id) }).map(\.id)
+  let sourceNodeIds = workflow.nodes.map(\.id)
   let typedDiagnostics = validateTypedAuthoredWorkflow(workflow)
   if typedDiagnostics.contains(where: { $0.severity == .error }) {
-    return AuthoredWorkflowValidationResult(workflow: nil, diagnostics: typedDiagnostics)
+    return AuthoredWorkflowValidationResult(
+      workflow: nil, diagnostics: typedDiagnostics, sourceDigest: sourceDigest,
+      stepIds: sourceStepIds, nodeIds: sourceNodeIds
+    )
   }
 
   guard let definition = materializeWorkflowDefinition(from: workflow) else {
     return AuthoredWorkflowValidationResult(
       workflow: nil,
-      diagnostics: [error("workflow.entryStepId", "must be a non-empty string")]
+      diagnostics: [error("workflow.entryStepId", "must be a non-empty string")],
+      sourceDigest: sourceDigest,
+      stepIds: sourceStepIds,
+      nodeIds: sourceNodeIds
     )
   }
 
   let diagnostics = validator.validate(definition)
   return AuthoredWorkflowValidationResult(
     workflow: diagnostics.contains { $0.severity == .error } ? nil : definition,
-    diagnostics: diagnostics
+    diagnostics: diagnostics,
+    sourceDigest: sourceDigest,
+    stepIds: sourceStepIds,
+    nodeIds: sourceNodeIds
   )
 }
 

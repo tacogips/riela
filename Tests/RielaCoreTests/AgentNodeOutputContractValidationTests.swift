@@ -125,6 +125,43 @@ final class AgentNodeOutputContractValidationTests: XCTestCase {
       nodePayloads: ["agent": compliantAgent(output: NodeOutputContract(description: "envelope"))]
     )
     XCTAssertTrue(diagnostics.contains { $0.message.contains("conditional transition labels") })
+    XCTAssertTrue(diagnostics.contains {
+      $0.severity == .warning && $0.path == "workflow.nodes.agent.output.jsonSchema" &&
+        $0.message.contains("analysis_incomplete: route control 'accepted'")
+    })
+  }
+
+  func testConditionalRouteGuaranteeDiagnosticsInspectAllIdentifiers() {
+    let registry = [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")]
+    let malformed = baseWorkflow(registry: registry, steps: [WorkflowStepRef(
+      id: "only", nodeId: "agent", transitions: [WorkflowStepTransition(toStepId: "only", label: "true || !")]
+    )])
+    let schema: JSONObject = [
+      "type": .string("object"),
+      "properties": .object(["flag": .object(["type": .string("boolean")])])
+    ]
+    let agent = compliantAgent(output: NodeOutputContract(jsonSchema: schema))
+    let malformedDiagnostics = DefaultWorkflowValidator().validate(malformed, nodePayloads: ["agent": agent])
+    XCTAssertTrue(malformedDiagnostics.contains {
+      $0.severity == .error && $0.path == "workflow.steps.only.transitions[0].label" &&
+        $0.message.contains("route.invalidCondition")
+    })
+
+    let shortCircuited = baseWorkflow(registry: registry, steps: [WorkflowStepRef(
+      id: "only", nodeId: "agent", transitions: [WorkflowStepTransition(toStepId: "only", label: "true || flag")]
+    )])
+    let incomplete = DefaultWorkflowValidator().validate(shortCircuited, nodePayloads: ["agent": agent])
+    XCTAssertTrue(incomplete.contains {
+      $0.severity == .warning && $0.path.hasSuffix("/properties/flag") &&
+        $0.message.contains("analysis_incomplete")
+    })
+
+    var required = schema
+    required["required"] = .array([.string("flag")])
+    let proven = DefaultWorkflowValidator().validate(
+      shortCircuited, nodePayloads: ["agent": compliantAgent(output: NodeOutputContract(jsonSchema: required))]
+    )
+    XCTAssertFalse(proven.contains { $0.message.contains("analysis_incomplete") })
   }
 
   private func validate(singleAgent payload: AgentNodePayload) -> [WorkflowValidationDiagnostic] {

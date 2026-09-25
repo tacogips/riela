@@ -189,7 +189,8 @@ private func appendContainerAddonRegistrations(
       image: execution?.image,
       imageDigest: execution?.imageDigest,
       contentDigest: contentDigest,
-      capabilities: addon.capabilities
+      capabilities: addon.capabilities,
+      outputProvenance: addon.outputProvenance
     ))
   }
 }

@@ -3,11 +3,43 @@ import RielaCore
 public struct RielaAddonDescriptor: Codable, Equatable, Sendable {
   public var name: String
   public var version: String?
+  public var outputProvenance: WorkflowAddonOutputProvenance?
 
-  public init(name: String, version: String? = nil) {
+  public init(name: String, version: String? = nil, outputProvenance: WorkflowAddonOutputProvenance? = nil) {
     self.name = name
     self.version = version
+    self.outputProvenance = outputProvenance
   }
+}
+
+func validateAddonOutputProvenance(
+  _ addon: WorkflowPackageNodeAddon,
+  index: Int
+) -> [WorkflowPackageValidationIssue] {
+  guard let provenance = addon.outputProvenance else { return [] }
+  var issues: [WorkflowPackageValidationIssue] = []
+  if addon.contentDigest == nil {
+    issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].contentDigest", message: "output provenance requires a contentDigest"))
+  }
+  let lists = [
+    ("guaranteedPayload", provenance.guaranteedPayload),
+    ("guaranteedWhen", provenance.guaranteedWhen),
+    ("removedPayload", provenance.removedPayload),
+    ("overwrittenPayload", provenance.overwrittenPayload),
+    ("booleanOverwrites", provenance.booleanOverwrites)
+  ]
+  for (name, fields) in lists where fields.contains(where: { $0.isEmpty }) || Set(fields).count != fields.count {
+    issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].outputProvenance.\(name)", message: "field names must be non-empty and unique"))
+  }
+  if addon.execution?.kind == .container, !provenance.guaranteedWhen.isEmpty {
+    issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].outputProvenance.guaranteedWhen", message: "container output is payload-only"))
+  }
+  if !Set(provenance.booleanOverwrites).isSubset(of: Set(provenance.overwrittenPayload)) ||
+    !Set(provenance.removedPayload).isDisjoint(with: Set(provenance.overwrittenPayload)) ||
+    !Set(provenance.removedPayload).isDisjoint(with: Set(provenance.guaranteedPayload)) {
+    issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].outputProvenance", message: "removed, guaranteed and overwritten fields conflict"))
+  }
+  return issues
 }
 
 public enum RielaBuiltinAddonCatalog {
@@ -75,8 +107,27 @@ public enum RielaBuiltinAddonCatalog {
   ]
 
   public static let workflowAddons: [RielaAddonDescriptor] = [
-    .init(name: "riela/workflow-create-register-run", version: "1")
+    .init(name: "riela/workflow-create-register-run", version: "1"),
+    .init(
+      name: "riela/chat-reply-worker", version: "1",
+      outputProvenance: .init(
+        forwardsPayload: true,
+        removedPayload: ["_rielaInput", "upstream", "runtime"],
+        overwrittenPayload: ["status", "addon", "stepId", "text", "replyText", "dispatchStatus", "replyAs"]
+      )
+    )
   ]
+
+  public static let sdkWorkerAddons: [RielaAddonDescriptor] = [
+    "riela/codex-sdk-worker", "riela/claude-sdk-worker", "riela/cursor-sdk-worker"
+  ].map { name in
+    .init(name: name, version: "1", outputProvenance: .init(
+      guaranteedPayload: ["liveExecution"],
+      removedPayload: ["inputFilterSkipped"],
+      overwrittenPayload: ["status", "addon", "stepId", "executionBackend", "text", "replyText", "liveExecution"],
+      booleanOverwrites: ["liveExecution"]
+    ))
+  }
 
   public static let documentAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/file-markdown-convert", version: "1")
@@ -146,6 +197,7 @@ public enum RielaBuiltinAddonCatalog {
     + appleGatewayAdminAddons
     + noteAddons
     + workflowAddons
+    + sdkWorkerAddons
     + documentAddons
     + keyValueStoreAddons
     + routineAddons

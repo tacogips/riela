@@ -1,12 +1,78 @@
 import Foundation
 
+public struct WorkflowPublicationRequest: Sendable {
+  public var sessionId: String
+  public var stepId: String
+  public var nodeId: String
+  public var attempt: Int
+  public var backend: NodeExecutionBackend?
+  public var body: WorkflowPublicationBody
+  public var outputContract: WorkflowOutputContract?
+  public var routingReconciler: OutputContractRoutingReconciler?
+  public var transitions: [WorkflowStepTransition]
+  public var publishesRootOutput: Bool
+  public var successfulExecutionStatus: WorkflowStepExecutionStatus
+  public var completesRootWithoutOutput: Bool
+  public var allowsNoOutput: Bool
+  public var routesAdapterFailureAsAdvisory: Bool
+  public var transitionSelectionMode: WorkflowPublicationTransitionSelectionMode
+  public var noSelectionDisposition: WorkflowPublicationNoSelectionDisposition
+  public var prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider?
+  public var preCommitPublicationHook: WorkflowPreCommitPublicationHook?
+  public var carriedPayloadFields: JSONObject
+
+  public init(
+    sessionId: String,
+    stepId: String,
+    nodeId: String,
+    attempt: Int,
+    backend: NodeExecutionBackend? = nil,
+    body: WorkflowPublicationBody = .none,
+    outputContract: WorkflowOutputContract? = nil,
+    routingReconciler: OutputContractRoutingReconciler? = nil,
+    transitions: [WorkflowStepTransition] = [],
+    publishesRootOutput: Bool = false,
+    successfulExecutionStatus: WorkflowStepExecutionStatus = .completed,
+    completesRootWithoutOutput: Bool = false,
+    allowsNoOutput: Bool = false,
+    routesAdapterFailureAsAdvisory: Bool = false,
+    transitionSelectionMode: WorkflowPublicationTransitionSelectionMode = .rejectMultiple,
+    noSelectionDisposition: WorkflowPublicationNoSelectionDisposition = .publishPayloadAsRoot,
+    prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider? = nil,
+    preCommitPublicationHook: WorkflowPreCommitPublicationHook? = nil,
+    carriedPayloadFields: JSONObject = [:]
+  ) {
+    self.sessionId = sessionId
+    self.stepId = stepId
+    self.nodeId = nodeId
+    self.attempt = attempt
+    self.backend = backend
+    self.body = body
+    self.outputContract = outputContract
+    self.routingReconciler = routingReconciler
+    self.transitions = transitions
+    self.publishesRootOutput = publishesRootOutput
+    self.successfulExecutionStatus = successfulExecutionStatus
+    self.completesRootWithoutOutput = completesRootWithoutOutput
+    self.allowsNoOutput = allowsNoOutput
+    self.routesAdapterFailureAsAdvisory = routesAdapterFailureAsAdvisory
+    self.transitionSelectionMode = transitionSelectionMode
+    self.noSelectionDisposition = noSelectionDisposition
+    self.prePersistenceRoutingDecider = prePersistenceRoutingDecider
+    self.preCommitPublicationHook = preCommitPublicationHook
+    self.carriedPayloadFields = carriedPayloadFields
+  }
+}
+
 public struct WorkflowOutputContract: Codable, Equatable, Sendable {
   public var schema: JSONObject?
   public var requiredObject: Bool
+  public var guaranteedWhen: [String]
 
-  public init(schema: JSONObject? = nil, requiredObject: Bool = false) {
+  public init(schema: JSONObject? = nil, requiredObject: Bool = false, guaranteedWhen: [String] = []) {
     self.schema = schema
     self.requiredObject = requiredObject
+    self.guaranteedWhen = guaranteedWhen
   }
 }
 
@@ -43,6 +109,19 @@ public struct DefaultWorkflowOutputValidator: WorkflowOutputValidating {
     }
     if let schema = contract.schema, let reason = validate(candidate.payload, against: schema) {
       return WorkflowOutputValidationResult(status: .rejected, reason: reason)
+    }
+    for name in contract.guaranteedWhen {
+      guard candidate.when[name] != nil else {
+        return WorkflowOutputValidationResult(status: .rejected, reason: "route.missingDeclaredWhen \(name)")
+      }
+      if let payloadValue = candidate.payload[name] {
+        guard case let .bool(payloadBoolean) = payloadValue else {
+          return WorkflowOutputValidationResult(status: .rejected, reason: "route.wrongType \(name)")
+        }
+        guard candidate.when[name] == payloadBoolean else {
+          return WorkflowOutputValidationResult(status: .rejected, reason: "route.conflictingValues \(name)")
+        }
+      }
     }
     return WorkflowOutputValidationResult(status: .accepted, payload: candidate.payload)
   }

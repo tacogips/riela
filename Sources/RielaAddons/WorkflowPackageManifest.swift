@@ -183,6 +183,7 @@ public struct WorkflowPackageNodeAddon: Codable, Equatable, Sendable {
   public var execution: WorkflowPackageAddonExecutionDescriptor?
   public var capabilities: [WorkflowAddonCapability]
   public var contentDigest: String?
+  public var outputProvenance: WorkflowAddonOutputProvenance?
 
   public init(
     name: String,
@@ -190,7 +191,8 @@ public struct WorkflowPackageNodeAddon: Codable, Equatable, Sendable {
     sourcePath: String,
     execution: WorkflowPackageAddonExecutionDescriptor? = nil,
     capabilities: [WorkflowAddonCapability] = [],
-    contentDigest: String? = nil
+    contentDigest: String? = nil,
+    outputProvenance: WorkflowAddonOutputProvenance? = nil
   ) {
     self.name = name
     self.version = version
@@ -198,6 +200,7 @@ public struct WorkflowPackageNodeAddon: Codable, Equatable, Sendable {
     self.execution = execution
     self.capabilities = capabilities
     self.contentDigest = contentDigest
+    self.outputProvenance = outputProvenance
   }
 
   private enum CodingKeys: String, CodingKey, CaseIterable {
@@ -207,6 +210,7 @@ public struct WorkflowPackageNodeAddon: Codable, Equatable, Sendable {
     case execution
     case capabilities
     case contentDigest
+    case outputProvenance
   }
 
   public init(from decoder: Decoder) throws {
@@ -218,6 +222,7 @@ public struct WorkflowPackageNodeAddon: Codable, Equatable, Sendable {
     self.execution = try container.decodeIfPresent(WorkflowPackageAddonExecutionDescriptor.self, forKey: .execution)
     self.capabilities = try container.decodeIfPresent([WorkflowAddonCapability].self, forKey: .capabilities) ?? []
     self.contentDigest = try container.decodeIfPresent(String.self, forKey: .contentDigest)
+    self.outputProvenance = try container.decodeIfPresent(WorkflowAddonOutputProvenance.self, forKey: .outputProvenance)
   }
 }
 
@@ -750,6 +755,7 @@ public enum WorkflowPackageManifestValidator {
       if let contentDigest = addon.contentDigest, !isSha256Digest(contentDigest) {
         issues.append(.init(code: "INVALID_MANIFEST", path: "addons[\(index)].contentDigest", message: "contentDigest must be sha256:<64 lowercase hex>"))
       }
+      issues += validateAddonOutputProvenance(addon, index: index)
       if let execution = addon.execution {
         validateNodeAddonExecutionRequirements(execution, addon: addon, addonIndex: index, packageKind: packageKind, into: &issues)
       }

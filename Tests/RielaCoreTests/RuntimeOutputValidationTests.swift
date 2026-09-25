@@ -2,6 +2,26 @@ import XCTest
 @testable import RielaCore
 
 final class RuntimeOutputValidationTests: XCTestCase {
+  func testGuaranteedWhenIsCheckedIndependentlyOfRequiredPayload() throws {
+    let validator = DefaultWorkflowOutputValidator()
+    let contract = WorkflowOutputContract(
+      schema: ["required": .array([.string("answer")])],
+      guaranteedWhen: ["unused"]
+    )
+    func validate(_ payload: JSONObject, _ when: [String: Bool]) throws -> WorkflowOutputValidationResult {
+      try validator.validate(
+        RuntimeOutputCandidate(source: .inlineCandidate, payload: payload, when: when), contract: contract
+      )
+    }
+    XCTAssertEqual(try validate(["answer": .string("ok")], [:]).reason, "route.missingDeclaredWhen unused")
+    XCTAssertEqual(try validate([:], ["unused": false]).reason, "output contract $.answer required property is missing")
+    XCTAssertEqual(try validate(["answer": .string("ok"), "unused": .string("false")], ["unused": false]).reason,
+                   "route.wrongType unused")
+    XCTAssertEqual(try validate(["answer": .string("ok"), "unused": .bool(true)], ["unused": false]).reason,
+                   "route.conflictingValues unused")
+    XCTAssertEqual(try validate(["answer": .string("ok")], ["unused": false]).status, .accepted)
+  }
+
   func testValidatorRejectsCompletionFailureAndSchemaFailures() throws {
     let validator = DefaultWorkflowOutputValidator()
     let contract = WorkflowOutputContract(
@@ -242,9 +262,49 @@ final class RuntimeOutputValidationTests: XCTestCase {
     }
   }
 
+  func testMissingRouteControlExhaustsTwoTotalValidationAttempts() async throws {
+    let adapter = MissingRouteControlAdapter()
+    let workflow = WorkflowDefinition(
+      workflowId: "route-correction-bound",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+      entryStepId: "review",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json")],
+      steps: [WorkflowStepRef(id: "review", nodeId: "node", transitions: [
+        WorkflowStepTransition(toStepId: "review", label: "flag")
+      ])],
+      nodes: [WorkflowNodeRef(id: "node", nodeFile: "nodes/node.json")]
+    )
+    let node = AgentNodePayload(
+      id: "node", model: "model", output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+    )
+
+    do {
+      _ = try await DeterministicWorkflowRunner(adapter: adapter).run(DeterministicWorkflowRunRequest(
+        workflow: workflow, nodePayloads: ["node": node], maxSteps: 3
+      ))
+      XCTFail("expected route control rejection")
+    } catch WorkflowPublicationError.validationRejected(let reason) {
+      XCTAssertTrue(reason.contains("route.missingControl"))
+    }
+    let attempts = await adapter.attempts
+    XCTAssertEqual(attempts, [1, 2])
+  }
+
   private func payload(_ base: JSONObject, setting key: String, to value: JSONValue) -> JSONObject {
     var copy = base
     copy[key] = value
     return copy
+  }
+}
+
+private actor MissingRouteControlAdapter: NodeAdapter {
+  var attempts: [Int] = []
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    if let attempt = input.output?.attempt { attempts.append(attempt) }
+    return AdapterExecutionOutput(
+      provider: "test", model: input.node.model, promptText: input.promptText,
+      completionPassed: true, payload: [:]
+    )
   }
 }

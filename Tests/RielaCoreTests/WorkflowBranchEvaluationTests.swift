@@ -25,4 +25,12 @@ final class WorkflowBranchEvaluationTests: XCTestCase {
       "needs_revision": false
     ]))
   }
+
+  func testRejectsMalformedExpressionsWithoutChangingNilMeaning() {
+    let evaluator = WorkflowBranchEvaluator()
+    XCTAssertTrue(evaluator.evaluate(label: nil, when: [:]))
+    XCTAssertFalse(evaluator.evaluate(label: "", when: [:]))
+    XCTAssertFalse(evaluator.evaluate(label: "true || !", when: [:]))
+    XCTAssertFalse(evaluator.evaluate(label: "true || (", when: [:]))
+  }
 }

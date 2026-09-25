@@ -45,7 +45,7 @@ Implement the smallest Riela-owned receiving path for the existing remote CLI,
 using the accepted design at `design-docs/specs/design-native-remote-workflow-execution.md`.
 Mode: `issue-resolution`. Step 3 accepted the focused design in `comm-000004`,
 source execution `step3-design-review-attempt-1-exec-4`, with no findings.
-Issue: local request, "Finish NRE-03 native receiver and review the source-matched App baseline";
+Issue: local request, "Independently review and finish NRE-03 native receiver";
 no GitHub issue supplied; existing Draft PR #110 targets main. Codex-agent reference: `/root`, prior Step 6 integration
 review `comm-000039`; Step 1 intake `comm-000002`. Cursor CLI mapping is not
 applicable: these are workflow review references, not reference-repository inputs.
@@ -53,7 +53,7 @@ NRE-01/NRE-02 remain accepted external prerequisites. Preserve checkpoint
 `611dc100c25bf297368df7b51fe1aeff429d835c`, prior history, source/tests and progress
 evidence. No predecessor redispatch or edits are authorized.
 
-The sole ownership addition is generated
+The previously accepted generated-schema ownership remains
 `Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift`, reviewed with
 `scripts/surface-parity/generate-sdl.sh` in Step 4. The script is read-only input,
 not an added write path. No Core status or App baseline-test ownership expansion.
@@ -129,67 +129,91 @@ check is blocked, report its actual error and leave completion open.
 Depends on accepted NRE-01 interfaces and NRE-02 strict reads. This plan is the
 serial integration owner. The existing RielaLibrary.executeWorkflow delegates
 to WorkflowRunCommand.run but forwards fewer fields than the wire contract;
-call that same command directly instead of expanding the facade. The preserved dirty tree already contains provider and host wiring plus an
-authenticated positive HTTP test; complete and repair those files in place,
-never replace them from a clean template. Deliver the finished provider, authenticated
-real-HTTP evidence and combined-tree verification.
+call that same command directly instead of expanding the facade. The preserved dirty tree contains completed attempt-4 I5/I6 implementation and
+authenticated real-HTTP evidence. Reconcile retained evidence with current bytes
+and repair only demonstrated in-scope defects; never replace passing work from
+a clean template. Deliver a review-ready combined tree and explicit baseline disposition.
 
 ## Continuation contract after accepted design review comm-000004
 
-Resume the terminal attempt-3 handoff, not a live writer, at intake HEAD
-`acbeab0de927afd3c816bbb8238aede19bdcfc8c`. Preserve earlier accepted planning
-commits, all implementation bytes and evidence. The task sequence below retains
-the full contract; I1 reconciles existing work and I2-I4 are repaired only when
-remaining tests demonstrate an in-scope defect. Do not reimplement passing work.
-Only NRE-03 is dispatched; NRE-01/NRE-02 are fixed external prerequisites.
+Resume terminal attempt 4, not a live writer, at intake HEAD
+`905947f947ee439abf331120e9a40727bdd70cf5`. Step 3 `comm-000004`, execution
+`step3-design-review-attempt-1-exec-4`, accepts the updated design with no
+findings. Current Step 5 review is pending; historical `comm-000006` is not
+acceptance of this revision. Preserve all accepted planning checkpoints,
+implementation bytes and evidence. Dispatch only NRE-03 with fixed accepted
+NRE-01/NRE-02 prerequisites and unchanged writePaths/sharedPaths.
 
-Current progress is `impl-plans/active/native-remote-nre-03-progress.md`.
-Attempt-3 focused tests, build, generated parity and strict lint passed on that
-source. The aggregate at
-`tmp/native-remote-implementation/NRE-03/attempt-3/aggregate-source-final.log`
-and `.exit` completed with exit 1, 1,465 tests, two skipped and 11 assertions.
-`tmp/native-remote-baseline/aggregate-comparison-final.json` reports the same
-11 assertions across six cases and no other errors. Preserve comparison-final.json,
-source-manifest-final.json, baseline-app.log/.exit and current-app-final.log/.exit
-in that baseline directory. These are historical evidence, not final-source
-acceptance or an approved waiver. The supplied Step 3 accepts design only;
-Step 5 accepted this continuation in `comm-000006` with no findings; implementation and independent aggregate disposition remain pending.
+The latest attempt-4 section of
+`impl-plans/active/native-remote-nre-03-progress.md` supersedes its earlier
+incomplete-task notes. It reports I5/I6 implementation complete. Retained
+commands are the exact focused/build/aggregate commands below and strict lint
+on the 20 paths in `changed-swift.nul`. Evidence root:
+`tmp/native-remote-receiver-20260925/NRE-03/attempt-4/`.
 
-Complete these bounded deliverables in sequence; each row is part of the single
-NRE-03 plan, with no new writePaths:
+| Complete log (each has a matching `.exit`) | Result |
+| --- | --- |
+| `provider-storage-final.log` | 13 tests, zero failures, exit 0 |
+| `host-final.log` | 96 tests, one skipped, zero failures, exit 0 |
+| `parity-final.log` | 6 tests, one skipped, zero failures, exit 0 |
+| `build-final.log` | Build exit 0 |
+| `lint-final.log` | Strict selected-file lint exit 0 |
+| `aggregate-final.log` | 1,469 tests, two skipped, 11 App assertions (one unexpected), exit 1 |
 
-| Task | Files and intended change | Required evidence |
-| --- | --- | --- |
-| C1 / I1 | Fresh-read source, accepted interfaces, progress and prior evidence; record source hashes and drift | Preserve predecessor bytes; new logs under `tmp/native-remote-receiver-20260925/NRE-03/<attempt>/` |
-| C2 / I5 | `Tests/RielaCLITests/WorkflowExecutionProviderTests.swift`: real command fixtures for invalid patch, saved-instance mismatch and deactivation | Reject before node invocation/new session; compare actual invocation and durable-store effects; no invented result IDs |
-| C3 / I5 | Same provider test file: malformed JSON, query and write failures using existing store/command seams | Storage errors never return absent-session null or successful IDs; reads do not mutate records; distinguish post-node persistence failure from pre-session rejection |
-| C4 / I5 | Same provider test file: ordered transition and cross-workflow summary fixtures | Fresh provider returns canonical persisted node IDs and messages for the requested session, ordered by createdOrder; distinguish transient dispatch counts |
-| C5 / I6 | `Tests/RielaCLITests/ServeHTTPCommandTests.swift`: malformed envelopes/JSON and existing request-size boundaries through production listener | Existing 400/413 behavior; zero runner/node effects and no new/modified durable records; assert response and effects |
-| C6 / I6-I7 | Retain existing `ServeWebHostTests.swift` and `RielaAppWebRegistryProviderTests.swift` coverage; change only for a demonstrated coverage gap | Bearer, profile isolation, listener cancellation and desktop source-policy limitations remain explicit; rerun all focused and aggregate commands |
-| C7 / I8 | Update only own progress log with source hashes, case-to-test mapping, complete logs and actual exits | Handoff implementation evidence, open baseline review decision and any material defect without claiming review acceptance |
+`source-manifest-pre-progress.json` records source identity before the progress
+update. `aggregate-baseline-comparison.json` and `aggregate-case-comparison.json`
+report the exact same 11 assertion signatures and six failed cases as baseline.
+Retain `tmp/native-remote-baseline/baseline-app.log` and `.exit`,
+`comparison-final.json`, `source-manifest-final.json` and current comparison logs.
+State is `baselineReviewPending`; neither matching signatures nor Step 3 design
+acceptance approves attribution or turns aggregate exit 1 into a passing gate.
 
-Read-only investigation/test-design agents may separately assess C2-C4 and C5-C6
-using the current tree. They report proposed cases and evidence to one edit owner;
-they do not run concurrent SwiftPM commands or edit files. Prior references are
-`/root/provider_explore`, `/root/host_explore`, `/root/test_explore`,
-`/root/code_audit`, `/root/test_audit`, and `/root` integration `comm-000039`.
-They imply no reference-repository or Cursor adaptation task.
+Execute this continuation in order. C1-C3 are the single Step 6 handoff;
+C4-C6 belong to later workflow review/finalization steps, not extra dispatches.
 
-If tests reveal a defect, repair only the responsible existing provider or host
-path in writePaths, using current seams. No permission-like dependency should
-be inferred from unavailable sandbox registry state. No speculative server,
-runner, status, queue, storage abstraction or App UI changes are planned.
+| Task | Dependency | Deliverable and exact scope | Acceptance evidence |
+| --- | --- | --- | --- |
+| C1 / I1 | Current Step 5 acceptance and serial planning checkpoint | Fresh-read source/tests, progress, source manifest and complete logs; hash tracked/untracked implementation and inspect drift | Explain documentation-only hash changes separately from source/toolchain changes; preserve predecessor files and evidence; determine which retained gates still match |
+| C2 / I5-I7 | C1 | Verify retained cases against the I2-I7 checklist below; repair only a demonstrated material defect in the assigned provider/host/test paths | Actual runner, durable stores, zero-effect rejection, browser/profile and stop-cancellation assertions remain intact; renew affected gates only for source identity, evidence gaps or repairs, recording the reason |
+| C3 / I8 | C2 | Append only `impl-plans/active/native-remote-nre-03-progress.md` with current source hashes, case-to-test map, commands, logs, actual exits and open findings | Hand off implementationComplete with `baselineReviewPending` if only the proven matching aggregate failures remain; no claim of formal acceptance |
+| C4 | C3 | Independent test-integrity review, one adversarial review and Astra integration review of the combined tree; evidence under a new `tmp/` attempt directory | Each decision identifies reviewed hashes, findings and baseline accept/reject rationale; all high/mid findings repaired serially within ownership and affected checks/review renewed |
+| C5 | C4 acceptance | Refresh `design-docs/specs/design-native-remote-workflow-execution.md` receiving usage/status/limits and own progress with accepted evidence | Documentation matches reviewed behavior; design/progress diff reviewed before final commit; README read-only unless separately assigned |
+| C6 | C5 and final review acceptance | Serial exact-file reviewed source/docs commit and non-force push on `feat/native-remote-workflow-execution` | Reviewed local HEAD, live remote head and Draft PR #110 head match; PR targets main; no main mutation |
 
-Step 6 completeness requires C1-C7, material behavioral checks and final-source
-logs. An aggregate consisting solely of the individually matched historical
-assertions is handed to independent review with its actual exit 1; pending
-formal disposition alone must not make completed implementation self-block.
-New failures, incomplete logs or missing required behavior remain incomplete.
-Overall NRE-03 acceptance still requires independent test-integrity, the single
-adversarial review and Astra integration review to explicitly accept or reject
-baseline attribution and accept the combined tree without unresolved high/mid
-findings. Formal reviews, review-dependent receiving documentation, commit and
-push are later workflow gates, not unfinished Step 6 implementation tasks.
+C2 independently checks the reported attempt-4 additions in
+`Tests/RielaCLITests/WorkflowExecutionProviderTests.swift`: real invalid patch,
+saved-instance mismatch and deactivation with zero node/session effects;
+malformed stored JSON and query errors; post-node write failure without successful
+IDs; ordered session-filtered messages/node IDs and real cross-workflow summary
+through a fresh provider. Check `Tests/RielaCLITests/ServeHTTPCommandTests.swift`
+for production HTTP malformed/empty/non-object envelopes and 2 MiB request limits,
+400/413 and zero effects, followed by authenticated positive execution. Retain
+`ServeWebHostTests.swift` profile/passkey checks and explicitly labeled desktop
+source-policy assertions in `RielaAppWebRegistryProviderTests.swift`. These are
+verification targets, not instructions to add duplicate tests or rerun unchanged
+expensive gates. Do not treat test compilation alone as execution evidence.
+
+Read-only investigation/test-design agents may assess independently bounded
+provider and HTTP evidence. One owner performs all writes and SwiftPM commands.
+Prior references `/root/test_gaps`, `/root/source_gaps`, `/root/baseline_evidence`,
+`/root/code_audit`, `/root/test_audit` and `/root` identify earlier work only;
+no reference-repository or Cursor adapter task exists. The single adversarial
+review and Astra integration review remain workflow-owned formal gates.
+
+A source manifest's broad diff hash may change after planning checkpoints or
+progress edits: compare actual tracked source/test/package bytes against the
+retained checkpoint diff and per-file evidence, and untracked source hashes;
+record the precise reason before deciding retained evidence is stale. Missing
+source identity, incomplete logs, new failures or missing behavior require
+bounded repair/verification. Do not rerun solely because a new workflow started.
+No test suppression, App UI repair, registry rediscovery, predecessor edit or
+new abstraction is authorized. Any necessary out-of-scope fix needs narrowly
+reviewed ownership before edits.
+
+C3 forwards actual aggregate exit 1 for independent review when the retained
+source-matched comparison is adequate; pending formal disposition alone does
+not block Step 6 completeness. Overall NRE-03 acceptance remains pending until
+C4-C6 complete. Every command must have a complete log and actual terminal exit.
 
 After review acceptance, refresh receiving design documentation and progress,
 then serial finalization commits and non-force pushes reviewed source/docs to
@@ -209,7 +233,11 @@ commit and remote branch hash. If verification fails, publication remains
 incomplete. Do not checkout, merge, commit or push main; P1 A2/A3 and retired
 reference cleanup remain separate. No finalization command runs in this authoring node.
 
-## Tasks in order
+## Retained implementation contract (C2 verification and conditional repair)
+
+I2-I7 describe required behavior already reported implemented. Verify them in
+place; imperatives below authorize changes only for a demonstrated material gap.
+C1-C6 above control the current continuation and prevent duplicate work.
 
 1. **I1 — Accepted-base and drift reconciliation.** Fresh-read accepted contracts, strict
    store method and both worker intent/hash records. Compare every post-hash
@@ -419,8 +447,9 @@ completed the source-matched comparison documented in the continuation contract.
 
 Retain the following procedure as the evidence standard, not a task to repeat
 completed baseline work. Revisit it only if source/environment drift or changed
-failure signatures invalidate the existing comparison. Always renew final-current
-focused/build/lint/aggregate gates; preserve prior logs and actual terminal exits:
+failure signatures invalidate the existing comparison. Reuse source-matched
+attempt-4 focused/build/lint/aggregate evidence; renew only when source identity
+or evidence requires it. Preserve prior logs and actual terminal exits:
 
 1. Record HEAD, dirty diff, untracked file hashes, source/test hashes, Package.resolved,
    Swift/Xcode/SDK/architecture and test environment. Freeze source during comparison.
@@ -499,8 +528,13 @@ comparison is not a replacement for build, lint, focused tests or the full aggre
 
 ## Verification commands and required evidence
 
-Run focused gates after the respective edits, then the aggregate gate after
-serial join/repair. Each command gets a distinct complete log and exit status.
+Reuse the source-matched attempt-4 commands/logs above when C1 establishes
+adequate identity and complete evidence. This command list is for justified
+renewal, not mandatory reruns of unchanged expensive gates. After material source
+edits, run affected focused gates, build, strict lint and the final combined
+aggregate serially; record the reason and current hashes. Each executed command
+gets a distinct complete log and actual exit status. Documentation-only changes
+require `git diff --check`, not SwiftPM reruns.
 
 ```sh
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkflowExecutionProviderTests|CLIWorkflowSessionStoreResilienceTests'

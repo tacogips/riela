@@ -1,9 +1,9 @@
 # Native remote workflow execution receiving boundary
 
-Status: Accepted NRE-03 planning amendment retained; focused issue-resolution handoff awaiting independent review; NRE-01/NRE-02 acceptance retained.
+Status: Accepted NRE-03 planning amendment retained; attempt-4 I5/I6 implementation reported complete; baselineReviewPending; independent review handoff; NRE-01/NRE-02 acceptance retained.
 Mode: `issue-resolution`; Step 2 updates design only; subsequent reviewed steps complete NRE-03.
 Issue reference: local request on `feat/native-remote-workflow-execution`; Draft PR #110 targets `main`; no GitHub issue supplied.
-Issue title: Finish NRE-03 native receiver and review the source-matched App baseline.
+Issue title: Independently review and finish NRE-03 native receiver.
 Intake: `comm-000002`, `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 Accepted planning baseline: `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7`, branch `feat/native-remote-workflow-execution`; preserve this commit.
 Accepted amendment checkpoint: `611dc100c25bf297368df7b51fe1aeff429d835c`; preserve this commit and all dirty/untracked implementation.
@@ -501,27 +501,45 @@ No unresolved user decision blocks design authoring. The remaining decision is
 independent review acceptance or rejection of the 11 baseline-identical App
 assertions; matching signatures are evidence, not permission to waive a gate.
 
-### Continuation from terminal attempt 3
+### Continuation from terminal attempt 4
 
-The authoritative intake resumes the terminal implementation-blocked session under
-`tmp/native-remote-nre03-continuation/sessions`; it is not a live write owner.
-Preserve current HEAD `acbeab0de927afd3c816bbb8238aede19bdcfc8c`, accepted checkpoints,
-all dirty/untracked source, and `impl-plans/active/native-remote-nre-03-progress.md`.
-The prior read-only agents `/root/provider_explore`, `/root/host_explore`,
-`/root/test_explore`, `/root/code_audit`, and `/root/test_audit` are evidence
-references only; no Codex-reference repository or Cursor adapter work is required.
+The authoritative intake resumes after terminal attempt 4; it is not a live
+write owner. Preserve HEAD `905947f947ee439abf331120e9a40727bdd70cf5`, accepted
+checkpoints, all dirty/untracked source, and
+`impl-plans/active/native-remote-nre-03-progress.md`. That progress file's latest
+attempt-4 section supersedes its historical incomplete I5/I6 and ownership notes.
+`/root` is the NRE-03 integration owner. Prior read-only agents
+`/root/test_gaps`, `/root/source_gaps`, `/root/baseline_evidence`,
+`/root/code_audit` and `/root/test_audit` are evidence references only; no
+Codex-reference repository or Cursor adapter work is required.
 
-Attempt-3 evidence under `tmp/native-remote-implementation/NRE-03/attempt-3/`
-records focused tests (105 tests, one skipped), build, generated parity and strict
-changed-file lint passing. `aggregate-source-final.log` and its `.exit` retain
-exit 1: 1,465 tests, two skipped, 11 assertions. The source-matched comparison is
-`tmp/native-remote-baseline/comparison-final.json`; its source manifest is
-`tmp/native-remote-baseline/source-manifest-final.json`.
-`tmp/native-remote-baseline/aggregate-comparison-final.json` records 11 matching
-assertions across six cases and no other errors. Preserve the baseline/current
-logs and exits. These historical results do not certify subsequently edited source.
+Attempt-4 evidence is retained under
+`tmp/native-remote-receiver-20260925/NRE-03/attempt-4/`. Exact commands appear in
+the latest progress section; every log below has its corresponding `.exit`:
 
-Complete the remaining accepted cases without expanding components or ownership:
+| Evidence | Recorded terminal result |
+| --- | --- |
+| `provider-storage-final.log` | 13 tests, zero failures, exit 0 |
+| `host-final.log` | 96 tests, one skipped, zero failures, exit 0 |
+| `parity-final.log` | 6 tests, one skipped, zero failures, exit 0 |
+| `build-final.log` | Build exit 0 |
+| `lint-final.log` | Strict lint on 20 selected Swift paths, exit 0 |
+| `aggregate-final.log` | 1,469 tests, two skipped, 11 assertions (one unexpected), exit 1 |
+
+`source-manifest-pre-progress.json` records the implementation identity before
+the progress-only edit. `aggregate-baseline-comparison.json` reports 11 matching
+assertion signatures and no differences; `aggregate-case-comparison.json`
+reports the same six failed cases. Preserve the source-matched baseline logs
+under `tmp/native-remote-baseline/`, including `baseline-app.log`,
+`comparison-final.json` and `source-manifest-final.json`. The aggregate is failed;
+its review state is `baselineReviewPending`, not a passing gate or an approved
+waiver. Independent reviewers must verify source/environment identity, complete
+terminal logs and test integrity before accepting or rejecting attribution.
+Do not rerun unchanged expensive gates without a source-identity or evidence
+reason; targeted repairs require renewed affected gates and final-source evidence.
+
+Attempt 4 reports I5/I6 complete. Independently verify these retained cases
+without redispatching completed work or expanding components or ownership:
 
 | Accepted case | Required observable evidence | Assigned test path |
 | --- | --- | --- |
@@ -543,13 +561,22 @@ accept or reject baseline attribution. A nonzero aggregate remains nonzero even
 if those reviewers accept individually evidenced baseline failures. No test
 suppression, speculative App UI repair or predecessor changes are authorized.
 
-Implementation completeness covers remaining behavior and final-source evidence;
+Implementation completeness covers I5/I6 behavior and final-source evidence;
 formal reviews, review-dependent documentation and publication are later gates.
 Do not self-block completed implementation on those later tasks, and do not
 claim overall completion before they finish. After acceptance, refresh receiving
 docs and commit/non-force push reviewed source/docs to
 `feat/native-remote-workflow-execution`. Verify existing PR #110 is open, Draft,
-targets `main`, and its head equals the reviewed pushed commit. Do not checkout,
+targets `main`, and its head equals the reviewed pushed commit using:
+
+```sh
+git rev-parse HEAD
+git ls-remote --heads origin refs/heads/feat/native-remote-workflow-execution
+gh pr view 110 --repo tacogips/riela --json number,state,isDraft,baseRefName,headRefName,headRefOid,url
+```
+
+All three hashes must match; PR state must be OPEN and isDraft true. These are
+post-push verification commands, not checks performed by this design node. Do not checkout,
 merge, commit or push `main`. P1 A2/A3 and retired-reference cleanup stay separate.
 
 Step 3 reviews this focused issue-resolution handoff without reopening the accepted
@@ -558,7 +585,10 @@ amendment. Step 4 aligns only
 `impl-plans/active/native-remote-receiver-20260925-dispatch.json`: one NRE-03 task,
 satisfied external predecessors, generated-schema ownership/rule, and unchanged
 bounded aggregate attribution. Step 5 reviews the resulting plan/manifest before
-implementation. Independent test-integrity, adversarial and Astra integration
+any material repair. Preserve prior accepted planning checkpoints; alignment must
+carry attempt-4 completion and `baselineReviewPending` forward, not demand a
+repeat implementation or a green aggregate before independent review.
+Independent test-integrity, adversarial and Astra integration
 reviews must accept the combined source and its source-matched verification;
 resolve every high/mid finding before reviewed source/docs are committed and
 non-force pushed. Preserve checkpoint `611dc100c25bf297368df7b51fe1aeff429d835c`
@@ -566,10 +596,11 @@ and all prior implementation/evidence. This design step neither commits nor
 pushes. NRE-03 remains pending; P1 A2/A3 remains open in its separate workflow.
 
 Residual operational risks remain synchronous timeout ambiguity, operator-wide
-store access and long-running route resource use. Remaining I5/I6 coverage and aggregate disposition
-remain open at implementation/review level; the design disposition does not close them.
+store access and long-running route resource use. Independent confirmation of
+I5/I6 test integrity and aggregate disposition remain open at review level;
+this design update does not decide them.
 Historical strict-decoding feedback (`comm-000004`, subsequently accepted in
 `comm-000006` during prior planning) remains addressed by the unchanged strict-read
 contract. The retained amendment responds to integration review `comm-000039`; the current
-Step 1 intake (`comm-000002`) authorizes its focused implementation continuation.
+Step 1 intake (`comm-000002`) authorizes its focused independent-review continuation.
 There is no new Step 3/Step 5 review decision for this handoff yet.

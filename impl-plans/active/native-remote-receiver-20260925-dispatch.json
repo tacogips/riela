@@ -4,19 +4,19 @@
   "implementationBranch": "feat/native-remote-workflow-execution",
   "baseBranch": "feat/native-remote-workflow-execution",
   "remote": "origin",
-  "originalHead": "acbeab0de927afd3c816bbb8238aede19bdcfc8c",
+  "originalHead": "905947f947ee439abf331120e9a40727bdd70cf5",
   "designDocPaths": [
     "design-docs/specs/design-native-remote-workflow-execution.md"
   ],
   "evidenceRoot": "tmp/native-remote-receiver-20260925",
   "reviewContext": {
     "issueReference": "Local request comm-000002; feat/native-remote-workflow-execution; Draft PR #110 targeting main",
-    "userProblem": "Complete remaining NRE-03 I5/I6 cases, renew final-source gates, independently decide baseline attribution, and publish reviewed work to existing Draft PR #110 without merging main.",
+    "userProblem": "Independently review completed attempt-4 NRE-03 I5/I6, decide baseline attribution, repair material findings and publish reviewed work to Draft PR #110 without merging main.",
     "requiredOutcomes": [
       "Finish and independently review NRE-03, then commit and non-force push reviewed source/docs; preserve checkpoint 611dc10 and all existing implementation.",
       "Dispatch only NRE-03 with accepted external NRE-01/NRE-02 prerequisites; preserve their evidence and owned files.",
       "No ordinary paused status: preserve failed/maxStepsExceeded and failed/cancelled; require command/persisted status and identity agreement and actual exit codes.",
-      "Preserve attempt-3 aggregate exit 1 and exact source-matched 11-assertion evidence; renew final-source gates and obtain explicit independent attribution decisions.",
+      "Preserve attempt-4 aggregate exit 1: 1469 tests, two skipped, 11 baseline-matching App assertions; reuse source-matched gates and obtain explicit independent attribution decisions.",
       "Verify PR #110 is open and Draft, targets main, and matches the reviewed pushed feature-branch head; never checkout, merge, commit or push main."
     ],
     "nonGoals": [
@@ -27,7 +27,8 @@
       "Preserve planning commit 9b1c935bc7e9fe4d586142e4ead035f84ef18ee7, local runs, existing GraphQL and browser authorization, and failure semantics.",
       "Current Step 5 accepts continuation plan/manifest before serial exact-file planning commit and non-force push, then single NRE-03 dispatch; final source publication follows independent reviews.",
       "Run foreground verification with explicit Xcode Swift toolchain, complete logs and exit statuses under evidenceRoot per plan and attempt; serialize shared SwiftPM build/test use.",
-      "Workers keep separate progress files and do not edit this manifest; one serial owner handles shared catalog, indexes, reconciliation, reviews and final Git actions."
+      "Workers keep separate progress files and do not edit this manifest; one serial owner handles shared catalog, indexes, reconciliation, reviews and final Git actions.",
+      "Reuse source-matched attempt-4 evidence; rerun unchanged expensive gates only for an explicit source-identity or evidence reason. Aggregate exit 1 is baselineReviewPending, never pass."
     ],
     "sharedPathIntent": "NRE-03 alone owns serial catalog/schema parity, generated schema and related design refresh; external predecessors are fixed. No lockfile or index edits by workers.",
     "designDecisionsAndRationale": [
@@ -67,16 +68,17 @@
       "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
       "scripts/surface-parity/generate-sdl.sh"
     ],
-    "reviewDecision": "Step 3 comm-000004 accepts the continuation design without findings. Step 5 comm-000006 accepts the single NRE-03 continuation plan and dispatch manifest without findings. Prior integration comm-000039 retains NRE-01/NRE-02 acceptance. NRE-03 implementation and independent baseline disposition remain pending.",
-    "reviewCommunicationId": "comm-000004",
+    "reviewDecision": "Step 5 comm-000006 accepts the single NRE-03 plan and dispatch manifest with no findings; NRE-01/NRE-02 remain accepted external prerequisites. Implementation and aggregate baseline acceptance remain pending.",
+    "reviewCommunicationId": "comm-000006",
     "codexAgentReferences": [
-      "/root: prior integration comm-000039",
-      "/root/provider_explore",
-      "/root/host_explore",
-      "/root/test_explore",
+      "/root",
+      "/root/test_gaps",
+      "/root/source_gaps",
+      "/root/baseline_evidence",
       "/root/code_audit",
       "/root/test_audit",
-      "step3-design-review: current comm-000004"
+      "step3-design-review: comm-000004",
+      "step5-impl-plan-review: comm-000006"
     ],
     "integrationReviewCommunicationId": "comm-000039",
     "historicalPlanReviewCommunicationId": "comm-000006",
@@ -92,6 +94,18 @@
         "command": "git diff --check",
         "completeLogPath": "tmp/native-remote-step4-focused-plan/diff-check.log",
         "statusPath": "tmp/native-remote-step4-focused-plan/diff-check.exit",
+        "exitStatus": 0
+      }
+    ],
+    "planningVerification": [
+      {
+        "command": "python3 tmp/native-remote-plan-step4-attempt4/verify.py",
+        "completeLogPath": "tmp/native-remote-plan-step4-attempt4/verification.log",
+        "exitStatus": 0
+      },
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/native-remote-plan-step4-attempt4/verification.log",
         "exitStatus": 0
       }
     ]
@@ -131,9 +145,9 @@
         "Use fixed accepted NRE-01/NRE-02 interfaces and strict reads; complete ordinary execution through the existing runner and captured host store.",
         "Actual Riela HTTP composition rejects unauthorized and malformed requests without effects and returns an authenticated persisted execution plus summary via the existing URLSession transport.",
         "Provider result agreement, real failure/pre-session, browser/profile and persisted cancellation tests pass; source build, strict changed-file SwiftLint and full aggregate complete with source-matched logs. Aggregate requires clean results or independent approval of individually proven baseline failures with every other test passing; never relabel nonzero exit as passing.",
-        "Independent test-integrity, adversarial and integration reviews accept source-matched evidence with no high or mid findings; directly related docs and progress records are finalized.",
+        "Independent test-integrity, single adversarial and Astra integration reviews accept source-matched evidence and explicit baseline disposition with no high/mid findings; finalize receiving docs and progress before reviewed publication.",
         "Retain accepted status/ownership and existing I7a comparison; rerun baseline only if evidence is invalidated. Implementation completeness and downstream formal review are separate as specified in the continuation contract.",
-        "Remaining invalid patch, saved-instance mismatch, deactivation, malformed JSON, query/write failure, ordered/cross-workflow summary, HTTP envelope/size and material zero-effect cases pass on final source."
+        "Independently verify retained attempt-4 invalid patch, saved-instance mismatch, deactivation, malformed JSON, query/write failure, ordered/cross-workflow summary, HTTP envelope/size and zero-effect cases; repair only demonstrated material gaps."
       ],
       "verification": [
         "env -u RIELA_WRITE_GENERATED_SDL /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter SurfaceParityGraphQLTests",
@@ -158,23 +172,62 @@
         "procedure": "impl-plans/active/native-remote-03-provider-host-integration.md#i7b--reviewed-generated-schema-parity-rule",
         "condition": "Only if parity requires regeneration; use documented Xcode login-shell preflight/environment; never hand-edit output."
       },
-      "implementationCompletion": "C1-C7 and renewed complete source-matched gates; hand off exactly baseline-matched aggregate exit 1 for formal review without self-blocking on that downstream decision. New errors or missing behavior remain incomplete.",
+      "implementationCompletion": "C1-C3 reconcile completed attempt-4 I5/I6 and source-matched evidence; repair only material gaps. Forward baselineReviewPending with actual aggregate exit 1 to C4 independent reviews; C5 documentation and C6 reviewed publication remain downstream.",
       "publicationVerification": [
         "git rev-parse HEAD",
         "git ls-remote --heads origin refs/heads/feat/native-remote-workflow-execution",
         "gh pr view 110 --repo tacogips/riela --json number,state,isDraft,baseRefName,headRefName,headRefOid,url"
-      ]
+      ],
+      "verificationPolicy": "Commands below are exact gates for justified renewal, not an unconditional rerun list. Reuse complete source-matched attempt-4 logs; record reason and hashes before renewal.",
+      "retainedEvidence": {
+        "root": "tmp/native-remote-receiver-20260925/NRE-03/attempt-4/",
+        "sourceManifest": "source-manifest-pre-progress.json",
+        "assertionComparison": "aggregate-baseline-comparison.json",
+        "caseComparison": "aggregate-case-comparison.json",
+        "reviewState": "baselineReviewPending",
+        "logs": [
+          {
+            "log": "provider-storage-final.log",
+            "exitFile": "provider-storage-final.exit",
+            "exit": 0
+          },
+          {
+            "log": "host-final.log",
+            "exitFile": "host-final.exit",
+            "exit": 0
+          },
+          {
+            "log": "parity-final.log",
+            "exitFile": "parity-final.exit",
+            "exit": 0
+          },
+          {
+            "log": "build-final.log",
+            "exitFile": "build-final.exit",
+            "exit": 0
+          },
+          {
+            "log": "lint-final.log",
+            "exitFile": "lint-final.exit",
+            "exit": 0
+          },
+          {
+            "log": "aggregate-final.log",
+            "exitFile": "aggregate-final.exit",
+            "exit": 1
+          }
+        ]
+      }
     }
   ],
   "preservedCheckpoint": "611dc100c25bf297368df7b51fe1aeff429d835c",
   "acceptedPlanIds": [
     "NRE-01",
-    "NRE-02"
-  ],
-  "pendingPlanIds": [
+    "NRE-02",
     "NRE-03"
   ],
-  "dispatchDisposition": "Exactly one NRE-03 task after current Step 5 acceptance and planning checkpoint commit/non-force push; accepted NRE-01/NRE-02 remain external prerequisites. Prior attempt-3 session is terminal.",
+  "pendingPlanIds": [],
+  "dispatchDisposition": "Step 5 comm-000006 accepted exactly one NRE-03 task for C1-C3 after this serial planning checkpoint; C4-C6 are downstream review/finalization. NRE-01/NRE-02 remain accepted external prerequisites. Prior attempt-4 workflow is terminal.",
   "externalPrerequisites": [
     {
       "planId": "NRE-01",

@@ -1,10 +1,10 @@
 {
   "taskId": "work-runtime-p1-7a-resume-comm000006-37c80ecd",
-  "workflowMode": "planning-only",
+  "workflowMode": "issue-resolution",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "e2515a452ad2afa34fd37ff2827bbb0dea5ce807",
+  "originalHead": "8b263ab07e22bb48a390489f395a7a4ea6a5d58b",
   "designDocPaths": [
     "design-docs/specs/design-work-runtime-consolidation.md",
     "design-docs/user-qa/qa-p1-7a-rielflow-publication.md"
@@ -15,33 +15,33 @@
       "reference": "Workflow input; no issue URL or number supplied",
       "intakeCommunicationId": "comm-000002",
       "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
-      "title": "Review exact test-file split ownership for remaining P1-7a A1 cases",
+      "title": "Finish reviewed P1-7a A1 GuardPolicy split and negative verification",
       "communicationId": "comm-000001",
       "issueNumber": null,
       "issueUrl": null
     },
     "acceptedDesignReview": "comm-000004",
-    "userProblem": "Publish reviewed exact GuardPolicy split ownership and remaining A1 verification; no implementation in this execution.",
+    "userProblem": "Complete only accepted A1 split and missing negative/race/first-hook assertions on the preserved dirty tree, then produce fresh source-matched evidence.",
     "requiredOutcomes": [
-      "New A1 policy tests prove bounded failure, last-admitted success, authorized director precedence, evidence-backed synthetic gate resolution, substantive blocking, and both terminal-first retry/non-retry cases without weakening assertions.",
-      "Atomic first canonical failed snapshot and reopened evidence retain adapterFailure without weakening terminal immutability; live inactivity and progress-sensitive positive tests pass before deletion.",
-      "Positive named replacement behavior and complete passing V1 before any deletion.",
-      "Removed options/remote fields reject; retained paths preserve behavior.",
-      "Final-source V1\u2013V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
-      "No material P1-7a finding remains after formal reviews; only reviewed files publish; parent P1 remains open."
+      "Exactly seven tests and two private helpers move to +GuardPolicy.swift; original <1000 lines, new <=1000; every moved/added test discovered once and positively executed.",
+      "All six A1 matrix rows and every named negative/race/first-hook subcase have meaningful assertions and exact row-to-test mapping.",
+      "Preserve retry limit, last-admitted success, director precedence, synthetic finding causality, atomic classification, terminal-first cancellation and exact-session live observer.",
+      "Fresh final-source V0, complete before-removal V1, policy-focused, canonical regression, cancellation-host, focused races, strict changed-file lint and source identity pass with full foreground logs and terminal exits.",
+      "A2/A3 remain open; no legacy deletion or external edits. Published receiving-side false/null rejection and authenticated acceptance remain prerequisites.",
+      "Formal test-integrity, single Sol adversarial and Astra integration decisions precede A1-only scoped documentation/finalization; deferred A2–A5 and parent P1 remain open."
     ],
     "nonGoals": [
-      "Any source/test/example/progress edits, deletion or A0\u2013A5 execution in this planning-only run.",
+      "No legacy removal, external edits or execution of deferred A2–A5 in this A1-only run.",
       "Implementation before current review/checkpoint gates or deletion before sealed A1 evidence.",
       "New failure enum, command-specific misclassification, terminal-fence weakening, blanket finding resolution or invented success",
       "New framework, schema/server, recursive director, broader ownership, unrelated cleanup or parent P1 closure"
     ],
     "constraints": [
-      "Preserve all nine protected dirty files and every prior evidence file byte-for-byte; implementation dispatch remains disabled throughout this planning-only run.",
+      "Preserve checkpoint and nine dirty implementations; planning is byte-preserving, implementation extends reviewed scope without reset/overwrite. Preserve all prior logs.",
       "Atomic adapterFailure records cause; configured policy and capacity select retry, authorized escalation or non-retry wait.",
       "Last-admitted success remains possible; no replacement bypasses cancellation acknowledgment or admission.",
       "Resolve only canonically proven synthetic gate absence using a matching real latest completed work gate; substantive findings/human acceptance remain mandatory.",
-      "A0\u2013A5 serial; source-matched V0/canonical-regression/cancellation-host/full V1 and live inactivity/progress proof precede all deletion.",
+      "A0 then A1 serial; only A1 is dispatched after accepted plan and published checkpoint. A2–A5 remain deferred.",
       "Keep task-free, required/optional gate, specialist/event/loop/routine behavior and external receiving-side evidence dependency."
     ],
     "designDecisionsAndRationale": [
@@ -75,17 +75,36 @@
     "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
     "accepted": true,
     "findings": [],
-    "reviewDecision": "Accepted bounded seven-test GuardPolicy ownership amendment; A1 incomplete and A2/A3 publication unresolved.",
-    "reviewedFiles": [
-      "design-docs/specs/design-work-runtime-consolidation.md"
-    ],
-    "designSha256": "35a2670fcd3de2514f22cdbb7aada46b58396865bbe98e19b8e0fe6b9d2007eb"
+    "reviewDecision": "Accepted for Step 4 planning; A1 implementation and formal reviews pending; A2/A3 open."
   },
   "planReview": {
-    "accepted": false,
-    "status": "pending",
+    "communicationId": "comm-000006",
+    "sourceStepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+    "accepted": true,
     "findings": [],
-    "reviewDecision": "Current Step 5 review pending; historical acceptance does not apply."
+    "needsDesignRevision": false,
+    "needsRevision": false,
+    "reviewDecision": "Accepted A1-only issue-resolution plan; implementation and formal test-integrity, Sol adversarial, and Astra integration reviews remain pending.",
+    "reviewedFiles": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json"
+    ],
+    "verification": [
+      {
+        "command": "python3 tmp/p1-7a-a1-plan/attempt-1/verification-2/verify-plan.py",
+        "completeLog": "tmp/p1-7a-a1-plan/attempt-1/verification-2/author-self-check.log",
+        "exitCode": 0,
+        "assessment": "Author evidence inspected; 14 checks passed."
+      },
+      {
+        "command": "git diff --check",
+        "completeLog": "tmp/p1-7a-a1-plan/attempt-1/verification-2/diff-check.log",
+        "exitCode": 0,
+        "assessment": "Author receipt inspected."
+      }
+    ]
   },
   "plans": [
     {
@@ -93,54 +112,19 @@
       "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
       "dependsOn": [],
       "writePaths": [
-        "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
-        "Sources/RielaCLI/RielaCommand.swift",
-        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
-        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
-        "Sources/RielaCLI/WorkflowCommands.swift",
-        "Sources/RielaCLI/WorkflowRunCommand.swift",
-        "Sources/RielaCLI/ProductionNodeAdapter.swift",
-        "Sources/RielaCLI/RielaCLIApplication.swift",
-        "Sources/RielaCLI/SessionCommands.swift",
-        "Sources/RielaCLI/SessionCommandModels.swift",
-        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
-        "Sources/RielaCLI/LoopCommands.swift",
-        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
-        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
         "Sources/RielaCLI/TaskDispatch.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
-        "Sources/RielaCore/WorkflowRunResult.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
         "Sources/RielaWork/TaskGuardCoordinator.swift",
-        "Tests/RielaCLITests/CommandParsingTests.swift",
-        "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
-        "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
-        "Tests/RielaCLITests/WorkflowCommandPackageLifecycleTests.swift",
-        "Tests/RielaCLITests/RielaExampleParityTests.swift",
-        "Tests/RielaCLITests/RielaExampleCatalog.swift",
-        "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
         "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
         "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
         "Tests/RielaCLITests/TaskCommandMutationTests.swift",
         "Tests/RielaWorkTests/TaskDispatcherTests.swift",
-        "impl-plans/progress/p1-dispatch.md",
-        "examples/auto-improve/README.md",
-        "examples/default-superviser/EXPECTED_RESULTS.md",
-        "examples/default-superviser/workflow.json",
-        "examples/supervised-mock-retry/EXPECTED_RESULTS.md",
-        "examples/supervised-mock-retry/mock-scenario.json",
-        "examples/supervised-mock-retry/nodes/node-main-worker.json",
-        "examples/supervised-mock-retry/prompts/main-worker.md",
-        "examples/supervised-mock-retry/workflow.json",
-        "Sources/RielaCore/RuntimePublication.swift",
-        "Sources/RielaCore/RuntimeStore.swift",
-        "Sources/RielaCLI/TaskRunCancellation.swift",
-        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
-        "examples/catalog/chat-persona-and-agent-trio.md",
-        "examples/monja-project-task-orchestrator/executor.ts",
-        "examples/monja-agent-collaboration/riela.ts",
-        "examples/monja-agent-collaboration/verify-workflow.ts",
-        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
-        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift"
+        "impl-plans/progress/p1-dispatch.md"
       ],
       "sharedPaths": [
         "README.md",
@@ -149,16 +133,123 @@
         "impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json"
       ],
       "acceptanceCriteria": [
-        "New A1 policy tests prove bounded failure, last-admitted success, authorized director precedence, evidence-backed synthetic gate resolution, substantive blocking, and both terminal-first retry/non-retry cases without weakening assertions.",
-        "Atomic first canonical failed snapshot and reopened evidence retain adapterFailure without weakening terminal immutability; live inactivity and progress-sensitive positive tests pass before deletion.",
-        "Positive named replacement behavior and complete passing V1 before any deletion.",
-        "Removed options/remote fields reject; retained paths preserve behavior.",
-        "Final-source V1\u2013V9 and retained-path receipts include exact commands, exits, logs, counts and source identity; broad failures remain FAILED with exact owners.",
-        "No material P1-7a finding remains after formal reviews; only reviewed files publish; parent P1 remains open.",
-        "Exactly seven named tests and two private helpers move to +GuardPolicy.swift; unchanged XCTest suite identity, every moved/added method discovered once, both files <=1000 lines.",
-        "Remaining named negative, stops-after-progress, warning/replay race and first-hook rows in the active plan all have final-source execution evidence; historical positive counts do not waive any row."
+        "Exactly seven tests and two private helpers move to +GuardPolicy.swift; original <1000 lines, new <=1000; every moved/added test discovered once and positively executed.",
+        "All six A1 matrix rows and every named negative/race/first-hook subcase have meaningful assertions and exact row-to-test mapping.",
+        "Preserve retry limit, last-admitted success, director precedence, synthetic finding causality, atomic classification, terminal-first cancellation and exact-session live observer.",
+        "Fresh final-source V0, complete before-removal V1, policy-focused, canonical regression, cancellation-host, focused races, strict changed-file lint and source identity pass with full foreground logs and terminal exits.",
+        "A2/A3 remain open; no legacy deletion or external edits. Published receiving-side false/null rejection and authenticated acceptance remain prerequisites.",
+        "Formal test-integrity, single Sol adversarial and Astra integration decisions precede A1-only scoped documentation/finalization; deferred A2–A5 and parent P1 remain open."
       ],
       "verification": [
+        "swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch",
+        "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch list",
+        "wc -l Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
+        "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'",
+        "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+        "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'",
+        "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence'",
+        "xargs -0 swiftlint lint --strict --quiet --no-cache < \"$a1_evidence_dir/changed-swift-files.nul\"",
+        "swiftlint lint --quiet --no-cache",
+        "shasum -a 256 -c \"$a1_evidence_dir/source-before.sha256\"",
+        "cmp \"$a1_evidence_dir/source-before.sha256\" \"$a1_evidence_dir/source-after.sha256\"",
+        "git diff --check"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "tasks": [
+        {
+          "taskId": "A0",
+          "dependsOn": [],
+          "intendedChanges": "Inventory exact consumers, protected dirty work, hashes and coverage; record identified rielflow owner/schema and unpublished c2b16ab plus pending publication decision. No external edits or provenance discovery.",
+          "deliverable": "Exact ownership/inventory, baseline hashes, immutable edit intents and publication/integration dependency record; local A1 may proceed through reviewed dispatch gates.",
+          "executionStatus": "pending"
+        },
+        {
+          "taskId": "A1",
+          "dependsOn": [
+            "A0"
+          ],
+          "intendedChanges": "First perform the accepted seven-test/two-helper GuardPolicy split; then complete every row in the active plan Accepted exact split and remaining A1 ownership table, including negative gate/retry/director cases, live stops-after-progress, warning/replay races and first terminal-hook assertions. Preserve completed repairs; seal fresh full A1 gates before deletion.",
+          "deliverable": "Policy and live behavior test mapping plus sealed before-removal source manifest and passing complete gate receipts.",
+          "executionStatus": "pending"
+        },
+        {
+          "taskId": "A2",
+          "dependsOn": [
+            "A1"
+          ],
+          "intendedChanges": "Deferred, not authorized in current execution. In a future authorized run, require sealed A1 and published receiving-side false/null rejection/authenticated acceptance before legacy removal.",
+          "deliverable": "Exact-path removal/rejection/preservation changes; receiving-owner rejection evidence required for acceptance.",
+          "executionStatus": "deferred"
+        },
+        {
+          "taskId": "A3",
+          "dependsOn": [
+            "A2"
+          ],
+          "intendedChanges": "Run final-source build, V1–V9, retained/cancellation gates and serial broad regression; classify exact failures.",
+          "deliverable": "Final-source V0–V9, canonical/cancellation/retained/typecheck and serial broad receipts with exact failure classification.",
+          "executionStatus": "deferred"
+        },
+        {
+          "taskId": "A4",
+          "dependsOn": [
+            "A3"
+          ],
+          "intendedChanges": "Obtain test-integrity, single Sol adversarial and Astra combined-tree acceptance; renew affected evidence after repairs.",
+          "deliverable": "Independent test-integrity, Sol adversarial and Astra combined-tree accepted decisions on final source.",
+          "executionStatus": "deferred"
+        },
+        {
+          "taskId": "A5",
+          "dependsOn": [
+            "A4"
+          ],
+          "intendedChanges": "Refresh reviewed docs/progress; exact-file commit and non-force push; leave parent P1 open.",
+          "deliverable": "Reviewed documentation/progress, exact implementation allowlist and non-force publication receipts; parent P1 open.",
+          "executionStatus": "deferred"
+        }
+      ],
+      "executionScope": "A0/A1 only after Step 5 acceptance and published planning checkpoint. A2–A5 and deferredWritePaths/deferredVerification grant no current dispatch or write permission.",
+      "evidencePolicy": "Preserve attempt-1. Use next unused attempt >=2; replace prospective attempt paths in commands with that directory, record exact executed command. New NUL lint list includes the split; all source hashes, full logs, terminal exits and row/subcase counts required.",
+      "deferredWritePaths": [
+        "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowCommands.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/SessionCommandModels.swift",
+        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
+        "Sources/RielaCLI/LoopCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/WorkflowRunResult.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandPackageLifecycleTests.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
+        "examples/auto-improve/README.md",
+        "examples/default-superviser/EXPECTED_RESULTS.md",
+        "examples/default-superviser/workflow.json",
+        "examples/supervised-mock-retry/EXPECTED_RESULTS.md",
+        "examples/supervised-mock-retry/mock-scenario.json",
+        "examples/supervised-mock-retry/nodes/node-main-worker.json",
+        "examples/supervised-mock-retry/prompts/main-worker.md",
+        "examples/supervised-mock-retry/workflow.json",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "examples/catalog/chat-persona-and-agent-trio.md",
+        "examples/monja-project-task-orchestrator/executor.ts",
+        "examples/monja-agent-collaboration/riela.ts",
+        "examples/monja-agent-collaboration/verify-workflow.ts"
+      ],
+      "deferredVerification": [
         "swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch",
         "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
         "swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
@@ -198,57 +289,32 @@
         "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'",
         "swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'"
       ],
-      "progressFile": "impl-plans/progress/p1-dispatch.md",
-      "tasks": [
+      "activeTaskIds": [
+        "A0",
+        "A1"
+      ],
+      "deferredTaskIds": [
+        "A2",
+        "A3",
+        "A4",
+        "A5"
+      ],
+      "downstreamA1Gates": [
         {
-          "taskId": "A0",
-          "dependsOn": [],
-          "intendedChanges": "Inventory exact consumers, protected dirty work, hashes and coverage; record identified rielflow owner/schema and unpublished c2b16ab plus pending publication decision. No external edits or provenance discovery.",
-          "deliverable": "Exact ownership/inventory, baseline hashes, immutable edit intents and publication/integration dependency record; local A1 may proceed through reviewed dispatch gates."
-        },
-        {
-          "taskId": "A1",
-          "dependsOn": [
-            "A0"
-          ],
-          "intendedChanges": "First perform the accepted seven-test/two-helper GuardPolicy split; then complete every row in the active plan Accepted exact split and remaining A1 ownership table, including negative gate/retry/director cases, live stops-after-progress, warning/replay races and first terminal-hook assertions. Preserve completed repairs; seal fresh full A1 gates before deletion.",
-          "deliverable": "Policy and live behavior test mapping plus sealed before-removal source manifest and passing complete gate receipts."
-        },
-        {
-          "taskId": "A2",
+          "gateId": "A1-review",
           "dependsOn": [
             "A1"
           ],
-          "intendedChanges": "Only after sealed A1 pass, remove exact legacy paths and update proven SurfaceParity/catalog/Monja consumers. External receiving rejection requires authorized owner and false/null tests; no A2/A3 acceptance without evidence. Local c2b16ab is unpublished and cannot satisfy A2/A3 acceptance.",
-          "deliverable": "Exact-path removal/rejection/preservation changes; receiving-owner rejection evidence required for acceptance."
+          "deliverable": "Formal test-integrity, single Sol adversarial and Astra integration accepted decisions with reviewed files/hashes; repair serially and renew evidence/review."
         },
         {
-          "taskId": "A3",
+          "gateId": "A1-finalize",
           "dependsOn": [
-            "A2"
+            "A1-review"
           ],
-          "intendedChanges": "Run final-source build, V1\u2013V9, retained/cancellation gates and serial broad regression; classify exact failures.",
-          "deliverable": "Final-source V0\u2013V9, canonical/cancellation/retained/typecheck and serial broad receipts with exact failure classification."
-        },
-        {
-          "taskId": "A4",
-          "dependsOn": [
-            "A3"
-          ],
-          "intendedChanges": "Obtain test-integrity, single Sol adversarial and Astra combined-tree acceptance; renew affected evidence after repairs.",
-          "deliverable": "Independent test-integrity, Sol adversarial and Astra combined-tree accepted decisions on final source."
-        },
-        {
-          "taskId": "A5",
-          "dependsOn": [
-            "A4"
-          ],
-          "intendedChanges": "Refresh reviewed docs/progress; exact-file commit and non-force push; leave parent P1 open.",
-          "deliverable": "Reviewed documentation/progress, exact implementation allowlist and non-force publication receipts; parent P1 open."
+          "deliverable": "Reviewed scoped docs/progress, exact-file commit and non-force push through workflow gates; A2–A5 and parent P1 stay open."
         }
-      ],
-      "executionScope": "Future implementation only; no writePaths/sharedPaths authorize implementation edits during this planning-only execution.",
-      "evidencePolicy": "Preserve attempt-1. Use next unused attempt >=2; replace prospective attempt paths in commands with that directory, record exact executed command. New NUL lint list includes the split; all source hashes, full logs, terminal exits and row/subcase counts required."
+      ]
     }
   ],
   "protectedDirtyPaths": [
@@ -264,9 +330,9 @@
   ],
   "implementationDispatchAllowed": false,
   "implementationDispatchConditions": [
-    "Disabled throughout this planning-only execution, even after checkpoint publication.",
-    "A later implementation execution requires accepted design/plan and published exact-path checkpoint.",
-    "Future A1 must pass complete source-matched before-removal gates; A2/A3 acceptance requires published receiving-boundary evidence."
+    "Step 3 accepted design comm-000004.",
+    "Step 5 accepts current plan/manifest; serial owner records review and publishes exact three-path planning checkpoint before enabling dispatch.",
+    "Dispatch only A0/A1. No legacy removal. A1 formal downstream reviews/finalization do not depend on deferred A2/A3."
   ],
   "checkpointWritePaths": [
     "design-docs/specs/design-work-runtime-consolidation.md",
@@ -305,7 +371,7 @@
       "reviewDecision": "Step 5 accepted this issue-resolution plan with no revision or design findings; implementation still requires the scoped checkpoint."
     }
   },
-  "executionMode": "design-plan-only",
+  "executionMode": "issue-resolution",
   "workflowVersion": "0.3.34",
   "planningTasks": [
     {
@@ -325,14 +391,14 @@
       "dependsOn": [
         "P1"
       ],
-      "deliverable": "Independent Step 5 acceptance; pending."
+      "deliverable": "Independent Step 5 acceptance in comm-000006; complete without findings."
     },
     {
       "taskId": "P3",
       "dependsOn": [
         "P2"
       ],
-      "deliverable": "Reviewed three-path checkpoint commit and non-force push; no implementation dispatch."
+      "deliverable": "Reviewed three-path checkpoint commit and non-force push; record receipts, then enable A0/A1-only dispatch."
     }
   ]
 }

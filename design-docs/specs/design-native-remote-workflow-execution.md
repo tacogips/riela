@@ -1,47 +1,42 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted NRE-01/NRE-02/NRE-03 contracts and publication are already on the P1 branch per effective intake. Current work continues from checkpoint `2f472b3bd4d203f21bf72497900e58b88c2ece3b`: A2/A3 and V7 receipts are complete; independent A4 decisions and A5 publication remain pending. Preserve source-matched removal receipts.
+Status: accepted NRE-01/NRE-02/NRE-03 receiving contracts are preserved. Effective intake records P1-7a A2–A5 accepted and published at `adde89d4af122d54e1311aad1c4ded12cddbe5c6`. Parent P1 final acceptance remains open under Work Runtime §17.11; both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each.
 Mode: `issue-resolution`; Step 2 updates design only.
-Issue: “Complete P1-7a A4 independent evidence handoff and A5 publication”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
+Issue: “Reconcile and complete Work Runtime P1 final acceptance”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.
 
-## Current P1-7a receiving integration
+## Current parent P1 receiving reconciliation
 
-The current continuation in
-`design-docs/specs/design-work-runtime-consolidation.md` §17.10 governs A2–A5.
-The historical NRE-only scope, pending PR #110 publication, and separate-checkout
-restrictions below describe earlier execution checkpoints, not current gates.
-Preserve the accepted receiver; no replacement protocol or service is needed.
-Remove legacy client emission with P1-7a while retaining native top-level
-`autoImprove`/`nestedSuperviser` rejection by presence before provider effects,
-including false/null and all accepted input forms. Opaque `runtimeVariables`
-remain permitted. Preserve authenticated ordinary execution, strict persisted
-summaries, host-owned paths, cancellation and actual terminal outcomes.
+`design-docs/specs/design-work-runtime-consolidation.md` §17.11 governs the
+requirement ledger, evidence reuse, independent reviews and final publication.
+Earlier NRE-only scope, pending PR #110 publication and A4/A5 instructions below
+are historical execution context. Preserve the accepted receiver and published
+removal; no replacement protocol, service or archived rielflow dependency exists.
 
-Require `swift test --filter WorkflowExecutionGraphQLTests` and
-`swift test --filter ServeHTTPCommandTests` receipts matched to final removal
-source, alongside P1-7a V0–V9 and independent reviews. Reuse complete unaffected
-receipts only after source comparison; renew missing or invalidated checks.
-The attempt-2 evidence index is
-`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json`.
-Its passing checks and baseline comparisons do not substitute for A4 acceptance.
-Section 17.10's current A4/A5 continuation retains the separate repository-wide final and
-checkpoint lint receipts, diagnostic-level comparison and strict changed-file
-gate. Renew native tests only when their source/dependencies or evidence are
-invalidated; this documentation amendment adds no receiver behavior. Preserve
-all nonzero aggregate outcomes for independent test-integrity, Sol adversarial
-and Astra integration disposition. V7 is complete (970 Swift files, both exits 0, 24 unchanged warnings); strict
-21-file lint passed separately. Both broad aggregates remain FAILED, exit 1,
-and each requires its own integrity, adversarial and Astra disposition. Carry
-A0's historical environment-metadata limitation and runtime-owned checkpoint
-projection through integration; workers do not edit the dispatch manifest.
-No new remote protocol or publication dependency is introduced.
-Existing source/tests establish where the contract lives, not a new passing
-receipt. No archived `rielflow`
-publication is a dependency. Historical NRE aggregate failures and unavailable
-browser evidence retain their recorded outcomes; do not transplant historical
-baseline attribution onto new failures without comparing their causes.
-No new user decision, codex-agent reference mapping or Cursor adapter is required.
+The audit must retain native top-level `autoImprove`/`nestedSuperviser` rejection
+by presence before provider effects, including false/null and all accepted input
+forms; opaque `runtimeVariables` remain permitted. Preserve authenticated ordinary
+execution, strict persisted summaries, host-owned paths, cancellation and actual
+terminal outcomes. Inspect `Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift`,
+`Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift`, and
+`Sources/RielaCLI/WorkflowExecutionProvider.swift` against
+`Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift` and
+`Tests/RielaCLITests/ServeHTTPCommandTests.swift`.
+
+Reuse source-matched complete native receipts; renew
+`swift test --filter WorkflowExecutionGraphQLTests` or
+`swift test --filter ServeHTTPCommandTests` only for material invalidation or a
+missing required receipt, retaining the original command environment/build method.
+The P1-7a attempt-2 verification index and attempt-6 renewed comparisons under
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/` are entry points, not new
+passing claims. Preserve prior exact independent aggregate dispositions and
+obtain separate parent test-integrity, Sol adversarial and Astra decisions under
+§17.11. A0 historical per-command environment snapshots are unavailable.
+Historical NRE aggregate failures and unavailable browser evidence retain their
+outcomes; do not transplant their attribution onto different failures.
+
+No new user decision, codex-agent reference mapping, Cursor adapter or receiver
+behavior is proposed. Parent closure and new remote-tip proof remain pending.
 
 ## Receiving usage and review disposition
 

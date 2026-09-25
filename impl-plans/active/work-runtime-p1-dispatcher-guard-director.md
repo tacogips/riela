@@ -1,4 +1,655 @@
-# Work Runtime P1-7a: A4 independent evidence handoff and A5 publication
+# Work Runtime P1: final acceptance reconciliation
+
+## Current executable contract — accepted design comm-000004 (2026-09-25)
+
+Mode `issue-resolution`; issue “Reconcile and complete Work Runtime P1 final
+acceptance”, `tacogips/riela`, Draft PR #109, no issue number/URL. Step 1 intake
+`comm-000002`; Step 3 `comm-000004` accepted both designs with no findings in
+`codex-design-and-implement-review-loop-session-1`. Authority:
+`design-docs/specs/design-work-runtime-consolidation.md` §17.11 and
+`design-docs/specs/design-native-remote-workflow-execution.md` current parent
+reconciliation. No codex-agent reference input, Cursor mapping or divergence.
+
+Intent: reconcile every P1 acceptance requirement with published source and
+actual evidence; implement only proven material gaps. Starting commit is
+`adde89d4af122d54e1311aad1c4ded12cddbe5c6` on `feat/remaining-impl-plans`.
+Effective intake records P1-6d, P1-7b and P1-7a A2–A5 published. The original
+36 unchecked boxes remain verbatim below as historical records; they are not
+instructions to repeat earlier work. This leading contract supersedes all
+previous execution, blanket rerun, external receiving-publication and parent
+closure prohibitions below. Parent closure now requires the gates here.
+Runner-resolved provenance and effective input are authoritative.
+
+### Ownership and non-goals
+
+One plan, one serial mutation owner. No independent implementation slice is
+established before the audit. Read-only investigations and independent reviews
+can run concurrently; they return evidence to the owner and do not edit shared
+files. No additional worktree, private branch or concurrent Git operation.
+
+```json
+{
+  "planId": "p1-dispatch",
+  "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+  "dependsOn": [],
+  "writePaths": [
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/progress/p1-dispatch.md"
+  ],
+  "sharedPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md",
+    "impl-plans/progress/plans-index.json",
+    "impl-plans/README.md",
+    "impl-plans/PROGRESS.json",
+    "impl-plans/progress/meta.json",
+    "impl-plans/progress/phases.json",
+    "README.md",
+    "examples/README.md"
+  ],
+  "progressFile": "impl-plans/progress/p1-dispatch.md"
+}
+```
+
+The owner updates this plan's ledger and appends only its progress log during
+implementation. Shared paths are serial finalization paths, not an unconditional
+edit list or staging allowlist. Resolve existing P1 index records through the
+checked-in `plans-index.json` schema; amend exact ownership before editing an
+additional referenced record. Do not invent a missing per-plan JSON file.
+No source/test edit is preauthorized by a demonstrated defect in this plan.
+If R2 finds a material gap, R3 must first record the exact source/test paths,
+requirement, intended hunk and affected command in a bounded amendment, have
+that scope accepted through the workflow's review/serial-owner route, and
+update the runtime-owned write-path projection before editing. Do not silently
+expand ownership or invent a design; a design defect returns for design review.
+This is a scope gate, not a new user-permission requirement.
+
+Non-goals: repeat completed P1/NRE work, restore removed auto-improve paths,
+change receiver protocol, introduce abstractions/dependencies, style cleanup,
+broad formatting, unrelated test repair, archive plans globally, edit archived
+rielflow or Monja tenant-sharding-d48, disturb other sessions/worktrees, merge
+main, force push or release. No mutable registry discovery. Package digests
+change only if an actually modified workflow/prompt/script/skill has a checked-in
+owning manifest; no such edit is presently planned. No lockfile generation.
+
+### Requirement inventory and ledger contract
+
+The following inventory is immutable relative to the starting Git object:
+IDs and original line numbers remain stable after this prefix shifts lines.
+Every original box, including continuation text, is copied below. Original
+checkboxes are not bulk checked or deleted. R1/R2 add dispositions in this
+leading contract, with subrows when a compound requirement differs in status.
+
+Initial routing (not a claim of behavioral completion):
+
+| Inventory IDs | Current requirement mapping | Audit target |
+| --- | --- | --- |
+| P1-U01–U07 | P1-7a / U27; current R1–R6 | Earlier A1-only process and A2–A5 deferrals; compare published replacement, not old authorization limits. |
+| P1-U08–U14 | P1-7b / U28; current R1–R6 | Earlier B0–B4 gates, catalog and publication evidence. |
+| P1-U15–U22 | P1-6c / U25; current R1–R6 | Earlier cancellation/store/live/review/finalization gates. |
+| P1-U23–U28 | P1-6a, 6b, 6c, 6d, 7a, 7b respectively | Current behavioral acceptance and published proof. |
+| P1-U29–U36 | R2, R4, R5, R5, R2, conditional R3, conditional R3, R6 respectively | Current reconciliation, review, docs/index, progress, conditional digests/lockfile and publication. |
+
+For each final ledger row record: original ID/section/text; current design
+paragraph; exact current source/test path and symbol (or not-applicable with
+process rationale); publication commit; evidence command, cwd/environment,
+complete log, terminal exit, source seal/dependency comparison; actual review
+artifact/session/communication; classification and rationale; owner/action.
+Use only `complete`, `materially open`, `historical/superseded`, or
+`externally blocked`. Pending required evidence/review is `materially open`,
+not proof of missing production behavior. Historical rows name the replacement
+row and superseding accepted contract/publication. Externally blocked requires
+an observed dependency, owner and unblock condition; none is established now.
+No current requirement is closed from source inspection or matching counts alone.
+
+Add rows C01 onward for current obligations not represented by the boxes:
+leading predecessor invariants/receipt reuse; §§17.2–17.10 current behavioral
+clauses; native receiver authentication, false/null rejection before effects,
+opaque variables, strict summaries and host-owned paths; retained specialist,
+event, loop and routine paths; and A0 evidence limitations. Explicitly link
+these clauses to existing rows when covered instead of duplicating work.
+
+### Tasks, dependencies and acceptance
+
+| Task | Depends on | Owner and precise deliverable |
+| --- | --- | --- |
+| R0 checkpoint | Step 5 acceptance | Serial workflow owner commits accepted two designs and this plan before native dispatch; non-force pushes checkpoint and verifies remote equality. Record exact paths/hash and preserve source/progress bytes. Step 4 does not commit/push. |
+| R1 ledger | R0 | Implementation owner fills all U01–U36 and current-clause rows; cite original commits, source symbols, tests and supersession links. Inventory alone is not completion. |
+| R2 evidence | R1 | Compare each relevant receipt input seal to current source/config/dependencies; retrieve exact prior integrity/Sol/Astra decisions from predecessor session artifacts; create assertion/cause/owner matrix and source reconciliation under a fresh tmp attempt; append progress. |
+| R3 bounded repair | R2 | If no material gap, explicitly record no source edit required. Otherwise obtain exact ownership amendment, repair only ledger-linked gaps and renew affected checks with full terminal receipts; reconcile final bytes. |
+| R4-integrity | R3 | Independent test-integrity decision on ledger coverage, source applicability, assertion attribution and each failed aggregate separately. |
+| R4-adversarial | R3 | Independent Sol adversarial decision for material correctness/spec/security/regression/verification findings; separate aggregate dispositions. |
+| R4-reconcile | R4-integrity, R4-adversarial | Single owner resolves every high/mid finding, records drift reconciliation and renews invalidated checks/reviews. |
+| R4-integration | R4-reconcile | Astra accepts combined tree, exact reviewed files, all ledger rows and both aggregate dispositions; missing decisions block acceptance. |
+| R5 status | R4-integration | Serial owner updates both designs, plan, progress and existing P1 index metadata to actual accepted status. Review README/example claims and edit only mismatches; preserve all other plans. Recheck final documentation and affected review scope. |
+| R6 publication | R5 | Workflow finalization reviews ordered unique exact-file allowlist, commits/pushes non-force, proves local/remote/Draft PR #109 tip equality and records terminal publication evidence. |
+
+R1 and R2 can iterate read-only evidence gathering, but cannot enter R3 until
+coverage is explicit. Step 6 completes R1–R3 and its evidence handoff. Formal R4,
+review-dependent R5 and publication R6 are downstream, not reasons to self-block
+an otherwise complete Step 6. A demonstrated unmet behavioral gate is incomplete,
+not downstream work. Never label the parent complete before all applicable gates.
+
+### Evidence entry points and preserved invariants
+
+Read source/tests and corresponding published progress for P1-6a through P1-7b,
+not merely the last commit. Start at `Sources/RielaCLI/TaskDispatch.swift`,
+`Sources/RielaWork/TaskDispatcher.swift`, `Sources/RielaWork/WorkStore+Reservation.swift`,
+`Sources/RielaWork/WorkStore+Decisions.swift`, `Sources/RielaWork/AgentDirector.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`,
+`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift`, and
+`Tests/RielaCLITests/TaskRuntimeExampleTests.swift`. Follow actual callees and
+existing tests to establish canonical reservation/session identity, no-write
+wait/dry-run, durable causal decisions, cancellation acknowledgment before fence
+release, bounded child accounting and replacement examples. P1-6b publication
+receipt cites `7d8fc121a4f4469de7a40495282b53c9d813b8d4`; resolve other exact
+commits from progress/history rather than guessing.
+
+For native behavior inspect the exact source/test anchors in the accepted
+native design. Preserve task-free plain workflow runs, top-level retired-field
+rejection including false/null before provider effects, opaque runtimeVariables,
+authentication, cancellation and retained specialist/event/loop/routine behavior.
+
+Under `tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/`, read:
+
+- `attempt-2/verification-evidence.json` for expanded commands, positive tests,
+  build, native/retained checks, Monja tests/typechecks and source identities;
+- `attempt-6/source-final.sha256`, `source-final-after-progress.sha256`,
+  `v7-source-final.sha256`, `v7-comparison.json`, `strict-changed.log`, and
+  `cancellation-focused.log` for the renewed final source and lint/cancellation;
+- `attempt-6/V5-comparison.json` and `full-comparison.json`, their final logs
+  and referenced attempt-2 baseline logs for assertion-level comparison.
+
+Work/CLI/Core remains **FAILED**, exit 1, 2,061 tests; full nonparallel Swift
+remains **FAILED**, exit 1, 2,717 cases, two skipped. Both match 21 assertions
+across 19 failed cases. Preserve exact diagnostic normalization, causes,
+follow-up owners and separate original integrity, Sol and Astra decisions.
+`identical: true` or equal counts is insufficient attribution. New reviews must
+separately accept/reject final applicability and attribution for both aggregates.
+A0 historical per-command environment snapshots are unavailable; do not backfill
+invented metadata. V7/strict lint and other passing evidence stay separate from
+failed aggregates. Historical failed earlier gates retain their original outcomes.
+
+### Verification commands and evidence requirements
+
+Run foreground commands to terminal exit; record expanded argv, cwd, relevant
+redacted environment, start/end, exit and complete log under a fresh unused
+`tmp/work-runtime-p1-final-acceptance/<attempt>/`. Never overwrite predecessor
+receipts. Nonzero, truncated and zero-test executions cannot be called passing.
+
+Read-only audit commands (capture each exit/log separately):
+
+```sh
+git rev-parse HEAD
+git symbolic-ref --short HEAD
+git status --porcelain=v1 --untracked-files=all
+git diff --cached --name-status
+git show adde89d4af122d54e1311aad1c4ded12cddbe5c6:impl-plans/active/work-runtime-p1-dispatcher-guard-director.md
+git log --format='%H %s' -- impl-plans/progress/p1-dispatch.md Sources/RielaWork Sources/RielaCLI/TaskDispatch.swift
+cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json
+cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-comparison.json
+cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-comparison.json
+cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/v7-comparison.json
+git diff --check
+git diff --cached --check
+```
+
+Inventory extraction must find exactly the 36 baseline boxes and preserve their
+full continuation text; do not count newly authored ledger rows as old boxes.
+Compare recorded hashes by recomputing SHA-256 for each listed current input;
+classify every mismatch (including documentation-only differences), changed
+membership and dependencies. Save machine-readable comparison and reviewable
+rationale. Read complete logs referenced by the indexes; inspect terminal suite
+summaries and command exit receipts. Retrieve prior decisions through known
+execution artifacts/session references, never workflow provenance rediscovery.
+If an actual decision is unavailable, record that specific evidence gap, keep
+its row open and obtain the required new independent decision without fabricating
+historical acceptance details.
+
+Conditional renewal uses the receipt's exact expanded command/environment and
+isolated build/cache paths with a fresh log destination, not an approximate bare
+command. The existing attempt-2 index and attempt-6 `renew-evidence.py` are
+read-only command sources; do not execute the old script into old destinations.
+Select only affected checks: Swift build and focused reservation/dry-run/
+cancellation/director/example tests for corresponding changes; native
+`swift test --filter WorkflowExecutionGraphQLTests` and
+`swift test --filter ServeHTTPCommandTests` for receiver changes; preserved
+Monja Bun tests and TypeScript commands only if their inputs changed. Retained
+event/loop/routine cases must remain positively covered. For Swift changes read
+and apply the Swift skill, run strict changed-file SwiftLint and reconcile V7
+membership/config/diagnostics; use complete recorded commands. Renew broad
+aggregates only after documented material invalidation, preserving both original
+failed receipts and independently reviewing any new failures. Documentation-only
+changes do not trigger Swift/Monja/broad reruns. No browser change is planned;
+record browser E2E applicability at its workflow gate.
+
+R5 validates existing JSON with `python3 -m json.tool <exact-modified-json-path>`
+and compares parsed non-P1 entries to preimages. Record the fully expanded paths;
+no new JSON shape or unrelated status changes. Run both diff checks after edits.
+R6 reads `git diff --name-status <checkpoint>` and `git diff --cached --name-status`,
+compares actual paths/hashes to the reviewed ordered unique allowlist, and uses
+the workflow-owned commit/push gates. After publication run:
+
+```sh
+git rev-parse HEAD
+git show --format=fuller --stat HEAD
+git ls-remote --heads origin feat/remaining-impl-plans
+gh pr view 109 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid
+```
+
+Require number 109, isDraft true, headRefName `feat/remaining-impl-plans` and
+headRefOid equal local HEAD and live remote tip. No main merge or release.
+Final commit/push receipt carries the exact ordered file set and matching hashes;
+if publication fails, report concrete command/log/exit and leave R6 open.
+
+### Edit integrity, progress and completion
+
+Before every edit fresh-read exact bytes, save immutable preimage/SHA-256 and
+intended hunk/requirement in a new tmp attempt, recheck the preimage hash immediately
+before write, then save postimage/hash (including additions/deletions). At join
+compare every changed path to accepted intents and ownership; unexplained drift
+requires serial repair before reviews. Never reset/stash unrelated work. Shared
+indexes, package digests, lockfile generation and archiving remain serial-owned;
+none is changed speculatively. Runtime dispatch manifests are not worker-owned.
+
+Append to `impl-plans/progress/p1-dispatch.md` with execution/communication IDs,
+row/task states, paths/hashes, publication/source references, expanded commands,
+complete logs/final exits/test counts, invalidations, review decisions/findings,
+separate failed aggregate dispositions and remaining owners/actions. Preserve
+all earlier receipts and historical status text. Read-only reviewers return
+artifacts; the owner appends their references without impersonating reviewers.
+
+Implementation completion requires all 36 rows and extra current clauses audited,
+no unresolved material implementation/evidence gap, exact final-source seals and
+an explicit R1–R3 handoff. Overall completion additionally requires actual R4
+acceptance with no high/mid findings, truthful R5 docs/index, accepted exceptions
+that never turn failed gates green, and R6 remote equality. Externally blocked
+current requirements remain open; superseded process rows cite replacements.
+No unrelated plan is closed. No unresolved user decision or design defect is
+established. This plan is pending Step 5 acceptance, not self-approved execution.
+
+### Original 36-box inventory at adde89d
+
+#### P1-U01 — original line 1517; Completion/progress checklist
+
+```text
+- [ ] Current Step 5 accepts this A1-only plan; P3 publishes only the three planning paths, then enables A0/A1 dispatch.
+```
+
+#### P1-U02 — original line 1518; Completion/progress checklist
+
+```text
+- [ ] A0 inventory/receiving-boundary investigation and immutable intents complete.
+```
+
+#### P1-U03 — original line 1519; Completion/progress checklist
+
+```text
+- [ ] A1 causal policy, paired cancellation, live inactivity/progress, canonical-regression, cancellation-host and full four-suite V1 pass on the same source before deletion.
+```
+
+#### P1-U04 — original line 1520; Completion/progress checklist
+
+```text
+- [ ] Deferred A2: removal and rejection/preservation; not authorized now.
+```
+
+#### P1-U05 — original line 1521; Completion/progress checklist
+
+```text
+- [ ] Deferred A3: post-removal final-source receipts.
+```
+
+#### P1-U06 — original line 1522; Completion/progress checklist
+
+```text
+- [ ] Deferred A4: full-removal formal review; separate current A1-only review is required.
+```
+
+#### P1-U07 — original line 1523; Completion/progress checklist
+
+```text
+- [ ] Deferred A5: full-removal finalization; separate current A1-only documentation/finalization is required.
+```
+
+#### P1-U08 — original line 1899; Completion gates
+
+```text
+- [ ] Step 5 acceptance and exact design/plan/manifest checkpoint/non-force push.
+```
+
+#### P1-U09 — original line 1900; Completion gates
+
+```text
+- [ ] B0 inventory/baseline and exact ownership recorded.
+```
+
+#### P1-U10 — original line 1901; Completion gates
+
+```text
+- [ ] B1 minimal bundles and truthful README/EXPECTED_RESULTS agree.
+```
+
+#### P1-U11 — original line 1902; Completion gates
+
+```text
+- [ ] B2 both catalog entries and observed expected mock counts corrected;
+  catalog validation/mock tests and both exact amendment regressions pass; all
+  seven rows proven at real task boundaries; retained tests preserved.
+```
+
+#### P1-U12 — original line 1905; Completion gates
+
+```text
+- [ ] B3 final-source build, V1 before-removal, affected focused/V11, V8, strict
+  lint, diff and serial broad evidence complete; new/slice failures resolved.
+```
+
+#### P1-U13 — original line 1907; Completion gates
+
+```text
+- [ ] Formal test-integrity, single adversarial and Astra combined-tree reviews
+  record no material P1-7b defect; repairs invalidate and renew affected checks.
+```
+
+#### P1-U14 — original line 1909; Completion gates
+
+```text
+- [ ] B4 shared docs and progress reflect accepted evidence; P1-7a/parent P1 and
+  unresolved broad follow-ups remain open. Exact-path commit and non-force push
+  have matching published hash and reviewed file evidence.
+```
+
+#### P1-U15 — original line 3647; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-store** after catalog-projection: Verify the preserved implementation, repairing
+  only demonstrated gaps. In `WorkStore+Decisions.swift` and
+  `WorkStore+Reservation.swift`, preserve and consume the existing
+  `attemptCancellation(taskId:attemptId:sessionId:)` read and
+  `AttemptCancellationRecord`; do not recreate the verified seam. Repair only
+  demonstrated transaction/replay gaps. Preserve decision/version validation, request-before-signal ordering,
+  authorization/node-start guards and generic-reconcile rejection. Acknowledge
+  only canonical exact cancelled snapshots; atomically update attempt, lease,
+  task and acknowledgment. Reopen recognizes already committed acknowledgment
+  without applying it twice. Keep pending replacement consumption in the existing
+  reservation transaction. Extend the three Work test files listed above only
+  for demonstrated missing coverage.
+```
+
+#### P1-U16 — original line 3659; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-remote** after store: Preserve implemented receipts and proof
+  consumption; repair only defects exposed by the required live/race tests. In `DistributedNodeExecution.swift`,
+  `DistributedJobController.swift`, `DistributedWorkerModels.swift`,
+  `DistributedWorkerLoop.swift`, `DistributedWorkerHTTPRouter.swift` and only
+  if needed `DistributedWorkerProtocol.swift`, carry proof of worker stop using
+  the existing authenticated worker completion route and durable job record.
+  Controller cancellation intent/status alone is insufficient. Retain the exact
+  job, lease token, worker incarnation and task-session attachment binding;
+  acknowledge only after the worker has cancelled and joined its executor/process
+  tree. A queued job proven never claimed may establish nonexecution atomically.
+  A leased job needs worker acknowledgment, including after lease expiry; expired
+  or missing heartbeat alone cannot establish it. Reject foreign/stale worker
+  proof and late successful results. Preserve cancelled-job result semantics;
+  use a minimal additive optional acknowledgment field if required, with absent
+  legacy data meaning unacknowledged. Do not add a parallel transport or store.
+  The task-backed caller awaits that proof before canonical cancellation
+  persistence; failed/lost transport keeps the attempt fenced. Bound individual
+  waits and surface uncertainty without releasing the fence. Preserve plain
+  distributed cancellation and worker reuse; reuse Core controller, Server HTTP
+  and distributed process regressions, extending only demonstrated coverage gaps.
+```
+
+#### P1-U17 — original line 3679; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-live** after remote: Verify and complete the preserved connection of `TaskDispatch.swift` and
+  `WorkflowRunCommand+TaskReservation.swift` to a run-owned bounded poll of exact
+  durable pending requests. Use `TaskRunCancellation.swift` only as a cohesive
+  helper for this lifetime, not a general service. Observe before admission and
+  throughout running, interrupt once per request while allowing safe retry,
+  and cancel/join the observer on every exit. In `TaskCommands.swift` preserve
+  exactly-one-action and required identity/version parsing; distinguish request
+  acceptance from task completion in existing output (`TaskCommandModels.swift`
+  only if necessary). Route guard actions through the same applier. In
+  `EntryPoint.swift`/`CLISignalCancellation.swift`, route task-backed Ctrl-C to
+  the owner so the stable decision commits before cancelling execution; handle
+  signals before reservation and repeated signals without a stale launch or
+  duplicate decision. Other command cancellation remains compatible. Do not
+  propagate parent cancellation to execution before the durable write finishes.
+  In `WorkflowRunCommand.swift`, `WorkflowRunLivePersistence.swift` and
+  `WorkflowRunCommand+SupervisionPersistence.swift`, preserve reserved identity
+  and await cancellation-safe terminal persistence. A prelaunch-cancelled
+  reservation records its own cancelled snapshot without launching work.
+  `TaskDispatch.swift` checks pending/acknowledged cancellation before generic
+  reconciliation or completion/guard evaluation, projects evidence idempotently,
+  and reserves a pending replacement once only after acknowledgment. Return
+  explicit pending/error for persistence/stop uncertainty, retaining IDs/fence.
+  `WorkflowRunCommand.swift` is already 998 lines: keep new cancellation logic
+  in the cohesive helper; if the file exceeds 1000, move only existing finalization
+  responsibility to `WorkflowRunCommand+Finalization.swift`, preserving access
+  boundaries. No broad file splitting is authorized.
+```
+
+#### P1-U18 — original line 3705; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-regressions** after live and evidence: Verify the preserved matrix below. Keep new live
+  tests in `TaskCancellationIntegrationTests.swift` and its fixtures file to
+  avoid enlarging the existing integration suite unnecessarily. Extend existing
+  selected-host fixtures only where needed. Run all commands below on final
+  implementation source, produce a source/test manifest, and record every
+  failure honestly. Store-only tests cannot close this gate.
+```
+
+#### P1-U19 — original line 3750; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-integrity** and **P1-6c-adversarial** after regressions: Independent
+  Sol read-only reviews may run concurrently. Integrity verifies test selection,
+  positive counts, meaningful ordering/process assertions, final-source hashes,
+  actual terminal exits, complete logs and every aggregate disposition. Both
+  reviews explicitly accept or reject slice-only treatment of unrelated failures.
+  Adversarial review exercises material
+  races/failure cases against design; no style-only or speculative scope.
+```
+
+#### P1-U20 — original line 3757; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-reconcile** after both reviews: Single Sol owner repairs all high/mid
+  findings and shared-file drift, preserves accepted changes, reruns affected
+  focused/aggregate/lint gates and obtains renewed independent acceptance where
+  repairs invalidate review. Refresh design, plan, owner progress and directly
+  affected README usage here, before final combined-tree review. Record unresolved
+  broad failures and owners separately from P1-6c and active later slices. Shared
+  indexes and documentation edits are serial; no unrelated README changes.
+```
+
+#### P1-U21 — original line 3764; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-integration** after reconciliation: Independent Astra review accepts
+  the exact combined tree, evidence and accepted design with no material open
+  finding. Any repair repeats affected verification/review before acceptance.
+```
+
+#### P1-U22 — original line 3767; Tasks, file-level deliverables and dependencies
+
+```text
+- [ ] **P1-6c-finalize** after integration: Verify the reviewed docs and unchanged
+  accepted source tree; any substantive new edit repeats affected review.
+  Record exact changed-file allowlist and accepted hashes; workflow finalization
+  commits and non-force pushes that exact accepted result to
+  `origin/feat/remaining-impl-plans`. Record commit/push receipts. Keep parent
+  plan active; do not archive it or close P1-6d/P1-7a/b. No main merge or release.
+```
+
+#### P1-U23 — original line 4553; Intended changes and acceptance (§17.2–17.5)
+
+```text
+- [ ] **P1-6a** Compose TaskDispatcher with canonical stored plan/definition and
+  runtime store resolution. Resolve selected entry, dependencies and placement
+  before reservation. Missing plan/entry/dependency or invalid policy errors;
+  unmet dependencies/capacity records its wait without attempt/session/lease.
+  Atomically reserve and authorize, then run EXACT reserved session ID through
+  the existing runner. Project terminal evidence before guard/completion and
+  apply decisions through the shared applier. Refresh real dispatch placement
+  once before reservation and use the chosen per-node backend/host in execution.
+```
+
+#### P1-U24 — original line 4561; Intended changes and acceptance (§17.2–17.5)
+
+```text
+- [ ] **P1-6b** Ship task run <task-id> [--dry-run] with attempt/session IDs or
+  wait reason. Dry-run follows identical resolution but opens state read-only:
+  no create, migration, generation reset, checkpoint, host-cache, task, attempt,
+  session, decision, lease or evidence writes. Missing/incompatible stores are
+  diagnostics; fresh probes remain in memory. Prove byte AND row equivalence
+  including work_hosts, SQLite sidecars and host profile configuration; an
+  absent store stays absent and corrupt profile config is not quarantined.
+```
+
+#### P1-U25 — original line 4568; Intended changes and acceptance (§17.2–17.5)
+
+```text
+- [ ] **P1-6c** task decide requires exactly one --accept, --reject <reason>,
+  --rerun [step], --cancel plus --principal, --expected-version, --decision-id.
+  Human principal is audit identity under existing local access, not new remote
+  authentication. Validate action combinations and stable replay; call the
+  applier, never direct row mutation. Ctrl-C uses this same durable cancellation
+  path; terminal acknowledgment precedes fence release. Cover interruption
+  during authorization, running, acknowledgment and pending rerun consumption.
+  Existing authenticated remote manager paths keep their protections.
+```
+
+#### P1-U26 — original line 4576; Intended changes and acceptance (§17.2–17.5)
+
+```text
+- [ ] **P1-6d** Wire one bounded optional agent-director child through ordinary
+  workflow execution. Reconcile work attempt before entry: .director reservation;
+  retain judged work TaskView, record child session/cost/attempt exactly once.
+  Validate allowed P1 decision kinds and apply through the same causal/version/
+  completion/budget checks. Invalid/forbidden/failed/budget-blocked output records
+  evidence and needs human decision. No recursive director repair, replan,
+  proposals or specialist classifier. Finish planner-variable host snapshot
+  wiring through dispatcher workflow input variables using capability contracts.
+```
+
+#### P1-U27 — original line 4584; Intended changes and acceptance (§17.2–17.5)
+
+```text
+- [ ] **P1-7a** FIRST establish replacement dispatcher behavioral tests for
+  auto-improve inactivity, bounded retry, gate/failure recovery, cancellation
+  and replay. Record passing exit/log before deleting the old implementation.
+  THEN remove WorkflowRunCommand+AutoImprove.swift, WorkflowAutoImprovePolicy,
+  WorkflowMutationMode, SupervisedScenarioNodeAdapter, supervision state/result,
+  remote input.autoImprove/input.nestedSuperviser and removed flags. Discover
+  exact references with rg; changes outside scoped files are serialized and
+  assigned to this integration owner before edit. Preserve specialist/event
+  supervisor dispatch, existing loop/routine behavior and plain workflow runs.
+```
+
+#### P1-U28 — original line 4593; Intended changes and acceptance (§17.2–17.5)
+
+```text
+- [ ] **P1-7b** Replace examples/auto-improve, examples/default-superviser and
+  examples/supervised-mock-retry with examples/task-repair-loop and
+  examples/task-agent-director, each with mock-scenario.json and
+  EXPECTED_RESULTS.md. TaskRuntimeExampleTests must drive real task lifecycle
+  using deterministic fixtures: acceptance, gate recovery, guard stop, capacity
+  wait; allowed director output, child accounting and invalid-output escalation.
+  Workflow-only mock runs supplement these tests; they do not prove dispatch.
+```
+
+#### P1-U29 — original line 5033; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Serially reconcile source against immutable intents and prerequisite
+  handoffs; run affected checks after repairs, then V0–V11 on the final stable
+  tree. No unresolved material high/mid finding or incomplete required evidence.
+```
+
+#### P1-U30 — original line 5036; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Perform author self-review, independent test-integrity review and the workflow's single adversarial
+  implementation review, followed by required combined-tree acceptance. Review
+  material behavior/data-loss/security/regression/test gaps, not style nits or
+  speculative abstraction. Record actual review IDs, decisions and findings.
+```
+
+#### P1-U31 — original line 5040; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Refresh `README.md`, affected example READMEs/EXPECTED_RESULTS, and P1
+  status in `design-docs/specs/design-work-runtime-consolidation.md`. Update
+  `Sources/RielaCore/SurfaceCatalog+RowsCLI.swift`, `SurfaceCatalog+Rows.swift`,
+  `SurfaceCatalog+RowSupport.swift`, `Sources/RielaCLI/CLISurfaceEnumeration.swift`
+  and `Tests/RielaCoreTests/SurfaceCatalogTests.swift` only where task CLI/removal
+  requires it. Task GraphQL/UI counterparts stay explicitly deferred.
+```
+
+#### P1-U32 — original line 5046; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Reconcile this plan, `impl-plans/README.md`, `impl-plans/PROGRESS.json`,
+  `impl-plans/progress/plans-index.json`, `meta.json`, `phases.json` and
+  `plans/work-runtime-p1-dispatcher-guard-director.json` under that progress
+  directory only where the existing index format requires it. Preserve all
+  non-P1 entries and other plans' unchecked status unless their acceptance is
+  explicitly evidenced; do not claim completion of separate work packages.
+```
+
+#### P1-U33 — original line 5052; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Append this session's status/evidence only to
+  `impl-plans/progress/p1-dispatch.md`: task state, exact changed paths/hashes,
+  retained-hunk attribution, interface ownership, commands/start/end/final exits,
+  complete log paths, positive per-suite counts, review findings/decisions,
+  invalidated evidence and deferred/external dependencies. No checkboxes close
+  on source inspection, planning acceptance or historical logs alone.
+```
+
+#### P1-U34 — original line 5058; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Audit applicable repository-owned `riela-package.json` manifests only
+  for modified workflow/prompt/script/skill artifacts; refresh actual owning
+  digests with established tooling and record exact paths serially before edit.
+  Do not invent a manifest, modify an immutable installation or inspect scoped
+  registries. Review `.codex/skills/riela-impl-workflow/SKILL.md` for directly
+  affected documentation; update only a necessary P1 contract with explicit
+  owner/path and digest audit, not unrelated workflow material. No skill edit
+  is necessary merely because this plan was authored.
+```
+
+#### P1-U35 — original line 5066; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Lockfile generation is conditional on a necessary dependency change;
+  do not opportunistically update `Package.resolved`. No archiving is necessary
+  before execution completes. Exclude tmp evidence from staging.
+```
+
+#### P1-U36 — original line 5069; P1-FINAL documentation, review and publication
+
+```text
+- [ ] Prepare the exact accepted P1 file/hunk allowlist; retain unrelated hunks
+  even in shared files. The authorized workflow finalization gate commits and
+  pushes non-force to `origin` / `feat/remaining-impl-plans`, verifies the final
+  accepted hash remotely and records matching commit/push evidence. Freshly
+  check publication readiness at that gate; missing upstream is not a design
+  blocker. Do not fabricate tracking state, change other worktrees or integrate
+  a base branch. No broad `git add` and no concurrent Git operations.
+```
+
+## Historical contracts and receipts — not current execution authorization
+
+### Historical P1-7a A4/A5 plan
 
 ## Current accepted-design continuation from 2f472b3 (2026-09-25)
 

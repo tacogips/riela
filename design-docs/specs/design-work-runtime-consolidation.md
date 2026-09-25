@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A4 independent evidence handoff and A5 publication from dispatch checkpoint `2f472b3bd4d203f21bf72497900e58b88c2ece3b`. A2/A3 implementation and source-matched receipts, including V7, are complete; independent A4 acceptance and A5 publication remain pending. Strict changed-file lint passed separately; both broad aggregates remain FAILED, exit 1, pending independent disposition. Native Remote NRE-01/02/03 and P1-7b publication are already on this branch per effective intake. Parent P1 closure remains separate. Section 17.10's current continuation supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
+Status: parent P1 final-acceptance reconciliation is in design review. Effective intake records P1-6d, P1-7b and P1-7a A2–A5 published, the latter at `adde89d4af122d54e1311aad1c4ded12cddbe5c6`. Parent P1 remains open until the §17.11 requirement ledger, material repairs if needed, independent reviews and exact-file publication are complete. Both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; prior independent acceptance of attribution does not make them green. Section 17.11 supersedes historical pending-A4/A5 execution instructions below; it preserves their original evidence and contracts.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2641,7 +2641,7 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
 
-#### Current continuation: A4 independent evidence handoff and A5 publication
+#### Historical continuation: A4 independent evidence handoff and A5 publication
 
 Issue: “Complete P1-7a A4 independent evidence handoff and A5 publication”;
 repository `tacogips/riela`, no issue number or URL supplied.
@@ -3430,3 +3430,113 @@ example or progress file, passes no deletion gate and closes no plan. A4 still
 requires formal test-integrity, one Sol adversarial and Astra combined-tree
 reviews with no material P1-7a finding; A5 publishes only exact reviewed files.
 Parent P1 remains open.
+
+
+### 17.11 Parent P1 final acceptance reconciliation (2026-09-25)
+
+**Authority and scope.** Mode `issue-resolution`; issue “Reconcile and complete
+Work Runtime P1 final acceptance”, repository `tacogips/riela`, Draft PR #109,
+no issue number or URL supplied. Step 1 `comm-000002` in
+`codex-design-and-implement-review-loop-session-1` and effective `workflowInput`
+authorize this bounded reconciliation on `feat/remaining-impl-plans`, starting
+at `adde89d4af122d54e1311aad1c4ded12cddbe5c6`. Runner-resolved provenance is
+accepted. No codex-agent reference-repository input or Cursor CLI mapping applies.
+
+The leading plan and both design status headers still describe earlier A5 work
+as pending. The effective intake records its publication; the progress section
+“P1-7a A4 acceptance and Step 8 documentation refresh” records accepted typed
+test-integrity, Sol adversarial and Astra integration decisions. Treat these as
+published predecessor results, not newly obtained parent-P1 review decisions.
+Do not replay historical dispatch instructions or recreate removed supervision.
+
+**Requirement ledger.** Before proposing source edits, the plan author must
+inventory all 36 unchecked boxes at the starting commit in
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, retaining each
+original section, line/text and a stable row ID. Split compound requirements
+into traceable subrows where their disposition differs; map duplicate historical
+rows to their current requirement instead of silently deleting them. Include
+current requirements from the leading contract and §§17.2–17.10 even if they
+are not unchecked boxes. Keep the durable ledger in that existing plan and
+supporting command/hash evidence under `tmp/work-runtime-p1-final-acceptance/`.
+Each row records applicable design, current source/test paths and symbols,
+published commit, exact evidence path/command/final exit, review reference,
+classification, rationale and any remaining owner/action. A historical process
+row cites the superseding contract/publication rather than inventing a code path.
+
+Use exactly these classifications:
+
+- `complete`: current behavior and acceptance are supported by source-matched
+  terminal evidence and required independent decisions; code presence alone
+  does not prove acceptance.
+- `materially open`: a current requirement lacks behavior, required evidence or
+  review. Specify the smallest repair or evidence task and its acceptance.
+- `historical/superseded`: name the replacement/current row and cite the accepted
+  contract or published receipt; do not implement the obsolete instruction.
+- `externally blocked`: name a concrete dependency, observed evidence, owner and
+  unblock condition. No external blocker is established by this design.
+
+P1-6a reservation/execution, P1-6b read-only dry-run, P1-6c durable decisions and
+cancellation, P1-6d bounded director, P1-7a ordered removal/preservation, P1-7b
+replacement examples and P1-FINAL all require explicit coverage. Source anchors
+include `Sources/RielaCLI/TaskDispatch.swift`, `Sources/RielaWork/TaskDispatcher.swift`,
+`Sources/RielaWork/WorkStore+Decisions.swift`, `Sources/RielaWork/AgentDirector.swift`,
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`,
+`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift`,
+`Tests/RielaCLITests/TaskRuntimeExampleTests.swift`, and the native receiver design.
+These are audit entry points, not a conclusion that each requirement is complete.
+
+**Evidence and review data flow.** Ledger → bounded plan → material repair only
+if demonstrated → source/dependency reconciliation → independent test-integrity
+and Sol adversarial decisions → Astra combined-tree integration → final status
+and publication. Existing P1-6a through P1-7b receipts remain immutable. Compare
+current input membership, bytes, configuration and dependencies to receipt seals;
+record why each receipt remains applicable or exactly what invalidated it.
+Documentation-only changes do not automatically invalidate behavioral suites.
+Renew only materially invalidated or missing required checks with their expanded
+original commands, isolated build method, positive selected-test counts, complete
+logs and terminal exits. No broad rerun merely to seek a green result.
+
+The latest P1-7a comparisons are under
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/`:
+`V5-comparison.json` refers to `V5-work-cli-core.log` and the attempt-2
+`baseline-shortbuild-V5/log.txt`; `full-comparison.json` refers to
+`full-suite-no-parallel.log` and attempt-2 `baseline-full-suite-no-parallel/log.txt`.
+The published progress records 2,061 Work/CLI/Core tests and 2,717 full-suite cases
+(two skipped), respectively, both **FAILED**, exit 1. Each comparison contains
+21 matching assertions across 19 failed cases, not a pass. Preserve exact test
+identities, diagnostic normalization, causes, owners/follow-ups and both prior
+independent dispositions. New parent reviews must separately accept or reject
+each aggregate's applicability/attribution on the final tree; equal counts or
+`identical: true` alone are insufficient. Obtain actual decision artifacts and
+references, never synthesize them from the progress summary. A0 historical
+per-command environment snapshots are unavailable and cannot be reconstructed.
+
+**Completion and publication.** No materially open current requirement,
+unresolved high/mid finding or unaccepted required verification may be hidden by
+checkbox updates. A baseline exception must state the failed outcome and explicit
+independent acceptance separately. An external blocker keeps the affected work
+open with its owner. Historical rows retain their original text and point to the
+ledger. Only after accepted integration may the serial owner align this design,
+the native design, active plan, `impl-plans/progress/p1-dispatch.md` and
+`impl-plans/progress/plans-index.json` with actual P1 status. Follow the existing
+index schema; update additional P1 metadata only if required for consistency,
+preserving every unrelated entry and other plans' states. Review README/example
+claims and change only a demonstrated mismatch. No blanket checkbox completion,
+new index schema, global archive move or unconditional package/lockfile update.
+
+The final owner commits only the exact reviewed ordered unique file allowlist,
+non-force pushes the existing branch and proves local HEAD, remote branch tip
+and Draft PR #109 head are equal. Record commands, complete logs and exits,
+including `git diff --check`, `git diff --cached --check`,
+`git show --format=fuller --stat adde89d4af122d54e1311aad1c4ded12cddbe5c6`,
+`git ls-remote --heads origin feat/remaining-impl-plans`, and
+`gh pr view 109 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid`.
+Publication checks belong to finalization, not this design update. Preserve
+Monja tenant-sharding-d48 and other sessions/worktrees; do not edit archived
+rielflow, merge main, release, force push or introduce speculative redesign.
+
+**Open questions.** No unresolved user decision. Which ledger rows require a
+material implementation or evidence repair is an explicit plan-author audit task,
+not permission to presume completion. New independent parent review decisions
+and final remote-tip equality remain downstream acceptance tasks. This design
+self-check does not claim their completion or substitute for Step 3 review.

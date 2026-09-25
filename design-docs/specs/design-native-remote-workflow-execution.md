@@ -1,9 +1,31 @@
 # Native remote workflow execution receiving boundary
 
-Status: NRE-03 implementation and combined-tree integration review accepted; attempt-4 aggregate baseline attribution accepted with actual exit 1; browser E2E unavailable; NRE-01/NRE-02 acceptance retained. Draft PR #110 publication remains downstream.
-Mode: `issue-resolution`; Step 2 updates design only; subsequent reviewed steps complete NRE-03.
-Issue reference: local request on `feat/native-remote-workflow-execution`; Draft PR #110 targets `main`; no GitHub issue supplied.
-Issue title: Independently review and finish NRE-03 native receiver.
+Status: accepted NRE-01/NRE-02/NRE-03 contracts incorporated into the P1 branch at `a373a6040bff11ef7e86b8f6789321fefc7596f1`, per current effective intake. Current work is P1-7a A2–A5; fresh removal verification and reviews remain pending.
+Mode: `issue-resolution`; Step 2 updates design only.
+Issue: “Finish Work Runtime P1-7a legacy supervision removal on native Riela receiving boundary”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
+Handoff: `feat/remaining-impl-plans`, Draft PR #109.
+
+## Current P1-7a receiving integration
+
+The current continuation in
+`design-docs/specs/design-work-runtime-consolidation.md` §17.10 governs A2–A5.
+The historical NRE-only scope, pending PR #110 publication, and separate-checkout
+restrictions below describe earlier execution checkpoints, not current gates.
+Preserve the accepted receiver; no replacement protocol or service is needed.
+Remove legacy client emission with P1-7a while retaining native top-level
+`autoImprove`/`nestedSuperviser` rejection by presence before provider effects,
+including false/null and all accepted input forms. Opaque `runtimeVariables`
+remain permitted. Preserve authenticated ordinary execution, strict persisted
+summaries, host-owned paths, cancellation and actual terminal outcomes.
+
+Use fresh `swift test --filter WorkflowExecutionGraphQLTests` and
+`swift test --filter ServeHTTPCommandTests` receipts on the final removal source,
+alongside P1-7a V0–V9 and independent reviews. Existing source/tests establish
+where the contract lives, not a new passing receipt. No archived `rielflow`
+publication is a dependency. Historical NRE aggregate failures and unavailable
+browser evidence retain their recorded outcomes; do not transplant historical
+baseline attribution onto new failures without comparing their causes.
+No new user decision, codex-agent reference mapping or Cursor adapter is required.
 
 ## Receiving usage and review disposition
 

@@ -1,6 +1,18 @@
 # P1-7a receiving-service publication decision
 
-Status: pending user direction. Workflow mode: `issue-resolution`.
+Status: resolved by current effective workflow input (2026-09-25). Workflow mode: `issue-resolution`.
+
+Current decision: use Riela's native GraphQL receiving boundary already merged
+at `a373a6040bff11ef7e86b8f6789321fefc7596f1`. Step 1 `comm-000002` for
+“Finish Work Runtime P1-7a legacy supervision removal on native Riela receiving
+boundary” supplies this authority. No archived `rielflow` edit or publication is
+a dependency. Fresh native rejection (including false/null), opaque-variable
+preservation and authenticated ordinary-request evidence belong to P1-7a A3;
+A4/A5 and parent P1 remain separate gates. See the current continuation in
+`design-docs/specs/design-work-runtime-consolidation.md` §17.10 and
+`design-docs/specs/design-native-remote-workflow-execution.md`.
+
+## Historical question (superseded; no decision pending)
 Issue: “Resume P1-7a after reviewed failure-policy amendment”; effective
 `workflowInput` / `comm-000001`, intake `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`. No issue URL/number supplied.

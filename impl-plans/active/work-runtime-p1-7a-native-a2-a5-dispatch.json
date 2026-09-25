@@ -1,0 +1,247 @@
+{
+  "taskId": "work-runtime-p1-7a-native-a2-a5",
+  "workflowMode": "issue-resolution",
+  "executionMode": "issue-resolution",
+  "issueReference": "tacogips/riela; no issue number supplied; Draft PR #109; intake comm-000002",
+  "codexAgentReferences": [],
+  "originalHead": "a373a6040bff11ef7e86b8f6789321fefc7596f1",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md",
+    "design-docs/user-qa/qa-p1-7a-rielflow-publication.md"
+  ],
+  "designReview": {
+    "communicationId": "comm-000004",
+    "accepted": true,
+    "reviewDecision": "accepted",
+    "findings": []
+  },
+  "planReview": {
+    "communicationId": "comm-000006",
+    "accepted": true,
+    "reviewDecision": "accepted",
+    "findings": [],
+    "codexAgentReferences": []
+  },
+  "evidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5",
+  "checkpointWritePaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md",
+    "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
+    "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+    "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json",
+    "impl-plans/progress/p1-dispatch.md"
+  ],
+  "implementationDispatchAllowed": false,
+  "implementationDispatchConditions": [
+    "Step 5 accepts this plan/manifest.",
+    "Serial owner commits and non-force pushes checkpointWritePaths; records local and remote matching hashes before dispatch."
+  ],
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/ParsedWorkflowOptions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/SessionCommandModels.swift",
+        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
+        "Sources/RielaCLI/LoopCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCore/WorkflowRunResult.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandPackageLifecycleTests.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
+        "impl-plans/progress/p1-dispatch.md",
+        "examples/auto-improve/README.md",
+        "examples/default-superviser/EXPECTED_RESULTS.md",
+        "examples/default-superviser/workflow.json",
+        "examples/supervised-mock-retry/EXPECTED_RESULTS.md",
+        "examples/supervised-mock-retry/mock-scenario.json",
+        "examples/supervised-mock-retry/nodes/node-main-worker.json",
+        "examples/supervised-mock-retry/prompts/main-worker.md",
+        "examples/supervised-mock-retry/workflow.json",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift",
+        "examples/catalog/chat-persona-and-agent-trio.md",
+        "examples/monja-project-task-orchestrator/executor.ts",
+        "examples/monja-agent-collaboration/riela.ts",
+        "examples/monja-agent-collaboration/verify-workflow.ts",
+        "Sources/RielaCLI/WorkflowExecutionProvider.swift",
+        "Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift",
+        "Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift",
+        "Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift",
+        "Tests/RielaCLITests/ServeHTTPCommandTests.swift"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "design-docs/specs/design-native-remote-workflow-execution.md",
+        "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "intent": "Finish P1-7a A2–A5 after accepted A1 and Native Remote integration; remove obsolete workflow supervision without regressing retained paths.",
+      "nonGoals": [
+        "No A1/NRE redesign, archived rielflow operation, specialist/event/loop/routine removal, new framework, unrelated repair, dependency/lockfile regeneration or broad formatting.",
+        "No worktree, private branch, concurrent Git, base merge, force push, release, App Store artifact, P1-7b publication completion or parent P1 closure."
+      ],
+      "invariants": [
+        "Preserve accepted A1 atomic progress, retry/gate/director policy and exact-session cancellation.",
+        "Plain workflows remain task-free; preserve specialist/event supervision, loops, routines and Monja.",
+        "Native top-level autoImprove/nestedSuperviser reject presence including false/null before provider effects; opaque runtimeVariables and ordinary authenticated execution pass.",
+        "No zero-test, incomplete-log or failed broad gate is represented as passing."
+      ],
+      "tasks": [
+        {
+          "taskId": "A0",
+          "dependsOn": [],
+          "deliverable": "Record accepted source baseline, audit exact consumers and refresh before-removal V0/V1, policy, canonical, cancellation-host and atomic-race proof."
+        },
+        {
+          "taskId": "A2",
+          "dependsOn": [
+            "A0"
+          ],
+          "deliverable": "Remove only obsolete workflow supervision, reject retired CLI forms, preserve native receiver contract and update directly coupled consumers/tests."
+        },
+        {
+          "taskId": "A3",
+          "dependsOn": [
+            "A2"
+          ],
+          "deliverable": "Run all final-source verification commands serially, classify failures/references and seal source-matched evidence."
+        },
+        {
+          "taskId": "A4",
+          "dependsOn": [
+            "A3"
+          ],
+          "deliverable": "Independent test-integrity, Sol adversarial and Astra integration decisions; repair material findings and renew affected evidence/reviews."
+        },
+        {
+          "taskId": "A5",
+          "dependsOn": [
+            "A4"
+          ],
+          "deliverable": "Serial docs/progress refresh, exact reviewed allowlist commit and non-force push; Draft PR #109 handoff."
+        }
+      ],
+      "acceptanceCriteria": [
+        "All A2 removal and retained behavior requirements have final-source positive behavioral proof.",
+        "Every verification command has complete log, final exit, exact command/environment and source identity; baseline failures have named causes and independent disposition.",
+        "A4 has no unresolved material finding; A5 publishes only reviewed files and reports actual commit/remote hashes."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testFailedTaskRetriesWithinBudgetAndStopsAtLimit|TaskDispatcherIntegrationTests.testLastAdmittedRecoveryAttemptCanSucceed'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests|RielaAppSupportTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkflowCommandTests|WorkflowRunHelpTests|CommandParsingTests|SpecialistSupervisorCommandTests|SpecialistSupervisorBoundaryTests|SpecialistSupervisorRecoveryTests|EventLiveServeTests|RoutineCommandTests|RoutineAddonTests|RoutineStoreTests|RoutineGraphQLTests|EventRoutineBindingTests|RoutineAddonCatalogTests|LoopStartPromoteCommandTests|DefaultLoopGuardRecoveryTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'RielaExampleParityTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'SurfaceParityCLITests'",
+        "(cd examples/monja-agent-collaboration && bun run typecheck)",
+        "(cd examples/monja-agent-collaboration && bun run test)",
+        "(cd examples/monja-project-task-orchestrator && bun run typecheck)",
+        "(cd examples/monja-project-task-orchestrator && bun run test)",
+        "rg -n -- '--no-auto-improve|--auto-improve|examples/auto-improve/|examples/supervised-mock-retry/|examples/default-superviser/' examples/catalog/chat-persona-and-agent-trio.md examples/monja-project-task-orchestrator/executor.ts examples/monja-agent-collaboration/riela.ts examples/monja-agent-collaboration/verify-workflow.ts",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkflowCommandTests.testWorkflowRunUsesGraphQLEndpointTransport|WorkflowCommandTests.testWorkflowRunEndpointUsesRielaAuthEnvironment|WorkflowCommandTests.testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskRuntimeExampleTests.testStandaloneNonAcceptedRepairGateFailsAndRetainsEvidence|WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --no-parallel",
+        "xargs -0 swiftlint lint --strict --quiet --no-cache < ${evidence_dir}/changed-swift-files.nul",
+        "swiftlint lint --quiet --no-cache",
+        "rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples",
+        "git diff --check",
+        "git diff --cached --check",
+        "tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store ${evidence_dir}/task-repair-loop-store --output json",
+        "tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store ${evidence_dir}/task-agent-director-store --output json",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter WorkflowExecutionGraphQLTests",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter ServeHTTPCommandTests",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter WorkflowExecutionProviderTests",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch list"
+      ],
+      "executionScope": "Step 6 owns A0/A2/A3. A4/A5 are mandatory downstream gates, not Step 6 self-blockers."
+    }
+  ],
+  "reviewContext": {
+    "issueReference": "tacogips/riela; no issue number supplied; Draft PR #109; intake comm-000002",
+    "userProblem": "Finish P1-7a A2–A5 after accepted A1 and native remote integration: remove obsolete workflow supervision while proving retained task and native receiving behavior.",
+    "requiredOutcomes": [
+      "Reject retired CLI options and native top-level autoImprove/nestedSuperviser input by presence, including false and null, before provider effects.",
+      "Preserve ordinary authenticated remote execution, opaque runtimeVariables, task-backed replacement examples, cancellation, guard/director behavior, and specialist/event/loop/routine paths.",
+      "Run final-source P1-7a V0–V9, native GraphQL/HTTP tests, strict changed-file SwiftLint and diff checks with complete source-matched receipts.",
+      "Obtain independent test-integrity, adversarial and integration review decisions with no unresolved material finding; refresh directly affected docs and progress; commit and non-force push exact reviewed files to Draft PR #109."
+    ],
+    "nonGoals": [
+      "No A1 or NRE redesign, archived rielflow edits or publication, new framework, unrelated repair, broad formatting, dependency or lockfile regeneration.",
+      "No P1-7b publication or parent P1 closure, base-branch merge, force push, release or App Store artifact."
+    ],
+    "constraints": [
+      "Use the immutable user-scope codex-design-and-implement-review-loop package and preserve Monja plus unrelated sessions and worktrees.",
+      "Keep throwaway evidence under the untracked evidenceRoot, separated by plan and attempt; do not treat zero-test, incomplete-log or failing broad gates as passing.",
+      "A0 before-removal proof precedes A2 deletion; A3 final-source verification precedes A4 reviews and A5 publication.",
+      "One plan owner handles coupled CLI and receiver changes; shared docs and indexes are reconciled serially."
+    ],
+    "designDecisionsAndRationale": [
+      "Native Riela GraphQL is the receiving owner after NRE-01/02/03 merged at a373a6040bff11ef7e86b8f6789321fefc7596f1; preserve its validated boundary instead of reviving archived rielflow.",
+      "Reject top-level removed input keys by presence before execution provider effects so explicit false and null cannot silently preserve legacy semantics.",
+      "Keep runtimeVariables opaque so user workflow data can contain those names without triggering input-level rejection.",
+      "Keep A2 removal and A3 verification in one plan because CLI option parsing, remote serialization and receiving proof share one execution contract."
+    ],
+    "intentionalTradeoffs": [
+      "The single plan serializes tightly coupled changes; A4 independent reviews and A5 documentation/publication follow Step 6 execution.",
+      "Broad gate failures may be classified with exact baseline causes, but remain failed receipts rather than passing checks."
+    ],
+    "supportedEdgeCases": [
+      "Removed top-level keys supplied as false, null, true, zero or objects through whole-input variables, inline input, field variables or variable defaults.",
+      "Names inside opaque runtimeVariables remain accepted data.",
+      "Authenticated ordinary remote execution, host-selected roots, persisted summaries, cancellation and terminal outcomes remain supported.",
+      "Retired CLI positive and negative aliases reject rather than silently ignore input."
+    ],
+    "outOfScopeEdgeCases": [
+      "Recursive rejection inside runtimeVariables.",
+      "Archived rielflow receiving service behavior or publication.",
+      "P1-7b and parent P1 closure."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "design-docs/specs/design-native-remote-workflow-execution.md",
+      "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift",
+      "Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift",
+      "Sources/RielaCLI/WorkflowExecutionProvider.swift",
+      "Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift",
+      "Tests/RielaCLITests/ServeHTTPCommandTests.swift"
+    ]
+  }
+}

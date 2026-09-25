@@ -1,3 +1,177 @@
+# Work Runtime P1-7a: native receiving integration and A2–A5
+
+## Current executable contract — accepted design comm-000004 (2026-09-25)
+
+Mode `issue-resolution`. Issue: “Finish Work Runtime P1-7a legacy supervision
+removal on native Riela receiving boundary”; `tacogips/riela`, no issue number
+supplied; intake `comm-000002`, execution
+`codex-design-and-implement-review-loop-session-1`. Step 3 accepted the design
+with no findings. Step 5 plan review accepted in comm-000006 with no findings. No codex-agent reference input
+or Cursor CLI divergence applies. Accepted A1 and Native Remote NRE-01/02/03
+are incorporated at `a373a6040bff11ef7e86b8f6789321fefc7596f1`.
+
+This contract supersedes historical A1-only execution limits and external
+receiving-publication requirements below. Preserve historical receipts; they
+are neither current failures nor current verification. Do not edit archived
+rielflow. Native Riela is the receiving owner. The accepted source of truth is
+`design-docs/specs/design-work-runtime-consolidation.md` §17.10 current
+continuation and `design-docs/specs/design-native-remote-workflow-execution.md`
+current P1-7a integration; the historical user-QA is resolved.
+
+Stable planId `p1-dispatch`; dependsOn `[]`; planPath is this file;
+progressFile `impl-plans/progress/p1-dispatch.md`. The sole current manifest is
+`impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json`.
+Its exact `writePaths`, `sharedPaths`, tasks and commands are executable authority;
+older manifests are historical. One owner handles the coupled option/execution
+contract. Independent investigation may run read-only with isolated evidence;
+no parallel edits, builds, tests, stores or Git operations. Multiple implementation
+plans would overlap shared CLI options without an independent deliverable.
+
+Intent: remove obsolete auto-improve/nested-superviser workflow execution after
+fresh replacement proof, retain ordinary workflows and task replacements, then
+prove native rejection and retained behavior on final source. No new framework,
+protocol, abstraction, A1/NRE redesign, unrelated repair, broad formatting,
+dependency/lockfile regeneration, specialist/event/loop/routine removal, worktree,
+private branch, base merge, force push, release or App Store artifact. Preserve
+Monja and unrelated sessions. P1-7b publication and parent P1 closure stay open.
+
+### Tasks, dependencies and completion
+
+| Task | Depends on | Deliverable and completion |
+| --- | --- | --- |
+| checkpoint | Step 5 acceptance | Serial owner commits and non-force pushes exactly manifest checkpointWritePaths before implementation fanout; record reviewed hashes and matching remote tip. Failed push stops dispatch. Step 4 does not commit. |
+| A0 | checkpoint | Record HEAD/source membership and hashes; audit legacy consumers and refresh V0, full four-suite V1, policy, canonical, cancellation-host and atomic-race proof before deletion. Accepted A1 is not reimplemented. |
+| A2 | A0 | Remove bounded legacy path; retire CLI aliases/options; update shared callers and tests/examples; prove native rejection and ordinary execution. |
+| A3 | A2 | Complete final-source V0–V9 plus every supplemental manifest command; positive per-suite counts, full logs/exits and unchanged source identity; named baseline failure attribution. |
+| A4 | A3 | Independent test-integrity, one Sol adversarial and Astra combined-tree review; no unresolved high/mid finding. Serial repairs renew affected checks and reviews. |
+| A5 | A4 | Serial README/design/plan/progress refresh, exact unique reviewed-file allowlist commit/non-force push to feat/remaining-impl-plans, Draft PR #109 handoff. |
+
+Step 6 completes A0/A2/A3 and reports A4/A5 pending for downstream workflow
+nodes. It must not self-block solely on those formal downstream gates. A failed
+owned behavior gate remains incomplete; unrelated broad failures require exact
+assertion/cause attribution and independent review, never a green label.
+
+### Exact changes and preserved invariants
+
+The manifest enumerates individual authorized files. Apply these bounded changes:
+
+- Delete `Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift` and obsolete
+  `WorkflowRunCommand+SupervisionPersistence.swift` only after A0. Remove
+  `SupervisedScenarioNodeAdapter` from `ProductionNodeAdapter.swift` while
+  preserving ordinary production adapters. Remove `WorkflowRunResult.supervision`
+  in `Sources/RielaCore/WorkflowRunResult.swift` and its dead callers.
+- In `RielaCommand.swift`, `ParsedWorkflowOptions.swift`,
+  `RielaArgumentParser+WorkflowAndMemory.swift`, `WorkflowCommands.swift`,
+  `WorkflowRunCommand.swift` and `RielaCLIApplication.swift` under
+  `Sources/RielaCLI/`, remove legacy policy fields, dispatch, help and remote
+  serialization. Reject `--auto-improve`, `--no-auto-improve`,
+  `--max-supervised-attempts`, `--max-workflow-patches`, `--monitor-interval-ms`,
+  `--stall-timeout-ms`, `--workflow-mutation-mode`, `--nested-superviser` and
+  `--nested-supervisor`, including equals/value forms. Preserve distinct
+  `--agent-silence-monitor-interval-ms` behavior and ordinary remote auth/options.
+- In that same directory, adapt `SessionCommands.swift`,
+  `SessionCommandModels.swift`, `RielaCommand+SessionParsing.swift`,
+  `LoopCommands.swift`, `WorkflowRunCommand+TaskReservation.swift`,
+  `TaskDispatch.swift` and `WorkflowExecutionProvider.swift` only to remove dead
+  option/initializer plumbing. Preserve resume/rerun, loops, reservations,
+  host-owned paths and cancellation. Do not reopen A1 retry/gate/atomicity logic.
+- Preserve native validation in `Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift`
+  and `WorkflowExecutionGraphQL.swift`; edit only if a demonstrated removal
+  regression needs a bounded repair. No schema expansion is needed. Test both
+  retired keys across true/false/null/zero/object and whole-input, inline,
+  field-variable/default forms with no provider calls. Keep opaque nested names
+  and authenticated ordinary execution successful. Existing native tests in
+  `Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift` and
+  `Tests/RielaCLITests/ServeHTTPCommandTests.swift` are the receiving proof.
+- In `Tests/RielaCLITests/`, rewrite `WorkflowCommandAutoImproveTests.swift` as
+  retired-option rejection/preservation coverage after A0; update
+  `CommandParsingTests.swift`, `WorkflowCommandInspectionTests.swift`,
+  `WorkflowCommandPackageLifecycleTests.swift`, `WorkflowRunHelpTests.swift`
+  and `SurfaceParityCLITests.swift` where old options/results were expected.
+  Assert task-free ordinary runs create no task/store; assert ordinary outbound
+  payload omits removed fields without losing auth or runtimeVariables. Do not
+  delete behavior assertions merely to make tests pass.
+- Delete only the eight manifest-listed obsolete example files. Update
+  `RielaExampleCatalog.swift`, `RielaExampleParityTests.swift` and
+  `examples/catalog/chat-persona-and-agent-trio.md` to point at existing
+  `task-repair-loop` and `task-agent-director` examples. In
+  `examples/monja-project-task-orchestrator/executor.ts`,
+  `examples/monja-agent-collaboration/riela.ts` and `verify-workflow.ts`, remove
+  only obsolete arguments; retain command ordering and other behavior. Run
+  both Monja projects' tests/typechecks without live services or lockfile churn.
+
+Accepted A1 source/tests remain read-only regression targets unless a material
+regression requires a reviewed exact-path amendment. The current write allowlist
+is not permission for unrelated edits. If a required caller lies outside it,
+record the concrete compiler/test evidence and obtain bounded plan review before
+editing. Shared README/design/plan files are reserved for serial finalization;
+only the implementation owner appends its progress file during A0–A3.
+
+### Evidence and commands
+
+Use every command in the current manifest `plans[0].verification`; these retain
+V0–V9 and supplemental gates from the historical plan with a new scratch root,
+plus explicit native GraphQL, HTTP, provider and atomic-race filters. All Swift
+commands use the explicit Xcode toolchain. Create a fresh unused numbered
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-<n>/` and set
+`evidence_dir` to that relative path. Never overwrite earlier receipts. Record
+expanded commands, environment/cwd, start/end, complete stdout/stderr logs and
+actual terminal exit in paired `.command`, `.log`, `.exit` files. All execution
+is foreground; retain/poll session handles until terminal exit. No incomplete
+log, skipped-only run, discovery listing or zero-selected suite is a pass.
+
+Before removal run V0/V1, policy, canonical, cancellation-host, the named atomic
+race and discovery. Seal those results before A2. After A2 run the entire manifest
+serially, including final V1 and all retained tests. V2's historical filter names
+include files extending other suites: require its actual-suite supplement
+`WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests` and actual
+cancellation method execution; never claim nonexistent suite counts. V8 validates
+and mock-runs only explicit repository examples; it is not workflow provenance
+discovery. Assert repair-loop two-node acceptance and director one-node accept
+output. Run native `WorkflowExecutionGraphQLTests`, `ServeHTTPCommandTests`
+and `WorkflowExecutionProviderTests` with positive execution counts.
+
+Generate sorted before/after SHA-256 membership manifests for all files beneath
+Sources, Tests and examples plus Package.swift/Package.resolved; record HEAD and
+changed-file hashes, compare membership and content with `cmp`, and verify with
+`shasum -a 256 -c`. Include additions/deletions. Any relevant source edit renews
+affected gates and the seal. Derive surviving changed Swift files from actual
+tracked/untracked changes relative to a373a60, not a historical A1 allowlist;
+record a NUL-delimited list and run the manifest strict SwiftLint command.
+V7 retains all baseline/final diagnostics. V9 matches require individual
+classification as rejection tests, opaque user data, retained supervision,
+history or missed legacy callsites; exit 1 means no matches, >1 is an error.
+Targeted obsolete Monja/catalog audit expects no matches (exit 1).
+
+Run serial broad tests with their actual final exit. Compare failures by named
+test/assertion and cause against historical P1/NRE baseline receipts; counts
+alone do not establish attribution. Record each owner/follow-up and seek A4
+independent disposition. Preserve failed logs. Missing dependencies or unavailable
+runtime evidence are explicit gaps, not authorization for dependency repair.
+
+### Drift, review and publication
+
+Before every edit, fresh-read the affected code and diff, save immutable preimage,
+SHA-256 and intended hunk/rationale under the attempt's intents directory. Recheck
+the hash immediately before writing; on drift reread and reconcile serially.
+Save postimage/hash. After any delegated read-only investigation joins, reconcile
+its findings and actual changed paths under the one owner before review. Do not
+run concurrent Git or generate shared indexes/lockfiles; global archiving is
+outside this slice. Progress entries record task state, exact files/source,
+commands/counts/logs/exits, unresolved findings and next dependency.
+
+After Step 5 acceptance the serial checkpoint owner stages only the six manifest
+checkpointWritePaths, checks `git diff --cached --check` and the exact staged
+allowlist, commits, then runs `git push origin HEAD:feat/remaining-impl-plans`.
+Record `git rev-parse HEAD` and
+`git ls-remote --heads origin refs/heads/feat/remaining-impl-plans`; hashes must
+match before dispatch. Preserve a373a60 as ancestor. Final A5 uses the workflow's
+exact-file commit/push gates for reviewed implementation/docs, with both diff
+checks and matching published hash. No broad staging or acceptance of unrelated
+changes. Keep P1-7b publication and parent P1 closure explicitly open.
+
+## Historical contracts and receipts (superseded execution scope)
+
 # Work Runtime P1-7a A1: atomic inactivity progress decision
 
 ## Current executable contract — A1 issue-resolution (2026-09-25)
@@ -4513,7 +4687,7 @@ concrete failed command/log/exit, not claimed as success.
 ## Planning author check and remaining gates
 
 Step 3 accepted §17.7 in the runtime-delivered review with no findings. Step 5
-plan acceptance, implementation, behavioral tests, lint, adversarial review,
+plan acceptance is recorded in comm-000006; implementation, behavioral tests, lint, adversarial review,
 documentation completion and final commit/push remain downstream. No Swift
 build/test/lint result is claimed in Step 4. No unresolved user decision or
 known design defect remains. The current concrete director integration gap is

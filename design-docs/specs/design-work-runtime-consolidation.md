@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a A1 implementation and reviews accepted; A2–A5 and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 scopes the current issue-resolution run to the accepted atomic inactivity amendment at preserved checkpoint `290cd483827af37d4f6725534e42676c7198bb85`; its final-source A1 verification and Codex Sol/Astra reviews have accepted the implementation. Exact-file commit and non-force push remain downstream. Historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
+Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A2–A5 after accepted A1 and native receiving integration at `a373a6040bff11ef7e86b8f6789321fefc7596f1`. A2–A5 remain unverified in this design step. P1-7b exact-file publication and parent P1 closure are separate dependencies, not completed here. Section 17.10's current continuation below supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2640,6 +2640,98 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
+
+#### Current continuation: native receiving boundary, A2–A5
+
+Issue: “Finish Work Runtime P1-7a legacy supervision removal on native Riela
+receiving boundary”; repository `tacogips/riela`, no issue number or URL supplied.
+Authority: Step 1 `comm-000002`, execution
+`codex-design-and-implement-review-loop-session-1`, effective `workflowInput`.
+Branch and handoff: `feat/remaining-impl-plans`, Draft PR #109. Accepted A1 and
+Native Remote NRE-01/02/03 are already incorporated at
+`a373a6040bff11ef7e86b8f6789321fefc7596f1`; preserve their contracts. This
+continuation supersedes the A1-only execution limits below and the archived
+receiving-owner dependency. Earlier logs and rejected reviews remain historical,
+not evidence of current failure or current acceptance.
+
+**Removal boundary.** Delete only obsolete workflow auto-improve and
+nested-superviser execution, options, remote serialization, supervision result
+and persistence plumbing, and their obsolete examples after refreshing the
+accepted before-removal replacement proof. Reject retired CLI spellings and
+aliases, including negative forms, rather than silently ignoring them. Shared
+session/loop options must not retain a back door. Ordinary local workflows
+remain task-free; task-backed repair/director examples, cancellation, guard and
+director policy, specialist/event supervision, loops and routines retain their
+existing behavior. Sections 10–12 describe the broader eventual consolidation;
+they do not authorize specialist, loop, routine, storage or GraphQL deletion in
+this slice. Preserve Monja behavior while removing only obsolete argument
+references and fixing directly affected example/catalog links.
+
+**Receiving data flow.** Authenticated HTTP GraphQL enters native Riela's
+`Sources/RielaCLI/ServeHTTPCommand.swift`, then execution validation in
+`Sources/RielaGraphQL/GraphQLWorkflowExecutionValidation.swift` and
+`Sources/RielaGraphQL/WorkflowExecutionGraphQL.swift`, before
+`Sources/RielaCLI/WorkflowExecutionProvider.swift` can launch work. Preserve the
+native design's authorization, host-selected roots, strict persisted reads,
+cancellation and synchronous result contract. `ExecuteWorkflowInput` rejects
+`autoImprove` and `nestedSuperviser` by top-level key presence, including false,
+null, true, zero and object values, through whole-input variables, inline input,
+field variables and variable defaults, before provider effects. Keep schema
+omission and existing unknown-field rejection. Do not add recursive validation:
+those names inside opaque `runtimeVariables` remain ordinary user data. Client
+omission alone is not receiving proof. Existing native behavior may need only
+fresh evidence, not a new receiver implementation. No archived `rielflow` edit,
+push or publication is required or authorized. The historical user decision is
+resolved in `design-docs/user-qa/qa-p1-7a-rielflow-publication.md`.
+
+**Ordered acceptance and ownership.** Step 4 must reconcile
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`, its active
+write-path manifest and `impl-plans/progress/p1-dispatch.md` to this continuation
+before implementation: retain accepted A1, refresh replacement evidence before
+A2 deletion, replace external receiver owners/commands with the native paths
+above and their tests, and retain A2 → A3 → A4 → A5 ordering. Do not reopen A1 or
+NRE design without a demonstrated material regression. A3 runs final-source
+P1-7a V0–V9, retained-consumer, remote, cancellation and serial broad gates. In
+addition to the existing plan commands, explicitly run:
+
+```sh
+swift test --filter WorkflowExecutionGraphQLTests
+swift test --filter ServeHTTPCommandTests
+xargs -0 swiftlint lint --strict --quiet --no-cache < "$evidence_dir/changed-swift-files.nul"
+git diff --check
+git diff --cached --check
+```
+
+Step 4 resolves `evidence_dir` to a fresh repository-root `tmp/` attempt and
+records the actual Xcode toolchain, scratch path and expanded commands. The
+existing native rejection matrix and opaque-data test are in
+`Tests/RielaGraphQLTests/WorkflowExecutionGraphQLTests.swift`; authenticated
+HTTP execution, forbidden fields and cancellation are in
+`Tests/RielaCLITests/ServeHTTPCommandTests.swift`. Discovery or a zero-test filter
+is not behavioral evidence. Capture positive per-suite counts, complete logs,
+terminal exits and before/after HEAD plus source/test/example/package membership
+and SHA-256 identity. Poll every owned foreground command to exit. Renew affected
+checks after relevant edits; record exact failing test/assertion identities and
+causes for unrelated baseline failures without calling broad failed gates green.
+V9 references must be classified as rejection coverage, retained opaque data,
+retained unrelated supervision, history, or an actual obsolete callsite.
+
+A4 requires independent test-integrity, Sol adversarial and Astra combined-tree
+review decisions tied to the exact reviewed files/source; no unresolved high or
+mid finding may advance. This author self-check does not substitute for A4.
+A5 refreshes README, both affected designs, the active plan and progress record,
+then publishes only the exact reviewed file allowlist through commit and
+non-force push to `feat/remaining-impl-plans`, handing off on Draft PR #109.
+Do not mark P1-7b exact-file publication or parent P1 closure complete. Preserve
+Monja and all unrelated sessions/worktrees; no base-branch merge, force push,
+release or App Store artifact. No new abstraction or broader cleanup is needed.
+
+**Questions and reference mapping.** No unresolved user decision is needed for
+this scope. No codex-agent repository reference was supplied; Cursor CLI adapter
+mapping and intentional reference divergences are not applicable. The missing
+issue identifier is recorded above; Draft PR #109 is the supplied handoff.
+
+#### Historical A1 execution and evidence
 
 **Current A1 atomic inactivity implementation (issue-resolution).** Issue
 `comm-000001`, “Implement atomic P1-7a A1 inactivity progress decision”; Step 1

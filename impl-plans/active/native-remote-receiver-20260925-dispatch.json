@@ -4,19 +4,20 @@
   "implementationBranch": "feat/native-remote-workflow-execution",
   "baseBranch": "feat/native-remote-workflow-execution",
   "remote": "origin",
-  "originalHead": "611dc100c25bf297368df7b51fe1aeff429d835c",
+  "originalHead": "acbeab0de927afd3c816bbb8238aede19bdcfc8c",
   "designDocPaths": [
     "design-docs/specs/design-native-remote-workflow-execution.md"
   ],
   "evidenceRoot": "tmp/native-remote-receiver-20260925",
   "reviewContext": {
-    "issueReference": "Local request on feat/native-remote-workflow-execution; no GitHub issue URL or number supplied",
-    "userProblem": "Complete dirty NRE-03 provider/host integration on accepted NRE-01/NRE-02 with durable result agreement and source-matched verification.",
+    "issueReference": "Local request comm-000002; feat/native-remote-workflow-execution; Draft PR #110 targeting main",
+    "userProblem": "Complete remaining NRE-03 I5/I6 cases, renew final-source gates, independently decide baseline attribution, and publish reviewed work to existing Draft PR #110 without merging main.",
     "requiredOutcomes": [
       "Finish and independently review NRE-03, then commit and non-force push reviewed source/docs; preserve checkpoint 611dc10 and all existing implementation.",
       "Dispatch only NRE-03 with accepted external NRE-01/NRE-02 prerequisites; preserve their evidence and owned files.",
       "No ordinary paused status: preserve failed/maxStepsExceeded and failed/cancelled; require command/persisted status and identity agreement and actual exit codes.",
-      "Establish the 11 App assertion failures through bounded source-matched comparison before proposing any baseline disposition."
+      "Preserve attempt-3 aggregate exit 1 and exact source-matched 11-assertion evidence; renew final-source gates and obtain explicit independent attribution decisions.",
+      "Verify PR #110 is open and Draft, targets main, and matches the reviewed pushed feature-branch head; never checkout, merge, commit or push main."
     ],
     "nonGoals": [
       "No parallel server or runner, queue, polling protocol, new library facade, legacy auto-improve compatibility or client timeout forwarding.",
@@ -24,7 +25,7 @@
     ],
     "constraints": [
       "Preserve planning commit 9b1c935bc7e9fe4d586142e4ead035f84ef18ee7, local runs, existing GraphQL and browser authorization, and failure semantics.",
-      "Step 5 accepts focused plan/manifest before serial planning checkpoint and the single NRE-03 dispatch; final source publication follows independent reviews.",
+      "Current Step 5 accepts continuation plan/manifest before serial exact-file planning commit and non-force push, then single NRE-03 dispatch; final source publication follows independent reviews.",
       "Run foreground verification with explicit Xcode Swift toolchain, complete logs and exit statuses under evidenceRoot per plan and attempt; serialize shared SwiftPM build/test use.",
       "Workers keep separate progress files and do not edit this manifest; one serial owner handles shared catalog, indexes, reconciliation, reviews and final Git actions."
     ],
@@ -66,17 +67,21 @@
       "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
       "scripts/surface-parity/generate-sdl.sh"
     ],
-    "reviewDecision": "Step 3 design accepted in comm-000004 and Step 5 focused NRE-03 plan accepted in comm-000006, both without findings. Integration comm-000039 retains NRE-01/NRE-02 acceptance; NRE-03 implementation and aggregate verification remain pending.",
+    "reviewDecision": "Step 3 comm-000004 accepts the continuation design without findings. Step 5 comm-000006 accepts the single NRE-03 continuation plan and dispatch manifest without findings. Prior integration comm-000039 retains NRE-01/NRE-02 acceptance. NRE-03 implementation and independent baseline disposition remain pending.",
     "reviewCommunicationId": "comm-000004",
-    "planReviewCommunicationId": "comm-000006",
     "codexAgentReferences": [
-      "/root \u2014 Step 6 NRE-03 integration review, comm-000039",
-      "step1-issue-intake \u2014 comm-000002",
-      "step3-design-review \u2014 comm-000004",
-      "/root/plan_review \u2014 Step 4 read-only generator/dependency check",
-      "step5-impl-plan-review \u2014 comm-000006"
+      "/root: prior integration comm-000039",
+      "/root/provider_explore",
+      "/root/host_explore",
+      "/root/test_explore",
+      "/root/code_audit",
+      "/root/test_audit",
+      "step3-design-review: current comm-000004"
     ],
-    "planningVerification": [
+    "integrationReviewCommunicationId": "comm-000039",
+    "historicalPlanReviewCommunicationId": "comm-000006",
+    "planReviewStatus": "accepted",
+    "historicalPlanningVerification": [
       {
         "command": "python3 tmp/native-remote-step4-focused-plan/check_plans.py",
         "completeLogPath": "tmp/native-remote-step4-focused-plan/self-check.log",
@@ -89,8 +94,7 @@
         "statusPath": "tmp/native-remote-step4-focused-plan/diff-check.exit",
         "exitStatus": 0
       }
-    ],
-    "integrationReviewCommunicationId": "comm-000039"
+    ]
   },
   "plans": [
     {
@@ -128,7 +132,8 @@
         "Actual Riela HTTP composition rejects unauthorized and malformed requests without effects and returns an authenticated persisted execution plus summary via the existing URLSession transport.",
         "Provider result agreement, real failure/pre-session, browser/profile and persisted cancellation tests pass; source build, strict changed-file SwiftLint and full aggregate complete with source-matched logs. Aggregate requires clean results or independent approval of individually proven baseline failures with every other test passing; never relabel nonzero exit as passing.",
         "Independent test-integrity, adversarial and integration reviews accept source-matched evidence with no high or mid findings; directly related docs and progress records are finalized.",
-        "No paused fixture or Core status/migration expansion; retain NRE-01/NRE-02 acceptance and writePaths. Follow NRE-03 I7a bounded baseline procedure; unresolved evidence keeps NRE-03 pending."
+        "Retain accepted status/ownership and existing I7a comparison; rerun baseline only if evidence is invalidated. Implementation completeness and downstream formal review are separate as specified in the continuation contract.",
+        "Remaining invalid patch, saved-instance mismatch, deactivation, malformed JSON, query/write failure, ordered/cross-workflow summary, HTTP envelope/size and material zero-effect cases pass on final source."
       ],
       "verification": [
         "env -u RIELA_WRITE_GENERATED_SDL /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter SurfaceParityGraphQLTests",
@@ -152,7 +157,13 @@
         "command": "bash scripts/surface-parity/generate-sdl.sh",
         "procedure": "impl-plans/active/native-remote-03-provider-host-integration.md#i7b--reviewed-generated-schema-parity-rule",
         "condition": "Only if parity requires regeneration; use documented Xcode login-shell preflight/environment; never hand-edit output."
-      }
+      },
+      "implementationCompletion": "C1-C7 and renewed complete source-matched gates; hand off exactly baseline-matched aggregate exit 1 for formal review without self-blocking on that downstream decision. New errors or missing behavior remain incomplete.",
+      "publicationVerification": [
+        "git rev-parse HEAD",
+        "git ls-remote --heads origin refs/heads/feat/native-remote-workflow-execution",
+        "gh pr view 110 --repo tacogips/riela --json number,state,isDraft,baseRefName,headRefName,headRefOid,url"
+      ]
     }
   ],
   "preservedCheckpoint": "611dc100c25bf297368df7b51fe1aeff429d835c",
@@ -163,7 +174,7 @@
   "pendingPlanIds": [
     "NRE-03"
   ],
-  "dispatchDisposition": "One NRE-03 task after Step 5 acceptance and planning checkpoint; no active NRE-01/NRE-02 tasks. External prerequisites already satisfied by comm-000039 and preserved tree.",
+  "dispatchDisposition": "Exactly one NRE-03 task after current Step 5 acceptance and planning checkpoint commit/non-force push; accepted NRE-01/NRE-02 remain external prerequisites. Prior attempt-3 session is terminal.",
   "externalPrerequisites": [
     {
       "planId": "NRE-01",

@@ -69,6 +69,18 @@ control-plane schema is printed by:
 riela graphql schema
 ```
 
+For ordinary remote execution, POST `executeWorkflow(input: ExecuteWorkflowInput!)`
+to the host's `/graphql` route with a bearer matching its startup
+`RIELA_MANAGER_AUTH_TOKEN`. The synchronous payload contains
+`workflowExecutionId`, `sessionId`, actual `status`, and actual `exitCode` after
+the result is persisted. Query
+`workflowExecution(workflowExecutionId: String!)` with the same bearer to read
+its session, transitions, and node executions. A well-formed absent ID returns
+null; corrupt persisted data returns an error. The host fixes the working
+directory and session store. The bearer permits execution in that host context,
+not registry writes. An ambiguous timeout can leave the run continuing, so a
+retry may start a second run.
+
 Session control is a local-host operation: `rerunSession`, `resumeSession`,
 `stopSession` and `continueSession` are answered only by the process that runs
 the sessions, and `stopSession` fails closed with `session_not_running` for a

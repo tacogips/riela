@@ -49,6 +49,39 @@ public enum GraphQLSchemaGenerator {
   /// pins every `GraphQL*DTO` struct to its descriptor here, so a DTO field
   /// added without a schema field fails the build gate.
   public static let types: [TypeDescriptor] = [
+    .init(kind: .input, name: "ExecuteWorkflowInput", fields: [
+      .init(name: "workflowName", type: "String!"),
+      .init(name: "runtimeVariables", type: "JSONObject"),
+      .init(name: "instanceIdentity", type: "String"),
+      .init(name: "nodePatch", type: "JSONObject"),
+      .init(name: "maxSteps", type: "Int"),
+      .init(name: "maxConcurrency", type: "Int"),
+      .init(name: "maxLoopIterations", type: "Int"),
+      .init(name: "disableDefaultLoopGuard", type: "Boolean"),
+      .init(name: "defaultTimeoutMs", type: "Int")
+    ]),
+    .init(kind: .object, name: "ExecuteWorkflowPayload", fields: [
+      .init(name: "workflowExecutionId", type: "String!"),
+      .init(name: "sessionId", type: "String!"),
+      .init(name: "status", type: "String!"),
+      .init(name: "exitCode", type: "Int!")
+    ]),
+    .init(kind: .object, name: "WorkflowExecutionSummary", fields: [
+      .init(name: "session", type: "WorkflowExecutionSessionSummary!"),
+      .init(name: "nodeExecutions", type: "[WorkflowExecutionNodeSummary!]!")
+    ]),
+    .init(kind: .object, name: "WorkflowExecutionSessionSummary", fields: [
+      .init(name: "sessionId", type: "String!"),
+      .init(name: "workflowName", type: "String!"),
+      .init(name: "workflowId", type: "String!"),
+      .init(name: "transitions", type: "[WorkflowExecutionTransitionSummary!]!")
+    ]),
+    .init(kind: .object, name: "WorkflowExecutionTransitionSummary", fields: [
+      .init(name: "when", type: "String")
+    ]),
+    .init(kind: .object, name: "WorkflowExecutionNodeSummary", fields: [
+      .init(name: "nodeExecId", type: "String!")
+    ]),
     .init(kind: .object, name: "ControlPlaneResult", fields: [
       .init(name: "accepted", type: "Boolean!"),
       .init(name: "status", type: "String!"),
@@ -581,6 +614,8 @@ public enum GraphQLSchemaGenerator {
   /// The catalog decides which fields the schema publishes and in what order;
   /// this table supplies each one's arguments and return type.
   public static let rootFields: [String: FieldDescriptor] = [
+    "Mutation.executeWorkflow": .init(name: "executeWorkflow", arguments: "input: ExecuteWorkflowInput!", type: "ExecuteWorkflowPayload!"),
+    "Query.workflowExecution": .init(name: "workflowExecution", arguments: "workflowExecutionId: String!", type: "WorkflowExecutionSummary"),
     "Mutation.activateWorkflow": .init(name: "activateWorkflow", arguments: "input: SetWorkflowActivationInput!", type: "WorkflowMutationPayload!"),
     "Mutation.addWorkflowDirectoryConfiguration": .init(name: "addWorkflowDirectoryConfiguration", arguments: "input: WorkflowDirectoryConfigurationInput!", type: "ConfigurationRevision!"),
     "Mutation.completeRoutine": .init(name: "completeRoutine", arguments: "input: CompleteRoutineInput!", type: "RoutineMutationPayload!"),

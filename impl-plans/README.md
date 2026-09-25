@@ -111,6 +111,9 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `native-remote-01-graphql-contract` | 2026-09-25 | `design-native-remote-workflow-execution` (accepted GraphQL contract and authorization; progress: `active/native-remote-nre-01-progress.md`) |
+| `native-remote-02-strict-storage` | 2026-09-25 | `design-native-remote-workflow-execution` (accepted strict persisted summary reads; progress: `active/native-remote-nre-02-progress.md`) |
+| `native-remote-03-provider-host-integration` | 2026-09-25 | `design-native-remote-workflow-execution` (adversarial and Astra integration reviews accepted; aggregate Swift exit 1 independently attributed to baseline App failures; browser E2E blocked by Playwright cache EPERM; Draft PR #110 publication pending; progress: `active/native-remote-nre-03-progress.md`) |
 | `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |
 | `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
 | `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |

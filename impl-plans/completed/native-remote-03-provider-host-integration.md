@@ -3,7 +3,7 @@
 ```json
 {
   "planId": "NRE-03",
-  "planPath": "impl-plans/active/native-remote-03-provider-host-integration.md",
+  "planPath": "impl-plans/completed/native-remote-03-provider-host-integration.md",
   "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/WorkflowExecutionProvider.swift",
@@ -72,7 +72,7 @@ Step 5 must accept this plan and focused dispatch manifest before the serial
 workflow owner checkpoints the accepted design and plans using only:
 
 - `design-docs/specs/design-native-remote-workflow-execution.md`
-- `impl-plans/active/native-remote-03-provider-host-integration.md`
+- `impl-plans/completed/native-remote-03-provider-host-integration.md`
 - `impl-plans/active/native-remote-receiver-20260925-dispatch.json`
 
 Commit and non-force push the accepted planning artifacts before native implementation/review fanout;

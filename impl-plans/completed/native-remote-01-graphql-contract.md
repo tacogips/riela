@@ -3,7 +3,7 @@
 ```json
 {
   "planId": "NRE-01",
-  "planPath": "impl-plans/active/native-remote-01-graphql-contract.md",
+  "planPath": "impl-plans/completed/native-remote-01-graphql-contract.md",
   "dependsOn": [],
   "writePaths": [
     "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",

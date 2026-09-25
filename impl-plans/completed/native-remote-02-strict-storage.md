@@ -3,7 +3,7 @@
 ```json
 {
   "planId": "NRE-02",
-  "planPath": "impl-plans/active/native-remote-02-strict-storage.md",
+  "planPath": "impl-plans/completed/native-remote-02-strict-storage.md",
   "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/CLIWorkflowSessionStore.swift",

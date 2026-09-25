@@ -5,6 +5,81 @@ import XCTest
 @testable import RielaCore
 
 final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
+  func testStrictReadDistinguishesValidCorruptAndAbsentRecordsWithoutWrites() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("cli-session-strict-records")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let valid = makeRecord(sessionId: "valid-session", updatedAt: Date(timeIntervalSince1970: 2))
+    let database = try fixtureDatabase(rootDirectory: root.path, createTable: true)
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let validJSON = try XCTUnwrap(String(data: encoder.encode(valid), encoding: .utf8))
+    try insertFixture(database, id: valid.session.sessionId, json: validJSON)
+    try insertFixture(database, id: "shape-session", json: "{}")
+    var mismatched = valid
+    mismatched.session.sessionId = "different-session"
+    let mismatchJSON = try XCTUnwrap(String(data: encoder.encode(mismatched), encoding: .utf8))
+    try insertFixture(database, id: "mismatch-session", json: mismatchJSON)
+    let before = try storedRows(database)
+
+    XCTAssertEqual(try store.loadStrictReadOnly(sessionId: valid.session.sessionId), valid)
+    assertStoreError(.notFound("session not found: absent-session")) {
+      try store.loadStrictReadOnly(sessionId: "absent-session")
+    }
+    assertStorageFailure { try store.loadStrictReadOnly(sessionId: "shape-session") }
+    assertStorageFailure { try store.loadStrictReadOnly(sessionId: "mismatch-session") }
+    assertStoreError(.invalidSessionId("../invalid")) {
+      try store.loadStrictReadOnly(sessionId: "../invalid")
+    }
+    XCTAssertEqual(try storedRows(database), before)
+  }
+
+  func testStrictReadTreatsNullAndMalformedJSONAsStorageFailure() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("cli-session-strict-sql")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let database = try fixtureDatabase(rootDirectory: root.path, createTable: true)
+    try database.execute(
+      "INSERT INTO cli_workflow_sessions (session_id, record_json) VALUES (?, ?), (?, ?)",
+      bindings: [.text("null-session"), .null, .text("malformed-session"), .text("{invalid")]
+    )
+    let before = try storedRows(database)
+    assertStorageFailure { try store.loadStrictReadOnly(sessionId: "null-session") }
+    assertStorageFailure { try store.loadStrictReadOnly(sessionId: "malformed-session") }
+    XCTAssertEqual(try storedRows(database), before)
+  }
+
+  func testStrictReadDoesNotCreateMissingStoreOrTable() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("cli-session-strict-absent")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    assertStoreError(.notFound("session not found: absent-session")) {
+      try store.loadStrictReadOnly(sessionId: "absent-session")
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: path))
+    _ = try fixtureDatabase(rootDirectory: root.path, createTable: false)
+    assertStoreError(.notFound("session not found: absent-session")) {
+      try store.loadStrictReadOnly(sessionId: "absent-session")
+    }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: path))
+  }
+
+  func testStrictReadPropagatesDatabaseAndQueryFailures() throws {
+    let root = try makeRielaCLITestTemporaryDirectory("cli-session-strict-failure")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("not a SQLite database".utf8).write(to: URL(fileURLWithPath: path))
+    assertStorageFailure { try store.loadStrictReadOnly(sessionId: "failure-session") }
+    try FileManager.default.removeItem(atPath: path)
+    let database = try fixtureDatabase(rootDirectory: root.path, createTable: true)
+    try database.execute("DROP TABLE cli_workflow_sessions")
+    try database.execute("CREATE TABLE cli_workflow_sessions (session_id TEXT PRIMARY KEY)")
+    assertStorageFailure { try store.loadStrictReadOnly(sessionId: "failure-session") }
+  }
+
   func testUnreadableRecordsAreSkippedWarnedAndPreserved() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("cli-session-store-resilience")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -48,6 +123,12 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
         error,
         .notFound("session not found: \(unreadableRecord.session.sessionId)")
       )
+    }
+    XCTAssertEqual(warnings.take(), [expectedWarning])
+    XCTAssertEqual(try rawRecordCount(rootDirectory: root.path), 2)
+
+    assertStoreError(.notFound("session not found: \(unreadableRecord.session.sessionId)")) {
+      try store.load(sessionId: unreadableRecord.session.sessionId, strictReadOnly: true)
     }
     XCTAssertEqual(warnings.take(), [expectedWarning])
     XCTAssertEqual(try rawRecordCount(rootDirectory: root.path), 2)
@@ -104,6 +185,56 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
         workingDirectory: "/tmp/riela-session-store-resilience"
       )
     )
+  }
+
+  private func fixtureDatabase(rootDirectory: String, createTable: Bool = false) throws -> SQLiteDatabase {
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: rootDirectory)
+    try FileManager.default.createDirectory(
+      at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let database = try SQLiteDatabase.open(path: path)
+    if createTable {
+      try database.execute("CREATE TABLE cli_workflow_sessions (session_id TEXT PRIMARY KEY, record_json TEXT, updated_at TEXT)")
+    }
+    return database
+  }
+
+  private func insertFixture(_ database: SQLiteDatabase, id: String, json: String) throws {
+    try database.execute(
+      "INSERT INTO cli_workflow_sessions (session_id, record_json, updated_at) VALUES (?, jsonb(?), ?)",
+      bindings: [.text(id), .text(json), .text("2026-07-24T00:00:00.000Z")]
+    )
+  }
+
+  private func storedRows(_ database: SQLiteDatabase) throws -> [SQLiteRow] {
+    try database.query(
+      "SELECT session_id, hex(record_json) AS record_bytes FROM cli_workflow_sessions ORDER BY session_id"
+    )
+  }
+
+  private func assertStoreError(
+    _ expected: CLIWorkflowSessionStoreError,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ body: () throws -> PersistedCLIWorkflowSession
+  ) {
+    XCTAssertThrowsError(try body(), file: file, line: line) { error in
+      XCTAssertEqual(error as? CLIWorkflowSessionStoreError, expected, file: file, line: line)
+    }
+  }
+
+  private func assertStorageFailure(
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ body: () throws -> PersistedCLIWorkflowSession
+  ) {
+    XCTAssertThrowsError(try body(), file: file, line: line) { error in
+      guard case let CLIWorkflowSessionStoreError.sqliteFailed(message) = error else {
+        return XCTFail("expected storage failure, got \(error)", file: file, line: line)
+      }
+      XCTAssertLessThan(message.count, 256, file: file, line: line)
+    }
   }
 
   private func insertRecordMissingIncludeDeactivated(

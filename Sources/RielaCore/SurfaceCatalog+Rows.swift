@@ -69,12 +69,30 @@ extension SurfaceCatalog {
         "--timeout-ms", "--artifact-root", "--session-store", "--working-dir", "--endpoint",
         "--auth-token", "--auth-token-env", "--from-registry", "--scope"
       ],
-      graphqlState: .excluded(
-        reason: "starting a run is a long-lived local process; the control plane observes, continues and reruns sessions instead",
-        design: "\(SurfaceCatalog.controlSurfaceDesign)#26-closing-the-current-gaps"
-      ),
+      graphql: graphQLMutation("executeWorkflow"),
       library: libraryEntryPoint("executeWorkflow"),
       skills: ["riela-workflow-run", "riela-workflow-reference"]
+    ),
+    surfaceRow(
+      workflowDefaults,
+      id: "workflow.execution-summary",
+      family: "workflow",
+      kind: .query,
+      cliState: .excluded(
+        reason: "the CLI uses session inspection rather than a separate execution-summary command",
+        design: "design-docs/specs/design-native-remote-workflow-execution.md"
+      ),
+      graphql: graphQLQuery("workflowExecution"),
+      webState: .excluded(
+        reason: "the summary is read through GraphQL, not a separate web API route",
+        design: "design-docs/specs/design-native-remote-workflow-execution.md"
+      ),
+      libraryState: .excluded(
+        reason: "the embedding facade does not expose this remote summary projection",
+        design: "design-docs/specs/design-native-remote-workflow-execution.md"
+      ),
+      skills: ["riela-workflow-run", "riela-workflow-reference"],
+      design: "design-docs/specs/design-native-remote-workflow-execution.md"
     ),
     surfaceRow(
       workflowDefaults,

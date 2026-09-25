@@ -175,6 +175,18 @@ public struct CLIWorkflowSessionStore: Sendable {
     sessionId: String,
     strictReadOnly: Bool = false
   ) throws -> PersistedCLIWorkflowSession {
+    try read(sessionId: sessionId, strictReadOnly: strictReadOnly, strictDecoding: false)
+  }
+
+  public func loadStrictReadOnly(sessionId: String) throws -> PersistedCLIWorkflowSession {
+    try read(sessionId: sessionId, strictReadOnly: true, strictDecoding: true)
+  }
+
+  private func read(
+    sessionId: String,
+    strictReadOnly: Bool,
+    strictDecoding: Bool
+  ) throws -> PersistedCLIWorkflowSession {
     guard isSafeSessionId(sessionId) else {
       throw CLIWorkflowSessionStoreError.invalidSessionId(sessionId)
     }
@@ -185,18 +197,39 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
-    let rows = try mapSQLiteError {
-      try db.query(
+    let rows: [SQLiteRow]
+    do {
+      rows = try mapSQLiteError {
+        try db.query(
         "SELECT json(record_json) AS record_json FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
-      bindings: [.text(sessionId)]
-      )
+        bindings: [.text(sessionId)]
+        )
+      }
+    } catch {
+      if strictDecoding {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record query failed")
+      }
+      throw error
     }
-    guard let recordText = rows.first?["record_json"] else {
+    guard let row = rows.first else {
+      throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+    }
+    guard let recordText = row["record_json"] else {
+      if strictDecoding {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is missing")
+      }
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
     do {
-      return try decodeRecord(recordText)
+      let record = try decodeRecord(recordText)
+      if strictDecoding, record.session.sessionId != sessionId {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session ID does not match requested ID")
+      }
+      return record
     } catch {
+      if strictDecoding {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is invalid or mismatched")
+      }
       warnAboutSkippedRecords(count: 1)
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }

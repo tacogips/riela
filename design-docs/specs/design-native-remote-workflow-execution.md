@@ -1,9 +1,34 @@
 # Native remote workflow execution receiving boundary
 
-Status: Accepted NRE-03 planning amendment retained; attempt-4 I5/I6 implementation reported complete; baselineReviewPending; independent review handoff; NRE-01/NRE-02 acceptance retained.
+Status: NRE-03 implementation and combined-tree integration review accepted; attempt-4 aggregate baseline attribution accepted with actual exit 1; browser E2E unavailable; NRE-01/NRE-02 acceptance retained. Draft PR #110 publication remains downstream.
 Mode: `issue-resolution`; Step 2 updates design only; subsequent reviewed steps complete NRE-03.
 Issue reference: local request on `feat/native-remote-workflow-execution`; Draft PR #110 targets `main`; no GitHub issue supplied.
 Issue title: Independently review and finish NRE-03 native receiver.
+
+## Receiving usage and review disposition
+
+Start `riela serve` with a nonempty `RIELA_MANAGER_AUTH_TOKEN` in its
+environment. An ordinary client run uses
+`riela workflow run <name> --endpoint <server-origin>/graphql` and sends the
+matching bearer from `--auth-token` or the selected `--auth-token-env` (default
+`RIELA_MANAGER_AUTH_TOKEN`). The mutation waits for the durable result; the
+client then queries `workflowExecution` in the same host-selected store. Failed
+persisted runs retain their actual status and exit code. The server fixes the
+working directory and store; a client timeout does not reserve an idempotent
+job, and a retry may start another run. Remote auto-improve input is rejected.
+
+Independent adversarial review (`step7-adversarial-review`, `comm-000013`)
+and combined-tree Astra integration review accepted the receiver with no high
+or mid findings. The focused provider/storage and host/GraphQL suites,
+generated-schema parity, source build, and strict changed-file SwiftLint
+passed with complete attempt-4 logs under
+`tmp/native-remote-receiver-20260925/NRE-03/attempt-4/`. The full
+`RielaGraphQLTests|RielaServerTests|RielaCLITests|RielaAppSupportTests`
+aggregate exited 1; its 11 App assertions in six cases match the preserved
+preimplementation baseline, and independent review accepted that attribution
+without treating the aggregate as passing. `cd web && CI=1 bun run test:e2e`
+exited 1 before launching Playwright tests because its transform cache write
+failed with `EPERM`; browser E2E results remain unavailable.
 Intake: `comm-000002`, `step1-issue-intake`, execution `codex-design-and-implement-review-loop-session-1`.
 Accepted planning baseline: `9b1c935bc7e9fe4d586142e4ead035f84ef18ee7`, branch `feat/native-remote-workflow-execution`; preserve this commit.
 Accepted amendment checkpoint: `611dc100c25bf297368df7b51fe1aeff429d835c`; preserve this commit and all dirty/untracked implementation.
@@ -244,13 +269,15 @@ preflight forwarding using the existing executor pattern.
 
 ## Implementation handoff and acceptance
 
-Use the accepted plans without expanding scope:
+The accepted plans are archived under `impl-plans/completed/`. Their
+implementation history and progress records remain available without expanding
+the reviewed scope:
 
-- `impl-plans/active/native-remote-01-graphql-contract.md` (NRE-01): contract,
+- `impl-plans/completed/native-remote-01-graphql-contract.md` (NRE-01): contract,
   validation and authorization.
-- `impl-plans/active/native-remote-02-strict-storage.md` (NRE-02): strict read-only
+- `impl-plans/completed/native-remote-02-strict-storage.md` (NRE-02): strict read-only
   storage; independent of NRE-01.
-- `impl-plans/active/native-remote-03-provider-host-integration.md` (NRE-03):
+- `impl-plans/completed/native-remote-03-provider-host-integration.md` (NRE-03):
   provider, authenticated host composition and integrated tests, after both
   NRE-01 and NRE-02 pass their gates.
 
@@ -581,7 +608,7 @@ merge, commit or push `main`. P1 A2/A3 and retired-reference cleanup stay separa
 
 Step 3 reviews this focused issue-resolution handoff without reopening the accepted
 amendment. Step 4 aligns only
-`impl-plans/active/native-remote-03-provider-host-integration.md` and
+`impl-plans/completed/native-remote-03-provider-host-integration.md` and
 `impl-plans/active/native-remote-receiver-20260925-dispatch.json`: one NRE-03 task,
 satisfied external predecessors, generated-schema ownership/rule, and unchanged
 bounded aggregate attribution. Step 5 reviews the resulting plan/manifest before
@@ -604,3 +631,13 @@ Historical strict-decoding feedback (`comm-000004`, subsequently accepted in
 contract. The retained amendment responds to integration review `comm-000039`; the current
 Step 1 intake (`comm-000002`) authorizes its focused independent-review continuation.
 There is no new Step 3/Step 5 review decision for this handoff yet.
+
+Current disposition (2026-09-25): the preceding planning and pending-review
+language records the earlier checkpoint. Step 6 test integrity, Step 7
+adversarial review (`comm-000013`), and combined-tree Astra integration review
+subsequently accepted NRE-03 with no high or mid findings. Independent review
+accepted baseline attribution for the aggregate Swift exit 1; browser E2E
+could not launch because Playwright's transform cache returned `EPERM`
+(`comm-000019`). The three NRE plans are archived under
+`impl-plans/completed/`. Final commit, non-force push, and Draft PR #110 head
+verification remain pending.

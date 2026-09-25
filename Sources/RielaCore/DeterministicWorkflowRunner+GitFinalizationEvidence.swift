@@ -251,9 +251,7 @@ extension DeterministicWorkflowRunner {
     if let integrationStepId = policy.integrationStepId {
       let integration = try acceptedPayload(stepId: integrationStepId, session: context.session)
       guard let mergeStatus = stringValue(integration["mergeStatus"]),
-            ["merged", "already-on-base", "already-merged"].contains(mergeStatus),
             let pushStatus = stringValue(integration["basePushStatus"]),
-            ["pushed", "already-pushed"].contains(pushStatus),
             integration["implementationCommit"] == .string(commitHash),
             integration["implementationBranch"] == .string(pushedBranch),
             integration["remote"] == .string(pushedRemote),
@@ -261,6 +259,27 @@ extension DeterministicWorkflowRunner {
             context.payload["baseBranch"] == .string(baseBranch),
             context.payload["mergeStatus"] == .string(mergeStatus),
             context.payload["basePushStatus"] == .string(pushStatus) else {
+        throw invalidGitFinalizationEvidence("base integration evidence is missing or mismatched")
+      }
+      if mergeStatus == "pr-open" {
+        guard pushStatus == "not-requested",
+              let pullRequestURL = stringValue(integration["pullRequestURL"]),
+              let parsedURL = URL(string: pullRequestURL),
+              parsedURL.scheme == "https", parsedURL.host?.isEmpty == false,
+              let pullRequestNumber = integration["pullRequestNumber"]?.asInt64,
+              pullRequestNumber > 0,
+              Array(parsedURL.pathComponents.suffix(2)) == ["pull", String(pullRequestNumber)],
+              integration["pullRequestDraft"] == .bool(true) || integration["pullRequestDraft"] == .bool(false),
+              let pullRequestBaseBranch = stringValue(integration["pullRequestBaseBranch"]),
+              !pullRequestBaseBranch.isEmpty, pullRequestBaseBranch != pushedBranch,
+              context.payload["pullRequestURL"] == .string(pullRequestURL),
+              context.payload["pullRequestNumber"] == integration["pullRequestNumber"],
+              context.payload["pullRequestDraft"] == integration["pullRequestDraft"],
+              context.payload["pullRequestBaseBranch"] == .string(pullRequestBaseBranch) else {
+          throw invalidGitFinalizationEvidence("PR handoff evidence is missing or mismatched")
+        }
+      } else if !["merged", "already-on-base", "already-merged"].contains(mergeStatus) ||
+                  !["pushed", "already-pushed"].contains(pushStatus) {
         throw invalidGitFinalizationEvidence("base integration evidence is missing or mismatched")
       }
     }

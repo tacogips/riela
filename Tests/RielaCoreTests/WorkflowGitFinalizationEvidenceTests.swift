@@ -98,6 +98,68 @@ final class WorkflowGitFinalizationEvidenceTests: XCTestCase {
     XCTAssertThrowsError(try DeterministicWorkflowRunner.validateGitFinalizationEvidence(context: context, policy: policy))
   }
 
+  func testAcceptsExactOpenPRHandoffWithoutBasePush() throws {
+    XCTAssertNoThrow(try validatePRHandoff(makePRHandoffContext()))
+  }
+
+  func testRejectsMissingOrChangedOpenPRHandoffIdentity() throws {
+    let alterations: [(String, JSONValue)] = [
+      ("pullRequestURL", .string("https://example.invalid/pull/999")),
+      ("pullRequestNumber", .integer(999)),
+      ("pullRequestDraft", .bool(false)),
+      ("pullRequestBaseBranch", .string("other"))
+    ]
+    for (key, value) in alterations {
+      var context = try makePRHandoffContext()
+      context.payload[key] = value
+      XCTAssertThrowsError(try validatePRHandoff(context), key)
+      context = try makePRHandoffContext()
+      context.payload.removeValue(forKey: key)
+      XCTAssertThrowsError(try validatePRHandoff(context), "missing \(key)")
+    }
+  }
+
+  func testRejectsInconsistentOpenPRHandoffOrFalseBaseIntegration() throws {
+    for (mergeStatus, pushStatus) in [
+      ("pr-open", "pushed"),
+      ("merged", "not-requested"),
+      ("unknown", "not-requested")
+    ] {
+      var context = try makePRHandoffContext()
+      let index = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "base-branch-integrate" })
+      context.session.executions[index].acceptedOutput?.payload["mergeStatus"] = .string(mergeStatus)
+      context.session.executions[index].acceptedOutput?.payload["basePushStatus"] = .string(pushStatus)
+      context.payload["mergeStatus"] = .string(mergeStatus)
+      context.payload["basePushStatus"] = .string(pushStatus)
+      XCTAssertThrowsError(try validatePRHandoff(context), "\(mergeStatus)/\(pushStatus)")
+    }
+
+    var context = try makePRHandoffContext()
+    let index = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "base-branch-integrate" })
+    context.session.executions[index].acceptedOutput?.payload["implementationCommit"] = .string(String(repeating: "b", count: 40))
+    XCTAssertThrowsError(try validatePRHandoff(context))
+  }
+
+  func testRejectsMalformedAcceptedPRIdentity() throws {
+    let alterations: [(String, JSONValue)] = [
+      ("pullRequestURL", .string("not-a-URL")),
+      ("pullRequestURL", .string("https://github.com/tacogips/riela/pull/999")),
+      ("pullRequestNumber", .integer(0)),
+      ("pullRequestDraft", .string("true")),
+      ("pullRequestBaseBranch", .string("feat/native-remote"))
+    ]
+    for (key, value) in alterations {
+      var context = try makePRHandoffContext()
+      let index = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "base-branch-integrate" })
+      context.session.executions[index].acceptedOutput?.payload[key] = value
+      context.payload[key] = value
+      XCTAssertThrowsError(try validatePRHandoff(context), key)
+      context = try makePRHandoffContext()
+      context.session.executions[index].acceptedOutput?.payload.removeValue(forKey: key)
+      XCTAssertThrowsError(try validatePRHandoff(context), "missing \(key)")
+    }
+  }
+
   func testAcceptsExactCommitAndPushEvidence() throws {
     XCTAssertNoThrow(try validate())
   }
@@ -287,6 +349,49 @@ final class WorkflowGitFinalizationEvidenceTests: XCTestCase {
         planningModeStepIds: ["step5-impl-plan-review", "step5-feature-plan-join"]
       )
     )
+  }
+
+  private func validatePRHandoff(_ context: WorkflowPrePersistenceRoutingContext) throws {
+    try DeterministicWorkflowRunner.validateGitFinalizationEvidence(
+      context: context,
+      policy: WorkflowGitFinalizationEvidencePolicy(
+        commitStepId: "step10-git-commit", pushStepId: "step11-git-push",
+        planningModeStepIds: ["step5-impl-plan-review"],
+        integrationStepId: "base-branch-integrate"
+      )
+    )
+  }
+
+  private func makePRHandoffContext() throws -> WorkflowPrePersistenceRoutingContext {
+    var context = makeContext()
+    let now = Date(timeIntervalSince1970: 1_700_000_002)
+    let pushIndex = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "step11-git-push" })
+    context.session.executions[pushIndex].acceptedOutput?.payload["git"] = .object([
+      "operation": .string("push"), "status": .string("pushed"),
+      "commitHash": .string(String(repeating: "a", count: 40)),
+      "pushedRemote": .string("origin"), "pushedBranch": .string("feat/native-remote")
+    ])
+    context.session.executions.append(execution(
+      id: "pr-handoff", stepId: "base-branch-integrate",
+      payload: [
+        "mergeStatus": .string("pr-open"), "basePushStatus": .string("not-requested"),
+        "implementationCommit": .string(String(repeating: "a", count: 40)),
+        "implementationBranch": .string("feat/native-remote"),
+        "remote": .string("origin"), "baseBranch": .string("feat/native-remote"),
+        "pullRequestURL": .string("https://github.com/tacogips/riela/pull/110"),
+        "pullRequestNumber": .integer(110), "pullRequestDraft": .bool(true),
+        "pullRequestBaseBranch": .string("main")
+      ], now: now
+    ))
+    context.payload["pushedBranch"] = .string("feat/native-remote")
+    context.payload["baseBranch"] = .string("feat/native-remote")
+    context.payload["mergeStatus"] = .string("pr-open")
+    context.payload["basePushStatus"] = .string("not-requested")
+    context.payload["pullRequestURL"] = .string("https://github.com/tacogips/riela/pull/110")
+    context.payload["pullRequestNumber"] = .integer(110)
+    context.payload["pullRequestDraft"] = .bool(true)
+    context.payload["pullRequestBaseBranch"] = .string("main")
+    return context
   }
 
   private func makeContext(

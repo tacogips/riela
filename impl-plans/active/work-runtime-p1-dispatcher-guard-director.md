@@ -1,70 +1,94 @@
-# Work Runtime P1-7a: A1 GuardPolicy split and negative verification
+# Work Runtime P1-7a: seal A1 GuardPolicy replacement evidence
 
 ## Current executable contract — A1 only (2026-09-25)
 
-Mode and executionMode `issue-resolution`; issue `comm-000001`, “Finish reviewed
-P1-7a A1 GuardPolicy split and negative verification”; intake `comm-000002`,
-execution `codex-design-and-implement-review-loop-session-1`. No GitHub issue
-supplied. Runner-resolved immutable user-scope workflow 0.3.34 is authoritative.
-Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, accepted design
+Issue `comm-000001`, intake `comm-000002`; no GitHub issue supplied. Mode and
+executionMode `issue-resolution`; execution
+`codex-design-and-implement-review-loop-session-1`. Runtime-resolved immutable
+user-scope workflow `0.3.35` and effective input are authoritative.
+Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, accepted
 `design-docs/specs/design-work-runtime-consolidation.md` §17.10 without findings.
-Step 5 `comm-000006`, `step5-impl-plan-review-attempt-1-exec-6`, accepted this A1-only plan without findings; implementation and formal reviews remain pending. Stable planId `p1-dispatch`, dependsOn `[]`,
-planPath `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`,
-progressFile `impl-plans/progress/p1-dispatch.md`; current manifest
+Step 5 `comm-000006`, `step5-impl-plan-review-attempt-1-exec-6`, accepted
+this A1-only plan against the Step 3 design without findings or revision.
+Fresh implementation checks and formal reviews remain pending.
+Codex Astra authored accepted intent and owns pending integration review; Codex
+Sol owns implementation, test-integrity and the single adversarial review in
+separate role contexts. Codex `/root` is the prior A1 edit owner. No Codex reference
+repository mapping or Cursor CLI divergence applies.
+
+Stable planId `p1-dispatch`; dependsOn `[]`; planPath
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; progressFile
+`impl-plans/progress/p1-dispatch.md`; current manifest
 `impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json`.
-One author `/root` owns this plan; historical read-only references are
-`/root/policy_inspect`, `/root/live_inspect`, `/root/tests_inspect`. No reference
-repository or Cursor CLI behavior mapping applies.
+Its exact `writePaths` and `sharedPaths` are the only current permissions.
+One coupled implementation owner maintains this plan's progress log.
 
-Intent: finish the accepted split and missing A1 assertions on the existing
-branch, then seal fresh final-source evidence. Checkpoint
-`8b263ab07e22bb48a390489f395a7a4ea6a5d58b` on `feat/remaining-impl-plans`
-and all nine dirty paths in `protectedDirtyPaths` must be preserved. These are
-`Sources/RielaCLI/TaskDispatch.swift`, `Sources/RielaCLI/TaskRunCancellation.swift`,
-`Sources/RielaCLI/WorkflowRunCommand.swift`, `Sources/RielaCore/RuntimePublication.swift`,
-`Sources/RielaCore/RuntimeStore.swift`, `Sources/RielaWork/TaskGuardCoordinator.swift`,
-`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift`,
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`, and
-`impl-plans/progress/p1-dispatch.md`. Planning preserves them byte-for-byte;
-implementation extends them through reviewed fresh-read edits without reverting
-previous work. Preserve all earlier receipts, especially
-`tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-1/`.
-Its V0 exit 0, V1 63/63, canonical 94/94, cancellation-host 49/49, live 2/2 and
-strict SwiftLint exit 0 are historical, not evidence for new source or missing
-rows. A1 remains unsealed. A2/A3 and parent P1 remain open.
+Intent: reconcile the existing accepted seven-test/two-helper split and A1 matrix,
+seal fresh source-matched checks, obtain formal acceptance and publish only A1.
+Preserve checkpoint `757d6f467b76500d79be03972808b37607b0f82b` on
+`feat/remaining-impl-plans`, every path in `protectedDirtyPaths` (eleven, including
+the untracked GuardPolicy extension and TaskRuntimeExampleTests), and prior logs.
+The latest GuardPolicy split receipt records 837/541 lines and historical policy
+74/74, V1 68/68, canonical 94/94, cancellation-host 49/49 and live 4/4 passes.
+These are reconciliation inputs, not fresh acceptance. No repeated split is needed.
+The historical strict lint command receipt is absent; reconstruct a fresh exact
+invocation including every changed Swift file.
 
-### Planning checkpoint and current execution boundary
+Non-goals: no A2–A5 execution, legacy deletion, external repository operation,
+new abstraction, public API, polling framework, discovery shim, assertion
+weakening, dependency/lockfile regeneration, broad formatting, unrelated repair,
+parent P1 closure, reset, stash, force push, worktree or private branch. No
+registry rediscovery. Shared indexes and global archiving remain serial.
 
-- P0 complete: Step 3 accepts §17.10, comm-000004.
-- P1 depends P0: this sole author updates the active plan/current manifest.
-- P2 complete: independent Step 5 `comm-000006` accepted the plan without findings.
-- P3 depends P2: serial checkpoint owner commits and non-force pushes only
-  `design-docs/specs/design-work-runtime-consolidation.md`, this plan and the
-  current manifest. Check `git diff --cached --name-only` against those exact
-  three paths, record accepted hashes and `git show --format= --name-only HEAD`,
-  then `git push origin HEAD:feat/remaining-impl-plans` without force. Do not stage
-  the nine existing dirty files. Preserve 8b263ab as an ancestor; no reset/stash.
-  Failed checkpoint publication stops implementation dispatch.
+### Ordered tasks, dependencies and deliverables
 
-After P3, native Riela dispatch runs only A0/A1. `implementationDispatchAllowed`
-is false pending P2/P3; the serial checkpoint owner enables it only after both
-receipts exist. The current `writePaths` is the exact A1 allowlist, and shared
-paths are reserved for serial documentation/finalization. A2–A5 remain the
-future removal DAG, with their paths/commands recorded as deferred in the same
-manifest. They are not dispatched or counted complete in this execution.
-After complete A1 implementation evidence, the workflow performs A1-only formal
-test-integrity, single Sol adversarial and Astra integration reviews, followed
-by scoped documentation and finalization. These are downstream workflow gates,
-not missing Step 6 implementation tasks and not completion of deferred A4/A5.
+| Task | Depends on | Owner and deliverable |
+| --- | --- | --- |
+| P0 | none | Step 3 accepted design, comm-000004; complete. |
+| P1 | P0 | Single plan author updates this plan/manifest and performs self-check. |
+| P2 | P1 | Independent Step 5 acceptance of current amendment in comm-000006; complete. |
+| P3 | P2 | Serial checkpoint owner commits/publishes only accepted design, this plan and current manifest. Record hashes and remote receipt before native dispatch. |
+| A0 | P3 | Single implementation owner reconciles preserved source with historical receipt, audits split/matrix, records exact membership and SHA-256 baseline. |
+| A1 | A0 | Same owner repairs only demonstrated scoped defects, runs all fresh gates below and appends structured evidence to own progress file. |
+| A1-test-integrity | A1 | Independent Sol validates assertions, discovery/execution, source identity and receipts. |
+| A1-adversarial | A1-test-integrity | One Sol adversarial review in separate context; material findings only. |
+| A1-integration | A1-adversarial | Astra reviews combined source and accepted intent. |
+| A1-finalize | A1-integration | Serial docs refresh and exact-file workflow commit/non-force push. |
 
-Non-goals: no legacy removal even after A1 passes; no external repository edits,
-new framework/polling loop/public API/discovery shim, second split/active manifest,
-assertion weakening, dependency or lockfile regeneration, broad formatting,
-unrelated repair or parent P1 completion. No reset, stash, force push, main merge,
-extra worktree, private branch or concurrent Git operation. No registry discovery.
-Shared indexes, lockfiles and global archiving remain serial and outside A1 scope.
+A2 → A3 → A4 → A5 is retained future work, not a dependency of A1 reviews or
+A1 finalization. All remain deferred; native Riela receiving evidence is required
+before A2/A3. Step 6 is complete when A0/A1 evidence is complete; pending downstream
+reviews/docs/commit/push must be reported but do not self-block that handoff.
 
-### Accepted exact split and remaining A1 ownership
+P3 stages only `design-docs/specs/design-work-runtime-consolidation.md`, this
+plan and the current manifest. Verify `git diff --cached --name-only` against
+those three paths, preserve 757d6f4 as ancestor, record
+`git show --format= --name-only HEAD`, then publish with
+`git push origin HEAD:feat/remaining-impl-plans`. No concurrent Git commands;
+never stage the protected implementation files in the planning checkpoint.
+`implementationDispatchAllowed` remains false until P2/P3 receipts exist; the
+serial checkpoint owner records the gated transition in the reviewed checkpoint.
+A failed checkpoint push stops dispatch. Step 4 itself does not commit or push.
+
+### Ownership, drift and invariants
+
+Before each necessary edit, fresh-read the entire affected function and current
+diff. Store immutable preimage, SHA-256, intended exact delta and justification
+under the new attempt's `intents/`; compare the preimage hash immediately before
+writing. On drift, stop that edit, reread and reconcile serially; never replace
+another owner's work with a stale whole-file snapshot. Save postimage/hash.
+Bounded read-only split/matrix and historical-evidence audits may run in parallel;
+only one owner edits coupled files/progress. Run gates serially against the shared
+build/store resources. After joining, compare intents and current hashes and
+repair drift serially, then rerun affected checks before formal review.
+
+Keep retry limits, last-admitted success, director authorization/precedence,
+canonical synthetic-gate lineage and resolution cause, substantive/human gates,
+first-terminal cancellation arbitration and exact-session acknowledgment intact.
+Task-free, specialist/event/loop/routine and required/optional gate behavior is
+unchanged. No source repair is required merely because old metadata differs.
+
+### Accepted exact split and A1 reconciliation ownership
 
 **Accepted responsibility split for A1.** Retain the sole new write path,
 `Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift`, in the
@@ -72,7 +96,7 @@ current manifest and active plan. This is the justified equivalent
 to `+LiveInactivity.swift`: the two live methods (54 lines) and adapter (27 lines)
 alone would leave the 1,111-line source at 1,030 lines. Group the already coupled
 guard-policy outcomes instead of introducing a second split or shared framework.
-Move these seven existing methods, preserving names and assertions:
+Reconcile these seven moved methods, preserving names and assertions:
 
 - `testFailedTaskRetriesWithinBudgetAndStopsAtLimit`
 - `testLastAdmittedRecoveryAttemptCanSucceed`
@@ -82,9 +106,9 @@ Move these seven existing methods, preserving names and assertions:
 - `testTaskInactivityPersistsViolationAndStopsExactAttempt`
 - `testTaskProgressPreventsInactivityAction`
 
-Move `DelayedScenarioNodeAdapter` (keep file-private via its existing `private`
+Retain the moved `DelayedScenarioNodeAdapter` (keep file-private via its existing `private`
 access) and `failedRepairScenario(in:)` (keep a private extension helper) with
-their callers. Current contiguous ranges 233–259, 658–838 and 1045–1110 total
+their callers. Pre-split contiguous ranges 233–259, 658–838 and 1045–1110 total
 274 lines, leaving approximately 837 in the original file. Keep
 `TaskExampleHarness`, its resolvers and `TaskDispatcherIntegrationTests: XCTestCase`
 in the original; the harness already has internal access. Keep placement,
@@ -93,13 +117,15 @@ admission, dry-run and CLI rerun tests there. The new file contains a non-privat
 XCTestCase, public helper API, test renaming, Package.swift edit or discovery shim.
 The existing SwiftPM `RielaCLITests` target includes this directory; ordinary
 non-private `test…` methods in the extension retain their existing suite identity
-and filters. Future implementation must prove discovery rather than assume it:
-`swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch list` must list
-every moved and added test once, followed by positive execution counts. The original file must be strictly below 1,000 lines and the new file at or
+and filters. Fresh verification must prove discovery and execution separately:
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch list` must list
+every moved and added test once. This command is discovery only, not a behavioral
+pass. Both helpers must have one definition and be exercised by their callers.
+Each moved/added test must execute once per selected suite run. The original file must be strictly below 1,000 lines and the new file at or
 below 1,000 after all additions; recheck
 with `wc -l`, independently of SwiftLint's looser warning threshold.
 
-| Remaining A1 row | Exact future owner and proof |
+| A1 reconciliation row | Accepted owner and required proof |
 | --- | --- |
 | Unclassified failure | New `TaskDispatcherIntegrationTests+GuardPolicy.swift`: `testUnclassifiedFailureDoesNotAutomaticallyRetry`; actual unclassified failure must wait without an automatic pending retry. Retain retry-disabled and retry-positive tests above. |
 | Historical/current gates and substantive findings | Same new file: extend `testLastAdmittedRecoveryAttemptCanSucceed` as the explicit equivalent of `testHistoricalMissingGateResolvesOnlyAfterMatchingAcceptedGate`; add `testCurrentMissingOrRejectedGateAndSubstantiveFindingsStillBlock`. Cover matching/mismatched lineage, missing/rejected/needs-work latest gates, similar-ID high/mid substantive findings, required human acceptance, durable resolution cause and reopened replay. |
@@ -116,19 +142,15 @@ V1 and strict changed-file SwiftLint on the final source (include the new file i
 the lint manifest). Extend the live filter to select the two new race tests;
 retain positive counts for every named case. Record HEAD, hashes including the
 new file, full foreground logs and terminal exits in a fresh evidence directory;
-never overwrite attempt-1. No test deletion or zero-selection pass opens A1.
-A2/A3 still require published `tacogips/rielflow` receiving-boundary false/null
-rejection and authenticated ordinary acceptance; unpublished local `c2b16ab`
-does not satisfy this dependency. The existing publication question remains at
-`design-docs/user-qa/qa-p1-7a-rielflow-publication.md`; no new user decision is
-needed for this bounded split, subject to independent review.
-
+never overwrite attempt-1 or attempt-2. No test deletion or zero-selection pass opens A1.
+A2/A3 require native Riela receiving-side false/null rejection and authenticated
+ordinary acceptance evidence plus separate implementation/review. No A1 user
+decision is unresolved. A2–A5 and parent P1 remain open.
 
 ### Current A1 deliverables and completion
 
-The sole implementation owner writes the original integration test and new
-GuardPolicy extension for the exact move, named policy/race negatives and shared
-harness use; `TaskRuntimeExampleTests.swift` owns director negatives;
+The sole implementation owner reconciles the existing original integration test
+and GuardPolicy extension, repairing only demonstrated matrix defects; `TaskRuntimeExampleTests.swift` owns director negatives;
 `TaskCancellationIntegrationTests.swift` owns both first-hook assertions.
 `TaskDispatch.swift`, `TaskGuardCoordinator.swift`, `TaskRunCancellation.swift`,
 `RuntimePublication.swift`, `RuntimeStore.swift` and `WorkflowRunCommand.swift`
@@ -156,6 +178,141 @@ accepted A1 behavior needs a user-facing correction. Renew review after material
 repairs. Final exact-file allowlist includes only reviewed changes (including
 preserved dirty implementations reviewed as part of A1); no tmp artifacts.
 Commit/non-force push occurs through workflow finalization gates, not Step 6.
+
+### Fresh evidence commands and acceptance
+
+Use the next unused directory, initially
+`tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3`; never truncate an earlier attempt.
+All execution stays foreground; retain and poll any yielded session through exit.
+For each command save exact argv/shell quoting to `logs/<check>.command`, combined
+stdout/stderr to `logs/<check>.log`, and actual terminal status to
+`logs/<check>.exit`. An empty quiet-lint log may pass only with its command and
+terminal exit; an incomplete process/log never passes. Preserve failed receipts.
+
+Capture sorted tracked and untracked, nonignored membership of `Sources`, `Tests`,
+`Package.swift` and `Package.resolved` with:
+
+```sh
+git ls-files --cached --others --exclude-standard -z -- Sources Tests Package.swift Package.resolved
+```
+
+Deduplicate/sort the NUL paths and SHA-256 every file into `source-before.sha256`
+and `membership-before.nul`. Repeat after all gates as `source-after.sha256` and
+`membership-after.nul`; both membership and contents must match. Include the
+untracked split. Record HEAD separately. Historical attempt-2 manifests are only
+reconciliation evidence, not substitutes. Exact post-check commands:
+
+```sh
+shasum -a 256 -c "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256"
+cmp "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256" "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-after.sha256"
+cmp "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-before.nul" "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-after.nul"
+```
+
+Exact source capture commands (run `before` before build, `after` after lint/tests;
+exclusive creation refuses to overwrite earlier evidence):
+
+```sh
+python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","--","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; (root/("membership-"+phase+".nul")).open("xb").write(("\0".join(paths)+"\0").encode()); (root/("source-"+phase+".sha256")).open("x").write("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths)); print(phase,len(paths),"files")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 before
+python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","--","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; (root/("membership-"+phase+".nul")).open("xb").write(("\0".join(paths)+"\0").encode()); (root/("source-"+phase+".sha256")).open("x").write("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths)); print(phase,len(paths),"files")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 after
+```
+
+Commands below use the explicit Xcode Swift toolchain and one scratch build path.
+Build provides Swift typechecking; no separate unrelated typecheck is required.
+No web code changes, browser gates or deferred broad cleanup are in this scope.
+
+**v0** (`build`):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch
+```
+
+**discovery** (`discovery`):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch list
+```
+
+**policy** (`behavioral`; historical expectation 74 tests):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'
+```
+
+**v1** (`behavioral`; historical expectation 68 tests):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'
+```
+
+**canonical** (`behavioral`; historical expectation 94 tests):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'
+```
+
+**cancellation-host** (`behavioral`; historical expectation 49 tests):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
+```
+
+**live** (`behavioral`; historical expectation 4 tests):
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence'
+```
+
+**strict-swiftlint** (`lint`):
+
+```sh
+swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift
+```
+
+**line-counts** (`static`):
+
+```sh
+wc -l Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift
+```
+
+**diff-check** (`static`):
+
+```sh
+git diff --check
+```
+
+Behavioral commands require exit 0, zero failures and positive actual counts;
+compare expected suite/method membership, not just aggregate totals. Record
+`{command, kind, completeLog, exitCode, testsExecuted, failures, sourceManifest}`
+for each behavioral check; discovery uses `kind: discovery` and a separately
+verified discovered-name count, never a behavioral test count. Do not weaken
+assertions or fabricate counts to match historical 74/68/94/49/4. If a count
+changes, explain the exact method delta and require review. Discovery must list
+all seven moved and four added extension methods once; V1 must execute each once.
+Both helpers remain defined once and exercised by those tests. Map every named
+matrix subcase to assertion and complete gate log, including separate no-heartbeat
+and stops-after-progress evidence. Original <1000/new <=1000 is mandatory.
+
+The explicit lint list includes the ten currently changed Swift files; reconcile it
+against current changed Swift files (including untracked) before execution. Any
+new changed Swift file outside ownership requires exact scope reconciliation,
+not automatic lint exclusion. Capture toolchain/linter versions in the receipt.
+Any relevant repair invalidates affected checks and formal review of old hashes.
+
+Append fresh results to `impl-plans/progress/p1-dispatch.md`, preserving history:
+source manifest, full commands/logs/exits, actual counts, discovered names,
+seven-test/two-helper integrity, all six rows/subcases, review status and remaining
+A2–A5/P1 scope. After formal acceptance, serial docs owner updates this plan,
+manifest, design and progress; inspect README and edit only for a necessary
+accepted A1 user-facing correction. Keep current prose native Riela-owned.
+Final workflow gates commit/push only the exact reviewed file allowlist and verify
+matching publication hash. Planning and implementation evidence alone cannot
+claim those downstream gates complete.
+
+## Historical executable contracts — retained context, not current authorization
+
+The sections below retain prior ownership, commands and receipts. Current A1
+contract above and manifest take precedence; deferred paths and old receiving
+assumptions grant no work in this execution.
 
 ### File ownership and exact intended changes
 

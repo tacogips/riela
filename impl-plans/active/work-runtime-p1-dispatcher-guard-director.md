@@ -1,5 +1,80 @@
 # Work Runtime P1-7a: native receiving integration and A2–A5
 
+## Exact skill-path amendment — planning-only (2026-09-25)
+
+Issue: “Authorize exact Riela workflow skill path for P1-7a A2-A5 repair”;
+`tacogips/riela`, no issue number supplied; Draft PR #109. Step 3 accepted
+this bounded design in `comm-000004` with no findings: existing
+`design-docs/specs/design-work-runtime-consolidation.md` §17.10 applies unchanged.
+No codex-agent reference or Cursor CLI divergence applies. Amendment Step 5
+adversarial review is pending; the accepted reviews below describe the prior
+implementation contract, not this amendment.
+
+The planning-only run edits and publishes exactly this plan and
+`impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json`. This restriction
+supersedes broader checkpoint, documentation and progress instructions below
+for this run. The manifest's implementation writePaths apply only to a later
+issue-resolution continuation. Preserve all dirty A2 implementation bytes and
+existing tmp evidence from checkpoint `911428e2ab6df6776627a64edd7c1d76e4622c26`.
+Do not edit the skill, source, tests, examples or progress, or run source tests
+in this planning-only run. No worktree, stash, reset, concurrent Git, base merge,
+force push, release or archived rielflow operation. Leave Monja tenant-sharding-d48
+and all other sessions untouched.
+
+| Task | Dependency | Deliverable / completion |
+| --- | --- | --- |
+| M1 | Accepted Step 3 | Add exactly `Resources/skills/riela-workflow-run/SKILL.md` to `p1-dispatch.writePaths`; preserve existing entries, sharedPaths, A0–A5 intent and serial ownership. Record the focused verification below. |
+| M2 | M1 | Step 5 adversarial acceptance with no unresolved high/mid finding; historical acceptance is insufficient. |
+| M3 | M2 | Serial checkpoint owner stages, commits and non-force pushes only the two checkpointWritePaths; records commit, exact committed paths and matching remote tip. Existing dirty implementation stays uncommitted. Step 4 does not stage or publish. |
+| C1 | M3 and a subsequent issue-resolution execution | Same `p1-dispatch` owner removes only stale `--auto-improve` documentation from the skill, retaining the other remote restrictions. Renew affected A3 evidence and subsequent A4/A5 gates. |
+
+The reported final-source V5 failure is
+`SurfaceParitySkillTests.testEveryDocumentedFlagIsAnOptionSomeParserAccepts`:
+`Resources/skills/riela-workflow-run/SKILL.md:56` still names the removed flag.
+Do not weaken the test or add parser compatibility to silence it. No new
+architecture, ownership, typecheck task or unrelated cleanup is required.
+
+For each amendment edit, fresh-read and save the immutable preimage, intended
+hunk and SHA-256 under a fresh repository `tmp/` attempt; recheck before writing,
+then save postimage/hash. On drift, reconcile serially before proceeding. Preserve
+all other tracked bytes/deletions and previous evidence. No progress-file edit
+is authorized now; record planning state in this amendment and workflow receipts.
+The later implementation owner records C1/A3 results in the existing progressFile.
+
+Planning verification (complete logs and terminal exits required):
+
+```sh
+python3 -m json.tool impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json
+git diff --check
+git diff HEAD -- impl-plans/active/work-runtime-p1-dispatcher-guard-director.md impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json
+git diff --cached --name-only
+git status --porcelain=v1 --untracked-files=all
+```
+
+Compare manifest preimage/current writePaths: additions must equal only the
+skill path, with zero removals or duplicate entries; sharedPaths remain identical.
+Compare SHA-256/deletion snapshots for all other tracked files. Before M3 commit,
+require staged paths to equal checkpointWritePaths, run `git diff --cached --check`,
+and inspect the staged diff. Publish with
+`git push origin HEAD:feat/remaining-impl-plans`, then compare `git rev-parse HEAD`
+with `git ls-remote --heads origin refs/heads/feat/remaining-impl-plans`.
+
+C1 must run the following on the repaired final source, not during planning:
+
+```sh
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter SurfaceParitySkillTests
+git diff --check
+git diff -- Resources/skills/riela-workflow-run/SKILL.md
+git status --porcelain=v1 --untracked-files=all
+```
+
+Require positive executed tests and zero failures; include the skill in the
+final-source SHA-256 seal and renew affected V5 plus the existing changed-file
+checks and review gates. Keep complete command/environment/log/exit receipts;
+never reuse stale final-source acceptance. A0–A5 dependencies remain unchanged.
+Planning completion means M1–M3 only; C1 and implementation acceptance remain
+pending for the subsequent execution. No unresolved user question.
+
 ## Current executable contract — accepted design comm-000004 (2026-09-25)
 
 Mode `issue-resolution`. Issue: “Finish Work Runtime P1-7a legacy supervision
@@ -160,7 +235,7 @@ run concurrent Git or generate shared indexes/lockfiles; global archiving is
 outside this slice. Progress entries record task state, exact files/source,
 commands/counts/logs/exits, unresolved findings and next dependency.
 
-After Step 5 acceptance the serial checkpoint owner stages only the six manifest
+After Step 5 acceptance the serial checkpoint owner stages only the current manifest
 checkpointWritePaths, checks `git diff --cached --check` and the exact staged
 allowlist, commits, then runs `git push origin HEAD:feat/remaining-impl-plans`.
 Record `git rev-parse HEAD` and

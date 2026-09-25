@@ -19,26 +19,35 @@
     "reviewDecision": "accepted",
     "findings": []
   },
-  "planReview": {
+  "priorPlanReview": {
     "communicationId": "comm-000006",
     "accepted": true,
     "reviewDecision": "accepted",
     "findings": [],
     "codexAgentReferences": []
   },
+  "planReview": {
+    "accepted": false,
+    "reviewDecision": "pending",
+    "findings": [],
+    "codexAgentReferences": []
+  },
+  "planningAmendment": {
+    "workflowMode": "planning-only",
+    "issueTitle": "Authorize exact Riela workflow skill path for P1-7a A2-A5 repair",
+    "baselineHead": "911428e2ab6df6776627a64edd7c1d76e4622c26",
+    "designReviewCommunicationId": "comm-000004",
+    "scope": "Only checkpointWritePaths may be edited or published in this run. Preserve dirty A2 bytes and existing tmp evidence. No source tests or progress edits. Implementation writePaths and commands apply only to a subsequent issue-resolution continuation."
+  },
   "evidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5",
   "checkpointWritePaths": [
-    "design-docs/specs/design-work-runtime-consolidation.md",
-    "design-docs/specs/design-native-remote-workflow-execution.md",
-    "design-docs/user-qa/qa-p1-7a-rielflow-publication.md",
     "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
-    "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json",
-    "impl-plans/progress/p1-dispatch.md"
+    "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
   ],
   "implementationDispatchAllowed": false,
   "implementationDispatchConditions": [
     "Step 5 accepts this plan/manifest.",
-    "Serial owner commits and non-force pushes checkpointWritePaths; records local and remote matching hashes before dispatch."
+    "Serial owner commits and non-force pushes only the two checkpointWritePaths; records local and remote matching hashes. Implementation requires a subsequent issue-resolution execution; never dispatch during this planning-only amendment."
   ],
   "plans": [
     {
@@ -46,6 +55,7 @@
       "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
       "dependsOn": [],
       "writePaths": [
+        "Resources/skills/riela-workflow-run/SKILL.md",
         "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
         "Sources/RielaCLI/RielaCommand.swift",
         "Sources/RielaCLI/ParsedWorkflowOptions.swift",
@@ -145,11 +155,13 @@
         }
       ],
       "acceptanceCriteria": [
+        "In the subsequent continuation, remove only stale --auto-improve documentation from Resources/skills/riela-workflow-run/SKILL.md; preserve other restrictions. SurfaceParitySkillTests must execute positive tests with zero failures; renew affected V5, changed-file checks and source hashes including the skill before A4/A5 acceptance.",
         "All A2 removal and retained behavior requirements have final-source positive behavioral proof.",
         "Every verification command has complete log, final exit, exact command/environment and source identity; baseline failures have named causes and independent disposition.",
         "A4 has no unresolved material finding; A5 publishes only reviewed files and reports actual commit/remote hashes."
       ],
       "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter SurfaceParitySkillTests",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",

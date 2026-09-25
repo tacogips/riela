@@ -1,181 +1,162 @@
 # Workflow defect detection and verified repair
 
-Status: Issue-resolution T2 continuation design handoff, 2026-09-26. This revision
-preserves accepted D1–D9 behavior, the accepted bounded T2 ownership amendment,
-and serial T1–T6 execution after disproving the prior ownership blocker. Step 3 independent review
-of these revised bytes is pending; implementation repair and verification are pending.
+Status: Issue-resolution bounded T2–T6 design handoff, 2026-09-26.
+Accepted D1–D9, A1–A16 and L1–L8 behavior remains unchanged. Independent review
+of this revision is pending; implementation is incomplete.
 
 ## Current implementation authority and review status
 
-Issue: **Continue T2-T6 after disproving false ownership blocker**, repository `tacogips/riela`, Draft PR
-[#109](https://github.com/tacogips/riela/pull/109). Issue number/URL are null;
-`codexAgentReferences=[]`. Mode: `issue-resolution`. Authoritative intake:
-`comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
-`codex-design-and-implement-review-loop-session-1`. The effective `workflowInput`
-and runner-resolved immutable user-scope `codex-design-and-implement-review-loop`
-package **0.3.44** are authoritative. No workflow
-or package registry rediscovery is required inside this node.
+Issue: **Split and finish bounded workflow defect implementation T2-T6**,
+repository `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+No GitHub issue number or URL was supplied; #109 is a PR, not an issue.
+Mode: `issue-resolution`; `codexAgentReferences=[]`.
+Intake: `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
+`codex-design-and-implement-review-loop-session-1`.
+The effective `workflowInput` and runner-resolved immutable user-scope
+`codex-design-and-implement-review-loop` **0.3.44** are authoritative.
+No contradiction is present in that supplied authority. Runner preflight owns
+workflow resolution and package integrity; this node does not rediscover them.
 
-Current local HEAD is checkpoint `b836f6b10460000193b20f4212dfbc842a5faacb` on
-`feat/remaining-impl-plans`. The dirty T1/T2 source, tests and progress record are
-continuation inputs, not part of that checkpoint. Preserve them and all existing
-`tmp/` evidence; no reset, stash, broad rewrite or T1 reimplementation. The progress
-record `impl-plans/active/workflow-defect-detection-and-repair-progress.md` reports
-T1 V1 passing 6/6 tests and strict SwiftLint passing. That evidence remains valid;
-this design step does not claim a new runtime test run.
+Current HEAD: `e04c1c124a5a5370ff56e2785ff01b6d6f8e67a3`, branch
+`feat/remaining-impl-plans`. Preserve all dirty T1/T2 source, tests, progress and
+passing source-matched evidence. No reset, stash, broad rewrite, T1 reimplementation,
+new worktree or global continuation-limit increase. All scratch stays under root
+`tmp/`. Protect main, Monja and other branches/worktrees.
 
-T2 is incomplete. The complete existing log
-`tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-2/V2-runtime.log`
-records 26 tests, 25 passed, one failure and `FINAL_EXIT_STATUS=1`.
-`RuntimePublicationTests.testPublicationRecordsExplicitLoopRoutingReconciliationDiagnostic`
-fails with `validationRejected` / `route.missingControl` for `accepted` at
-`transitions[1].label`. The current reconciler emits `needs_replan` and `needs_work`
-but omits `accepted`, although the existing transition references it. The failure
-exposes a producer/reconciliation defect; all-referenced-control validation,
-including short-circuited paths, must remain intact.
+This current section supersedes older checkpoint, incomplete-task and dispatch
+instructions below and in the existing plan. Historical behavior contracts remain
+normative; historical execution observations are not current completion evidence.
+The Step 4 revision must update the plan's stale leading instructions accordingly.
 
-### Bounded T2 reconciliation amendment
+### Preserved implementation and evidence boundary
 
-For payloads already recognized by `reconcileCompletionReviewRouting`, retain the
-existing decision/goal precedence and derive `accepted` as
-`!needs_replan && !needs_work`. This is a domain-derived Boolean, never a generic
-default for an absent routing identifier. The effective reconciled envelope must
-contain all three controls even when the incoming two-control map already agrees.
-A contradictory or missing `accepted` must trigger reconciliation and its existing
-bounded diagnostic; repeating reconciliation on the corrected map must be stable.
-Non-completion-review payloads retain their existing routing behavior. Preserve
-unrelated routing controls on the existing non-rewrite path; do not broaden this
-repair into a routing-map cleanup or a new payload classifier.
+T1 is complete per intake and the preserved progress record
+`impl-plans/active/workflow-defect-detection-and-repair-progress.md`.
+T2 reconciliation and producer-proof work is real but partial. Its existing
+completion-review normalization derives `accepted = !needs_replan && !needs_work`
+only for already-recognized review payloads, preserving decision/goal precedence,
+idempotence, non-review passthrough and unrelated controls on the non-rewrite path.
+Retain the all-referenced-control check, including short-circuited expressions.
+Normalization/reconciliation must precede strict validation of the effective
+candidate, which precedes reservation, finalization, persistence and publication.
 
-| Existing completion decision | needs_replan | needs_work | accepted |
-| --- | --- | --- | --- |
-| needs_replan | true | false | false |
-| needs_work | false | true | false |
-| accepted with goalAchieved=false | false | true | false |
-| accepted otherwise | false | false | true |
-| Existing fallback with goalAchieved=false | false | true | false |
-| Existing recognized fallback otherwise | false | false | true |
+Read complete logs in `tmp/workflow-defect-implementation/T2-terminal/`:
 
-Normalization and authorized reconciliation precede strict route validation;
-validation then checks every referenced control before route selection,
-reservation, accepted-output persistence or message publication. Payload schema
-requirements and envelope/payload Boolean agreement still apply. No special
-exemption for `accepted`, silent false default, changed retry policy or weakened
-negative test is permitted.
-
-The intake accepts the amended design and revised T2 ownership plan; checkpoint
-`0e96c61` expanded ownership and `c5c72c6` corrected the dispatch contract. Retain
-that ownership and the existing serial owner. Step 4 must preserve the corrected
-plan/dispatch contract and bind subsequent handoff evidence to newly reviewed
-document bytes, without reopening this accepted amendment. Exact paths and rationale:
-
-| Path | T2 ownership justification |
+| Log | Recorded result |
 | --- | --- |
-| `Sources/RielaCore/LoopCompletionReviewRouting.swift` | Existing reconciliation function constructs the incomplete map and its change predicate omits accepted. |
-| `Tests/RielaCoreTests/RuntimePublicationTests.swift` | Existing failed publication test references accepted and asserts the old two-control map; already in T2 ownership. |
-| `Tests/RielaCoreTests/DefaultLoopGuardTests.swift` | Existing accepted-output assertion requires the old two-control map; retain loop termination behavior. |
-| `Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift` | Existing reconciliation assertion requires the old map and diagnostic count; retain policy behavior. |
-| `Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift` | Existing adapter reconciliation assertion requires the old map and diagnostic count. |
+| `V2.log` | 32 tests, zero failures, FINAL_EXIT_STATUS=0 |
+| `V2b.log` | 38 tests, zero failures, FINAL_EXIT_STATUS=0 |
+| `raw-model.log` | 35 tests, zero failures, FINAL_EXIT_STATUS=0 |
+| `T2-validation-attempt-3.log` | 14 tests, zero failures, FINAL_EXIT_STATUS=0 |
+| `all-changed-lint.log` | strict changed-Swift lint, FINAL_EXIT_STATUS=0 |
 
-Keep already-owned `Sources/RielaCore/RuntimePublication.swift` and
-`Sources/RielaCore/WorkflowRouteContract.swift` changes. Existing later-task
-ownership of loop tests remains serialized; do not add another worker or unrelated
-source paths. Test additions must cover missing accepted with otherwise correct
-controls, contradictory accepted, accepted/needs-work/needs-replan decisions,
-goalAchieved=false precedence, idempotent reconciliation, non-review passthrough,
-and the existing all-control rejection/publication-order negatives. Extend the
-listed tests without creating an unrelated abstraction or test ownership seam.
+These are preserved prior runs, not fresh tests performed by this design step.
+Earlier failures remain failures. Current intake's generic dependency/raw labels
+are resolved by the exact commands and suite names in the progress record.
+T2 still needs typed `WorkflowDefectDiagnostic`, captured-source digest binding,
+raw/typed integration, explicit when-only/add-on guarantee provenance and rejection
+coverage for ordinary, inline, fanout-join, callee-resume and recovered pending
+publication. Rejection must have zero downstream effects; producer tool effects
+already performed are not claimed rolled back. Retain bounded two-total-attempt
+agent correction and single-execution add-on/direct-call semantics.
 
-### Verification and remaining delivery
+### Five bounded serial dispatch items
 
-Renew V2 on the repaired combined source:
+The existing artifacts each have one oversized item:
+`impl-plans/active/workflow-defect-repair-20260926-comm000006-a8e1beb-dispatch.json`
+has 113 write paths; the corrected continuation artifact
+`impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`
+has 115. Step 4 must split the requested dispatch using the corrected ownership
+baseline and the exact task contracts in
+`impl-plans/active/workflow-defect-detection-and-repair.md`. In particular preserve
+`Sources/RielaCore/LoopCompletionReviewRouting.swift` and
+`Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift` in T2 ownership.
+Do not regress to the older 113-path baseline or infer an ownership mismatch from
+prompt prose. Before any mismatch finding, inspect actual dispatch, child
+`fanoutItem` and `runtimeVariables` arrays in the owned session evidence under
+`tmp/workflow-defect-t2-owned/sessions/`. No ownership mismatch is asserted here.
+
+Use exactly these five unique plan IDs and native dependencies. Completed T1 is
+preserved input, not a new dispatch item or an unresolved dependency ID.
+
+| planId | dependsOn | Existing behavior and completion evidence |
+| --- | --- | --- |
+| `workflow-defect-t2-remaining` | `[]` | D1/D8, A2/A5; remaining diagnostic/digest/provenance/publication matrix, fresh V2/V2b and producer/raw validation tests |
+| `workflow-defect-t3` | `["workflow-defect-t2-remaining"]` | D2, A3–A7; bounded branch/SCC/guard diagnostics, V3 |
+| `workflow-defect-t4` | `["workflow-defect-t3"]` | D3/D6/D9, A8–A12/A16, L1–L8; durable semantic progress separate from activity/responsiveness, V4 and L-V1–L-V5 |
+| `workflow-defect-t5` | `["workflow-defect-t4"]` | D4/D5, A13–A15; digest-bound reviewed proposals and staged transactions, V5 |
+| `workflow-defect-t6` | `["workflow-defect-t5"]` | D6–D9, A1–A16/L1–L8 integration; incident fixtures, V6–V9 and combined activity regressions |
+
+Every item carries exact repository-relative file `writePaths`, explicit owner,
+`planPath`, `dependsOn`, and nonempty string arrays `acceptanceCriteria` and
+`verification`. Derive the exact files from the accepted task ownership, including
+D9's T4/T6 extension; no directory globs or unspecified helper files. Retain the
+accepted aggregate ownership while assigning each task only its required files.
+Shared publication, validation, loop, test and progress paths are serialized by
+the dependency chain. Shared final design/plan/index changes stay with the later
+serial documentation owner. The plan must distinguish implementation-phase T6
+deliverables from formal-review-dependent documentation and publication tasks.
+
+Native dependency scheduling releases a successor only after predecessor acceptance;
+failed/incomplete items remain pending. Review and checkpoint the revised design,
+plan and dispatch before T2-remaining starts, excluding dirty Swift/progress work
+from that planning checkpoint. Bind review evidence to exact revised bytes and
+verify manifest shape, five IDs, dependency references/order, ownership coverage,
+and string arrays before checkpoint. A blocked checkpoint push stops dispatch.
+Do not claim the existing single-item dispatch already satisfies this contract.
+
+### Verification, review and delivery
+
+Fresh T2 gates on the completed combined source:
 
 ```bash
 arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'"
 arch -arm64 /bin/zsh -lc "swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowModelTests|AgentNodeOutputContractValidationTests'"
+git diff --check
 ```
 
-Retain full commands, repository cwd, source/fixture hashes, complete logs under
-repository-root `tmp/`, positive selected-test counts and final exit statuses.
-Run foreground commands and poll any yielded handle through terminal exit. The
-old failed V2 remains failed even after a new passing run; neither the 25 passing
-cases nor a zero-test secondary harness is acceptance. Run changed-file strict
-SwiftLint and diff checks as required by the plan.
+Retain the plan's changed-file strict SwiftLint and V3–V9/L-V1–L-V5 commands.
+Record exact command, cwd, source/fixture digests, positive selected-test counts,
+complete log path and terminal exit status. Foreground execution only; poll yielded
+handles to terminal exit. Incomplete logs and zero selected tests cannot pass.
+The bounded child continuation correctly stopped an incomplete oversized item;
+productive prior passes do not authorize weakening completion or raising limits.
 
-T2's remaining producer-guarantee proof, publication entry-path coverage and
-bounded exhaustion checks still apply. Preserve the serial T1 → T2 → T3 → T4 →
-T5 → T6 plan and all V1–V9/L-V1–L-V5 gates. T3–T6, independent test-integrity,
-adversarial and combined-tree reviews, final design/plan/index updates, exact-file
-commit and non-force push remain pending. Publication completes only when the
-reviewed commit matches the remote tip on `feat/remaining-impl-plans` and Draft
-PR #109. Do not touch other worktrees, concurrent D4 package work, Monja, archived
-rielflow, main, release paths or unrelated plans.
+Independent test-integrity, adversarial and combined-tree review must have no
+unresolved material findings. Refresh docs/index against reviewed behavior, then
+commit and non-force push only exact reviewed files to `feat/remaining-impl-plans`;
+verify the resulting remote tip and Draft PR #109 reflect that tree. Formal review,
+review-dependent docs and Git publication are downstream gates, not conditions for
+an individual Step 6 child to self-block after its implementation tests pass.
 
-| Intake requirement | Design and downstream acceptance |
+| Intake requirement | Design mapping |
 | --- | --- |
-| Preserve completed T1 and partial T2 | Current authority distinguishes checkpoint from dirty work; no reimplementation or reset. |
-| Repair missing accepted without weakening validation | Bounded T2 amendment above and D1/D8; renewed V2 plus affected loop/adapter tests. |
-| Retain accepted ownership and corrected dispatch | Exact five-path table; preserve nonempty string-array acceptanceCriteria and refresh source-matched review context. |
-| Complete remaining accepted work | D2/T3 analysis; D3/D6/D9/T4 progress/activity; D4/D5/T5 repair; D7/D8/D9.6/T6 deterministic gates. |
-| Reviewed publication | Accurate design/plan/index, independent reviews with no material finding, exact reviewed commit and matching remote/PR tip. |
+| Preserve completed T1 and dirty T2 | Preserved implementation boundary; no rewrite/reset; historical evidence retained |
+| Split oversized dispatch only | Five native serial items, exact ownership and schema checks before checkpoint |
+| Finish T2 without weakened routing | D1/D8 diagnostic/digest/provenance/publication matrix and fresh V2/V2b |
+| Complete accepted T3–T6 | D2–D9, A1–A16/L1–L8 and unchanged V3–V9/L-V1–L-V5 |
+| Reviewed exact-file publication | Formal review gates, docs/index, same-branch non-force push and PR matching |
 
-No unresolved user decision or new Codex-reference input exists. Current
-`cursorCliBehaviorMapping=[]` and `intentionalDivergences=[]`; historical D9
-behavioral references remain historical. D9.1 continues to isolate Cursor-specific
-normalization in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; this
-amendment changes no adapter protocol. Historical provenance, review receipts and
-source observations below are not fresh evidence for this continuation.
+### Open questions and author self-check
 
-### Corrected dispatch and review boundary
+No unresolved user decision or new Codex-reference input exists.
+`cursorCliBehaviorMapping=[]`; `intentionalDivergences=[]` for this revision.
+D9's historical behavioral references remain historical; its Cursor normalization
+stays isolated in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`. No new
+reference repository investigation or adapter protocol change is required.
+Historical missing incident artifacts limit exact causal replay; the accepted
+synthetic fixture remains the verification contract, not a new blocker.
 
-Continue from
-`impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`
-and `impl-plans/active/workflow-defect-detection-and-repair.md`. The dispatch's older
-originalHead and review hashes describe its earlier authoring context; they do not
-replace the effective input's b836f6b continuation checkpoint. Preserve the existing
-corrected artifact; downstream review/checkpoint preparation binds new review
-context to the exact accepted document bytes.
-
-### False ownership blocker correction and author verification
-
-The current intake supersedes the ownership-blocker claim in the preserved
-progress record's Attempt 2. The existing dispatch `plans[0].writePaths` and the
-persisted child inputSnapshot both include
-`Sources/RielaCore/LoopCompletionReviewRouting.swift` and
-`Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift`. No additional ownership
-amendment, transport fix or T1 reimplementation is required.
-
-Read-only evidence: `tmp/workflow-defect-t2-valid/sessions/runtime-records/runtime-message-log.sqlite`,
-`workflow_runtime_snapshots.session_json`, session
-`nested-v1-14b59b4ca29e18320877eadad21cfada56111961ce175485874aac2eaa47140d`,
-`executions[0].inputSnapshot`. Both paths are present in each of:
-
-- `arguments.implementation.writePaths`;
-- `arguments.fanoutItem.writePaths`;
-- `mergedVariables.runtimeVariables.implementation.writePaths`;
-- `mergedVariables.fanoutItem.writePaths`.
-
-Each inspected array contains 115 paths. These observations corroborate the
-runtime intake; they do not establish new ownership. Preserve the dispatch and
-plan, including nonempty string-array `acceptanceCriteria`. Bind subsequent
-review evidence to the revised document bytes. Prior Step 3 design and Step 5
-plan acceptance with no findings remains historical acceptance; independent
-review of this refresh and formal implementation reviews remain pending.
-
-Step 2 changes only this leading design section; the historical D1–D9 body,
-pre-existing dirty source/tests/progress and dispatch/plan are preserved.
-Author verification command: `python3 tmp/workflow-defect-step2-false-blocker/verify.py`.
-Complete log: `tmp/workflow-defect-step2-false-blocker/verification.log`.
-The check verifies checkpoint, preservation hashes, the actual dispatch and four
-child arrays, historical failed V2 status, intake/design mapping, and
-`git diff --check`. Final exit status: **0**. This is documentation verification,
-not a fresh V2/V2b pass. No high/mid author finding or user decision remains.
-
-Future T2 verification also includes
-`xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/T2/changed-swift.nul`.
-The runtime regression and exact-map compatibility risks remain pending until V2
-and V2b pass. T3–T6 and formal reviews remain pending, not blocked design checks.
-Retain complete verification evidence under `tmp/` for downstream handoff.
+Author self-check: intake/issue mapping, unchanged D1–D9 body, five serial scopes,
+T2 incompleteness, preserved dirty files and evidence, and bounded design scope.
+Verification: `python3 tmp/workflow-defect-step2-bounded/verify.py`;
+complete log `tmp/workflow-defect-step2-bounded/verification.log`, exit 0.
+This is documentation verification only. No high/mid author finding, blocked
+design check or unresolved user decision remains. Shared-path regression and
+durable-state/repair risks remain subject to the specified implementation gates;
+no runtime acceptance or independent review acceptance is claimed.
 
 ## Historical D9 extension authority (2026-09-22)
 

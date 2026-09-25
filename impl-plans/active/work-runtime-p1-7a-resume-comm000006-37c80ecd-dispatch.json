@@ -1,10 +1,10 @@
 {
   "taskId": "work-runtime-p1-7a-resume-comm000006-37c80ecd",
-  "workflowMode": "issue-resolution",
+  "workflowMode": "planning-only",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "757d6f467b76500d79be03972808b37607b0f82b",
+  "originalHead": "352291aca2cd4af6eefd71ca81600c658e03eb13",
   "designDocPaths": [
     "design-docs/specs/design-work-runtime-consolidation.md"
   ],
@@ -14,20 +14,23 @@
       "reference": "comm-000001; no GitHub issue URL or number supplied",
       "intakeCommunicationId": "comm-000002",
       "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
-      "title": "Seal Work Runtime P1-7a A1 GuardPolicy replacement evidence",
+      "title": "Amend P1-7a A1 ownership for atomic inactivity decision",
       "communicationId": "comm-000001",
       "issueNumber": null,
       "issueUrl": null
     },
     "acceptedDesignReview": "comm-000004",
-    "userProblem": "Seal and formally review the existing A1 implementation with fresh source-matched evidence, then publish only A1; preserve checkpoint 757d6f4 and all eleven existing dirty paths.",
+    "userProblem": "Progress can commit after observer recheck but before durable inactivity action. Plan the smallest atomic exact-attempt precondition and deterministic regression; preserve checkpoint 352291aca2cd4af6eefd71ca81600c658e03eb13 and dirty A1 bytes during planning.",
     "requiredOutcomes": [
       "Reconcile the existing seven moved tests and two private helpers; original <1000 lines and new <=1000. Each moved/added test is discovered once and executes once per suite run; helpers have one definition and are exercised by callers.",
       "All six accepted A1 matrix rows and named subcases retain meaningful assertions, exact owner/method mapping and complete behavioral evidence.",
       "Preserve retry limit, last-admitted success, director precedence, historical synthetic gate causality, atomic adapterFailure, first-terminal cancellation and exact-session live observer behavior.",
       "Fresh Xcode V0, policy, before-removal V1, canonical, cancellation-host and live gates plus strict changed-file SwiftLint pass with complete foreground logs, terminal exits and unchanged source membership/hashes. Discovery is not behavioral execution.",
       "A2-A5 and parent P1 remain open. No legacy deletion or external repository operation; A2/A3 need native Riela receiving evidence and separate implementation/review.",
-      "Formal test-integrity, one Sol adversarial and Astra integration acceptance precede A1-only documentation and scoped commit/non-force push; these downstream gates do not block Step 6 implementation handoff once its own evidence is complete."
+      "Formal test-integrity, one Sol adversarial and Astra integration acceptance precede A1-only documentation and scoped commit/non-force push; these downstream gates do not block Step 6 implementation handoff once its own evidence is complete.",
+      "Transaction reads canonical session on the same SQLite connection; stale identity/progress/terminal/cancellation observations cause no inactivity decision, decision evidence, task version increment, cancellation request, pending reservation or lease release.",
+      "Regression Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift::testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction uses an explicit post-recheck/pre-transaction barrier; canonical progress commit precedes release, under both stop and bounded-rerun policies; identity/terminal/cancel variants and idle/replay controls are asserted.",
+      "Planning publication includes only the reviewed design, plan and manifest; A1 acceptance and A2-A5/P1 remain open."
     ],
     "nonGoals": [
       "No legacy removal, external edits or execution of deferred A2–A5 in this A1-only run.",
@@ -36,7 +39,7 @@
       "New framework, schema/server, recursive director, broader ownership, unrelated cleanup or parent P1 closure"
     ],
     "constraints": [
-      "Preserve checkpoint 757d6f4 and all eleven dirty paths; planning is byte-preserving and any implementation repair uses immutable intents and fresh-read source hashes. Preserve prior logs.",
+      "Preserve checkpoint 352291aca2cd4af6eefd71ca81600c658e03eb13 and all eleven dirty/untracked A1 paths during planning. No Swift edits, reset, stash, deletion, force push or external repository operation. Later reviewed A1 implementation uses fresh-read intents and source hashes.",
       "Atomic adapterFailure records cause; configured policy and capacity select retry, authorized escalation or non-retry wait.",
       "Last-admitted success remains possible; no replacement bypasses cancellation acknowledgment or admission.",
       "Resolve only canonically proven synthetic gate absence using a matching real latest completed work gate; substantive findings/human acceptance remain mandatory.",
@@ -46,7 +49,9 @@
     "designDecisionsAndRationale": [
       "The completed GuardPolicy split retains seven test names and two private helpers in the original XCTest suite; reconcile rather than repeat it.",
       "Command exit 7 fixtures are adapterFailure; preserve explicit non-retry behavior by configuring policy, not hiding classification.",
-      "Keep prior immutable failure evidence and substantive findings while causally resolving proven historical synthetic absence."
+      "Keep prior immutable failure evidence and substantive findings while causally resolving proven historical synthetic absence.",
+      "Enforce exact task/attempt/session/execution and canonical progress precondition inside the existing decision transaction before durable mutation; reject stale observation without interruption.",
+      "GuardPolicy integration extension owns deterministic post-recheck/pre-decision barrier regression; no second polling framework."
     ],
     "intentionalTradeoffs": [
       "One integration owner executes coupled changes serially; read-only investigation may run independently.",
@@ -56,7 +61,8 @@
       "Last admitted failed retry stops only when capacity is exhausted; last admitted success remains possible.",
       "Terminal-first late cancellation preserves the committed outcome under explicit retry-disabled and retry-enabled policies; cancellation-first remains fenced until exact-session acknowledgment.",
       "A later matching accepted required gate resolves only proven historical synthetic absence; substantive and mismatched findings remain open.",
-      "Live progress prevents false inactivity; replay preserves durable effects without duplicate decisions."
+      "Live progress prevents false inactivity; replay preserves durable effects without duplicate decisions.",
+      "Changed execution, progress, terminal completion and cancellation precedence reject stale inactivity actions; original committed applications replay without duplication."
     ],
     "outOfScopeEdgeCases": [
       "New remote service, general unknown-field policy, unrelated broad failures, and parent P1 completion audit."
@@ -65,7 +71,9 @@
       "design-docs/specs/design-work-runtime-consolidation.md",
       "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
       "impl-plans/progress/p1-dispatch.md",
-      "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-2/logs/"
+      "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-2/logs/",
+      "Sources/RielaWork/WorkStore+Decisions.swift",
+      "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-4/logs/ownership-audit-final.log"
     ]
   },
   "designReview": {
@@ -73,15 +81,15 @@
     "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
     "accepted": true,
     "findings": [],
-    "reviewDecision": "Step 3 comm-000004 accepted the A1-only evidence-seal design with no findings; implementation reviews remain pending."
+    "reviewDecision": "Accepted atomic exact-attempt ownership and race-test design; A1 implementation acceptance remains open.",
+    "designSha256": "ff6f6bdeaa1f710e9e29b6e77fad7313c56ca198b8cc81ba2600957c74ab9afa"
   },
   "planReview": {
-    "accepted": true,
-    "status": "accepted",
-    "communicationId": "comm-000006",
-    "sourceStepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+    "accepted": false,
+    "status": "pending",
+    "communicationId": null,
     "findings": [],
-    "reviewDecision": "Step 5 accepted the A1-only implementation plan against the Step 3 design without findings or revision; fresh implementation checks and formal reviews remain pending."
+    "reviewDecision": "Current atomicity amendment awaits independent Step 5 review; prior plan acceptance is historical."
   },
   "plans": [
     {
@@ -94,6 +102,7 @@
         "Sources/RielaCLI/WorkflowRunCommand.swift",
         "Sources/RielaCore/RuntimePublication.swift",
         "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
         "Sources/RielaWork/TaskGuardCoordinator.swift",
         "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
         "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
@@ -115,7 +124,10 @@
         "Preserve retry limit, last-admitted success, director precedence, historical synthetic gate causality, atomic adapterFailure, first-terminal cancellation and exact-session live observer behavior.",
         "Fresh Xcode V0, policy, before-removal V1, canonical, cancellation-host and live gates plus strict changed-file SwiftLint pass with complete foreground logs, terminal exits and unchanged source membership/hashes. Discovery is not behavioral execution.",
         "A2-A5 and parent P1 remain open. No legacy deletion or external repository operation; A2/A3 need native Riela receiving evidence and separate implementation/review.",
-        "Formal test-integrity, one Sol adversarial and Astra integration acceptance precede A1-only documentation and scoped commit/non-force push; these downstream gates do not block Step 6 implementation handoff once its own evidence is complete."
+        "Formal test-integrity, one Sol adversarial and Astra integration acceptance precede A1-only documentation and scoped commit/non-force push; these downstream gates do not block Step 6 implementation handoff once its own evidence is complete.",
+        "Transaction reads canonical session on the same SQLite connection; stale identity/progress/terminal/cancellation observations cause no inactivity decision, decision evidence, task version increment, cancellation request, pending reservation or lease release.",
+        "Regression Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift::testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction uses an explicit post-recheck/pre-transaction barrier; canonical progress commit precedes release, under both stop and bounded-rerun policies; identity/terminal/cancel variants and idle/replay controls are asserted.",
+        "Planning publication includes only the reviewed design, plan and manifest; A1 acceptance and A2-A5/P1 remain open."
       ],
       "verification": [
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch",
@@ -124,22 +136,22 @@
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
-        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence'",
-        "swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence|TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction'",
+        "swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift Sources/RielaWork/WorkStore+Decisions.swift",
         "wc -l Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
         "git diff --check",
-        "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 before",
-        "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 after",
-        "shasum -a 256 -c tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256",
-        "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256 tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-after.sha256",
-        "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-before.nul tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-after.nul"
+        "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 before",
+        "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 after",
+        "shasum -a 256 -c tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256",
+        "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256 tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-after.sha256",
+        "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/membership-before.nul tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/membership-after.nul"
       ],
       "progressFile": "impl-plans/progress/p1-dispatch.md",
       "tasks": [
         {
           "taskId": "A0",
           "dependsOn": [],
-          "intendedChanges": "Read accepted design, plan and latest progress receipt; compare preserved source and attempt-2 manifests/logs. Record current HEAD, complete source membership/hash baseline and split/matrix audit. No source edits unless A1 identifies a demonstrated defect.",
+          "intendedChanges": "Read accepted design/plan, comm-000013 rejection and attempt-4 ownership audit. Preserve the existing split/matrix; record current HEAD and source baseline. Reconcile later-run authorization and exact owners before edits.",
           "deliverable": "Current-source reconciliation and historical-versus-fresh evidence classification; one owner, exact path intents.",
           "executionStatus": "pending"
         },
@@ -148,9 +160,12 @@
           "dependsOn": [
             "A0"
           ],
-          "intendedChanges": "Keep completed split and accepted matrix; repair only demonstrated A1 defects within writePaths with fresh reads/intents. Execute fresh V0/discovery/policy/V1/canonical/cancellation-host/live/strict lint; compare source identity and append evidence to own progress file.",
-          "deliverable": "Six-row/subcase mapping; seven-test/two-helper integrity; complete source-matched gate receipts with structured behavioral counts and separate discovery result.",
-          "executionStatus": "pending"
+          "intendedChanges": "Execute serial A1.1 transaction contract, A1.2 observer propagation, A1.3 deterministic regression, then A1.4 complete source-matched gates and own progress receipt as defined in this plan.",
+          "deliverable": "Atomic exact-attempt progress fence; deterministic negative/control/replay assertions; retained six-row A1 coverage; complete new foreground command/log/exit/source-identity evidence.",
+          "executionStatus": "pending",
+          "completionDependsOn": [
+            "A1.4"
+          ]
         },
         {
           "taskId": "A2",
@@ -189,8 +204,8 @@
           "executionStatus": "deferred"
         }
       ],
-      "executionScope": "A0 then A1 after current Step 5 acceptance and published planning checkpoint. Downstream A1 reviews/finalization follow; A2-A5 remain deferred.",
-      "evidencePolicy": "Use unused attempt-3 (or next unused number) without overwriting earlier receipts. Record source membership and SHA-256 before/after all gates, exact commands, complete stdout/stderr, terminal exits, actual behavioral counts and separate discovery status. Counts 74/68/94/49/4 are historical expectations to reconcile, never fabricate or weaken. No fresh tests have run in Step 4.",
+      "executionScope": "Planning-only now. A0/A1 execute only in a later issue-resolution run after current Step 5 acceptance and exact planning checkpoint publication; A2-A5 remain deferred.",
+      "evidencePolicy": "Use new attempt-5 or next unused number; never overwrite attempt-1 through attempt-4. Substitute the chosen root consistently in commands and receipts. Source-before runs after edits and before build; source-after follows gates. Every command needs a complete combined log, exact command and terminal exit. Counts 74/68/94/49/4 are historical, not acceptance. No implementation gate ran in Step 4.",
       "deferredWritePaths": [
         "Sources/RielaCLI/WorkflowRunCommand+AutoImprove.swift",
         "Sources/RielaCLI/RielaCommand.swift",
@@ -314,138 +329,168 @@
           "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch",
           "kind": "build",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/v0.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/v0.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/v0.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/v0.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/v0.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/v0.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "discovery",
           "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch list",
           "kind": "discovery",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/discovery.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/discovery.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/discovery.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/discovery.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/discovery.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/discovery.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "policy",
           "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'",
           "kind": "behavioral",
           "expectedHistoricalTestCount": 74,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/policy.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/policy.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/policy.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/policy.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/policy.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/policy.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "v1",
           "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
           "kind": "behavioral",
           "expectedHistoricalTestCount": 68,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/v1.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/v1.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/v1.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/v1.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/v1.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/v1.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "canonical",
           "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'RuntimeStoreTests|RuntimePublicationTests|DeterministicWorkflowRunnerTests|TaskCancellationIntegrationTests'",
           "kind": "behavioral",
           "expectedHistoricalTestCount": 94,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/canonical.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/canonical.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/canonical.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/canonical.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/canonical.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/canonical.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "cancellation-host",
           "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
           "kind": "behavioral",
           "expectedHistoricalTestCount": 49,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/cancellation-host.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/cancellation-host.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/cancellation-host.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/cancellation-host.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/cancellation-host.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/cancellation-host.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "live",
-          "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence'",
+          "command": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence|TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction'",
           "kind": "behavioral",
           "expectedHistoricalTestCount": 4,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/live.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/live.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/live.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/live.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/live.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/live.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "strict-swiftlint",
-          "command": "swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+          "command": "swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift Sources/RielaWork/WorkStore+Decisions.swift",
           "kind": "lint",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/strict-swiftlint.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/strict-swiftlint.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/strict-swiftlint.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/strict-swiftlint.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/strict-swiftlint.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/strict-swiftlint.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "line-counts",
           "command": "wc -l Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
           "kind": "static",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/line-counts.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/line-counts.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/line-counts.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/line-counts.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/line-counts.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/line-counts.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "diff-check",
           "command": "git diff --check",
           "kind": "static",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/diff-check.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/diff-check.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/diff-check.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/diff-check.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/diff-check.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/diff-check.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "source-before",
-          "command": "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 before",
+          "command": "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 before",
           "kind": "source-identity",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-before.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-before.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-before.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-before.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-before.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-before.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "source-after",
-          "command": "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 after",
+          "command": "python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output([\"git\",\"ls-files\",\"--cached\",\"--others\",\"--exclude-standard\",\"-z\",\"--\",\"Sources\",\"Tests\",\"Package.swift\",\"Package.resolved\"]).decode().split(\"\\0\")))); assert paths; (root/(\"membership-\"+phase+\".nul\")).open(\"xb\").write((\"\\0\".join(paths)+\"\\0\").encode()); (root/(\"source-\"+phase+\".sha256\")).open(\"x\").write(\"\".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+\"  \"+p+\"\\n\" for p in paths)); print(phase,len(paths),\"files\")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 after",
           "kind": "source-identity",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-after.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-after.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-after.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-after.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-after.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-after.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "source-check",
-          "command": "shasum -a 256 -c tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256",
+          "command": "shasum -a 256 -c tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256",
           "kind": "source-identity",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-check.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-check.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-check.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-check.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-check.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-check.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "source-identity",
-          "command": "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256 tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-after.sha256",
+          "command": "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256 tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-after.sha256",
           "kind": "source-identity",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-identity.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-identity.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/source-identity.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-identity.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-identity.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/source-identity.command",
+          "status": "not_run",
+          "exitStatus": null
         },
         {
           "checkId": "membership-identity",
-          "command": "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-before.nul tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-after.nul",
+          "command": "cmp tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/membership-before.nul tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/membership-after.nul",
           "kind": "source-identity",
           "expectedHistoricalTestCount": null,
-          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/membership-identity.log",
-          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/membership-identity.exit",
-          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/logs/membership-identity.command"
+          "completeLog": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/membership-identity.log",
+          "exitReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/membership-identity.exit",
+          "commandReceipt": "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/logs/membership-identity.command",
+          "status": "not_run",
+          "exitStatus": null
         }
       ],
-      "intent": "Reconcile and seal existing A1 only; no repeated split, new architecture or legacy deletion.",
+      "intent": "Implement the accepted minimal atomic inactivity precondition in a later A1 run; preserve existing split/matrix and prove race/replay behavior with fresh source-matched gates.",
       "nonGoals": [
         "No legacy removal, external edits or execution of deferred A2–A5 in this A1-only run.",
         "Implementation before current review/checkpoint gates or deletion before sealed A1 evidence.",
@@ -453,7 +498,103 @@
         "New framework, schema/server, recursive director, broader ownership, unrelated cleanup or parent P1 closure"
       ],
       "invariants": [
-        "Preserve retry limit, last-admitted success, director precedence, historical synthetic gate causality, atomic adapterFailure, first-terminal cancellation and exact-session live observer behavior."
+        "Preserve retry limit, last-admitted success, director precedence, historical synthetic gate causality, atomic adapterFailure, first-terminal cancellation and exact-session live observer behavior.",
+        "Transaction reads canonical session on the same SQLite connection; stale identity/progress/terminal/cancellation observations cause no inactivity decision, decision evidence, task version increment, cancellation request, pending reservation or lease release.",
+        "Committed decision replay precedes fresh precondition evaluation; immutable guard evidence alone never authorizes interruption or later stale action.",
+        "Canonical timestamp comparison preserves persisted precision and nil/createdAt baseline; no millisecond-key comparison as authority."
+      ],
+      "trackedPaths": [
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "Tests/RielaCLITests/TaskCommandMutationTests.swift",
+        "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "trackedPathsMeaning": "Evidence membership includes every write path, including the currently untracked GuardPolicy extension; this list does not stage files or assert Git tracking.",
+      "subtasks": [
+        {
+          "taskId": "A1.1",
+          "dependsOn": [
+            "A0"
+          ],
+          "writePaths": [
+            "Sources/RielaWork/WorkStore+Decisions.swift",
+            "Sources/RielaWork/TaskGuardCoordinator.swift"
+          ],
+          "deliverable": "In-memory exact-observation input passed through coordinator; require it for new live inactivity actions and verify canonical identity/progress/status/cancellation in applyDecision transaction, preserving original replay."
+        },
+        {
+          "taskId": "A1.2",
+          "dependsOn": [
+            "A1.1"
+          ],
+          "writePaths": [
+            "Sources/RielaCLI/TaskRunCancellation.swift",
+            "Sources/RielaCLI/WorkflowRunCommand.swift",
+            "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift"
+          ],
+          "deliverable": "Propagate canonical observation, reject/re-evaluate stale action without interruption or suppression of fresh progress; bounded internal test barrier, no new polling."
+        },
+        {
+          "taskId": "A1.3",
+          "dependsOn": [
+            "A1.2"
+          ],
+          "writePaths": [
+            "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift"
+          ],
+          "deliverable": "Deterministic testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction stop/rerun variants plus changed-execution/terminal/cancel precedence, no-progress control, missing-precondition rejection and committed/rejected replay assertions."
+        },
+        {
+          "taskId": "A1.4",
+          "dependsOn": [
+            "A1.3"
+          ],
+          "writePaths": [
+            "impl-plans/progress/p1-dispatch.md"
+          ],
+          "deliverable": "All fresh gates pass on unchanged final source membership/hashes; preserve historical evidence and append exact assertions/counts/command/log/exit receipts; implementation reviews remain pending."
+        }
+      ],
+      "verificationOrder": [
+        "source-before",
+        "v0",
+        "discovery",
+        "policy",
+        "v1",
+        "canonical",
+        "cancellation-host",
+        "live",
+        "strict-swiftlint",
+        "line-counts",
+        "diff-check",
+        "source-after",
+        "source-check",
+        "source-identity",
+        "membership-identity"
+      ],
+      "fileChanges": {
+        "Sources/RielaWork/WorkStore+Decisions.swift": "Own small observation-precondition type here if needed; retain replay-first path; inspect canonical session using load(sessionId:in:) on the decision transaction connection before all decision mutations. Reject missing precondition for new live inactivity decisions by inspecting causal guard evidence; keep other decisions unchanged.",
+        "Sources/RielaWork/TaskGuardCoordinator.swift": "Carry exact observation to shared applier without inventing a new durable schema; immutable saved violations are observations only, never independent action authority.",
+        "Sources/RielaCLI/TaskRunCancellation.swift": "Capture exact execution and canonical progress; pass through existing observer; stale result must not interrupt or consume new progress; internal test seam after recheck and before transaction.",
+        "Sources/RielaCLI/WorkflowRunCommand.swift": "Only forward the bounded test synchronization seam through the existing adapter/harness path if required.",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift": "Only forward synchronization through existing TaskExampleHarness; preserve suite and original methods.",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift": "Own deterministic race test and variants; preserve seven moved methods, existing assertions and two original helpers.",
+        "impl-plans/progress/p1-dispatch.md": "Later implementation owner appends actual fresh evidence; untouched during planning."
+      },
+      "executionPrerequisites": [
+        "P2 current independent plan acceptance",
+        "P3 reviewed three-path planning publication",
+        "Later issue-resolution execution authorization"
       ]
     }
   ],
@@ -472,9 +613,9 @@
   ],
   "implementationDispatchAllowed": false,
   "implementationDispatchConditions": [
-    "Step 3 accepted design comm-000004.",
-    "Step 5 accepts current plan/manifest; serial owner records review and publishes exact three-path planning checkpoint before enabling dispatch.",
-    "Dispatch only A0/A1. No legacy removal. A1 formal downstream reviews/finalization do not depend on deferred A2/A3."
+    "Current Step 3 accepted atomicity design comm-000004.",
+    "Independent Step 5 accepts current atomicity plan/manifest; planning owner commits and non-force pushes only checkpointWritePaths.",
+    "A separate later issue-resolution run explicitly authorizes A0/A1 on the published planning checkpoint. This planning-only execution never dispatches implementation."
   ],
   "checkpointWritePaths": [
     "design-docs/specs/design-work-runtime-consolidation.md",
@@ -482,8 +623,8 @@
     "impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json"
   ],
   "codexAgentReferences": [
-    "Codex Astra: accepted design/plan author; pending integration reviewer",
-    "Codex Sol: pending test-integrity and single adversarial reviews",
+    "Codex Sol: Step 7 comm-000013 rejected A1 with one mid atomicity finding",
+    "Codex Astra: accepted design intent; integration review pending",
     "Codex /root: prior A1 edit owner"
   ],
   "historicalReviewContext": {
@@ -512,7 +653,7 @@
       "reviewDecision": "Step 5 accepted this issue-resolution plan with no revision or design findings; implementation still requires the scoped checkpoint."
     }
   },
-  "executionMode": "issue-resolution",
+  "executionMode": "design-plan-only",
   "workflowVersion": "0.3.35",
   "planningTasks": [
     {
@@ -525,14 +666,14 @@
       "dependsOn": [
         "P0"
       ],
-      "deliverable": "Exact active plan/current manifest amendment and author verification."
+      "deliverable": "Current atomicity plan/manifest amendment with author self-check; independent review pending."
     },
     {
       "taskId": "P2",
       "dependsOn": [
         "P1"
       ],
-      "deliverable": "Independent Step 5 acceptance of this amendment in comm-000006; complete."
+      "deliverable": "Independent Step 5 acceptance of current atomicity amendment; pending, no receipt yet."
     },
     {
       "taskId": "P3",
@@ -541,5 +682,25 @@
       ],
       "deliverable": "After Step 5 acceptance, serial owner commits and non-force pushes only accepted design, plan and manifest; record reviewed hashes and publication before A0/A1 dispatch. Preserve all dirty implementation files."
     }
-  ]
+  ],
+  "priorEvidenceSealReview": {
+    "originalHead": "757d6f467b76500d79be03972808b37607b0f82b",
+    "workflowMode": "issue-resolution",
+    "executionMode": "issue-resolution",
+    "designReview": {
+      "communicationId": "comm-000004",
+      "sourceStepExecutionId": "step3-design-review-attempt-1-exec-4",
+      "accepted": true,
+      "findings": [],
+      "reviewDecision": "Step 3 comm-000004 accepted the A1-only evidence-seal design with no findings; implementation reviews remain pending."
+    },
+    "planReview": {
+      "accepted": true,
+      "status": "accepted",
+      "communicationId": "comm-000006",
+      "sourceStepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+      "findings": [],
+      "reviewDecision": "Step 5 accepted the A1-only implementation plan against the Step 3 design without findings or revision; fresh implementation checks and formal reviews remain pending."
+    }
+  }
 }

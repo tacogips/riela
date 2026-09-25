@@ -1,15 +1,16 @@
-# Work Runtime P1-7a: seal A1 GuardPolicy replacement evidence
+# Work Runtime P1-7a: atomic inactivity ownership amendment
 
-## Current executable contract — A1 only (2026-09-25)
+## Current executable contract — planning amendment for later A1 (2026-09-25)
 
-Issue `comm-000001`, intake `comm-000002`; no GitHub issue supplied. Mode and
-executionMode `issue-resolution`; execution
+Issue `comm-000001`, intake `comm-000002`; no GitHub issue supplied. Mode `planning-only`,
+executionMode `design-plan-only`; execution
 `codex-design-and-implement-review-loop-session-1`. Runtime-resolved immutable
 user-scope workflow `0.3.35` and effective input are authoritative.
 Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, accepted
 `design-docs/specs/design-work-runtime-consolidation.md` §17.10 without findings.
-Step 5 `comm-000006`, `step5-impl-plan-review-attempt-1-exec-6`, accepted
-this A1-only plan against the Step 3 design without findings or revision.
+Step 5 review of this amendment is pending. Prior `comm-000006` acceptance
+belongs to the evidence-seal plan and does not accept this atomicity amendment.
+Codex Sol rejected A1 in Step 7 `comm-000013` with one mid race finding.
 Fresh implementation checks and formal reviews remain pending.
 Codex Astra authored accepted intent and owns pending integration review; Codex
 Sol owns implementation, test-integrity and the single adversarial review in
@@ -20,22 +21,23 @@ Stable planId `p1-dispatch`; dependsOn `[]`; planPath
 `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`; progressFile
 `impl-plans/progress/p1-dispatch.md`; current manifest
 `impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json`.
-Its exact `writePaths` and `sharedPaths` are the only current permissions.
+Its exact `writePaths` and `sharedPaths` bound the later A1 implementation;
+current planning writes are limited to this plan and manifest.
 One coupled implementation owner maintains this plan's progress log.
 
-Intent: reconcile the existing accepted seven-test/two-helper split and A1 matrix,
-seal fresh source-matched checks, obtain formal acceptance and publish only A1.
-Preserve checkpoint `757d6f467b76500d79be03972808b37607b0f82b` on
-`feat/remaining-impl-plans`, every path in `protectedDirtyPaths` (eleven, including
-the untracked GuardPolicy extension and TaskRuntimeExampleTests), and prior logs.
-The latest GuardPolicy split receipt records 837/541 lines and historical policy
-74/74, V1 68/68, canonical 94/94, cancellation-host 49/49 and live 4/4 passes.
-These are reconciliation inputs, not fresh acceptance. No repeated split is needed.
-The historical strict lint command receipt is absent; reconstruct a fresh exact
-invocation including every changed Swift file.
+Intent: amend ownership and the test plan for the accepted §17.10 atomic
+exact-attempt inactivity check. Progress can commit after the observer recheck
+but before the WorkStore decision transaction; a second observer read cannot
+close that gap. Preserve checkpoint `352291aca2cd4af6eefd71ca81600c658e03eb13`
+on `feat/remaining-impl-plans`, all eleven `protectedDirtyPaths`, and prior logs.
+Planning edits only this plan and manifest; the accepted design is unchanged.
+No Swift source/test edit or implementation dispatch occurs in this execution.
+The future A1 owner retains the existing seven-test/two-helper split and six-row
+matrix. Attempt-3 build/policy 74/74, V1 68/68, canonical 94/94,
+cancellation-host 49/49 and live 4/4 receipts remain historical, not race-fix proof.
 
 Non-goals: no A2–A5 execution, legacy deletion, external repository operation,
-new abstraction, public API, polling framework, discovery shim, assertion
+new general abstraction, unrelated public API, polling framework, discovery shim, assertion
 weakening, dependency/lockfile regeneration, broad formatting, unrelated repair,
 parent P1 closure, reset, stash, force push, worktree or private branch. No
 registry rediscovery. Shared indexes and global archiving remain serial.
@@ -46,10 +48,10 @@ registry rediscovery. Shared indexes and global archiving remain serial.
 | --- | --- | --- |
 | P0 | none | Step 3 accepted design, comm-000004; complete. |
 | P1 | P0 | Single plan author updates this plan/manifest and performs self-check. |
-| P2 | P1 | Independent Step 5 acceptance of current amendment in comm-000006; complete. |
+| P2 | P1 | Independent Step 5 acceptance of this atomicity amendment; pending. |
 | P3 | P2 | Serial checkpoint owner commits/publishes only accepted design, this plan and current manifest. Record hashes and remote receipt before native dispatch. |
 | A0 | P3 | Single implementation owner reconciles preserved source with historical receipt, audits split/matrix, records exact membership and SHA-256 baseline. |
-| A1 | A0 | Same owner repairs only demonstrated scoped defects, runs all fresh gates below and appends structured evidence to own progress file. |
+| A1 | A0 | Same owner completes serial A1.1–A1.4 below, runs fresh gates and appends evidence to own progress file. |
 | A1-test-integrity | A1 | Independent Sol validates assertions, discovery/execution, source identity and receipts. |
 | A1-adversarial | A1-test-integrity | One Sol adversarial review in separate context; material findings only. |
 | A1-integration | A1-adversarial | Astra reviews combined source and accepted intent. |
@@ -62,12 +64,13 @@ reviews/docs/commit/push must be reported but do not self-block that handoff.
 
 P3 stages only `design-docs/specs/design-work-runtime-consolidation.md`, this
 plan and the current manifest. Verify `git diff --cached --name-only` against
-those three paths, preserve 757d6f4 as ancestor, record
+those three paths, preserve 352291a as ancestor, record
 `git show --format= --name-only HEAD`, then publish with
 `git push origin HEAD:feat/remaining-impl-plans`. No concurrent Git commands;
 never stage the protected implementation files in the planning checkpoint.
 `implementationDispatchAllowed` remains false until P2/P3 receipts exist; the
-serial checkpoint owner records the gated transition in the reviewed checkpoint.
+later issue-resolution runner must also explicitly authorize A0/A1. Publication
+of planning artifacts alone never authorizes implementation in this execution.
 A failed checkpoint push stops dispatch. Step 4 itself does not commit or push.
 
 ### Ownership, drift and invariants
@@ -77,8 +80,8 @@ diff. Store immutable preimage, SHA-256, intended exact delta and justification
 under the new attempt's `intents/`; compare the preimage hash immediately before
 writing. On drift, stop that edit, reread and reconcile serially; never replace
 another owner's work with a stale whole-file snapshot. Save postimage/hash.
-Bounded read-only split/matrix and historical-evidence audits may run in parallel;
-only one owner edits coupled files/progress. Run gates serially against the shared
+This amendment uses no parallel task or agent dispatch;
+one owner edits coupled files/progress. Run gates serially against the shared
 build/store resources. After joining, compare intents and current hashes and
 repair drift serially, then rerun affected checks before formal review.
 
@@ -88,9 +91,73 @@ first-terminal cancellation arbitration and exact-session acknowledgment intact.
 Task-free, specialist/event/loop/routine and required/optional gate behavior is
 unchanged. No source repair is required merely because old metadata differs.
 
+### Atomic repair: serial file-level tasks for the later A1 run
+
+The manifest retains every existing `writePaths` entry and adds
+`Sources/RielaWork/WorkStore+Decisions.swift`. `trackedPaths` explicitly covers
+all those paths, including the untracked GuardPolicy extension as evidence
+membership; it is not an instruction to stage files. Shared documentation remains
+serial. `Tests/RielaWorkTests/WorkGuardDispatcherTests.swift` and
+`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` are read-only
+references, not new edit grants. No schema/model-file or general scheduler change
+is planned. If another exact owner is materially necessary, stop for a bounded
+reviewed amendment instead of bypassing ownership.
+
+| Task | Depends on | Exact changes and completion evidence |
+| --- | --- | --- |
+| A1.1 | A0 | `Sources/RielaWork/WorkStore+Decisions.swift` owns the small in-memory observation input if needed, new-action validation and transaction check. `Sources/RielaWork/TaskGuardCoordinator.swift` passes that input to the shared applier. Preserve replay-first handling. Complete when all durable mutations are downstream of the canonical check and no new live inactivity path can omit it. |
+| A1.2 | A1.1 | `Sources/RielaCLI/TaskRunCancellation.swift` captures/passes the observation through its existing observer and re-evaluates stale input without interruption. Add one internal barrier after recheck and before transaction. `Sources/RielaCLI/WorkflowRunCommand.swift` and `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift` may only forward this seam via existing runner/harness. No new polling or public product configuration. |
+| A1.3 | A1.2 | `Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift` owns `testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction` and deterministic variants below. Preserve all existing tests and helpers. |
+| A1.4 | A1.3 | Run every fresh gate below in manifest `verificationOrder`, then append only actual results to `impl-plans/progress/p1-dispatch.md`. Map old six-row coverage and new race subcases to assertions/logs, and report remaining review gates. A1 implementation handoff requires all these deliverables, not self-acceptance. |
+
+A1.1 must compare task ID/version, latest attempt ID, reserved session ID, selected
+running execution ID, running attempt/session/execution status and canonical
+`lastBackendEventAt` (including nil and `createdAt` baseline). Preserve persisted
+precision rather than comparing the millisecond observation key. On the same
+SQLite transaction connection call `load(sessionId:in:)`; canonical progress
+committed first must win. Committed cancellation and terminal completion also win.
+Missing/unreadable canonical state fails closed. Require observation input for a
+new live inactivity action, identifying that action from its causal guard evidence,
+so another caller cannot bypass the check by omitting an optional argument.
+
+Reject stale input before task-version update, attempt change, decision/evidence
+insert, cancellation request, pending reservation or lease release. Never cancel
+the runner on that result. Existing immutable guard evidence may remain, but it
+must not become authority for a later stale action or poison terminal reconciliation.
+Re-evaluation must admit genuinely new progress observations. A previously applied
+identical decision replays its original application/causal evidence before any new
+precondition check; conflicting replay intent remains rejected. A valid no-progress
+action retains current bounded policy and exact-session acknowledgment/selected-host
+stop proof before replacement. Other decisions and warning-only behavior stay intact.
+
+A1.3 uses explicit synchronization, with bounded failure cleanup that releases and
+joins the fixture on every exit; time sleeps cannot establish the causal ordering:
+
+1. Drive the real observer to a configured inactivity violation; hold it after its
+   last observer read and before the decision transaction.
+2. Commit exact-execution backend progress through the canonical runtime writer,
+   prove it is durable, then release the observer. Exercise both stop and
+   bounded-rerun policies; no stale decision, decision evidence, task version
+   increment attributable to it, cancellation, lease release, pending replacement,
+   extra attempt or false stopped outcome is permitted. Capture state at the barrier
+   to distinguish legitimate later progress/completion writes.
+3. At the same seam, exercise changed execution identity, terminal-first and
+   cancellation-first. Preserve the winning terminal outcome or prior cancellation;
+   inactivity must add no competing action. Exercise missing-precondition rejection
+   through the shared applier to prove callers cannot opt out.
+4. Keep a no-progress control that applies exactly once. Replay the committed
+   decision after terminal completion and compare its application and row counts;
+   replay of rejected stale observations stays non-actionable. Reopen the store
+   to prove durable evidence/decision/reservation counts. Preserve the existing
+   warning/live/replay assertions and never seed synthetic success to hide the race.
+
+Review trace: accepted Step 3 `comm-000004`, design §17.10; rejected A1 Sol
+`comm-000013`; Codex Astra integration pending; prior edit owner Codex `/root`.
+There is no Codex-reference repository/adapter divergence or unresolved user choice.
+
 ### Accepted exact split and A1 reconciliation ownership
 
-**Accepted responsibility split for A1.** Retain the sole new write path,
+**Accepted responsibility split for A1.** Retain the previously added write path,
 `Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift`, in the
 current manifest and active plan. This is the justified equivalent
 to `+LiveInactivity.swift`: the two live methods (54 lines) and adapter (27 lines)
@@ -142,7 +209,7 @@ V1 and strict changed-file SwiftLint on the final source (include the new file i
 the lint manifest). Extend the live filter to select the two new race tests;
 retain positive counts for every named case. Record HEAD, hashes including the
 new file, full foreground logs and terminal exits in a fresh evidence directory;
-never overwrite attempt-1 or attempt-2. No test deletion or zero-selection pass opens A1.
+never overwrite attempt-1 through attempt-4. No test deletion or zero-selection pass opens A1.
 A2/A3 require native Riela receiving-side false/null rejection and authenticated
 ordinary acceptance evidence plus separate implementation/review. No A1 user
 decision is unresolved. A2–A5 and parent P1 remain open.
@@ -181,8 +248,16 @@ Commit/non-force push occurs through workflow finalization gates, not Step 6.
 
 ### Fresh evidence commands and acceptance
 
+Run gates in manifest `verificationOrder`: source-before after all edits and before
+build, then v0/discovery/policy/v1/canonical/cancellation-host/live/lint/static
+checks, then source-after and all three comparisons. Each entry in manifest
+`verificationEvidence` supplies its complete log, command receipt and terminal
+exit receipt; null exit/status not_run are planned checks, not results.
+
 Use the next unused directory, initially
-`tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3`; never truncate an earlier attempt.
+`tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5`; never truncate an earlier attempt. If occupied, select the next unused number
+and substitute it consistently in every command and evidence path. All logs stay
+under that chosen root; preserve failure receipts.
 All execution stays foreground; retain and poll any yielded session through exit.
 For each command save exact argv/shell quoting to `logs/<check>.command`, combined
 stdout/stderr to `logs/<check>.log`, and actual terminal status to
@@ -203,17 +278,17 @@ untracked split. Record HEAD separately. Historical attempt-2 manifests are only
 reconciliation evidence, not substitutes. Exact post-check commands:
 
 ```sh
-shasum -a 256 -c "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256"
-cmp "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-before.sha256" "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/source-after.sha256"
-cmp "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-before.nul" "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3/membership-after.nul"
+shasum -a 256 -c "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256"
+cmp "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-before.sha256" "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/source-after.sha256"
+cmp "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/membership-before.nul" "tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5/membership-after.nul"
 ```
 
 Exact source capture commands (run `before` before build, `after` after lint/tests;
 exclusive creation refuses to overwrite earlier evidence):
 
 ```sh
-python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","--","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; (root/("membership-"+phase+".nul")).open("xb").write(("\0".join(paths)+"\0").encode()); (root/("source-"+phase+".sha256")).open("x").write("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths)); print(phase,len(paths),"files")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 before
-python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","--","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; (root/("membership-"+phase+".nul")).open("xb").write(("\0".join(paths)+"\0").encode()); (root/("source-"+phase+".sha256")).open("x").write("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths)); print(phase,len(paths),"files")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-3 after
+python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","--","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; (root/("membership-"+phase+".nul")).open("xb").write(("\0".join(paths)+"\0").encode()); (root/("source-"+phase+".sha256")).open("x").write("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths)); print(phase,len(paths),"files")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 before
+python3 -c 'import hashlib,pathlib,subprocess,sys; root=pathlib.Path(sys.argv[1]); phase=sys.argv[2]; root.mkdir(parents=True,exist_ok=True); paths=sorted(set(filter(None,subprocess.check_output(["git","ls-files","--cached","--others","--exclude-standard","-z","--","Sources","Tests","Package.swift","Package.resolved"]).decode().split("\0")))); assert paths; (root/("membership-"+phase+".nul")).open("xb").write(("\0".join(paths)+"\0").encode()); (root/("source-"+phase+".sha256")).open("x").write("".join(hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()+"  "+p+"\n" for p in paths)); print(phase,len(paths),"files")' tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-5 after
 ```
 
 Commands below use the explicit Xcode Swift toolchain and one scratch build path.
@@ -256,16 +331,16 @@ No web code changes, browser gates or deferred broad cleanup are in this scope.
 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'
 ```
 
-**live** (`behavioral`; historical expectation 4 tests):
+**live** (`behavioral`; historical 4 tests, plus the new atomic-race method):
 
 ```sh
-/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence'
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests.testTaskInactivityPersistsViolationAndStopsExactAttempt|TaskDispatcherIntegrationTests.testTaskProgressPreventsInactivityAction|TaskDispatcherIntegrationTests.testTaskInactivityWarningAndReplayPreserveSingleObservation|TaskDispatcherIntegrationTests.testTaskInactivityProgressTerminalAndCancellationRacesPreservePrecedence|TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction'
 ```
 
 **strict-swiftlint** (`lint`):
 
 ```sh
-swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift
+swiftlint lint --strict --quiet --no-cache Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskRunCancellation.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaWork/TaskGuardCoordinator.swift Tests/RielaCLITests/TaskCancellationIntegrationTests.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift Tests/RielaCLITests/TaskRuntimeExampleTests.swift Sources/RielaWork/WorkStore+Decisions.swift
 ```
 
 **line-counts** (`static`):
@@ -287,12 +362,12 @@ for each behavioral check; discovery uses `kind: discovery` and a separately
 verified discovered-name count, never a behavioral test count. Do not weaken
 assertions or fabricate counts to match historical 74/68/94/49/4. If a count
 changes, explain the exact method delta and require review. Discovery must list
-all seven moved and four added extension methods once; V1 must execute each once.
+all existing extension methods and the new atomic-race method once; V1 must execute each once.
 Both helpers remain defined once and exercised by those tests. Map every named
 matrix subcase to assertion and complete gate log, including separate no-heartbeat
 and stops-after-progress evidence. Original <1000/new <=1000 is mandatory.
 
-The explicit lint list includes the ten currently changed Swift files; reconcile it
+The explicit lint list includes the ten previously changed Swift files plus the transaction owner; reconcile it
 against current changed Swift files (including untracked) before execution. Any
 new changed Swift file outside ownership requires exact scope reconciliation,
 not automatic lint exclusion. Capture toolchain/linter versions in the receipt.

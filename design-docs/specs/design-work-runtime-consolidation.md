@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 carries the previously accepted P1-7a GuardPolicy ownership into A1-only issue-resolution from `8b263ab07e22bb48a390489f395a7a4ea6a5d58b`; current design/plan review and implementation acceptance remain pending; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
+Status: accepted 2026-09-20 with the three section-16 questions resolved by the user. **P0 implemented; P1 incomplete. P1-7b accepted and committed at `a8516ec7e44d57f9717b2403510cfb7d6b84fec1` (2026-09-25), per the current runtime intake. P1-7a and parent P1 remain open.** The latest serial broad gate remains **FAILED**, exit 1, with 18 classified non-P1-7b assertions. Section 17.10 proposes the planning-only atomic inactivity ownership amendment from preserved checkpoint `352291aca2cd4af6eefd71ca81600c658e03eb13`; current design/plan review and A1 implementation acceptance remain pending; historical execution scopes and completion statements below do not expand this slice. Applicable accepted behavioral contracts remain in force.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2641,64 +2641,120 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
 
-**Current A1 evidence seal (issue-resolution).** Issue `comm-000001`, “Seal
-Work Runtime P1-7a A1 GuardPolicy replacement evidence”; Step 1 intake
-`comm-000002` and effective `workflowInput` are authoritative. No GitHub issue
-URL or number or Codex reference repository was supplied. Codex Astra authored
-the accepted design and plan and remains the pending integration reviewer;
-Codex Sol owns the pending test-integrity and single adversarial reviews.
-Codex `/root` is the prior A1 edit owner; `/root/matrix_audit` and
-`/root/evidence_audit` are historical read-only evidence references, not review
-acceptance. No Cursor CLI behavior mapping or adapter divergence applies.
+**Current atomic inactivity amendment (planning-only).** Issue `comm-000001`,
+“Amend P1-7a A1 ownership for atomic inactivity decision”; Step 1 intake
+`comm-000002` and effective `workflowInput` are authoritative. Workflow mode is
+`planning-only`, execution mode `design-plan-only`, runner-resolved immutable
+user-scope workflow `codex-design-and-implement-review-loop` version `0.3.35`.
+No GitHub issue URL/number or Codex reference repository was supplied. No Cursor
+CLI behavior mapping or adapter divergence applies to this WorkStore race.
+Codex Sol's Step 7 `comm-000013` adversarial review **rejected A1** with one mid
+finding; Codex Astra's accepted design intent is retained with integration review
+pending; Codex `/root` is the prior A1 edit owner. New design and plan reviews
+are pending; this author amendment does not claim their acceptance.
 
-The runner-resolved immutable user-scope `codex-design-and-implement-review-loop`
-`0.3.35` and effective input govern this execution; workflow and execution mode
-are `issue-resolution`, execution `codex-design-and-implement-review-loop-session-1`,
-node `step2-design-doc-update`. Preserve checkpoint
-`757d6f467b76500d79be03972808b37607b0f82b` on `feat/remaining-impl-plans` and all
-existing dirty A1 files: `Sources/RielaCLI/TaskDispatch.swift`,
-`Sources/RielaCLI/TaskRunCancellation.swift`, `Sources/RielaCLI/WorkflowRunCommand.swift`,
-`Sources/RielaCore/RuntimePublication.swift`, `Sources/RielaCore/RuntimeStore.swift`,
-`Sources/RielaWork/TaskGuardCoordinator.swift`,
-`Tests/RielaCLITests/TaskCancellationIntegrationTests.swift`,
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`,
-`Tests/RielaCLITests/TaskRuntimeExampleTests.swift`,
-`Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift` (untracked),
-and `impl-plans/progress/p1-dispatch.md`. No reset, stash, force push, unrelated
-cleanup, external repository operation, extra worktree or concurrent Git action.
+Preserve checkpoint `352291aca2cd4af6eefd71ca81600c658e03eb13` on
+`feat/remaining-impl-plans` and byte-preserve all ten dirty tracked paths and the
+untracked `Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift`
+listed by intake, including `impl-plans/progress/p1-dispatch.md`. No Swift source
+or test edit, reset, stash, deletion, force push, unrelated cleanup or external
+repository operation is authorized in this planning execution. Only reviewed
+planning artifacts may be committed and non-force pushed. A1 acceptance,
+A2–A5 and parent P1 remain open. This node changes only this design document;
+Step 4 updates the active plan and manifest, Step 5 reviews that plan, and
+publication follows independent planning acceptance.
 
-The latest GuardPolicy split receipt in `impl-plans/progress/p1-dispatch.md`
-records the accepted seven-test/two-helper move and six-row A1 assertion matrix.
-The accepted ownership below remains binding; reconcile the existing source,
-do not repeat the move or expand the scope. Logs under
-`tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-2/logs/`
-record V0 exit 0, policy 74/74, before-removal V1 68/68, canonical 94/94,
-cancellation-host 49/49, live 4/4 and strict changed-file SwiftLint exit 0.
-These are historical receipts until checked against current source; reading them
-or matching hashes does not constitute a fresh behavioral run. Preserve every
-prior receipt, including failed and superseded logs.
+**Finding and transaction boundary.** The latest rejection in
+`impl-plans/progress/p1-dispatch.md` and
+`tmp/work-runtime-p1-7a-resume-comm000006-37c80ecd/plans/p1-dispatch/attempt-4/logs/ownership-audit-final.log`
+identifies the missing transaction owner. `TaskRunCancellation.observeInactivity`
+rechecks canonical progress before `TaskGuardCoordinator.evaluateAndApply`, but
+progress may commit between that read and `WorkStore.applyDecision`. Its task
+version and cancellation checks alone cannot fence a runtime progress write.
+A second observer read cannot close this gap. Attempt-3 build, policy 74/74,
+V1 68/68, canonical 94/94, cancellation-host 49/49 and live 4/4 receipts remain
+historical evidence, not proof of the race fix.
 
-Earlier Step 3 design and Step 5 plan decisions were accepted without findings.
-This amendment changes evidence/status and the deferred receiving boundary only;
-it adds no product behavior, component, public API or implementation scope.
-Step 4 reconciles the current metadata in
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` and the existing
-`impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json`;
-retain their exact A1 ownership and one current manifest. Earlier checkpoint and
-execution metadata in those artifacts is historical, not a runtime provenance
-contradiction. Current amendment reviews are downstream workflow decisions.
+**Atomic exact-attempt precondition.** Carry the observed task/attempt/session,
+step execution ID and canonical progress value through the existing coordinator
+to the existing `WorkStore.applyDecision` transaction. The progress value is
+`lastBackendEventAt`, including its absence and the `createdAt` baseline for a
+no-event execution; compare canonical persisted values without reducing precision
+to the observation key's millisecond bucket. For a new live inactivity action,
+require this precondition; callers cannot silently omit it and use an unchecked
+inactivity path. Other decision kinds retain their existing semantics.
 
-Seal fresh source-matched A1 checks before formal test-integrity, one Sol
-adversarial and Astra integration review. Record each review identity, decision,
-findings and reviewed source hashes; all three decisions remain pending here.
-Only accepted A1 files may proceed through scoped documentation, commit and
-non-force push. A2–A5 and parent P1 remain open, and no legacy deletion is
-authorized even after A1 acceptance. A2/A3 require separately implemented native
-Riela receiving evidence and their own review. No unresolved user decision is
-needed for A1; the later receiving implementation is outside this execution.
-This design node changes only this design document.
+Before any decision-driven durable mutation, read the exact session using
+`SQLiteWorkflowRuntimePersistenceStore.load(sessionId:in:)` on the same SQLite
+transaction connection. Verify the current task/version and latest attempt still
+match the observation, the attempt/session and selected execution are running,
+the execution identity and progress value still match, and no committed
+cancellation has precedence. Different execution identity, changed progress,
+terminal completion, missing/unreadable canonical state or cancellation
+precedence rejects the stale action and reloads/re-evaluates through the existing
+observer. No stop/rerun decision, decision evidence, task-version increment,
+cancellation request, pending reservation or lease release may commit for that
+stale observation. Do not interrupt the runner on rejection. SQLite transaction
+serialization defines precedence: progress committed before the decision is
+visible to this check; a writer arriving after a valid decision cannot retroactively
+invalidate it. No new transaction framework, polling loop or scheduler is needed.
 
-**Accepted responsibility split for A1.** Retain the sole new write path,
+The coordinator may already have saved immutable guard observation evidence;
+that evidence alone is not authority to interrupt and must not be promoted into
+action later without a fresh precondition. Preserve its original payload on replay.
+A stale attempt must not suppress later observation of new canonical progress or
+poison later terminal reconciliation. A previously committed decision still
+replays its original durable application and causal evidence before checking a
+new live precondition; a replay neither duplicates rows nor issues a new action.
+Unchanged genuinely idle observations still apply the existing bounded policy,
+with exact-session cancellation acknowledgment and selected-host stop proof
+before any replacement launch. Warning-only behavior remains evidence-only.
+
+**Exact ownership and regression.** Step 4 amends
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md` and
+`impl-plans/active/work-runtime-p1-7a-resume-comm000006-37c80ecd-dispatch.json`:
+retain the entire existing A1 write set and add
+`Sources/RielaWork/WorkStore+Decisions.swift` to `writePaths` and applicable
+`trackedPaths`. The exact regression owner is
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift`; retain it
+explicitly in `writePaths` and source-membership tracking even while untracked.
+Use the already-owned `TaskRunCancellation.swift`, `TaskGuardCoordinator.swift`
+and CLI harness seams to carry the precondition and provide one bounded test
+barrier. `Tests/RielaWorkTests/WorkGuardDispatcherTests.swift` is read-only
+reference coverage, not an additional requested write path. Earlier manifest
+`originalHead` and accepted-review receipts describe historical work; record this
+checkpoint and new review decisions without claiming those reviews accepted this
+amendment. No implementation is authorized by this design node.
+
+Add deterministic `TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction`
+in that GuardPolicy extension. Pause after the observer recheck and before the
+decision transaction, commit backend progress for that exact execution via the
+canonical runtime writer, confirm persistence, then release the decision. Run
+both stop and bounded-rerun policies and assert no stale decision/cancellation,
+no pending replacement, no extra attempt and no false stopped outcome. Use an
+explicit barrier, not sleep-based ordering. Include changed-execution,
+terminal-first and cancellation-first variants at the same seam. Preserve the
+pre-existing cancellation when it wins; prohibit an additional inactivity action.
+A no-progress control must still apply once, and replay must return the committed
+application without duplicate decisions, evidence or reservations even after the
+session becomes terminal. Replaying a rejected observation must remain
+non-actionable. Existing live/warning/replay tests and their assertions remain.
+
+**Verification and rollout.** Step 4 must provide exact foreground commands and
+fresh complete log paths with terminal exit statuses for source-matched Xcode
+build (V0), test discovery, policy, V1, canonical, cancellation-host, live plus the
+new deterministic race, strict selected-file SwiftLint and before/after source
+membership/hash checks. Discovery must positively include the new test once;
+it is not behavioral execution. Include the transaction owner and untracked test
+extension in lint and source identity. Retain the accepted suite filters; expand
+the live selection to execute the new method. Historical counts are baselines,
+not required fixed totals or new passing evidence. No incomplete log or running
+process counts as a pass. Independent design and plan acceptance permits a later
+A1 implementation run; only its fresh verification and required implementation
+reviews can establish A1 acceptance. There are no unresolved user decisions for
+this bounded amendment; implementation and verification remain explicitly pending.
+
+**Accepted responsibility split for A1.** Retain the previously added write path,
 `Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift`, in the
 current manifest and active plan. This is the justified equivalent
 to `+LiveInactivity.swift`: the two live methods (54 lines) and adapter (27 lines)
@@ -2915,7 +2971,8 @@ not the CLI projection: `Sources/RielaCLI/WorkflowRunLivePersistence.swift`
 throttles backend-event projections to one second. No throttle change is
 required. Polling must not reset idle time, and a stale/missing/read-failed
 snapshot must not authorize interruption. Recheck current task/attempt/session
-and progress before applying a violation; if terminal completion or a version
+and progress before applying a violation, and enforce the atomic exact-attempt
+precondition above inside the decision transaction; if terminal completion or a version
 conflict wins, reload instead of forcing a cancellation. Persist immutable
 violation evidence and the shared bounded policy decision before interruption.
 Use stable attempt/step observation identities; reuse an existing observation's

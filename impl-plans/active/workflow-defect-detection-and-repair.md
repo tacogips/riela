@@ -1,102 +1,103 @@
 # Workflow defect detection and verified repair implementation plan
 
-Status: Issue-resolution plan handoff, 2026-09-26. Current design accepted by Step 3
-`comm-000004`; this plan revision awaits Step 5 review. T1–T6 remain pending
-source-matched implementation verification, not certified absent or complete.
+Status: T2 continuation plan handoff, 2026-09-26. Step 3 accepted the amended
+design via `comm-000004`; Step 5 review of this plan amendment is pending.
+T1 implementation evidence remains valid; T2 is partial and V2 failed; T3–T6
+remain pending. No implementation acceptance is claimed by this authoring step.
 
 ## Current implementation authority
 
-Issue: **Implement workflow defect detection and verified repair**, `tacogips/riela`,
-Draft PR [#109](https://github.com/tacogips/riela/pull/109); issue number/URL null.
-Mode: `issue-resolution`; `codexAgentReferences=[]`. Effective `workflowInput` and
-runner-resolved immutable user-scope workflow are authoritative; no registry
-rediscovery or package-readiness task belongs to this node.
-
+Issue: **Continue workflow defect T2 after bounded routing-reconciler ownership
+repair**, `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+Issue number/URL null; mode `issue-resolution`; `codexAgentReferences=[]`.
+Effective `workflowInput` and runner-resolved immutable user-scope provenance are
+authoritative. No registry rediscovery or package-readiness task is required.
 Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
 `codex-design-and-implement-review-loop-session-1`: accepted=true,
 needs_revision=false, findings=[]. Accepted design:
 `design-docs/specs/design-workflow-defect-detection-and-repair.md`, SHA-256
-`47f99f9f2761332307afc54eecec1dbc42d9bfa26dd9c7c5308eacdd5c5e0437`.
-Preserve those bytes. The supplied 2026-09-23 design/plan acceptance establishes
-behavioral scope. Earlier planning-only, disabled-dispatch, old branch, source and
-pending-review statements in historical sections do not govern this execution.
-Historical checks and review hashes do not certify the current tree.
+`0506ae708c4dfbcf00c8dd80ed7ea67762cec7fc2a4fd5bf8eaa89169733af4a`.
+Preserve its bytes. No current Step 5 feedback was supplied. Historical receipts,
+digests, absent-source observations and disabled-dispatch statements below do not
+override this continuation.
 
-Starting HEAD is `a8e1beb7e9ead22ae2c4a99403d26d7ba62c482a` on
-`feat/remaining-impl-plans`. Step 4 owns this plan only; the accepted design change
-already exists. Keep the single stable plan item and serial T1 → T2 → T3 → T4 → T5
-→ T6 sequence. Existing exact writePaths, invariants and A1–A16/L1–L8 gates remain.
-No runtime edits occur in Step 4. After Step 5 accepts exact plan bytes, the owning
-workflow commits and non-force pushes the accepted design/plan checkpoint before
-native implementation dispatch. Record that checkpoint and full review context;
-checkpoint failure prevents dispatch. No worktree, private branch, concurrent Git
-operation or separate scheduler is authorized.
+Checkpoint HEAD is `6e2caa334fa77404d95377cdfc777384c7cd8db8` on
+`feat/remaining-impl-plans`. Dirty T1/T2 implementation and progress are separate
+from that checkpoint. Preserve them and all existing tmp evidence; no reset,
+stash, broad rewrite, T1 reimplementation or unrelated source edits. Step 4 edits
+only this plan. The stable planId remains `workflow-defect-detection-and-repair`;
+its plan-level dependsOn is empty, with serial internal T1 → T2 → T3 → T4 → T5 →
+T6 dependencies. No independent implementation wave is added for this seam.
 
-### Source-matched starting observations and dependency gates
+After Step 5 acceptance, the owning workflow commits and non-force pushes only
+accepted design/plan documentation before native continuation dispatch, preserving
+all dirty implementation outside that checkpoint. Generate fresh dispatch tracking
+from this reviewed manifest: writePaths/trackedPaths must include its complete
+union, reviewContext must bind the new design/plan hashes and acceptance receipt.
+The existing
+`impl-plans/active/workflow-defect-repair-20260926-comm000006-a8e1beb-dispatch.json`
+is immutable historical evidence for the prior attempt, not authorization for this
+amendment. Do not reuse its narrower allowlist or rewrite its review claims.
+Checkpoint failure prevents dispatch. No worktrees, private branches, concurrent
+Git operations or separate scheduler are authorized.
 
-- `Sources/RielaCore/WorkflowBranchEvaluation.swift` still contains the private
-  tokenizer/parser; the manifest's new AST/analysis/progress/repair files are absent.
-  These observations justify retained task deliverables, not a complete audit of
-  all implementations. Each task fresh-reads source/tests and reuses existing work.
-- `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift` already defaults
-  output-bearing requests to two total validation attempts. T2 consumes this
-  contract; do not implement the historical default-change request again.
-  `Sources/RielaCore/WorkflowValidation.swift` owns current producer validation.
-  Before T2, record owner commit/API evidence and run
-  `arch -arm64 /bin/zsh -lc "swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'"`,
-  followed by V2's actual bounded-correction/publication assertions.
-- Dependency plan references now resolve to
-  `impl-plans/completed/agent-node-output-contract.md` and
-  `impl-plans/completed/loop-engineering-convergence-and-operations.md`.
-  Completion does not waive this feature's integration tests or authorize editing
-  those plans.
-- Work Runtime P1 is implemented under `Sources/RielaWork/`; current
-  `DecisionApplier` stages decisions while WorkStore owns transactions, and
-  `Sources/RielaCLI/TaskDispatch+Director.swift` integrates director child work.
-  Read the completed P1 plan and these existing APIs before T4; preserve reservation
-  and attempt fences. Run
-  `arch -arm64 /bin/zsh -lc "swift test --filter 'DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|TaskDispatcherIntegrationTests'"`
-  at that gate, recording owner commits, counts and exits. Native fanout remains
-  the incident fixture authority; no new Core-to-Work dependency or P1 reimplementation.
-  P1's historical aggregate failures are not this feature's current verification;
-  any encountered aggregate failure stays failed and needs explicit comparison.
-- `Package.swift` registers Fixtures for RielaWorkTests, but not RielaCoreTests.
-  T6's existing narrow RielaCoreTests resource registration remains required.
-  Preserve Package.resolved and all other target settings.
+### Continuation sequence and evidence
 
-### Completion and publication authority
+1. Carry forward T1's six passing V1 tests, strict SwiftLint and diff evidence in
+   `impl-plans/active/workflow-defect-detection-and-repair-progress.md` and
+   `tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-1/`.
+   Fresh-read and hash its existing source; do not reimplement T1 or rerun V1 merely
+   to restart this continuation. Later combined gates still cover regressions.
+2. T2 resumes from existing `WorkflowRouteContract.swift` and
+   `RuntimePublication.swift` changes. Its dependency gate previously passed 16
+   tests in `step6-attempt-2/T2-dependency.log`; preserve that evidence and verify
+   source identity before reuse. The V2 log at
+   `tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-2/V2-runtime.log`
+   remains FAILED: 25/26 passed, `FINAL_EXIT_STATUS=1`, missing `accepted` at
+   `transitions[1].label`. Implement the bounded T2 amendment below, rerun V2 and
+   V2b, and finish all original T2 producer-proof/publication/exhaustion obligations.
+3. Continue T3–T6 and their V3–V9/L-V1–L-V5 gates without changing accepted D1–D9,
+   A1–A16 or L1–L8 scope. Reuse completed output-contract APIs and Work Runtime P1;
+   record source-matched owner commits/API evidence at their existing task gates.
+   Before T4 run
+   `arch -arm64 /bin/zsh -lc "swift test --filter 'DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|TaskDispatcherIntegrationTests'"`.
+   Preserve transaction, reservation and attempt fences; no Core-to-Work dependency.
+4. Submit complete implementation and behavioral evidence for independent
+   test-integrity, adversarial and combined-tree reviews. Review-dependent
+   design/plan/index refresh, exact reviewed-file commit, non-force push and Draft
+   PR #109 tip matching remain downstream finalization work; their pending status
+   does not make otherwise complete Step 6 implementation self-block.
 
-No generic rewriter, silent max-step increase, mock success as repair, unrelated
-cleanup, provider-auth repair or new activity-as-progress authority is permitted.
-Protect riela-packages worktrees, Monja tenant-sharding-d48, archived rielflow, main,
-release tooling and unrelated plans. Shared indexes, README, design/plan status,
-archiving and broad formatting remain serial finalizer responsibilities; each
-worker writes only its own progress log in addition to authorized implementation
-paths. Do not add speculative changes to any allowed path.
+### Scope, invariants and publication
 
-Step 6 completeness covers T1–T6 implementation and behavioral verification;
-formal independent test-integrity/adversarial review, Astra combined-tree integration,
-review-dependent status/index refresh and publication belong to subsequent stages.
-Their pending status does not block submitting completed implementation for review.
-Final completion requires all these gates, accurate docs/index, exact reviewed-file
-commit, non-force push to `origin/feat/remaining-impl-plans`, matching remote and
-Draft PR #109 tips, and a clean worktree. Failed aggregates never become passes
-because focused tests pass. Every gate records command, cwd, reviewed source/fixture
-hashes, complete tmp/ log, selected-test count and actual terminal exit; foreground
-commands and yielded handles must be owned through terminal completion.
+No generic rewriter, false-default fallback for missing controls, weakened
+all-referenced-control validation, silent max-step increase, mock success as repair,
+new retry engine, provider-auth repair, speculative cleanup or activity-as-progress
+is authorized. Protect other worktrees, concurrent D4 package work, Monja, archived
+rielflow, main, release paths and unrelated plans. Cursor-specific normalization
+remains in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; no new reference
+mapping or intentional divergence is requested. No unresolved user decision exists.
 
-No new Codex mapping or unresolved user decision exists. D9 keeps Cursor-specific
-normalization in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; historical
-incident reconstruction and upstream schema/cross-host freshness limits remain
-explicit without expanding implementation scope.
+Fresh reads, immutable intent snapshots, pre/post hashes, drift detection and
+serial repair after join remain mandatory as specified below. Each worker appends
+to its own existing progress log; it never erases earlier failed evidence. Shared
+indexes, README, review-dependent design/plan status and archiving remain serial
+finalizer responsibilities. Preserve Package.resolved; T6's existing narrow
+RielaCoreTests fixture resource registration is the only planned Package.swift edit.
 
-Current author verification: `python3 tmp/workflow-defect-step4/verify.py`, complete
-log `tmp/workflow-defect-step4/verification.log`; require terminal exit 0. It checks
-the accepted design digest, unchanged write ownership, manifest/DAG, task and gate
-coverage, resolved read-only dependencies, fresh source observations, unchanged
-unrelated tracked files and whitespace. Runtime commands above and V1–V9/L-V1–L-V5
-are future gates, not claimed passes. Archive logs in workflow evidence before
-removing task scratch. Independent Step 5 acceptance remains pending.
+Each verification records exact command, cwd, reviewed source/fixture hashes,
+complete attempt-specific tmp log, positive selected-test count and terminal exit.
+Foreground commands and yielded handles remain owned through terminal completion.
+Failed aggregates remain failed. Final completion requires no material independent
+review finding, accurate docs/index, exact reviewed-file commit, non-force push to
+`origin/feat/remaining-impl-plans`, matching remote and Draft PR #109 tips, and no
+unaccounted worktree changes.
+
+Author self-check: `python3 tmp/workflow-defect-step4-t2-continuation/verify.py`;
+complete log `tmp/workflow-defect-step4-t2-continuation/verification.log`.
+This checks accepted design identity, preservation of dirty work and historical
+dispatch, exact ownership delta, DAG, verification coverage and whitespace. It does
+not claim runtime passes or Step 5 acceptance.
 
 ## Historical activity extension authority (2026-09-22)
 
@@ -256,6 +257,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
     "Sources/RielaCore/DeterministicWorkflowRunner+LoopPolicy.swift",
     "Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift",
     "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+    "Sources/RielaCore/LoopCompletionReviewRouting.swift",
     "Sources/RielaCore/LoopConvergenceTracker.swift",
     "Sources/RielaCore/RuntimeOutputValidation.swift",
     "Sources/RielaCore/RuntimePublication+Routing.swift",
@@ -283,6 +285,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
     "Sources/RielaGraphQL/GraphQLSessionObservabilityContracts.swift",
     "Sources/RielaGraphQL/RielaGraphQL.swift",
     "Sources/RielaServer/DistributedWorkerEventSender.swift",
+    "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift",
     "Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift",
     "Tests/RielaCLITests/SessionCommandJSONLStreamingTests.swift",
     "Tests/RielaCLITests/SessionObservabilityCommandTests.swift",
@@ -385,6 +388,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
       "Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift",
       "Sources/RielaCore/DeterministicWorkflowRunner.swift",
       "Sources/RielaCore/DistributedJobController.swift",
+      "Sources/RielaCore/LoopCompletionReviewRouting.swift",
       "Sources/RielaCore/LoopConvergenceTracker.swift",
       "Sources/RielaCore/RuntimeOutputValidation.swift",
       "Sources/RielaCore/RuntimePublication+Routing.swift",
@@ -419,6 +423,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
       "Sources/RielaWork/DecisionApplier.swift",
       "Sources/RielaWork/WorkStore+Decisions.swift",
       "Sources/RielaWork/WorkStore+Director.swift",
+      "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift",
       "Tests/RielaAdaptersTests/AgentGatewayNodeAdapterTests.swift",
       "Tests/RielaCLITests/SessionCommandJSONLStreamingTests.swift",
       "Tests/RielaCLITests/SessionObservabilityCommandTests.swift",
@@ -538,16 +543,23 @@ read-only dependencies remain in reviewContext.sourcePaths.
         "Sources/RielaCore/DeterministicWorkflowRunner+InputFilters.swift",
         "Tests/RielaCoreTests/WorkflowRouteContractTests.swift",
         "Tests/RielaCoreTests/RuntimeOutputValidationTests.swift",
-        "Tests/RielaCoreTests/RuntimePublicationTests.swift"
+        "Tests/RielaCoreTests/RuntimePublicationTests.swift",
+        "Sources/RielaCore/LoopCompletionReviewRouting.swift",
+        "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift",
+        "Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift"
       ],
       "planPath": "impl-plans/active/workflow-defect-detection-and-repair.md",
       "sharedPaths": [
         "Sources/RielaCore/WorkflowValidation.swift",
         "Sources/RielaCore/RuntimePublication.swift",
-        "Sources/RielaCore/DeterministicWorkflowRunner.swift"
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Tests/RielaCoreTests/DefaultLoopGuardTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift"
       ],
       "verificationIds": [
-        "V2"
+        "V2",
+        "V2b"
       ]
     },
     {
@@ -789,7 +801,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
     }
   ],
   "acceptanceCriteria": "All D1-D9, original A1-A16 and activity L1-L8 contracts; preserve six task gates, complete foreground evidence and no unresolved high/mid findings. Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push.",
-  "verification": "V1-V9 and L-V1-L-V5 plus current dependency gates above; Step 4 author check: python3 tmp/workflow-defect-step4/verify.py."
+  "verification": "V1 evidence retained; V2/V2b renewed; V3-V9 and L-V1-L-V5 plus source-matched dependency gates; author check: python3 tmp/workflow-defect-step4-t2-continuation/verify.py."
 }
 ```
 
@@ -837,6 +849,45 @@ reference parsing change. Record exported API names for T2/T3; do not mark T1 do
 until its own tests and changed-file lint pass.
 
 ## T2 — Boolean guarantees and rejection before routing
+
+### Current bounded reconciliation amendment (execute first)
+
+The accepted design's three-control table is normative. Fresh-read the dirty T2
+source/tests and failed V2 before editing. No T1 rewrite or route-validation bypass.
+
+- `Sources/RielaCore/LoopCompletionReviewRouting.swift`: derive accepted as
+  `!needs_replan && !needs_work` for already-recognized completion-review payloads.
+  Retain existing decision/goalAchieved precedence, including accepted plus
+  goalAchieved=false routing to needs_work. Include accepted in the expected map
+  and disagreement/missing-control check, including the old otherwise-correct
+  two-control path. Emit the existing reconciliation diagnostic when correcting
+  it. A corrected map is idempotent. Non-review input passes through; preserve
+  unrelated controls on the existing non-rewrite path, without broad map cleanup.
+- `Tests/RielaCoreTests/RuntimePublicationTests.swift`: update the existing failed
+  test's exact map to include accepted=false and retain its route and diagnostic
+  assertions. Add accepted/needs_work/needs_replan, goal-false precedence,
+  missing/contradictory accepted, idempotence and non-review passthrough coverage.
+  A missing accepted on otherwise matching needs flags must be exercised. Keep
+  existing strict missing/type/conflict/short-circuit and publication-order negatives.
+- `Tests/RielaCoreTests/DefaultLoopGuardTests.swift` and
+  `Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift`: update
+  the existing reconciliation exact-map expectations with accepted=false while
+  preserving execution-sequence, terminal routing and diagnostic-count assertions.
+  Later T4 edits to these shared paths remain serial after T2 and T3.
+- `Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift`: update the existing
+  reconciliation exact-map expectation with accepted=false; preserve its diagnostic
+  count and adapter normalization behavior. No adapter production change is added.
+
+These are the only new T2 ownership entries: the reconciler and three previously
+unowned T2 test paths. RuntimePublicationTests was already owned. The aggregate
+manifest gains only the reconciler and AdapterUtilitiesTests; the two loop tests
+already belonged to the serial plan. Review context includes all five paths.
+Run V2 and V2b, then changed-file strict lint using a NUL-delimited exact changed
+Swift path manifest at `tmp/workflow-defect-implementation/T2/changed-swift.nul`:
+`xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/T2/changed-swift.nul`.
+Run `git diff --check`. Capture complete attempt-specific logs and final exits.
+Passing this repair alone does not complete the remaining original T2 obligations
+below. Do not rewrite the failed V2 log or claim 25/26 was passing.
 
 Intent: D1/D8, A2/A5. Requires T1 and externally accepted output-contract T2/T3.
 No new retry engine, schema on an add-on, or requirement to mirror valid payload
@@ -1116,6 +1167,7 @@ Keep failed attempts immutable in attempt-numbered directories.
 | --- | --- | --- |
 | V1 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowBranchEvaluationTests|WorkflowConditionAnalysisTests'"` | A1/A3 parser negatives and complete-input equivalence; positive test count |
 | V2 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'"` | A2/A5 exact errors, schema/when behavior, two-attempt bound, all publication paths, no downstream effects |
+| V2b | `arch -arm64 /bin/zsh -lc "swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'"` | Three-control exact maps, loop termination/policy and adapter reconciliation retain behavior; positive test count and exit 0 |
 | V3 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowGraphAnalysisTests|WorkflowLoopValidationTests|DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests'"` | A3–A7 witnesses, incomplete bounds, routing semantics and policy/eligibility parity |
 | V4 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowCycleProgressTests|WorkflowCycleProgressPersistenceTests|LoopConvergenceTrackerTests|DefaultLoopGuardTests|DefaultLoopGuardRecoveryTests|DeterministicWorkflowRunnerLoopPolicyTests'"` | A9–A12/A16 authoritative comparison, liveness, retries, file/SQLite crash and concurrent recovery |
 | V5 | `arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRepairProposalTests|WorkflowSelfImproveVersioningTests|WorkflowStagedVerificationTests|WorkflowDirectoryTransaction'"` | A13–A15 source/review binding, unchanged live bytes on rejection, no shell/provider fallback |
@@ -1140,20 +1192,20 @@ No tests/build are needed for the current documentation-only authoring step.
 
 ## Completion and progress contract
 
-- [ ] T1: Shared AST/typed lookup and V1 evidence accepted.
-- [ ] T2: Upstream contracts ready; route validation/publication and V2 evidence accepted.
+- [x] T1: Shared AST/typed lookup implemented; carried-forward V1 6/6 and strict lint evidence valid; final combined review still required.
+- [ ] T2: Partial implementation preserved; repaired reconciliation and complete route validation/publication require passing V2/V2b and original acceptance evidence.
 - [ ] T3: Bounded routing/SCC/guard analysis and V3 evidence accepted.
 - [ ] T4: Persisted authoritative progress plus separate D9 activity/recovery/surfaces; V4 and L-V1–L-V5 evidence accepted.
 - [ ] T5: Digest-bound reviewed repair/staged apply and V5 evidence accepted.
 - [ ] T6: Original incident matrix plus L1–L8 integration, V6–V9 and L-V1–L-V5, docs, combined review and serial scope reconciliation accepted.
 
-All six original scopes/checklists remain pending current acceptance evidence. Completion requires named
+T1 evidence is retained; T2–T6 remain pending. Final completion requires named
 acceptance tests, complete logs/exit statuses and no high/mid findings; unknown
 historical causality is a residual evidence limitation, not a runtime test pass.
 Failures/blocked dependencies remain pending. Shared finalizer may archive only this
 plan after every criterion passes; no global plan archiving or unrelated edits.
 
-Future worker creates its sole progress log at the manifest progressLogPath. Each
+The continuation worker appends to the existing manifest progressLogPath. Each
 entry records task/attempt, requirement IDs, dependency readiness, immutable intent
 path, pre/post hashes, exact changed files/API decisions, command/log/final status,
 positive test counts, findings/review disposition and remaining risks. Keep verified

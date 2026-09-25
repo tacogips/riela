@@ -1,80 +1,137 @@
 # Workflow defect detection and verified repair
 
-Status: Issue-resolution design handoff, 2026-09-26. Preserve the accepted D1–D9
-behavior and serial T1–T6 plan. This revision reconciles execution authority only;
-implementation completeness is subject to source-matched verification, not the
-historical planning status below. Current Step 3 review of these edited bytes is
-pending.
+Status: Issue-resolution T2 continuation design handoff, 2026-09-26. This revision
+preserves accepted D1–D9 behavior and serial T1–T6 execution, and specifies the
+bounded completion-review routing ownership amendment. Step 3 independent review
+of these revised bytes is pending; implementation repair and verification are pending.
 
 ## Current implementation authority and review status
 
-Issue: **Implement workflow defect detection and verified repair**, repository
-`tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
-Issue number/URL are null; `codexAgentReferences=[]`. Mode: `issue-resolution`.
-Authoritative intake: `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
+Issue: **Continue workflow defect T2 after bounded routing-reconciler ownership
+repair**, repository `tacogips/riela`, Draft PR
+[#109](https://github.com/tacogips/riela/pull/109). Issue number/URL are null;
+`codexAgentReferences=[]`. Mode: `issue-resolution`. Authoritative intake:
+`comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
 `codex-design-and-implement-review-loop-session-1`. The effective `workflowInput`
 and runner-resolved immutable user-scope workflow are authoritative. No workflow
 or package registry rediscovery is required inside this node.
 
-The effective input reports independent acceptance of this design and plan on
-2026-09-23. That supplied acceptance is the scope baseline; earlier planning-only,
-implementation-disabled and pending-review statements below describe historical
-runs and do not override this execution. Likewise, historical source observations,
-package versions, dependency availability, hashes and scratch checks are not fresh
-source evidence. Do not infer that all six tasks are still unimplemented from their
-old status. Step 4 reconciles the leading authority, review digest and task status
-in `impl-plans/active/workflow-defect-detection-and-repair.md`; inspect current
-source and tests before deciding which tasks need new code. Reopen accepted behavior
-only for a material conflict, with an explicit review finding.
+Current local HEAD is checkpoint `6e2caa334fa77404d95377cdfc777384c7cd8db8` on
+`feat/remaining-impl-plans`. The dirty T1/T2 source, tests and progress record are
+continuation inputs, not part of that checkpoint. Preserve them and all existing
+`tmp/` evidence; no reset, stash, broad rewrite or T1 reimplementation. The progress
+record `impl-plans/active/workflow-defect-detection-and-repair-progress.md` reports
+T1 V1 passing 6/6 tests and strict SwiftLint passing. That evidence remains valid;
+this design step does not claim a new runtime test run.
 
-Verified local starting HEAD: `a8e1beb7e9ead22ae2c4a99403d26d7ba62c482a`, branch
-`feat/remaining-impl-plans`, initially clean. No remote-tip verification is claimed
-by Step 2. Keep serial T1 → T2 → T3 → T4 → T5 → T6 ownership and the plan's exact
-reviewed paths. At their specified task gates, record source-matched APIs, owner
-commits and tests for completed output-contract runtime and Work Runtime P1;
-consume the existing APIs rather than implementing substitute ownership. Other
-conditional dependency gates remain as accepted in the plan.
+T2 is incomplete. The complete existing log
+`tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-2/V2-runtime.log`
+records 26 tests, 25 passed, one failure and `FINAL_EXIT_STATUS=1`.
+`RuntimePublicationTests.testPublicationRecordsExplicitLoopRoutingReconciliationDiagnostic`
+fails with `validationRejected` / `route.missingControl` for `accepted` at
+`transitions[1].label`. The current reconciler emits `needs_replan` and `needs_work`
+but omits `accepted`, although the existing transition references it. The failure
+exposes a producer/reconciliation defect; all-referenced-control validation,
+including short-circuited paths, must remain intact.
 
-| Intake requirement | Existing design and implementation contract |
+### Bounded T2 reconciliation amendment
+
+For payloads already recognized by `reconcileCompletionReviewRouting`, retain the
+existing decision/goal precedence and derive `accepted` as
+`!needs_replan && !needs_work`. This is a domain-derived Boolean, never a generic
+default for an absent routing identifier. The effective reconciled envelope must
+contain all three controls even when the incoming two-control map already agrees.
+A contradictory or missing `accepted` must trigger reconciliation and its existing
+bounded diagnostic; repeating reconciliation on the corrected map must be stable.
+Non-completion-review payloads retain their existing routing behavior. Preserve
+unrelated routing controls on the existing non-rewrite path; do not broaden this
+repair into a routing-map cleanup or a new payload classifier.
+
+| Existing completion decision | needs_replan | needs_work | accepted |
+| --- | --- | --- | --- |
+| needs_replan | true | false | false |
+| needs_work | false | true | false |
+| accepted with goalAchieved=false | false | true | false |
+| accepted otherwise | false | false | true |
+| Existing fallback with goalAchieved=false | false | true | false |
+| Existing recognized fallback otherwise | false | false | true |
+
+Normalization and authorized reconciliation precede strict route validation;
+validation then checks every referenced control before route selection,
+reservation, accepted-output persistence or message publication. Payload schema
+requirements and envelope/payload Boolean agreement still apply. No special
+exemption for `accepted`, silent false default, changed retry policy or weakened
+negative test is permitted.
+
+Step 4 must narrowly amend T2 ownership and the plan's aggregate writePaths and
+review/dispatch tracking, using the existing serial owner. Review the resulting
+amendment before implementation resumes. Exact paths and inspected justification:
+
+| Path | T2 ownership justification |
 | --- | --- |
-| Typed conditions and rejection before publication/reservation | D1 and D1 detail; T1/T2, A1–A5 |
-| Bounded branch/SCC/gate coverage with explainable incomplete results | D2 and D2 detail; T3, A3–A7 |
-| Persisted authoritative no-progress, stable recovery and retry ownership | D3/D6; T4, A8–A12/A16 |
-| Separate observed activity, responsiveness and semantic progress | D9; T4/T6, L1–L8; activity never resets progress or budgets |
-| Digest-bound reviewed repair and staged apply | D4/D5; T5, A13–A15; preserve transaction and authorization gates |
-| Deterministic incident matrix and existing-behavior regression evidence | D7/D8/D9.6; T6, A1–A16 and L1–L8 |
-| Reviewed publication | Independent test-integrity and adversarial review, Astra combined-tree integration, accurate docs/index, exact reviewed files and commit on Draft PR #109 |
+| `Sources/RielaCore/LoopCompletionReviewRouting.swift` | Existing reconciliation function constructs the incomplete map and its change predicate omits accepted. |
+| `Tests/RielaCoreTests/RuntimePublicationTests.swift` | Existing failed publication test references accepted and asserts the old two-control map; already in T2 ownership. |
+| `Tests/RielaCoreTests/DefaultLoopGuardTests.swift` | Existing accepted-output assertion requires the old two-control map; retain loop termination behavior. |
+| `Tests/RielaCoreTests/DeterministicWorkflowRunnerLoopPolicyTests.swift` | Existing reconciliation assertion requires the old map and diagnostic count; retain policy behavior. |
+| `Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift` | Existing adapter reconciliation assertion requires the old map and diagnostic count. |
 
-Preserve publication/reservation ordering and D9's distinction between correlated
-inbound activity and proven responsiveness. No generic rewriter, silent max-step
-increase or mock success as repair is authorized. Do not touch riela-packages
-worktrees, Monja tenant-sharding-d48, archived rielflow, main, release tooling or
-unrelated plans. Later finalization commits only exact reviewed files and pushes
-non-force to `origin/feat/remaining-impl-plans`; verify the matching remote tip and
-clean worktree before reporting publication complete.
+Keep already-owned `Sources/RielaCore/RuntimePublication.swift` and
+`Sources/RielaCore/WorkflowRouteContract.swift` changes. Existing later-task
+ownership of loop tests remains serialized; do not add another worker or unrelated
+source paths. Test additions must cover missing accepted with otherwise correct
+controls, contradictory accepted, accepted/needs-work/needs-replan decisions,
+goalAchieved=false precedence, idempotent reconciliation, non-review passthrough,
+and the existing all-control rejection/publication-order negatives. Extend the
+listed tests without creating an unrelated abstraction or test ownership seam.
 
-For every implementation verification command retain its full command, repository
-cwd, reviewed source/fixture identity, complete repository-root `tmp/` log path,
-positive selected-test count where applicable and observed terminal exit. Run in
-the foreground and poll yielded handles through exit. Failed aggregates remain
-failed, even if focused gates pass; any baseline comparison must be explicit.
-The plan's V1–V9 and L-V1–L-V5 commands remain implementation gates, not Step 2 passes.
+### Verification and remaining delivery
 
-No user decision is unresolved and no new Codex-reference mapping is requested.
-D9.1 retains Cursor-specific normalization in
-`Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; no upstream schema equivalence
-is asserted. Historical incident artifacts, opaque pre-ingress buffering and
-unverified cross-host freshness remain the accepted evidence/capability limits;
-synthetic deterministic tests do not require resolving those limits.
+Renew V2 on the repaired combined source:
 
-Step 2 changes only this design's authority section. D1–D9 and all historical
-sections beneath it are byte-preserved. Author self-check command:
-`python3 tmp/workflow-defect-step2/verify.py`; complete log:
-`tmp/workflow-defect-step2/verification.log`. Require terminal exit 0 and the log's
-`FINAL_EXIT_STATUS 0`. The check covers scope/authority, preserved design contracts,
-unchanged plan, six-task/verification mapping, branch/HEAD and whitespace. Retain
-scratch evidence until the owning workflow archives it, then remove it. This
-self-check does not claim independent review, runtime test success, commit or push.
+```bash
+arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'"
+```
+
+Retain full commands, repository cwd, source/fixture hashes, complete logs under
+repository-root `tmp/`, positive selected-test counts and final exit statuses.
+Run foreground commands and poll any yielded handle through terminal exit. The
+old failed V2 remains failed even after a new passing run; neither the 25 passing
+cases nor a zero-test secondary harness is acceptance. Run changed-file strict
+SwiftLint and diff checks as required by the plan.
+
+T2's remaining producer-guarantee proof, publication entry-path coverage and
+bounded exhaustion checks still apply. Preserve the serial T1 → T2 → T3 → T4 →
+T5 → T6 plan and all V1–V9/L-V1–L-V5 gates. T3–T6, independent test-integrity,
+adversarial and combined-tree reviews, final design/plan/index updates, exact-file
+commit and non-force push remain pending. Publication completes only when the
+reviewed commit matches the remote tip on `feat/remaining-impl-plans` and Draft
+PR #109. Do not touch other worktrees, concurrent D4 package work, Monja, archived
+rielflow, main, release paths or unrelated plans.
+
+| Intake requirement | Design and downstream acceptance |
+| --- | --- |
+| Preserve completed T1 and partial T2 | Current authority distinguishes checkpoint from dirty work; no reimplementation or reset. |
+| Repair missing accepted without weakening validation | Bounded T2 amendment above and D1/D8; renewed V2 plus affected loop/adapter tests. |
+| Amend only proven ownership | Exact five-path table; Step 4 plan/manifest amendment and independent review before repair. |
+| Complete remaining accepted work | D2/T3 analysis; D3/D6/D9/T4 progress/activity; D4/D5/T5 repair; D7/D8/D9.6/T6 deterministic gates. |
+| Reviewed publication | Accurate design/plan/index, independent reviews with no material finding, exact reviewed commit and matching remote/PR tip. |
+
+No unresolved user decision or new Codex-reference input exists. Current
+`cursorCliBehaviorMapping=[]` and `intentionalDivergences=[]`; historical D9
+behavioral references remain historical. D9.1 continues to isolate Cursor-specific
+normalization in `Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; this
+amendment changes no adapter protocol. Historical provenance, review receipts and
+source observations below are not fresh evidence for this continuation.
+
+Step 2 edits only this leading design section and preserves the historical D1–D9
+body and every pre-existing dirty file. Author self-check:
+`python3 tmp/workflow-defect-step2-t2-continuation/verify.py`; complete log:
+`tmp/workflow-defect-step2-t2-continuation/verification.log`. These checks cover
+scope, preservation, checkpoint identity, failure evidence and whitespace, not
+implementation acceptance. Step 3 design review and Step 5 ownership review remain
+required. The runtime regression and exact-map compatibility risks remain pending
+until the implementation gates above pass.
 
 ## Historical D9 extension authority (2026-09-22)
 

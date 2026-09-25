@@ -74,7 +74,7 @@ extension WorkflowCommandTests {
       "--output", "json"
     ])
 
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     XCTAssertTrue(inspect.stderr.isEmpty)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
@@ -141,7 +141,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
       diagnostic.severity == .error &&
@@ -229,7 +229,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
       diagnostic.severity == .error &&
@@ -329,7 +329,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
       diagnostic.severity == .error &&

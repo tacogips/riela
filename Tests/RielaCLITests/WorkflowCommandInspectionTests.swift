@@ -10,36 +10,48 @@ import XCTest
 
 extension WorkflowCommandTests {
   func testInspectReportsCallableInputAndOutputContracts() async throws {
-    let root = repositoryRoot()
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-callable-\(UUID().uuidString)", isDirectory: true)
+    let workflow = root.appendingPathComponent("callable-contract", isDirectory: true)
+    let nodes = workflow.appendingPathComponent("nodes", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: nodes, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "callable-contract",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
+      "managerStepId": "manager",
+      "entryStepId": "manager",
+      "nodes": [{ "id": "manager", "nodeFile": "nodes/manager.json" }],
+      "steps": [{ "id": "manager", "nodeId": "manager", "role": "manager" }]
+    }
+    """.write(to: workflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "manager",
+      "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
+      "model": "gpt-5.5",
+      "modelFreeze": false,
+      "variables": {},
+      "input": { "description": "Authored manager input" },
+      "output": { "description": "Authored manager output" }
+    }
+    """.write(to: nodes.appendingPathComponent("manager.json"), atomically: true, encoding: .utf8)
+
     let result = await RielaCLIApplication().run([
-      "workflow", "inspect", "codex-design-and-implement-review-loop",
-      "--scope", "project",
-      "--working-dir", root,
+      "workflow", "inspect", "callable-contract",
+      "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
 
-    XCTAssertEqual(result.exitCode, .success)
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
     XCTAssertTrue(result.stderr.isEmpty)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: result.stdout)
-    XCTAssertEqual(summary.callable.stepId, "riela-manager")
+    XCTAssertEqual(summary.callable.stepId, "manager")
     XCTAssertEqual(summary.callable.role, .manager)
-    XCTAssertEqual(
-      summary.callable.input?.description,
-      """
-      Provide either issue reference details for full issue resolution or Codex-reference planning details for a \
-      design-plan-only run. Preferred fields are executionMode, issueUrl, issueNumber, issueRepository, issueTitle, \
-      issueBody, targetFeatureArea, requestedBehavior, codexAgentReferences, referenceRepositoryRoot, and \
-      referenceRepositoryUrl.
-      """
-    )
-    XCTAssertEqual(
-      summary.callable.output?.description,
-      """
-      Return either the final accepted issue-resolution summary or the accepted design-and-implementation-plan handoff, \
-      including any required documentation refresh, the final commit-message, and commit/push status, depending on the \
-      requested workflow mode.
-      """
-    )
+    XCTAssertEqual(summary.callable.input?.description, "Authored manager input")
+    XCTAssertEqual(summary.callable.output?.description, "Authored manager output")
   }
 
   func testResolverHydratesPromptTemplateFilesForTopLevelAndVariantPayloads() throws {

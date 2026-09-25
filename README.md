@@ -706,6 +706,18 @@ apple-gateway permissions status --json
 
 ## Work Runtime (`RielaWork`)
 
+The P1 release remediation for Draft PR #113 registers
+`riela/chat-reply-worker@1` in the built-in catalog, so
+`riela workflow usage matrix-chat-reply --workflow-definition-dir examples --output json`
+resolves the example's reply step. Unknown add-on names and unsupported
+versions still fail validation. Current-source verification passed the focused
+P1 suite (181/181), Work/CLI/Core (2,062/2,062), and the full nonparallel
+Swift suite (2,717 passed, two disclosed skips, zero failures). See the
+[integration progress](impl-plans/progress/p1-release-integration.md) for
+commands, logs, skips, and the 21-assertion ledger. Draft PR #113 remains
+unpublished from this documentation gate; commit, non-force push, and PR head
+verification remain open.
+
 `Sources/RielaWork` is the Work Runtime module: one lifecycle for the work
 that a single workflow run is not enough to finish. An `Intent` states what is
 wanted, a `WorkTask` carries the completion contract, guard policy and

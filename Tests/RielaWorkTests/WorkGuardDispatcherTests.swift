@@ -420,6 +420,7 @@ final class WorkGuardDispatcherTests: XCTestCase {
   func testFailPolicyStopsInactivityInsteadOfRerunning() throws {
     let store = WorkStore(rootDirectory: root.path)
     var task = sampleTask()
+    task.state = .running
     task.guardPolicy = GuardPolicy(
       inactivity: InactivityGuard(
         stallTimeoutMs: 1,
@@ -429,21 +430,85 @@ final class WorkGuardDispatcherTests: XCTestCase {
       onViolation: .fail
     )
     try store.saveTask(task)
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let fixture = try saveRunningInactivityFixture(store: store, task: task, now: now)
+    let attempt = fixture.attempt
+    let session = fixture.session
+    let observation = fixture.observation
 
     let result = try TaskGuardCoordinator(store: store).evaluateAndApply(
       task: task,
-      latestAttempt: nil,
-      snapshot: GuardSnapshot(activeStepId: "agent", heartbeatBackend: NodeExecutionBackend.codexAgent.rawValue, idleMs: 1),
+      latestAttempt: attempt,
+      snapshot: TaskGuardSnapshotAdapter.make(attempts: [attempt], session: session, wallClockMs: 0, now: now),
       completion: .unmet([]),
       failedStepId: "agent",
       violationEvidenceIds: [EvidenceID("inactivity-guard")],
       decisionId: DecisionID("inactivity-stop"),
       decisionEvidenceId: EvidenceID("inactivity-decision"),
-      now: Date(timeIntervalSince1970: 1_800_000_000)
+      liveInactivityObservation: observation,
+      now: now
     )
 
-    XCTAssertEqual(result.resolution?.kind, .stop(GuardViolationRef(evidenceId: EvidenceID("inactivity-guard"), summary: "step agent was inactive for 1ms")))
-    XCTAssertEqual(result.application?.task.state, .failed)
+    XCTAssertEqual(result.resolution?.kind, .stop(GuardViolationRef(
+      evidenceId: EvidenceID("inactivity-guard"), summary: "step agent was inactive for 1000ms"
+    )))
+    XCTAssertEqual(result.application?.task.state, .running)
+    XCTAssertEqual(try store.listDecisions(taskId: task.id).map(\.kind), [result.resolution?.kind])
+    XCTAssertNil(try TaskDispatcher(store: store).pendingReservation(taskId: task.id))
+
+    let cancelledSession = WorkflowSession(
+      workflowId: session.workflowId, sessionId: session.sessionId, status: .failed,
+      entryStepId: "agent", currentStepId: "agent", createdAt: session.createdAt,
+      updatedAt: now, failureKind: .cancelled
+    )
+    let cancelledSnapshot = WorkflowRuntimePersistenceSnapshot(session: cancelledSession)
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(cancelledSnapshot)
+    _ = try store.acknowledgeAttemptCancellation(
+      attemptId: attempt.id, outcome: WorkEvidenceProjector.outcome(from: cancelledSnapshot)
+    )
+    XCTAssertEqual(try store.loadTask(id: task.id)?.state, .failed)
+    XCTAssertEqual(try store.loadAttempt(id: attempt.id)?.state, .reconciled)
+    XCTAssertNil(try TaskDispatcher(store: store).pendingReservation(taskId: task.id))
+  }
+
+  func testStaleInactivityObservationLeavesTaskAndAttemptDecisionUnchanged() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.state = .running
+    task.guardPolicy = GuardPolicy(
+      inactivity: InactivityGuard(
+        stallTimeoutMs: 1, monitorIntervalMs: 1,
+        heartbeatBackends: [NodeExecutionBackend.codexAgent.rawValue]
+      ), onViolation: .fail
+    )
+    try store.saveTask(task)
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let fixture = try saveRunningInactivityFixture(store: store, task: task, now: now)
+    let attempt = fixture.attempt
+    let session = fixture.session
+    let observation = fixture.observation
+    let stale = LiveInactivityObservation(
+      taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId,
+      executionId: observation.executionId, createdAt: observation.createdAt,
+      lastBackendEventAt: now.addingTimeInterval(-2)
+    )
+
+    XCTAssertThrowsError(try TaskGuardCoordinator(store: store).evaluateAndApply(
+      task: task, latestAttempt: attempt,
+      snapshot: TaskGuardSnapshotAdapter.make(attempts: [attempt], session: session, wallClockMs: 0, now: now),
+      completion: .unmet([]), failedStepId: "agent",
+      violationEvidenceIds: [EvidenceID("stale-inactivity-guard")],
+      decisionId: DecisionID("stale-inactivity-stop"),
+      decisionEvidenceId: EvidenceID("stale-inactivity-decision"),
+      liveInactivityObservation: stale, now: now
+    )) { error in
+      XCTAssertTrue(error is StaleInactivityObservation)
+    }
+    XCTAssertEqual(try store.loadTask(id: task.id), task)
+    XCTAssertEqual(try store.loadAttempt(id: attempt.id), attempt)
+    XCTAssertEqual(try store.listDecisions(taskId: task.id), [])
+    XCTAssertNil(try TaskDispatcher(store: store).pendingReservation(taskId: task.id))
+    XCTAssertEqual(try store.listEvidence(taskId: task.id).map(\.id), [EvidenceID("stale-inactivity-guard")])
   }
 
   func testSatisfiedCompletionCarriesPersistedEvidenceThroughCoordinator() throws {
@@ -525,6 +590,43 @@ final class WorkGuardDispatcherTests: XCTestCase {
       plan: .workflow(WorkflowReference(name: "workflow")),
       state: .ready
     )
+  }
+
+  private struct RunningInactivityFixture {
+    let attempt: Attempt
+    let session: WorkflowSession
+    let observation: LiveInactivityObservation
+  }
+
+  private func saveRunningInactivityFixture(
+    store: WorkStore, task: WorkTask, now: Date
+  ) throws -> RunningInactivityFixture {
+    let attempt = Attempt(
+      id: AttemptID("inactivity-attempt"), taskId: task.id,
+      sessionId: "inactivity-session", state: .running
+    )
+    try store.saveAttempt(attempt)
+    let createdAt = now.addingTimeInterval(-10)
+    let lastBackendEventAt = now.addingTimeInterval(-1)
+    let execution = WorkflowStepExecution(
+      executionId: "inactivity-execution", stepId: "agent", nodeId: "agent-node",
+      attempt: 1, backend: .codexAgent, status: .running,
+      lastBackendEventAt: lastBackendEventAt, createdAt: createdAt, updatedAt: now
+    )
+    let session = WorkflowSession(
+      workflowId: "workflow", sessionId: attempt.sessionId, status: .running,
+      entryStepId: "agent", currentStepId: "agent", createdAt: createdAt,
+      updatedAt: now, executions: [execution]
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(
+      WorkflowRuntimePersistenceSnapshot(session: session)
+    )
+    let observation = LiveInactivityObservation(
+      taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId,
+      executionId: execution.executionId, createdAt: execution.createdAt,
+      lastBackendEventAt: execution.lastBackendEventAt
+    )
+    return RunningInactivityFixture(attempt: attempt, session: session, observation: observation)
   }
 
   private static func guardEvidence(

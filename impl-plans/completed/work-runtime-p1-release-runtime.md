@@ -1,6 +1,9 @@
 # p1-release-runtime
 
-Status: independently accepted predecessor; no implementation redispatch. Metadata amendment awaits Step 5.
+Status: implementation complete and independently accepted; archived during Step 8. Publication remains with p1-release-integration.
+
+The `planPath` below records the original accepted dispatch identity; this
+archived copy is `impl-plans/completed/work-runtime-p1-release-runtime.md`.
 
 ```json
 {

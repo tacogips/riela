@@ -1,6 +1,9 @@
 # p1-release-integration
 
-Status: pending CLI acceptance; runtime dependency already accepted. Amendment awaits Step 5.
+Status: I1–I5 complete on the combined source; I6 publication remains downstream.
+
+The dispatch metadata below retains the predecessors' original active paths;
+their completed copies are indexed in `impl-plans/README.md`.
 
 ```json
 {
@@ -172,40 +175,40 @@ part of this dispatch.
 
 ## Tasks, deliverables and dependencies
 
-- [ ] I1 / serial join: Wait for both accepted predecessor plan outcomes.
+- [x] I1 / serial join: Wait for both accepted predecessor plan outcomes.
   Audit runtime change evidence, every pre/post hash and immutable intent.
   Re-read all twelve shared source/test paths; reconcile any overwritten or omitted intent.
   Consolidate a 21-row ledger under this plan's evidence directory mapping
   IDs to causes, contract proof, changed paths, regression test and command.
   Do not treat the worker's status alone as evidence. No row may be unclassified.
-- [ ] I2 / serial reconciliation: Confirm CLI's catalog descriptor and catalog
+- [x] I2 / serial reconciliation: Confirm CLI's catalog descriptor and catalog
   regression survived join alongside every retained fixture change. Only the
   twelve exact shared paths are authorized for necessary reconciliation after
   workers stop. No new production boundary is pre-authorized. If a new material
   defect needs another path, stop that repair for an exact reviewed amendment;
   never weaken tests. Rerun affected regressions after any reconciliation.
-- [ ] I3 / current combined-source gates: Run the commands below serially on
+- [x] I3 / current combined-source gates: Run the commands below serially on
   a stable combined tree. Require every gate to exit 0 and report actual test
   totals, failures, named skips and reasons. Historical matching failures are
   not acceptable. Rerun affected gates after any source/test repair; seal the
   final source/test/config inputs and diff. Do not reuse logs from a changing
   tree. Verify selected suites include native remote dispatch/receiving paths
   in TaskDispatcherIntegrationTests and adapter/server/GraphQL coverage.
-- [ ] I4 / downstream formal review: Obtain independent test-integrity
+- [x] I4 / downstream formal review: Obtain independent test-integrity
   acceptance of all fixture/expectation changes and the 21-row ledger, one
   independent Sol adversarial acceptance and Astra combined-tree integration
   acceptance. Record real execution references, reviewed hash/diff, decisions,
   findings and evidence paths. Earlier P1 approvals do not satisfy this gate.
   Reconcile findings serially and reverify/review material changes.
-- [ ] I5 / downstream docs: After acceptance, update `README.md`,
+- [x] I5 / downstream docs: After acceptance, update `README.md`,
   `design-docs/specs/design-work-runtime-consolidation.md` §17.13 and
   `impl-plans/progress/p1-dispatch.md` with current evidence and remaining release
   constraints. Update `impl-plans/README.md` with these plans' actual status.
   Read `.codex/skills/riela-impl-workflow/SKILL.md`; no change is anticipated.
-  Update `impl-plans/active/p1-release-remediation-dispatch.json` planPath
-  references and actual statuses when archiving. Archive only these three plans under `impl-plans/completed/` once the workflow
-  reaches its documentation/finalization gate; leave unrelated plans/indexes
-  untouched. Maintain links and exact publication status, not premature claims.
+  Archive the completed CLI and runtime predecessors now; retain this integration
+  plan active until I6 publication and head equality are proven. Preserve the
+  immutable dispatch manifest's historical plan paths. Leave unrelated plans
+  and indexes untouched. Maintain links and exact publication status.
 - [ ] I6 / downstream publication: Prepare a Draft PR #113 description with
   contract repairs, exact test counts/skips, commands/log references, three
   review decisions, residual risks and no-merge/no-release gates. Use a body

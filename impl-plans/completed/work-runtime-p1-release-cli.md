@@ -1,6 +1,9 @@
 # p1-release-cli
 
-Status: continuation pending; C1–C5/C7 retained; C6/C8 pending; amended ownership awaits Step 5.
+Status: implementation complete and independently accepted; archived during Step 8. Publication remains with p1-release-integration.
+
+The `planPath` below records the original accepted dispatch identity; this
+archived copy is `impl-plans/completed/work-runtime-p1-release-cli.md`.
 
 ```json
 {
@@ -184,7 +187,7 @@ C6 and C8 are the remaining implementation tasks.
   self-contained valid authored fixture carrying manager input/output
   descriptions. Assert callable step, manager role and both descriptions.
   Do not inspect or modify the executing workflow installation.
-- [ ] C6 / ID 14: Freshly read `Sources/RielaCLI/ProductionNodeAdapter.swift`
+- [x] C6 / ID 14: Freshly read `Sources/RielaCLI/ProductionNodeAdapter.swift`
   (`executeChatReplyWorker` accepts version `1` or nil),
   `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` (catalog projection),
   and `Sources/RielaCore/WorkflowRequirements.swift` (unresolved rejection).
@@ -210,7 +213,7 @@ C6 and C8 are the remaining implementation tasks.
   success, mutable authored provenance, absent package identity, mutation and
   history assertions. Preserve or add an unresolved-addon negative control;
   do not make ignored package metadata resolve an otherwise missing executable.
-- [ ] C8: Complete all 19 owned assertion rows with cause, contract anchor,
+- [x] C8: Complete all 19 owned assertion rows with cause, contract anchor,
   exact changed path and focused regression result. Add positive/negative
   regressions above only where existing tests do not already establish them.
 

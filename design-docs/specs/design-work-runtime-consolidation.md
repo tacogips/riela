@@ -3879,3 +3879,25 @@ registration must not admit unknown names or unsupported versions; positive and
 negative regressions and unchanged requirement validation enforce that boundary.
 Preserve historical failed receipts and source identities; rerun affected gates
 after any source change rather than relabeling previous failures.
+
+**Accepted implementation and review status (2026-09-26).** The bounded catalog
+repair registered `riela/chat-reply-worker@1` in
+`Sources/RielaAddons/RielaAddons.swift`; its regression in
+`Tests/RielaAddonsTests/AddonExecutionContractsTests.swift` verifies exact
+version support and unknown-name/version rejection. The real Matrix usage
+command now exits 0. The 21-row ledger in
+`tmp/p1-release-remediation/p1-release-integration/catalog-continuation/21-row-ledger.json`
+reconciles all historical assertions. On the combined source, focused P1 passed
+181/181, native integration 101/101, remote integration 194 cases with one
+skip, Work/CLI/Core 2,062/2,062, and the full nonparallel Swift suite 2,717
+passed with two disclosed skips and zero failures. Strict changed-file SwiftLint
+and `git diff --check` exited 0. Independent test-integrity, Sol adversarial,
+and Astra combined-tree reviews accepted the implementation with no findings.
+The CLI and runtime plans are archived at
+`impl-plans/completed/work-runtime-p1-release-cli.md` and
+`impl-plans/completed/work-runtime-p1-release-runtime.md`;
+`impl-plans/active/work-runtime-p1-release-integration.md` remains active until
+Draft PR #113 documentation, exact-file commit, non-force push and local,
+remote and PR head equality complete. See
+`impl-plans/progress/p1-release-integration.md` for command logs and named
+skips. Historical exit-1 receipts above remain historical failures.

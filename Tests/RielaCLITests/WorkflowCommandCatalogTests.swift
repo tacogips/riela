@@ -326,7 +326,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", tempDir.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspection.exitCode, .success, inspection.stderr + inspection.stdout)
+    XCTAssertEqual(inspection.exitCode, .failure, inspection.stderr + inspection.stdout)
     XCTAssertTrue(inspection.stdout.contains("runtimeCapabilityGaps"), inspection.stdout)
     XCTAssertTrue(
       inspection.stdout.contains("workflow.steps.second.sessionPolicy.inheritFromStepId"),

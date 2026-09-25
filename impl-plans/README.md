@@ -33,6 +33,14 @@ impl-plans/
 
 ## Active Plans
 
+For the P1 release remediation on Draft PR #113,
+[`p1-release-integration`](active/work-runtime-p1-release-integration.md)
+remains active pending documentation closure, exact-file commit, non-force push,
+and local/remote/PR head equality. The accepted CLI and runtime predecessors
+are archived below. Current-source Work/CLI/Core passed 2,062/2,062; the full
+nonparallel Swift suite passed 2,717 cases with two disclosed skips and zero
+failures. See the [integration progress](progress/p1-release-integration.md).
+
 Unchecked-checkbox counts below are reconciled from the actual plan files as of
 2026-09-21; the Work Runtime status was refreshed on 2026-09-26. Workstream tags
 (W0–W13) map to
@@ -111,6 +119,8 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`work-runtime-p1-release-cli`](completed/work-runtime-p1-release-cli.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; 19 historical assertion rows including the version-1 chat reply catalog repair, focused CLI 165/165, unknown add-on rejection retained. Publication is owned by the active integration plan. |
+| [`work-runtime-p1-release-runtime`](completed/work-runtime-p1-release-runtime.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; IDs 08/19 and focused 16/16, with combined-tree verification in the integration progress. Publication is owned by the active integration plan. |
 | `work-runtime-p1-dispatcher-guard-director` | 2026-09-26 | `design-work-runtime-consolidation` P1 accepted implementation and native join; independent test-integrity, Codex Sol adversarial and Codex Astra integration accepted. N7 exact-file commit, non-force push and Draft PR #109 head equality remain a workflow publication gate. Both broad Swift aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; A0 environment snapshots and older slice-local receipts are unavailable. Historical unchecked boxes are preserved in the archived plan |
 | `work-runtime-p1-selected-host-delivery` | 2026-09-24 | `design-work-runtime-consolidation` P1-6a selected-host delivery; independent reviews accepted the slice with a bounded V5 CLI/Core exception (22 failing cases, 24 assertions). Parent P1 remains open |
 | `cli-session-store-decode-resilience` | 2026-09-21 | `design-cli-session-store-decode-resilience` (resilient strict decoding, aggregate warning, raw identity collision prevention) |

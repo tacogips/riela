@@ -173,6 +173,11 @@ extension WorkflowTemporaryRegistrationTests {
       workflowId: workflowId,
       description: "temporary authored workflow"
     )
+    try matrixWorkflowJSON(workflowId: workflowId, description: "temporary authored workflow",
+                           nodeFile: nil).replacingOccurrences(
+      of: #""name":"example-addon""#,
+      with: #""name":"riela/kv-get","version":"1""#
+    ).write(to: input.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     try matrixPackageManifestJSON(workflowId: workflowId).write(
       to: input.appendingPathComponent("riela-package.json"),
       atomically: true,

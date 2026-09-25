@@ -1,8 +1,8 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted NRE-01/NRE-02/NRE-03 contracts and publication are already on the P1 branch per effective intake. Current work continues P1-7a A2–A5 from checkpoint `6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`: complete missing V7 lint comparison and independent A4 acceptance before A5 publication; preserve source-matched removal receipts.
+Status: accepted NRE-01/NRE-02/NRE-03 contracts and publication are already on the P1 branch per effective intake. Current work continues from checkpoint `2f472b3bd4d203f21bf72497900e58b88c2ece3b`: A2/A3 and V7 receipts are complete; independent A4 decisions and A5 publication remain pending. Preserve source-matched removal receipts.
 Mode: `issue-resolution`; Step 2 updates design only.
-Issue: “Finish P1-7a A2-A5 V7 verification and independent acceptance”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
+Issue: “Complete P1-7a A4 independent evidence handoff and A5 publication”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.
 
 ## Current P1-7a receiving integration
@@ -25,14 +25,17 @@ receipts only after source comparison; renew missing or invalidated checks.
 The attempt-2 evidence index is
 `tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json`.
 Its passing checks and baseline comparisons do not substitute for A4 acceptance.
-Section 17.10's V7 continuation defines the separate repository-wide final and
+Section 17.10's current A4/A5 continuation retains the separate repository-wide final and
 checkpoint lint receipts, diagnostic-level comparison and strict changed-file
 gate. Renew native tests only when their source/dependencies or evidence are
 invalidated; this documentation amendment adds no receiver behavior. Preserve
 all nonzero aggregate outcomes for independent test-integrity, Sol adversarial
-and Astra integration disposition. The historical instruction conflict does not
-waive V7, and no new remote protocol, registry check or publication dependency
-is introduced.
+and Astra integration disposition. V7 is complete (970 Swift files, both exits 0, 24 unchanged warnings); strict
+21-file lint passed separately. Both broad aggregates remain FAILED, exit 1,
+and each requires its own integrity, adversarial and Astra disposition. Carry
+A0's historical environment-metadata limitation and runtime-owned checkpoint
+projection through integration; workers do not edit the dispatch manifest.
+No new remote protocol or publication dependency is introduced.
 Existing source/tests establish where the contract lives, not a new passing
 receipt. No archived `rielflow`
 publication is a dependency. Historical NRE aggregate failures and unavailable

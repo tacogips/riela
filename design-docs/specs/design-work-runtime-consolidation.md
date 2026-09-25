@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A2–A5 V7 verification and independent acceptance from checkpoint `6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`. Preserve A2/A3 implementation and source-matched positive receipts; V7, A4 acceptance and A5 publication remain pending. Native Remote NRE-01/02/03 and P1-7b publication are already on this branch per effective intake. Parent P1 closure remains separate. Section 17.10's current continuation supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
+Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A4 independent evidence handoff and A5 publication from dispatch checkpoint `2f472b3bd4d203f21bf72497900e58b88c2ece3b`. A2/A3 implementation and source-matched receipts, including V7, are complete; independent A4 acceptance and A5 publication remain pending. Strict changed-file lint passed separately; both broad aggregates remain FAILED, exit 1, pending independent disposition. Native Remote NRE-01/02/03 and P1-7b publication are already on this branch per effective intake. Parent P1 closure remains separate. Section 17.10's current continuation supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2641,9 +2641,9 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 ### 17.10 P1-7a ordered legacy removal (2026-09-25)
 
-#### Current continuation: native receiving boundary, A2–A5
+#### Current continuation: A4 independent evidence handoff and A5 publication
 
-Issue: “Finish P1-7a A2-A5 V7 verification and independent acceptance”;
+Issue: “Complete P1-7a A4 independent evidence handoff and A5 publication”;
 repository `tacogips/riela`, no issue number or URL supplied.
 Authority: Step 1 `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`, effective `workflowInput`.
@@ -2654,14 +2654,64 @@ continuation supersedes the A1-only execution limits below and the archived
 receiving-owner dependency. Earlier logs and rejected reviews remain historical,
 not evidence of current failure or current acceptance.
 
-**V7 continuation from checkpoint `6e7475d` (current authority).** The accepted
-checkpoint is `6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`. Preserve all 37
-dirty implementation, test, example, skill and progress paths. The sole missing
-A3 verification is the repository-wide SwiftLint inventory/comparison; A4 and
-A5 remain downstream. The runner-resolved workflow and effective input are
-authoritative; no workflow/package provenance rediscovery is part of this work.
-This paragraph supersedes earlier continuation/checkpoint status below.
+**Current A4/A5 authority: checkpoint `2f472b3`.** Continue from
+`2f472b3bd4d203f21bf72497900e58b88c2ece3b`, preserving all 37 dirty A2/A3
+paths. A2/A3 implementation and source-matched receipts are complete, including
+V7 under `tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-4/v7/`:
+970 included Swift files, checkpoint/final exits 0, 24 unchanged warnings and
+zero new diagnostics in `comparison.json`. Separate strict changed-file lint
+passed on 21 Swift files (`attempt-4/strict-changed-2/`). The historical V7
+procedure below is a receipt contract, not an instruction to rerun completed
+checks. Retain `6e7475d` as V7 snapshot identity and `911428e2` as behavioral
+baseline; neither replaces the current dispatch checkpoint.
 
+**A4 decision transfer.** Each independent test-integrity, Sol adversarial and
+Astra combined-tree disposition must identify the reviewed source seal, exact
+reviewed paths, command, complete log, terminal exit, findings and decision.
+Record a separate disposition for each failed aggregate:
+
+- `attempt-2/V5-work-cli-core/`: exit 1, 21 assertions; comparison in
+  `comparison-shortbuild.json`.
+- `attempt-2/full-suite-no-parallel/`: exit 1, 21 assertions; comparison in
+  `comparison-full.json`.
+
+These paths are relative to
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/`. Review exact assertion
+identity/cause, source matches, ownership and follow-up; equal counts alone
+cannot establish baseline attribution. Both aggregates remain **FAILED** even
+if slice acceptance is granted. Carry V3/CLI nonzero receipts and the explicit
+A0 limitation (missing historical per-command environment snapshots) with the
+decisions. Do not fabricate retrospective metadata. Intake reports prior
+integrity and Sol acceptance without material findings and Astra rejection for
+lost decisions/checkpoint provenance; these are historical reports, not current
+A4 acceptance. The current branch handoff must preserve the typed integrity
+decision and each independent decision through reconciliation to Astra. No
+unresolved high/mid finding may advance to A5.
+
+**Checkpoint ownership and publication.** The runtime-owned dispatch projection
+supplies checkpoint provenance to integration. Verify its checkpoint hash and
+manifest identity against Git object `2f472b3` and
+`impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json` at that commit.
+The manifest's predecessor `originalHead` is historical input, not the containing
+commit's hash. Workers do not edit the manifest or synthesize runtime provenance.
+Step 2 verifies the Git object only; downstream integration verifies the actual
+runtime projection. The runner-resolved immutable package (0.3.42 or later) and
+effective input are authoritative; no package rediscovery is required.
+
+Step 4 aligns `impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`
+with completed A2/A3 and pending A4/A5. Any planning checkpoint stages only
+reviewed design/plan/manifest paths under the serial checkpoint owner's control.
+After current A4 acceptance, A5 records the exact reviewed ordered file allowlist,
+refreshes affected documentation and `impl-plans/progress/p1-dispatch.md`, audits
+staged changes against it, commits only that set and non-force pushes
+`feat/remaining-impl-plans`. Verify commit files, HEAD/live remote equality and
+Draft PR #109 head before reporting publication. No new source work, broad rerun,
+main merge, release, archived rielflow activity, Monja tenant-sharding-d48 edit,
+or other-session/worktree change is authorized. NRE and P1-7b are already
+published; parent P1 remains open. No user decision or reference mapping is
+pending. This design author check grants no independent review acceptance.
+
+**Historical V7 receipt contract (completed; reuse unless invalidated).**
 Run V7 on the final tree and a byte-verified checkpoint source snapshot under
 repository-root `tmp/`, using the same SwiftLint executable/version, effective
 configuration and command. Use checkpoint `6e7475d` for this V7 comparison;

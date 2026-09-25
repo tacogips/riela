@@ -1,8 +1,8 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted NRE-01/NRE-02/NRE-03 contracts incorporated into the P1 branch at `a373a6040bff11ef7e86b8f6789321fefc7596f1`, per current effective intake. Current work is P1-7a A2–A5; preserved removal receipts require source reconciliation and independent A4 review before A5 publication.
+Status: accepted NRE-01/NRE-02/NRE-03 contracts and publication are already on the P1 branch per effective intake. Current work continues P1-7a A2–A5 from checkpoint `6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`: complete missing V7 lint comparison and independent A4 acceptance before A5 publication; preserve source-matched removal receipts.
 Mode: `issue-resolution`; Step 2 updates design only.
-Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
+Issue: “Finish P1-7a A2-A5 V7 verification and independent acceptance”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.
 
 ## Current P1-7a receiving integration
@@ -25,6 +25,14 @@ receipts only after source comparison; renew missing or invalidated checks.
 The attempt-2 evidence index is
 `tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json`.
 Its passing checks and baseline comparisons do not substitute for A4 acceptance.
+Section 17.10's V7 continuation defines the separate repository-wide final and
+checkpoint lint receipts, diagnostic-level comparison and strict changed-file
+gate. Renew native tests only when their source/dependencies or evidence are
+invalidated; this documentation amendment adds no receiver behavior. Preserve
+all nonzero aggregate outcomes for independent test-integrity, Sol adversarial
+and Astra integration disposition. The historical instruction conflict does not
+waive V7, and no new remote protocol, registry check or publication dependency
+is introduced.
 Existing source/tests establish where the contract lives, not a new passing
 receipt. No archived `rielflow`
 publication is a dependency. Historical NRE aggregate failures and unavailable

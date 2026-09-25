@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A2–A5 after accepted A1 and native receiving integration at `a373a6040bff11ef7e86b8f6789321fefc7596f1`. A2–A5 remain unverified in this design step. P1-7b commit `a8516ec` is incorporated; its remote publication needs confirmation before any pending/completed claim. Parent P1 closure remains separate. Section 17.10's current continuation below supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
+Status: accepted design; P0 implemented and parent P1 incomplete. Current issue-resolution scope is P1-7a A2–A5 V7 verification and independent acceptance from checkpoint `6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`. Preserve A2/A3 implementation and source-matched positive receipts; V7, A4 acceptance and A5 publication remain pending. Native Remote NRE-01/02/03 and P1-7b publication are already on this branch per effective intake. Parent P1 closure remains separate. Section 17.10's current continuation supersedes historical execution limits and external receiving-publication requirements; historical receipts retain their original outcomes.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -2643,7 +2643,7 @@ high/mid design finding remains. Subsequent behavioral gates remain required.
 
 #### Current continuation: native receiving boundary, A2–A5
 
-Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment”;
+Issue: “Finish P1-7a A2-A5 V7 verification and independent acceptance”;
 repository `tacogips/riela`, no issue number or URL supplied.
 Authority: Step 1 `comm-000002`, execution
 `codex-design-and-implement-review-loop-session-1`, effective `workflowInput`.
@@ -2653,6 +2653,60 @@ Native Remote NRE-01/02/03 are already incorporated at
 continuation supersedes the A1-only execution limits below and the archived
 receiving-owner dependency. Earlier logs and rejected reviews remain historical,
 not evidence of current failure or current acceptance.
+
+**V7 continuation from checkpoint `6e7475d` (current authority).** The accepted
+checkpoint is `6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`. Preserve all 37
+dirty implementation, test, example, skill and progress paths. The sole missing
+A3 verification is the repository-wide SwiftLint inventory/comparison; A4 and
+A5 remain downstream. The runner-resolved workflow and effective input are
+authoritative; no workflow/package provenance rediscovery is part of this work.
+This paragraph supersedes earlier continuation/checkpoint status below.
+
+Run V7 on the final tree and a byte-verified checkpoint source snapshot under
+repository-root `tmp/`, using the same SwiftLint executable/version, effective
+configuration and command. Use checkpoint `6e7475d` for this V7 comparison;
+retain the earlier `911428e2` behavioral baseline identities in their original
+receipts. Record snapshot membership and source/configuration SHA-256 values,
+cwd, exact expanded command, relevant toolchain environment, complete stdout
+and stderr, and actual terminal exits. Verify equivalent included-file scope
+when linting a snapshot beneath `tmp/`; a zero-file scan cannot satisfy V7.
+Do not change source, lint configuration or exclusions to silence findings.
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache
+```
+
+Compare diagnostics by repository-relative file, rule and cause, preserving
+severity, message and raw location in the evidence. Classify unchanged, added,
+removed and changed diagnostics; explain line movement and deleted files rather
+than equating totals. Every nonzero command remains FAILED. Each unexplained or
+new material diagnostic requires owner/follow-up and resolution or independent
+baseline disposition. Missing logs, exits, source/configuration identity or
+comparison leave V7 incomplete. Strict changed-file lint is a separate passing
+gate and cannot substitute for V7:
+
+```sh
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/changed-swift-files.nul
+```
+
+Verify the NUL-delimited list matches current changed Swift files before reuse.
+Reuse attempt-2 positive receipts only after checking their source/dependency
+identity; attempt-3 `implementation-source-check.log` records 2,762 unchanged
+entries with exit 0, while four checkpoint documentation/plan files changed.
+Documentation-only amendments do not invalidate behavioral tests. Do not repeat
+broad tests without a material source or evidence change. Attempt-2 whole-suite
+final and baseline exits remain 1 with 21 assertions each in
+`full-suite-no-parallel/comparison-full.json`; matching assertions are candidates
+for independent cause review, not a passing gate. Preserve V3/CLI/V5 failures
+and A0's missing per-command environment metadata in the A4 handoff.
+
+A4 test-integrity, Sol adversarial and Astra integration reviews must explicitly
+dispose of failed aggregates and V7 diagnostics against the reviewed source,
+with no unresolved material finding. A5 then updates exact-file documentation,
+commits and non-force pushes `feat/remaining-impl-plans`, verifies the live remote
+tip and updates Draft PR #109. Preserve already-published NRE and P1-7b work;
+neither is a new publication dependency. No A4 acceptance or A5 completion is
+claimed by this design amendment.
 
 **Continuation after amendment `13267c9`.** Preserve all dirty tracked A2
 paths recorded by intake at `c97370cee30857068654c4323fa0c7a60bf3f9ee`,

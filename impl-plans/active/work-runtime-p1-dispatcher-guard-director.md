@@ -1,6 +1,157 @@
 # Work Runtime P1-7a: native receiving integration and A2–A5
 
-## Current continuation after reviewed amendment 13267c9 (2026-09-25)
+## Current V7 continuation from 6e7475d (2026-09-25)
+
+Mode `issue-resolution`; issue “Finish P1-7a A2-A5 V7 verification and independent
+acceptance”, `tacogips/riela`, no issue number supplied, Draft PR #109. Step 3
+`comm-000004` accepted both design updates with no findings. Current Step 5
+review is pending. Accepted authority is
+`design-docs/specs/design-work-runtime-consolidation.md` §17.10 V7 continuation
+and `design-docs/specs/design-native-remote-workflow-execution.md` current
+receiving integration. No codex-agent reference input or Cursor mapping applies.
+
+Intent: complete only missing V7 and obtain independent acceptance of preserved
+A2/A3 before A5. This section supersedes earlier current-status wording and
+automatic rerun instructions below. Preserve published checkpoint
+`6e7475d4216e4cb96c2a04e1d3337cba3f53fb44`, NRE and P1-7b publication, all 37
+dirty implementation/test/example/skill/progress paths, and attempt-1/2/3
+receipts. Do not rediscover runner-owned workflow/package provenance.
+
+Stable planId `p1-dispatch`; dependsOn `[]`; planPath is this file;
+progressFile `impl-plans/progress/p1-dispatch.md`. Exact individual `writePaths`
+and `sharedPaths` remain those in
+`impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json`; no expansion.
+One owner executes serially because the source seal, evidence and review cover
+one coupled tree. No independent implementation plan or parallel mutation is
+needed. A4 reviews are independent downstream workflow roles.
+
+Non-goals: no repeated removal/skill repair, A1/NRE redesign, new abstraction,
+unrelated lint cleanup, configuration/exclusion changes, broad formatting,
+lockfile generation, archived rielflow or Monja tenant-sharding-d48 edits,
+other-session/worktree edits, new worktree/private branch, concurrent Git,
+reset/stash, main merge, force push, release or parent P1 closure.
+
+### Ordered deliverables and file-level work
+
+| Task | Dependency | Exact deliverable / acceptance |
+| --- | --- | --- |
+| checkpoint | Current Step 5 acceptance | Serial checkpoint owner commits and non-force pushes only the two design paths, this plan and the dispatch manifest (`checkpointWritePaths`), preserving dirty implementation hashes/deletions. Record exact staged/committed paths and matching live remote tip; failed publication stops dispatch. Step 4 prepares only. |
+| A0 | checkpoint | Reconcile prior A0 chronological evidence; preserve its missing environment-metadata limitation. No automatic rerun. |
+| A2 | A0 | Verify preserved implementation/test/example/skill identity against attempt-2 and attempt-3. No source edits expected; retained exact file map below permits only demonstrated material repairs. |
+| A3 | A2 | Run missing V7 final/checkpoint inventory and diagnostic comparison; account for each other manifest command with a source-matched prior receipt or justified renewal. Append receipts/classifications to the owner's progress file. |
+| A4 | A3 | Independent test-integrity, Sol adversarial and Astra integration review explicitly dispose of failed aggregates and V7; no unresolved high/mid finding. Serial repair and affected evidence/review renewal if required. |
+| A5 | A4 | Refresh directly affected README, both designs, this active plan/manifest and progress with actual outcomes; stage only exact reviewed changed files, commit and non-force push feat/remaining-impl-plans, update Draft PR #109 with commit, remote hash, failed-gate disposition and residual limitations. |
+
+The repaired `Resources/skills/riela-workflow-run/SKILL.md` and all existing
+source/test/example changes are preserved outputs, not instructions to re-edit.
+During A0–A3 only `impl-plans/progress/p1-dispatch.md` normally changes; all new
+evidence lives under a fresh unused
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-<n>/`.
+Shared docs/indexes remain serial-finalization owned. No plan archiving is due.
+
+Before every edit, fresh-read the file and save immutable preimage, SHA-256 and
+intended hunk in the fresh attempt; recheck the hash immediately before writing,
+then save postimage/hash. Preserve deletion identities as well as existing bytes.
+At join compare actual changed paths/hashes to these intents; resolve drift
+serially and renew affected evidence before review. Do not overwrite prior
+attempts or concurrent work.
+
+### Exact V7 execution and evidence reuse
+
+Set `evidence_dir` to the fresh attempt's absolute path and `repository_root`
+to this checkout's absolute path; record their expanded values. Prepare baseline
+without creating a worktree:
+
+```sh
+mkdir -p "$evidence_dir/v7-baseline-source"
+git archive --format=tar --output="$evidence_dir/v7-baseline.tar" 6e7475d4216e4cb96c2a04e1d3337cba3f53fb44
+tar -xf "$evidence_dir/v7-baseline.tar" -C "$evidence_dir/v7-baseline-source"
+git ls-tree -r --full-tree 6e7475d4216e4cb96c2a04e1d3337cba3f53fb44
+/usr/bin/arch -arm64 /usr/bin/xcrun swiftlint version
+shasum -a 256 .swiftlint.yml "$evidence_dir/v7-baseline-source/.swiftlint.yml"
+```
+
+Verify archived file membership/content against checkpoint blobs, then record
+SHA-256 inventories for the actual lint inputs and all effective configuration
+files on both trees before/after scanning. Pin the Xcode environment below for
+the version command as well as both scans. Execute this identical V7 command
+once with cwd `repository_root` and once with cwd
+`$evidence_dir/v7-baseline-source`:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache
+```
+
+Save exact expanded command, cwd, tool path/version, environment, start/end,
+complete stdout/stderr and terminal exit separately for baseline and final.
+Foreground execution only; retain and poll any session handle through exit.
+Verify the snapshot's effective included set is its Package.swift/Sources/Tests
+scope; ancestor `tmp/` exclusion must not produce an empty or partial scan.
+Record per-tree input membership, explain intentional removed Swift files and
+configuration differences; do not silently alter the configuration or command.
+Incomplete scope/logs/exits/identity/comparison leave V7 incomplete.
+
+Produce `v7-comparison.json` with one diagnostic row per repository-relative
+file/rule/cause, raw line/column, severity and message, baseline/final identity
+and unchanged/added/removed/changed classification. Explain shifted locations
+and removed files. Counts alone are insufficient. Attach named cause,
+owner/follow-up and pending A4 disposition for nonzero gates or unexplained/new
+diagnostics; repair new material owned defects before advancement. Nonzero
+receipts remain FAILED even when independently accepted as baseline.
+
+Strict changed-file lint remains a separate passing gate. Reconcile the
+attempt-2 receipt and its NUL-delimited input list against current modified
+Swift membership and bytes. If invalidated, regenerate the list in this fresh
+attempt (exclude deleted/non-Swift paths) and execute:
+
+```sh
+xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < "$evidence_dir/changed-swift-files.nul"
+git diff --check
+git diff --cached --check
+```
+
+For every other `plans[0].verification` command, record receipt path, real exit,
+test counts where applicable, source/dependency/configuration identity and reuse
+rationale in the new evidence index. Preserve positive native/retained tests,
+Monja tests/typechecks and the repaired skill suite; documentation-only changes
+do not invalidate them. Renew only checks invalidated by material source or
+evidence changes, using the exact manifest command and existing isolated build
+or snapshot method. Do not run the broad suite automatically. Attempt-3
+`implementation-source-check.log` records 2,762 matching entries; reconcile the
+four changed checkpoint design/plan/manifest files separately from test inputs.
+
+Retain attempt-2 `V5-work-cli-core/comparison-shortbuild.json` and
+`full-suite-no-parallel/comparison-full.json`: final/checkpoint aggregate exits
+are 1 with 21 matching assertions, pending independent cause disposition.
+Their behavioral baseline remains `911428e2ab6df6776627a64edd7c1d76e4622c26`;
+do not relabel it as V7's `6e7475d` baseline. Include V3/CLI failures and prior
+Monja recovery receipts. For each failed command record exact assertions/causes,
+source identities, complete logs/exits, classification, owner/follow-up and A4
+decision. Unsupported attribution remains unresolved.
+
+### Completion and publication
+
+Step 6 completes A3 when V7 evidence is complete, separate strict lint passes,
+positive behavior stays source-matched, and failed aggregate classifications
+are ready for independent review. Formal A4 and review-dependent A5 are
+downstream tasks, not Step 6 self-blockers. Append this distinction, commands,
+source seals, failed exits and remaining review dependencies to the progress log.
+Preserve plain task-free workflows, native rejection by top-level key presence,
+opaque runtimeVariables, authentication, cancellation and retained task/event/
+specialist/loop/routine behavior. No behavior change is intended.
+
+A5 requires fresh exact-file review and staged-path/hash comparison, including
+intentional deletions; allowlist-external staging stops publication. Run
+`git diff --check`, `git diff --cached --check`, `git diff --cached --name-only`
+and inspect `git diff --cached` before commit. The serial authorized publication
+owner uses the workflow's commit/push path and checks
+`git ls-remote --heads origin refs/heads/feat/remaining-impl-plans` against
+`git rev-parse HEAD` after non-force push. Remote drift requires reconciliation,
+never force. Update Draft PR #109 after confirmed publication. NRE/P1-7b are
+already published per intake; preserve them without a new publication task.
+Parent P1 remains open. No unresolved user decision or reference divergence.
+
+## Historical continuation after reviewed amendment 13267c9 (2026-09-25)
 
 Mode `issue-resolution`. Issue: “Continue Work Runtime P1-7a A2-A5 from reviewed
 exact-path amendment”; `tacogips/riela`, no issue number/URL supplied, Draft PR

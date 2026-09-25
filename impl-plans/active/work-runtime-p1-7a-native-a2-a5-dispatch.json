@@ -2,9 +2,9 @@
   "taskId": "work-runtime-p1-7a-native-a2-a5",
   "workflowMode": "issue-resolution",
   "executionMode": "issue-resolution",
-  "issueReference": "tacogips/riela; Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment; no issue number supplied; Draft PR #109; intake comm-000002",
+  "issueReference": "tacogips/riela; Finish P1-7a A2-A5 V7 verification and independent acceptance; no issue number supplied; Draft PR #109; intake comm-000002",
   "codexAgentReferences": [],
-  "originalHead": "c97370cee30857068654c4323fa0c7a60bf3f9ee",
+  "originalHead": "6e7475d4216e4cb96c2a04e1d3337cba3f53fb44",
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
@@ -20,16 +20,17 @@
     "findings": []
   },
   "priorPlanReview": {
-    "communicationId": "comm-000006",
-    "accepted": true,
-    "reviewDecision": "accepted",
-    "findings": [],
-    "codexAgentReferences": []
-  },
-  "planReview": {
     "communicationId": "comm-000008",
     "accepted": true,
     "reviewDecision": "Accepted. The revision addresses the mid finding in comm-000006.",
+    "findings": [],
+    "codexAgentReferences": [],
+    "status": "Historical acceptance at checkpoint 6e7475d; not acceptance of this revision."
+  },
+  "planReview": {
+    "communicationId": "comm-000006",
+    "accepted": true,
+    "reviewDecision": "accepted",
     "findings": [],
     "codexAgentReferences": []
   },
@@ -42,8 +43,8 @@
   ],
   "implementationDispatchAllowed": true,
   "implementationDispatchConditions": [
-    "Step 5 accepted this continuation plan/manifest in comm-000008 with no unresolved high/mid finding.",
-    "Serial checkpoint owner commits and non-force pushes exactly checkpointWritePaths, verifies matching live remote hash, and preserves all dirty implementation bytes. Then resume implementation in this issue-resolution execution."
+    "Current Step 5 accepts this V7 continuation plan/manifest with no unresolved high/mid finding.",
+    "Serial checkpoint owner commits and non-force pushes only checkpointWritePaths, verifies live remote equality and preservation of all dirty implementation bytes before dispatch."
   ],
   "plans": [
     {
@@ -104,10 +105,10 @@
         "impl-plans/active/work-runtime-p1-7a-native-a2-a5-dispatch.json"
       ],
       "progressFile": "impl-plans/progress/p1-dispatch.md",
-      "intent": "Finish P1-7a A2\u2013A5 after accepted A1 and Native Remote integration; remove obsolete workflow supervision without regressing retained paths.",
+      "intent": "Complete missing V7 from checkpoint 6e7475d, reuse preserved source-matched A2/A3 evidence, obtain A4 independent disposition, then publish A5.",
       "nonGoals": [
         "No A1/NRE redesign, archived rielflow operation, specialist/event/loop/routine removal, new framework, unrelated repair, dependency/lockfile regeneration or broad formatting.",
-        "No worktree, private branch, concurrent Git, base merge, force push, release, App Store artifact, P1-7b publication completion or parent P1 closure."
+        "No worktree, private branch, concurrent Git, base merge, force push, release, App Store artifact or parent P1 closure. Preserve already-published NRE and P1-7b; no new publication task for either."
       ],
       "invariants": [
         "Preserve accepted A1 atomic progress, retry/gate/director policy and exact-session cancellation.",
@@ -140,7 +141,7 @@
           "dependsOn": [
             "A2"
           ],
-          "deliverable": "Reconcile every command with attempt-1/attempt-2 receipts and current source. Reuse complete unaffected source-matched receipts with rationale; execute missing/invalidated checks. Preserve failed exits and compare exact checkpoint/final causes; seal skill-inclusive hashes."
+          "deliverable": "Run missing V7 final/checkpoint scans and diagnostic comparison; reuse all other complete source-matched attempt-2/3 evidence with rationale, renewing only invalidated checks. Keep strict changed-file lint separately passing; retain failed aggregate exits and assertion-level cause classifications for independent A4 review. Append progress and final source seals."
         },
         {
           "taskId": "A4",
@@ -158,6 +159,7 @@
         }
       ],
       "acceptanceCriteria": [
+        "V7 has complete final and byte-verified 6e7475d checkpoint logs, actual exits, source/configuration hashes, equivalent lint scope and comparison by file/rule/cause. Strict changed-file lint remains a separate passing gate.",
         "Preserve repaired skill and remaining restrictions. Require positive zero-failure SurfaceParitySkillTests final-source evidence; renew affected checks after edits, source-match unaffected receipts and include skill in hashes before A4/A5.",
         "All A2 removal and retained behavior requirements have final-source positive behavioral proof.",
         "Every current verification command has complete log, final exit, exact command/environment and source identity; baseline failures have named causes and independent disposition. Preserve the accepted historical A0 environment-metadata limitation explicitly; never fabricate missing metadata.",
@@ -188,8 +190,8 @@
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'WorkflowCommandTests.testWorkflowRunUsesGraphQLEndpointTransport|WorkflowCommandTests.testWorkflowRunEndpointUsesRielaAuthEnvironment|WorkflowCommandTests.testURLSessionWorkflowRunUsesSchemaAccurateRemotePayloadAndPausedStatus'",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskRuntimeExampleTests.testStandaloneNonAcceptedRepairGateFailsAndRetainsEvidence|WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection'",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --no-parallel",
-        "xargs -0 swiftlint lint --strict --quiet --no-cache < ${evidence_dir}/changed-swift-files.nul",
-        "swiftlint lint --quiet --no-cache",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < \"${evidence_dir}/changed-swift-files.nul\"",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
         "rg -n 'autoImprove|nestedSuperviser|WorkflowAutoImprovePolicy|WorkflowMutationMode|SupervisedScenarioNodeAdapter|--auto-improve|--nested-superviser' Sources Tests README.md examples",
         "git diff --check",
         "git diff --cached --check",
@@ -203,35 +205,52 @@
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter TaskDispatcherIntegrationTests.testTaskProgressBetweenObserverRecheckAndDecisionPreventsInactivityAction",
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch list"
       ],
-      "executionScope": "Step 6 reconciles accepted A0 and completes remaining A2/A3. A4/A5 are mandatory downstream gates, not Step 6 self-blockers; owned failures or missing material A3 evidence remain incomplete.",
+      "executionScope": "Step 6 preserves A0/A2 and completes missing A3 V7 plus evidence reconciliation. A4/A5 remain mandatory downstream gates; no self-block solely on pending formal review or publication.",
       "fileLevelChanges": {
-        "Resources/skills/riela-workflow-run/SKILL.md": "Remove stale --auto-improve documentation only; retain other remote restrictions.",
+        "Resources/skills/riela-workflow-run/SKILL.md": "Preserve completed repair and source-matched seven-test receipt; no new edit expected.",
         "impl-plans/progress/p1-dispatch.md": "Owner appends continuation source identity, receipts, classifications and remaining dependencies; preserves historical failed outcomes.",
         "remainingWritePaths": "Preserve completed A2 bytes/deletions; only concrete in-scope repair as specified in current executable contract. No automatic repetition of removal."
       },
       "verificationEvidenceRequirements": {
         "V7": {
-          "command": "swiftlint lint --quiet --no-cache",
+          "command": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
           "required": true,
-          "execution": "A3 final source at repository root plus complete source-matched checkpoint receipt or same command from byte-verified checkpoint snapshot under repository tmp; same SwiftLint version/configuration, with differences explained.",
+          "execution": "Run identical command at final repository root and byte-verified checkpoint snapshot under a fresh repository tmp attempt. Verify equivalent effective configuration and included scope; an empty/partial scan is incomplete.",
           "evidence": "Exact command, tool version, environment/cwd, source/configuration hashes, complete stdout/stderr, terminal exit, baseline/final diagnostic comparison by file/rule/cause, owner/follow-up.",
-          "nonzeroDisposition": "FAILED pending independent A4 review; no green label. Missing/incomplete comparison leaves V7 incomplete; strict changed-file lint is additional, not a substitute."
+          "nonzeroDisposition": "FAILED pending independent A4 review; no green label. Missing/incomplete comparison leaves V7 incomplete; strict changed-file lint is additional, not a substitute.",
+          "baselineCommit": "6e7475d4216e4cb96c2a04e1d3337cba3f53fb44",
+          "comparisonArtifact": "${evidence_dir}/v7-comparison.json",
+          "comparisonFields": [
+            "file",
+            "rule",
+            "cause",
+            "severity",
+            "message",
+            "rawLocation",
+            "baselineSourceIdentity",
+            "finalSourceIdentity",
+            "classification",
+            "owner",
+            "followUp",
+            "reviewDisposition"
+          ]
         }
-      }
+      },
+      "verificationExecutionPolicy": "The command list is an evidence contract, not a blanket rerun queue. Run only missing V7 and invalidated checks; account for every other command using complete source-matched receipts with explicit dependency rationale. No automatic broad tests after documentation-only changes."
     }
   ],
   "reviewContext": {
-    "issueReference": "tacogips/riela; Continue Work Runtime P1-7a A2-A5 from reviewed exact-path amendment; no issue number supplied; Draft PR #109; intake comm-000002",
-    "userProblem": "Continue preserved A2 and completed skill repair; reconcile attempt-2 evidence and nonzero gates, obtain A4 reviews, then publish exact reviewed A5 files.",
+    "issueReference": "tacogips/riela; Finish P1-7a A2-A5 V7 verification and independent acceptance; no issue number supplied; Draft PR #109; intake comm-000002",
+    "userProblem": "Complete missing V7 from checkpoint 6e7475d, reuse preserved source-matched A2/A3 evidence, obtain A4 independent disposition, then publish A5.",
     "requiredOutcomes": [
       "Reject retired CLI options and native top-level autoImprove/nestedSuperviser input by presence, including false and null, before provider effects.",
       "Preserve ordinary authenticated remote execution, opaque runtimeVariables, task-backed replacement examples, cancellation, guard/director behavior, and specialist/event/loop/routine paths.",
-    "Run final-source P1-7a V0\u2013V9, native GraphQL/HTTP tests, strict changed-file SwiftLint, repository-wide swiftlint lint --quiet --no-cache with baseline/final comparison, and diff checks with complete source-matched receipts.",
+      "Complete V7 final/checkpoint lint and diagnostic comparison; preserve source-matched positive P1-7a/native/retained/Monja evidence and separate passing strict changed-file lint. Renew only invalidated checks.",
       "Obtain independent test-integrity, adversarial and integration review decisions with no unresolved material finding; refresh directly affected docs and progress; commit and non-force push exact reviewed files to Draft PR #109."
     ],
     "nonGoals": [
       "No A1 or NRE redesign, archived rielflow edits or publication, new framework, unrelated repair, broad formatting, dependency or lockfile regeneration.",
-      "No P1-7b publication or parent P1 closure, base-branch merge, force push, release or App Store artifact."
+      "No worktree, private branch, concurrent Git, base merge, force push, release, App Store artifact or parent P1 closure. Preserve already-published NRE and P1-7b; no new publication task for either."
     ],
     "constraints": [
       "Use the immutable user-scope codex-design-and-implement-review-loop package and preserve Monja plus unrelated sessions and worktrees.",
@@ -286,12 +305,15 @@
     "priorEvidenceRoot": "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1",
     "preExistingDirtyPaths": 37,
     "a0Disposition": "Reuse accepted chronological proof; preserve missing per-command environment metadata as historical limitation. No automatic A0 rerun.",
-    "evidencePolicy": "Preserve completed skill repair and A2. Reconcile every command; reuse complete unaffected source-matched receipts with rationale; renew missing or invalidated checks and skill-inclusive seals. Keep V5 exit 1 / 2060 tests / 21 failures and all other failed gates pending independent exact-cause disposition.",
-    "publicationPolicy": "Verify live remote and a8516ec ancestry before P1-7b status claims. No worktree, stash, reset, force push or unreviewed commit.",
+    "evidencePolicy": "The command list is an evidence contract, not a blanket rerun queue. Run only missing V7 and invalidated checks; account for every other command using complete source-matched receipts with explicit dependency rationale. No automatic broad tests after documentation-only changes. Preserve nonzero V3/CLI/V5/whole-suite exits for independent A4 disposition and historical A0 environment limitation.",
+    "publicationPolicy": "Preserve already-published NRE/P1-7b. After A4, publish only exact reviewed A5 files, verify live remote tip and update Draft PR #109. No reset, stash, worktree or force push.",
     "priorEvidenceRoots": [
       "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1",
-      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2"
-    ]
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-3"
+    ],
+    "v7BaselineCommit": "6e7475d4216e4cb96c2a04e1d3337cba3f53fb44",
+    "behavioralBaselineCommit": "911428e2ab6df6776627a64edd7c1d76e4622c26"
   },
   "checkpointVerification": [
     "git diff --check",
@@ -301,8 +323,6 @@
     "git ls-remote --heads origin refs/heads/feat/remaining-impl-plans",
     "git push origin HEAD:feat/remaining-impl-plans",
     "git rev-parse HEAD",
-    "git ls-remote --heads origin refs/heads/feat/remaining-impl-plans",
-    "git fetch origin refs/heads/feat/remaining-impl-plans:refs/remotes/origin/feat/remaining-impl-plans",
-    "git merge-base --is-ancestor a8516ec origin/feat/remaining-impl-plans"
+    "git ls-remote --heads origin refs/heads/feat/remaining-impl-plans"
   ]
 }

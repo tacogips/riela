@@ -4,10 +4,7 @@
 {
   "planId": "NRE-03",
   "planPath": "impl-plans/active/native-remote-03-provider-host-integration.md",
-  "dependsOn": [
-    "NRE-01",
-    "NRE-02"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/WorkflowExecutionProvider.swift",
     "Sources/RielaCLI/ServeHTTPCommand.swift",
@@ -24,15 +21,21 @@
     "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
     "Tests/RielaGraphQLTests/GraphQLContractsTests.swift",
     "impl-plans/active/native-remote-nre-03-progress.md",
-    "design-docs/specs/design-native-remote-workflow-execution.md"
+    "design-docs/specs/design-native-remote-workflow-execution.md",
+    "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift"
   ],
   "sharedPaths": [
     "Sources/RielaCore/SurfaceCatalog+Rows.swift",
     "Tests/RielaGraphQLTests/SurfaceParityExecutorCoverageTests.swift",
     "Tests/RielaGraphQLTests/SurfaceParityDTOSchemaTests.swift",
-    "Tests/RielaGraphQLTests/GraphQLContractsTests.swift"
+    "Tests/RielaGraphQLTests/GraphQLContractsTests.swift",
+    "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift"
   ],
-  "progressLogPath": "impl-plans/active/native-remote-nre-03-progress.md"
+  "progressLogPath": "impl-plans/active/native-remote-nre-03-progress.md",
+  "satisfiedPrerequisites": [
+    "NRE-01",
+    "NRE-02"
+  ]
 }
 ```
 
@@ -40,26 +43,21 @@
 
 Implement the smallest Riela-owned receiving path for the existing remote CLI,
 using the accepted design at `design-docs/specs/design-native-remote-workflow-execution.md`.
-Mode: `planning-only` (`executionMode: design-plan-only`). Step 3 accepted the
-amended design in current `comm-000004`, source execution
-`step3-design-review-attempt-1-exec-4`, with no findings. Issue reference: local
-request on `feat/native-remote-workflow-execution`; no GitHub issue supplied.
-Issue title: Amend NRE-03 paused-result contract and aggregate verification ownership.
-Codex-agent reference: `/root` — Step 6 NRE-03 integration review `comm-000039`.
-Cursor CLI mapping is not applicable: this is a review reference, not a reference
-repository requirement. Integration review retained NRE-01/NRE-02 acceptance;
-NRE-03 remains pending. Preserve checkpoint
-`72a9dae65c6ca99cd06746d2100dcf3465fc3e8f`, prior planning history and every existing
-dirty/untracked implementation file.
+Mode: `issue-resolution`. Step 3 accepted the focused design in `comm-000004`,
+source execution `step3-design-review-attempt-1-exec-4`, with no findings.
+Issue: local request, "Finish NRE-03 native Riela remote workflow execution receiver";
+no GitHub issue supplied. Codex-agent reference: `/root`, prior Step 6 integration
+review `comm-000039`; Step 1 intake `comm-000002`. Cursor CLI mapping is not
+applicable: these are workflow review references, not reference-repository inputs.
+NRE-01/NRE-02 remain accepted external prerequisites. Preserve checkpoint
+`611dc100c25bf297368df7b51fe1aeff429d835c`, prior history, source/tests and progress
+evidence. No predecessor redispatch or edits are authorized.
 
-The existing writePaths/sharedPaths and runtime change-tracking scope remain
-unchanged; no additional trackedPaths or Core ownership is introduced.
-
-This amendment authorizes planning artifacts only; no source/test edits or test
-execution that mutates implementation, reset, stash, force push, or unrelated
-cleanup. The implementation tasks below apply only in the later issue-resolution
-run. The current workflow ends with reviewed planning publication, not fanout.
-No workflow/package provenance rediscovery is required.
+The sole ownership addition is generated
+`Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift`, reviewed with
+`scripts/surface-parity/generate-sdl.sh` in Step 4. The script is read-only input,
+not an added write path. No Core status or App baseline-test ownership expansion.
+Runner-resolved provenance is authoritative; no registry discovery task exists.
 
 Non-goals: another server, runner, queue, polling protocol, credential framework,
 new library facade, legacy auto-improve compatibility, client timeout forwarding,
@@ -70,40 +68,29 @@ No external service is a dependency or publication target.
 
 ## Same-directory execution and evidence protocol
 
-Step 5 must accept this amended plan and dispatch manifest before the serial
-workflow owner commits and non-force pushes exactly these planning artifacts:
+Step 5 must accept this plan and focused dispatch manifest before the serial
+workflow owner checkpoints the accepted design and plans using only:
 
 - `design-docs/specs/design-native-remote-workflow-execution.md`
 - `impl-plans/active/native-remote-03-provider-host-integration.md`
 - `impl-plans/active/native-remote-receiver-20260925-dispatch.json`
 
-Preserve checkpoint `72a9dae`, all implementation bytes and the existing untracked
-progress files; never stage them with the planning commit. This node does not
-commit or push. Verify the planning commit's exact file list and unchanged
-implementation hashes before publication. Current publication must not dispatch
-implementation; a subsequent authorized issue-resolution run may resume only
-NRE-03 after verifying the published checkpoint and retained predecessor evidence.
-Record commit/live remote hashes and full logs/statuses. Stop publication on any
-failure or mismatch; no force push or history rewrite.
+Commit these planning artifacts before native implementation/review fanout;
+exclude all dirty implementation and existing progress files from that checkpoint.
+This authoring node does not commit or push. Preserve `611dc10` and verify the
+checkpoint's exact file list and unchanged implementation hashes. The accepted
+NRE-01/NRE-02 source exists in the preserved dirty tree; do not mistake a planning
+commit alone for its implementation evidence. No worktrees, private branches,
+concurrent Git operations, resets, stashes or worker commits.
 
-After the checkpoint commit, run these commands serially in the foreground:
-
-```sh
-git rev-parse HEAD
-git push origin HEAD:refs/heads/feat/native-remote-workflow-execution
-git ls-remote --exit-code origin refs/heads/feat/native-remote-workflow-execution
-```
-
-Require each command to exit 0; compare the single returned remote ref hash to
-the recorded accepted checkpoint hash and confirm local HEAD still matches.
-A successful push alone is insufficient evidence. Stop on any failure; never
-force-push or dispatch workers while publication remains unverified.
-In the later issue-resolution run, reviewed code/docs are committed and non-force
-pushed by serial workflow finalization after integration and review. No worktrees, private branches,
-concurrent Git operations or worker commits. NRE-01/NRE-02 are already accepted; do not redispatch them.
-The remaining implementation wave contains only NRE-03, dependent on their
-accepted interfaces and preserved evidence. One integration
-owner runs all serial reconciliation and finalization.
+Dispatch exactly one task, NRE-03. Its scheduler `dependsOn` is empty because
+NRE-01/NRE-02 are external already-satisfied prerequisites, recorded separately
+in metadata and the manifest with their original acceptance/progress references.
+Do not enqueue them. One owner performs all coupled edits and serial reconciliation;
+read-only investigation/test-design subagents may work independently. Serialize
+SwiftPM commands and all writes. Final source/docs commit and non-force push
+belong to workflow finalization after independent test-integrity, adversarial
+and Astra integration acceptance; P1 A2/A3 remains outside this workflow.
 
 Before each edit, freshly read the target and dependency interfaces, record
 SHA-256 before/after (ABSENT for a new file), and save an immutable intent snapshot
@@ -142,21 +129,21 @@ check is blocked, report its actual error and leave completion open.
 Depends on accepted NRE-01 interfaces and NRE-02 strict reads. This plan is the
 serial integration owner. The existing RielaLibrary.executeWorkflow delegates
 to WorkflowRunCommand.run but forwards fewer fields than the wire contract;
-call that same command directly instead of expanding the facade. The machine
-serve fallback currently installs only the registry executor; browser hosts
-already gate local trust. Deliver a narrow provider, host wiring, authenticated
+call that same command directly instead of expanding the facade. The preserved dirty tree already contains provider and host wiring plus an
+authenticated positive HTTP test; complete and repair those files in place,
+never replace them from a clean template. Deliver the finished provider, authenticated
 real-HTTP evidence and combined-tree verification.
 
 ## Tasks in order
 
-1. **I1 — Join and drift reconciliation.** Fresh-read joined contracts, strict
+1. **I1 — Accepted-base and drift reconciliation.** Fresh-read accepted contracts, strict
    store method and both worker intent/hash records. Compare every post-hash
    with the current tree; inspect differences and restore lost required behavior
    serially, never wholesale snapshots. If repair requires a NRE-01/NRE-02-owned
    file, stop for a narrowly reviewed ownership amendment; this plan grants
    no transfer of predecessor writePaths. Rerun affected targeted tests after
    an independently authorized repair. Do not edit another worker's progress log. No overlapping live writes.
-2. **I2 — Provider.** Add WorkflowExecutionProvider.swift conforming to NRE-01's
+2. **I2 — Provider.** Complete existing WorkflowExecutionProvider.swift conforming to NRE-01's
    protocol. Capture immutable host resolution, working directory, environment
    and resolved store root in provider construction. Map workflowName to target
    and resolution.workflowName; instanceIdentity to instance; objects to inline
@@ -266,14 +253,15 @@ real-HTTP evidence and combined-tree verification.
    disguises a stuck task. No polling job, new cancellation registry or detached
    shell lifecycle. If cancellation fails, report the concrete defect for repair
    within the existing path; do not claim lifecycle acceptance.
-7. **I7 — Serial catalog and combined verification.** Add executeWorkflow binding
+7. **I7 — Serial catalog and combined verification.** Preserve/verify executeWorkflow binding
    to the workflow.run catalog row, replacing its obsolete GraphQL exclusion.
    Add a specific summary operation binding for workflowExecution with explicit
    non-applicable surface exclusions; do not conflate it with workflowSession.
    Register the new executor fields in SurfaceParityExecutorCoverageTests without
    increasing the gap allowlist. Update only affected DTO/schema expectations in
    SurfaceParityDTOSchemaTests/GraphQLContractsTests as tests require. Run all
-   commands below after drift repair; inspect every failure. Fix only material
+   commands below after drift repair; inspect every failure. Follow I7b for the
+   generated schema; never hand-edit it or change predecessor generator inputs. Fix only material
    regressions in scope. Execute I7a below before attributing the 11 App assertions
    to baseline; no test suppression or speculative App source/test changes. Re-run affected checks after repairs and final combined gates when
    necessary. No dependency updates or broad formatting.
@@ -312,6 +300,38 @@ URLSession/proxy timeout is not a workflow timeout; a retry can create another
 run. Keep those accepted limitations explicit. Server owns and drains route
 work. Integration proof must use a real authenticated Riela server, not merely
 executor mocks, and include unauthorized/malformed-input rejection.
+
+## I7b — Reviewed generated-schema parity rule
+
+Step 4 inspected the existing generated diff: it adds ExecuteWorkflowInput,
+ExecuteWorkflowPayload and the four summary object types, plus executeWorkflow
+and workflowExecution roots. Fields match the accepted receiving contract;
+forbidden input keys are absent. The script regenerates this one Swift file via
+SurfaceParityGraphQLTests/testRegenerateGeneratedSDLWhenRequested using
+RIELA_WRITE_GENERATED_SDL=1 in an arm64 login zsh. Neither script nor generator
+inputs require edits. Retain the existing generated bytes unless parity proves
+regeneration necessary. This review allocates only the generated Swift path.
+
+First run the explicit Xcode parity command below without regeneration. If drift
+requires regeneration, record script/generated-file hashes before and after and
+run the script from the repository root. Its login shell must resolve `swift` to
+the Xcode toolchain; the preflight command must exit 0 before invoking it. If the
+shell resolves a different toolchain, report the concrete toolchain blocker;
+do not edit user shell configuration, the script or predecessor files to bypass it.
+Use the same Xcode environment for the preflight and generator commands:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /bin/zsh -lc 'command -v swift; swift --version; xcrun --find swift; test "$(command -v swift)" = /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH bash scripts/surface-parity/generate-sdl.sh
+env -u RIELA_WRITE_GENERATED_SDL /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter SurfaceParityGraphQLTests
+```
+
+Log each command and exit separately; compare generated changes to accepted
+schema/catalog inputs and rerun the combined SurfaceParity gate with `RIELA_WRITE_GENERATED_SDL`
+unset. All ordinary focused/aggregate test commands must leave this variable
+unset so tests cannot silently rewrite the generated file. The generator's
+success message alone is not parity evidence. Do not broaden writePaths for
+unrelated drift. No speculative regeneration occurs in this planning step.
 
 ## I7a — Source-matched App attribution (NRE-03 serial owner)
 
@@ -466,7 +486,7 @@ high/mid defect. Aggregate acceptance requires a clean run or independently
 approved, individually proven baseline failures with all other tests passing;
 a nonzero result stays recorded as nonzero. I8 prepares downstream reviews and
 cannot self-approve them. NRE-03 remains pending until all implementation and
-aggregate gates receive acceptance. This planning workflow completes only after
-Step 5 acceptance and reviewed planning-only commit/non-force push. Existing
-implementation remains dirty for the next issue-resolution run. P1 A2/A3 remains
-open. No implementation acceptance, commit or publication is claimed here.
+aggregate gates receive acceptance. This issue-resolution workflow completes only after
+independent test-integrity, adversarial and Astra integration acceptance, refreshed
+docs and serial reviewed source/docs commit and non-force push. P1 A2/A3 remains
+open. This plan authoring step claims no implementation acceptance or publication.

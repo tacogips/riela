@@ -7,7 +7,7 @@ remain pending. No implementation acceptance is claimed by this authoring step.
 
 ## Current implementation authority
 
-Issue: **Continue T2-T6 workflow defect repair from corrected dispatch contract**, `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+Issue: **Continue T2-T6 after disproving false ownership blocker**, `tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
 Issue number/URL null; mode `issue-resolution`; `codexAgentReferences=[]`.
 Effective `workflowInput` and runner-resolved immutable user-scope
 `codex-design-and-implement-review-loop` package 0.3.44 are authoritative. No registry rediscovery or package-readiness task is required.
@@ -15,12 +15,12 @@ Step 3 `comm-000004`, `step3-design-review-attempt-1-exec-4`, execution
 `codex-design-and-implement-review-loop-session-1`: accepted=true,
 needs_revision=false, findings=[]. Accepted design:
 `design-docs/specs/design-workflow-defect-detection-and-repair.md`, SHA-256
-`20d691ef2d8d7d13df4858eef3b262cad826dcf150212fb9ae77dc97467253e7`.
+`a0e87b2d0c5dcae82da4ece7d64215854bcc9a9dbed8bfe578121377861c4b95`.
 Preserve its bytes. No current Step 5 feedback was supplied. Historical receipts,
 digests, absent-source observations and disabled-dispatch statements below do not
 override this continuation.
 
-Checkpoint HEAD is `c5c72c62726b1527494ac85f2c234fdd60c37638` on
+Checkpoint HEAD is `b836f6b10460000193b20f4212dfbc842a5faacb` on
 `feat/remaining-impl-plans`. Dirty T1/T2 implementation and progress are separate
 from that checkpoint. Preserve them and all existing tmp evidence; no reset,
 stash, broad rewrite, T1 reimplementation or unrelated source edits. Step 4 edits
@@ -46,6 +46,29 @@ is immutable historical evidence for the prior attempt, not authorization for th
 amendment. Do not reuse its narrower allowlist or rewrite its review claims.
 Checkpoint failure prevents dispatch. No worktrees, private branches, concurrent
 Git operations or separate scheduler are authorized.
+
+### Proven ownership and continuation correction
+
+Step 3 accepted the current design via `comm-000004` with no findings. The prior
+ownership blocker was false, not a Riela transport defect. Both exact paths
+`Sources/RielaCore/LoopCompletionReviewRouting.swift` and
+`Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift` already occur in this
+manifest's T2 writePaths, its aggregate writePaths, and the preserved dispatch's
+`plans[0].writePaths`.
+
+The accepted design records corroborating read-only evidence in
+`tmp/workflow-defect-t2-valid/sessions/runtime-records/runtime-message-log.sqlite`,
+child `nested-v1-14b59b4ca29e18320877eadad21cfada56111961ce175485874aac2eaa47140d`,
+`executions[0].inputSnapshot`: `arguments.implementation.writePaths`,
+`arguments.fanoutItem.writePaths`,
+`mergedVariables.runtimeVariables.implementation.writePaths`, and
+`mergedVariables.fanoutItem.writePaths` each contain both paths.
+Before asserting any future ownership mismatch, inspect the actual current
+dispatch and child arrays, not the historical progress narrative. No ownership
+amendment, new worker, or T1 repetition is required. The continuation worker
+appends this correction to its existing progress log before T2 edits, retaining
+Attempt 2 and its failed V2 as historical evidence. This planning node preserves
+that progress file unchanged.
 
 ### Continuation sequence and evidence
 
@@ -116,11 +139,12 @@ workflow/package readiness rediscovery. This node preserves the corrected dispat
 it checks its array types and plan ownership correspondence without claiming to
 have rerun the runner's complete schema validator.
 
-Author self-check: `python3 tmp/workflow-defect-step4-corrected-dispatch/verify.py`;
-complete log `tmp/workflow-defect-step4-corrected-dispatch/verification.log`.
+Author self-check: `python3 tmp/workflow-defect-step4-false-blocker/verify.py`;
+complete log `tmp/workflow-defect-step4-false-blocker/verification.log`.
 Checks cover accepted design identity, preservation of dirty work and corrected
 dispatch, unchanged task contracts, DAG, array shape, verification coverage and
-whitespace. No runtime passes, current Step 5 acceptance or checkpoint are claimed.
+whitespace. Complete author verification exits **0**, including `git diff --check`
+exit **0**. No runtime passes, current Step 5 acceptance or checkpoint are claimed.
 
 ## Historical activity extension authority (2026-09-22)
 
@@ -828,7 +852,7 @@ read-only dependencies remain in reviewContext.sourcePaths.
     "Preserve six task gates, complete foreground evidence and no unresolved high/mid findings.",
     "Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push."
   ],
-  "verification": "V1 evidence retained; V2/V2b renewed; V3-V9 and L-V1-L-V5 plus source-matched dependency gates; author check: python3 tmp/workflow-defect-step4-corrected-dispatch/verify.py."
+  "verification": "V1 evidence retained; V2/V2b renewed; V3-V9 and L-V1-L-V5 plus source-matched dependency gates; author check: python3 tmp/workflow-defect-step4-false-blocker/verify.py."
 }
 ```
 
@@ -905,10 +929,9 @@ source/tests and failed V2 before editing. No T1 rewrite or route-validation byp
   reconciliation exact-map expectation with accepted=false; preserve its diagnostic
   count and adapter normalization behavior. No adapter production change is added.
 
-These are the only new T2 ownership entries: the reconciler and three previously
-unowned T2 test paths. RuntimePublicationTests was already owned. The aggregate
-manifest gains only the reconciler and AdapterUtilitiesTests; the two loop tests
-already belonged to the serial plan. Review context includes all five paths.
+These T2 ownership entries were already accepted before this continuation.
+Preserve the existing task and aggregate allowlists without additions or removals.
+Review context includes all five paths; no further ownership approval is needed.
 Run V2 and V2b, then changed-file strict lint using a NUL-delimited exact changed
 Swift path manifest at `tmp/workflow-defect-implementation/T2/changed-swift.nul`:
 `xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/T2/changed-swift.nul`.

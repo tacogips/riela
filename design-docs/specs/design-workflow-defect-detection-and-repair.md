@@ -2,12 +2,12 @@
 
 Status: Issue-resolution T2 continuation design handoff, 2026-09-26. This revision
 preserves accepted D1–D9 behavior, the accepted bounded T2 ownership amendment,
-and serial T1–T6 execution from the corrected dispatch checkpoint. Step 3 independent review
+and serial T1–T6 execution after disproving the prior ownership blocker. Step 3 independent review
 of these revised bytes is pending; implementation repair and verification are pending.
 
 ## Current implementation authority and review status
 
-Issue: **Continue T2-T6 workflow defect repair from corrected dispatch contract**, repository `tacogips/riela`, Draft PR
+Issue: **Continue T2-T6 after disproving false ownership blocker**, repository `tacogips/riela`, Draft PR
 [#109](https://github.com/tacogips/riela/pull/109). Issue number/URL are null;
 `codexAgentReferences=[]`. Mode: `issue-resolution`. Authoritative intake:
 `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
@@ -16,7 +16,7 @@ and runner-resolved immutable user-scope `codex-design-and-implement-review-loop
 package **0.3.44** are authoritative. No workflow
 or package registry rediscovery is required inside this node.
 
-Current local HEAD is checkpoint `c5c72c62726b1527494ac85f2c234fdd60c37638` on
+Current local HEAD is checkpoint `b836f6b10460000193b20f4212dfbc842a5faacb` on
 `feat/remaining-impl-plans`. The dirty T1/T2 source, tests and progress record are
 continuation inputs, not part of that checkpoint. Preserve them and all existing
 `tmp/` evidence; no reset, stash, broad rewrite or T1 reimplementation. The progress
@@ -132,27 +132,50 @@ Continue from
 `impl-plans/active/workflow-defect-t2-continuation-20260926-comm000006-6e2caa3-dispatch.json`
 and `impl-plans/active/workflow-defect-detection-and-repair.md`. The dispatch's older
 originalHead and review hashes describe its earlier authoring context; they do not
-replace the effective input's c5c72c6 continuation checkpoint. Preserve the existing
+replace the effective input's b836f6b continuation checkpoint. Preserve the existing
 corrected artifact; downstream review/checkpoint preparation binds new review
 context to the exact accepted document bytes.
 
-`acceptanceCriteria` must remain a nonempty array of nonempty strings in the plan
-manifest and each dispatch plan entry, matching the effective workflow input's
-array type. A prose string is not an equivalent encoding. Before checkpoint or
-dispatch, the owning planning step checks the exact dispatch schema and ownership
-union; it must not infer validity from prose alone. Use the full parent workflow
-inbox for continuation; the prior standalone dispatch attempt lacked that context.
-This node neither starts another workflow nor changes the dispatch artifact.
+### False ownership blocker correction and author verification
 
-Step 2 edits only this leading design section and preserves the historical D1–D9
-body and every pre-existing dirty file. Author self-check:
-`python3 tmp/workflow-defect-step2-corrected-dispatch/verify.py`; complete log:
-`tmp/workflow-defect-step2-corrected-dispatch/verification.log`. These checks cover
-scope, preservation, checkpoint identity, array shape, failure evidence and
-whitespace. Independent Step 3 review of this documentation refresh and downstream
-Step 5 plan review remain required; prior amendment acceptance is not revoked.
+The current intake supersedes the ownership-blocker claim in the preserved
+progress record's Attempt 2. The existing dispatch `plans[0].writePaths` and the
+persisted child inputSnapshot both include
+`Sources/RielaCore/LoopCompletionReviewRouting.swift` and
+`Tests/RielaAdaptersTests/AdapterUtilitiesTests.swift`. No additional ownership
+amendment, transport fix or T1 reimplementation is required.
+
+Read-only evidence: `tmp/workflow-defect-t2-valid/sessions/runtime-records/runtime-message-log.sqlite`,
+`workflow_runtime_snapshots.session_json`, session
+`nested-v1-14b59b4ca29e18320877eadad21cfada56111961ce175485874aac2eaa47140d`,
+`executions[0].inputSnapshot`. Both paths are present in each of:
+
+- `arguments.implementation.writePaths`;
+- `arguments.fanoutItem.writePaths`;
+- `mergedVariables.runtimeVariables.implementation.writePaths`;
+- `mergedVariables.fanoutItem.writePaths`.
+
+Each inspected array contains 115 paths. These observations corroborate the
+runtime intake; they do not establish new ownership. Preserve the dispatch and
+plan, including nonempty string-array `acceptanceCriteria`. Bind subsequent
+review evidence to the revised document bytes. Prior Step 3 design and Step 5
+plan acceptance with no findings remains historical acceptance; independent
+review of this refresh and formal implementation reviews remain pending.
+
+Step 2 changes only this leading design section; the historical D1–D9 body,
+pre-existing dirty source/tests/progress and dispatch/plan are preserved.
+Author verification command: `python3 tmp/workflow-defect-step2-false-blocker/verify.py`.
+Complete log: `tmp/workflow-defect-step2-false-blocker/verification.log`.
+The check verifies checkpoint, preservation hashes, the actual dispatch and four
+child arrays, historical failed V2 status, intake/design mapping, and
+`git diff --check`. Final exit status: **0**. This is documentation verification,
+not a fresh V2/V2b pass. No high/mid author finding or user decision remains.
+
+Future T2 verification also includes
+`xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/T2/changed-swift.nul`.
 The runtime regression and exact-map compatibility risks remain pending until V2
 and V2b pass. T3–T6 and formal reviews remain pending, not blocked design checks.
+Retain complete verification evidence under `tmp/` for downstream handoff.
 
 ## Historical D9 extension authority (2026-09-22)
 

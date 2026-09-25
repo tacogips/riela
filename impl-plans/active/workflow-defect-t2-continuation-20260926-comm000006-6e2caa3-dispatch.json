@@ -4,7 +4,7 @@
   "implementationBranch": "feat/remaining-impl-plans",
   "baseBranch": "feat/remaining-impl-plans",
   "remote": "origin",
-  "originalHead": "c5c72c62726b1527494ac85f2c234fdd60c37638",
+  "originalHead": "b836f6b10460000193b20f4212dfbc842a5faacb",
   "designDocPaths": [
     "design-docs/specs/design-workflow-defect-detection-and-repair.md"
   ],
@@ -14,24 +14,24 @@
       "repository": "tacogips/riela",
       "draftPR": 109,
       "intakeCommunication": "comm-000002",
-      "checkpoint": "c5c72c62726b1527494ac85f2c234fdd60c37638"
+      "checkpoint": "b836f6b10460000193b20f4212dfbc842a5faacb"
     },
-    "userProblem": "T2 all-referenced-control validation exposed an existing completion-review producer that omits accepted; the failed V2 run must be repaired within narrowly reviewed ownership before continuing T3–T6.",
+    "userProblem": "A previous native child falsely blocked T2 on ownership despite both exact paths appearing in the accepted dispatch and all four persisted child inputSnapshot writePaths arrays. T2 remains partial and V2 failed; continue T2–T6 without repeating T1.",
     "requiredOutcomes": [
-      "Derive accepted as !needs_replan && !needs_work for recognized completion reviews, reconcile missing or contradictory maps, preserve non-review pass-through and all-referenced-control validation.",
-      "Renew V2 and run V2b plus strict changed-Swift lint; retain failed V2 as failed and preserve passing T1 evidence.",
-      "Complete serial T3–T6, V3–V9 and L-V1–L-V5 with independent test-integrity, adversarial and combined-tree reviews; finalizer records exact reviewed commit and non-force push to Draft PR #109."
+      "Use the already authorized T2 paths to derive and reconcile accepted, preserve strict all-referenced-control validation, and obtain fresh passing V2 and V2b.",
+      "Preserve passing T1 and failed historical V2 evidence; complete serial T3–T6 with V3–V9 and L-V1–L-V5 source-matched gates and independent reviews.",
+      "Refresh final docs/index and publish exact reviewed files non-force to feat/remaining-impl-plans and Draft PR #109."
     ],
     "nonGoals": [
       "No generic rewriter, silent max-step increase, mock-success repair, second scheduler or parallel database.",
       "No upstream producer-contract or Work Runtime P1 reimplementation, provider-auth repair or release."
     ],
     "constraints": [
-      "Use immutable user-scope codex-design-and-implement-review-loop; one native plan item with serial internal T1→T6.",
-      "Preserve current dirty T1/T2 source/tests/progress and all tmp evidence; no reset, stash, broad rewrite or T1 reimplementation.",
-      "Worker edits only exact plan writePaths and own progress file; shared indexes, README, review-dependent status and archiving belong to serial reconciliation.",
-      "Keep scratch under repository-root tmp; protect sibling worktrees, Monja, archived rielflow, main and release paths.",
-      "Final push non-force to origin/feat/remaining-impl-plans, matching Draft PR #109 tip."
+      "Use immutable user-scope codex-design-and-implement-review-loop package 0.3.44 and one native plan item with serial internal T1→T6.",
+      "Preserve dirty T1/T2 source, tests, progress and evidence; no reset, stash, broad rewrite or T1 reimplementation.",
+      "Before claiming a writePaths blocker, inspect this dispatch and actual child inputSnapshot arrays; both exact T2 paths were authorized.",
+      "Worker edits exact plan writePaths and its own progress file; shared indexes, review-dependent docs, lockfiles and broad formatting belong to serial reconciliation.",
+      "Keep scratch under repository-root tmp and push exact reviewed files non-force to origin/feat/remaining-impl-plans for Draft PR #109."
     ],
     "designDecisionsAndRationale": [
       "D1 shares parsed Boolean syntax and typed lookup between validation and publication; all referenced controls are checked, including short-circuited paths.",
@@ -201,23 +201,30 @@
       "impl-plans/completed/loop-engineering-convergence-and-operations.md",
       "impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md"
     ],
-    "reviewDecision": "Step 3 comm-000004 accepted current design; Step 5 comm-000006 accepted current plan, findings=[], needs_design_revision=false, needs_revision=false. T1 evidence remains valid; historical V2 failed at 25/26 and awaits repair.",
+    "reviewDecision": "Step 3 comm-000004 accepted current design; Step 5 comm-000006 accepted current plan, findings=[], needs_design_revision=false, needs_revision=false. T1 evidence remains valid; historical V2 failed 25/26 and awaits fresh V2/V2b.",
     "codexAgentReferences": [],
     "planningVerification": {
-      "command": "python3 tmp/workflow-defect-step4-corrected-dispatch/verify.py",
-      "completeLogPath": "tmp/workflow-defect-step4-corrected-dispatch/verification.log",
-      "terminalExit": 0,
-      "includedCommand": "git diff --check",
-      "includedCommandTerminalExit": 0,
-      "runtimeTests": "Pending renewed V2/V2b, T3–T6 gates; prior V2 FINAL_EXIT_STATUS=1 at tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-2/V2-runtime.log."
+      "commands": [
+        {
+          "command": "python3 tmp/workflow-defect-step4-false-blocker/verify.py",
+          "completeLogPath": "tmp/workflow-defect-step4-false-blocker/verification.log",
+          "finalExitStatus": 0
+        },
+        {
+          "command": "git diff --check",
+          "completeLogPath": "tmp/workflow-defect-step4-false-blocker/verification.log",
+          "finalExitStatus": 0
+        }
+      ],
+      "runtimeTests": "Fresh V2/V2b and T3–T6 gates pending; prior V2 FINAL_EXIT_STATUS=1 at tmp/workflow-defect-repair-20260926-comm000006-a8e1beb/step6-attempt-2/V2-runtime.log."
     },
     "acceptedReview": {
       "designCommunicationId": "comm-000004",
       "planCommunicationId": "comm-000006",
       "decision": "accepted",
       "findings": [],
-      "designSHA256": "20d691ef2d8d7d13df4858eef3b262cad826dcf150212fb9ae77dc97467253e7",
-      "planSHA256": "dfeecf226698f512b4cee59eb23de5c824e442501c82f7dc8421771d187a485c"
+      "designSHA256": "a0e87b2d0c5dcae82da4ece7d64215854bcc9a9dbed8bfe578121377861c4b95",
+      "planSHA256": "33a6aef29d986743ced417223b7466fa83d92d72d7a4cc4f6c29686875310cf8"
     }
   },
   "plans": [

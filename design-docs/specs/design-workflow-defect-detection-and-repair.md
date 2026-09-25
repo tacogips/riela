@@ -1,57 +1,80 @@
 # Workflow defect detection and verified repair
 
-Status: Planning-only finalization, 2026-09-23. Historical D1–D8 acceptance and D9 Step 3 acceptance are distinguished below. This status correction requires renewed Step 3 review; Step 5 acceptance of the current plan remains pending. Runtime implementation remains pending and is not authorized in this run.
+Status: Issue-resolution design handoff, 2026-09-26. Preserve the accepted D1–D9
+behavior and serial T1–T6 plan. This revision reconciles execution authority only;
+implementation completeness is subject to source-matched verification, not the
+historical planning status below. Current Step 3 review of these edited bytes is
+pending.
 
-## Current finalization authority and review status
+## Current implementation authority and review status
 
-Issue: **Finalize workflow defect detection and verified repair design and
-implementation plan**. Issue reference: `workflowInput local request`; no GitHub
-issue number/URL or Codex-agent reference was supplied (`codexAgentReferences=[]`).
-Mode: `planning-only`. Authoritative intake is `comm-000002`,
-`step1-issue-intake-attempt-1-exec-2`, execution
-`codex-design-and-implement-review-loop-session-1`. The runtime-resolved immutable
-user-scope workflow and effective workflowInput are authoritative; this node does
-not rediscover package provenance or readiness.
+Issue: **Implement workflow defect detection and verified repair**, repository
+`tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+Issue number/URL are null; `codexAgentReferences=[]`. Mode: `issue-resolution`.
+Authoritative intake: `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
+`codex-design-and-implement-review-loop-session-1`. The effective `workflowInput`
+and runner-resolved immutable user-scope workflow are authoritative. No workflow
+or package registry rediscovery is required inside this node.
 
-Inspected local `main`, `origin/main` and branch
-`design/workflow-defect-liveness-finalize` all point to
-`0fab7f95e300ecb9e5d236813a9a6519df6025e8`. This is the local source baseline,
-not a claim that the remote was fetched. Only material documentation corrections
-are in scope; Work Runtime P1's separate branch and runtime code remain outside
-this run. Later workflow stages own plan review, accepted-document commit/push,
-and any main integration after acceptance and verification.
+The effective input reports independent acceptance of this design and plan on
+2026-09-23. That supplied acceptance is the scope baseline; earlier planning-only,
+implementation-disabled and pending-review statements below describe historical
+runs and do not override this execution. Likewise, historical source observations,
+package versions, dependency availability, hashes and scratch checks are not fresh
+source evidence. Do not infer that all six tasks are still unimplemented from their
+old status. Step 4 reconciles the leading authority, review digest and task status
+in `impl-plans/active/workflow-defect-detection-and-repair.md`; inspect current
+source and tests before deciding which tasks need new code. Reopen accepted behavior
+only for a material conflict, with an explicit review finding.
 
-| Review scope | Evidence and current decision |
+Verified local starting HEAD: `a8e1beb7e9ead22ae2c4a99403d26d7ba62c482a`, branch
+`feat/remaining-impl-plans`, initially clean. No remote-tip verification is claimed
+by Step 2. Keep serial T1 → T2 → T3 → T4 → T5 → T6 ownership and the plan's exact
+reviewed paths. At their specified task gates, record source-matched APIs, owner
+commits and tests for completed output-contract runtime and Work Runtime P1;
+consume the existing APIs rather than implementing substitute ownership. Other
+conditional dependency gates remain as accepted in the plan.
+
+| Intake requirement | Existing design and implementation contract |
 | --- | --- |
-| Historical D1–D8 | Intake reports accepted design and plan. The plan retains Step 3 `comm-000006`, `step3-design-review-attempt-1-exec-3`, accepted design digest `258cc1d34f78d64971e96e4f130ed8ee8db02eba5209657ee39f8a0ac416b170`, and resolved Step 5 `comm-000008` Package.swift ownership feedback. A later raw Step 5 acceptance receipt is not available in this checkout; historical acceptance is attributed to intake, not independently reconstructed. |
-| D9 Step 3 | Plan records `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`, no findings, for SHA-256 `998818586b15ab158a6dd956ef9a69de52b3bbdcd3a008702a2e96e593b45a0c`. That digest matches this design before the current status correction. This is historical receipt evidence, not acceptance of the newly edited bytes. |
-| Current design | D1–D9 behavior is retained; current authority/status supersedes historical pending-review prose below. Renewed Step 3 review must bind the corrected bytes. |
-| Current plan / implementation | Independent Step 5 review of exact final plan bytes is pending; all six runtime tasks remain unimplemented. The README's blanket acceptance statement must not substitute for this gate. |
+| Typed conditions and rejection before publication/reservation | D1 and D1 detail; T1/T2, A1–A5 |
+| Bounded branch/SCC/gate coverage with explainable incomplete results | D2 and D2 detail; T3, A3–A7 |
+| Persisted authoritative no-progress, stable recovery and retry ownership | D3/D6; T4, A8–A12/A16 |
+| Separate observed activity, responsiveness and semantic progress | D9; T4/T6, L1–L8; activity never resets progress or budgets |
+| Digest-bound reviewed repair and staged apply | D4/D5; T5, A13–A15; preserve transaction and authorization gates |
+| Deterministic incident matrix and existing-behavior regression evidence | D7/D8/D9.6; T6, A1–A16 and L1–L8 |
+| Reviewed publication | Independent test-integrity and adversarial review, Astra combined-tree integration, accurate docs/index, exact reviewed files and commit on Draft PR #109 |
 
-Current source recheck confirms `WorkflowBranchEvaluation.swift` still falls back
-to false for missing controls; `RuntimePublication.swift` validates before normal
-transition selection; loop gate eligibility remains in
-`DeterministicWorkflowRunner+LoopPolicy.swift`. `AgentGatewayNodeAdapter.swift`
-still maps the four ACP discriminators, `RuntimeStore.swift` trusts generic event
-time/sequence, and `SessionObservability.swift` classifies generic event time.
-`FailClosedSQLiteWorkflowRuntimeStore.swift` and the SQLite `session_json` store
-remain the durable implementation seams. These facts support the existing
-ownership boundaries; they do not establish runtime implementation of D1–D9.
+Preserve publication/reservation ordering and D9's distinction between correlated
+inbound activity and proven responsiveness. No generic rewriter, silent max-step
+increase or mock success as repair is authorized. Do not touch riela-packages
+worktrees, Monja tenant-sharding-d48, archived rielflow, main, release tooling or
+unrelated plans. Later finalization commits only exact reviewed files and pushes
+non-force to `origin/feat/remaining-impl-plans`; verify the matching remote tip and
+clean worktree before reporting publication complete.
 
-No new Codex schema mapping is required by this intake. D9's historical behavioral
-references remain context only; Cursor-specific mapping stays in the gateway
-adapter. No user decision is unresolved. Historical incident causal reconstruction,
-exact upstream event-schema equivalence and cross-host freshness remain evidence
-limits, not prerequisites for synthetic deterministic implementation tests.
+For every implementation verification command retain its full command, repository
+cwd, reviewed source/fixture identity, complete repository-root `tmp/` log path,
+positive selected-test count where applicable and observed terminal exit. Run in
+the foreground and poll yielded handles through exit. Failed aggregates remain
+failed, even if focused gates pass; any baseline comparison must be explicit.
+The plan's V1–V9 and L-V1–L-V5 commands remain implementation gates, not Step 2 passes.
 
-The historical scratch verifiers cited below are absent in this checkout and their
-reported results are not fresh verification. Current author checks use
-`python3 tmp/workflow-defect-finalize/step2/verify.py`, complete log
-`tmp/workflow-defect-finalize/step2/verification.log`; require terminal exit 0.
-The checks cover baseline hashes, preserved D1–D9 contracts, source seams, unchanged
-plan/index, changed-file scope and whitespace. Step 4 must reconcile the plan's
-old design digest and authority prose before Step 5; acceptance cannot carry across
-changed bytes. No independent acceptance, runtime test, commit or push is claimed.
+No user decision is unresolved and no new Codex-reference mapping is requested.
+D9.1 retains Cursor-specific normalization in
+`Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`; no upstream schema equivalence
+is asserted. Historical incident artifacts, opaque pre-ingress buffering and
+unverified cross-host freshness remain the accepted evidence/capability limits;
+synthetic deterministic tests do not require resolving those limits.
+
+Step 2 changes only this design's authority section. D1–D9 and all historical
+sections beneath it are byte-preserved. Author self-check command:
+`python3 tmp/workflow-defect-step2/verify.py`; complete log:
+`tmp/workflow-defect-step2/verification.log`. Require terminal exit 0 and the log's
+`FINAL_EXIT_STATUS 0`. The check covers scope/authority, preserved design contracts,
+unchanged plan, six-task/verification mapping, branch/HEAD and whitespace. Retain
+scratch evidence until the owning workflow archives it, then remove it. This
+self-check does not claim independent review, runtime test success, commit or push.
 
 ## Historical D9 extension authority (2026-09-22)
 

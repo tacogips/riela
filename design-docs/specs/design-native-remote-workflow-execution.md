@@ -1,6 +1,6 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted NRE-01/NRE-02/NRE-03 receiving contracts are preserved. Parent P1 native-review continuation from `f8b0d886d277a3f3517f60c344cf6ce9df9b3799` remains open under Work Runtime §17.12; both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each.
+Status: accepted NRE-01/NRE-02/NRE-03 receiving contracts are preserved. Parent P1 native-review continuation from `f8b0d886d277a3f3517f60c344cf6ce9df9b3799` has passed current-tree review under Work Runtime §17.12; implementation plan archived; exact-file publication remains open. Both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each.
 Mode: `issue-resolution`; Step 2 updates design only.
 Issue: “Complete Work Runtime P1 parent review and publication with native join evidence”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.

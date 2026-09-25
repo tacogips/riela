@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: parent P1 native-review continuation is in design review from checkpoint `f8b0d886d277a3f3517f60c344cf6ce9df9b3799`. Section 17.12 governs this bounded continuation of §17.11: preserve the completed ledger reconciliation and existing receipts; native join, current-tree independent acceptance, final docs/index and publication remain pending. Both broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each. Earlier execution instructions remain historical; no completed P1 implementation is repeated.
+Status: parent P1 native-review continuation from checkpoint `f8b0d886d277a3f3517f60c344cf6ce9df9b3799` has passed current-tree test-integrity, Codex Sol adversarial and Codex Astra integration review. Section 17.12 governs this bounded continuation of §17.11. The accepted implementation plan is archived at `impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md`; exact-file commit, non-force push and Draft PR #109 head equality remain pending. Both broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each. Earlier execution instructions remain historical; no completed P1 implementation is repeated.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -3551,7 +3551,7 @@ Runtime P1 parent review and publication with native join evidence”,
 `f8b0d886d277a3f3517f60c344cf6ce9df9b3799`. Runner-resolved provenance is
 authoritative. No codex-agent reference-repository or Cursor behavior mapping
 applies. One design author retains the single `p1-dispatch` plan at
-`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`.
+`impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md`.
 
 Step 6 already classified the 36 historical boxes and C01–C12, reconciled the
 2,766-entry source seal with documentation-only differences, and identified no

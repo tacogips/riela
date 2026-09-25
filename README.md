@@ -815,7 +815,16 @@ matched all 21 baseline assertions across 19 failed cases. Independent
 test-integrity, adversarial and integration reviews accepted the baseline
 attribution and P1-7a A4 handoff with no material finding. The historical A0
 per-command environment snapshots are unavailable. Browser E2E was skipped
-because no `web/` file changed. A5 publication and parent P1 remain open.
+because no `web/` file changed. The native parent continuation has since
+carried the single `p1-dispatch` branch through current-tree review. Independent
+test-integrity, Codex Sol adversarial and Codex Astra integration accepted the
+documentation-only continuation and the separate baseline attribution of both
+FAILED aggregates. The focused dispatcher/example selection remains 69/69
+passing; the Work/CLI/Core and full nonparallel aggregates remain **FAILED**,
+exit 1, with 21 baseline-matched assertions each. Browser E2E was skipped for
+this continuation because no browser-facing file changed. The accepted P1
+implementation plan is archived. Exact-file commit, non-force push and Draft
+PR #109 head verification remain pending workflow publication gates.
 See the [P1-7a progress record](impl-plans/progress/p1-dispatch.md) for commands,
 logs and review history. The design is
 [Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).

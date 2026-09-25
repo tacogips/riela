@@ -1,5 +1,25 @@
 # Work Runtime P1: final acceptance reconciliation
 
+## Step 8 completion-state review — 2026-09-26
+
+Mode `issue-resolution`; issue `tacogips/riela` Draft PR #109 / `comm-000002`;
+workflow execution `codex-design-and-implement-review-loop-session-1`.
+The workflow reached documentation refresh after independent test-integrity,
+Codex Sol adversarial and Codex Astra integration acceptance of the current
+documentation-only tree. The retained dispatcher/example selection passed
+69/69. The Work/CLI/Core and full nonparallel aggregates each remain **FAILED**,
+exit 1, with 21 baseline-matched assertions and distinct attempt-6 comparison
+JSONs. Browser E2E was skipped because no browser-facing path changed.
+
+Accepted implementation and independent reviews are complete, so Step 8 archived
+this original P1 plan without rewriting its historical checklist. N7 remains a
+workflow publication gate: exact reviewed-file commit, non-force push and equality
+of local HEAD, remote tip and Draft PR #109 head are pending. Unavailable A0
+environment snapshots and older slice-local receipts remain disclosed below.
+Step 8 reviewed `README.md` and `.codex/skills/riela-impl-workflow/SKILL.md`;
+the skill needs no edit. `impl-plans/progress/plans-index.json` has no
+`p1-dispatch` entry in its current schema.
+
 ## Native parent continuation — accepted design comm-000004 (2026-09-26)
 
 Mode `issue-resolution`; issue “Complete Work Runtime P1 parent review and

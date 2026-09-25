@@ -34,7 +34,7 @@ impl-plans/
 ## Active Plans
 
 Unchecked-checkbox counts below are reconciled from the actual plan files as of
-2026-09-21; the Work Runtime status was refreshed on 2026-09-25. Workstream tags
+2026-09-21; the Work Runtime status was refreshed on 2026-09-26. Workstream tags
 (W0–W13) map to
 `impl-plans/REMAINING-WORK-HANDOVER.md`. "Unchecked" counts remaining plan
 checkboxes; zero-unchecked plans marked *archive candidate* are complete pending
@@ -44,7 +44,6 @@ only the W13 read-through/move to `completed/`.
 
 | Plan | Unchecked | Status | Workstream |
 | ---- | --------: | ------ | ---------- |
-| `active/work-runtime-p1-dispatcher-guard-director` | 36 | P1-6d and P1-7b published. P1-7a A2/A3 removal and A4 independent review accepted; A5 exact-file commit, non-force push and Draft PR #109 remote-tip check remain open. Both broad Swift aggregates failed exit 1 with 21 baseline-matched assertions; A0 per-command environment snapshots are unavailable. The 36 unchecked boxes include superseded historical sections; parent P1 final evidence remains open, so this plan stays active | Work Runtime P1 |
 | `active/gateway-sdk-addons-01`–`05` | 23 | Design and five plans accepted on `feat/gateway-sdk-addons` (`03eaee1f`, 2026-09-23); public Google Documents v0.3.3 and GatewaySDKKit v0.1.0 tags verified. Planning artifacts only; implementation, dependency resolution and tests remain open. Earlier pending-review wording in the authored documents is historical. | Gateway SDK add-ons |
 | `active/workflow-defect-detection-and-repair` | 6 | D1–D9 design and exact plan accepted by Step 3/Step 5 (2026-09-23, `d11527a`); six serial runtime tasks including backend liveness remain unimplemented. Pending-review wording inside the accepted documents records earlier author stages. | Workflow correctness |
 | `active/execution-environment-consolidation` | 13 | Planned 2026-09-21, no code written; eight implementation boxes and five final acceptance boxes remain. Zero-based definitions, workspace, policy, model, placement and runner consolidation (`design-docs/specs/design-execution-environment-consolidation.md`); supersedes intake adoptions A/C/D/F/G. | Execution environment consolidation |
@@ -112,6 +111,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `work-runtime-p1-dispatcher-guard-director` | 2026-09-26 | `design-work-runtime-consolidation` P1 accepted implementation and native join; independent test-integrity, Codex Sol adversarial and Codex Astra integration accepted. N7 exact-file commit, non-force push and Draft PR #109 head equality remain a workflow publication gate. Both broad Swift aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; A0 environment snapshots and older slice-local receipts are unavailable. Historical unchecked boxes are preserved in the archived plan |
 | `work-runtime-p1-selected-host-delivery` | 2026-09-24 | `design-work-runtime-consolidation` P1-6a selected-host delivery; independent reviews accepted the slice with a bounded V5 CLI/Core exception (22 failing cases, 24 assertions). Parent P1 remains open |
 | `cli-session-store-decode-resilience` | 2026-09-21 | `design-cli-session-store-decode-resilience` (resilient strict decoding, aggregate warning, raw identity collision prevention) |
 | `rielaapp-instance-execution-timeline` | 2026-09-21 | Historical AppKit design superseded by Web UI in `684eeca7`; retained viewer/trace contract verified with Swift, Web unit/typecheck, and Playwright evidence |

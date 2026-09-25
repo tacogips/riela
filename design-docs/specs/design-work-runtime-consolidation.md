@@ -1,6 +1,8 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: parent P1 native-review continuation from checkpoint `f8b0d886d277a3f3517f60c344cf6ce9df9b3799` has passed current-tree test-integrity, Codex Sol adversarial and Codex Astra integration review. Section 17.12 governs this bounded continuation of §17.11. The accepted implementation plan is archived at `impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md`; exact-file commit, non-force push and Draft PR #109 head equality remain pending. Both broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each. Earlier execution instructions remain historical; no completed P1 implementation is repeated.
+Current release-readiness amendment: §17.13 governs Draft PR #113 on `fix/work-runtime-p1-release`; implementation and independent release reviews are pending. The prior status below is historical and does not satisfy the new broad-suite gates.
+
+Historical status: parent P1 native-review continuation from checkpoint `f8b0d886d277a3f3517f60c344cf6ce9df9b3799` has passed current-tree test-integrity, Codex Sol adversarial and Codex Astra integration review. Section 17.12 governs this bounded continuation of §17.11. The accepted implementation plan is archived at `impl-plans/completed/work-runtime-p1-dispatcher-guard-director.md`; exact-file commit, non-force push and Draft PR #109 head equality remain pending. Both broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each. Earlier execution instructions remain historical; no completed P1 implementation is repeated.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -3623,3 +3625,174 @@ rielflow or Monja branches, merge main, release, or stage scratch evidence.
 Native join completeness, current-tree independent decisions, final reviewed
 allowlist and post-push equality are downstream checks, not completed results
 of this design node. The mid provenance finding remains pending those checks.
+
+
+### 17.13. P1 release remediation — Draft PR #113 (2026-09-26)
+
+**Authority and scope.** Mode `issue-resolution`; Step 1 `comm-000002` in
+`codex-design-and-implement-review-loop-session-1`; local request for
+`tacogips/riela`, Draft PR #113 (no issue number supplied). This section is the
+bounded follow-up to the accepted P1 checkpoint
+`a026356eeddcff94eaa82db2cfec09090620c81f`. It supersedes earlier instructions
+that treat baseline attribution as sufficient for this release candidate, or
+name PR #109 as this run's publication target. Work only on
+`fix/work-runtime-p1-release`. Preserve Draft PRs #109 and #112, T2–T6 WIP,
+Monja, archived rielflow and other sessions. No extra worktree, main merge,
+release, new framework or unrelated cleanup. ARM64 Homebrew Formula/Cask
+remains the eventual release path; distribution work is outside this change.
+There is no codex-agent reference input or Cursor CLI behavior mapping for this
+request; no external reference comparison or adapter redesign is needed.
+
+**Evidence and required outcome.** Historical evidence lives under
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/`:
+`V5-comparison.json`, `full-comparison.json`, `V5-work-cli-core.log`, and
+`full-suite-no-parallel.log`. Both comparisons contain the same 21 assertions
+in 19 cases. Work/CLI/Core ran 2,061 tests; full nonparallel ran 2,717 cases,
+two skipped. Both exited 1. `impl-plans/progress/p1-dispatch.md` preserves this
+failed status. Matching a baseline is diagnostic evidence only. New tests may
+increase counts; report actual current-source totals, failures and named skips.
+
+**Contract boundaries and repair decisions.** The classifications below select
+the repair boundary; implementation must substantiate each with a focused test
+and record the actual cause, changed path and result against every assertion ID.
+Do not delete assertions, broad-skip suites or relax production validation to
+make invalid fixtures pass. Where investigation contradicts a classification,
+record contract evidence and obtain review of the changed repair decision.
+
+- **D — JSON consumer fixture.** `Sources/RielaCLI/RielaCLIApplication.swift`
+  emits ISO-8601 dates. `Tests/RielaCLITests/DoctorCommandTests.swift` uses a
+  default numeric-date decoder. Decode the published date format and assert a
+  present, valid `backendCapabilities[].observedAt`, retaining every readiness
+  assertion. Do not change CLI wire dates to numeric values.
+- **G — live inactivity fixture.** `Sources/RielaWork/WorkStore+Decisions.swift`
+  requires an exact running attempt/session/execution and unchanged heartbeat
+  observation before applying inactivity decisions. The failing fixture in
+  `Tests/RielaWorkTests/WorkGuardDispatcherTests.swift` passes a nil attempt and
+  a synthetic idle snapshot. Supply persisted live state and its observation;
+  retain fail-policy stop semantics and prove no rerun. Keep stale-observation
+  rejection and its no-mutation behavior covered. Never bypass the transaction
+  fence or turn stale observations into successful decisions.
+- **B — executable discovery fixture.** The separate-process catalog test in
+  `Tests/RielaCLITests/WorkflowCommandCatalogTests+Temporary.swift` hard-codes
+  `.build/debug/riela`. Resolve the current test build's executable, including
+  `--scratch-path`, and fail clearly if absent. Preserve a real second process,
+  isolated test home and persisted catalog assertions; no skip or stale root
+  binary fallback. Build `riela` in the same scratch build if required.
+- **F — valid agent fixture.** The fanout fixture in
+  `Tests/RielaCLITests/ScopedParityCallStepFanoutTests.swift` omits mandatory
+  `agentSandbox`. Declare permissions matching its change-tracking operation;
+  retain fanout completion and stopping assertions. Keep missing-sandbox
+  rejection covered; do not change runtime defaults to grant permission.
+- **E — CLI diagnostic contract.** Invalid session-policy and cross-workflow
+  fixtures deliberately produce error diagnostics. In
+  `Sources/RielaCLI/WorkflowValidateInspectCommands.swift`, inspection with any
+  error-severity capability gap returns failure while preserving the structured
+  summary. Align stale success expectations with that contract, asserting exact
+  diagnostic paths/meaning and summary presence, plus a valid success control.
+  Do not suppress errors or accept arbitrary nonzero failures as equivalent.
+- **C — callable metadata fixture.** The inspection test currently depends on
+  a project-installed orchestration workflow. Exercise a self-contained valid
+  workflow with explicit callable input/output contracts in
+  `Tests/RielaCLITests/WorkflowCommandInspectionTests.swift`. Preserve callable
+  step, role and both descriptions; avoid any dependency on the executing
+  workflow's installation. This test dependency is unrelated to runner provenance.
+- **U — usage/add-on contract investigation.** In
+  `Tests/RielaCLITests/WorkflowCommandTests.swift`, preserve successful usage
+  discovery for a valid add-on workflow and its add-on source summary. Determine
+  the failing `matrix-chat-reply` diagnostic with isolated fixture inputs.
+  `design-docs/specs/design-workflow-usage-discovery.md` defines usage as callable
+  metadata discovery. Repair an invalid fixture or a proven command/resolver
+  violation at that boundary; do not assert failure merely because it occurs.
+- **A — admission fixture.** In
+  `Tests/RielaCoreTests/DeterministicWorkflowRunnerAdmissionTests.swift`, the
+  codex-agent payload omits its sandbox. Validation precedes session creation
+  and admission in `Sources/RielaCore/DeterministicWorkflowRunner.swift`.
+  Supply a valid payload and prove the specific admission rejection is reached,
+  the created session persists, and no adapter/node effect occurs. A generic
+  throws assertion alone cannot distinguish preflight failure from admission.
+- **T — add-on fixture availability.** The temporary bundle helper in
+  `Tests/RielaCLITests/WorkflowTemporaryRegistrationTests+Matrix.swift` defaults
+  to unresolved `example-addon`. Use an explicitly resolvable add-on for the
+  successful validation/inspection path. Preserve ignored package-manifest
+  metadata, mutable authored provenance and mutation/history assertions.
+  Separately retain unresolved-add-on diagnostics; do not teach production to
+  ignore unresolved executables or use unrelated package metadata to resolve them.
+
+**Complete historical assertion ledger.** IDs follow the aggregate array in
+`V5-comparison.json`; the full comparison contains the same set. Repeated IDs
+for one test represent distinct assertions, not additional test cases.
+
+| ID | Boundary | Test identity |
+| --- | --- | --- |
+| 01 | D | `RielaCLITests.DoctorCommandTests testDoctorMarksAppleContainerWarningWhenServiceIsNotRunning` |
+| 02 | D | `RielaCLITests.DoctorCommandTests testDoctorMarksContainerRequirementOkWhenRuntimeIsAvailable` |
+| 03 | D | `RielaCLITests.DoctorCommandTests testDoctorMarksDockerRuntimeOkWhenDaemonIsReady` |
+| 04 | D | `RielaCLITests.DoctorCommandTests testDoctorMarksDockerWarningWhenDaemonIsNotReady` |
+| 05 | D | `RielaCLITests.DoctorCommandTests testDoctorReportsMissingContainerRuntimeForContainerAddons` |
+| 06 | D | `RielaCLITests.DoctorCommandTests testDoctorReportsRequiredEnvironmentAndRuntimeHints` |
+| 07 | D | `RielaCLITests.DoctorCommandTests testDoctorTreatsRuntimeReadinessErrorsAsWarnings` |
+| 08 | G | `RielaWorkTests.WorkGuardDispatcherTests testFailPolicyStopsInactivityInsteadOfRerunning` |
+| 09 | B | `RielaCLITests.WorkflowCommandCatalogTests testTemporaryCatalogPersistsAcrossSeparateCLIProcess` |
+| 10 | B | `RielaCLITests.WorkflowCommandCatalogTests testTemporaryCatalogPersistsAcrossSeparateCLIProcess` |
+| 11 | F | `RielaCLITests.WorkflowCommandTests testCallStepCompletesChangeTrackedFanoutBeforeStopping` |
+| 12 | E | `RielaCLITests.WorkflowCommandTests testCLIEntryPointsReportInvalidEffectiveNodeSessionPolicy` |
+| 13 | C | `RielaCLITests.WorkflowCommandTests testInspectReportsCallableInputAndOutputContracts` |
+| 14 | U | `RielaCLITests.WorkflowCommandTests testUsageSupportsAddonSmokeWorkflow` |
+| 15 | E | `RielaCLITests.WorkflowCommandTests testValidateAndInspectReportCrossWorkflowDispatchReachableOnlyThroughResumeStep` |
+| 16 | E | `RielaCLITests.WorkflowCommandTests testValidateAndInspectReportMissingCallerResumeStepForCrossWorkflowDispatch` |
+| 17 | E | `RielaCLITests.WorkflowCommandTests testValidateAndInspectReportMissingCrossWorkflowCallee` |
+| 18 | E | `RielaCLITests.WorkflowCommandTests testWorkflowValidateReportsRuntimeCapabilityGaps` |
+| 19 | A | `RielaCoreTests.WorkflowRunnerAdmissionTests testSessionExecutionAdmissionRejectsBeforeNodeEffect` |
+| 20 | T | `RielaCLITests.WorkflowTemporaryRegistrationTests testTemporaryBundleIgnoresPackageManifestMetadataAcrossCommandsAndMutations` |
+| 21 | T | `RielaCLITests.WorkflowTemporaryRegistrationTests testTemporaryBundleIgnoresPackageManifestMetadataAcrossCommandsAndMutations` |
+
+**Verification and acceptance sequence.** The implementation plan must map
+all IDs to exact edits and focused regression evidence before broad execution.
+Use the Xcode Swift toolchain (put
+`/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin`
+first on PATH and record `swift --version`). Run commands in the foreground,
+retain any running tool handle until exit, and write complete command logs plus
+exit status, source revision/diff identity, counts and skips under
+`tmp/p1-release-remediation/`. An incomplete log cannot pass. Scratch files must
+never enter the commit. No changes to workflow packages, prompts or skills are
+proposed, so this design does not require package digest changes.
+
+Required commands, in order after repairs:
+
+```sh
+swift build --scratch-path tmp/p1-release-remediation/build --product riela
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'DoctorCommandTests|WorkGuardDispatcherTests|WorkflowCommandCatalogTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests|WorkflowRunnerAdmissionTests'
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskDispatcherTests|WorkGuardDispatcherTests|AgentDirectorTests|AgentDirectorStoreTests|DeterministicDirectorTests'
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'RielaAdaptersTests|RielaServerTests|RielaGraphQLTests'
+swift test --scratch-path tmp/p1-release-remediation/build --filter 'RielaWorkTests|RielaCLITests|RielaCoreTests'
+swift test --scratch-path tmp/p1-release-remediation/build --no-parallel
+```
+
+The P1 focused selection includes native remote dispatch in
+`Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`; the adapter/server/
+GraphQL gate retains integration coverage. Require positive selected-test counts
+and zero failures with exit 0 for every gate. Explain every skip; none of the
+21 failures may be hidden by a new skip. Run `swiftlint lint --strict --no-cache`
+with the exact changed Swift paths as positional arguments, and
+`git diff --check`; both must exit 0. The plan must spell out the concrete path
+allowlist when known. These are future implementation gates, not results of
+this design-only step.
+
+Independent test-integrity review must verify fixture and expectation changes
+against the stated contracts and all 21 ledger rows. Independent Sol adversarial
+review and Astra combined-tree integration review must accept the final source,
+focused and broad evidence; older P1 approvals do not substitute. Any material
+change following review requires affected re-verification and acceptance.
+Then update release-readiness docs and Draft PR #113 with actual commands,
+counts/skips, complete log references, review decisions and residual risks.
+Commit exact accepted files, non-force push only this branch, verify local,
+remote and PR head equality, and keep PR #113 Draft. No merge or release.
+
+**Open questions and risks.** No unresolved user decision or new architectural
+component. The exact usage failure cause (U) and any additional fixture defects
+surfaced after fixing preflight inputs remain bounded implementation diagnosis;
+record actual diagnostics before selecting edits. Broad tests and the three
+independent reviews are pending. Fixture fixes can conceal production bugs if
+only result codes are checked; specific diagnostics, positive controls and
+side-effect assertions are mandatory. Historical failed logs remain historical
+failures until replaced by current-source passing evidence, never relabeled.

@@ -185,7 +185,7 @@ func acquireWorkflowTargetLock(
   guard live.path == target.ownershipRoot else {
     throw CLIUsageError("workflow target lock requires canonical ownership identity")
   }
-  let lockURL = workflowTargetLockURL(target: target)
+  let lockURL = try workflowTargetLockURL(target: target)
   let pinnedParent = try WorkflowHistoryPinnedRoot(lockURL.deletingLastPathComponent())
   let parentDescriptor = pinnedParent.descriptor
   var parentStatus = stat()
@@ -227,12 +227,22 @@ func acquireWorkflowTargetLock(
   return descriptor
 }
 
-func workflowTargetLockURL(target: WorkflowBundleIdentity) -> URL {
+func workflowTargetLockURL(target: WorkflowBundleIdentity) throws -> URL {
   let key = WorkflowHistoryCanonicalCoding.sha256(Data(target.ownershipRoot.utf8))
-  return URL(fileURLWithPath: "/tmp", isDirectory: true)
+  return try workflowSystemTemporaryRoot()
     .appendingPathComponent("riela-workflow-target-locks-\(geteuid())", isDirectory: true)
     .appendingPathComponent(key, isDirectory: true)
     .appendingPathComponent("target.lock")
+}
+
+func workflowSystemTemporaryRoot() throws -> URL {
+  // macOS spells this trusted system root as /tmp, but /tmp itself is a
+  // symlink. Resolve it before the no-follow descriptor walk below it.
+  guard let resolvedRoot = realpath("/tmp", nil) else {
+    throw CLIUsageError("unable to canonicalize workflow target lock root")
+  }
+  defer { free(resolvedRoot) }
+  return URL(fileURLWithPath: String(cString: resolvedRoot), isDirectory: true)
 }
 
 func releaseWorkflowTargetLock(_ descriptor: Int32) {

@@ -731,6 +731,20 @@ final class GitWorkflowAddonContractTests: XCTestCase {
     }
   }
 
+  func testGitTransportFailureReportsStageWithoutProviderOutput() throws {
+    let repository = try GitTestRepository()
+    let secret = "https://user:secret@example.invalid/private.git"
+    let resolver = repository.makeResolver(
+      commandRunner: SensitiveFailingGitCommandRunner(output: secret)
+    )
+
+    XCTAssertThrowsError(try resolver.runGit(["push"], diagnosticStage: "git push transport")) { error in
+      let adapterError = error as? AdapterExecutionError
+      XCTAssertEqual(adapterError?.message, "git push transport failed with exit code 128")
+      XCTAssertFalse(adapterError?.message.contains(secret) == true)
+    }
+  }
+
   func testFoundationGitRunnerStopsAtOutputLimit() throws {
     let repository = try GitTestRepository()
     let largePath = "large-output.txt"

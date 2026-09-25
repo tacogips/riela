@@ -254,6 +254,13 @@ a non-force push and verifies the live remote again before reporting `pushed`
 or `already-pushed`. Successful output includes the validated remote name and
 branch, never the remote URL or credentials.
 
+For GitHub HTTPS remotes, push can use the operator's URL-matched Homebrew
+`gh auth git-credential` helper when its command and executable match the
+strict allowlist. The isolated transport still disables system/global Git
+configuration; only the GitHub CLI's user authentication context is restored
+for that transport. Other credential-helper snippets remain rejected. A failed
+push reports the transport stage and exit code without exposing Git output.
+
 Production invokes only the trusted system Git at `/usr/bin/git` with argument
 arrays, a minimal environment, disabled hooks/signing/prompts, and bounded
 diagnostics; it never searches `PATH` or evaluates a shell command. Version 1

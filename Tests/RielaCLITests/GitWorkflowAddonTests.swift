@@ -587,6 +587,35 @@ final class GitWorkflowAddonTests: XCTestCase {
     }
   }
 
+  func testPushAcceptsOneReviewedCommitAfterCheckpointPushLeavesTrackingStale() async throws {
+    let repository = try GitTestRepository(withBareRemote: true)
+    let remote = try XCTUnwrap(repository.remoteRoot)
+    let originalTracking = try repository.git(["rev-parse", "refs/remotes/origin/main"]).trimmed
+    try repository.write("checkpoint", to: "checkpoint.txt")
+    _ = try repository.git(["add", "--", "checkpoint.txt"])
+    _ = try repository.git(["commit", "-m", "test: published checkpoint"])
+    let checkpoint = try repository.git(["rev-parse", "HEAD"]).trimmed
+    _ = try repository.git(["push", "origin", "HEAD:refs/heads/main"])
+    _ = try repository.git(["update-ref", "refs/remotes/origin/main", originalTracking])
+    XCTAssertEqual(try GitTestRepository.runGit(["rev-parse", "refs/heads/main"], at: remote).trimmed, checkpoint)
+
+    try repository.write("reviewed final change", to: "final.txt")
+    let committed = try await repository.resolver.execute(
+      commitInput(message: "test: reviewed final change", files: ["final.txt"]),
+      context: AdapterExecutionContext()
+    )
+    let finalRevision = try XCTUnwrap(gitPayload(committed.payload)["commitHash"]?.stringValue)
+    XCTAssertEqual(try repository.git(["rev-parse", "HEAD^"]).trimmed, checkpoint)
+    XCTAssertEqual(try repository.git(["rev-parse", "refs/remotes/origin/main"]).trimmed, originalTracking)
+
+    let pushed = try await repository.resolver.execute(
+      pushInput(repository: repository, expectedCommitHash: finalRevision),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertGitPushEvidence(pushed.payload, status: "pushed", revision: finalRevision, remote: "origin", branch: "main")
+    XCTAssertEqual(try GitTestRepository.runGit(["rev-parse", "refs/heads/main"], at: remote).trimmed, finalRevision)
+  }
+
   func testPushRejectsConfiguredHelpersAndInvalidRemoteNamesBeforeNetwork() async throws {
     let repository = try GitTestRepository(withBareRemote: true)
     _ = try repository.git(["config", "remote.origin.receivepack", "evil-receive-pack"])

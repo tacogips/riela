@@ -7,25 +7,22 @@ Ignore `sessionId`, timestamps, and artifact paths.
 
 ```bash
 riela workflow validate note-link-extract --workflow-definition-dir examples/note-link-extract
+riela workflow inspect note-link-extract --workflow-definition-dir examples/note-link-extract --output json
 ```
 
 Expected result: the workflow is valid.
 
 ## Run
 
-Create a temporary note root containing:
-
-- subject note id: `<subject-note-id>`
-- candidate note id: `note-candidate`
-- a bounded explicit/shared-tag/seed-lexical graph path between the notes
-
-Then run:
+The bundled mock scenario supplies the subject and candidate payloads without
+connecting to a Kaiba server. Run:
 
 ```bash
 riela workflow run note-link-extract \
   --workflow-definition-dir examples/note-link-extract \
   --mock-scenario examples/note-link-extract/mock-scenario.json \
-  --variables '{"noteRoot":"<tmp-note-root>","workflowInput":{"noteId":"<subject-note-id>","subjectBodyMarkdown":"# Subject\nProject planning context.","query":"project planning","limit":10}}' \
+  --session-store tmp/note-link-extract-example/sessions \
+  --artifact-root tmp/note-link-extract-example/artifacts \
   --output json
 ```
 
@@ -35,7 +32,8 @@ Expected stable result:
 - `workflowId` is `note-link-extract`.
 - The root output contains one `proposals` item.
 - The proposal has `targetNoteId: "note-candidate"`, `linkKind: "related"`,
-  and a non-empty `reason`.
+  and a non-empty `reason` (`Depth-two graph path from the subject note.` in
+  this deterministic scenario).
 - Candidate generation is fixed to `depth: 2` and consumes the service-provided
   graph score/path rather than prompt-side scoring.
 - The workflow only proposes candidates; the UI or caller must still confirm

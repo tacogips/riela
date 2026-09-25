@@ -6,6 +6,8 @@ struct WorkflowGitFinalizationEvidencePolicy: Equatable, Sendable {
   var planningModeStepIds: Set<String>
   var integrationStepId: String?
   var implementationReviewStepId: String?
+  var planCommitStepId: String?
+  var planPushStepId: String?
 }
 
 private enum WorkflowGitFinalizationMode: String {
@@ -36,7 +38,7 @@ extension DeterministicWorkflowRunner {
     let relevantStepIds = [
       "step1-issue-intake", "step2-design-doc-update", "step3-design-review",
       "step4-impl-plan-create", "step5-impl-plan-review", "step5-feature-plan-join",
-      "plan-checkpoint", "plan-git-commit", "dispatch-plans",
+      "plan-checkpoint", "plan-git-commit", "plan-git-push", "dispatch-plans",
       "step6-implement", "step6-test-integrity-check", "step7-adversarial-review",
       "step7b-e2e-evidence", "implementation-wave-outcome", "reconcile-implementations",
       "integration-review", "step8-docs-refresh", "step9-commit-message",
@@ -76,14 +78,23 @@ extension DeterministicWorkflowRunner {
     let pushNodes = workflow.nodes.filter {
       $0.addon?.name == "riela/git-push" && $0.addon?.version == "1"
     }
-    guard pushNodes.count == 1, let pushNode = pushNodes.first else {
+    guard (1...2).contains(pushNodes.count) else {
       return nil
     }
-    let pushSteps = workflow.steps.filter { $0.nodeId == pushNode.id }
-    guard pushSteps.count == 1, let pushStep = pushSteps.first else {
-      return nil
-    }
+    let pushNodeIds = Set(pushNodes.map(\.id))
+    let pushSteps = workflow.steps.filter { pushNodeIds.contains($0.nodeId) }
     let integrationStep = workflow.steps.first { $0.id == "base-branch-integrate" }
+    let terminalPushSteps = pushSteps.filter { candidate in
+      let directTerminal = candidate.transitions?.map(\.toStepId) == [terminalStep.id]
+      let integratedTerminal = integrationStep.map {
+        candidate.transitions?.map(\.toStepId) == [$0.id] &&
+          $0.transitions?.map(\.toStepId) == [terminalStep.id]
+      } ?? false
+      return directTerminal || integratedTerminal
+    }
+    guard terminalPushSteps.count == 1, let pushStep = terminalPushSteps.first else {
+      return nil
+    }
     let directTerminal = pushStep.transitions?.map(\.toStepId) == [terminalStep.id]
     let integratedTerminal = integrationStep.map {
       pushStep.transitions?.map(\.toStepId) == [$0.id] &&
@@ -105,12 +116,24 @@ extension DeterministicWorkflowRunner {
       return nil
     }
     let otherCommitNodes = commitNodes.filter { $0.id != commitStep.nodeId }
-    guard otherCommitNodes.isEmpty || (
-      otherCommitNodes.count == 1 && otherCommitNodes[0].id == "plan-git-commit" &&
+    let planCommitStep = workflow.steps.first { $0.id == "plan-git-commit" }
+    let planPushStep = workflow.steps.first { $0.id == "plan-git-push" }
+    let planCommitTransition = planPushStep == nil ? "dispatch-plans" : "plan-git-push"
+    let hasValidPlanCommit = otherCommitNodes.count == 1 &&
+      otherCommitNodes[0].id == "plan-git-commit" &&
       workflow.steps.filter { $0.nodeId == "plan-git-commit" }.count == 1 &&
-      workflow.steps.first { $0.id == "plan-git-commit" }?.transitions?.map(\.toStepId) == ["dispatch-plans"] &&
+      planCommitStep?.nodeId == "plan-git-commit" &&
+      planCommitStep?.transitions?.map(\.toStepId) == [planCommitTransition] &&
       workflow.steps.contains { $0.id == "dispatch-plans" && $0.transitions?.contains { $0.fanout != nil } == true }
-    ) else {
+    let hasValidPlanPush = planPushStep == nil ? pushNodes.count == 1 && pushSteps.count == 1 : (
+      pushNodes.count == 2 && pushSteps.count == 2 &&
+      pushNodes.contains { $0.id == "plan-git-push" } &&
+      planPushStep?.nodeId == "plan-git-push" &&
+      planPushStep?.transitions?.map(\.toStepId) == ["dispatch-plans"] &&
+      pushStep.id != "plan-git-push"
+    )
+    guard (otherCommitNodes.isEmpty && planPushStep == nil || hasValidPlanCommit) &&
+          hasValidPlanPush else {
       return nil
     }
     guard commitStep.transitions?.map(\.toStepId) == [pushStep.id] else {
@@ -135,7 +158,9 @@ extension DeterministicWorkflowRunner {
       planningModeStepIds: planningModeStepIds,
       integrationStepId: integratedTerminal ? integrationStep?.id : nil,
       implementationReviewStepId: workflow.steps.contains { $0.id == "integration-review" }
-        ? "integration-review" : nil
+        ? "integration-review" : nil,
+      planCommitStepId: hasValidPlanCommit ? planCommitStep?.id : nil,
+      planPushStepId: planPushStep?.id
     )
   }
 
@@ -200,12 +225,33 @@ extension DeterministicWorkflowRunner {
           context.payload["pushedBranch"] == .string(pushedBranch) else {
       throw invalidGitFinalizationEvidence("final output does not exactly consume accepted git evidence")
     }
+    if expectedMode == .issueResolution,
+       let planCommitStepId = policy.planCommitStepId,
+       let planPushStepId = policy.planPushStepId {
+      let planCommit = try gitEvidence(
+        acceptedPayload(stepId: planCommitStepId, session: context.session),
+        expectedOperation: "commit",
+        expectedStatuses: ["committed", "already-committed"],
+        expectedKeys: ["operation", "status", "commitHash", "commitMessage", "committedFiles"]
+      )
+      let planPush = try gitEvidence(
+        acceptedPayload(stepId: planPushStepId, session: context.session),
+        expectedOperation: "push",
+        expectedStatuses: ["pushed", "already-pushed"],
+        expectedKeys: ["operation", "status", "commitHash", "pushedRemote", "pushedBranch"]
+      )
+      guard let planCommitHash = stringValue(planCommit["commitHash"]),
+            isFullGitObjectID(planCommitHash),
+            planPush["commitHash"] == .string(planCommitHash),
+            planPush["pushedRemote"] == .string(pushedRemote),
+            planPush["pushedBranch"] == .string(pushedBranch) else {
+        throw invalidGitFinalizationEvidence("plan checkpoint commit and push evidence is missing or mismatched")
+      }
+    }
     if let integrationStepId = policy.integrationStepId {
       let integration = try acceptedPayload(stepId: integrationStepId, session: context.session)
       guard let mergeStatus = stringValue(integration["mergeStatus"]),
-            ["merged", "already-on-base", "already-merged"].contains(mergeStatus),
             let pushStatus = stringValue(integration["basePushStatus"]),
-            ["pushed", "already-pushed"].contains(pushStatus),
             integration["implementationCommit"] == .string(commitHash),
             integration["implementationBranch"] == .string(pushedBranch),
             integration["remote"] == .string(pushedRemote),
@@ -213,6 +259,27 @@ extension DeterministicWorkflowRunner {
             context.payload["baseBranch"] == .string(baseBranch),
             context.payload["mergeStatus"] == .string(mergeStatus),
             context.payload["basePushStatus"] == .string(pushStatus) else {
+        throw invalidGitFinalizationEvidence("base integration evidence is missing or mismatched")
+      }
+      if mergeStatus == "pr-open" {
+        guard pushStatus == "not-requested",
+              let pullRequestURL = stringValue(integration["pullRequestURL"]),
+              let parsedURL = URL(string: pullRequestURL),
+              parsedURL.scheme == "https", parsedURL.host?.isEmpty == false,
+              let pullRequestNumber = integration["pullRequestNumber"]?.asInt64,
+              pullRequestNumber > 0,
+              Array(parsedURL.pathComponents.suffix(2)) == ["pull", String(pullRequestNumber)],
+              integration["pullRequestDraft"] == .bool(true) || integration["pullRequestDraft"] == .bool(false),
+              let pullRequestBaseBranch = stringValue(integration["pullRequestBaseBranch"]),
+              !pullRequestBaseBranch.isEmpty, pullRequestBaseBranch != pushedBranch,
+              context.payload["pullRequestURL"] == .string(pullRequestURL),
+              context.payload["pullRequestNumber"] == integration["pullRequestNumber"],
+              context.payload["pullRequestDraft"] == integration["pullRequestDraft"],
+              context.payload["pullRequestBaseBranch"] == .string(pullRequestBaseBranch) else {
+          throw invalidGitFinalizationEvidence("PR handoff evidence is missing or mismatched")
+        }
+      } else if !["merged", "already-on-base", "already-merged"].contains(mergeStatus) ||
+                  !["pushed", "already-pushed"].contains(pushStatus) {
         throw invalidGitFinalizationEvidence("base integration evidence is missing or mismatched")
       }
     }

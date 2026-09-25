@@ -9,6 +9,9 @@ usage() {
 Usage:
   scripts/release-homebrew-cask-local.sh v<version> [tap-cask-file]
 
+When tap-cask-file is omitted, the sibling homebrew-tap checkout must exist.
+Pass an explicit path when releasing from a separate Git worktree.
+
 Required local environment variables:
   APPLE_SIGNING_IDENTITY  Developer ID Application identity for RielaApp and the CLI executable.
 
@@ -56,6 +59,14 @@ fi
 require_command gh
 require_command git
 require_command shasum
+
+if [[ $# -lt 2 ]]; then
+  tap_root="$repo_root/../homebrew-tap"
+  if [[ ! -f "$tap_cask_file" || ( ! -d "$tap_root/.git" && ! -f "$tap_root/.git" ) ]]; then
+    printf 'error: default sibling homebrew-tap checkout is missing; pass an explicit tap-cask-file path\n' >&2
+    exit 1
+  fi
+fi
 
 version="${release_tag#v}"
 if [[ "$(tr -d '[:space:]' < "$repo_root/VERSION")" != "$version" ]]; then

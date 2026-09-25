@@ -140,7 +140,7 @@ final class WorkflowHistoryAdversarialTests: XCTestCase {
   func testPinnedTargetLockRefusesAncestorRedirection() async throws {
     let (root, _) = try await makeWorkflowVersioningFixture(self)
     let resolved = try resolveVersioningTarget(root: root)
-    let lock = workflowTargetLockURL(target: resolved.identity)
+    let lock = try workflowTargetLockURL(target: resolved.identity)
     try? FileManager.default.removeItem(at: lock)
     let parent = lock.deletingLastPathComponent()
     let displaced = parent.deletingLastPathComponent().appendingPathComponent(

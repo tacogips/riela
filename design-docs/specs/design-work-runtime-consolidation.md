@@ -1,6 +1,6 @@
 # Work Runtime: consolidating auto-improve, loop engineering, supervision, and routines
 
-Status: parent P1 final-acceptance reconciliation is in design review. Effective intake records P1-6d, P1-7b and P1-7a A2–A5 published, the latter at `adde89d4af122d54e1311aad1c4ded12cddbe5c6`. Parent P1 remains open until the §17.11 requirement ledger, material repairs if needed, independent reviews and exact-file publication are complete. Both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; prior independent acceptance of attribution does not make them green. Section 17.11 supersedes historical pending-A4/A5 execution instructions below; it preserves their original evidence and contracts.
+Status: parent P1 native-review continuation is in design review from checkpoint `f8b0d886d277a3f3517f60c344cf6ce9df9b3799`. Section 17.12 governs this bounded continuation of §17.11: preserve the completed ledger reconciliation and existing receipts; native join, current-tree independent acceptance, final docs/index and publication remain pending. Both broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each. Earlier execution instructions remain historical; no completed P1 implementation is repeated.
 Accepted P0 deltas (2026-09-21, spelling only, no redesign): §4 `Task` is Swift `WorkTask` with `guardPolicy` under CodingKey `"guard"`; §4 `FindingSeverity`/`FindingStatus` are typealiases of the existing `WorkflowReviewFindingSeverity`/`WorkflowReviewFindingStatus`, which §3.8 already names as the surviving scale; the gate payload `acceptance` object is decoded by `RielaWork` itself (the internal `LoopGatePayloadParser` is untouched); the shared `user_version` is `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` 4→5, and because §16 forbids `RielaCore` importing `RielaWork`, it is `WorkStore.prepareSchema` that calls the core generation guard, not the reverse; the §8 projector returns evidence, findings **and** decisions, because a `LoopRecoveryLineage` projects to a `Decision`. Details: the plan's "Accepted Deltas" section.
 Date: 2026-09-20
 
@@ -3540,3 +3540,86 @@ material implementation or evidence repair is an explicit plan-author audit task
 not permission to presume completion. New independent parent review decisions
 and final remote-tip equality remain downstream acceptance tasks. This design
 self-check does not claim their completion or substitute for Step 3 review.
+
+### 17.12 Parent P1 native review and publication continuation (2026-09-26)
+
+**Authority and retained work.** Mode `issue-resolution`; issue “Complete Work
+Runtime P1 parent review and publication with native join evidence”,
+`tacogips/riela`, Draft PR #109; no issue number or URL supplied. Step 1
+`comm-000002` in `codex-design-and-implement-review-loop-session-1` and effective
+`workflowInput` authorize continuation on `feat/remaining-impl-plans` from
+`f8b0d886d277a3f3517f60c344cf6ce9df9b3799`. Runner-resolved provenance is
+authoritative. No codex-agent reference-repository or Cursor behavior mapping
+applies. One design author retains the single `p1-dispatch` plan at
+`impl-plans/active/work-runtime-p1-dispatcher-guard-director.md`.
+
+Step 6 already classified the 36 historical boxes and C01–C12, reconciled the
+2,766-entry source seal with documentation-only differences, and identified no
+production gap. Preserve the dirty ledger in that plan and
+`impl-plans/progress/p1-dispatch.md`, including preimage hashes and retained-hunk
+attribution. Preserve existing `tmp/` evidence; use a fresh attempt directory
+under repository-root `tmp/` for new receipts. This section supersedes earlier
+instructions to repeat that reconciliation, implementation or source-matched
+broad tests. Recheck applicability when inputs change; rerun affected tests only
+if source, dependencies, configuration or required evidence is invalidated.
+
+**Native handoff and review.** The prior standalone continuation is recorded in
+`tmp/p1-final-closure-child-rerun-2.jsonl`. Its integrity `comm-000019` and Sol
+adversarial `comm-000020` decisions accepted; Astra integration, responding to
+`comm-000023`, withheld acceptance with mid finding
+`P1-CURRENT-WAVE-PROVENANCE`. No source repair was requested. That finding is
+still open at execution level; this design specifies its resolution, not a new
+integration decision.
+
+The native parent dispatch must execute the one `p1-dispatch` branch and carry
+the runtime-owned join result into serial reconciliation. Evidence must identify
+the current execution/wave, actual `dispatchedBranchIds`, every branch's terminal
+outcome, and runtime `changeEvidence`/snapshot references. Reconciliation must
+account for every dispatched branch and prove both pre-existing ledger edits
+survive in the combined tree, recording any intentional subsequent edits and
+their owner. Branch hashes or a standalone child rerun alone do not prove join
+completeness. Do not fabricate runtime metadata or amend dispatch records to
+simulate it. Missing or incomplete current-wave evidence keeps integration
+pending; it is not a workflow-resolution or source defect.
+
+Data flow: native dispatch → branch evidence → runtime join → serial combined
+tree reconciliation → independent test-integrity and Codex Sol adversarial
+decisions → Codex Astra integration → serial status refresh → exact-file
+publication. Each reviewer must explicitly accept or reject applicability and
+baseline attribution for **each** failed aggregate on the current tree, with
+actual review references. Prior acceptance remains historical until that
+reviewer confirms its applicability; Astra must resolve the native-join finding.
+
+**Required retained verification records.** Keep all three entries in
+`verification[]`, with their complete log paths and final exit codes. The
+comparison field on each failed entry must name its own direct JSON below,
+not a wrapper reconciliation report. Paths share prefix
+`tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/`:
+
+| Command | Retained outcome | Complete log | Direct comparison |
+| --- | --- | --- | --- |
+| `swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests\|TaskRuntimeExampleTests'` | 69/69 passing, exit 0 | `attempt-1/after-removal/V1-focused/log.txt` | Not applicable |
+| `swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --filter 'RielaWorkTests\|RielaCLITests\|RielaCoreTests'` | **FAILED**, exit 1; 2,061 tests; 21 baseline-matched assertions | `attempt-6/V5-work-cli-core.log` | `attempt-6/V5-comparison.json` |
+| `swift test --scratch-path tmp/work-runtime-p1-7a-native-a2-a5/build/p1-dispatch --no-parallel` | **FAILED**, exit 1; 2,717 cases, two skipped; 21 baseline-matched assertions | `attempt-6/full-suite-no-parallel.log` | `attempt-6/full-comparison.json` |
+
+Review acceptance of attribution never changes either FAILED result. Older
+historical slice-local receipts and A0 environment snapshots remain unavailable;
+do not reconstruct them or claim they were revalidated.
+
+**Status and publication.** After accepted integration, the serial owner updates
+this design, the native receiving design, the retained plan/progress ledger and
+`impl-plans/progress/plans-index.json` to evidenced P1 status. Preserve other
+plans and historical limitations. Final review must cover those status edits
+before the exact ordered unique file allowlist is committed and pushed non-force
+to `origin/feat/remaining-impl-plans`. Record `git diff --check`,
+`git diff --cached --check`, actual commit/push outcomes, `git status --porcelain=v1`,
+`git rev-parse HEAD`, `git ls-remote --heads origin feat/remaining-impl-plans`, and
+`gh pr view 109 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid`.
+Require a clean worktree, Draft PR #109 on this branch, and equality of local
+HEAD, remote tip and PR head. Do not repair unrelated source/tests, edit archived
+rielflow or Monja branches, merge main, release, or stage scratch evidence.
+
+**Open questions.** No unresolved user decision or new architectural component.
+Native join completeness, current-tree independent decisions, final reviewed
+allowlist and post-push equality are downstream checks, not completed results
+of this design node. The mid provenance finding remains pending those checks.

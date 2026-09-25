@@ -1,14 +1,21 @@
 # Native remote workflow execution receiving boundary
 
-Status: accepted NRE-01/NRE-02/NRE-03 receiving contracts are preserved. Effective intake records P1-7a A2–A5 accepted and published at `adde89d4af122d54e1311aad1c4ded12cddbe5c6`. Parent P1 final acceptance remains open under Work Runtime §17.11; both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each.
+Status: accepted NRE-01/NRE-02/NRE-03 receiving contracts are preserved. Parent P1 native-review continuation from `f8b0d886d277a3f3517f60c344cf6ce9df9b3799` remains open under Work Runtime §17.12; both latest broad aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each.
 Mode: `issue-resolution`; Step 2 updates design only.
-Issue: “Reconcile and complete Work Runtime P1 final acceptance”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
+Issue: “Complete Work Runtime P1 parent review and publication with native join evidence”; `tacogips/riela`, no issue number/URL supplied; Step 1 `comm-000002`, execution `codex-design-and-implement-review-loop-session-1`.
 Handoff: `feat/remaining-impl-plans`, Draft PR #109.
 
 ## Current parent P1 receiving reconciliation
 
-`design-docs/specs/design-work-runtime-consolidation.md` §17.11 governs the
+`design-docs/specs/design-work-runtime-consolidation.md` §§17.11–17.12 govern the
 requirement ledger, evidence reuse, independent reviews and final publication.
+Section 17.12 is the current continuation: preserve the two dirty ledger files
+and the completed reconciliation. Resolve `P1-CURRENT-WAVE-PROVENANCE` through
+actual native dispatch/join and current-tree Astra acceptance; this workflow
+fanout evidence does not introduce a receiving protocol change. Retain the
+69/69 focused entry in `verification[]` and each FAILED aggregate's distinct
+attempt-6 comparison path. No completed receiving implementation or unchanged
+broad suite is repeated. Final status changes require review before publication.
 Earlier NRE-only scope, pending PR #110 publication and A4/A5 instructions below
 are historical execution context. Preserve the accepted receiver and published
 removal; no replacement protocol, service or archived rielflow dependency exists.

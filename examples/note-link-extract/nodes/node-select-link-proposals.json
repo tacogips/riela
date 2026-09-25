@@ -2,6 +2,7 @@
   "id": "select-link-proposals",
   "description": "Select reviewable related-note link proposals from retrieved candidates.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/select-link-proposals.md",

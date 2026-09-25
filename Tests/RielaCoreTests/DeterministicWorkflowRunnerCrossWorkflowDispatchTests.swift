@@ -542,8 +542,8 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
 
   private func callerNodePayloads() -> [String: AgentNodePayload] {
     [
-      "dispatch-node": AgentNodePayload(id: "dispatch-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-      "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "gpt-5.5")
+      "dispatch-node": AgentNodePayload(id: "dispatch-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+      "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
     ]
   }
 
@@ -595,7 +595,7 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
     payloads["final-node"] = AgentNodePayload(
       id: "final-node",
       executionBackend: .codexAgent,
-      model: "gpt-5.5"
+      model: "gpt-5.5", agentSandbox: .readOnly
     )
     return payloads
   }
@@ -611,7 +611,7 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
         nodes: [WorkflowNodeRef(id: "callee-entry", nodeFile: "nodes/callee.json")]
       ),
       nodePayloads: [
-        "callee-node": AgentNodePayload(id: "callee-node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "callee-node": AgentNodePayload(id: "callee-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ]
     )
   }
@@ -638,7 +638,7 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
         nodes: stepIds.map { WorkflowNodeRef(id: "\($0)-node", nodeFile: "nodes/\($0).json") }
       ),
       nodePayloads: Dictionary(uniqueKeysWithValues: stepIds.map {
-        ("\($0)-node", AgentNodePayload(id: "\($0)-node", executionBackend: .codexAgent, model: "gpt-5.5"))
+        ("\($0)-node", AgentNodePayload(id: "\($0)-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly))
       })
     )
   }
@@ -671,8 +671,14 @@ final class DeterministicWorkflowRunnerCrossWorkflowDispatchTests: XCTestCase {
         ]
       ),
       nodePayloads: [
-        "callee-entry-node": AgentNodePayload(id: "callee-entry-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-        "child-done-node": AgentNodePayload(id: "child-done-node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "callee-entry-node": AgentNodePayload(
+          id: "callee-entry-node",
+          executionBackend: .codexAgent,
+          model: "gpt-5.5",
+          agentSandbox: .readOnly,
+          output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+        ),
+        "child-done-node": AgentNodePayload(id: "child-done-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ]
     )
   }

@@ -2,6 +2,7 @@
   "id": "riela-manager",
   "description": "Coordinate the recent-change quality loop.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/riela-manager.md",

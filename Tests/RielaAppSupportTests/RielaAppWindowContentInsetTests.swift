@@ -35,6 +35,7 @@ final class RielaAppWindowContentInsetTests: XCTestCase {
     )
     let window = try XCTUnwrap(controller.window)
     window.setContentSize(NSSize(width: 760, height: 620))
+    controller.showInstancesList()
     window.layoutIfNeeded()
 
     let contentView = try XCTUnwrap(window.contentView)

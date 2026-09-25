@@ -2,6 +2,7 @@
   "id": "loop-intake",
   "description": "Capture the loop symptom and define the acceptance target.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/loop-intake.md",

@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaWork
 @testable import RielaServer
 import XCTest
 
@@ -20,6 +21,41 @@ final class DistributedWorkerHTTPTests: XCTestCase {
       .init(workerId: "mac", groups: ["apple"], token: tokenA, maxCapacity: 2),
       .init(workerId: "linux", groups: ["linux"], token: tokenB, maxCapacity: 1)
     ])
+  }
+
+  func testStoppedReceiptRequiresAuthenticatedOriginalWorkerLease() async throws {
+    let controller = try controller()
+    let route = try router(controller)
+    let worker = try await controller.register(workerId: "mac", groups: ["apple"], capacity: 1)
+    _ = try await controller.enqueue(id: "stop", target: .init(workerId: "mac"), payload: [:])
+    let claimed = try await controller.claim(worker: worker, now: Date(), leaseDuration: 10)
+    let token = try XCTUnwrap(claimed?.lease?.token)
+    try await controller.cancel(jobId: "stop")
+
+    func response(_ bearer: String, _ leaseToken: String) async throws -> Int {
+      let body = try JSONEncoder().encode(DistributedWorkerRequest(
+        operation: .stopped, registration: worker, jobId: "stop", leaseToken: leaseToken
+      ))
+      return await route.response(for: RielaHTTPRequest(
+        method: "POST", path: DistributedWorkerHTTPRouter.path,
+        headers: ["content-type": "application/json", "authorization": "Bearer " + bearer], body: body
+      )).status
+    }
+
+    let foreignStatus = try await response(tokenB, token)
+    let staleStatus = try await response(tokenA, "stale")
+    let pendingStop = try await controller.job(id: "stop", now: Date())
+    XCTAssertEqual(foreignStatus, 403)
+    XCTAssertEqual(staleStatus, 409)
+    XCTAssertNil(pendingStop?.stoppedAt)
+    let acceptedStatus = try await response(tokenA, token)
+    XCTAssertEqual(acceptedStatus, 200)
+    let acknowledged = try await controller.job(id: "stop", now: Date())?.stoppedAt
+    XCTAssertNotNil(acknowledged)
+    let replayStatus = try await response(tokenA, token)
+    let replayedStop = try await controller.job(id: "stop", now: Date())?.stoppedAt
+    XCTAssertEqual(replayStatus, 200)
+    XCTAssertEqual(replayedStop, acknowledged)
   }
 
   func testTwoLiveHTTPWorkersRouteAndPublishResults() async throws {
@@ -60,6 +96,128 @@ final class DistributedWorkerHTTPTests: XCTestCase {
       _ = try await mac.send(.init(operation: .claim, registration: linuxRegistration))
       XCTFail("Credential impersonation accepted")
     } catch { XCTAssertEqual(error as? DistributedWorkerTransportError, .rejected(status: 403)) }
+  }
+
+  func testRegistrationPublishesCapabilitiesToWorkHostStore() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("tmp/distributed-workers/capability-store/\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkStore(rootDirectory: root.path)
+    let controller = try controller()
+    let observedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    let clock = MutableDistributedWorkerClock(observedAt)
+    let router = try DistributedWorkerHTTPRouter(
+      controller: controller,
+      credentials: [.init(workerId: "mac", groups: ["apple"], token: tokenA, maxCapacity: 2)],
+      clock: clock,
+      capabilitySnapshotSink: { snapshot in try store.saveHostSnapshot(snapshot) }
+    )
+    let body = try JSONEncoder().encode(DistributedWorkerRequest(
+      operation: .register,
+      capacity: 2,
+      capabilities: [
+        BackendCapability(
+          backend: .codexAgent,
+          source: .observed,
+          observedAt: observedAt,
+          availability: .available,
+          authentication: .available,
+          requiredEnvironment: ["CODEX_TOKEN": true],
+          executableAvailable: true
+        ),
+        BackendCapability(
+          backend: .claudeCodeAgent,
+          source: .observed,
+          observedAt: observedAt,
+          availability: .available,
+          authentication: .available,
+          executableAvailable: true
+        )
+      ],
+      environment: ["CODEX_TOKEN": false, "CUSTOM_ENV": true],
+      addonExecutables: ["tool-cli": true]
+    ))
+    let response = await router.response(for: RielaHTTPRequest(
+      method: "POST",
+      path: DistributedWorkerHTTPRouter.path,
+      headers: ["content-type": "application/json", "authorization": "Bearer " + tokenA],
+      body: body
+    ))
+    XCTAssertEqual(response.status, 200)
+    let registrationReply = try JSONDecoder().decode(DistributedWorkerResponse.self, from: response.body)
+    let registration = try XCTUnwrap(registrationReply.registration)
+    let snapshot = try XCTUnwrap(store.loadHostSnapshots().first)
+    XCTAssertEqual(snapshot.hostId, "mac")
+    XCTAssertEqual(snapshot.groups, ["apple"])
+    XCTAssertEqual(snapshot.capacity, 2)
+    XCTAssertTrue(snapshot.live)
+    XCTAssertEqual(snapshot.backends.first?.backend, .codexAgent)
+    XCTAssertEqual(snapshot.environment, ["CODEX_TOKEN": false, "CUSTOM_ENV": true])
+    XCTAssertEqual(snapshot.addonExecutables, ["tool-cli": true])
+    XCTAssertEqual(snapshot.capabilitiesObservedAt, observedAt)
+
+    let backendProvenance = WorkflowRequirementProvenance(workflowId: "flow", stepId: "agent", nodeId: "agent")
+    let addonProvenance = WorkflowRequirementProvenance(workflowId: "flow", stepId: "addon", nodeId: "addon")
+    let placement = BackendCapabilityPlacementResolver().resolve(
+      requirements: [
+        WorkflowBackendRequirement(
+          pin: .claudeCodeAgent,
+          requiredEnvironment: ["CUSTOM_ENV"],
+          provenance: [backendProvenance]
+        ),
+        WorkflowBackendRequirement(addonExecutable: "tool-cli", provenance: [addonProvenance])
+      ],
+      local: HostCapabilitySnapshot(hostId: "local", backends: [], refreshedAt: Date()),
+      workers: [snapshot],
+      assignments: [
+        backendProvenance: DistributedWorkerTarget(workerId: "mac"),
+        addonProvenance: DistributedWorkerTarget(workerId: "mac")
+      ],
+      now: observedAt
+    )
+    XCTAssertTrue(placement.complete)
+    XCTAssertEqual(placement.choices.map(\.hostId), ["mac", "mac"])
+    let workspaceFilteredPlacement = BackendCapabilityPlacementResolver().resolve(
+      requirements: [WorkflowBackendRequirement(
+        pin: .codexAgent,
+        provenance: [backendProvenance]
+      )],
+      local: HostCapabilitySnapshot(hostId: "local", backends: [], refreshedAt: observedAt),
+      workers: [snapshot],
+      assignments: [backendProvenance: DistributedWorkerTarget(workerId: "mac")],
+      now: observedAt
+    )
+    XCTAssertFalse(workspaceFilteredPlacement.complete, "A positive backend probe cannot override a workspace-filtered environment fact.")
+
+    clock.advance(by: 20)
+    let claimResponse = await router.response(for: RielaHTTPRequest(
+      method: "POST",
+      path: DistributedWorkerHTTPRouter.path,
+      headers: ["content-type": "application/json", "authorization": "Bearer " + tokenA],
+      body: try JSONEncoder().encode(DistributedWorkerRequest(operation: .claim, registration: registration))
+    ))
+    XCTAssertEqual(claimResponse.status, 200)
+    let refreshedSnapshot = try XCTUnwrap(store.loadHostSnapshots().first)
+    XCTAssertEqual(refreshedSnapshot.refreshedAt, observedAt.addingTimeInterval(20))
+    XCTAssertEqual(refreshedSnapshot.capabilitiesObservedAt, observedAt)
+    let stalePlacement = BackendCapabilityPlacementResolver(maximumAge: 300).resolve(
+      requirements: [
+        WorkflowBackendRequirement(
+          requiredEnvironment: ["CUSTOM_ENV"],
+          provenance: [backendProvenance]
+        ),
+        WorkflowBackendRequirement(addonExecutable: "tool-cli", provenance: [addonProvenance])
+      ],
+      local: HostCapabilitySnapshot(hostId: "local", backends: [], refreshedAt: observedAt),
+      workers: [refreshedSnapshot],
+      assignments: [
+        backendProvenance: DistributedWorkerTarget(workerId: "mac"),
+        addonProvenance: DistributedWorkerTarget(workerId: "mac")
+      ],
+      now: observedAt.addingTimeInterval(300)
+    )
+    XCTAssertFalse(stalePlacement.complete, "Capability equality at maximum age is stale even after a liveness refresh.")
   }
 
   func testAuthenticationContentTypeAndBrowserRequestsFailClosed() async throws {
@@ -328,6 +486,27 @@ private actor DistributedEventTestFault {
   func consume() -> Bool {
     defer { pending = false }
     return pending
+  }
+}
+
+private final class MutableDistributedWorkerClock: WorkflowRuntimeClock, @unchecked Sendable {
+  private let lock = NSLock()
+  private var value: Date
+
+  init(_ value: Date) {
+    self.value = value
+  }
+
+  func now() -> Date {
+    lock.lock()
+    defer { lock.unlock() }
+    return value
+  }
+
+  func advance(by interval: TimeInterval) {
+    lock.lock()
+    value = value.addingTimeInterval(interval)
+    lock.unlock()
   }
 }
 

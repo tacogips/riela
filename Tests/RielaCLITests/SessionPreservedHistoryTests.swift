@@ -18,7 +18,7 @@ final class SessionPreservedHistoryTests: XCTestCase {
     """.write(to: bundle.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     for id in ["first", "final"] {
       try """
-      {"id":"\(id)","executionBackend":"codex-agent","model":"fixture","variables":{},
+      {"id":"\(id)","executionBackend":"codex-agent","agentSandbox":"read-only","model":"fixture","variables":{},
        "output":{"jsonSchema":{"type":"object","required":["answer"]},"maxValidationAttempts":2}}
       """.write(to: bundle.appendingPathComponent("\(id).json"), atomically: true, encoding: .utf8)
     }

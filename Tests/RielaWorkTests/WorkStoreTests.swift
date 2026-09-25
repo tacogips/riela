@@ -107,6 +107,117 @@ final class WorkStoreTests: XCTestCase {
     XCTAssertEqual(try store.listTasks().map(\.id), [sampleTask().id])
   }
 
+  func testGenerationSixPendingReservationSchemaIsDiscardedAndRecreated() throws {
+    let store = makeStore()
+    try FileManager.default.createDirectory(
+      at: URL(fileURLWithPath: store.databasePath).deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let stale = try SQLiteDatabase.open(path: store.databasePath, mode: .readWriteCreate, options: .writableDefault)
+    try stale.execute("CREATE TABLE workflow_runtime_snapshots (workflow_execution_id TEXT PRIMARY KEY)")
+    try stale.execute("CREATE TABLE work_pending_reservations (request_id TEXT PRIMARY KEY, task_id TEXT UNIQUE)")
+    try stale.execute("PRAGMA user_version = 6")
+
+    XCTAssertFalse(
+      SQLiteSchemaMigrator.hasCompletePath(
+        from: 6,
+        to: SQLiteWorkflowRuntimePersistenceStore.schemaGeneration,
+        migrations: SQLiteWorkflowRuntimePersistenceStore.schemaMigrations
+      )
+    )
+
+    try store.saveTask(sampleTask())
+
+    let rebuilt = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try SQLiteSchemaMigrator.stampedGeneration(in: rebuilt), SQLiteWorkflowRuntimePersistenceStore.schemaGeneration)
+    let indexes = try rebuilt.query("PRAGMA index_list('work_pending_reservations')")
+    XCTAssertTrue(indexes.contains { $0["name"] == "idx_work_pending_reservations_one_unconsumed_task" })
+    XCTAssertEqual(try store.listTasks().map(\.id), [sampleTask().id])
+  }
+
+  func testOnlyOneUnconsumedPendingReservationCanExistPerTask() throws {
+    let store = makeStore()
+    let task = sampleTask(state: .scheduled)
+    try store.saveTask(task)
+    let firstDecision = Decision(
+      id: DecisionID("first-rerun-decision"),
+      taskId: task.id,
+      attemptId: AttemptID("first-predecessor"),
+      producer: .policy(rule: "recover"),
+      kind: .rerun(fromStepId: "repair"),
+      reason: "first retry request",
+      createdAt: Date(timeIntervalSince1970: 1_800_000_000)
+    )
+    try store.saveDecision(firstDecision)
+    XCTAssertThrowsError(try store.enqueuePendingReservation(PendingAttemptReservation(
+      id: "wrong-predecessor-request",
+      taskId: task.id,
+      decisionId: firstDecision.id,
+      predecessorAttemptId: AttemptID("wrong-predecessor"),
+      entry: .rerunFromStep("repair")
+    )))
+    let firstRequest = PendingAttemptReservation(
+      id: "first-pending-request",
+      taskId: task.id,
+      decisionId: firstDecision.id,
+      predecessorAttemptId: firstDecision.attemptId,
+      entry: .rerunFromStep("repair")
+    )
+    try store.enqueuePendingReservation(firstRequest)
+    let database = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let firstRow = try XCTUnwrap(database.query(
+      "SELECT request_id, decision_id, consumed_attempt_id FROM work_pending_reservations WHERE request_id = ?",
+      bindings: [.text(firstRequest.id)]
+    ).first)
+
+    let secondDecision = Decision(
+      id: DecisionID("second-rerun-decision"),
+      taskId: task.id,
+      attemptId: AttemptID("second-predecessor"),
+      producer: .policy(rule: "recover"),
+      kind: .rerun(fromStepId: "repair"),
+      reason: "competing retry request",
+      createdAt: Date(timeIntervalSince1970: 1_800_000_001)
+    )
+    try store.saveDecision(secondDecision)
+    XCTAssertThrowsError(try store.enqueuePendingReservation(PendingAttemptReservation(
+      id: "second-pending-request",
+      taskId: task.id,
+      decisionId: secondDecision.id,
+      predecessorAttemptId: secondDecision.attemptId,
+      entry: .rerunFromStep("repair")
+    )))
+
+    XCTAssertEqual(try database.query(
+      "SELECT request_id, decision_id, consumed_attempt_id FROM work_pending_reservations WHERE task_id = ?",
+      bindings: [.text(task.id.rawValue)]
+    ), [firstRow])
+  }
+
+  func testReservationRejectsPersistedPendingRequestWithWrongPredecessor() throws {
+    let store = makeStore()
+    let task = sampleTask(state: .scheduled)
+    try store.saveTask(task)
+    let decision = Decision(
+      id: DecisionID("rerun"), taskId: task.id, attemptId: AttemptID("predecessor"),
+      producer: .policy(rule: "recover"), kind: .rerun(fromStepId: "repair"), reason: "retry", createdAt: Date()
+    )
+    try store.saveDecision(decision)
+    try store.enqueuePendingReservation(PendingAttemptReservation(
+      id: "pending", taskId: task.id, decisionId: decision.id,
+      predecessorAttemptId: decision.attemptId, entry: .rerunFromStep("repair")
+    ))
+    let database = try store.openWritable()
+    try database.execute("UPDATE work_pending_reservations SET predecessor_attempt_id = 'wrong' WHERE request_id = 'pending'")
+    XCTAssertThrowsError(try store.reserveAttempt(AttemptReservationRequest(
+      taskId: task.id, expectedTaskVersion: task.version, attemptId: AttemptID("attempt"),
+      sessionId: "session", workflowId: "workflow", entryStepId: "repair", entry: .rerunFromStep("repair"),
+      decisionId: decision.id, producer: .policy(rule: "recover"), reason: "retry", pendingRequestId: "pending"
+    )))
+    XCTAssertEqual(try store.listAttempts(taskId: task.id), [])
+    XCTAssertEqual(try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault).query("SELECT attempt_id FROM work_leases"), [])
+  }
+
   // MARK: - CRUD
 
   func testIntentUpsertLoadAndList() throws {

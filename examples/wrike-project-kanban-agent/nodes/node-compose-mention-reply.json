@@ -2,11 +2,21 @@
   "id": "compose-mention-reply",
   "description": "Answers a new mention comment on an already-completed Wrike task; the reply is posted back to the same task without changing its status.",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-haiku-4-5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/compose-mention-reply.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with payload.taskId and payload.commentId copied exactly from the input, and payload.replyText containing the answer."
+    "description": "Return JSON with payload.taskId and payload.commentId copied exactly from the input, and payload.replyText containing the answer.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "commentId": { "type": "string" },
+        "replyText": { "type": "string" }
+      },
+      "required": ["taskId", "commentId", "replyText"]
+    }
   }
 }

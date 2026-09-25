@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Emit the final knowledge-base update summary payload.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplate": "Project the latest knowledge-base payload.",

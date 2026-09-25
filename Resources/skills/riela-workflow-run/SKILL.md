@@ -42,6 +42,19 @@ riela workflow manifest validate
 choose where runtime records are written. Add `--output json` when a program
 reads the result.
 
+For an ordinary run on `riela serve`, set `RIELA_MANAGER_AUTH_TOKEN` in the
+server's startup environment and provide the same bearer to the client:
+
+```
+riela workflow run my-workflow --endpoint https://riela.example/graphql --output json
+```
+
+The client also accepts `--auth-token` and `--auth-token-env`. The host chooses
+the working directory and session store. The call waits for a persisted result
+and returns its actual exit code, including failure. A client timeout can leave
+the run continuing; retrying can start another run. Remote runs reject
+`--from-registry`, `--mock-scenario`, and `--supervisor-mode`.
+
 ## Follow and control a session
 
 <!-- surface-catalog:begin session -->

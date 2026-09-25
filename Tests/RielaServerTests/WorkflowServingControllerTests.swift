@@ -163,8 +163,6 @@ final class WorkflowServingControllerTests: XCTestCase {
     XCTAssertEqual(state.generation?.generationId, "generation-2")
   }
 
-
-
   func testServeScenarioPreservesInstanceParametersAcrossRestart() async throws {
     let eventSourceFactory = RequestRecordingEventSourceFactory()
     let controller = WorkflowServingController(dependencies: WorkflowServingDependencies(
@@ -266,6 +264,7 @@ final class WorkflowServingControllerTests: XCTestCase {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "model",
       "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "missing" }
     }
@@ -339,7 +338,6 @@ private func objectValue(_ value: JSONValue?, field: String) throws -> JSONObjec
   }
   return object
 }
-
 
 private actor ServeRecorder {
   private var events: [String] = []

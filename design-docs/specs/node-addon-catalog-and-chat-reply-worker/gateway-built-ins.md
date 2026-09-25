@@ -1243,12 +1243,14 @@ Execution behavior:
    separate arguments:
 
 ```bash
-apple-gateway file download --key <download-key>
+apple-gateway file download --key <download-key> --output-dir <validated-root>
 ```
 
-8. compare the actual stdout byte count to `maxDownloadBytes` before writing;
-   underreported or missing provider `byteSize` values cannot bypass the cap
-9. write downloaded bytes to a Riela-chosen leaf path under the download root;
+8. parse the gateway's JSON `data.files[]` manifest, require exactly one
+   contained regular-file path for the requested key, and compare the actual
+   file size to `maxDownloadBytes`; underreported or missing provider
+   `byteSize` values cannot bypass the cap
+9. publish the downloaded bytes at a Riela-chosen leaf path under the download root;
    gateway-provided filenames are sanitized by stripping path separators,
    traversal markers, and control characters, with a deterministic fallback such
    as `<kind>-<index>`
@@ -1257,13 +1259,11 @@ apple-gateway file download --key <download-key>
    `appleMail.downloadRoot`, `appleMail.permissions.mailFullDiskAccess`, and
    `appleGateway.binary`
 
-The unresolved upstream contract for `apple-gateway file download` is tracked in
-`design-docs/user-qa/qa-apple-mail-gateway-file-download.md`. Until confirmed,
-implementation should prefer raw stdout bytes for the fake-executable contract.
-If the real gateway requires an explicit output directory rather than stdout
-bytes, Riela still chooses and validates the destination and passes that
-Riela-controlled path to the gateway. The gateway never chooses the final local
-path.
+The upstream contract is confirmed in
+`design-docs/user-qa/qa-apple-mail-gateway-file-download.md`: stdout is a JSON
+manifest, not file bytes, and `--output-dir` selects the materialization root.
+Riela validates and supplies that root, validates the returned path, and still
+chooses the final sanitized local filename.
 
 ### Validation and Error Rules
 

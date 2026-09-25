@@ -2,11 +2,20 @@
   "id": "do-ticket-work",
   "description": "Reads the claimed Wrike task and produces the work result text that will be posted back to the ticket as a comment.",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-haiku-4-5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/do-ticket-work.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with payload.taskId copied exactly from the input task id and payload.resultComment containing the completed work text."
+    "description": "Return JSON with payload.taskId copied exactly from the input task id and payload.resultComment containing the completed work text.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "resultComment": { "type": "string" }
+      },
+      "required": ["taskId", "resultComment"]
+    }
   }
 }

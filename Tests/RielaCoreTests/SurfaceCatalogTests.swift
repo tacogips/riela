@@ -48,21 +48,26 @@ final class SurfaceCatalogTests: XCTestCase {
     )
   }
 
-  /// Delta D6, after P0: the Work Runtime read commands are implemented on
-  /// the CLI and nothing else is. Every other face stays `blocked` on the
-  /// phase that owns it, with evidence naming it — never loosened to
-  /// `excluded`, and never left claiming a binding it does not have.
-  func testOnlyTheWorkRuntimeReadCommandsAreImplementedAfterP0() {
+  /// P0 reads and P1 task run/decide are implemented on the CLI. Every
+  /// remaining face stays blocked on its owning phase, with evidence naming
+  /// it; no row claims a binding that has not shipped.
+  func testWorkRuntimeReadAndP1TaskCommandsAreCataloged() {
     let rows = SurfaceCatalog.operations(inFamily: "task") + SurfaceCatalog.operations(inFamily: "intent")
     XCTAssertEqual(
       Set(rows.map(\.id)),
-      ["task.submit", "task.list", "task.show", "task.serve", "intent.create", "intent.list", "intent.show"]
+      [
+        "task.submit", "task.list", "task.show", "task.run", "task.decide", "task.serve",
+        "intent.create", "intent.list", "intent.show"
+      ]
     )
 
-    let readCommands = ["task.show": "task show", "task.list": "task list"]
+    let implementedCommands = [
+      "task.show": "task show", "task.list": "task list",
+      "task.run": "task run", "task.decide": "task decide"
+    ]
     for row in rows {
-      if let command = readCommands[row.id] {
-        XCTAssertEqual(row.availability(on: .cli), .implemented, "\(row.id) ships in P0")
+      if let command = implementedCommands[row.id] {
+        XCTAssertEqual(row.availability(on: .cli), .implemented, "\(row.id) ships in P0 or P1")
         XCTAssertEqual(row.cli?.command, command)
         XCTAssertFalse(row.cli?.options.isEmpty ?? true, "\(row.id) must document its flags")
       } else {

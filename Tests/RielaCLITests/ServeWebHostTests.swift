@@ -79,6 +79,118 @@ final class ServeWebHostTests: XCTestCase {
     XCTAssertEqual(wrongHost.status, 403)
   }
 
+  func testBrowserExecutionUsesProfileStoreAndGatesSummaryReads() async throws {
+    let root = try fixtureRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let workflow = root.appendingPathComponent("project/.riela/workflows/browser-example")
+    try FileManager.default.createDirectory(at: workflow.appendingPathComponent("nodes"), withIntermediateDirectories: true)
+    try Data(#"""
+      {"workflowId":"browser-example","entryStepId":"work",
+       "defaults":{"nodeTimeoutMs":30000,"maxLoopIterations":1},
+       "nodes":[{"id":"work","nodeFile":"nodes/work.json"}],
+       "steps":[{"id":"work","nodeId":"work","role":"worker"}]}
+      """#.utf8).write(to: workflow.appendingPathComponent("workflow.json"))
+    try Data(#"""
+      {"id":"work","nodeType":"command","modelFreeze":false,
+       "command":{"executable":"/bin/echo","arguments":["{\"ok\":true}"]}}
+      """#.utf8).write(to: workflow.appendingPathComponent("nodes/work.json"))
+    let home = root.appendingPathComponent("home")
+    let host = ServeWebHost(
+      homeDirectory: home, workingDirectory: root.appendingPathComponent("project"),
+      sessionStoreRoot: nil, host: "127.0.0.1", port: 8787,
+      fallback: DeterministicServerHTTPAdapter(), environment: ["HOME": home.path]
+    )
+    let firstStore = host.sessionStoreRoot
+    let bootstrap = try object(await host.response(for: get("/api/v1/bootstrap")))
+    let csrf = try XCTUnwrap(bootstrap["csrfToken"] as? String)
+    var request = RielaHTTPRequest(
+      method: "POST", path: "/graphql",
+      headers: [
+        "host": "127.0.0.1:8787", "origin": "http://127.0.0.1:8787",
+        "content-type": "application/json", "x-riela-csrf": csrf,
+        "x-riela-profile": "default"
+      ],
+      body: Data(#"{"query":"mutation { executeWorkflow(input: {workflowName: \"browser-example\"}) { sessionId status exitCode } }"}"#.utf8)
+    )
+    request.headers["x-riela-csrf"] = "invalid"
+    let rejected = await host.response(for: request)
+    XCTAssertEqual(rejected.status, 403)
+    request.headers["x-riela-csrf"] = csrf
+    request.headers.removeValue(forKey: "x-riela-profile")
+    let conflict = await host.response(for: request)
+    XCTAssertEqual(conflict.status, 409)
+    request.headers["x-riela-profile"] = "default"
+    let executed = await host.response(for: request)
+    XCTAssertEqual(executed.status, 200)
+    let data = try XCTUnwrap((try object(executed)["data"] as? [String: Any])?["executeWorkflow"] as? [String: Any])
+    let sessionId = try XCTUnwrap(data["sessionId"] as? String)
+    XCTAssertEqual(data["status"] as? String, "completed")
+    XCTAssertEqual(data["exitCode"] as? Int, 0)
+    XCTAssertEqual(try CLIWorkflowSessionStore(rootDirectory: firstStore)
+      .loadStrictReadOnly(sessionId: sessionId).session.status, .completed)
+
+    request.body = try JSONSerialization.data(withJSONObject: [
+      "query": "query($id: String!) { workflowExecution(workflowExecutionId: $id) { session { sessionId workflowId } } }",
+      "variables": ["id": sessionId]
+    ])
+    let summary = try object(await host.response(for: request))
+    let summarySession = ((summary["data"] as? [String: Any])?["workflowExecution"] as? [String: Any])?["session"] as? [String: Any]
+    XCTAssertEqual(summarySession?["workflowId"] as? String, "browser-example")
+
+    let ready = root.appendingPathComponent("ready")
+    let release = root.appendingPathComponent("release")
+    let barrierNode: [String: Any] = [
+      "id": "work", "nodeType": "command", "modelFreeze": false,
+      "command": [
+        "executable": "/bin/sh",
+        "arguments": [
+          "-c",
+          "printf ready > \"$1\"; while [ ! -e \"$2\" ]; do /bin/sleep 0.05; done; printf '{\"ok\":true}\\n'",
+          "work", ready.path, release.path
+        ]
+      ]
+    ]
+    try JSONSerialization.data(withJSONObject: barrierNode)
+      .write(to: workflow.appendingPathComponent("nodes/work.json"))
+    var pendingRequest = request
+    pendingRequest.body = Data(#"{"query":"mutation { executeWorkflow(input: {workflowName: \"browser-example\"}) { sessionId status exitCode } }"}"#.utf8)
+    let pending = Task { await host.response(for: pendingRequest) }
+    let deadline = Date().addingTimeInterval(5)
+    while !FileManager.default.fileExists(atPath: ready.path) && Date() < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    guard FileManager.default.fileExists(atPath: ready.path) else {
+      try Data().write(to: release)
+      _ = await pending.value
+      XCTFail("browser execution did not reach the profile-switch barrier")
+      return
+    }
+
+    let configuration = try await host.configuration()
+    let created = try await host.createProfile(input: decode(GraphQLProfileConfigurationInput.self, [
+      "expectedRevision": configuration.revision, "expectedProfile": configuration.profile, "name": "second"
+    ]))
+    _ = try await host.switchProfile(input: decode(GraphQLProfileConfigurationInput.self, [
+      "expectedRevision": created.revision, "expectedProfile": created.profile, "name": "second"
+    ]))
+    XCTAssertNotEqual(host.sessionStoreRoot, firstStore)
+    try Data().write(to: release)
+    let activeResponse = try object(await pending.value)
+    let activeData = try XCTUnwrap((activeResponse["data"] as? [String: Any])?["executeWorkflow"] as? [String: Any])
+    let activeSessionId = try XCTUnwrap(activeData["sessionId"] as? String)
+    XCTAssertEqual(activeData["status"] as? String, "completed")
+    XCTAssertEqual(try CLIWorkflowSessionStore(rootDirectory: firstStore)
+      .loadStrictReadOnly(sessionId: activeSessionId).session.status, .completed)
+    request.body = try JSONSerialization.data(withJSONObject: [
+      "query": "query($id: String!) { workflowExecution(workflowExecutionId: $id) { session { sessionId workflowId } } }",
+      "variables": ["id": activeSessionId]
+    ])
+    request.headers["x-riela-profile"] = "second"
+    let isolated = try object(await host.response(for: request))
+    XCTAssertNil(isolated["errors"])
+    XCTAssertTrue(((isolated["data"] as? [String: Any])?["workflowExecution"]) is NSNull)
+  }
+
   func testPublicListenerDoesNotGrantLocalRegistryAuthority() async throws {
     let root = try fixtureRoot()
     defer { try? FileManager.default.removeItem(at: root) }

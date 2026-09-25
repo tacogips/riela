@@ -18,7 +18,7 @@ public enum KaibaRemoteGraphQLAddon {
         "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'"
       )
     }
-    let inputs = KaibaAddonInputs(input: input, environment: [:])
+    let inputs = try KaibaAddonInputs(input: input, environment: [:])
     let query = try inputs.requiredString(["query", "document"], fieldName: "query")
     let response: KaibaGraphQLResponse<KaibaJSONValue>
     do {
@@ -55,7 +55,7 @@ private func remoteGraphQLVariables(_ inputs: KaibaAddonInputs) throws -> RielaC
   guard let rawVariables = inputs.value("variables") else {
     return [:]
   }
-  let rendered = renderJSONTemplates(rawVariables, variables: inputs.variables)
+  let rendered = try renderAddonConfig(rawVariables, variables: inputs.variables)
   guard case let .object(variables) = rendered else {
     throw noteAddonInvalidInput("\(inputs.addonName) variables must be an object")
   }

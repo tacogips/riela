@@ -93,6 +93,7 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
       {
         "id": "reviewer",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.6",
         "promptTemplateFile": "prompts/reviewer.md",
         "variables": {}
@@ -634,6 +635,7 @@ final class RielaAppWebAPIRouteTests: XCTestCase {
       {
         "id": "reviewer",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.6",
         "promptTemplateFile": "prompts/reviewer.md",
         "variables": {}

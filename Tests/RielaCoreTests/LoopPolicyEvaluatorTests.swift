@@ -21,7 +21,7 @@ final class LoopPolicyEvaluatorTests: XCTestCase {
 
     let evidence = evaluator.preflight(
       workflow: workflow,
-      nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5")]
+      nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)]
     )
 
     XCTAssertEqual(evidence.effective?.mutation?.commit, "deny")
@@ -49,7 +49,7 @@ final class LoopPolicyEvaluatorTests: XCTestCase {
 
     let evidence = evaluator.preflight(
       workflow: workflow,
-      nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .claudeCodeAgent, model: "claude-sonnet")]
+      nodePayloads: ["node": AgentNodePayload(id: "node", executionBackend: .claudeCodeAgent, model: "claude-sonnet", agentSandbox: .readOnly)]
     )
 
     XCTAssertTrue(evidence.denials.contains { $0.policy == "process.allowedBackends" })

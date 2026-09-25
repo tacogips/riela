@@ -44,7 +44,7 @@ extension BuiltinWorkflowAddonResolver {
     }
     let expectedCommit = try renderedExpectedPushCommit(
       config["expectedCommitHashTemplate"],
-      variables: addonVariables(for: input)
+      variables: try addonVariables(for: input)
     )
     let repository = try loadGitRepository()
     try prepareGitFinalizationStore(repository: repository)
@@ -122,7 +122,7 @@ extension BuiltinWorkflowAddonResolver {
     guard case let .string(template) = value else {
       throw policyError("riela/git-push config.expectedCommitHashTemplate is required")
     }
-    let rendered = renderJSONTemplates(.string(template), variables: variables)
+    let rendered = try renderAddonConfig(.string(template), variables: variables)
     guard case let .string(commit) = rendered,
           commit.range(of: "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", options: .regularExpression) != nil else {
       throw policyError("riela/git-push expected commit hash is invalid")

@@ -10,7 +10,6 @@ public struct SessionRerunOptions: Equatable, Sendable {
   public var workingDirectory: String
   public var mockScenarioPath: String?
   public var sessionStore: String?
-  public var nestedSuperviser: Bool
   public var preserveHistory: Bool
 
   public init(
@@ -22,7 +21,6 @@ public struct SessionRerunOptions: Equatable, Sendable {
     workingDirectory: String = FileManager.default.currentDirectoryPath,
     mockScenarioPath: String? = nil,
     sessionStore: String? = nil,
-    nestedSuperviser: Bool = false,
     preserveHistory: Bool = false
   ) {
     self.sessionId = sessionId
@@ -33,7 +31,6 @@ public struct SessionRerunOptions: Equatable, Sendable {
     self.workingDirectory = workingDirectory
     self.mockScenarioPath = mockScenarioPath
     self.sessionStore = sessionStore
-    self.nestedSuperviser = nestedSuperviser
     self.preserveHistory = preserveHistory
   }
 }

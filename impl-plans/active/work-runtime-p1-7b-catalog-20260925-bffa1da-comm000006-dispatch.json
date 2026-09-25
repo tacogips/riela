@@ -1,0 +1,212 @@
+{
+  "taskId": "work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "bffa1da4ab161892ecec54784439e6148860f302",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006",
+  "reviewContext": {
+    "issueReference": {
+      "communicationId": "comm-000002",
+      "number": null,
+      "title": "Finish P1-7b after integration review found missing example-catalog coverage",
+      "url": null
+    },
+    "workflowExecutionId": "codex-design-and-implement-review-loop-session-1",
+    "userProblem": "Astra rejected the missing replacement-example catalog entries, stale mock counts and misclassified P1-7b failure; unchanged dispatch ownership prevented repair.",
+    "requiredOutcomes": [
+      "Review, checkpoint and non-force push the exact design/plan/manifest amendment before dispatch; then include both replacement bundles in shared catalog validation/mock coverage and reconcile observed expected counts.",
+      "Validate both replacement bundles and deterministic mocks against documented stable outputs.",
+      "Prove seven real task lifecycle cases, including rejected-gate recovery, with positive test counts and stable replay.",
+      "Pass both exact task-backed recovery and standalone rejected-required-gate regressions separately on final source.",
+      "Record final-source build, V1 before-removal, affected suites, V8, V11, strict touched-file SwiftLint, diff checks, source identity and serial broad regression with full logs and honest failure classification.",
+      "Obtain formal test-integrity, single Sol adversarial and Astra combined-tree acceptance; complete B4 documentation, then publish exact reviewed paths."
+    ],
+    "nonGoals": [
+      "P1-7a legacy removal, legacy example deletion, or closure of parent P1.",
+      "Reconstruction of P1-6 slices, new CLI/schema/public APIs or orchestration abstraction, SQLite terminal immutability changes, unrelated broad failure repairs, Monja work, broad formatting, lockfile regeneration or global plan archiving."
+    ],
+    "constraints": [
+      "Preserve checkpoint bffa1da4ab161892ecec54784439e6148860f302, eight dirty P1-7b implementation/progress files and unrelated work.",
+      "Keep coupled source and test edits serial under one owner; write each plan progress only to impl-plans/progress/p1-dispatch.md; use tmp for scratch and full logs.",
+      "Only Sources/RielaCLI/WorkflowRunCommand.swift is additionally authorized production source; any further production path requires another bounded reviewed amendment.",
+      "Preserve real WorkStore/TaskDispatch/WorkflowRunCommand tests, initial gate rejection, causal recovery, distinct second attempt/session and replay stability; do not weaken assertions or seed success.",
+      "No reset, stash, revert, force push, broad staging, main merge, additional worktree or concurrent Git operation.",
+      "Classify fresh broad failures on final source; resolve new or P1-7b-owned failures, and keep unrelated failures explicitly FAILED with owner/follow-up.",
+      "Add only the two catalog/parity test paths to existing serial ownership; preserve all assertions and previously implemented behavior."
+    ],
+    "designDecisionsAndRationale": [
+      "Bounded test-only ownership amendment resolves the material Astra catalog finding without new production scope. Retain prior task-gate correction and seven lifecycle cases.",
+      "Carry actual taskReservation presence into RunFinalizeContext at both call sites and skip only applyRequiredLoopGateFailureIfNeeded for reserved task runs; this preserves completed canonical sessions and rejected gate evidence for ordinary task recovery.",
+      "Keep standalone required-gate failure status and evidence, genuine runner failure/cancellation, SQLite terminal immutability and dispatcher/director policy unchanged.",
+      "Retain repair then required verification and one bounded director worker; existing bundle shapes and store fixture constrain edits to demonstrated inconsistencies.",
+      "Use real reservation, runner reconciliation and decision application for seven cases; deterministic workflow mocks supplement but cannot replace ledger evidence.",
+      "Keep coupled source, tests, harness and bundles in one implementation plan; reserve shared documentation and publication for serial B4 after formal reviews."
+    ],
+    "intentionalTradeoffs": [
+      "Retain legacy examples while proving P1-7b replacement behavior before separately reviewed P1-7a removal.",
+      "Allow unrelated broad failures only as explicitly classified FAILED follow-ups with formal slice-only review disposition; only a complete passing broad command may be reported as passing."
+    ],
+    "supportedEdgeCases": [
+      "Rejected required gate retains a completed canonical session and rejected evidence; causal verification recovery consumes a pending request and uses a distinct bounded second attempt/session.",
+      "Standalone rejected required gate retains failed exit/status and inspectable canonical and artifact evidence.",
+      "Guard stop with durable evidence and repeat dispatch; capacity zero with no attempt, canonical session or lease.",
+      "Bounded director decision; child-only success cannot accept failed judged work.",
+      "Reopened-store once-only child accounting and invalid-output human escalation without recursive repair or duplicate charge."
+    ],
+    "outOfScopeEdgeCases": [
+      "Repeated-finding guard behavior from the gate-visit fixture.",
+      "Recursive director repair.",
+      "P1-7a removal and unrelated broad regression fixes."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "Sources/RielaCLI/WorkflowRunCommand.swift",
+      "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+      "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+      "examples/task-repair-loop/",
+      "examples/task-agent-director/",
+      "tmp/work-runtime-p1-7b-20260925-comm000008-59f45c1a/plans/p1-dispatch/attempt-2/bounded-amendment-request.json",
+      "Tests/RielaCLITests/RielaExampleCatalog.swift",
+      "Tests/RielaCLITests/RielaExampleParityTests.swift"
+    ],
+    "designReview": {
+      "communicationId": "comm-000004",
+      "stepId": "step3-design-review",
+      "stepExecutionId": "step3-design-review-attempt-1-exec-4",
+      "decision": "accepted",
+      "findings": [],
+      "reviewedFiles": [
+        "design-docs/specs/design-work-runtime-consolidation.md §17.9"
+      ]
+    },
+    "codexAgentReferences": [],
+    "planningVerification": [
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/p1-7b-catalog-step4-plan/diff-check.log",
+        "exitStatus": 0
+      },
+      {
+        "command": "git diff --cached --check",
+        "completeLogPath": "tmp/p1-7b-catalog-step4-plan/cached-diff-check.log",
+        "exitStatus": 0
+      }
+    ],
+    "evidenceLayout": "plans/p1-dispatch/attempt-<number>/; reviews/<role>/; serial/attempt-<number>/; checkpoint/",
+    "priorPlanReview": {
+      "communicationId": "comm-000006",
+      "stepId": "step5-impl-plan-review",
+      "stepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+      "decision": "accepted",
+      "findings": [],
+      "reviewedFiles": [
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "design-docs/specs/design-work-runtime-consolidation.md §17.9"
+      ]
+    },
+    "planReview": {
+      "communicationId": "comm-000006",
+      "stepId": "step5-impl-plan-review",
+      "stepExecutionId": "step5-impl-plan-review-attempt-1-exec-6",
+      "decision": "accepted",
+      "reviewScope": "Planning acceptance only; catalog repair, behavioral verification, formal implementation reviews, and publication remain pending.",
+      "findings": [],
+      "codexAgentReferences": [],
+      "reviewedFiles": [
+        "design-docs/specs/design-work-runtime-consolidation.md §17.9",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/active/work-runtime-p1-7b-20260925-c8840ad-comm000006-dispatch.json"
+      ],
+      "verification": [
+        {
+          "command": "python3 tmp/p1-7b-catalog-step4-plan/verify.py",
+          "completeLogPath": "tmp/p1-7b-catalog-step4-plan/verification.log",
+          "exitStatus": 0
+        },
+        {
+          "command": "git diff --check",
+          "completeLogPath": "tmp/p1-7b-catalog-step4-plan/diff-check.log",
+          "exitStatus": 0
+        },
+        {
+          "command": "git diff --cached --check",
+          "completeLogPath": "tmp/p1-7b-catalog-step4-plan/cached-diff-check.log",
+          "exitStatus": 0
+        }
+      ]
+    }
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "examples/task-repair-loop/workflow.json",
+        "examples/task-repair-loop/nodes/node-repair.json",
+        "examples/task-repair-loop/nodes/node-verify.json",
+        "examples/task-repair-loop/prompts/repair.md",
+        "examples/task-repair-loop/prompts/verify.md",
+        "examples/task-repair-loop/mock-scenario.json",
+        "examples/task-repair-loop/README.md",
+        "examples/task-repair-loop/EXPECTED_RESULTS.md",
+        "examples/task-agent-director/workflow.json",
+        "examples/task-agent-director/nodes/node-director.json",
+        "examples/task-agent-director/prompts/director.md",
+        "examples/task-agent-director/mock-scenario.json",
+        "examples/task-agent-director/README.md",
+        "examples/task-agent-director/EXPECTED_RESULTS.md",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/README.md",
+        "impl-plans/REMAINING-WORK-HANDOVER.md"
+      ],
+      "acceptanceCriteria": [
+        "Both replacement bundles appear in the shared catalog and deterministic mock execution; only affected expected counts change based on observed results; every assertion remains intact.",
+        "Both replacement bundles validate and deterministic mocks complete with documented stable outputs.",
+        "Real task lifecycle tests prove acceptance, rejected-gate recovery, guard stop, capacity wait, bounded director decision, once-only child accounting and invalid-output escalation with positive counts.",
+        "Exact task-backed recovery and standalone rejected-required-gate regressions each pass separately with positive counts; final-source before-removal V1 and affected suites pass.",
+        "Build, V8 mocks, V11, strict touched-file SwiftLint, diff checks, source identity and serial broad regression have complete final-source evidence and honest failure classification.",
+        "Formal test-integrity, single Sol adversarial and Astra combined-tree reviews accept no material P1-7b defect; B4 docs/progress leave P1-7a, parent P1 and unrelated broad follow-ups open.",
+        "Only exact reviewed paths are committed and non-force pushed after review and documentation gates."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter RielaExampleParityTests.testAllRielaExampleWorkflowsArePortedAndValidateInSwift",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter RielaExampleParityTests.testMockScenarioExamplesRunThroughSwiftCLI",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskRuntimeExampleTests.testRejectedGateRecoveryConsumesPendingRequestAndAcceptsSecondAttempt",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter WorkflowCommandLivePersistenceTests.testWorkflowRunPersistsRejectedRequiredLoopGateForFailedRunInspection",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskRuntimeExampleTests",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests|WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|AgentDirectorStoreTests|CompletionEvaluatorTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests'",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-1/repair-store --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
+        "tmp/work-runtime-p1/build/p1-dispatch/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-1/director-store --output json",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --no-parallel",
+        "env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-7b-catalog-20260925-bffa1da-comm000006/plans/p1-dispatch/attempt-1/changed-swift-files.nul",
+        "git diff --check",
+        "git diff --cached --check"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md"
+    }
+  ]
+}

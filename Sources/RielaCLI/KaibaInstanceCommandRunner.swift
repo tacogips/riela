@@ -2,7 +2,23 @@ import Foundation
 import RielaKaibaSupport
 
 public struct KaibaInstanceCommandRunner: Sendable {
-  public init() {}
+  typealias ReadinessProbe = @Sendable (KaibaInstance, [String: String]) async throws -> KaibaInstanceLastTest
+
+  private let readinessProbe: ReadinessProbe
+
+  public init() {
+    readinessProbe = { instance, environment in
+      let client = try KaibaClientFactory().makeClient(
+        instance: instance,
+        environment: environment
+      )
+      return try await KaibaReadinessService().test(client)
+    }
+  }
+
+  init(readinessProbe: @escaping ReadinessProbe) {
+    self.readinessProbe = readinessProbe
+  }
 
   // The dispatch keeps the contract-required validation ordering visible.
   public func run(_ options: CLICommandOptions) async -> CLICommandResult {
@@ -154,8 +170,10 @@ public struct KaibaInstanceCommandRunner: Sendable {
     }
     let lastTest: KaibaInstanceLastTest
     do {
-      let client = try KaibaClientFactory().makeClient(instance: instance, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
-      lastTest = try await KaibaReadinessService().test(client)
+      lastTest = try await readinessProbe(
+        instance,
+        CLIRuntimeEnvironment.mergedProcessEnvironment()
+      )
     } catch let error as KaibaClientFactoryError {
       if error == .missingCredential {
         _ = try persistLastTest(.init(status: .missingCredential, code: KaibaCommandFailure.missingCredential.code, attemptedAt: Date()), for: instance, store: store)

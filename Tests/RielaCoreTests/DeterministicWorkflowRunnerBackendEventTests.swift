@@ -318,7 +318,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
       id: "node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      workingDirectory: workingDirectory
+      workingDirectory: workingDirectory, agentSandbox: .readOnly
     )
   }
 
@@ -348,7 +348,7 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
 
   private func outputProjectionPayloads() -> [String: AgentNodePayload] {
     [
-      "producer-node": AgentNodePayload(id: "producer-node", executionBackend: .codexAgent, model: "gpt-5.5"),
+      "producer-node": AgentNodePayload(id: "producer-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
       "output-node": AgentNodePayload(
         id: "output-node",
         model: "",

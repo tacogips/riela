@@ -62,10 +62,9 @@ struct LocalGatewayGraphQLEngine {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
     let config = input.addon.config ?? [:]
-    var variables = addonVariables(for: input)
-    for (name, value) in try localGatewayNowVariables(config: config, addonName: input.addon.name) {
-      variables[name] = .string(value)
-    }
+    let nowVariables = try localGatewayNowVariables(config: config, addonName: input.addon.name)
+      .mapValues(JSONValue.string)
+    let variables = try addonVariables(for: input, additionalVariables: nowVariables)
     let childEnvironment = try resolvedChildEnvironment(input)
     let document = try renderedDocument(config: config, variables: variables, addonName: input.addon.name)
     let variablesJSON: String?
@@ -175,7 +174,7 @@ struct LocalGatewayGraphQLEngine {
     guard case let .object(template) = value else {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) config.variablesTemplate must be an object")
     }
-    let rendered = template.mapValues { renderJSONTemplates($0, variables: variables) }
+    let rendered = try template.mapValues { try renderAddonConfig($0, variables: variables) }
     do {
       return try JSONValue.object(rendered).compactJSONString()
     } catch {
@@ -257,7 +256,7 @@ func localGatewaySelectedValue(
   }
   var conditions: JSONObject = [:]
   if let whereValue = selector["where"] {
-    guard case let .object(rendered) = renderJSONTemplates(whereValue, variables: variables) else {
+    guard case let .object(rendered) = try renderAddonConfig(whereValue, variables: variables) else {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) config.selectFirst.where must be an object")
     }
     conditions = rendered
@@ -310,7 +309,7 @@ func localGatewayPayloadExtras(
   guard case let .object(template) = value else {
     throw AdapterExecutionError(.policyBlocked, "\(addonName) config.payloadExtras must be an object")
   }
-  return template.mapValues { renderJSONTemplates($0, variables: variables) }
+  return try template.mapValues { try renderAddonConfig($0, variables: variables) }
 }
 
 /// Dot-path lookup over a JSON object that also understands numeric array

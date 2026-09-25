@@ -135,6 +135,7 @@ final class WorkModelsCodableTests: XCTestCase {
       .replan(instruction: "split the importer change"),
       .wait(.capacity),
       .wait(.dependency),
+      .wait(.human),
       .wait(.clarification(question: "which vendor feed?")),
       .wait(.until(Date(timeIntervalSince1970: 1_790_000_000))),
       .proposeWorkflowChange(ProposalRef(id: "proposal-1", summary: "add a verification gate")),

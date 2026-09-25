@@ -132,7 +132,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
     executorFactory: executor.factory
   ).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "prompt"
     ),
     context: AdapterExecutionContext()
@@ -203,7 +203,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
     executorFactory: executor.factory
   ).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "prompt",
       agentEnvironment: ["SHARED": "node", "NODE_ONLY": "value"]
     ),
@@ -255,7 +255,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
         id: "worker",
         executionBackend: .codexAgent,
         model: "model",
-        provider: provider
+        agentSandbox: .readOnly, provider: provider
       ),
       promptText: "prompt",
       executionIdentity: AdapterExecutionIdentity(
@@ -280,7 +280,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
         id: "worker",
         executionBackend: .claudeCodeAgent,
         model: "",
-        baseURL: "https://api.kimi.example",
+        agentSandbox: .readOnly, baseURL: "https://api.kimi.example",
         apiKeyEnvironment: "KIMI_API_KEY"
       ),
       promptText: "prompt",
@@ -324,8 +324,8 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   )
   let arguments = vendorArguments(try #require(executor.params()))
   #expect(arguments.contains(#"model_reasoning_effort="high""#))
-  #expect(arguments.contains("--sandbox"))
-  #expect(arguments.contains("workspace-write"))
+  #expect(arguments.contains(#"sandbox_mode="workspace-write""#))
+  #expect(!arguments.contains("--sandbox"))
   #expect(arguments.contains("--search"))
   #expect(arguments.contains("--ephemeral"))
   #expect(pairedValue(arguments, "--disable") == "multi_agent")
@@ -338,7 +338,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
     executorFactory: executor.factory
   ).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "prompt"
     ),
     context: AdapterExecutionContext()
@@ -354,12 +354,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   let first = GatewayStubExecutor(resultText: "first", vendorSessionId: "backend-session-1")
   _ = try await AgentGatewayNodeAdapter(executorFactory: first.factory, sessionStore: store).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(
-        id: "producer",
-        executionBackend: .codexAgent,
-        model: "gpt-5",
-        agentSandbox: .workspaceWrite
-      ),
+      node: AgentNodePayload(id: "producer", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "first",
       executionIdentity: AdapterExecutionIdentity(
         workflowRunId: "run-1",
@@ -375,12 +370,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   let second = GatewayStubExecutor(resultText: "second")
   _ = try await AgentGatewayNodeAdapter(executorFactory: second.factory, sessionStore: store).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(
-        id: "consumer",
-        executionBackend: .codexAgent,
-        model: "gpt-5",
-        agentSandbox: .workspaceWrite
-      ),
+      node: AgentNodePayload(id: "consumer", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "second",
       sessionPolicy: WorkflowStepSessionPolicy(mode: .reuse, inheritFromStepId: "producer"),
       executionIdentity: AdapterExecutionIdentity(
@@ -393,8 +383,9 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   )
   #expect(second.params()?.sessionId == "backend-session-1")
   #expect(second.params()?.sessionMode == .reuse)
-  #expect(second.params()?.arguments.contains("--sandbox") == true)
-  #expect(second.params()?.arguments.contains("workspace-write") == true)
+  let resumedArguments = vendorArguments(try #require(second.params()))
+  #expect(resumedArguments.contains(#"sandbox_mode="read-only""#))
+  #expect(!resumedArguments.contains("--sandbox"))
 
   let isolatedKey = AgentGatewaySessionKey(
     workflowRunId: "run-1",
@@ -432,7 +423,7 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   let executor = GatewayStubExecutor(steps: [.delta("hel"), .delta("lo")], resultText: "")
   let output = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "prompt",
       executionIdentity: AdapterExecutionIdentity(
         workflowRunId: "run",
@@ -445,12 +436,46 @@ private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { param
   #expect(output.payload == ["text": .string("hello")])
 }
 
+@Test func gatewayAdapterTreatsMalformedBracePrefixedAnswerAsTextWithoutOutputContract() async throws {
+  let executor = GatewayStubExecutor(resultText: "{malformed answer")
+  let output = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+    AdapterExecutionInput(
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
+      promptText: "prompt"
+    ),
+    context: AdapterExecutionContext()
+  )
+  #expect(output.payload == ["text": .string("{malformed answer")])
+}
+
+@Test func gatewayAdapterKeepsDescriptionOnlyOutputOnStrictEnvelopePath() async throws {
+  let executor = GatewayStubExecutor(resultText: "prose answer")
+  do {
+    _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+      AdapterExecutionInput(
+        node: AgentNodePayload(
+          id: "worker", executionBackend: .codexAgent, model: "gpt-5",
+          agentSandbox: .readOnly, output: NodeOutputContract(description: "Return an envelope")
+        ),
+        promptText: "prompt"
+      ),
+      context: AdapterExecutionContext()
+    )
+    Issue.record("expected validation rejection")
+  } catch let error as WorkflowPublicationError {
+    guard case .validationRejected = error else {
+      Issue.record("unexpected publication error: \(error)")
+      return
+    }
+  }
+}
+
 @Test func gatewayAdapterStreamsThoughtChunksOnTheThinkingChannel() async throws {
   let executor = GatewayStubExecutor(steps: [.thought("planning"), .delta("done")], resultText: "done")
   let events = GatewayEventStore()
   _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
     AdapterExecutionInput(
-      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5"),
+      node: AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "gpt-5", agentSandbox: .readOnly),
       promptText: "prompt"
     ),
     context: AdapterExecutionContext { event in await events.append(event) }

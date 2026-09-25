@@ -40,6 +40,7 @@ extension WorkflowCommandTests {
     {
       "id": "mika",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "systemPromptTemplateFile": "prompts/mika-system.md",
@@ -118,6 +119,7 @@ extension WorkflowCommandTests {
     {
       "id": "mika",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "systemPromptTemplateFile": "prompts/mika-system.md",
@@ -696,6 +698,7 @@ extension WorkflowCommandTests {
     {
       "id": "\(nodeId)",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "\(prompt)",

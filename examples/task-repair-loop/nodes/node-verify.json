@@ -1,0 +1,12 @@
+{
+  "id": "verify",
+  "description": "Judge the repair against the task acceptance criteria.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/verify.md",
+  "variables": {},
+  "output": {
+    "description": "Return loopGate evidence and an acceptance object with a boolean met field."
+  }
+}

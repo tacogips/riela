@@ -22,6 +22,7 @@ actor WorkflowRunLivePersistenceState {
 
   private var latestSessionId: String?
   private var storeRoot: String?
+  private var requiresCanonicalTerminal = false
   private var persistedSessionIds: Set<String> = []
   private var persistedBackendSessionIdsBySessionId: [String: String] = [:]
   private var lastBackendEventPersistenceAtBySessionId: [String: Date] = [:]
@@ -30,11 +31,12 @@ actor WorkflowRunLivePersistenceState {
   private var connectionOpenCount = 0
   private var diagnostics: [String] = []
 
-  func configure(storeRoot: String) {
+  func configure(storeRoot: String, requiresCanonicalTerminal: Bool = false) {
     if self.storeRoot != storeRoot {
       connection = nil
     }
     self.storeRoot = storeRoot
+    self.requiresCanonicalTerminal = requiresCanonicalTerminal
   }
 
   func pendingMessages(
@@ -61,6 +63,9 @@ actor WorkflowRunLivePersistenceState {
     let sessionId = input.persistedSession.session.sessionId
     guard let storeRoot else {
       throw CLIWorkflowSessionStoreError.io("live session persistence store root is not configured")
+    }
+    if requiresCanonicalTerminal {
+      try requireCommittedCanonicalTerminal(input.runtimeSnapshot, sessionStoreRoot: storeRoot)
     }
     let pendingMessages = pendingMessages(sessionId: sessionId, from: input.workflowMessages)
     try liveConnection(storeRoot: storeRoot).save(
@@ -131,6 +136,21 @@ actor WorkflowRunLivePersistenceState {
     self.connection = connection
     connectionOpenCount += 1
     return connection
+  }
+}
+
+func requireCommittedCanonicalTerminal(
+  _ snapshot: WorkflowRuntimePersistenceSnapshot, sessionStoreRoot: String
+) throws {
+  let session = snapshot.session
+  guard session.status == .completed || session.status == .failed else { return }
+  let canonical = try SQLiteWorkflowRuntimePersistenceStore(
+    rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
+  ).load(sessionId: session.sessionId).session
+  guard canonical.status == session.status, canonical.failureKind == session.failureKind else {
+    throw CLIWorkflowSessionStoreError.io(
+      "terminal CLI projection requires a matching committed canonical session"
+    )
   }
 }
 

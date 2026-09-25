@@ -307,7 +307,7 @@ extension WorkflowCommandTests {
           id: "node",
           executionBackend: .codexAgent,
           model: "gpt-5.5",
-          output: NodeOutputContract(
+          agentSandbox: .readOnly, output: NodeOutputContract(
             jsonSchema: [
               "type": .string("object"),
               "required": .array([.string("status")])
@@ -315,7 +315,7 @@ extension WorkflowCommandTests {
             maxValidationAttempts: 2
           )
         ),
-        "next-node": AgentNodePayload(id: "next-node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "next-node": AgentNodePayload(id: "next-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ]
     ))
 
@@ -330,12 +330,11 @@ extension WorkflowCommandTests {
     XCTAssertEqual(messages.first?.sourceStepExecutionId, retriedExecutions.last?.executionId)
   }
 
-  func testScenarioSequenceSkipsUnusedRetrySlotsForRepeatedStepExecutions() async throws {
+  func testScenarioSequenceConsumesOnlyActualCallsAcrossRepeatedStepExecutions() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let scenario = WorkflowMockScenario(responses: [
       "step": [
         MockNodeResponse(when: ["loop": true], payload: ["status": .string("first")]),
-        MockNodeResponse(fail: true),
         MockNodeResponse(when: ["loop": false, "done": true], payload: ["status": .string("second")])
       ]
     ])
@@ -371,7 +370,7 @@ extension WorkflowCommandTests {
           id: "node",
           executionBackend: .codexAgent,
           model: "gpt-5.5",
-          output: NodeOutputContract(
+          agentSandbox: .readOnly, output: NodeOutputContract(
             jsonSchema: [
               "type": .string("object"),
               "required": .array([.string("status")])
@@ -379,7 +378,7 @@ extension WorkflowCommandTests {
             maxValidationAttempts: 2
           )
         ),
-        "final-node": AgentNodePayload(id: "final-node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "final-node": AgentNodePayload(id: "final-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ],
       maxSteps: 3
     ))
@@ -438,6 +437,7 @@ extension WorkflowCommandTests {
         "nodes/shared-worker.json": {
           "id": "shared-worker",
           "executionBackend": "codex-agent",
+          "agentSandbox": "read-only",
           "model": "gpt-5.5",
           "modelFreeze": false,
           "variables": {}
@@ -480,7 +480,9 @@ extension WorkflowCommandTests {
     let guarded = try decodeJSON(WorkflowRunResult.self, from: guardedResult.stdout)
     XCTAssertEqual(guarded.session.executions.map(\.stepId), ["review", "review", "finalize", "done"])
     guard case let .object(guardOutcome)? = guarded.rootOutput?["loopGuardOutcome"] else {
-      return XCTFail("expected default guard marker from mock-scenario run")
+      return XCTFail(
+        "expected default guard marker from mock-scenario run; root output: \(String(describing: guarded.rootOutput)); executions: \(guarded.session.executions.map { $0.acceptedOutput?.payload ?? [:] })"
+      )
     }
     XCTAssertEqual(guardOutcome["decision"], .string("accept-with-residual-risks"))
     XCTAssertEqual(guardOutcome["policySource"], .string("default"))
@@ -537,13 +539,13 @@ private extension WorkflowCommandTests {
     },
     "nodePayloads": {
       "nodes/review.json": {
-        "id":"review-node","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}
+        "id":"review-node","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","variables":{},"output":{"jsonSchema":{"type":"object"}}
       },
       "nodes/finalize.json": {
-        "id":"finalize-node","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}
+        "id":"finalize-node","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","variables":{},"output":{"jsonSchema":{"type":"object"}}
       },
       "nodes/done.json": {
-        "id":"done-node","executionBackend":"codex-agent","model":"gpt-5.5","variables":{}
+        "id":"done-node","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","variables":{},"output":{"jsonSchema":{"type":"object"}}
       }
     }
   }

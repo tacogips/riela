@@ -105,11 +105,15 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
   ) -> [WorkflowValidationDiagnostic] {
     var diagnostics = validate(workflow)
     for nodeId in nodePayloads.keys.sorted() {
-      if let schema = nodePayloads[nodeId]?.output?.jsonSchema,
+      guard let payload = nodePayloads[nodeId] else { continue }
+      diagnostics += validateAgentNodePayload(payload, path: "workflow.nodes.\(nodeId)")
+      validateAgentSandbox(payload, nodeId: nodeId, diagnostics: &diagnostics)
+      if let schema = payload.output?.jsonSchema,
          let reason = DefaultWorkflowOutputValidator().validateContractSchema(schema) {
         diagnostics.append(error("workflow.nodes.\(nodeId).output.jsonSchema", reason))
       }
     }
+    validateAgentOutputDependencies(workflow, nodePayloads: nodePayloads, diagnostics: &diagnostics)
     let stepIds = Set(workflow.steps.map(\.id))
     for step in workflow.steps {
       if step.placement != nil, nodePayloads[step.nodeId]?.output?.projection != nil {
@@ -125,6 +129,128 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     }
     return diagnostics
   }
+}
+
+private func validateAgentSandbox(
+  _ payload: AgentNodePayload,
+  nodeId: String,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let backend = payload.executionBackend else { return }
+  let path = "workflow.nodes.\(nodeId).agentSandbox"
+  if backend.cliAgentBackend != nil, payload.agentSandbox == nil {
+    diagnostics.append(error(
+      path,
+      "agent nodes on \(backend.rawValue) must declare agentSandbox (readOnly | workspaceWrite | dangerFullAccess); omitting it launches the agent with no permission flag and silently denies writes"
+    ))
+  } else if backend.cliAgentBackend == nil, payload.agentSandbox != nil {
+    diagnostics.append(error(path, "agentSandbox is not supported by \(backend.rawValue) and would be ignored"))
+  }
+}
+
+private struct PayloadDependency: Hashable {
+  var consumerStepId: String
+  var field: String
+  var path: String
+}
+
+private func validateAgentOutputDependencies(
+  _ workflow: WorkflowDefinition,
+  nodePayloads: [String: AgentNodePayload],
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  let registryById = Dictionary(uniqueKeysWithValues: workflow.nodeRegistry.map { ($0.id, $0) })
+  var incoming: [String: [WorkflowStepRef]] = [:]
+  for step in workflow.steps {
+    for transition in step.transitions ?? [] where transition.toWorkflowId == nil {
+      incoming[transition.toStepId, default: []].append(step)
+    }
+  }
+
+  var dependenciesByProducer: [String: Set<PayloadDependency>] = [:]
+  for consumer in workflow.steps {
+    guard let addon = registryById[consumer.nodeId]?.addon else { continue }
+    let inputKeys = Set(addon.inputs?.keys.map { $0 } ?? [])
+    let surfaces: [(JSONValue?, TemplateSurface)] = [
+      (addon.config.map(JSONValue.object), .addonConfig(addonInputKeys: inputKeys)),
+      (addon.inputs.map(JSONValue.object), .addonInputs)
+    ]
+    let references = surfaces.flatMap { value, surface in
+      (value.map(templateReferencePaths) ?? []).compactMap { path -> (String, String)? in
+        payloadField(inTemplatePath: path, surface: surface).map { ($0, path) }
+      }
+    }
+    guard !references.isEmpty else { continue }
+    let producerNodeIds = requiredProducerNodeIds(
+      before: consumer.id,
+      incoming: incoming,
+      registryById: registryById,
+      nodePayloads: nodePayloads
+    )
+    for producerNodeId in producerNodeIds {
+      for (field, path) in references {
+        dependenciesByProducer[producerNodeId, default: []].insert(PayloadDependency(
+          consumerStepId: consumer.id,
+          field: field,
+          path: path
+        ))
+      }
+    }
+  }
+
+  for step in workflow.steps where (step.transitions ?? []).contains(where: { transition in
+    guard let label = transition.label else { return false }
+    return label != "always"
+  }) {
+    guard let payload = nodePayloads[step.nodeId], payload.output?.jsonSchema == nil else { continue }
+    diagnostics.append(error(
+      "workflow.nodes.\(step.nodeId).output.jsonSchema",
+      "agent node '\(step.nodeId)' drives conditional transition labels from step '\(step.id)' and must declare output.jsonSchema"
+    ))
+  }
+
+  for producerNodeId in dependenciesByProducer.keys.sorted() {
+    guard let payload = nodePayloads[producerNodeId] else { continue }
+    let dependencies = dependenciesByProducer[producerNodeId, default: []].sorted {
+      ($0.consumerStepId, $0.path) < ($1.consumerStepId, $1.path)
+    }
+    guard let schema = payload.output?.jsonSchema else {
+      for dependency in dependencies {
+        diagnostics.append(error(
+          "workflow.nodes.\(producerNodeId).output.jsonSchema",
+          "agent node '\(producerNodeId)' payload field '\(dependency.field)' is referenced by step '\(dependency.consumerStepId)' template '{{\(dependency.path)}}' and must declare output.jsonSchema"
+        ))
+      }
+      continue
+    }
+    let properties: JSONObject = if case let .object(value)? = schema["properties"] { value } else { [:] }
+    for dependency in dependencies where properties[dependency.field] == nil {
+      diagnostics.append(error(
+        "workflow.nodes.\(producerNodeId).output.jsonSchema.properties.\(dependency.field)",
+        "referenced payload field '\(dependency.field)' used by step '\(dependency.consumerStepId)' must be declared in schema.properties"
+      ))
+    }
+  }
+}
+
+private func requiredProducerNodeIds(
+  before consumerStepId: String,
+  incoming: [String: [WorkflowStepRef]],
+  registryById: [String: WorkflowNodeRegistryRef],
+  nodePayloads: [String: AgentNodePayload]
+) -> Set<String> {
+  var producers: Set<String> = []
+  var visited: Set<String> = []
+  var pending = incoming[consumerStepId] ?? []
+  while let step = pending.popLast() {
+    guard visited.insert(step.id).inserted else { continue }
+    if nodePayloads[step.nodeId] != nil {
+      producers.insert(step.nodeId)
+    } else if registryById[step.nodeId]?.addon != nil {
+      pending.append(contentsOf: incoming[step.id] ?? [])
+    }
+  }
+  return producers
 }
 
 private func validateEffectiveSessionPolicy(

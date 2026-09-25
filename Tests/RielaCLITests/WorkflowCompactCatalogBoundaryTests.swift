@@ -212,7 +212,7 @@ final class WorkflowCompactCatalogBoundaryTests: XCTestCase {
     "steps":[{"id":"work","nodeId":"work","role":"worker"}]}
     """#
     try Data(definition.utf8).write(to: directory.appendingPathComponent("workflow.json"))
-    try Data(#"{"id":"work","executionBackend":"codex-agent","model":"fixture","modelFreeze":false}"#.utf8)
+    try Data(#"{"id":"work","executionBackend":"codex-agent","agentSandbox":"read-only","model":"fixture","modelFreeze":false}"#.utf8)
       .write(to: nodes.appendingPathComponent("work.json"))
   }
 }

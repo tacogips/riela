@@ -46,6 +46,22 @@ public struct TaskListCommandResult: Codable, Equatable, Sendable {
   }
 }
 
+public struct TaskDecisionCommandResult: Codable, Equatable, Sendable {
+  public var taskId: String
+  public var decisionId: String
+  public var state: TaskState
+  public var version: Int
+  public var attemptId: String?
+
+  public init(taskId: String, decisionId: String, state: TaskState, version: Int, attemptId: String?) {
+    self.taskId = taskId
+    self.decisionId = decisionId
+    self.state = state
+    self.version = version
+    self.attemptId = attemptId
+  }
+}
+
 /// Ledger counts per evidence kind, in a stable order so the text and JSON
 /// renderings agree.
 public struct TaskEvidenceCount: Codable, Equatable, Sendable {

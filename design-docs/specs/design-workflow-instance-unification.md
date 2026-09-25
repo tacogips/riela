@@ -60,8 +60,8 @@ path (e.g. `modelFreeze`).
   (`Sources/RielaAppSupport/RielaAppDaemonWorkflowPreference.swift:6-232`):
   per-instance `workingDirectory`, `environmentFilePath`, `environmentVariables`,
   `defaultVariables` (JSONObject), and `nodePatches: [String: NodePatch]` with exactly
-  the same three override fields as the CLI patch applier (`executionBackend`,
-  `model`, `effort`).
+  the same override fields as the CLI patch applier (`executionBackend`,
+  `agentSandbox`, `model`, `effort`, plus the later Kaiba binding extension).
 - Persistence: `RielaAppDaemonWorkflowState` (version 1) in
   `~/.riela/rielaapp/profiles/<profile>/daemon-workflows.json` via
   `RielaAppDaemonWorkflowStore`; instances keyed by local identity, profile-scoped
@@ -354,9 +354,10 @@ public var instanceConfiguration: JSONObject? // merged snapshot actually used
 and storage layout; authored this design and the implementation plan.
 **Tasks In Progress**: None.
 **Blockers**: None.
-**Notes**: RielaApp nodePatch field set already matches the CLI patch contract
-exactly (executionBackend/model/effort), which makes type unification a rename
-rather than a schema migration.
+**Notes**: At implementation time RielaApp's nodePatch field set matched the CLI
+patch contract (executionBackend/model/effort), which made the original type
+unification a rename rather than a schema migration. The shared type has since
+grown additive `agentSandbox` and Kaiba-binding fields.
 
 ## Related Plans
 

@@ -6,7 +6,142 @@
 
 **Purpose**: transfer every known unfinished task without losing dirty-worktree ownership, review evidence, dependency ordering, or verification obligations
 
-**Status**: handover inventory complete; implementation workflows intentionally stopped at the user's request
+**Status**: historical handover inventory; current Work Runtime continuation is recorded below
+
+## Work Runtime P1-7b update — 2026-09-25
+
+The `task-repair-loop` and `task-agent-director` bundles now have task-backed
+lifecycle tests and shared catalog coverage (41 deterministic mocks).
+Current-source build, focused task and catalog tests, bundle validation and
+mocks, and strict touched-file SwiftLint passed. The serial broad run is
+**FAILED** with 18 classified non-P1-7b assertions among 2,668 tests. Browser
+E2E was skipped because no `web/` path changed. P1-7b exact-file publication,
+P1-7a legacy removal, parent P1 and broad failure follow-ups remain open. See
+[`progress/p1-dispatch.md`](progress/p1-dispatch.md) for exact commands and logs.
+
+## Work Runtime P1-6d update — 2026-09-25
+
+Formal independent test-integrity, single adversarial and Astra combined-tree
+reviews accepted the retained P1-6d implementation on
+`feat/remaining-impl-plans`. Seven source-matched focused selections passed
+399/399 tests; build and touched-file strict SwiftLint passed. The complete
+serial broad gate remains **FAILED**: 2,666 tests, 19 independently classified
+historical non-slice assertions. Browser E2E was skipped because no `web/` file
+changed. D5 documentation was refreshed; exact-file commit and non-force
+push remain pending. P1-7b examples, P1-7a removal, parent P1, broad failures
+and the intermittent live-progress timing limitation remain open. See
+[`progress/p1-dispatch.md`](progress/p1-dispatch.md) for exact evidence.
+
+## Progress update — 2026-09-21 remaining-plan continuation
+
+- `agent-node-output-contract` is implemented and verified on
+  `feat/remaining-impl-plans`. D1–D3 landed in the runtime; every in-repo
+  workflow/fixture was reconciled. The excluded D4 `riela-packages` bundle
+  migration remains a separate repository work package.
+- Final evidence on the implementation tree: `swift test` executed 2,392
+  XCTest cases with 2 skips and zero failures plus 17 Swift Testing cases with
+  zero failures; all 39 mock-scenario examples passed; all 102 top-level
+  workflow definitions validated; changed-file SwiftLint had zero serious
+  findings.
+- The work stayed in the dedicated worktree
+  `/Users/taco/gits/tacogips/riela-worktrees/remaining-impl-plans`; the original
+  `main` checkout and the separate Monja work were not modified.
+- `work-runtime-p0-model-and-store` and
+  `session-follow-rollup-backend-liveness` were reconciled as already
+  implemented, verified work whose feature commits are contained by `main`;
+  their stale active plans were archived without reopening later Work Runtime
+  phases.
+- `workflow-graph-studio` and `issue-94-inheritance-minimal` were likewise
+  archived after confirming their implementation commits are contained by
+  `main` and their plans record completed acceptance evidence.
+- `bounded-fanout-join-workflow-execution` was reconciled from stale
+  `Ready`/`NOT_STARTED` metadata to the implementation already shipped in
+  `3e0a0d57`; 63 focused tests and the current full/mock/validation gates are
+  green.
+- `mutable-workflow-registry` completed its pending independent adversarial
+  review with no high/medium findings. The current implementation passed a
+  68-test focused registry/GraphQL/server aggregate plus 10 resolver tests and
+  `swift build`; its shipped implementation merge `01f63d19` is contained by
+  `main`, and the stale active plan is archived.
+- Its historical predecessor `temporary-workflow-registry` is also archived as
+  superseded: every completion criterion was already satisfied, and the
+  current legacy compatibility/recovery aggregate passed 83 tests with zero
+  failures. `mutable-workflow-registry` remains the canonical contract.
+- `wrike-web-notebook-view` is archived as historical implementation rather
+  than reopened work. Commit `a823a90d` shipped it; the later accepted Kaiba
+  extraction `d4268c34` deliberately removed Riela Note and its Notes SPA.
+  Current retained surfaces pass Web audit/lint/typecheck, 100 unit tests,
+  42 Playwright scenarios, and 24 focused Swift security/hosting tests.
+- All six remaining Riela Note-owned active plans are archived against the
+  explicit ownership transition in `d4268c34`: graph-RAG, configurable Kanban,
+  notebook expansion, system memory, and hierarchical tags shipped before the
+  extraction; the unimplemented “new features” proposal now requires a
+  Kaiba-owned plan and must not recreate the deleted Riela subsystem. No Kaiba
+  repository or `note-hub-improve` worktree was modified.
+- `rielaapp-workflow-marketplace` was already complete and remains present in
+  the current tree; 18 focused repository/catalog/layout tests passed, so its
+  stale active plan is archived.
+- `apple-mail-addons` is now complete and archived. Live inspection of the
+  installed apple-gateway and its source contract proved that file downloads
+  materialize under `--output-dir` and return `data.files[]`, rather than raw
+  stdout bytes. Riela now parses and validates that manifest, checks the actual
+  regular file and byte size, and publishes only its sanitized destination.
+  The Mail/Notes contract aggregate passed 34 tests, the wider Apple
+  Gateway/Mail aggregate passed 45 tests, strict changed-file lint was clean,
+  and the three installed-CLI-dependent Mail TODOs are closed.
+- `apple-clock-alarm-addons` remains active for its four live QA boxes. The
+  gateway is installed, but the read-only Clock query returned
+  `UNEXPECTED_ERROR` / `Clock UI automation failed`; permission status is
+  `clockAutomation=UNKNOWN` and System Events returned `-600`. No permission
+  prompt or real-alarm mutation was initiated without explicit authorization.
+- `distributed-registry-container-node-roadmap` is archived because its own
+  accepted contract says no local engineering work remains. A current
+  container/registry/setup/manifest aggregate passed 50 tests with zero
+  failures. The Homebrew/release publication remains explicitly deferred to a
+  maintainer with release access at the next release window; archival does not
+  claim that external publication occurred.
+- `specialist-task-supervisor` completed its post-`comm-000118` verification and
+  independent acceptance. Specialist tests passed 106/106 before and after a
+  responsibility-only source split; compact-catalog/cross-workflow/fanout
+  boundaries passed 22/22, including the production SIGKILL/reopen matrix; the
+  real-runner smoke accepted. Strict lint exposed and then cleared the only two
+  structural findings by extracting delivery/query persistence, leaving the
+  affected files below 1,000 lines. Review found no high/medium finding. Live
+  Matrix, classifier, and Wrike writes remain deliberately unperformed rather
+  than being misreported as verified.
+- `swift-cli-runtime-parity-gap-closure` is archived as stale metadata over
+  already accepted and executed work. The current gate is deletion-ready with
+  13/13 accepted domains and severity `none`; commits `7b50572a` and
+  `e6282429` contain source deletion/readiness and final parity. Current gate,
+  source-deletion, and packaging suites passed 60/60, and all readiness JSON
+  parsed. The reconciliation did not alter or manufacture review evidence.
+- `workflow-runtime-fanout-capabilities` is no longer a planning deferral.
+  F1/F2 were shipped by bounded fanout plus later cross-workflow/recovery work;
+  F3 uses durable parent/root-linked child sessions and the inherited standard
+  run-event stream. A new regression explicitly proves three branch
+  start/completion event pairs and inspectable terminal child sessions. The
+  current fanout/cross-workflow aggregate passed 14 tests (including production
+  SIGKILL/reopen), four capability diagnostics passed, and review found no
+  high/medium finding.
+- Per the user's expanded goal, once the remaining active-plan inventory is
+  reconciled, continue with a fresh audit of unimplemented features recorded in
+  design documents, general docs, and implementation plans, then implement the
+  actionable Riela-owned gaps in this same dedicated worktree/branch.
+- `rielaapp-instance-execution-timeline` is archived through explicit Web UI
+  supersession, not by recreating deleted AppKit code. Commit `684eeca7`
+  intentionally removed the native viewer. Current retained behavior passed
+  18 RielaViewer tests, four Web trace-layout tests, Web typecheck, and the
+  Playwright trace-drilldown scenario with inspected screenshot evidence.
+- `cli-session-store-decode-resilience` is complete. Startup now observes raw
+  SQLite session/workflow identities before independently decoding records, so
+  an unreadable highest suffix cannot be reused. The focused collision test
+  allocated `session-8` with unreadable `session-7` retained; the 22-test
+  discovery/live-persistence/resolution aggregate and strict lint passed.
+- `kaiba-api-instances` no longer has a published-package blocker. The current
+  resolved revision exports `KaibaClient`; 86 focused CLI/support/add-on/App
+  tests pass, including newly completed fixed-diagnostic and stale-readiness
+  coverage. Only two manual screenshot boxes remain: the direct executable ran
+  with isolated roots, but this session could not enumerate a RielaApp CGWindow.
 
 ## 0-bis. Progress update — 2026-07-12 second session (program closure)
 
@@ -354,7 +489,7 @@ Run only after W0 establishes a stable overlapping worktree:
 
 **State**: LA1a implemented; LA1b and later phases not started.
 
-Primary deliverables:
+Archived deliverables include:
 
 - `loop start` policy-panel/delegation behavior and `loop promote` readiness.
 - Cost value types, usage accumulation, duration/evidence projection, and legacy decoding.
@@ -364,11 +499,16 @@ Primary deliverables:
 
 Order: LA1b → cost model/accumulator → budget → diff/stats → CLI/GraphQL → CI/SARIF. W3 consumes the diff/stat types; publish stable typed contracts before W3 integration.
 
-### W3 — Loop convergence and operations — 30 unchecked
+### W3 — Loop convergence and operations — repository work complete
 
-**Plan**: `impl-plans/active/loop-engineering-convergence-and-operations.md`
+**Plans**: `impl-plans/completed/loop-engineering-convergence-and-operations.md`
+(historical LB1-LB4) and
+`impl-plans/completed/loop-engineering-default-guardrails-and-terminal-preservation.md`
+(S9a default guardrails)
 
-**State**: LB1 implemented; LB2–LB6 remain.
+**State**: The accepted LB1-LB4 repository work and the later S9a default
+guardrail work are implemented, verified, and archived. LB5-LB6 remain design
+roadmap material without an active implementation plan.
 
 Primary deliverables:
 
@@ -378,7 +518,9 @@ Primary deliverables:
 - Busy fail/skip behavior, stale takeover diagnostics, and advisory limitations.
 - Terminal-outcome notification metadata, dispatch, env indirection, retries, diagnostics, and package warnings.
 
-Dependencies: tolerant failure decoding from W2 budget work; `LoopEvidenceDiffer` and stats from W2. Avoid implementing duplicate diff/stat types in W3.
+Historical dependency: tolerant failure decoding, `LoopEvidenceDiffer`, and
+statistics types came from W2. Do not recreate those shared types if future
+LB5-LB6 work receives a new accepted implementation plan.
 
 ### W4 — Apple local-gateway add-on completion/hardening — 79 unchecked
 
@@ -491,7 +633,7 @@ Every active plan has exactly one primary owner below. Cross-cutting dependencie
 | `hermes-inspired-capabilities` | W11 | adoption decision required |
 | `installed-package-workflow-resolution` | W13 | completion/archive audit |
 | `loop-engineering-application-gap-closure` | W2 | 62 checks remain |
-| `loop-engineering-convergence-and-operations` | W3 | 30 checks remain |
+| `loop-engineering-default-guardrails-and-terminal-preservation` | W3 | completed and archived; full-suite failures precisely classified outside feature scope |
 | `loop-engineering-first-line-tool-progress` | W0 | preserve as W0 evidence log |
 | `loop-engineering-first-line-tool` | W0 | round-eight acceptance outstanding |
 | `macos-workflow-viewer` | W13 | completion/archive audit |

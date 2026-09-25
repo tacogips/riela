@@ -1,6 +1,7 @@
 {
   "id": "workflow-b-brainstorm",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.4-mini",
   "modelFreeze": true,
   "promptTemplateFile": "prompts/workflow-b-brainstorm.md",

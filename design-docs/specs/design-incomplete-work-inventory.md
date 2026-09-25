@@ -21,12 +21,11 @@ entries when the source changes.
 Authoritative source: `Sources/RielaCore/WorkflowRuntimeCapabilityGap.swift`
 (`unsupportedFeatures(in:maxConcurrency:supportsCrossWorkflowDispatch:)`).
 
-- **Fanout transitions are not supported by the live runner.**
-  `workflow.steps.<id>.transitions.fanout` produces an error-severity gap;
-  live runs cannot execute fanout. Mock scenarios are the only way to
-  exercise fanout-shaped workflows today.
-- **`run.maxConcurrency` is reserved, not implemented.** Declared for future
-  fanout execution; setting it is diagnosed as unsupported.
+- **Live fanout and `run.maxConcurrency` are implemented.** Local and
+  cross-workflow fanout execute through the deterministic runner with bounded
+  concurrency, ordered joins, failure policies, durable child sessions, and
+  standard run-event progress. Only unsupported ownership modes such as
+  `isolated-workspace` remain validator-surfaced gaps.
 - **Cross-workflow transitions without `resumeStepId` are unsupported.**
   Only the dispatch form (`toWorkflowId` + `resumeStepId`) runs live, and
   only when a callee resolver is wired (CLI wires

@@ -117,7 +117,7 @@ private struct GoogleServiceGatewayAddonEngine {
     }
     try validate(operation: operation, capability: capability, addonName: input.addon.name)
     let token = try accessToken(from: input)
-    let values = GatewayAddonValues(config: config, variables: addonVariables(for: input))
+    let values = GatewayAddonValues(config: config, variables: try addonVariables(for: input))
     let client = clientFactory(token)
     let result = try await invoke(
       operation: operation,

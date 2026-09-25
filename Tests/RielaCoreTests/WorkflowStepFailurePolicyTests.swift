@@ -201,12 +201,12 @@ final class RunnerFailurePolicyTests: XCTestCase {
         "advisory-node": AgentNodePayload(
           id: "advisory-node",
           executionBackend: .codexAgent,
-          model: "gpt-5.5"
+          model: "gpt-5.5", agentSandbox: .readOnly
         ),
         "done-node": AgentNodePayload(
           id: "done-node",
           executionBackend: .codexAgent,
-          model: "gpt-5.5"
+          model: "gpt-5.5", agentSandbox: .readOnly
         )
       ]
     )

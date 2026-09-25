@@ -76,7 +76,6 @@ export class RielaExecutor {
 			resolve(directory, "artifacts"),
 			"--output",
 			"jsonl",
-			"--no-auto-improve",
 		];
 		if (this.mockScenario) args.push("--mock-scenario", this.mockScenario);
 		const child = Bun.spawn(args, {

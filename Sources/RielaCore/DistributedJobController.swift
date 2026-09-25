@@ -41,14 +41,27 @@ public actor DistributedJobController {
     }
   }
 
-  public func register(workerId: String, groups: Set<String>, capacity: Int, now: Date = Date()) throws -> DistributedWorkerRegistration {
+  public func register(
+    workerId: String,
+    groups: Set<String>,
+    capacity: Int,
+    capabilities: [BackendCapability] = [],
+    environment: [String: Bool] = [:],
+    addonExecutables: [String: Bool] = [:],
+    now: Date = Date()
+  ) throws -> DistributedWorkerRegistration {
     return try withStoreLock {
-      guard validName(workerId), groups.allSatisfy(validName), (1...1024).contains(capacity) else {
+      guard validName(workerId), groups.allSatisfy(validName), (1...1024).contains(capacity),
+        environment.count <= 512, environment.keys.allSatisfy(validName),
+        addonExecutables.count <= 512, addonExecutables.keys.allSatisfy(validName) else {
         throw DistributedWorkerError.invalidRegistration
       }
       guard state.workers[workerId] != nil || state.workers.count < 1024 else { throw DistributedWorkerError.storeCapacityExceeded }
       let registration = DistributedWorkerRegistration(
-        workerId: workerId, incarnation: UUID().uuidString, groups: groups, capacity: capacity
+        workerId: workerId, incarnation: UUID().uuidString, groups: groups,
+        capacity: capacity, capabilities: capabilities,
+        environment: environment, addonExecutables: addonExecutables,
+        capabilitiesObservedAt: now
       )
       var next = state
       // A new incarnation cannot acknowledge or inherit a previous process's work.
@@ -231,6 +244,31 @@ public actor DistributedJobController {
     try commit(next)
   }
 
+  /// The worker calls this only after its structured execution group has joined.
+  /// The original lease remains on a cancelled job so a late or foreign worker
+  /// cannot turn a controller cancellation into stop proof.
+  public func acknowledgeStopped(
+    jobId: String, worker: DistributedWorkerRegistration, token: String, now: Date
+  ) throws -> DistributedJob {
+    try withStoreLock {
+      try validate(worker)
+      guard let index = state.jobs.firstIndex(where: { $0.id == jobId }) else {
+        throw DistributedWorkerError.unknownJob
+      }
+      let job = try jobUnlocked(id: jobId) ?? state.jobs[index]
+      guard job.status == .cancelled,
+            job.lease?.workerId == worker.workerId,
+            job.lease?.incarnation == worker.incarnation,
+            job.lease?.token == token else { throw DistributedWorkerError.staleLease }
+      if job.stoppedAt != nil { return job }
+      guard state.jobs[index].archived != true else { throw DistributedWorkerError.staleLease }
+      var next = state
+      next.jobs[index].stoppedAt = now
+      try commit(next)
+      return next.jobs[index]
+    }
+  }
+
   public func appendEvents(
     jobId: String, worker: DistributedWorkerRegistration, token: String,
     events: [DistributedJobEvent], now: Date
@@ -276,6 +314,45 @@ public actor DistributedJobController {
     }
   }
 
+  /// Proves all jobs owned by a terminal workflow and its durable callees stopped.
+  /// A cancelled claimed job needs the original worker's joined-executor receipt.
+  public func provesCancellationStopped(
+    sessionId: String, runtimeRoot: String, now: Date,
+    remoteSteps: [String: Set<String>] = [:]
+  ) throws -> Bool {
+    let runtime = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot)
+    var sessions: Set<String> = []
+    var expectedJobs: Set<String> = []
+    var pending = [sessionId]
+    while let current = pending.popLast() {
+      guard sessions.insert(current).inserted else { continue }
+      if !remoteSteps.isEmpty {
+        let session = try runtime.loadStrictReadOnly(sessionId: current).session
+        for execution in session.executions where execution.importedFrom == nil && execution.status != .skipped
+          && remoteSteps[session.workflowId]?.contains(execution.stepId) == true {
+          expectedJobs.insert("\(current)/\(execution.executionId)")
+        }
+      }
+      pending.append(contentsOf: try runtime.nestedInvocationRecords(parentSessionId: current)
+        .map { $0.reservation.childSnapshot.session.sessionId })
+    }
+    let ownedJobs = try jobs(now: now).filter {
+      sessions.contains(String($0.id.split(separator: "/", maxSplits: 1)[0]))
+    }
+    guard expectedJobs.isSubset(of: Set(ownedJobs.map(\.id))) else { return false }
+    for job in ownedJobs {
+      switch job.status {
+      case .succeeded, .failed:
+        break
+      case .cancelled:
+        if job.lease != nil && job.stoppedAt == nil { return false }
+      case .queued, .leased, .lost:
+        return false
+      }
+    }
+    return true
+  }
+
   private func jobUnlocked(id: String) throws -> DistributedJob? {
     guard let job = state.jobs.first(where: { $0.id == id }) else { return nil }
     guard job.archived == true else { return job }
@@ -305,14 +382,31 @@ public actor DistributedJobController {
   public func workers(now: Date, offlineAfter: TimeInterval = 30) throws -> [DistributedWorkerStatus] {
     try withStoreLock {
       try commit(expiredSnapshot(now: now))
-      return state.workers.values.sorted { $0.workerId < $1.workerId }.map { worker in
-        let lastSeen = state.workerLastSeen?[worker.workerId]
-        return DistributedWorkerStatus(
-          workerId: worker.workerId, groups: worker.groups, capacity: worker.capacity,
-          activeJobIds: state.jobs.filter { $0.status == .leased && $0.lease?.workerId == worker.workerId }.map(\.id),
-          lastSeenAt: lastSeen, online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false
-        )
-      }
+      return workerStatuses(now: now, offlineAfter: offlineAfter)
+    }
+  }
+
+  /// Task preview reads registration and capacity without advancing leases or
+  /// rewriting the controller snapshot.
+  public func inspectWorkers(now: Date, offlineAfter: TimeInterval = 30) throws -> [DistributedWorkerStatus] {
+    try withStoreLock {
+      workerStatuses(now: now, offlineAfter: offlineAfter)
+    }
+  }
+
+  private func workerStatuses(now: Date, offlineAfter: TimeInterval) -> [DistributedWorkerStatus] {
+    state.workers.values.sorted { $0.workerId < $1.workerId }.map { worker in
+      let lastSeen = state.workerLastSeen?[worker.workerId]
+      return DistributedWorkerStatus(
+        workerId: worker.workerId, groups: worker.groups, capacity: worker.capacity,
+        activeJobIds: state.jobs.filter {
+          $0.status == .leased && $0.lease?.workerId == worker.workerId
+            && ($0.lease?.expiresAt ?? .distantPast) > now
+        }.map(\.id),
+        lastSeenAt: lastSeen,
+        online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false,
+        capabilities: worker.capabilities
+      )
     }
   }
 
@@ -377,7 +471,9 @@ public actor DistributedJobController {
   private func commit(_ proposed: Snapshot) throws {
     var next = proposed
     let terminalIndices = next.jobs.indices.filter {
-      next.jobs[$0].status != .queued && next.jobs[$0].status != .leased && next.jobs[$0].archived != true
+      let job = next.jobs[$0]
+      return job.status != .queued && job.status != .leased && job.archived != true
+        && !(job.status == .cancelled && job.lease != nil && job.stoppedAt == nil)
     }
     for index in terminalIndices.dropLast(limits.retainedTerminalJobs) {
       let job = next.jobs[index]
@@ -386,6 +482,7 @@ public actor DistributedJobController {
       next.archives?[job.id] = reference
       next.jobs[index] = DistributedJob(id: job.id, target: job.target, payload: [:], status: job.status, lease: job.lease, eventCount: job.eventCount)
       next.jobs[index].archived = true
+      next.jobs[index].stoppedAt = job.stoppedAt
       next.attachments?[job.id] = nil
     }
     guard next != state || !FileManager.default.fileExists(atPath: fileURL.path) else { return }

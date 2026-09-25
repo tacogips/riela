@@ -70,7 +70,7 @@ extension DeterministicWorkflowRunner {
         return .policyBlocked
       case .timeout:
         return .nodeTimeout
-      case .providerError, .invalidInput, .invalidOutput:
+      case .providerError, .invalidInput, .invalidOutput, .templateResolutionFailed:
         return .adapterFailure
       }
     }

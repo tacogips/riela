@@ -67,7 +67,8 @@ public extension WorkStore {
         task_id TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.taskId')) STORED,
         session_id TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.sessionId')) STORED,
         generation INTEGER NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.generation')) STORED,
-        state TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.state')) STORED
+        state TEXT NOT NULL GENERATED ALWAYS AS (json_extract(record, '$.state')) STORED,
+        launch_phase TEXT GENERATED ALWAYS AS (json_extract(record, '$.launch.phase')) STORED
       )
       """
     )
@@ -76,6 +77,57 @@ public extension WorkStore {
     try db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_work_attempts_session ON work_attempts (session_id)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_attempts_task ON work_attempts (task_id, created_at, attempt_id)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_attempts_state ON work_attempts (state, created_at DESC, attempt_id)")
+    try db.execute(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_work_attempts_one_live_per_task ON work_attempts (task_id) WHERE state IN ('prepared', 'running', 'terminal')"
+    )
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_leases (
+        attempt_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        session_id TEXT NOT NULL UNIQUE,
+        token_digest TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
+    try db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_work_leases_task ON work_leases (task_id)")
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_pending_reservations (
+        request_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        decision_id TEXT NOT NULL UNIQUE,
+        predecessor_attempt_id TEXT,
+        entry_record JSONB NOT NULL CHECK (json_valid(entry_record, 8)),
+        created_at TEXT NOT NULL,
+        consumed_attempt_id TEXT UNIQUE,
+        consumed_at TEXT
+      )
+      """
+    )
+    // Retain consumed requests for replay detection while allowing the next
+    // request after reconciliation. A task still has only one unconsumed
+    // request, so competing rerun/recover decisions cannot race to reserve it.
+    try db.execute(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_work_pending_reservations_one_unconsumed_task ON work_pending_reservations (task_id) WHERE consumed_attempt_id IS NULL"
+    )
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_cancellations (
+        attempt_id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        decision_id TEXT NOT NULL UNIQUE,
+        requested_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        terminal_status TEXT
+      )
+      """
+    )
 
     try db.execute(
       """
@@ -93,6 +145,15 @@ public extension WorkStore {
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_decisions_task ON work_decisions (task_id, created_at, decision_id)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_decisions_attempt ON work_decisions (attempt_id, created_at, decision_id)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_decisions_kind ON work_decisions (kind, created_at DESC, decision_id)")
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_decision_applications (
+        decision_id TEXT PRIMARY KEY,
+        record JSONB NOT NULL CHECK (json_valid(record, 8))
+      )
+      """
+    )
 
     try db.execute(
       """
@@ -124,6 +185,16 @@ public extension WorkStore {
     )
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_findings_task_status ON work_findings (task_id, status, severity)")
     try db.execute("CREATE INDEX IF NOT EXISTS idx_work_findings_gate ON work_findings (task_id, gate_id)")
+
+    try db.execute(
+      """
+      CREATE TABLE IF NOT EXISTS work_hosts (
+        host_id TEXT PRIMARY KEY,
+        record JSONB NOT NULL CHECK (json_valid(record, 8)),
+        updated_at TEXT NOT NULL
+      )
+      """
+    )
   }
 
   /// Every table `prepareSchema` creates, in creation order. The store tests
@@ -132,8 +203,13 @@ public extension WorkStore {
     "work_intents",
     "work_tasks",
     "work_attempts",
+    "work_leases",
+    "work_pending_reservations",
+    "work_cancellations",
     "work_decisions",
+    "work_decision_applications",
     "work_evidence",
-    "work_findings"
+    "work_findings",
+    "work_hosts"
   ]
 }

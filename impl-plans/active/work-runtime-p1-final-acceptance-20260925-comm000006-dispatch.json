@@ -1,0 +1,141 @@
+{
+  "taskId": "work-runtime-p1-final-acceptance-20260925-comm000006",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "adde89d4af122d54e1311aad1c4ded12cddbe5c6",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-final-acceptance-20260925-comm000006",
+  "reviewContext": {
+    "issueReference": {
+      "repository": "tacogips/riela",
+      "draftPR": 109,
+      "intakeCommunication": "comm-000002",
+      "acceptedDesignReview": "comm-000004",
+      "acceptedPlanReview": "comm-000006",
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+    },
+    "userProblem": "Reconcile 36 unchecked parent P1 requirements against current source, published work and evidence; close only real remaining P1 gaps.",
+    "requiredOutcomes": [
+      "Classify all 36 original requirements and current clauses with source, evidence, review and ownership in the existing plan ledger.",
+      "Repair only demonstrated material gaps on current source and obtain independent test-integrity, Sol adversarial and Astra integration decisions.",
+      "Keep V5 Work/CLI/Core and full Swift aggregates FAILED at exit 1 with separate attribution and review dispositions for 21 baseline-matched assertions each.",
+      "After acceptance, align P1 designs, plan, progress and index; commit exact reviewed files and non-force push until Draft PR #109 remote tip equals local HEAD."
+    ],
+    "nonGoals": [
+      "No repetition of published P1-6d, P1-7b, P1-7a A2-A5 or native receiver work without demonstrated material invalidation.",
+      "No archived rielflow or Monja tenant-sharding-d48 edits, other-session/worktree disturbance, main merge, release, speculative redesign or broad rerun without material invalidation."
+    ],
+    "constraints": [
+      "Use the immutable user-scope codex-design-and-implement-review-loop package and one serial mutation owner.",
+      "Preserve the original 36 boxes and P1-6a through P1-7b published source and receipts; keep all scratch and new evidence under repository-root tmp/.",
+      "Source/test edits require an accepted bounded ownership amendment and runtime write-path projection before modification.",
+      "Keep unrelated tracked, untracked and staged changes outside exact checkpoint and final commit allowlists."
+    ],
+    "designDecisionsAndRationale": [
+      "The §17.11 ledger distinguishes complete, materially open, historical/superseded and externally blocked requirements so prior unchecked process boxes are not treated as unimplemented behavior.",
+      "Compare receipt input seals, dependencies, full logs and actual prior review artifacts against current source before reusing evidence.",
+      "Run affected commands only after material invalidation; independent reviewers separately decide both failed aggregate attributions on the final tree.",
+      "Use one serial p1-dispatch plan because audit, conditional repair, shared status files and publication depend on one ordered reviewed tree."
+    ],
+    "intentionalTradeoffs": [
+      "A0 historical per-command environment snapshots are unavailable and must remain an explicit evidence limit.",
+      "Baseline-attributed aggregate failures remain FAILED rather than being described as passing or hidden by equal counts."
+    ],
+    "supportedEdgeCases": [
+      "Historical/superseded boxes retain original text and link to current replacement requirements; compound rows can split by disposition.",
+      "Native retired top-level fields reject presence including false/null before effects while opaque runtimeVariables and task-free workflows remain supported.",
+      "Cancellation, reservation/session identity, specialist/event/loop/routine paths and draft PR remote-tip equality remain explicit acceptance targets."
+    ],
+    "outOfScopeEdgeCases": [
+      "No new receiver protocol, task GraphQL/UI counterpart, recursive runtimeVariables validation, registry discovery or unrelated formatting/test repair.",
+      "No force push, global archive move, new index schema, speculative package digest or lockfile update."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md §17.11",
+      "design-docs/specs/design-native-remote-workflow-execution.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "impl-plans/progress/plans-index.json",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-comparison.json",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-comparison.json"
+    ],
+    "acceptedReviews": {
+      "design": {
+        "communicationId": "comm-000004",
+        "decision": "accepted",
+        "findings": [],
+        "codexAgentReferences": []
+      },
+      "plan": {
+        "communicationId": "comm-000006",
+        "decision": "accepted",
+        "findings": [],
+        "codexAgentReferences": [],
+        "reviewDecision": "The single active plan aligns with accepted §17.11, preserves the 36-item inventory, and specifies serial ownership, dependencies, evidence, independent reviews, progress tracking, and publication checks."
+      }
+    },
+    "checkpointVerification": [
+      {
+        "command": "git diff --check",
+        "completeLogPath": "tmp/work-runtime-p1-final-acceptance/step4/check-1.log",
+        "exitCode": 0
+      },
+      {
+        "command": "git diff --cached --check",
+        "completeLogPath": "tmp/work-runtime-p1-final-acceptance/step4/check-2.log",
+        "exitCode": 0
+      }
+    ]
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "design-docs/specs/design-native-remote-workflow-execution.md",
+        "impl-plans/progress/plans-index.json",
+        "impl-plans/README.md",
+        "impl-plans/PROGRESS.json",
+        "impl-plans/progress/meta.json",
+        "impl-plans/progress/phases.json",
+        "README.md",
+        "examples/README.md"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "acceptanceCriteria": [
+        "Every original P1-U01 through P1-U36 box and current clause has a classified, source-linked and evidence-backed ledger disposition.",
+        "Any material gap receives bounded ownership, current-source repair and affected verification with complete terminal receipts.",
+        "Independent test-integrity, Sol adversarial and Astra integration decisions accept final coverage and separately dispose of both FAILED broad aggregates without unresolved high/mid findings.",
+        "Serial final status updates preserve unrelated plans; exact reviewed files are committed and pushed non-force with local HEAD, remote tip and Draft PR #109 head equal."
+      ],
+      "verification": [
+        "git rev-parse HEAD",
+        "git symbolic-ref --short HEAD",
+        "git status --porcelain=v1 --untracked-files=all",
+        "git diff --cached --name-status",
+        "git show adde89d4af122d54e1311aad1c4ded12cddbe5c6:impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "git log --format='%H %s' -- impl-plans/progress/p1-dispatch.md Sources/RielaWork Sources/RielaCLI/TaskDispatch.swift",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-2/verification-evidence.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-comparison.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-comparison.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/v7-comparison.json",
+        "git diff --check",
+        "git diff --cached --check",
+        "git ls-remote --heads origin feat/remaining-impl-plans",
+        "gh pr view 109 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid"
+      ]
+    }
+  ]
+}

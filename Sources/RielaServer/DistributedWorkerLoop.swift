@@ -8,26 +8,57 @@ public struct DistributedWorkerLoop: Sendable {
   public typealias ContextualExecutor = @Sendable (DistributedJob, DistributedWorkerRegistration) async throws -> DistributedJobResult
   private let client: DistributedWorkerHTTPClient
   private let capacity: Int
+  private let capabilities: [BackendCapability]
+  private let environment: [String: Bool]
+  private let addonExecutables: [String: Bool]
   private let executor: ContextualExecutor
 
-  public init(client: DistributedWorkerHTTPClient, capacity: Int, executor: @escaping Executor) throws {
+  public init(
+    client: DistributedWorkerHTTPClient,
+    capacity: Int,
+    capabilities: [BackendCapability] = [],
+    environment: [String: Bool] = [:],
+    addonExecutables: [String: Bool] = [:],
+    executor: @escaping Executor
+  ) throws {
     guard (1...1024).contains(capacity) else { throw DistributedWorkerTransportError.invalidConfiguration }
     self.client = client
     self.capacity = capacity
+    self.capabilities = capabilities
+    self.environment = environment
+    self.addonExecutables = addonExecutables
     self.executor = { job, _ in try await executor(job) }
   }
 
-  public init(client: DistributedWorkerHTTPClient, capacity: Int, contextualExecutor: @escaping ContextualExecutor) throws {
+  public init(
+    client: DistributedWorkerHTTPClient,
+    capacity: Int,
+    capabilities: [BackendCapability] = [],
+    environment: [String: Bool] = [:],
+    addonExecutables: [String: Bool] = [:],
+    contextualExecutor: @escaping ContextualExecutor
+  ) throws {
     guard (1...1024).contains(capacity) else { throw DistributedWorkerTransportError.invalidConfiguration }
     self.client = client
     self.capacity = capacity
+    self.capabilities = capabilities
+    self.environment = environment
+    self.addonExecutables = addonExecutables
     self.executor = contextualExecutor
   }
 
   /// Register only once per process lifecycle. Transient network errors retry
   /// with the same incarnation; silently re-registering would abandon live work.
   public func run() async throws {
-    let response = try await retryNetwork { try await client.send(.init(operation: .register, capacity: capacity)) }
+    let response = try await retryNetwork {
+      try await client.send(.init(
+        operation: .register,
+        capacity: capacity,
+        capabilities: capabilities,
+        environment: environment,
+        addonExecutables: addonExecutables
+      ))
+    }
     guard let registration = response.registration else { throw DistributedWorkerTransportError.invalidResponse }
     try await withThrowingTaskGroup(of: Void.self) { group in
       defer { group.cancelAll() }
@@ -57,8 +88,14 @@ public struct DistributedWorkerLoop: Sendable {
       } catch DistributedWorkerError.staleLease {
         // Cancellation or lease loss ends this invocation, not other capacity
         // lanes. The structured execution group has already stopped its work.
+        _ = try? await client.send(.init(
+          operation: .stopped, registration: registration, jobId: job.id, leaseToken: lease.token
+        ))
         try Task.checkCancellation()
       } catch DistributedWorkerTransportError.rejected(status: 409) {
+        _ = try? await client.send(.init(
+          operation: .stopped, registration: registration, jobId: job.id, leaseToken: lease.token
+        ))
         try Task.checkCancellation()
         // If the registration itself was fenced, the next claim will reject
         // it and terminate the worker. Never silently re-register live work.
@@ -99,7 +136,7 @@ public struct DistributedWorkerLoop: Sendable {
         let clock = ContinuousClock()
         var renewalDeadline = claimStarted.advanced(by: .seconds(duration))
         while true {
-          try await clock.sleep(until: min(clock.now.advanced(by: .seconds(duration / 3)), renewalDeadline))
+          try await clock.sleep(until: min(clock.now.advanced(by: .seconds(min(duration / 3, 1))), renewalDeadline))
           guard clock.now < renewalDeadline else { throw DistributedWorkerError.staleLease }
           let renewalStarted = clock.now
           // Stop the executor if the last acknowledged lease can no longer be

@@ -2,7 +2,19 @@
   "id": "self-review",
   "description": "Self-review the run journal and extract at most one durable knowledge candidate.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.3-codex",
   "promptTemplateFile": "prompts/self-review.md",
-  "variables": {}
+  "variables": {},
+  "output": {
+    "description": "Return at most one durable knowledge candidate and its recall query.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "candidateContent": {"type": "string"},
+        "candidateTags": {"type": "array"},
+        "knowledgeQuery": {"type": "string"}
+      }
+    }
+  }
 }

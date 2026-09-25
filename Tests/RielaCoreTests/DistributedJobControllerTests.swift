@@ -3,6 +3,69 @@ import XCTest
 @testable import RielaCore
 
 final class DistributedJobControllerTests: XCTestCase {
+  func testStartedRemoteExecutionCannotUseEmptyControllerAsStopProof() async throws {
+    let url = try storeURL()
+    let runtimeRoot = url.deletingLastPathComponent().path
+    let controller = try DistributedJobController(fileURL: url)
+    let now = Date()
+    let execution = WorkflowStepExecution(
+      executionId: "execution", stepId: "remote-step", nodeId: "remote-node",
+      attempt: 1, status: .failed, createdAt: now, updatedAt: now
+    )
+    let session = WorkflowSession(
+      workflowId: "remote-workflow", sessionId: "owned-session", status: .failed,
+      entryStepId: "remote-step", createdAt: now, updatedAt: now,
+      executions: [execution], failureKind: .cancelled
+    )
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).save(
+      WorkflowRuntimePersistenceSnapshot(session: session)
+    )
+    let remoteSteps: [String: Set<String>] = ["remote-workflow": ["remote-step"]]
+    let missingProof = try await controller.provesCancellationStopped(
+      sessionId: session.sessionId, runtimeRoot: runtimeRoot, now: now, remoteSteps: remoteSteps
+    )
+    XCTAssertFalse(missingProof)
+    _ = try await controller.enqueue(id: "owned-session/execution", target: .init(), payload: [:])
+    try await controller.cancel(jobId: "owned-session/execution")
+    let queuedProof = try await controller.provesCancellationStopped(
+      sessionId: session.sessionId, runtimeRoot: runtimeRoot, now: now, remoteSteps: remoteSteps
+    )
+    XCTAssertTrue(queuedProof)
+  }
+
+  func testCancellationProofRequiresWorkerStopAndSurvivesReopen() async throws {
+    let url = try storeURL()
+    let controller = try DistributedJobController(fileURL: url)
+    let worker = try await controller.register(workerId: "worker", groups: [], capacity: 1)
+    _ = try await controller.enqueue(id: "owned-session/execution", target: .init(), payload: [:])
+    let claim = try await controller.claim(worker: worker, now: Date(), leaseDuration: 10)
+    let claimed = try XCTUnwrap(claim)
+    try await controller.cancel(jobId: claimed.id)
+    let pendingProof = try await controller.provesCancellationStopped(
+      sessionId: "owned-session", runtimeRoot: url.deletingLastPathComponent().path, now: Date()
+    )
+    XCTAssertFalse(pendingProof)
+    let afterLeaseAndHeartbeat = Date().addingTimeInterval(3_600)
+    let offline = try await controller.workers(now: afterLeaseAndHeartbeat).first
+    XCTAssertEqual(offline?.online, false)
+    let expiredJob = try await controller.job(id: claimed.id, now: afterLeaseAndHeartbeat)
+    XCTAssertEqual(expiredJob?.status, .cancelled)
+    XCTAssertNotNil(expiredJob?.lease)
+    XCTAssertNil(expiredJob?.stoppedAt)
+    let proofAfterLoss = try await controller.provesCancellationStopped(
+      sessionId: "owned-session", runtimeRoot: url.deletingLastPathComponent().path, now: afterLeaseAndHeartbeat
+    )
+    XCTAssertFalse(proofAfterLoss)
+    _ = try await controller.acknowledgeStopped(
+      jobId: claimed.id, worker: worker, token: XCTUnwrap(claimed.lease?.token), now: Date()
+    )
+    let reopened = try DistributedJobController(fileURL: url)
+    let stoppedProof = try await reopened.provesCancellationStopped(
+      sessionId: "owned-session", runtimeRoot: url.deletingLastPathComponent().path, now: Date()
+    )
+    XCTAssertTrue(stoppedProof)
+  }
+
   func testStaleExecutorCancellationCannotCancelReattachedExecution() async throws {
     let url = try storeURL()
     let controller = try DistributedJobController(fileURL: url)
@@ -54,6 +117,62 @@ final class DistributedJobControllerTests: XCTestCase {
       _ = try await controller.renew(jobId: job.id, worker: worker, token: XCTUnwrap(job.lease?.token), now: Date(), leaseDuration: 10)
       XCTFail("Current attachment cancellation must fence the worker lease")
     } catch { XCTAssertEqual(error as? DistributedWorkerError, .staleLease) }
+  }
+
+  func testCancelledWorkerStopReceiptRequiresOriginalLeaseAndSurvivesReopen() async throws {
+    let url = try storeURL()
+    let controller = try DistributedJobController(fileURL: url)
+    let worker = try await controller.register(workerId: "worker", groups: [], capacity: 1)
+    let foreign = try await controller.register(workerId: "foreign", groups: [], capacity: 1)
+    _ = try await controller.enqueue(id: "claimed", target: .init(), payload: [:])
+    let claim = try await controller.claim(worker: worker, now: Date(), leaseDuration: 10)
+    let claimed = try XCTUnwrap(claim)
+    let lease = try XCTUnwrap(claimed.lease)
+    try await controller.cancel(jobId: claimed.id)
+    let pendingStop = try await controller.job(id: claimed.id, now: Date())
+    XCTAssertNil(pendingStop?.stoppedAt)
+    do {
+      _ = try await controller.acknowledgeStopped(jobId: claimed.id, worker: foreign, token: lease.token, now: Date())
+      XCTFail("Foreign worker supplied stop proof")
+    } catch { XCTAssertEqual(error as? DistributedWorkerError, .staleLease) }
+    do {
+      _ = try await controller.acknowledgeStopped(jobId: claimed.id, worker: worker, token: "stale", now: Date())
+      XCTFail("Stale lease supplied stop proof")
+    } catch { XCTAssertEqual(error as? DistributedWorkerError, .staleLease) }
+    let stopped = try await controller.acknowledgeStopped(
+      jobId: claimed.id, worker: worker, token: lease.token, now: Date()
+    )
+    XCTAssertNotNil(stopped.stoppedAt)
+    let reopened = try DistributedJobController(fileURL: url)
+    let replay = try await reopened.acknowledgeStopped(
+      jobId: claimed.id, worker: worker, token: lease.token, now: Date().addingTimeInterval(1)
+    )
+    XCTAssertEqual(replay.stoppedAt, stopped.stoppedAt)
+  }
+
+  func testCancelledClaimRemainsUnarchivedUntilStopReceipt() async throws {
+    let url = try storeURL()
+    var limits = DistributedStoreLimits()
+    limits.retainedTerminalJobs = 0
+    let controller = try DistributedJobController(fileURL: url, limits: limits)
+    let worker = try await controller.register(workerId: "worker", groups: [], capacity: 1)
+    _ = try await controller.enqueue(id: "claimed", target: .init(), payload: [:])
+    let claim = try await controller.claim(worker: worker, now: Date(), leaseDuration: 10)
+    let token = try XCTUnwrap(claim?.lease?.token)
+    try await controller.cancel(jobId: "claimed")
+    let pending = try await controller.job(id: "claimed", now: Date())
+    XCTAssertEqual(pending?.archived, nil)
+    XCTAssertNil(pending?.stoppedAt)
+    let stopped = try await controller.acknowledgeStopped(
+      jobId: "claimed", worker: worker, token: token, now: Date()
+    )
+    let reopened = try DistributedJobController(fileURL: url, limits: limits)
+    let archived = try await reopened.job(id: "claimed", now: Date())
+    XCTAssertEqual(archived?.stoppedAt, stopped.stoppedAt)
+    let replay = try await reopened.acknowledgeStopped(
+      jobId: "claimed", worker: worker, token: token, now: Date().addingTimeInterval(1)
+    )
+    XCTAssertEqual(replay.stoppedAt, stopped.stoppedAt)
   }
 
   func testConcurrentNodeReattachmentUsesOneJobDespiteRegeneratedTimeouts() async throws {
@@ -129,6 +248,12 @@ final class DistributedJobControllerTests: XCTestCase {
         now: now.addingTimeInterval(10)
       )
       XCTFail("Expired lease accepted")
+    } catch { XCTAssertEqual(error as? DistributedWorkerError, .staleLease) }
+    do {
+      _ = try await controller.acknowledgeStopped(
+        jobId: "expires", worker: worker, token: lease.token, now: now.addingTimeInterval(10)
+      )
+      XCTFail("Lease expiry supplied worker-stop proof")
     } catch { XCTAssertEqual(error as? DistributedWorkerError, .staleLease) }
     _ = try await controller.claim(worker: worker, now: now.addingTimeInterval(10), leaseDuration: 30)
     let replacement = try await controller.register(workerId: "worker", groups: [], capacity: 2)
@@ -277,6 +402,28 @@ final class DistributedJobControllerTests: XCTestCase {
     XCTAssertEqual(after[.modificationDate] as? Date, prior)
     let files = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
     XCTAssertFalse(files.contains { $0.hasPrefix(".distributed-snapshot-") })
+  }
+
+  func testTaskWorkerInspectionLeavesExpiredLeaseSnapshotUnchanged() async throws {
+    let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent(
+      "tmp/work-runtime-p1-selected-host-delivery/tests/T5-controller/\(UUID().uuidString)", isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("jobs.json")
+    let controller = try DistributedJobController(fileURL: url)
+    let now = Date(timeIntervalSince1970: 100)
+    let worker = try await controller.register(workerId: "remote", groups: [], capacity: 1, now: now)
+    _ = try await controller.enqueue(id: "job", target: .init(workerId: "remote"), payload: [:])
+    _ = try await controller.claim(worker: worker, now: now, leaseDuration: 10)
+    let before = try Data(contentsOf: url)
+    let statuses = try await controller.inspectWorkers(now: now.addingTimeInterval(11))
+    XCTAssertEqual(statuses.first?.workerId, "remote")
+    XCTAssertEqual(statuses.first?.activeJobIds, [])
+    XCTAssertEqual(statuses.first?.online, true)
+    XCTAssertEqual(try Data(contentsOf: url), before)
   }
 
   func testWorkerStatusTracksIdleAndBusyHeartbeatsWithoutCredentials() async throws {

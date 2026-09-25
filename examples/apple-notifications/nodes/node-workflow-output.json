@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Project the Apple Notifications add-on payload as the workflow root output.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplate": "Project the latest Apple Notifications add-on payload.",

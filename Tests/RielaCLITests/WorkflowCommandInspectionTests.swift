@@ -62,6 +62,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "systemPromptTemplateFile": "prompts/system.md",
@@ -177,6 +178,7 @@ extension WorkflowCommandTests {
     {
       "id": "implement",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "implement",
@@ -187,6 +189,7 @@ extension WorkflowCommandTests {
     {
       "id": "review",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "review",
@@ -293,6 +296,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5",
       "modelFreeze": false,
       "promptTemplate": "dispatch through codex",
@@ -362,7 +366,8 @@ extension WorkflowCommandTests {
       if [ "$count" = "1" ]; then
         text='{"completionPassed":true,"when":{"always":true},"payload":{"status":"manager-ready"}}'
       else
-        text='{"completionPassed":true,"when":{"has_feature_fanout":false},"payload":{"workflowMode":"issue-resolution","problemSummary":"captured intake","acceptanceSignals":[],"impactedAreas":[],"constraints":[],"unknowns":[],"risks":[],"requiresAdversarialReview":false,"codexAgentReferences":[],"featureFanoutItems":[]}}'
+        text='{"completionPassed":true,"when":{"has_feature_fanout":false},"payload":{"workflowMode":"issue-resolution","problemSummary":"captured intake",'
+        text="$text"'"acceptanceSignals":[],"impactedAreas":[],"constraints":[],"unknowns":[],"risks":[],"requiresAdversarialReview":false,"codexAgentReferences":[],"featureFanoutItems":[]}}'
       fi
       escaped=$(printf '%s' "$text" | sed 's/"/\\\\"/g')
       printf '{"item":{"type":"agent_message","text":"%s"}}\\n' "$escaped"
@@ -402,9 +407,14 @@ extension WorkflowCommandTests {
       "--output", "json"
     ])
 
-    XCTAssertEqual(result.exitCode, CLIExitCode.failure)
+    XCTAssertEqual(result.exitCode, CLIExitCode.failure, result.stderr + result.stdout)
+    let intakePromptURL = promptDirectory.appendingPathComponent("prompt-2.txt")
+    XCTAssertTrue(
+      FileManager.default.fileExists(atPath: intakePromptURL.path),
+      "expected intake prompt after manager execution: \(result.stderr)\(result.stdout)"
+    )
     let intakePrompt = try String(
-      contentsOf: promptDirectory.appendingPathComponent("prompt-2.txt"),
+      contentsOf: intakePromptURL,
       encoding: .utf8
     )
     XCTAssertTrue(intakePrompt.contains("Runtime variables are available under `runtimeVariables`"))
@@ -576,8 +586,7 @@ extension WorkflowCommandTests {
     ])
     XCTAssertEqual(result.exitCode, .usage)
     XCTAssertTrue(result.stderr.isEmpty)
-    let failure = try decodeJSON(SessionCommandFailureResult.self, from: result.stdout)
-    XCTAssertTrue(failure.error.contains("not supported for session rerun"))
+    XCTAssertTrue(result.stdout.contains("nested-superviser"))
   }
 
   func testUserScopeWorkflowRunSupportsDefaultAutoScopeSessionRerunAndResume() async throws {
@@ -796,46 +805,21 @@ extension WorkflowCommandTests {
     XCTAssertEqual(summaryVariables["workflowExecutionId"] as? String, "remote-exec-1")
   }
 
-  func testURLSessionWorkflowRunAutoImproveIsOptInOverRemotePayload() async throws {
+  func testURLSessionWorkflowRunRejectsRetiredOptionsBeforeRemoteRequest() async {
     URLProtocol.registerClass(RecordingGraphQLURLProtocol.self)
     defer { URLProtocol.unregisterClass(RecordingGraphQLURLProtocol.self) }
 
-    RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses(executionId: "remote-exec-disabled"))
-    let disabled = await RielaCLIApplication().run([
-      "workflow", "run", "worker-only-single-step",
-      "--endpoint", "http://riela.test/graphql",
-      "--no-auto-improve",
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(disabled.exitCode, .success, disabled.stderr)
-    let disabledBodies = RecordingGraphQLURLProtocol.bodies()
-    let disabledExecuteBody = try XCTUnwrap(disabledBodies.first)
-    let disabledVariables = try XCTUnwrap(disabledExecuteBody["variables"] as? [String: Any])
-    let disabledInput = try XCTUnwrap(disabledVariables["input"] as? [String: Any])
-    XCTAssertNil(disabledInput["autoImprove"])
-    XCTAssertNil(disabledInput["nestedSuperviser"])
-
-    RecordingGraphQLURLProtocol.reset(responses: remoteGraphQLRunResponses(executionId: "remote-exec-enabled"))
-    let enabled = await RielaCLIApplication().run([
-      "workflow", "run", "worker-only-single-step",
-      "--endpoint", "http://riela.test/graphql",
-      "--auto-improve",
-      "--max-supervised-attempts", "4",
-      "--nested-supervisor",
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(enabled.exitCode, .success, enabled.stderr)
-    let enabledBodies = RecordingGraphQLURLProtocol.bodies()
-    let enabledExecuteBody = try XCTUnwrap(enabledBodies.first)
-    let enabledVariables = try XCTUnwrap(enabledExecuteBody["variables"] as? [String: Any])
-    let enabledInput = try XCTUnwrap(enabledVariables["input"] as? [String: Any])
-    let enabledAutoImprove = try XCTUnwrap(enabledInput["autoImprove"] as? [String: Any])
-    XCTAssertEqual((enabledAutoImprove["enabled"] as? NSNumber)?.boolValue, true)
-    XCTAssertEqual((enabledAutoImprove["maxSupervisedAttempts"] as? NSNumber)?.intValue, 4)
-    XCTAssertEqual((enabledAutoImprove["stallDetectionEnabled"] as? NSNumber)?.boolValue, false)
-    XCTAssertEqual((enabledInput["nestedSuperviser"] as? NSNumber)?.boolValue, true)
+    for option in ["--auto-improve", "--no-auto-improve", "--nested-supervisor", "--nested-superviser"] {
+      RecordingGraphQLURLProtocol.reset(responses: [])
+      let result = await RielaCLIApplication().run([
+        "workflow", "run", "worker-only-single-step",
+        "--endpoint", "http://riela.test/graphql",
+        option,
+        "--output", "json"
+      ])
+      XCTAssertEqual(result.exitCode, .usage, option)
+      XCTAssertTrue(RecordingGraphQLURLProtocol.bodies().isEmpty, option)
+    }
   }
 
   func testParserValidateJSONFailureReturnsParseableEnvelopeForUnknownOption() async throws {

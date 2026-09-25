@@ -2,11 +2,13 @@
   "id": "answer-discord-message",
   "description": "Generate the user-facing Discord reply text from the normalized chat event.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.4-mini",
   "modelFreeze": true,
   "promptTemplateFile": "prompts/answer-discord-message.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with replyText containing the exact Discord reply text to send."
+    "description": "Return JSON with replyText containing the exact Discord reply text to send.",
+    "jsonSchema": {"type": "object", "properties": {"replyText": {"type": "string"}}}
   }
 }

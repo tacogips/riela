@@ -52,7 +52,7 @@ final class RunnerFailurePublicationTests: XCTestCase {
         nodes: [WorkflowNodeRef(id: "node", nodeFile: "nodes/node.json")]
       ),
       nodePayloads: [
-        "node": AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "node": AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ]
     )
   }

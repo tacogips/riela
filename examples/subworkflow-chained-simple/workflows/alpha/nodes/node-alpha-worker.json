@@ -1,6 +1,7 @@
 {
   "id": "alpha-worker",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-haiku-4-5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/alpha-worker.md",

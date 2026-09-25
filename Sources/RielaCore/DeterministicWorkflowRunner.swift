@@ -894,6 +894,12 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           silenceMonitor?.cancel()
         }
         adapterOutput = try await executePlacedAdapter(attemptInput, step: step, executionId: "\(sessionId)/\(execution.executionId)", context: context)
+      } catch let validationError as WorkflowPublicationError {
+        guard case let .validationRejected(reason) = validationError else { throw validationError }
+        try await recordAdapterValidationRejection(execution, sessionId: sessionId, reason: reason)
+        guard attempt < maxAttempts else { throw validationError }
+        lastValidationError = validationError
+        continue
       } catch let adapterFailure as AdapterExecutionError {
         return try await publishAdapterFailure(
           adapterFailure,

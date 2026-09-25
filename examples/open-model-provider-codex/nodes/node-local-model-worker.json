@@ -1,6 +1,7 @@
 {
   "id": "local-model-worker",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "qwen3-coder",
   "modelFreeze": false,
   "provider": {

@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Publish the accepted detailed design and implementation-plan handoff.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

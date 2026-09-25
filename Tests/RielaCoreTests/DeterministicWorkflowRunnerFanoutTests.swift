@@ -2,6 +2,42 @@ import XCTest
 @testable import RielaCore
 
 final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
+  func testFanoutBranchesEmitInspectableChildSessionProgress() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [:])
+    let store = InMemoryWorkflowRuntimeStore()
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(
+      store: store,
+      adapter: FanoutTestAdapter(tracker: tracker)
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2),
+      nodePayloads: fanoutPayloads(),
+      eventHandler: { event in await recorder.append(event) }
+    ))
+
+    let events = await recorder.events()
+    let startedSessionIds = events.compactMap { event -> String? in
+      guard event.type == .sessionStarted else { return nil }
+      return event.sessionId
+    }
+    let completedSessionIds = events.compactMap { event -> String? in
+      guard event.type == .sessionCompleted else { return nil }
+      return event.sessionId
+    }
+    let childSessionIds = Set(startedSessionIds).subtracting([result.session.sessionId])
+
+    XCTAssertEqual(childSessionIds.count, 3)
+    XCTAssertEqual(Set(completedSessionIds), childSessionIds.union([result.session.sessionId]))
+    for sessionId in childSessionIds {
+      let child = try await store.loadSession(id: sessionId)
+      XCTAssertEqual(child?.parentSessionId, result.session.sessionId)
+      XCTAssertEqual(child?.rootSessionId, result.session.sessionId)
+      XCTAssertEqual(child?.status, .completed)
+    }
+  }
+
   func testFanoutJoinOrdersBranchesByInputAndCapsConcurrency() async throws {
     let tracker = FanoutBranchTracker(delaysByIndex: [0: 120_000_000, 1: 20_000_000, 2: 60_000_000])
     let adapter = FanoutTestAdapter(tracker: tracker)
@@ -746,16 +782,22 @@ private func fanoutLoopWorkflow() -> WorkflowDefinition {
 
 private func fanoutPayloads() -> [String: AgentNodePayload] {
   [
-    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5")
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "branch-node": AgentNodePayload(id: "branch-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
   ]
 }
 
 private func fanoutLoopPayloads() -> [String: AgentNodePayload] {
   [
-    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "review-node": AgentNodePayload(id: "review-node", executionBackend: .codexAgent, model: "gpt-5.5"),
-    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5")
+    "source-node": AgentNodePayload(id: "source-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly),
+    "review-node": AgentNodePayload(
+      id: "review-node",
+      executionBackend: .codexAgent,
+      model: "gpt-5.5",
+      agentSandbox: .readOnly,
+      output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+    ),
+    "join-node": AgentNodePayload(id: "join-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
   ]
 }

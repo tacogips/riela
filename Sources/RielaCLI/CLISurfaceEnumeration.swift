@@ -138,7 +138,9 @@ public enum CLISurfaceEnumerator {
       ParsedWorkflowRegisterArguments.helpMessage(),
       ParsedLoopBaselineDiffRoute.helpMessage(),
       ParsedTaskShowOptions.helpMessage(),
-      ParsedTaskListOptions.helpMessage()
+      ParsedTaskListOptions.helpMessage(),
+      ParsedTaskRunOptions.helpMessage(),
+      ParsedTaskDecideOptions.helpMessage()
     ] {
       names.formUnion(longOptionTokens(in: message))
     }

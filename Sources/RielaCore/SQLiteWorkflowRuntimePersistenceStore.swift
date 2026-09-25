@@ -108,19 +108,22 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   ///
   /// Generation 5 adds the Work Runtime's `work_*` tables to this same
   /// database file (`WorkStore` in `RielaWork` creates them behind this one
-  /// guard). No `fromGeneration: 4` migration is registered on purpose: the
-  /// Work Runtime design forbids backward compatibility, so a generation-4
-  /// session store has no path forward and `discardIncompatibleStoreIfNeeded`
-  /// deletes and recreates it.
-  public static let schemaGeneration: Int64 = 5
+  /// guard). Generation 7 replaces generation 6's obsolete pending-request
+  /// uniqueness with uniqueness over unconsumed requests only. No migration
+  /// is registered for either shape: the Work Runtime design forbids backward
+  /// compatibility, so `discardIncompatibleStoreIfNeeded` recreates them.
+  public static let schemaGeneration: Int64 = 8
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —
   /// they share one file). Append a `SQLiteSchemaMigration(fromGeneration:)`
   /// here for every future `schemaGeneration` bump that is allowed to migrate.
-  /// Stores stamped before generation 2 (the migration baseline), and stores
-  /// stamped at generation 4 (the last pre-Work-Runtime shape), have no path
-  /// and are discarded.
+  /// Stores stamped before generation 2 (the migration baseline), at generation
+  /// 4 (the last pre-Work-Runtime shape), generation 5 (the P0-only Work
+  /// Runtime shape), generation 6 (the obsolete P1 request shape), or generation
+  /// 7 (the pre-decision-application-result shape) have no
+  /// path and are discarded. P1 deliberately follows the Work Runtime's
+  /// no-compatibility contract.
   public static let schemaMigrations: [SQLiteSchemaMigration] = [
     SQLiteSchemaMigration(fromGeneration: 2) { database in
       // Historical migrations must not call the current-schema builder:
@@ -210,6 +213,35 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
 
   public func loadStrictReadOnly(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
     try load(sessionId: sessionId, strictReadOnly: true)
+  }
+
+  /// Loads a snapshot through an existing transaction connection so callers
+  /// can validate runner state before committing related durable changes.
+  public func load(sessionId: String, in db: SQLiteDatabase) throws -> WorkflowRuntimePersistenceSnapshot {
+    guard isSafeId(sessionId) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
+    }
+    guard try runtimeSnapshotTableExists(db) else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    let rows = try mapRuntimeSQLiteError {
+      try db.query(
+        """
+        SELECT json(session_json) AS session_json,
+          CASE WHEN root_output_json IS NULL THEN NULL ELSE json(root_output_json) END AS root_output_json,
+          json(diagnostics_json) AS diagnostics_json,
+          \(runtimeLoopEvidenceSelectSQL)
+        FROM workflow_runtime_snapshots
+        WHERE workflow_execution_id = ?
+        LIMIT 1
+        """,
+        bindings: [.text(sessionId)]
+      )
+    }
+    guard let row = rows.first else {
+      throw WorkflowRuntimePersistenceStoreError.notFound("runtime snapshot not found: \(sessionId)")
+    }
+    return try snapshot(from: row, db: db)
   }
 
   private func load(
@@ -681,6 +713,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   }
 
   private func upsertSnapshot(_ db: SQLiteDatabase, _ snapshot: WorkflowRuntimePersistenceSnapshot) throws {
+    try validateTaskTerminalWrite(snapshot, in: db)
     let rootOutputJSON = try snapshot.rootOutput.map(jsonString)
     let loopEvidenceJSON = try snapshot.loopEvidence.map(jsonString)
     let loopSummaryJSON = try snapshot.loopEvidence.map {
@@ -714,6 +747,43 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       ]
       )
       try touchLoopConcurrencyLease(db, snapshot)
+    }
+  }
+
+  private func validateTaskTerminalWrite(
+    _ snapshot: WorkflowRuntimePersistenceSnapshot,
+    in db: SQLiteDatabase
+  ) throws {
+    guard try db.tableExists("work_attempts") else { return }
+    let sessionId = snapshot.session.sessionId
+    guard let attemptId = try db.query(
+      "SELECT attempt_id FROM work_attempts WHERE session_id = ? LIMIT 1",
+      bindings: [.text(sessionId)]
+    ).first?["attempt_id"] else { return }
+    let status = snapshot.session.status
+    let isTerminal = status == .completed || status == .failed
+    if isTerminal, try db.tableExists("work_cancellations") {
+      let pending = try db.query(
+        "SELECT attempt_id FROM work_cancellations WHERE attempt_id = ? AND acknowledged_at IS NULL LIMIT 1",
+        bindings: [.text(attemptId)]
+      ).first != nil
+      if pending && !(status == .failed && snapshot.session.failureKind == .cancelled) {
+        throw WorkflowRuntimePersistenceStoreError.cancellationPending(sessionId)
+      }
+    }
+    guard let existing = try db.query(
+      "SELECT session_status, updated_at, json_extract(session_json, '$.failureKind') AS failure_kind "
+        + "FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
+      bindings: [.text(sessionId)]
+    ).first, let previousStatus = existing["session_status"] else { return }
+    if previousStatus == WorkflowSessionStatus.completed.rawValue
+      || previousStatus == WorkflowSessionStatus.failed.rawValue {
+      let sameTerminal = isTerminal && status.rawValue == previousStatus
+        && snapshot.session.failureKind?.rawValue == existing["failure_kind"]
+      let notOlder = (existing["updated_at"] ?? "") <= Self.dateString(snapshot.session.updatedAt)
+      if !sameTerminal || !notOlder {
+        throw WorkflowRuntimePersistenceStoreError.terminalSnapshotConflict(sessionId)
+      }
     }
   }
 

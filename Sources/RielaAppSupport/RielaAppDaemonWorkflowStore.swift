@@ -10,6 +10,16 @@ public struct RielaAppDaemonWorkflowLoadResult: Equatable, Sendable {
   }
 }
 
+public struct RielaAppDaemonWorkflowReadOnlyResult: Equatable, Sendable {
+  public var state: RielaAppDaemonWorkflowState?
+  public var error: String?
+
+  public init(state: RielaAppDaemonWorkflowState? = nil, error: String? = nil) {
+    self.state = state
+    self.error = error
+  }
+}
+
 public struct RielaAppDaemonWorkflowStore: Sendable {
   public var profileName: RielaAppProfileName
   public var stateURL: URL
@@ -49,6 +59,22 @@ public struct RielaAppDaemonWorkflowStore: Sendable {
         state: RielaAppDaemonWorkflowState(),
         quarantinedStateURL: quarantineURL
       )
+    }
+  }
+
+  /// Decodes profile configuration without moving, creating, or rewriting it.
+  /// Validation and dry-run callers must use this instead of `loadResult()`.
+  public func loadReadOnlyResult() -> RielaAppDaemonWorkflowReadOnlyResult {
+    guard FileManager.default.fileExists(atPath: stateURL.path) else {
+      return RielaAppDaemonWorkflowReadOnlyResult(state: RielaAppDaemonWorkflowState())
+    }
+    do {
+      let data = try Data(contentsOf: stateURL)
+      return RielaAppDaemonWorkflowReadOnlyResult(
+        state: try JSONDecoder().decode(RielaAppDaemonWorkflowState.self, from: data)
+      )
+    } catch {
+      return RielaAppDaemonWorkflowReadOnlyResult(error: "profile backend configuration is incompatible or corrupt")
     }
   }
 

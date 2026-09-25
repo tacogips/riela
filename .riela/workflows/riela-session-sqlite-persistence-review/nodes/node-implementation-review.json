@@ -2,6 +2,7 @@
   "id": "implementation-review",
   "description": "Review the current session SQLite persistence implementation.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

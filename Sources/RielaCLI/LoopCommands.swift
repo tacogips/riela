@@ -194,8 +194,6 @@ public struct LoopCommandRunner: Sendable {
     var workingDirectory = FileManager.default.currentDirectoryPath
     @Option var scope = "auto"
     @Option var output: String?
-    @Flag(name: [.customLong("nested-superviser"), .customLong("nested-supervisor")])
-    var nestedSuperviser = false
   }
 
   private struct OverviewArguments: RielaClientFamilyArguments {
@@ -277,8 +275,7 @@ public struct LoopCommandRunner: Sendable {
       workflowDefinitionDir: parsed.workflowDefinitionDir,
       workingDirectory: parsed.workingDirectory,
       mockScenarioPath: parsed.mockScenario,
-      sessionStore: parsed.sessionStore,
-      nestedSuperviser: parsed.nestedSuperviser
+      sessionStore: parsed.sessionStore
     )
   }
 

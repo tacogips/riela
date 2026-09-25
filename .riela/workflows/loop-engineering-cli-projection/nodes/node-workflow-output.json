@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Summarize the completed CLI loop projection slice.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/workflow-output.md",

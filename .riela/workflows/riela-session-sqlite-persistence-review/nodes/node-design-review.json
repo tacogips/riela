@@ -2,6 +2,7 @@
   "id": "design-review",
   "description": "Review the proposed session SQLite persistence migration design.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

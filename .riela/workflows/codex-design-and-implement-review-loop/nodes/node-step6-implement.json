@@ -2,6 +2,7 @@
   "id": "step6-implement",
   "description": "Implement the accepted plan for the issue, run verification, and update the active implementation plan progress.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "workspace-write",
   "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "effort": "high",
@@ -16,6 +17,7 @@
   },
   "variables": {},
   "output": {
-    "description": "Return JSON with changed files, implementation summary, plan progress updates, verification commands, and addressed review feedback."
+    "description": "Return JSON with changed files, implementation summary, plan progress updates, verification commands, and addressed review feedback.",
+    "jsonSchema": { "type": "object" }
   }
 }

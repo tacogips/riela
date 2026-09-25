@@ -83,6 +83,8 @@ public enum WorkflowRuntimePersistenceStoreError: Error, Equatable, Sendable {
   case invalidSessionId(String)
   case notFound(String)
   case sqliteFailed(String)
+  case cancellationPending(String)
+  case terminalSnapshotConflict(String)
 }
 
 public struct FileWorkflowRuntimePersistenceStore: Sendable {

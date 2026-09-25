@@ -7,7 +7,7 @@ extension BuiltinWorkflowAddonResolver {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     guard let scheduledAt = timeSignalNonEmptyString(variables["scheduledAt"]) else {
       throw AdapterExecutionError(.policyBlocked, "riela/time-signal input scheduledAt is required")
     }

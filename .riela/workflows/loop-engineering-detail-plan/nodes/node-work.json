@@ -2,6 +2,7 @@
   "id": "work",
   "description": "Write or revise the detailed loop-engineering design and implementation plan.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "high",

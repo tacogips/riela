@@ -1,297 +1,50 @@
 import Foundation
 import RielaCore
+import RielaWork
 import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
-  func testAutoImproveRerunPreservesDefaultGuardOptOut() {
-    let workflow = WorkflowDefinition(
-      workflowId: "auto-improve-opt-out",
-      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
-      entryStepId: "review",
-      nodeRegistry: [WorkflowNodeRegistryRef(id: "review-node", nodeFile: "nodes/review.json")],
-      steps: [WorkflowStepRef(id: "review", nodeId: "review-node")],
-      nodes: [WorkflowNodeRef(id: "review-node", nodeFile: "nodes/review.json")]
-    )
-    let payloads = [
-      "review-node": AgentNodePayload(
-        id: "review-node",
-        executionBackend: .codexAgent,
-        model: "gpt-5.5"
-      )
+  func testRetiredWorkflowRunOptionsRejectBeforeExecution() async {
+    let flags = [
+      "--auto-improve", "--no-auto-improve", "--auto-improve=true", "--no-auto-improve=false",
+      "--max-supervised-attempts=3", "--max-workflow-patches=2", "--monitor-interval-ms=1000",
+      "--stall-timeout-ms=2000", "--workflow-mutation-mode=execution-copy",
+      "--nested-superviser", "--nested-supervisor", "--nested-superviser=false"
     ]
-    let options = WorkflowRunOptions(
-      target: workflow.workflowId,
-      maxSteps: 11,
-      maxLoopIterations: 5,
-      disableDefaultLoopGuard: true,
-      autoImprove: true
-    )
-
-    let rerun = WorkflowRunCommand().rerunRequest(
-      base: DeterministicWorkflowRunRequest(workflow: workflow),
-      workflow: workflow,
-      nodePayloads: payloads,
-      variables: ["request": .string("retry")],
-      options: options,
-      sourceSessionId: "source-session",
-      targetStepId: "review"
-    )
-
-    XCTAssertTrue(rerun.disableDefaultLoopGuard)
-    XCTAssertEqual(rerun.maxSteps, 11)
-    XCTAssertEqual(rerun.maxLoopIterations, 5)
-    XCTAssertEqual(rerun.rerunFromSessionId, "source-session")
-    XCTAssertEqual(rerun.rerunFromStepId, "review")
-  }
-
-  func testAutoImproveRetriesStalledWorkflowFromActiveStep() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-auto-improve-stall-\(UUID().uuidString)", isDirectory: true)
-    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
-    let workflowDirectory = workflowRoot.appendingPathComponent("stall-then-ready", isDirectory: true)
-    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
-    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
-    let counterFile = tempDir.appendingPathComponent("attempt-count.txt")
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
-
-    let script = try createExecutable(
-      directory: tempDir,
-      name: "stall-once.sh",
-      body: """
-      if [ ! -f "$1" ]; then
-        printf first > "$1"
-        sleep 5
-        exit 99
-      fi
-      printf '%s\\n' '{"status":"ready"}'
-      """
-    )
-    try writeSingleCommandWorkflow(
-      workflowDirectory: workflowDirectory,
-      nodesDirectory: nodesDirectory,
-      workflowId: "stall-then-ready",
-      executable: script,
-      argument: counterFile
-    )
-
-    let result = await RielaCLIApplication().run([
-      "workflow", "run", "stall-then-ready",
-      "--workflow-definition-dir", workflowRoot.path,
-      "--session-store", sessionStore.path,
-      "--auto-improve",
-      "--max-supervised-attempts", "2",
-      "--monitor-interval-ms", "100",
-      "--stall-timeout-ms", "1000",
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
-    let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
-    XCTAssertEqual(runResult.status, .completed)
-    XCTAssertEqual(runResult.rootOutput?["status"], .string("ready"))
-    let supervision = try XCTUnwrap(runResult.supervision)
-    XCTAssertEqual(supervision["status"], .string("succeeded"))
-    XCTAssertEqual(supervision["attempts"], .number(2))
-    guard case let .object(policy)? = supervision["policy"] else {
-      return XCTFail("expected supervision policy")
-    }
-    XCTAssertEqual(policy["stallDetectionEnabled"], .bool(true))
-    guard case let .array(incidents)? = supervision["incidents"] else {
-      return XCTFail("expected supervision incidents")
-    }
-    guard case let .object(incident)? = incidents.first else {
-      return XCTFail("expected stall incident")
-    }
-    XCTAssertEqual(incident["category"], .string("stall"))
-    XCTAssertEqual(incident["stepId"], .string("main-worker"))
-    guard case let .array(remediations)? = supervision["remediations"] else {
-      return XCTFail("expected supervision remediations")
-    }
-    guard case let .object(remediation)? = remediations.first else {
-      return XCTFail("expected rerun remediation")
-    }
-    XCTAssertEqual(remediation["action"], .string("rerun-workflow"))
-    XCTAssertEqual(remediation["targetSessionId"], .string(runResult.session.sessionId))
-    XCTAssertNotEqual(remediation["sourceSessionId"], remediation["targetSessionId"])
-  }
-
-  func testAutoImproveTreatsOnlyHeartbeatObservedAgentBackendAsStallDetectable() {
-    let now = Date()
-    let later = now.addingTimeInterval(60)
-    let silentAgentExecution = WorkflowStepExecution(
-      executionId: "exec-silent-agent",
-      stepId: "agent-step",
-      nodeId: "agent-node",
-      attempt: 1,
-      backend: .codexAgent,
-      status: .running,
-      createdAt: later,
-      updatedAt: later
-    )
-    let heartbeatAgentExecution = WorkflowStepExecution(
-      executionId: "exec-heartbeat-agent",
-      stepId: "agent-heartbeat-step",
-      nodeId: "agent-heartbeat-node",
-      attempt: 1,
-      backend: .codexAgent,
-      status: .running,
-      lastBackendEventAt: later,
-      lastBackendEventType: "turn.started",
-      createdAt: now,
-      updatedAt: now
-    )
-    let commandExecution = WorkflowStepExecution(
-      executionId: "exec-command",
-      stepId: "command-step",
-      nodeId: "command-node",
-      attempt: 1,
-      backend: nil,
-      status: .running,
-      createdAt: now,
-      updatedAt: now
-    )
-    XCTAssertFalse(workflowAutoImproveCanDetectStall(in: silentAgentExecution))
-    XCTAssertTrue(workflowAutoImproveCanDetectStall(in: heartbeatAgentExecution))
-    XCTAssertTrue(workflowAutoImproveCanDetectStall(in: commandExecution))
-
-    let session = WorkflowSession(
-      workflowId: "mixed-running",
-      sessionId: "session-mixed",
-      status: .running,
-      entryStepId: "command-step",
-      createdAt: now,
-      updatedAt: later,
-      executions: [commandExecution, silentAgentExecution, heartbeatAgentExecution]
-    )
-    XCTAssertEqual(workflowAutoImproveStallTarget(in: session)?.executionId, "exec-heartbeat-agent")
-    XCTAssertEqual(workflowAutoImproveLatestStallActivityDate(in: session), later)
-  }
-
-  func testAutoImproveStallRetryRequiresExplicitStallTimeout() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-auto-improve-no-stall-\(UUID().uuidString)", isDirectory: true)
-    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
-    let workflowDirectory = workflowRoot.appendingPathComponent("slow-ready", isDirectory: true)
-    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
-    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
-    let counterFile = tempDir.appendingPathComponent("attempt-count.txt")
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
-
-    let script = try createExecutable(
-      directory: tempDir,
-      name: "slow-ready.sh",
-      body: """
-      count=0
-      if [ -f "$1" ]; then
-        count="$(cat "$1")"
-      fi
-      count=$((count + 1))
-      printf '%s' "$count" > "$1"
-      sleep 1
-      printf '%s\\n' '{"status":"ready"}'
-      """
-    )
-    try writeSingleCommandWorkflow(
-      workflowDirectory: workflowDirectory,
-      nodesDirectory: nodesDirectory,
-      workflowId: "slow-ready",
-      executable: script,
-      argument: counterFile
-    )
-
-    let result = await RielaCLIApplication().run([
-      "workflow", "run", "slow-ready",
-      "--workflow-definition-dir", workflowRoot.path,
-      "--session-store", sessionStore.path,
-      "--auto-improve",
-      "--max-supervised-attempts", "2",
-      "--monitor-interval-ms", "100",
-      "--output", "json"
-    ])
-
-    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
-    let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
-    XCTAssertEqual(runResult.status, .completed)
-    XCTAssertEqual(runResult.rootOutput?["status"], .string("ready"))
-    let supervision = try XCTUnwrap(runResult.supervision)
-    XCTAssertEqual(supervision["attempts"], .number(1))
-    XCTAssertEqual(try String(contentsOf: counterFile, encoding: .utf8), "1")
-  }
-
-  func testAutoImproveCancellationDoesNotCreateIncidentOrRerun() async throws {
-    let tempDir = URL(fileURLWithPath: repositoryRoot()).appendingPathComponent("tmp/specialist-supervisor/cancellation")
-      .appendingPathComponent("riela-auto-improve-cancel-\(UUID().uuidString)", isDirectory: true)
-    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
-    let workflowDirectory = workflowRoot.appendingPathComponent("cancelled-run", isDirectory: true)
-    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
-    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
-    let ignoredArgument = tempDir.appendingPathComponent("unused.txt")
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
-
-    let script = try createExecutable(
-      directory: tempDir,
-      name: "wait-forever.sh",
-      body: """
-      while :; do
-        sleep 1
-      done
-      """
-    )
-    try writeSingleCommandWorkflow(
-      workflowDirectory: workflowDirectory,
-      nodesDirectory: nodesDirectory,
-      workflowId: "cancelled-run",
-      executable: script,
-      argument: ignoredArgument
-    )
-
-    let task = Task {
-      await RielaCLIApplication().run([
-        "workflow", "run", "cancelled-run",
-        "--workflow-definition-dir", workflowRoot.path,
-        "--session-store", sessionStore.path,
-        "--auto-improve",
-        "--max-supervised-attempts", "3",
+    for flag in flags {
+      let store = FileManager.default.temporaryDirectory
+        .appendingPathComponent("riela-retired-option-\(UUID().uuidString)", isDirectory: true)
+      defer { try? FileManager.default.removeItem(at: store) }
+      let result = await RielaCLIApplication().run([
+        "workflow", "run", "worker-only-single-step",
+        "--workflow-definition-dir", "examples",
+        "--session-store", store.path,
+        flag,
         "--output", "json"
       ])
+      XCTAssertEqual(result.exitCode, .usage, flag)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: store.path), flag)
     }
+  }
 
-    let liveRecord = try await waitForPersistedSession(sessionStore: sessionStore, workflowName: "cancelled-run")
-    task.cancel()
-    let result = await task.value
-
-    XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
-    XCTAssertTrue(result.stderr.isEmpty, result.stderr)
-    XCTAssertTrue(result.stdout.contains("\"workflowId\""), String(result.stdout.prefix(2_000)))
-    let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
-    XCTAssertEqual(runResult.session.sessionId, liveRecord.session.sessionId)
-    XCTAssertEqual(runResult.status, .failed)
-    let supervision = try XCTUnwrap(runResult.supervision)
-    XCTAssertEqual(supervision["status"], .string("cancelled"))
-    XCTAssertEqual(supervision["attempts"], .number(1))
-    XCTAssertEqual(supervision["targetSessionId"], .string(runResult.session.sessionId))
-    XCTAssertEqual(supervision["incidents"], .array([]))
-    XCTAssertEqual(supervision["remediations"], .array([]))
-    guard case let .object(managerControl)? = supervision["managerControl"] else {
-      return XCTFail("expected supervision managerControl")
-    }
-    XCTAssertEqual(managerControl["targetedRerun"], .bool(false))
-
-    let sessions = try CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll()
-    XCTAssertEqual(sessions.map(\.session.sessionId), [runResult.session.sessionId])
-
-    let supervisionRecord = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path), isDirectory: true)
-      .appendingPathComponent(runResult.session.sessionId, isDirectory: true)
-      .appendingPathComponent("supervision-record.json")
-    XCTAssertTrue(FileManager.default.fileExists(atPath: supervisionRecord.path))
-    let persistedSupervision = try decodeJSON(JSONObject.self, from: String(contentsOf: supervisionRecord, encoding: .utf8))
-    XCTAssertEqual(persistedSupervision["status"], .string("cancelled"))
-    XCTAssertEqual(persistedSupervision["incidents"], .array([]))
-    XCTAssertEqual(persistedSupervision["remediations"], .array([]))
+  func testOrdinaryWorkflowRunDoesNotCreateTaskStore() async throws {
+    let store = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-plain-run-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: store) }
+    let taskDatabase = WorkStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: store.path)).databasePath
+    XCTAssertFalse(FileManager.default.fileExists(atPath: taskDatabase))
+    let result = await RielaCLIApplication().run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", "examples",
+      "--mock-scenario", "examples/worker-only-single-step/mock-scenario.json",
+      "--session-store", store.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(result.exitCode, .success, result.stderr)
+    let run = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
+    XCTAssertEqual(run.status, .completed)
+    XCTAssertTrue(try WorkStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: store.path)).listTasks().isEmpty)
   }
 
   func testCancellationWithoutAutoImprovePersistsTerminalFailure() async throws {
@@ -304,10 +57,9 @@ extension WorkflowCommandTests {
     defer { try? FileManager.default.removeItem(at: tempDir) }
     try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
     let script = try createExecutable(directory: tempDir, name: "wait.sh", body: "exec sleep 60")
-    try writeSingleCommandWorkflow(
+    try writeCancellationWorkflow(
       workflowDirectory: workflowDirectory,
       nodesDirectory: nodesDirectory,
-      workflowId: "cancelled-run",
       executable: script,
       argument: tempDir.appendingPathComponent("unused.txt")
     )
@@ -316,10 +68,10 @@ extension WorkflowCommandTests {
         "workflow", "run", "cancelled-run",
         "--workflow-definition-dir", workflowRoot.path,
         "--session-store", sessionStore.path,
-        "--no-auto-improve", "--output", "json"
+        "--output", "json"
       ])
     }
-    let live = try await waitForPersistedSession(sessionStore: sessionStore, workflowName: "cancelled-run")
+    let live = try await waitForCancellationSession(sessionStore: sessionStore)
     task.cancel()
     let result = await task.value
     XCTAssertEqual(result.exitCode, .failure, result.stdout + result.stderr)
@@ -333,119 +85,15 @@ extension WorkflowCommandTests {
     XCTAssertTrue(result.stdout.contains("\"failureKind\":\"cancelled\""), result.stdout)
   }
 
-  func testAutoImproveCancellationPreservesPriorIncidentAndRemediation() async throws {
-    let tempDir = URL(fileURLWithPath: repositoryRoot()).appendingPathComponent("tmp/specialist-supervisor/cancellation")
-      .appendingPathComponent("riela-auto-improve-cancel-rerun-\(UUID().uuidString)", isDirectory: true)
-    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
-    let workflowDirectory = workflowRoot.appendingPathComponent("fail-then-cancel", isDirectory: true)
-    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
-    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
-    let counterFile = tempDir.appendingPathComponent("attempt-count.txt")
-    defer { try? FileManager.default.removeItem(at: tempDir) }
-    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
-
-    let script = try createExecutable(
-      directory: tempDir,
-      name: "fail-then-wait.sh",
-      body: """
-      count=0
-      if [ -f "$1" ]; then
-        count="$(cat "$1")"
-      fi
-      count=$((count + 1))
-      printf '%s' "$count" > "$1"
-      if [ "$count" -eq 1 ]; then
-        printf 'first attempt failed\\n' >&2
-        exit 42
-      fi
-      while :; do
-        sleep 1
-      done
-      """
-    )
-    try writeSingleCommandWorkflow(
-      workflowDirectory: workflowDirectory,
-      nodesDirectory: nodesDirectory,
-      workflowId: "fail-then-cancel",
-      executable: script,
-      argument: counterFile
-    )
-
-    let task = Task {
-      await RielaCLIApplication().run([
-        "workflow", "run", "fail-then-cancel",
-        "--workflow-definition-dir", workflowRoot.path,
-        "--session-store", sessionStore.path,
-        "--auto-improve",
-        "--max-supervised-attempts", "3",
-        "--output", "json"
-      ])
-    }
-
-    let liveRecords = try await waitForPersistedSessions(
-      sessionStore: sessionStore,
-      workflowName: "fail-then-cancel",
-      count: 2
-    )
-    task.cancel()
-    let result = await task.value
-
-    XCTAssertEqual(result.exitCode, .failure, result.stderr + result.stdout)
-    XCTAssertTrue(result.stdout.contains("\"workflowId\""), String(result.stdout.prefix(2_000)))
-    let runResult = try decodeJSON(WorkflowRunResult.self, from: result.stdout)
-    XCTAssertEqual(runResult.session.sessionId, liveRecords.last?.session.sessionId)
-    XCTAssertEqual(runResult.status, .failed)
-    let supervision = try XCTUnwrap(runResult.supervision)
-    XCTAssertEqual(supervision["status"], .string("cancelled"))
-    XCTAssertEqual(supervision["attempts"], .number(2))
-    XCTAssertEqual(supervision["targetSessionId"], .string(runResult.session.sessionId))
-    guard case let .array(incidents)? = supervision["incidents"] else {
-      return XCTFail("expected supervision incidents")
-    }
-    XCTAssertEqual(incidents.count, 1)
-    guard case let .object(incident)? = incidents.first else {
-      return XCTFail("expected incident object")
-    }
-    XCTAssertEqual(incident["category"], .string("failure"))
-    XCTAssertEqual(incident["sessionId"], .string(liveRecords.first?.session.sessionId ?? ""))
-    guard case let .array(remediations)? = supervision["remediations"] else {
-      return XCTFail("expected supervision remediations")
-    }
-    XCTAssertEqual(remediations.count, 1)
-    guard case let .object(remediation)? = remediations.first else {
-      return XCTFail("expected remediation object")
-    }
-    XCTAssertEqual(remediation["sourceSessionId"], .string(liveRecords.first?.session.sessionId ?? ""))
-    XCTAssertEqual(remediation["targetSessionId"], .string(runResult.session.sessionId))
-    guard case let .object(managerControl)? = supervision["managerControl"] else {
-      return XCTFail("expected supervision managerControl")
-    }
-    XCTAssertEqual(managerControl["targetedRerun"], .bool(true))
-
-    let sessions = try CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll()
-    let cancelledSession = try XCTUnwrap(sessions.first { $0.session.sessionId == runResult.session.sessionId })
-    XCTAssertEqual(cancelledSession.session.status, .failed)
-
-    let supervisionRecord = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path), isDirectory: true)
-      .appendingPathComponent(runResult.session.sessionId, isDirectory: true)
-      .appendingPathComponent("supervision-record.json")
-    XCTAssertTrue(FileManager.default.fileExists(atPath: supervisionRecord.path))
-    let persistedSupervision = try decodeJSON(JSONObject.self, from: String(contentsOf: supervisionRecord, encoding: .utf8))
-    XCTAssertEqual(persistedSupervision["status"], .string("cancelled"))
-    XCTAssertEqual(persistedSupervision["incidents"], .array(incidents))
-    XCTAssertEqual(persistedSupervision["remediations"], .array(remediations))
-  }
-
-  private func writeSingleCommandWorkflow(
+  private func writeCancellationWorkflow(
     workflowDirectory: URL,
     nodesDirectory: URL,
-    workflowId: String,
     executable: URL,
     argument: URL
   ) throws {
     try """
     {
-      "workflowId": "\(workflowId)",
+      "workflowId": "cancelled-run",
       "defaults": { "maxLoopIterations": 1, "nodeTimeoutMs": 10000 },
       "entryStepId": "main-worker",
       "nodes": [{ "id": "main-worker", "nodeFile": "nodes/main-worker.json" }],
@@ -465,40 +113,21 @@ extension WorkflowCommandTests {
     """.write(to: nodesDirectory.appendingPathComponent("main-worker.json"), atomically: true, encoding: .utf8)
   }
 
-  private func waitForPersistedSession(sessionStore: URL, workflowName: String) async throws -> PersistedCLIWorkflowSession {
+  private func waitForCancellationSession(sessionStore: URL) async throws -> PersistedCLIWorkflowSession {
     let deadline = Date().addingTimeInterval(3)
     while Date() < deadline {
       if let record = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().first(where: {
-        $0.workflowName == workflowName
+        $0.workflowName == "cancelled-run"
       }) {
         return record
       }
       try await Task.sleep(nanoseconds: 50_000_000)
     }
     XCTFail("timed out waiting for live persisted session")
-    throw AutoImproveTestError.timedOutWaitingForSession
-  }
-
-  private func waitForPersistedSessions(
-    sessionStore: URL,
-    workflowName: String,
-    count: Int
-  ) async throws -> [PersistedCLIWorkflowSession] {
-    let deadline = Date().addingTimeInterval(5)
-    while Date() < deadline {
-      let records = (try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().filter {
-        $0.workflowName == workflowName
-      }) ?? []
-      if records.count >= count {
-        return records.sorted { $0.session.createdAt < $1.session.createdAt }
-      }
-      try await Task.sleep(nanoseconds: 50_000_000)
-    }
-    XCTFail("timed out waiting for \(count) live persisted sessions")
-    throw AutoImproveTestError.timedOutWaitingForSession
+    throw CancellationTestError.timedOutWaitingForSession
   }
 }
 
-private enum AutoImproveTestError: Error {
+private enum CancellationTestError: Error {
   case timedOutWaitingForSession
 }

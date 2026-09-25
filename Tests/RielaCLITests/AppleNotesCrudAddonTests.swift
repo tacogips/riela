@@ -684,28 +684,28 @@ private struct CrudFakeAppleGateway {
       local_path="$output_dir/body.txt"
       printf "large body" > "$local_path"
       if [ "\(mode)" = "get-body-file-missing-map" ]; then
-        printf '{"files":[{"downloadKey":"other-key","localPath":"%s","byteSize":10}]}\\n' "$local_path"
+        printf '{"data":{"files":[{"downloadKey":"other-key","path":"%s"}]}}\\n' "$local_path"
         exit 0
       fi
       if [ "\(mode)" = "get-body-file-duplicate-mapping" ]; then
         second_path="$output_dir/body-duplicate.txt"
         printf "large body duplicate" > "$second_path"
-        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10},{"downloadKey":"%s","localPath":"%s","byteSize":20}]}\\n' "$key" "$local_path" "$key" "$second_path"
+        printf '{"data":{"files":[{"downloadKey":"%s","path":"%s"},{"downloadKey":"%s","path":"%s"}]}}\\n' "$key" "$local_path" "$key" "$second_path"
         exit 0
       fi
       if [ "\(mode)" = "get-body-file-missing-key" ]; then
-        printf '{"files":[{"localPath":"%s","byteSize":10}]}\\n' "$local_path"
+        printf '{"data":{"files":[{"path":"%s"}]}}\\n' "$local_path"
         exit 0
       fi
       if [ "\(mode)" = "get-body-file-outside-download-root" ]; then
         outside_path="\(rootURL.path)/outside-body.txt"
         printf "large body" > "$outside_path"
-        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$outside_path"
+        printf '{"data":{"files":[{"downloadKey":"%s","path":"%s"}]}}\\n' "$key" "$outside_path"
         exit 0
       fi
       if [ "\(mode)" = "get-body-file-missing-downloaded-file" ]; then
         missing_path="$output_dir/missing-body.txt"
-        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$missing_path"
+        printf '{"data":{"files":[{"downloadKey":"%s","path":"%s"}]}}\\n' "$key" "$missing_path"
         exit 0
       fi
       if [ "\(mode)" = "get-body-file-symlink-downloaded-file" ]; then
@@ -713,10 +713,10 @@ private struct CrudFakeAppleGateway {
         printf "large body" > "$outside_path"
         rm -f "$local_path"
         ln -s "$outside_path" "$local_path"
-        printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$local_path"
+        printf '{"data":{"files":[{"downloadKey":"%s","path":"%s"}]}}\\n' "$key" "$local_path"
         exit 0
       fi
-      printf '{"files":[{"downloadKey":"%s","localPath":"%s","byteSize":10}]}\\n' "$key" "$local_path"
+      printf '{"data":{"files":[{"downloadKey":"%s","path":"%s"}]}}\\n' "$key" "$local_path"
       exit 0
     fi
 

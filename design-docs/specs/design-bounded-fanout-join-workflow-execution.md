@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted Step 2 design for issue-resolution workflow execution work.
+Implemented 2026-07-16; current implementation re-audited 2026-09-21.
+Implementation plan: `impl-plans/completed/bounded-fanout-join-workflow-execution.md`.
 
 ## Feature Contract
 

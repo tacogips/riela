@@ -47,6 +47,7 @@ extension WorkflowCommandTests {
       {
         "id": "\(nodeName)-node",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.5"
       }
       """.write(to: nodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
@@ -115,6 +116,7 @@ extension WorkflowCommandTests {
       {
         "id": "\(nodeName)-node",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.5"
       }
       """.write(to: nodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
@@ -195,6 +197,7 @@ extension WorkflowCommandTests {
     {
       "id": "start-node",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5"
     }
     """.write(to: callerNodesDirectory.appendingPathComponent("start.json"), atomically: true, encoding: .utf8)
@@ -202,6 +205,7 @@ extension WorkflowCommandTests {
     {
       "id": "child-node",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5"
     }
     """.write(to: calleeNodesDirectory.appendingPathComponent("child.json"), atomically: true, encoding: .utf8)
@@ -292,6 +296,7 @@ extension WorkflowCommandTests {
       {
         "id": "\(nodeName)-node",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.5"
       }
       """.write(to: callerNodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
@@ -300,6 +305,7 @@ extension WorkflowCommandTests {
     {
       "id": "child-node",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5"
     }
     """.write(to: calleeNodesDirectory.appendingPathComponent("child.json"), atomically: true, encoding: .utf8)

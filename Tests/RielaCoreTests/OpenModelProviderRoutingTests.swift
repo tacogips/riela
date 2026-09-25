@@ -8,6 +8,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       {
         "id": "worker",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "baseURL": "https://api.kimi.example/v1",
         "apiKeyEnvironment": "KIMI_API_KEY"
       }
@@ -34,7 +35,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       id: "worker",
       executionBackend: .codexAgent,
       model: "custom",
-      baseURL: "https://api.kimi.example/v1",
+      agentSandbox: .readOnly, baseURL: "https://api.kimi.example/v1",
       provider: provider
     )
     XCTAssertTrue(validateAgentNodePayload(withNamedProvider).contains {
@@ -45,7 +46,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       id: "worker",
       executionBackend: .cursorCliAgent,
       model: "custom",
-      baseURL: "https://api.kimi.example/v1"
+      agentSandbox: .readOnly, baseURL: "https://api.kimi.example/v1"
     )
     XCTAssertTrue(validateAgentNodePayload(unsupportedBackend).contains {
       $0.path == "node.baseURL" && $0.message.contains("codex-agent")
@@ -55,7 +56,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       id: "worker",
       executionBackend: .claudeCodeAgent,
       model: "custom",
-      apiKeyEnvironment: "KIMI_API_KEY"
+      agentSandbox: .readOnly, apiKeyEnvironment: "KIMI_API_KEY"
     )
     XCTAssertTrue(validateAgentNodePayload(missingBaseURL).contains {
       $0.path == "node.apiKeyEnvironment" && $0.message.contains("requires baseURL")
@@ -160,7 +161,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       id: "worker",
       executionBackend: .claudeCodeAgent,
       model: "model",
-      provider: configuration,
+      agentSandbox: .readOnly, provider: configuration,
       providerProxy: .codex
     ))
     XCTAssertTrue(claudeProxyDiagnostics.contains { $0.path == "node.providerProxy" })
@@ -169,14 +170,14 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       id: "worker",
       executionBackend: .claudeCodeAgent,
       model: "model",
-      agentEnvironment: ["ANTHROPIC_BASE_URL": AgentEnvironmentBinding(value: "https://old.example/v1")],
+      agentSandbox: .readOnly, agentEnvironment: ["ANTHROPIC_BASE_URL": AgentEnvironmentBinding(value: "https://old.example/v1")],
       provider: configuration
     ))
     XCTAssertEqual(overlapDiagnostics.first?.severity, .warning)
     XCTAssertTrue(validateAgentNodePayload(AgentNodePayload(
       id: "worker",
       executionBackend: .codexAgent,
-      model: "model"
+      model: "model", agentSandbox: .readOnly
     )).isEmpty)
   }
 
@@ -239,6 +240,7 @@ final class OpenModelProviderRoutingTests: XCTestCase {
       {
         "id": "worker",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "model",
         \(providerFields)
         "variables": {}

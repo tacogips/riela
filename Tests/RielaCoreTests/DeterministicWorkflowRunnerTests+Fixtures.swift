@@ -54,7 +54,7 @@ extension DeterministicWorkflowRunnerTests {
 
   func nodePayloads(for workflow: WorkflowDefinition) -> [String: AgentNodePayload] {
     Dictionary(uniqueKeysWithValues: workflow.nodeRegistry.map { ref in
-      (ref.id, AgentNodePayload(id: ref.id, executionBackend: .codexAgent, model: "gpt-5.5"))
+      (ref.id, AgentNodePayload(id: ref.id, executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly))
     })
   }
 
@@ -80,7 +80,7 @@ extension DeterministicWorkflowRunnerTests {
   }
 
   func payload(output: NodeOutputContract? = nil) -> AgentNodePayload {
-    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", output: output)
+    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly, output: output)
   }
 
   func commandPayload(output: NodeOutputContract? = nil) -> AgentNodePayload {

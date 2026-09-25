@@ -83,7 +83,6 @@ extension RielaArgumentParser {
       workingDirectory: workingDirectory,
       mockScenarioPath: parsed.mockScenarioPath,
       sessionStore: parsed.sessionStore,
-      nestedSuperviser: parsed.nestedSuperviser,
       preserveHistory: preserveHistory
     )))
   }

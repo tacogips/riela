@@ -3,9 +3,13 @@
 **Status**: Completed historically; PR #77 merged 2026-07-31. The Riela Note implementation was later extracted to Kaiba in PR #86, so this plan does not assert current Riela runtime ownership.
 **Design Reference**: design-docs/specs/design-riela-note-kanban-status-sets-and-orchestration.md
 **Created**: 2026-07-31
-**Last Updated**: 2026-07-31
+**Last Updated**: 2026-09-21
 
 ---
+
+> Closure: the feature shipped through `5c55d474`, `8f354f47`, and merge
+> `c1a72d8f`. The Riela Note subsystem was later intentionally extracted by
+> `d4268c34`; retained integrations use `kaiba/*` add-ons.
 
 ## Design Document Reference
 
@@ -375,4 +379,4 @@ DaemonWorkflowNodePatch event-source-restart flake).
 ## Related Plans
 
 - **Depends On**: impl-plans/active/riela-note.md (baseline),
-  impl-plans/active/bounded-fanout-join-workflow-execution.md (runtime fan-out)
+  impl-plans/completed/bounded-fanout-join-workflow-execution.md (runtime fan-out)

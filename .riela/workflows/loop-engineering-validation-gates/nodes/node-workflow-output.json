@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Publish accepted loop validation handoff.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "low",

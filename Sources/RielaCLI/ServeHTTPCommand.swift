@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaGraphQL
 import RielaServer
 
 struct ServeHTTPCommand: Sendable {
@@ -43,17 +44,29 @@ struct ServeHTTPCommand: Sendable {
       port: requestedPort,
     )
     let listenerHandle = try await inProcessListener(configuration: configuration)
-    let adapter = DeterministicServerHTTPAdapter(
-      routeHandler: listenerHandle.routeHandler,
-      context: serveRequestContext(parsed: parsed)
-    )
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let sessionRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+      sessionStore: parsed.sessionStore,
+      scope: parsed.scope,
+      workingDirectory: workingDirectory,
+      environment: environment
+    )
+    let adapter = serveMachineGraphQLAdapter(
+      parsed: parsed,
+      environment: environment,
+      workingDirectory: workingDirectory
+    )
     let distributedHost = try environment[DistributedControllerConfiguration.environmentKey].map {
-      try DistributedControllerHost(configurationURL: URL(fileURLWithPath: $0), environment: environment)
+      try DistributedControllerHost(
+        configurationURL: URL(fileURLWithPath: $0),
+        environment: environment,
+        capabilityStoreRoot: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionRoot)
+      )
     }
     let webHost = await ServeWebHost(
       homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true),
-      workingDirectory: URL(fileURLWithPath: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true),
+      workingDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true),
       sessionStoreRoot: parsed.sessionStore,
       host: host,
       port: requestedPort,
@@ -126,6 +139,35 @@ struct ServeHTTPCommand: Sendable {
     }
     return records
   }
+}
+
+func serveMachineGraphQLAdapter(
+  parsed: ParsedParityOptions,
+  environment: [String: String],
+  workingDirectory: String
+) -> DeterministicServerHTTPAdapter {
+  let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
+    sessionStore: parsed.sessionStore,
+    scope: parsed.scope,
+    workingDirectory: workingDirectory,
+    environment: environment
+  )
+  let provider = WorkflowExecutionProvider(
+    workingDirectory: workingDirectory,
+    sessionStoreRoot: storeRoot,
+    environment: environment
+  )
+  let graphQLExecutor = WorkflowExecutionAuthorizationWrapper(
+    expectedBearer: environment["RIELA_MANAGER_AUTH_TOKEN"],
+    next: CompositeGraphQLDocumentExecutor(
+      workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(),
+      fallback: WorkflowExecutionGraphQLDocumentExecutor(provider: provider)
+    )
+  )
+  return DeterministicServerHTTPAdapter(
+    routeHandler: DeterministicServerRouteHandler(graphQLExecutor: graphQLExecutor),
+    context: serveRequestContext(parsed: parsed)
+  )
 }
 
 func resolvedServeWebRoot(parsed: ParsedParityOptions) throws -> URL? {

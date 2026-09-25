@@ -166,6 +166,17 @@ When both ID and group are supplied, both must match. An empty target object
 allows any remote worker. Omitted placement retains local execution. Explicit
 placement never falls back to local execution when a worker is unavailable.
 
+For a Work Runtime task, `riela task run <task-id> --dry-run --output json`
+previews the reachable root and called-workflow placement without reserving an
+attempt or session. A live worker registration and matching capability are
+required for remote task admission; a cached capability snapshot alone is not
+enough. A missing or stale worker, exhausted capacity, or unmet dependency
+returns a wait without an allocation. After admission, the selected worker,
+backend and model remain pinned for the run, including called workflows. A
+claimed worker loss does not launch a replacement or fall back to the
+controller. Configure `defaultWorkspace` on the controller when a remote task
+step has no authored workspace; an authored workspace takes precedence.
+
 Optional `exports` lists files to return after successful execution, relative to
 the worker workspace root (not the node's working directory). List at most 16
 unique regular files, totaling at most 512 KiB. Absolute paths, traversal and

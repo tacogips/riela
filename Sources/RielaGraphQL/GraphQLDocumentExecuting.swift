@@ -13,6 +13,7 @@ public struct GraphQLDocumentRequest: Equatable, Sendable {
   var parsedRootFields: [ParsedGraphQLRootField]?
   var domainPreflightComplete: Bool
   var verifiedRegistryPrincipal: WorkflowRegistryVerifiedPrincipal?
+  var executionAuthorized: Bool
 
   public init(
     query: String,
@@ -35,6 +36,7 @@ public struct GraphQLDocumentRequest: Equatable, Sendable {
     parsedRootFields = nil
     domainPreflightComplete = false
     verifiedRegistryPrincipal = nil
+    executionAuthorized = false
   }
 }
 
@@ -62,4 +64,3 @@ protocol GraphQLDocumentDomainPreflighting: Sendable {
     rootFields: [ParsedGraphQLRootField]
   ) async -> GraphQLDocumentExecutionResponse?
 }
-

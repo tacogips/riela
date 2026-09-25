@@ -20,7 +20,7 @@ extension BuiltinWorkflowAddonResolver {
     guard boolValue(config["allowCommit"]) == true else {
       throw policyError("riela/git-commit requires config.allowCommit=true")
     }
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let message = try renderedCommitMessage(config["commitMessageTemplate"], variables: variables)
     let files = try renderedCommittedFiles(config["committedFilesTemplate"], variables: variables)
     let repository = try loadGitRepository()

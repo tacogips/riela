@@ -1,5 +1,8 @@
 # Riela Note Notebook Expansion
 
+Status: historically implemented; Riela ownership superseded by Kaiba extraction.
+Archived plan: `impl-plans/completed/riela-note-notebook-expand.md`.
+
 ## Summary
 
 Notebook rows expose **Expand with Agent** from both the notebook list and the

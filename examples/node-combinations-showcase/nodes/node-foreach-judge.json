@@ -1,10 +1,15 @@
 {
   "id": "foreach-judge",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-haiku-4-5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/foreach-judge.md",
   "variables": {
     "lane": "foreach-loop"
+  },
+  "output": {
+    "description": "Return the foreach decision payload and routing flags.",
+    "jsonSchema": {"type": "object"}
   }
 }

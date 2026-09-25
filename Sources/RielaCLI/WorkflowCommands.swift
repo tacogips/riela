@@ -258,8 +258,6 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
   public var instanceIdentity: String?
   public var runtimeVariables: JSONObject
   public var nodePatch: JSONObject?
-  public var autoImprove: Bool
-  public var autoImprovePolicy: WorkflowAutoImprovePolicy
   public var maxSteps: Int?
   public var maxConcurrency: Int?
   public var maxLoopIterations: Int?
@@ -275,8 +273,6 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     instanceIdentity: String? = nil,
     runtimeVariables: JSONObject = [:],
     nodePatch: JSONObject? = nil,
-    autoImprove: Bool = false,
-    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy(),
     maxSteps: Int? = nil,
     maxConcurrency: Int? = nil,
     maxLoopIterations: Int? = nil,
@@ -291,8 +287,6 @@ public struct WorkflowRemoteRunRequest: Codable, Equatable, Sendable {
     self.instanceIdentity = instanceIdentity
     self.runtimeVariables = runtimeVariables
     self.nodePatch = nodePatch
-    self.autoImprove = autoImprove
-    self.autoImprovePolicy = autoImprovePolicy
     self.maxSteps = maxSteps
     self.maxConcurrency = maxConcurrency
     self.maxLoopIterations = maxLoopIterations
@@ -475,9 +469,6 @@ private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONOb
   if let instanceIdentity = request.instanceIdentity {
     input["instanceIdentity"] = .string(instanceIdentity)
   }
-  if request.autoImprove {
-    input["autoImprove"] = .object(remoteAutoImprovePolicyInput(request.autoImprovePolicy))
-  }
   if let nodePatch = request.nodePatch {
     input["nodePatch"] = .object(nodePatch)
   }
@@ -496,9 +487,6 @@ private func remoteRunInputObject(_ request: WorkflowRemoteRunRequest) -> JSONOb
   if let defaultTimeoutMs = request.defaultTimeoutMs {
     input["defaultTimeoutMs"] = .number(Double(defaultTimeoutMs))
   }
-  if request.autoImprove && request.autoImprovePolicy.nestedSuperviser {
-    input["nestedSuperviser"] = .bool(true)
-  }
   return input
 }
 
@@ -507,21 +495,6 @@ func nonEmptyString(_ value: String?) -> String? {
     return nil
   }
   return value
-}
-
-private func remoteAutoImprovePolicyInput(_ policy: WorkflowAutoImprovePolicy) -> JSONObject {
-  var input: JSONObject = [
-    "enabled": .bool(true),
-    "maxSupervisedAttempts": .number(Double(policy.maxSupervisedAttempts)),
-    "maxWorkflowPatches": .number(Double(policy.maxWorkflowPatches)),
-    "monitorIntervalMs": .number(Double(policy.monitorIntervalMs)),
-    "stallTimeoutMs": .number(Double(policy.stallTimeoutMs)),
-    "stallDetectionEnabled": .bool(policy.stallDetectionEnabled)
-  ]
-  if policy.workflowMutationMode.isForwardedToRemoteExecution {
-    input["workflowMutationMode"] = .string(policy.workflowMutationMode.rawValue)
-  }
-  return input
 }
 
 private struct RemoteExecutionPayload {

@@ -20,7 +20,8 @@ private struct RielaAppGraphQLExecutor: GraphQLDocumentExecuting {
     )
     trustedRequest.isLocallyTrusted = true
     trustedRequest.localWorkingDirectory = registryWorkingDirectory
-    return await executor.execute(trustedRequest)
+    return await WorkflowExecutionAuthorizationWrapper(expectedBearer: nil, next: executor)
+      .execute(trustedRequest)
   }
 }
 
@@ -29,6 +30,9 @@ extension RielaApp {
     guard request.headers["x-riela-profile"] == daemonProfileName.rawValue else {
       return webGraphQLProfileConflictResponse()
     }
+    var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    environment["HOME"] = appHomeDirectory.path
+    let sessionStoreRoot = daemonSessionStoreRoot(profileName: daemonProfileName)
     let executor = RielaAppGraphQLExecutor(
       executor: CompositeGraphQLDocumentExecutor(
         workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
@@ -38,19 +42,26 @@ extension RielaApp {
           ),
           localManagedReferenceResolver: RielaAppWebManagedReferenceResolver()
         ),
-        fallback: SessionControlGraphQLDocumentExecutor(
-          provider: RielaSessionControlProvider(
+        fallback: WorkflowExecutionGraphQLDocumentExecutor(
+          provider: WorkflowExecutionProvider(
             workingDirectory: appHomeDirectory.path,
-            sessionStore: daemonSessionStoreRoot(profileName: daemonProfileName)
+            sessionStoreRoot: sessionStoreRoot,
+            environment: environment
           ),
-          next: ConsoleGraphQLDocumentExecutor(
-            provider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() },
-            next: RoutineAwareGraphQLFallbackExecutor(
-              routine: RoutineGraphQLDocumentExecutor(
-                provider: FileRoutineGraphQLProvider(workingDirectory: appHomeDirectory.path)
-              ),
-              next: RielaConfigGraphQLDocumentExecutor(
-                provider: RielaAppConfigurationGraphQLProvider(app: self)
+          next: SessionControlGraphQLDocumentExecutor(
+            provider: RielaSessionControlProvider(
+              workingDirectory: appHomeDirectory.path,
+              sessionStore: sessionStoreRoot
+            ),
+            next: ConsoleGraphQLDocumentExecutor(
+              provider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() },
+              next: RoutineAwareGraphQLFallbackExecutor(
+                routine: RoutineGraphQLDocumentExecutor(
+                  provider: FileRoutineGraphQLProvider(workingDirectory: appHomeDirectory.path)
+                ),
+                next: RielaConfigGraphQLDocumentExecutor(
+                  provider: RielaAppConfigurationGraphQLProvider(app: self)
+                )
               )
             )
           )
@@ -58,8 +69,6 @@ extension RielaApp {
       ),
       registryWorkingDirectory: appHomeDirectory.path
     )
-    var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-    environment["HOME"] = appHomeDirectory.path
     return await CLIRuntimeEnvironment.$overrides.withValue(environment) {
       await DeterministicServerHTTPAdapter(
         routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),

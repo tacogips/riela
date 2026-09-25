@@ -800,7 +800,11 @@ read-only dependencies remain in reviewContext.sourcePaths.
       ]
     }
   ],
-  "acceptanceCriteria": "All D1-D9, original A1-A16 and activity L1-L8 contracts; preserve six task gates, complete foreground evidence and no unresolved high/mid findings. Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push.",
+  "acceptanceCriteria": [
+    "All D1-D9, original A1-A16 and activity L1-L8 contracts are verified.",
+    "Preserve six task gates, complete foreground evidence and no unresolved high/mid findings.",
+    "Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push."
+  ],
   "verification": "V1 evidence retained; V2/V2b renewed; V3-V9 and L-V1-L-V5 plus source-matched dependency gates; author check: python3 tmp/workflow-defect-step4-t2-continuation/verify.py."
 }
 ```

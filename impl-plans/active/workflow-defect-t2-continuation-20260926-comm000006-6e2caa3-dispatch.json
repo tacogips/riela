@@ -342,7 +342,11 @@
         "Package.swift",
         "Package.resolved"
       ],
-      "acceptanceCriteria": "All D1-D9, original A1-A16 and activity L1-L8 contracts; preserve six task gates, complete foreground evidence and no unresolved high/mid findings. Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push.",
+      "acceptanceCriteria": [
+        "All D1-D9, original A1-A16 and activity L1-L8 contracts are verified.",
+        "Preserve six task gates, complete foreground evidence and no unresolved high/mid findings.",
+        "Implementation dispatch requires current Step 5 acceptance and the accepted design/plan checkpoint commit and non-force push."
+      ],
       "verification": [
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowBranchEvaluationTests|WorkflowConditionAnalysisTests'\"",
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'\"",

@@ -64,70 +64,6 @@ public protocol WorkflowNestedPublicationCommitting: WorkflowRuntimeStore {
   ) async throws -> WorkflowPublicationCommitResult
 }
 
-public struct WorkflowPublicationRequest: Sendable {
-  public var sessionId: String
-  public var stepId: String
-  public var nodeId: String
-  public var attempt: Int
-  public var backend: NodeExecutionBackend?
-  public var body: WorkflowPublicationBody
-  public var outputContract: WorkflowOutputContract?
-  public var routingReconciler: OutputContractRoutingReconciler?
-  public var transitions: [WorkflowStepTransition]
-  public var publishesRootOutput: Bool
-  public var successfulExecutionStatus: WorkflowStepExecutionStatus
-  public var completesRootWithoutOutput: Bool
-  public var allowsNoOutput: Bool
-  public var routesAdapterFailureAsAdvisory: Bool
-  public var transitionSelectionMode: WorkflowPublicationTransitionSelectionMode
-  public var noSelectionDisposition: WorkflowPublicationNoSelectionDisposition
-  public var prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider?
-  public var preCommitPublicationHook: WorkflowPreCommitPublicationHook?
-  public var carriedPayloadFields: JSONObject
-
-  public init(
-    sessionId: String,
-    stepId: String,
-    nodeId: String,
-    attempt: Int,
-    backend: NodeExecutionBackend? = nil,
-    body: WorkflowPublicationBody = .none,
-    outputContract: WorkflowOutputContract? = nil,
-    routingReconciler: OutputContractRoutingReconciler? = nil,
-    transitions: [WorkflowStepTransition] = [],
-    publishesRootOutput: Bool = false,
-    successfulExecutionStatus: WorkflowStepExecutionStatus = .completed,
-    completesRootWithoutOutput: Bool = false,
-    allowsNoOutput: Bool = false,
-    routesAdapterFailureAsAdvisory: Bool = false,
-    transitionSelectionMode: WorkflowPublicationTransitionSelectionMode = .rejectMultiple,
-    noSelectionDisposition: WorkflowPublicationNoSelectionDisposition = .publishPayloadAsRoot,
-    prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider? = nil,
-    preCommitPublicationHook: WorkflowPreCommitPublicationHook? = nil,
-    carriedPayloadFields: JSONObject = [:]
-  ) {
-    self.sessionId = sessionId
-    self.stepId = stepId
-    self.nodeId = nodeId
-    self.attempt = attempt
-    self.backend = backend
-    self.body = body
-    self.outputContract = outputContract
-    self.routingReconciler = routingReconciler
-    self.transitions = transitions
-    self.publishesRootOutput = publishesRootOutput
-    self.successfulExecutionStatus = successfulExecutionStatus
-    self.completesRootWithoutOutput = completesRootWithoutOutput
-    self.allowsNoOutput = allowsNoOutput
-    self.routesAdapterFailureAsAdvisory = routesAdapterFailureAsAdvisory
-    self.transitionSelectionMode = transitionSelectionMode
-    self.noSelectionDisposition = noSelectionDisposition
-    self.prePersistenceRoutingDecider = prePersistenceRoutingDecider
-    self.preCommitPublicationHook = preCommitPublicationHook
-    self.carriedPayloadFields = carriedPayloadFields
-  }
-}
-
 /// Instruction produced when a live run selects a cross-workflow transition:
 /// the runner must dispatch the callee workflow and, once it completes,
 /// deliver the callee root output to `resumeStepId` in the caller session.
@@ -420,7 +356,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     do {
       candidate = try await runtimeCandidate(from: request)
     } catch {
-      try? await finalizeCandidatePathIfNeeded(for: request)
+      try? cleanupRejectedCandidatePath(for: request)
       _ = try await store.updateStepExecution(
         WorkflowStepExecutionUpdateInput(
           sessionId: request.sessionId,
@@ -432,6 +368,44 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         )
       )
       throw error
+    }
+    let validation = try validator.validate(candidate, contract: request.outputContract)
+    guard validation.status == .accepted, let validatedPayload = validation.payload else {
+      let reason = validation.reason ?? "output validation rejected candidate"
+      try? cleanupRejectedCandidatePath(for: request)
+      let failedExecution = try await store.updateStepExecution(
+        WorkflowStepExecutionUpdateInput(
+          sessionId: request.sessionId,
+          executionId: recordedExecution.executionId,
+          status: .failed,
+          adapterOutput: adapterOutputMetadata,
+          failureReason: reason,
+          usage: adapterUsage
+        )
+      )
+      let session = try await store.loadSession(id: request.sessionId)
+      throw WorkflowPublicationError.validationRejected(failedExecution.failureReason ?? session?.status.rawValue ?? reason)
+    }
+    do {
+      let routeContract = WorkflowRouteContract()
+      try routeContract.validateCandidate(candidate, transitions: request.transitions)
+      try routeContract.validateCarriedFields(
+        request.carriedPayloadFields, candidate: candidate, transitions: request.transitions
+      )
+    } catch let routeError as WorkflowRouteControlError {
+      let reason = routeError.description
+      try? cleanupRejectedCandidatePath(for: request)
+      _ = try await store.updateStepExecution(
+        WorkflowStepExecutionUpdateInput(
+          sessionId: request.sessionId,
+          executionId: recordedExecution.executionId,
+          status: .failed,
+          adapterOutput: adapterOutputMetadata,
+          failureReason: reason,
+          usage: adapterUsage
+        )
+      )
+      throw WorkflowPublicationError.validationRejected(reason)
     }
     do {
       try await finalizeCandidatePathIfNeeded(for: request)
@@ -447,23 +421,6 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         )
       )
       throw error
-    }
-
-    let validation = try validator.validate(candidate, contract: request.outputContract)
-    guard validation.status == .accepted, let validatedPayload = validation.payload else {
-      let reason = validation.reason ?? "output validation rejected candidate"
-      let failedExecution = try await store.updateStepExecution(
-        WorkflowStepExecutionUpdateInput(
-          sessionId: request.sessionId,
-          executionId: recordedExecution.executionId,
-          status: .failed,
-          adapterOutput: adapterOutputMetadata,
-          failureReason: reason,
-          usage: adapterUsage
-        )
-      )
-      let session = try await store.loadSession(id: request.sessionId)
-      throw WorkflowPublicationError.validationRejected(failedExecution.failureReason ?? session?.status.rawValue ?? reason)
     }
     var payload = validatedPayload
     for (key, value) in request.carriedPayloadFields {
@@ -589,7 +546,33 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     )
     let decision: WorkflowPrePersistenceRoutingDecision
     do {
+      let recoveredCandidate = RuntimeOutputCandidate(
+        source: .inlineCandidate, payload: acceptedOutput.payload, when: acceptedOutput.when
+      )
+      let recoveredValidation = try validator.validate(recoveredCandidate, contract: request.outputContract)
+      guard recoveredValidation.status == .accepted else {
+        throw WorkflowPublicationError.validationRejected(
+          recoveredValidation.reason ?? "recovered output validation rejected candidate"
+        )
+      }
+      try WorkflowRouteContract().validateCandidate(
+        RuntimeOutputCandidate(source: .inlineCandidate, payload: acceptedOutput.payload, when: acceptedOutput.when),
+        transitions: request.transitions
+      )
       decision = try request.prePersistenceRoutingDecider?(context) ?? .unchanged(context)
+      let routedCandidate = RuntimeOutputCandidate(
+        source: .inlineCandidate, payload: decision.routedPayload, when: acceptedOutput.when
+      )
+      let routedValidation = try validator.validate(routedCandidate, contract: request.outputContract)
+      guard routedValidation.status == .accepted else {
+        throw WorkflowPublicationError.validationRejected(
+          routedValidation.reason ?? "routed output validation rejected candidate"
+        )
+      }
+      try WorkflowRouteContract().validateCandidate(
+        routedCandidate,
+        transitions: request.transitions
+      )
       if let reason = unsupportedTransitionReason(in: decision.selectedTransitions) {
         throw WorkflowPublicationError.unsupportedTransition(reason)
       }
@@ -599,6 +582,9 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         executionId: execution.executionId,
         reason: String(describing: error)
       ))
+      if let routeError = error as? WorkflowRouteControlError {
+        throw WorkflowPublicationError.validationRejected(routeError.description)
+      }
       throw error
     }
     let nextStepId = self.nextStepId(from: decision.selectedTransitions)
@@ -869,6 +855,21 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       return
     }
     try FileManager.default.createDirectory(at: finalizationRootDirectory, withIntermediateDirectories: true)
+    let root = finalizationRootDirectory.standardizedFileURL.resolvingSymlinksInPath()
+    let stagingDirectory = reservation.stagingDirectory.standardizedFileURL.resolvingSymlinksInPath()
+    guard isFileURL(stagingDirectory, inside: root) else {
+      throw RuntimeCandidatePathStagingError.stagingPathEscapesRoot(stagingDirectory.path)
+    }
+    if FileManager.default.fileExists(atPath: reservation.stagingDirectory.path) {
+      try FileManager.default.removeItem(at: reservation.stagingDirectory)
+    }
+  }
+
+  private func cleanupRejectedCandidatePath(for request: WorkflowPublicationRequest) throws {
+    guard case let .candidatePath(_, reservation) = request.body,
+          let finalizationRootDirectory = reservation.finalizationRootDirectory else {
+      return
+    }
     let root = finalizationRootDirectory.standardizedFileURL.resolvingSymlinksInPath()
     let stagingDirectory = reservation.stagingDirectory.standardizedFileURL.resolvingSymlinksInPath()
     guard isFileURL(stagingDirectory, inside: root) else {

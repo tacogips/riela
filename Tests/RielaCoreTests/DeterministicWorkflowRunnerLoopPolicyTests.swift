@@ -158,7 +158,7 @@ final class WorkflowRunnerLoopPolicyTests: XCTestCase {
       nodePayloads: ["review-node": Self.conditionalReviewPayload()]
     ))
 
-    XCTAssertEqual(result.session.executions.first?.acceptedOutput?.when, ["needs_replan": false, "needs_work": true])
+    XCTAssertEqual(result.session.executions.first?.acceptedOutput?.when, ["needs_replan": false, "needs_work": true, "accepted": false])
     XCTAssertEqual(result.session.executions.first?.acceptedOutput?.routingDiagnostics.count, 1)
   }
 

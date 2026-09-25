@@ -318,6 +318,20 @@ private func validateTransitions(
     }
     if let label = entry["label"] {
       validateNonEmptyString(label, path: "\(transitionPath).label", diagnostics: &diagnostics)
+      if let expression = label as? String, !expression.isEmpty {
+        do {
+          _ = try ParsedWorkflowCondition(expression)
+        } catch let WorkflowConditionError.syntax(span) {
+          diagnostics.append(error(
+            "\(transitionPath).label",
+            "route.invalidCondition characters[\(span.start)..<\(span.end)]"
+          ))
+        } catch {
+          diagnostics.append(WorkflowValidationDiagnostic(
+            severity: .error, path: "\(transitionPath).label", message: "route.invalidCondition"
+          ))
+        }
+      }
     }
     if let fanout = entry["fanout"] {
       validateFanout(fanout, path: "\(transitionPath).fanout", diagnostics: &diagnostics)

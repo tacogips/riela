@@ -292,6 +292,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           nodeId: step.nodeId,
           attempt: pendingExecution.attempt,
           backend: pendingExecution.backend,
+          outputContract: WorkflowOutputContract(
+            schema: effectiveRequest.nodePayloads[step.nodeId]?.output?.jsonSchema,
+            requiredObject: effectiveRequest.nodePayloads[step.nodeId]?.output != nil,
+            guaranteedWhen: effectiveRequest.nodePayloads[step.nodeId]?.output?.guaranteedWhen ?? []
+          ),
           transitions: transitions,
           publishesRootOutput: transitions.isEmpty,
           successfulExecutionStatus: pending.intendedSuccessfulStatus,
@@ -698,7 +703,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         attempt: executionIndex,
         backend: payload.executionBackend,
         body: .inlineCandidate(projectedPayload),
-        outputContract: workflowOutputContract(from: payload.output),
+        outputContract: WorkflowOutputContract(schema: payload.output?.jsonSchema, requiredObject: payload.output != nil, guaranteedWhen: payload.output?.guaranteedWhen ?? []),
         routingReconciler: routingReconciler,
         transitions: transitions,
         publishesRootOutput: transitions.isEmpty,
@@ -797,7 +802,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
           nodeId: step.nodeId,
           attempt: executionIndex,
           body: result.payload.map(WorkflowPublicationBody.inlineCandidate) ?? .none,
-          outputContract: workflowOutputContract(from: payload.output),
+          outputContract: WorkflowOutputContract(schema: payload.output?.jsonSchema, requiredObject: payload.output != nil, guaranteedWhen: payload.output?.guaranteedWhen ?? []),
           routingReconciler: routingReconciler,
           transitions: transitions,
           publishesRootOutput: transitions.isEmpty,
@@ -841,6 +846,10 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
   }
 
+}
+
+// Agent output correction and publication share one bounded attempt loop.
+extension DeterministicWorkflowRunner {
   private func executeAndPublish(
     adapterInput: AdapterExecutionInput,
     sessionId: String,
@@ -939,7 +948,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
             attempt: attempt,
             backend: basePayload.executionBackend,
             body: .adapterOutput(adapterOutput),
-            outputContract: workflowOutputContract(from: basePayload.output),
+            outputContract: WorkflowOutputContract(schema: basePayload.output?.jsonSchema, requiredObject: basePayload.output != nil, guaranteedWhen: basePayload.output?.guaranteedWhen ?? []),
             routingReconciler: routingReconciler,
             transitions: transitions,
             publishesRootOutput: transitions.isEmpty,

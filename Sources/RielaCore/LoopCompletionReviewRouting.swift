@@ -9,7 +9,8 @@ public func reconcileCompletionReviewRouting(
   let expected = expectedGoalCompletionRouting(from: payload)
   let expectedWhen: [String: Bool] = [
     "needs_replan": expected.needsReplan,
-    "needs_work": expected.needsWork
+    "needs_work": expected.needsWork,
+    "accepted": !expected.needsReplan && !expected.needsWork
   ]
   if when == expectedWhen {
     return OutputContractRoutingReconciliation(when: when)
@@ -17,7 +18,9 @@ public func reconcileCompletionReviewRouting(
 
   let alwaysOverridesRouting = when["always"] == true && (expected.needsReplan || expected.needsWork)
   let contradictsPayload =
-    when["needs_replan"] != expected.needsReplan || when["needs_work"] != expected.needsWork
+    when["needs_replan"] != expected.needsReplan ||
+    when["needs_work"] != expected.needsWork ||
+    when["accepted"] != expectedWhen["accepted"]
   guard alwaysOverridesRouting || contradictsPayload else {
     return OutputContractRoutingReconciliation(when: when)
   }

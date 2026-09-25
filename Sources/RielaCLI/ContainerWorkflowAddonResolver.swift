@@ -4,6 +4,35 @@ import RielaAddonSupport
 import RielaAddons
 import RielaCore
 
+func resolvedAddonRouteEvidence(
+  _ workflow: WorkflowDefinition,
+  packageManifest: WorkflowPackageManifest?
+) -> [String: WorkflowAddonRouteEvidence] {
+  var selected: [String: WorkflowAddonRouteEvidence] = [:]
+  let validManifest = packageManifest.flatMap {
+    WorkflowPackageManifestValidator.validate($0).isEmpty ? $0 : nil
+  }
+  for node in workflow.nodeRegistry {
+    guard let addon = node.addon, let version = addon.version else { continue }
+    var candidates: [WorkflowAddonRouteEvidence] = []
+    if let descriptor = RielaBuiltinAddonCatalog.descriptor(named: addon.name),
+       descriptor.version == version, let output = descriptor.outputProvenance {
+      candidates.append(.init(name: addon.name, version: version, output: output))
+    }
+    for packageAddon in validManifest?.nodeAddons ?? []
+    where packageAddon.name == addon.name && packageAddon.version == version &&
+      packageAddon.execution?.kind == .container {
+      if let output = packageAddon.outputProvenance, let digest = packageAddon.contentDigest,
+         digest.hasPrefix("sha256:"), digest.count == 71,
+         digest.dropFirst(7).unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (97...102).contains($0.value) }) {
+        candidates.append(.init(name: addon.name, version: version, contentDigest: digest, output: output))
+      }
+    }
+    if candidates.count == 1 { selected[node.id] = candidates[0] }
+  }
+  return selected
+}
+
 struct ContainerAddonRegistration: Equatable, Sendable {
   var packageName: String
   var addonName: String
@@ -16,6 +45,27 @@ struct ContainerAddonRegistration: Equatable, Sendable {
   var imageDigest: String?
   var contentDigest: String
   var capabilities: [WorkflowAddonCapability]
+  var outputProvenance: WorkflowAddonOutputProvenance?
+
+  init(
+    packageName: String, addonName: String, version: String,
+    packageRoot: URL, addonRoot: URL, entrypoint: String?, containerfilePath: String?,
+    image: String?, imageDigest: String?, contentDigest: String,
+    capabilities: [WorkflowAddonCapability], outputProvenance: WorkflowAddonOutputProvenance? = nil
+  ) {
+    self.packageName = packageName
+    self.addonName = addonName
+    self.version = version
+    self.packageRoot = packageRoot
+    self.addonRoot = addonRoot
+    self.entrypoint = entrypoint
+    self.containerfilePath = containerfilePath
+    self.image = image
+    self.imageDigest = imageDigest
+    self.contentDigest = contentDigest
+    self.capabilities = capabilities
+    self.outputProvenance = outputProvenance
+  }
 }
 
 struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
@@ -71,6 +121,7 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
       throw AdapterExecutionError(.providerError, "container add-on '\(registration.addonName)' failed: \(run.stderrSummary)")
     }
     let payload = try outputPayload(fromStdout: run.stdout, addonName: registration.addonName)
+    try validateProvenance(payload, input: input.resolvedInputPayload, registration: registration)
     return AdapterExecutionOutput(
       provider: "container-addon",
       model: registration.addonName,
@@ -80,7 +131,7 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
     )
   }
 
-  private func selectedRegistration(for addon: WorkflowNodeAddonRef) throws -> ContainerAddonRegistration {
+  func selectedRegistration(for addon: WorkflowNodeAddonRef) throws -> ContainerAddonRegistration {
     let matches = registrations.filter { registration in
       registration.addonName == addon.name && registration.version == (addon.version ?? registration.version)
     }
@@ -90,7 +141,34 @@ struct ContainerWorkflowAddonResolver: WorkflowAddonResolving {
     guard matches.count == 1 else {
       throw AdapterExecutionError(.policyBlocked, "container add-on '\(addon.name)' matched multiple installed packages")
     }
+    let hex = selected.contentDigest.dropFirst("sha256:".count)
+    guard selected.version.isEmpty == false, selected.contentDigest.hasPrefix("sha256:"), hex.count == 64,
+          hex.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (97...102).contains($0.value) }) else {
+      throw AdapterExecutionError(.policyBlocked, "container add-on selection lacks exact version and digest")
+    }
     return selected
+  }
+
+  func validateProvenance(
+    _ payload: JSONObject,
+    input: JSONObject,
+    registration: ContainerAddonRegistration
+  ) throws {
+    guard let proof = registration.outputProvenance else { return }
+    func reject(_ field: String) -> AdapterExecutionError {
+      AdapterExecutionError(.invalidOutput, "container add-on '\(registration.addonName)' violated output provenance for '\(field)'")
+    }
+    guard proof.guaranteedWhen.isEmpty else { throw reject("when") }
+    for key in proof.guaranteedPayload + proof.booleanOverwrites {
+      guard case .bool? = payload[key] else { throw reject(key) }
+    }
+    for key in proof.removedPayload where payload[key] != nil { throw reject(key) }
+    if proof.forwardsPayload == true {
+      let excluded = Set(proof.removedPayload + proof.overwrittenPayload)
+      for (key, value) in input where !excluded.contains(key) {
+        guard payload[key] == value else { throw reject(key) }
+      }
+    }
   }
 
   private func selectedRuntimeDriver() throws -> any ContainerRuntimeDriver {

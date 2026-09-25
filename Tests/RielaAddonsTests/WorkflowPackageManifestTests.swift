@@ -4,6 +4,28 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowPackageManifestTests: XCTestCase {
+  func testAddonOutputProvenanceRoundTripsAndRejectsInvalidClaims() throws {
+    let source = Data(#"""
+    {"name":"example/addon","version":"1","sourcePath":"addons/example",
+     "contentDigest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+     "execution":{"kind":"container","image":"example/image"},
+     "outputProvenance":{"guaranteedPayload":["ready"],"forwardsPayload":true,"removedPayload":["runtime"]}}
+    """#.utf8)
+    let addon = try JSONDecoder().decode(WorkflowPackageNodeAddon.self, from: source)
+    XCTAssertEqual(addon.outputProvenance?.guaranteedPayload, ["ready"])
+    let roundTrip = try JSONDecoder().decode(WorkflowPackageNodeAddon.self, from: JSONEncoder().encode(addon))
+    XCTAssertEqual(roundTrip, addon)
+    let unknown = Data(#"{"name":"example/addon","version":"1","sourcePath":"addons/example","outputProvenance":{"unsupported":true}}"#.utf8)
+    XCTAssertThrowsError(try JSONDecoder().decode(WorkflowPackageNodeAddon.self, from: unknown))
+
+    var invalid = addon
+    invalid.outputProvenance?.guaranteedWhen = ["ready"]
+    let manifest = WorkflowPackageManifest(name: "test", nodeAddons: [invalid])
+    XCTAssertTrue(WorkflowPackageManifestValidator.validate(manifest).contains {
+      $0.path == "addons[0].outputProvenance.guaranteedWhen"
+    })
+  }
+
   func testManifestDecodesWithWorkflowDefaultAndDeterministicValidation() throws {
     let data = Data("""
     {

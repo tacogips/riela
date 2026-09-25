@@ -380,7 +380,7 @@ final class AdapterUtilitiesTests: XCTestCase {
       routingReconciler: reconcileCompletionReviewRouting
     )
 
-    XCTAssertEqual(envelope.when, ["needs_replan": false, "needs_work": true])
+    XCTAssertEqual(envelope.when, ["needs_replan": false, "needs_work": true, "accepted": false])
     XCTAssertEqual(envelope.routingDiagnostics.count, 1)
   }
 

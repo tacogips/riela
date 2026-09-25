@@ -395,14 +395,6 @@ public struct SessionRerunCommand: Sendable {
 
   public func run(_ options: SessionRerunOptions) async -> CLICommandResult {
     let jsonlRecorder = options.output == .jsonl ? WorkflowRunJSONLRecorder(writer: jsonlRecordWriter) : nil
-    if options.nestedSuperviser {
-      return await failure(
-        options: options,
-        exitCode: .usage,
-        error: "--nested-supervisor / --nested-superviser is not supported for session rerun; use workflow run or session resume with --auto-improve instead",
-        jsonlRecorder: jsonlRecorder
-      )
-    }
     do {
       let loaded = try CLIWorkflowSessionResolution.loadPersistedSession(
         sessionId: options.sessionId,

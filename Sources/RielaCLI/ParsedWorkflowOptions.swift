@@ -38,17 +38,8 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Option var authToken: String?
   @Option var authTokenEnv: String?
   @Flag var fromRegistry = false
-  @Flag(name: [.customLong("nested-superviser"), .customLong("nested-supervisor")])
-  var nestedSuperviser = false
   @Flag(inversion: .prefixedNo, help: "Allow Codex nodes to use multi-agent supervisor mode for this run.")
   var supervisorMode = false
-  @Flag(inversion: .prefixedNo) var autoImprove = false
-  @Option var maxSupervisedAttempts = 3
-  @Option var maxWorkflowPatches = 2
-  @Option var monitorIntervalMs = 1_000
-  @Option var stallTimeoutMs = 30_000
-  var stallDetectionEnabled = false
-  @Option var workflowMutationMode = WorkflowMutationMode.executionCopy
 
   private static let runOptionNames: Set<String> = [
     "--variables",
@@ -71,14 +62,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     "--agent-silence-warning-ms",
     "--agent-silence-monitor-interval-ms",
     "--supervisor-mode",
-    "--no-supervisor-mode",
-    "--auto-improve",
-    "--no-auto-improve",
-    "--max-supervised-attempts",
-    "--max-workflow-patches",
-    "--monitor-interval-ms",
-    "--stall-timeout-ms",
-    "--workflow-mutation-mode"
+    "--no-supervisor-mode"
   ]
 
   init() {}
@@ -109,18 +93,6 @@ struct ParsedWorkflowOptions: ParsableArguments {
     return variables
   }
 
-  var autoImprovePolicy: WorkflowAutoImprovePolicy {
-    WorkflowAutoImprovePolicy(
-      maxSupervisedAttempts: maxSupervisedAttempts,
-      maxWorkflowPatches: maxWorkflowPatches,
-      monitorIntervalMs: monitorIntervalMs,
-      stallTimeoutMs: stallTimeoutMs,
-      stallDetectionEnabled: stallDetectionEnabled,
-      workflowMutationMode: workflowMutationMode,
-      nestedSuperviser: nestedSuperviser
-    )
-  }
-
   private static func isRunOption(_ token: String) -> Bool {
     let name = token.split(separator: "=", maxSplits: 1).first.map(String.init) ?? token
     return runOptionNames.contains(name)
@@ -145,20 +117,6 @@ struct ParsedWorkflowOptions: ParsableArguments {
     try requirePositive(timeoutMs, option: "--timeout-ms")
     try requireNonNegative(agentSilenceWarningMs, option: "--agent-silence-warning-ms")
     try requirePositive(agentSilenceMonitorIntervalMs, option: "--agent-silence-monitor-interval-ms")
-    try requirePositive(maxSupervisedAttempts, option: "--max-supervised-attempts")
-    try requireNonNegative(maxWorkflowPatches, option: "--max-workflow-patches")
-    try requirePositive(monitorIntervalMs, option: "--monitor-interval-ms")
-    try requirePositive(stallTimeoutMs, option: "--stall-timeout-ms")
-
-    applyAutoImprovePatchOrdering(tokens: tokens)
-    stallDetectionEnabled = tokens.contains(where: {
-      $0 == "--stall-timeout-ms" || $0.hasPrefix("--stall-timeout-ms=")
-    })
-    if stallTimeoutMs < monitorIntervalMs {
-      throw CLIUsageError(
-        "invalid --auto-improve policy: stallTimeoutMs must be greater than or equal to monitorIntervalMs"
-      )
-    }
     if variables != nil && variablesFile != nil {
       throw CLIUsageError("--variables and --variables-file are mutually exclusive")
     }
@@ -176,28 +134,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
     }
   }
 
-  private mutating func applyAutoImprovePatchOrdering(tokens: [String]) {
-    // ArgumentParser owns validation and typed values. This pass preserves the
-    // established last-occurrence-wins interaction between two different options.
-    var effectiveMaxWorkflowPatches = 2
-    var index = 0
-    while index < tokens.count {
-      let token = tokens[index]
-      if token == "--no-auto-improve" {
-        effectiveMaxWorkflowPatches = 0
-      } else if token == "--max-workflow-patches", index + 1 < tokens.count {
-        effectiveMaxWorkflowPatches = Int(tokens[index + 1]) ?? effectiveMaxWorkflowPatches
-        index += 1
-      } else if token.hasPrefix("--max-workflow-patches="),
-                let value = Int(token.dropFirst("--max-workflow-patches=".count)) {
-        effectiveMaxWorkflowPatches = value
-      }
-      index += 1
-    }
-    maxWorkflowPatches = effectiveMaxWorkflowPatches
-  }
 }
 
 extension WorkflowOutputFormat: ExpressibleByArgument {}
 extension WorkflowInstanceScope: ExpressibleByArgument {}
-extension WorkflowMutationMode: ExpressibleByArgument {}

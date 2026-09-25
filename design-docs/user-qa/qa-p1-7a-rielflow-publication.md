@@ -8,7 +8,10 @@ at `a373a6040bff11ef7e86b8f6789321fefc7596f1`. Step 1 `comm-000002` for
 boundary” supplies this authority. No archived `rielflow` edit or publication is
 a dependency. Fresh native rejection (including false/null), opaque-variable
 preservation and authenticated ordinary-request evidence belong to P1-7a A3;
-A4/A5 and parent P1 remain separate gates. See the current continuation in
+A4 independent review has accepted the source-matched evidence and baseline
+attribution for both failed broad Swift aggregates. Step 7b browser E2E was
+skipped because no `web/` file changed. A5 exact-file publication to Draft PR
+#109 and parent P1 remain separate open gates. See the current continuation in
 `design-docs/specs/design-work-runtime-consolidation.md` §17.10 and
 `design-docs/specs/design-native-remote-workflow-execution.md`.
 

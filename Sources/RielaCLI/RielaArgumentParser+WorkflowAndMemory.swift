@@ -216,8 +216,6 @@ extension RielaArgumentParser {
       authTokenEnv: parsed.authTokenEnv,
       fromRegistry: parsed.fromRegistry,
       supervisorMode: parsed.supervisorMode,
-      autoImprove: parsed.autoImprove,
-      autoImprovePolicy: parsed.autoImprovePolicy,
       resumeSessionId: parsed.resumeSessionId
     )
   }

@@ -15,7 +15,7 @@ for compatibility with existing workflow bundles.
 The Swift CLI owns the production command surface for local workflow execution,
 session inspection, workflow packages, event sources, hooks, GraphQL/server
 control-plane commands, direct `call-step`/`workflow-call` execution,
-supervised `workflow run --auto-improve`, and reviewed `workflow self-improve`
+task-backed Work Runtime dispatch, and reviewed `workflow self-improve`
 mutation flows.
 
 Client command routing, subcommand validation, positional arguments, and typed
@@ -212,8 +212,9 @@ it in command arguments or workflow artifacts. Claude Code routing also clears
 Riela-owned environment names use the `RIELA_` prefix. Remote GraphQL workflow
 runs read `RIELA_MANAGER_AUTH_TOKEN` and optionally
 `RIELA_MANAGER_SESSION_ID`; the latter does not authorize execution.
-`workflow run --endpoint ...` omits `autoImprove` by default. Supplying
-`--auto-improve` sends unsupported input, which the receiver rejects.
+`workflow run --endpoint ...` accepts opaque `runtimeVariables`. The receiver
+rejects retired top-level `autoImprove` and `nestedSuperviser` fields by
+presence, including `false` and `null`, before starting provider work.
 
 To run against a `riela serve` host, configure a nonempty
 `RIELA_MANAGER_AUTH_TOKEN` in the server's startup environment and provide the
@@ -229,8 +230,8 @@ its selected working directory and session store for both the run and the
 following summary read; request input cannot choose either path. The mutation
 waits for a persisted result and reports the actual status and exit code,
 including a failed run. A client or proxy timeout can precede completion, and
-retrying then can start a second run. `--auto-improve`, `--from-registry`,
-`--mock-scenario`, and `--supervisor-mode` are unsupported for this remote run.
+retrying then can start a second run. `--from-registry`, `--mock-scenario`,
+and `--supervisor-mode` are unsupported for this remote run.
 
 Codex multi-agent supervisor mode is also opt-in. Riela explicitly disables the
 Codex `multi_agent` feature for ordinary local workflow runs, regardless of the
@@ -787,8 +788,8 @@ gate still fails the run and preserves gate evidence. The P1-7b build, catalog
 checks, 21 task example tests, 57 before-removal tests, 115 affected work tests
 and 55 selected-host tests passed. The serial broad suite remains **FAILED**
 with 18 classified non-P1-7b assertions among 2,668 tests. Browser E2E was
-skipped because no `web/` file changed. P1-7a legacy removal, parent P1 and the
-broad failure follow-ups remain open. See the
+skipped because no `web/` file changed. Parent P1 and the broad failure
+follow-ups remain open. See the
 [P1-7b progress record](impl-plans/progress/p1-dispatch.md) for exact commands
 and logs.
 
@@ -802,8 +803,19 @@ deterministic race regression and source-matched Xcode build, policy (75/75),
 before-removal (69/69), canonical (94/94), cancellation-host (49/49) and live
 (5/5) test selections passed with strict changed-file SwiftLint. Codex Sol
 (`comm-000013`) and Codex Astra (`comm-000018`) accepted A1. Browser E2E was
-skipped because no `web/` file changed. A2–A5 legacy removal and parent P1
-remain open; A2/A3 require native Riela receiving evidence and separate review.
+skipped because no `web/` file changed. P1-7a A2/A3 has since removed the
+legacy workflow auto-improve option, result and examples after task-backed
+replacement coverage. Ordinary workflows remain task-free; specialist, event,
+loop and routine paths remain available. Current-source cancellation coverage
+passed 1/1, strict changed-file SwiftLint passed on 21 paths, and the V7
+repository lint comparison found 24 unchanged warnings across 970 Swift files.
+Both broad Swift test aggregates remain **FAILED**, exit 1: Work/CLI/Core ran
+2,061 tests and the full nonparallel suite ran 2,717 cases with two skips. Each
+matched all 21 baseline assertions across 19 failed cases. Independent
+test-integrity, adversarial and integration reviews accepted the baseline
+attribution and P1-7a A4 handoff with no material finding. The historical A0
+per-command environment snapshots are unavailable. Browser E2E was skipped
+because no `web/` file changed. A5 publication and parent P1 remain open.
 See the [P1-7a progress record](impl-plans/progress/p1-dispatch.md) for commands,
 logs and review history. The design is
 [Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).

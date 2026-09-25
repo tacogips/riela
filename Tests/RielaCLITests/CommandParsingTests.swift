@@ -233,7 +233,6 @@ final class CommandParsingTests: XCTestCase {
       XCTAssertEqual(options.agentSilenceMonitorIntervalMs, 250)
       XCTAssertEqual(options.output, .json)
       XCTAssertFalse(options.supervisorMode)
-      XCTAssertFalse(options.autoImprove)
     } else {
       XCTFail("expected run command")
     }
@@ -258,52 +257,6 @@ final class CommandParsingTests: XCTestCase {
       XCTFail("expected run command")
     }
 
-    let supervisedRun = try parser.parse([
-      "workflow", "run", "demo",
-      "--auto-improve",
-      "--max-supervised-attempts", "4",
-      "--max-workflow-patches", "1",
-      "--monitor-interval-ms", "1000",
-      "--stall-timeout-ms", "2000",
-      "--workflow-mutation-mode", "execution-copy",
-      "--nested-supervisor"
-    ])
-    if case let .workflow(.run(options)) = supervisedRun {
-      XCTAssertTrue(options.autoImprove)
-      XCTAssertEqual(options.autoImprovePolicy.maxSupervisedAttempts, 4)
-      XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 1)
-      XCTAssertEqual(options.autoImprovePolicy.monitorIntervalMs, 1000)
-      XCTAssertEqual(options.autoImprovePolicy.stallTimeoutMs, 2000)
-      XCTAssertTrue(options.autoImprovePolicy.stallDetectionEnabled)
-      XCTAssertEqual(options.autoImprovePolicy.workflowMutationMode, .executionCopy)
-      XCTAssertTrue(options.autoImprovePolicy.nestedSuperviser)
-    } else {
-      XCTFail("expected supervised run command")
-    }
-
-    let disabledThenConfigured = try parser.parse([
-      "workflow", "run", "demo",
-      "--no-auto-improve",
-      "--max-workflow-patches", "4"
-    ])
-    if case let .workflow(.run(options)) = disabledThenConfigured {
-      XCTAssertFalse(options.autoImprove)
-      XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 4)
-    } else {
-      XCTFail("expected disabled run command")
-    }
-
-    let configuredThenDisabled = try parser.parse([
-      "workflow", "run", "demo",
-      "--max-workflow-patches", "4",
-      "--no-auto-improve"
-    ])
-    if case let .workflow(.run(options)) = configuredThenDisabled {
-      XCTAssertFalse(options.autoImprove)
-      XCTAssertEqual(options.autoImprovePolicy.maxWorkflowPatches, 0)
-    } else {
-      XCTFail("expected disabled run command")
-    }
   }
 
   func testWorkflowRunVariablesFileHasParityWithVariables() throws {
@@ -474,20 +427,6 @@ final class CommandParsingTests: XCTestCase {
         )
       ))
     )
-  }
-
-  func testRejectsInvalidAutoImprovePolicy() {
-    XCTAssertThrowsError(try RielaArgumentParser().parse([
-      "workflow", "run", "demo",
-      "--auto-improve",
-      "--monitor-interval-ms", "5000",
-      "--stall-timeout-ms", "4999"
-    ])) { error in
-      XCTAssertEqual(
-        (error as? CLIUsageError)?.message,
-        "invalid --auto-improve policy: stallTimeoutMs must be greater than or equal to monitorIntervalMs"
-      )
-    }
   }
 
   func testParsesRemoteRunOptions() throws {

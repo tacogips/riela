@@ -68,7 +68,6 @@ public struct WorkflowRunCommand: Sendable {
       let adapter = try taskNodeAdapterOverride ?? makeScenarioBackedNodeAdapter(
         scenarioPath: options.mockScenarioPath,
         workingDirectory: runWorkingDirectory,
-        autoImprove: options.autoImprove,
         codexSupervisorModeEnabled: options.supervisorMode,
         environment: runEnvironment
       )
@@ -182,35 +181,6 @@ public struct WorkflowRunCommand: Sendable {
         eventHandler: runEventHandler,
         sessionExecutionAdmission: taskAdmission ?? processAdmission
       )
-      if options.autoImprove {
-        var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
-          kaibaSnapshot,
-          allowsMockExecution: options.mockScenarioPath != nil
-        ) {
-          try await runWithAutoImprove(
-            initialRequest: initialRequest,
-            runner: runner,
-            workflow: bundle.workflow,
-            nodePayloads: bundle.nodePayloads,
-            variables: effectiveVariables,
-            options: options,
-            runtimeStore: runtimeStore
-          )
-        }
-        return try await finalizeRun(
-          &finalResult,
-          context: RunFinalizeContext(
-            runtimeStore: runtimeStore,
-            bundle: bundle,
-            effectiveVariables: effectiveVariables,
-            options: options, hasTaskReservation: taskReservation != nil,
-            persistedIdentity: persistedIdentity,
-            storeRoot: storeRoot,
-            telemetry: telemetry,
-            jsonlRecorder: jsonlRecorder
-          )
-        )
-      }
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
         kaibaSnapshot,
         allowsMockExecution: options.mockScenarioPath != nil
@@ -322,8 +292,6 @@ public struct WorkflowRunCommand: Sendable {
       instanceIdentity: options.instance,
       runtimeVariables: variables,
       nodePatch: nodePatch,
-      autoImprove: options.autoImprove,
-      autoImprovePolicy: options.autoImprovePolicy,
       maxSteps: options.maxSteps,
       maxConcurrency: options.maxConcurrency,
       maxLoopIterations: options.maxLoopIterations,
@@ -548,14 +516,6 @@ public struct WorkflowRunCommand: Sendable {
     if let artifactRoot = options.artifactRoot {
       let artifactURL = absoluteURL(artifactRoot, relativeTo: URL(fileURLWithPath: options.workingDirectory, isDirectory: true))
       try FileWorkflowRuntimePersistenceStore(rootDirectory: artifactURL.path).save(snapshot)
-    }
-    if options.autoImprove, let supervision = result.supervision {
-      try persistSupervisionRecord(
-        sessionId: result.session.sessionId,
-        storeRoot: storeRoot,
-        workflowName: workflowName,
-        supervision: supervision
-      )
     }
   }
 
@@ -933,7 +893,7 @@ private func unquotedEnvironmentValue(_ value: String) -> String {
     .replacingOccurrences(of: "'\\''", with: "'")
 }
 
-/// Shared post-run finalize sequence for the plain and auto-improve paths:
+/// Shared post-run finalize sequence:
 /// evidence projection, required-gate failure application, terminal
 /// persistence, notification dispatch, telemetry flush, and rendering.
 struct RunFinalizeContext {

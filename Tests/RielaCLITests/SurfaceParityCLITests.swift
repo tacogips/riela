@@ -125,7 +125,9 @@ final class SurfaceParityCLITests: XCTestCase {
   func testOptionUniverseContainsRealFlagsAndRejectsRetiredOnes() {
     let options = CLISurfaceEnumerator.optionNames()
     XCTAssertTrue(options.contains("--max-steps"))
-    XCTAssertTrue(options.contains("--auto-improve"))
+    XCTAssertFalse(options.contains("--auto-improve"))
+    XCTAssertFalse(options.contains("--no-auto-improve"))
+    XCTAssertFalse(options.contains("--nested-superviser"))
     XCTAssertTrue(options.contains("--mock-scenario"))
     XCTAssertFalse(options.contains("--supervisor-workflow"))
     XCTAssertFalse(options.contains("--no-allow-targeted-rerun"))

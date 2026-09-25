@@ -15,7 +15,7 @@ extension WorkflowRunCommand {
     store: WorkStore,
     context: TaskPlacementExecutionContext
   ) async -> CLICommandResult {
-    guard options.endpoint == nil, !options.autoImprove,
+    guard options.endpoint == nil,
           options.resumeSessionId == reservation.attempt.sessionId else {
       return CLICommandResult(exitCode: .usage, stderr: "task run requires its local reserved session")
     }

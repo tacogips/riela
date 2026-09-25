@@ -5,7 +5,8 @@
 Mode `issue-resolution`; issue “Complete P1-7a A4 independent evidence handoff
 and A5 publication”, `tacogips/riela`, no issue number/URL, Draft PR #109.
 Intake `comm-000002`; design accepted by Step 3 `comm-000006`, no findings,
-resolving `comm-000004`. Current Step 5 plan acceptance remains pending.
+resolving `comm-000004`. Step 5 plan and A4 integration reviews are accepted;
+A5 documentation and exact-file publication remain in progress.
 Authority: `design-docs/specs/design-work-runtime-consolidation.md` §17.10 and
 `design-docs/specs/design-native-remote-workflow-execution.md` current section.
 No codex-agent references, Cursor mapping or intentional divergence applies.
@@ -17,6 +18,14 @@ baseline remains `911428e2ab6df6776627a64edd7c1d76e4622c26`. Preserve all 37
 pre-existing dirty paths/deletions and existing receipts. This section overrides
 all historical pending-V7, automatic-rerun and manifest-edit instructions below.
 Runtime-resolved package provenance and effective input are authoritative.
+
+Step 8 documentation review keeps this plan active. Its parent P1 checklist
+and final evidence are incomplete, and A5 still requires the reviewed exact
+file allowlist, commit, non-force push and Draft PR #109 remote-tip proof.
+The renewed Work/CLI/Core and full nonparallel aggregates both failed exit 1,
+with 21/21 baseline-matched assertions; A0 historical per-command environment
+snapshots remain unavailable. The Step 7b browser check was skipped because no
+`web/` file changed.
 
 ### Ownership and executable scope
 

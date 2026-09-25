@@ -37,7 +37,6 @@ func makeProductionNodeAdapter(
 func makeScenarioBackedNodeAdapter(
   scenarioPath: String?,
   workingDirectory: String,
-  autoImprove: Bool = false,
   codexSupervisorModeEnabled: Bool = false,
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) throws -> any NodeAdapter {
@@ -53,9 +52,7 @@ func makeScenarioBackedNodeAdapter(
     scenarioPath,
     relativeTo: URL(fileURLWithPath: workingDirectory)
   ).path)
-  return autoImprove
-    ? SupervisedScenarioNodeAdapter(scenario: scenario, fallback: fallback)
-    : ScenarioNodeAdapter(scenario: scenario, fallback: fallback)
+  return ScenarioNodeAdapter(scenario: scenario, fallback: fallback)
 }
 
 func makeScenarioBackedStdioNodeExecutor(

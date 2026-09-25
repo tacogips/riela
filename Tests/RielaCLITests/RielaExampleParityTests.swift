@@ -11,7 +11,7 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 41
+    static let expectedMockScenarioCount = 40
     static let expectedNodeMockScenarioCount = 0
   }
 
@@ -24,9 +24,6 @@ final class RielaExampleParityTests: XCTestCase {
   }
 
   private enum WorkflowIds {
-    static let defaultSuperviserWorkflowName = "default-superviser"
-    static let defaultSuperviserWorkflowId = "riela-default-superviser"
-    static let supervisedMockRetryWorkflowName = "supervised-mock-retry"
     static let discordAgentTrioChatWorkflowName = "discord-agent-trio-chat"
     static let matrixAgentTrioChatWorkflowName = "matrix-agent-trio-chat"
     static let telegramAgentTrioChatWorkflowName = "telegram-agent-trio-chat"
@@ -53,7 +50,6 @@ final class RielaExampleParityTests: XCTestCase {
     static let mockRunMaxSteps = "200"
     static let outputFlag = "--output"
     static let jsonOutputFormat = "json"
-    static let autoImproveFlag = "--auto-improve"
   }
 
   private enum TelegramSDKTrioChatMock {
@@ -280,9 +276,6 @@ final class RielaExampleParityTests: XCTestCase {
         WorkflowRunCLI.maxStepsFlag, WorkflowRunCLI.mockRunMaxSteps,
         WorkflowRunCLI.outputFlag, WorkflowRunCLI.jsonOutputFormat
       ]
-      if workflowName == WorkflowIds.supervisedMockRetryWorkflowName {
-        arguments.append(WorkflowRunCLI.autoImproveFlag)
-      }
       if workflowName == WorkflowIds.telegramSDKTrioChatWorkflowName {
         let memoryRoot = sessionStore.appendingPathComponent("memory", isDirectory: true)
         arguments.append(contentsOf: [
@@ -795,11 +788,7 @@ extension RielaExampleParityTests {
     }
   }
 
-  private func expectedWorkflowId(for workflowName: String) -> String {
-    workflowName == WorkflowIds.defaultSuperviserWorkflowName
-      ? WorkflowIds.defaultSuperviserWorkflowId
-      : workflowName
-  }
+  private func expectedWorkflowId(for workflowName: String) -> String { workflowName }
 
   private func discoverWorkflowNames(examplesRoot: URL) throws -> [String] {
     let contents = try FileManager.default.contentsOfDirectory(

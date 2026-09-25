@@ -53,7 +53,7 @@ The client also accepts `--auth-token` and `--auth-token-env`. The host chooses
 the working directory and session store. The call waits for a persisted result
 and returns its actual exit code, including failure. A client timeout can leave
 the run continuing; retrying can start another run. Remote runs reject
-`--auto-improve`, `--from-registry`, `--mock-scenario`, and `--supervisor-mode`.
+`--from-registry`, `--mock-scenario`, and `--supervisor-mode`.
 
 ## Follow and control a session
 

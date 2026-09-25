@@ -318,8 +318,6 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var authTokenEnv: String?
   public var fromRegistry: Bool
   public var supervisorMode: Bool
-  public var autoImprove: Bool
-  public var autoImprovePolicy: WorkflowAutoImprovePolicy
   /// Reserved canonical session identity for durable supervisors.  Ordinary
   /// command callers leave it nil and retain normal run semantics.
   public var resumeSessionId: String?
@@ -351,8 +349,6 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     authTokenEnv: String? = nil,
     fromRegistry: Bool = false,
     supervisorMode: Bool = false,
-    autoImprove: Bool = false,
-    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy(),
     resumeSessionId: String? = nil
   ) {
     self.target = target
@@ -381,77 +377,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.authTokenEnv = authTokenEnv
     self.fromRegistry = fromRegistry
     self.supervisorMode = supervisorMode
-    self.autoImprove = autoImprove
-    self.autoImprovePolicy = autoImprovePolicy
     self.resumeSessionId = resumeSessionId
-  }
-}
-
-public enum WorkflowMutationMode: String, Codable, CaseIterable, Sendable {
-  case executionCopy = "execution-copy"
-  case inPlace = "in-place"
-  case disabled
-
-  public var isForwardedToRemoteExecution: Bool {
-    switch self {
-    case .executionCopy, .inPlace:
-      true
-    case .disabled:
-      false
-    }
-  }
-
-  static var acceptedValuesDescription: String {
-    Self.allCases.map(\.rawValue).joined(separator: ", ")
-  }
-}
-
-public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
-  public var maxSupervisedAttempts: Int
-  public var maxWorkflowPatches: Int
-  public var monitorIntervalMs: Int
-  public var stallTimeoutMs: Int
-  public var stallDetectionEnabled: Bool
-  public var workflowMutationMode: WorkflowMutationMode
-  public var nestedSuperviser: Bool
-
-  private enum CodingKeys: String, CodingKey {
-    case maxSupervisedAttempts
-    case maxWorkflowPatches
-    case monitorIntervalMs
-    case stallTimeoutMs
-    case stallDetectionEnabled
-    case workflowMutationMode
-    case nestedSuperviser
-  }
-
-  public init(
-    maxSupervisedAttempts: Int = 3,
-    maxWorkflowPatches: Int = 2,
-    monitorIntervalMs: Int = 1_000,
-    stallTimeoutMs: Int = 30_000,
-    stallDetectionEnabled: Bool = false,
-    workflowMutationMode: WorkflowMutationMode = .executionCopy,
-    nestedSuperviser: Bool = false
-  ) {
-    self.maxSupervisedAttempts = maxSupervisedAttempts
-    self.maxWorkflowPatches = maxWorkflowPatches
-    self.monitorIntervalMs = monitorIntervalMs
-    self.stallTimeoutMs = stallTimeoutMs
-    self.stallDetectionEnabled = stallDetectionEnabled
-    self.workflowMutationMode = workflowMutationMode
-    self.nestedSuperviser = nestedSuperviser
-  }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    maxSupervisedAttempts = try container.decode(Int.self, forKey: .maxSupervisedAttempts)
-    maxWorkflowPatches = try container.decode(Int.self, forKey: .maxWorkflowPatches)
-    monitorIntervalMs = try container.decode(Int.self, forKey: .monitorIntervalMs)
-    stallTimeoutMs = try container.decode(Int.self, forKey: .stallTimeoutMs)
-    stallDetectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .stallDetectionEnabled) ?? false
-    workflowMutationMode = try container.decode(WorkflowMutationMode.self, forKey: .workflowMutationMode)
-    nestedSuperviser = try container.decode(Bool.self, forKey: .nestedSuperviser)
   }
 }
 

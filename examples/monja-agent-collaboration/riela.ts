@@ -269,7 +269,6 @@ export class CliRielaSessionRunner implements RielaSessionRunner {
 			resolve(this.runtimeRoot, "artifacts"),
 			"--output",
 			"jsonl",
-			"--no-auto-improve",
 			"--no-supervisor-mode",
 		);
 		if (this.mockScenario) args.push("--mock-scenario", this.mockScenario);

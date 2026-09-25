@@ -1,6 +1,12 @@
 # RielaApp Instance Execution Timeline
 
-Status: reviewed draft
+Status: superseded by the Web UI trace viewer (`684eeca7`); retained data/layout contract verified 2026-09-21
+
+The original AppKit presentation described below shipped and was later
+deliberately removed when workflow viewing moved to the Web UI. Its durable
+requirements now live in `RielaViewer` plus `Web/src/views/RunTrace.tsx` and
+`Web/src/views/traceLayout.ts`. This document remains historical design
+provenance and does not authorize recreating the removed native viewer.
 
 Add a Jaeger-style execution timeline to RielaApp so an operator can see, for one workflow instance session, every node execution as a Gantt bar (nodes on the vertical axis, time on the horizontal axis) and open a per-execution popup that shows its log, inbox, and outbox.
 

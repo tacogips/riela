@@ -298,6 +298,7 @@ extension WorkflowCommandTests {
     {
       "id": "worker",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "model",
       "sessionPolicy": { "mode": "reuse", "inheritFromStepId": "missing" }
     }
@@ -325,7 +326,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", tempDir.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspection.exitCode, .success, inspection.stderr + inspection.stdout)
+    XCTAssertEqual(inspection.exitCode, .failure, inspection.stderr + inspection.stdout)
     XCTAssertTrue(inspection.stdout.contains("runtimeCapabilityGaps"), inspection.stdout)
     XCTAssertTrue(
       inspection.stdout.contains("workflow.steps.second.sessionPolicy.inheritFromStepId"),

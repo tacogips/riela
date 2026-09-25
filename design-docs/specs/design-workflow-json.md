@@ -247,6 +247,7 @@ Minimal derived shape:
     },
     "agentNodePatch": {
       "executionBackend": "cursor-cli-agent",
+      "agentSandbox": "read-only",
       "model": "claude-sonnet-4-5"
     }
   }
@@ -284,6 +285,10 @@ Load-time behavior:
   missing path such as `nodes/node-adhoc-claude-code.json`.
 - `agentNodePatch` is convenience syntax for backend/model family variants; it
   must not patch add-on-backed nodes or non-agent execution nodes
+- node patches accept `agentSandbox` alongside `executionBackend`; switching to
+  a CLI-agent backend must leave an explicit effective sandbox, while switching
+  to an API backend clears an inherited CLI-only sandbox when the patch does not
+  provide one
 - explicit `nodePatch` may override or complement `agentNodePatch` for named
   inherited node registry entries
 - any run-time `LoadOptions.nodePatch` remains a caller-supplied non-persistent

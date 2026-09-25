@@ -2,6 +2,7 @@
   "id": "intake-or-plan",
   "description": "Confirm the run persistence projection slice.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "low",

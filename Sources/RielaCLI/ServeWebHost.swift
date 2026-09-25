@@ -145,6 +145,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       let executor = ServeWebRegistryExecutor(
         workingDirectory: workingDirectory.path,
         sessionStoreRoot: sessionStoreRoot,
+        environment: environment,
         configurationProvider: self,
         consoleProvider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() }
       )
@@ -180,7 +181,8 @@ final class ServeWebHost: RielaHTTPRouteHandling {
 
 private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
   let workingDirectory: String
-  let sessionStoreRoot: String?
+  let sessionStoreRoot: String
+  let environment: [String: String]
   let configurationProvider: any RielaConfigurationGraphQLProviding
   let consoleProvider: any GraphQLConsoleProviding
 
@@ -188,24 +190,32 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
     var trusted = request
     trusted.isLocallyTrusted = true
     trusted.localWorkingDirectory = workingDirectory
-    return await CompositeGraphQLDocumentExecutor(
+    let composite = CompositeGraphQLDocumentExecutor(
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
       localProvider: FileWorkflowRegistryGraphQLProvider(
         workingDirectory: workingDirectory, webPrincipalId: "riela-serve-local-web"
       ),
       localManagedReferenceResolver: ServeWebManagedReferenceResolver()
       ),
-      fallback: SessionControlGraphQLDocumentExecutor(
-        provider: RielaSessionControlProvider(
+      fallback: WorkflowExecutionGraphQLDocumentExecutor(
+        provider: WorkflowExecutionProvider(
           workingDirectory: workingDirectory,
-          sessionStore: sessionStoreRoot
+          sessionStoreRoot: sessionStoreRoot,
+          environment: environment
         ),
-        next: ConsoleGraphQLDocumentExecutor(
-          provider: consoleProvider,
-          next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+        next: SessionControlGraphQLDocumentExecutor(
+          provider: RielaSessionControlProvider(
+            workingDirectory: workingDirectory,
+            sessionStore: sessionStoreRoot
+          ),
+          next: ConsoleGraphQLDocumentExecutor(
+            provider: consoleProvider,
+            next: RielaConfigGraphQLDocumentExecutor(provider: configurationProvider)
+          )
         )
       )
-    ).execute(trusted)
+    )
+    return await WorkflowExecutionAuthorizationWrapper(expectedBearer: nil, next: composite).execute(trusted)
   }
 }
 

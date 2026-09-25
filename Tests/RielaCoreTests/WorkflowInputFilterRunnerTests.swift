@@ -629,7 +629,13 @@ private actor InputFilterExecutedStepCapturingAdapter: NodeAdapter {
 }
 
 private func inputFilterPayload(output: NodeOutputContract? = nil) -> AgentNodePayload {
-  AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", output: output)
+  AgentNodePayload(
+    id: "node",
+    executionBackend: .codexAgent,
+    model: "gpt-5.5",
+    agentSandbox: .readOnly,
+    output: output ?? NodeOutputContract(jsonSchema: ["type": .string("object")])
+  )
 }
 
 private func inputFilterTelegramVariables(

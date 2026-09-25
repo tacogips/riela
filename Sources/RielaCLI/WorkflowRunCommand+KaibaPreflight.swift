@@ -18,7 +18,8 @@ extension WorkflowRunCommand {
     options: WorkflowRunOptions,
     resolution: WorkflowResolutionOptions,
     bundle: inout ResolvedWorkflowBundle,
-    variables: JSONObject
+    variables: JSONObject,
+    taskContext: TaskPlacementExecutionContext? = nil
   ) async throws -> PreparedWorkflowRunExecution {
     let instance = try prepareEffectiveRunBundle(
       options: options,
@@ -26,9 +27,13 @@ extension WorkflowRunCommand {
       bundle: &bundle,
       variables: variables
     )
+    if let taskContext {
+      bundle = try applyingTaskPlacement(taskContext, to: bundle)
+    }
     let calleeResolver = FileSystemWorkflowCalleeResolver(
       resolver: resolver,
-      baseResolution: resolution
+      baseResolution: resolution,
+      taskContext: taskContext
     )
     let context = try await preflightedRunContext(
       options: options,

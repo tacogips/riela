@@ -700,7 +700,13 @@ private extension DefaultLoopGuardRecoveryTests {
 
   static func nodePayloads() -> [String: AgentNodePayload] {
     Dictionary(uniqueKeysWithValues: ["review-node", "finalize-node", "done-node"].map {
-      ($0, AgentNodePayload(id: $0, executionBackend: .codexAgent, model: "gpt-5.5"))
+      ($0, AgentNodePayload(
+        id: $0,
+        executionBackend: .codexAgent,
+        model: "gpt-5.5",
+        agentSandbox: .readOnly,
+        output: NodeOutputContract(jsonSchema: ["type": .string("object")])
+      ))
     })
   }
 

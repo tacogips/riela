@@ -14,10 +14,14 @@ struct KaibaAddonInputs {
   let variables: JSONObject
   let environment: [String: String]
 
-  init(input: WorkflowAddonExecutionInput, environment: [String: String]) {
+  init(input: WorkflowAddonExecutionInput, environment: [String: String]) throws {
     addonName = input.addon.name
-    config = input.addon.config ?? [:]
-    variables = addonVariables(for: input)
+    variables = try addonVariables(for: input)
+    let rawConfig = input.addon.config ?? [:]
+    guard case let .object(renderedConfig) = try renderAddonConfig(.object(rawConfig), variables: variables) else {
+      throw noteAddonInvalidInput("\(input.addon.name) config must be an object")
+    }
+    config = renderedConfig
     self.environment = environment
   }
 

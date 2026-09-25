@@ -104,7 +104,7 @@ final class PromptTemplateTests: XCTestCase {
       id: "worker",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      systemPromptTemplateFile: "prompts/system.md",
+      agentSandbox: .readOnly, systemPromptTemplateFile: "prompts/system.md",
       promptTemplateFile: "prompts/prompt.md",
       sessionStartPromptTemplateFile: "prompts/start.md",
       promptVariants: [
@@ -146,7 +146,7 @@ final class PromptTemplateTests: XCTestCase {
         id: "worker",
         executionBackend: .codexAgent,
         model: "gpt-5.5",
-        promptTemplateFile: invalidPath
+        agentSandbox: .readOnly, promptTemplateFile: invalidPath
       )
 
       XCTAssertThrowsError(try PromptTemplateAssetLoader().hydrate(payload, workflowDirectory: root), "expected rejection for \(invalidPath)") { error in

@@ -13,15 +13,22 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
   private let backing: InMemoryWorkflowRuntimeStore
   private let persistence: SQLiteWorkflowRuntimePersistenceStore
   private let persistenceWriter: PersistenceWriter
+  private let beforeTerminalPersistence: (@Sendable () throws -> Void)?
+  private let deferTerminalPersistence: (@Sendable () -> Bool)?
   private let faultAtCanonicalWrite: Int?
   private var canonicalWriteCount = 0
+  private var terminalHookRan: Set<String> = []
 
   init(
     backing: InMemoryWorkflowRuntimeStore,
     rootDirectory: String,
-    persistenceWriter: PersistenceWriter? = nil
+    persistenceWriter: PersistenceWriter? = nil,
+    beforeTerminalPersistence: (@Sendable () throws -> Void)? = nil,
+    deferTerminalPersistence: (@Sendable () -> Bool)? = nil
   ) {
     self.backing = backing
+    self.beforeTerminalPersistence = beforeTerminalPersistence
+    self.deferTerminalPersistence = deferTerminalPersistence
     persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
     self.persistenceWriter = persistenceWriter ?? { [persistence] snapshot in
       try persistence.save(snapshot)
@@ -142,6 +149,13 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
       throw WorkflowRuntimeStoreError.sessionNotFound(sessionId)
     }
     let messages = try await backing.listMessages(for: sessionId, toStepId: nil)
+    if session.status == .completed || session.status == .failed,
+       !terminalHookRan.contains(sessionId) {
+      try beforeTerminalPersistence?()
+      terminalHookRan.insert(sessionId)
+    }
+    if session.status == .completed || session.status == .failed,
+       deferTerminalPersistence?() == true { return }
     try consumeCanonicalWriteBudget()
     try persistenceWriter(WorkflowRuntimePersistenceSnapshot(session: session, workflowMessages: messages))
   }

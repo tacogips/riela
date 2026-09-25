@@ -144,7 +144,7 @@ public struct RielaCLIApplication: Sendable {
       case let .specialist(command):
         return await specialistCommandRunner.run(command)
       case let .task(command):
-        return taskCommandRunner.run(command)
+        return await taskCommandRunner.run(command)
       case let .scoped(command):
         return await scopedCommandRunner.run(command)
       }
@@ -283,37 +283,6 @@ public struct CLIUnsupportedCommandResult: Codable, Equatable, Sendable {
   }
 }
 
-actor SupervisedScenarioNodeAdapter: NodeAdapter {
-  private let scenario: WorkflowMockScenario
-  private let fallback: any NodeAdapter
-  private var callCounts: [String: Int] = [:]
-
-  init(scenario: WorkflowMockScenario, fallback: any NodeAdapter = DeterministicLocalNodeAdapter()) {
-    self.scenario = scenario
-    self.fallback = fallback
-  }
-
-  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
-    guard let sequence = scenario.responses[input.node.id] else {
-      return try await fallback.execute(input, context: context)
-    }
-    let nextIndex = (callCounts[input.node.id] ?? 0) + 1
-    callCounts[input.node.id] = nextIndex
-    let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(nextIndex - 1, sequence.count - 1)]
-    if response.fail == true {
-      throw AdapterExecutionError(.providerError, "scenario forced failure for node '\(input.node.id)'")
-    }
-    return AdapterExecutionOutput(
-      provider: response.provider ?? "scenario-mock",
-      model: response.model ?? input.node.model,
-      promptText: response.promptText ?? input.promptText,
-      completionPassed: response.completionPassed ?? true,
-      when: response.when ?? ["always": true],
-      payload: response.payload ?? [:]
-    )
-  }
-}
-
 public let rielaCLIHelpText = """
 Riela CLI
 
@@ -335,7 +304,7 @@ Usage:
   riela workflow version diff <workflow> <from> <to> [--output json|text]
   riela workflow restore <workflow> <snapshot-id> [--yes] [--output json|text]
   riela workflow package <search|list|status|install|ci|update|remove|checkout|init|validate|pack|publish> [options]
-  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--auto-improve] [--output jsonl|json|text]
+  riela workflow run <workflow> [--variables <json|@file>] [--instance <name>] [--mock-scenario <path>] [--supervisor-mode] [--output jsonl|json|text]
   riela instance list|show|create|update|remove [identity] [--workflow <id>] [--scope project|user|all] [--output json|jsonl|text|table]
   riela doctor [--scope project|user|auto] [--working-dir <dir>] [--output json|text]
   riela gc [--retention-days <days>] [--scope user|project|all] [--working-dir <dir>] [--dry-run] [--output json|text]
@@ -519,21 +488,14 @@ func workflowRunHelpText(target: String?) -> String {
     --default-timeout-ms <n>
     --timeout-ms <n>
     --supervisor-mode              Allow Codex nodes to spawn subagents for this run. Defaults to off.
-    --auto-improve                 Retry failed supervised runs and record supervision state.
-    --max-supervised-attempts <n>  Maximum auto-improve attempts.
-    --monitor-interval-ms <n>      Polling interval for explicit stall detection.
-    --stall-timeout-ms <n>         Enable stall detection for local non-agent executions.
     --agent-silence-warning-ms <n> Emit a warning event when an agent backend is silent this long.
                                    Use 0 to disable. Defaults to 120000.
     --agent-silence-monitor-interval-ms <n>
                                    Polling interval for agent silence warnings. Defaults to 1000.
     --output jsonl|json|text       Defaults to jsonl. Prefer jsonl for agents/LLMs; json emits one document after completion.
 
-  Stall detection:
-    --stall-timeout-ms is opt-in. CLI agent and official SDK backends are not
-    treated as stalled from missing session heartbeats, because a long LLM
-    inference and a provider-side stall are not distinguishable from local
-    session records alone. Agent silence warnings are observability hints, not
+  Agent silence:
+    Agent silence warnings are observability hints, not
     cancellation decisions. codex-agent disables unified_exec by default for
     command observability; set node variables.codexUnifiedExec to true only when
     a workflow explicitly needs Codex unified exec shell-state persistence.

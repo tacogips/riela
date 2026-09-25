@@ -12,11 +12,13 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
   private let credentials: [DistributedWorkerCredential]
   private let clock: any WorkflowRuntimeClock
   private let leaseDuration: Double
+  private let capabilitySnapshotSink: @Sendable (HostCapabilitySnapshot) async throws -> Void
 
   public init(
     controller: DistributedJobController, credentials: [DistributedWorkerCredential],
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
-    leaseDurationSeconds: Double = Self.leaseDurationSeconds
+    leaseDurationSeconds: Double = Self.leaseDurationSeconds,
+    capabilitySnapshotSink: @escaping @Sendable (HostCapabilitySnapshot) async throws -> Void = { _ in }
   ) throws {
     guard leaseDurationSeconds.isFinite, (3...3600).contains(leaseDurationSeconds), !credentials.isEmpty,
       Set(credentials.map(\.workerId)).count == credentials.count,
@@ -31,6 +33,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
     self.credentials = credentials
     self.clock = clock
     self.leaseDuration = leaseDurationSeconds
+    self.capabilitySnapshotSink = capabilitySnapshotSink
   }
 
   public func response(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
@@ -84,10 +87,20 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
   ) async throws -> DistributedWorkerResponse {
     if message.operation == .register {
       guard let capacity = message.capacity, (1...credential.maxCapacity).contains(capacity),
-        message.registration == nil, message.jobId == nil, message.leaseToken == nil, message.result == nil else {
+        message.registration == nil, message.jobId == nil, message.leaseToken == nil,
+        message.result == nil, message.capabilitiesObservedAt == nil else {
         throw DistributedWorkerTransportError.invalidConfiguration
       }
-      let registration = try await controller.register(workerId: credential.workerId, groups: credential.groups, capacity: capacity, now: clock.now())
+      let registration = try await controller.register(
+        workerId: credential.workerId,
+        groups: credential.groups,
+        capacity: capacity,
+        capabilities: message.capabilities ?? [],
+        environment: message.environment ?? [:],
+        addonExecutables: message.addonExecutables ?? [:],
+        now: clock.now()
+      )
+      try await publishCapabilities(registration)
       return reply(registration: registration)
     }
     guard message.capacity == nil, let registration = message.registration,
@@ -98,29 +111,117 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
       guard message.jobId == nil, message.leaseToken == nil, message.result == nil else {
         throw DistributedWorkerTransportError.invalidConfiguration
       }
-      return try await reply(job: controller.claim(worker: registration, now: clock.now(), leaseDuration: leaseDuration))
-    case .renew, .complete, .events:
+      let observation = try refreshObservation(message, now: clock.now())
+      let job = try await controller.claim(worker: registration, now: clock.now(), leaseDuration: leaseDuration)
+      try await publishCapabilities(registration, observation: observation)
+      return reply(job: job)
+    case .renew, .complete, .events, .stopped:
+      let observation = message.operation == .renew ? try refreshObservation(message, now: clock.now()) : nil
+      guard message.operation == .renew || (
+        message.capabilities == nil && message.environment == nil
+          && message.addonExecutables == nil && message.capabilitiesObservedAt == nil
+      ) else {
+        throw DistributedWorkerTransportError.invalidConfiguration
+      }
       guard let jobId = message.jobId, let token = message.leaseToken else {
         throw DistributedWorkerTransportError.invalidConfiguration
       }
       if message.operation == .complete {
         guard let result = message.result else { throw DistributedWorkerTransportError.invalidConfiguration }
         let completed = try await controller.complete(jobId: jobId, worker: registration, token: token, result: result, now: clock.now())
+        try await publishCapabilities(registration)
         // A completion acknowledgement must not retransmit a possibly large
         // invocation, result and event history in the same bounded HTTP body.
         return reply(job: DistributedJob(id: completed.id, target: completed.target, payload: [:], status: completed.status, lease: completed.lease))
       }
       guard message.result == nil else { throw DistributedWorkerTransportError.invalidConfiguration }
+      if message.operation == .stopped {
+        guard message.events == nil else { throw DistributedWorkerTransportError.invalidConfiguration }
+        _ = try await controller.acknowledgeStopped(
+          jobId: jobId, worker: registration, token: token, now: clock.now()
+        )
+        return reply()
+      }
       if message.operation == .events {
         guard let events = message.events else { throw DistributedWorkerTransportError.invalidConfiguration }
         try await controller.appendEvents(jobId: jobId, worker: registration, token: token, events: events, now: clock.now())
+        try await publishCapabilities(registration)
         return reply()
       }
       try await controller.renew(jobId: jobId, worker: registration, token: token, now: clock.now(), leaseDuration: leaseDuration)
+      try await publishCapabilities(registration, observation: observation)
       return reply()
     case .register:
       throw DistributedWorkerTransportError.invalidConfiguration
     }
+  }
+
+  private func refreshObservation(
+    _ message: DistributedWorkerRequest,
+    now: Date
+  ) throws -> DistributedWorkerCapabilityObservation? {
+    let hasRefresh = message.capabilities != nil || message.environment != nil
+      || message.addonExecutables != nil || message.capabilitiesObservedAt != nil
+    guard hasRefresh else { return nil }
+    guard let capabilities = message.capabilities,
+      let environment = message.environment,
+      let addonExecutables = message.addonExecutables,
+      let observedAt = message.capabilitiesObservedAt,
+      capabilities.count <= NodeExecutionBackend.allCases.count,
+      Set(capabilities.map(\.backend)).count == capabilities.count,
+      environment.count <= 512, addonExecutables.count <= 512,
+      environment.keys.allSatisfy(isValidEnvironmentVariableName),
+      addonExecutables.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 }) else {
+      throw DistributedWorkerTransportError.invalidConfiguration
+    }
+    let lead = observedAt.timeIntervalSince(now)
+    // An out-of-range worker clock must not prevent a valid claim or lease renewal.
+    guard lead <= 30 else { return nil }
+    let adjustment = max(0, lead)
+    return DistributedWorkerCapabilityObservation(
+      capabilities: capabilities.map { shiftedCapability($0, by: adjustment) },
+      environment: environment,
+      addonExecutables: addonExecutables,
+      observedAt: observedAt.addingTimeInterval(-adjustment)
+    )
+  }
+
+  private func publishCapabilities(
+    _ registration: DistributedWorkerRegistration,
+    observation: DistributedWorkerCapabilityObservation? = nil
+  ) async throws {
+    let now = clock.now()
+    let backends = observation?.capabilities ?? registration.capabilities.map { capability in
+      let lead = capability.observedAt?.timeIntervalSince(now) ?? 0
+      return shiftedCapability(capability, by: lead > 0 && lead <= 30 ? lead : 0)
+    }
+    try await capabilitySnapshotSink(HostCapabilitySnapshot(
+      hostId: registration.workerId,
+      groups: registration.groups,
+      capacity: registration.capacity,
+      live: true,
+      backends: backends,
+      addonExecutables: observation?.addonExecutables ?? registration.addonExecutables,
+      environment: observation?.environment ?? registration.environment,
+      capabilitiesObservedAt: observation?.observedAt ?? registration.capabilitiesObservedAt,
+      refreshedAt: now
+    ))
+  }
+
+  private func shiftedCapability(_ capability: BackendCapability, by adjustment: TimeInterval) -> BackendCapability {
+    BackendCapability(
+      backend: capability.backend,
+      source: capability.source,
+      observedAt: capability.observedAt?.addingTimeInterval(-adjustment),
+      availability: capability.availability,
+      authentication: capability.authentication,
+      version: capability.version,
+      models: capability.models,
+      requiredEnvironment: capability.requiredEnvironment,
+      requiredEnvironmentAlternatives: capability.requiredEnvironmentAlternatives,
+      executableAvailable: capability.executableAvailable,
+      failures: capability.failures
+    )
   }
 
   private func reply(registration: DistributedWorkerRegistration? = nil, job: DistributedJob? = nil) -> DistributedWorkerResponse {

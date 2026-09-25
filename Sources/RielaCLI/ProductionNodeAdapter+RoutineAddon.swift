@@ -21,7 +21,7 @@ extension BuiltinWorkflowAddonResolver {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let service = RoutineService(
       workingDirectory: workingDirectory.path,
       environment: environment

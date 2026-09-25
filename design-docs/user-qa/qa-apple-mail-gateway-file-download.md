@@ -34,13 +34,23 @@ HTML, raw source, and attachments.
 4. Confirm whether Mail attachment filenames or MIME metadata are returned only
    by GraphQL descriptors, or can also be returned by the download command.
 
-## Default Until Answered
+## Confirmed Contract (2026-09-21)
 
-Implement `riela/apple-mail-message` and its fake-executable tests as a raw
-stdout-byte contract for `file download --key`. If the real gateway requires an
-explicit output directory, pass only a Riela-chosen, validated destination and
-continue treating gateway filenames as metadata that cannot choose the final
-local path.
+The installed CLI, its checked-in command specification, implementation, smoke
+tests, and focused file-store tests agree on the contract:
+
+- `file download` materializes each requested file under the configured cache
+  root or an explicit `--output-dir`.
+- stdout is a JSON success envelope containing `data.files[]`; each entry has
+  `downloadKey`, `domain`, `kind`, and `path`. It is not raw file bytes.
+- failures use the shared JSON error envelope, including
+  `INVALID_DOWNLOAD_KEY` and `FILE_OPERATION_FAILED`.
+- filename and MIME metadata remain available from the GraphQL descriptor; the
+  download manifest provides the materialized path and file kind.
+
+Riela now supplies its validated private runtime root with `--output-dir`,
+parses the exact envelope, validates the returned regular path is contained,
+checks the actual on-disk size, and publishes under its own sanitized filename.
 
 ## Impact
 
@@ -50,15 +60,12 @@ the stability of local paths returned in `appleMail.materialized[]`.
 
 ## Implementation Status
 
-The initial Riela implementation follows the default raw-stdout-byte contract
-for fake-executable tests:
+The corrected Riela implementation follows the confirmed manifest contract:
 
 ```bash
-apple-gateway file download --key <download-key>
+apple-gateway file download --key <download-key> --output-dir <validated-root>
 ```
 
-Riela chooses and validates the download root, sanitizes the final leaf
-filename, writes stdout bytes itself, and returns the resulting local path. If
-the production gateway later requires `--output-dir` or another explicit output
-argument, keep the same Riela-controlled destination rule and update this note,
-the catalog docs, and fake fixtures together.
+Riela chooses and validates the download root, validates the manifest mapping,
+sanitizes the final leaf filename, enforces the cap against the materialized
+file, and returns the resulting local path.

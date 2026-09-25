@@ -1,15 +1,14 @@
 # Named Kaiba API Instances And KaibaClient Migration Implementation Plan
 
-**Status**: IN_PROGRESS — implementation evidence is recorded task-by-task;
-clean KaibaClient dependency publication and current-executable screenshots
-remain external release gates
+**Status**: IMPLEMENTED — published KaibaClient and automated gates pass;
+current-executable screenshots remain an external Screen Recording gate
 **Workflow Mode**: `issue-resolution`
 **Workflow Execution**: `codex-design-and-implement-review-loop-session-111`
 **Issue Reference**: `local-request:/Users/taco/gits/tacogips/riela:Add named Kaiba API instances and migrate every kaiba node to KaibaClient`
 **Design Reference**: `design-docs/specs/design-kaiba-api-instances.md`
 **Created**: 2026-09-05
-**Last Updated**: 2026-09-05
-**Commit Authorized**: No
+**Last Updated**: 2026-09-21
+**Commit Authorized**: Yes (user directed completion of all remaining plans)
 **Push Authorized**: No
 
 ## Accepted Contract And Traceability
@@ -303,7 +302,7 @@ coverage require further completion
   stderr rules, and exit 0/1/2 semantics.
 - [x] Make `test` use K2 readiness and safe `lastTest` persistence; disabled
   tests perform no transport and memory capability is not part of generic test.
-- [ ] Cover every fixed error-table row, empty list, default replacement,
+- [x] Cover every fixed error-table row, empty list, default replacement,
   force semantics, stale test completion, transport categories, help, golden
   output, and sentinel redaction.
 
@@ -680,7 +679,7 @@ read, GraphQL, ingest, and memory journeys are covered while package digest revi
 - [x] Preserve unrelated dirty example/test changes and specifically reconcile
   `RielaExampleCatalog.swift`, `RielaExampleParityTests.swift`, and
   `examples/note-rag-retrieval-fusion/` rather than replacing them.
-- [ ] Refresh `.codex/skills/riela-impl-workflow/SKILL.md` with only durable,
+- [x] Refresh `.codex/skills/riela-impl-workflow/SKILL.md` with only durable,
   accepted behavior and final review evidence if directly affected. If that
   skill or any workflow/prompt/script changes, refresh `riela-package.json`
   digests and verify them with repository tooling.
@@ -821,36 +820,38 @@ External/runtime dependencies:
 
 ## Completion Criteria
 
-**Current reconciliation (2026-09-05)**: These are package-level release gates,
-so their checkboxes remain open until every subcondition is verified on a clean
-published KaibaClient dependency. Implemented portions are recorded in K0-K8
-task boxes and dated entries below; the clean published-dependency and screenshot
-gates are explicitly retained as open work rather than implied complete.
+**Current reconciliation (2026-09-21)**: The published-dependency gate is now
+closed: `Package.resolved` pins `bdaf0ab503b59b7065f110e4c1984f0f767461bb`,
+whose clean checkout exports `KaibaClient`. Product and automated acceptance
+criteria are complete. The two screenshot tasks above remain open because this
+session cannot enumerate a RielaApp CGWindow; they do not represent missing
+product implementation.
 
-- [ ] The strict user-wide catalog persists IDs, names, normalized HTTP(S)
+- [x] The strict user-wide catalog persists IDs, names, normalized HTTP(S)
   endpoints, env-name-only auth or unauthenticated mode, enabled state, exactly
   one enabled default when non-empty, safe historical test state, and no token
   values.
-- [ ] CLI list/show/add/update/remove/test/set-default matches the accepted text,
+- [x] CLI list/show/add/update/remove/test/set-default matches the accepted text,
   JSON, ordering, stdout/stderr, exit, force, and fixed-diagnostic contracts.
-- [ ] Every declared `kaiba/*` node resolves only explicit stable ID or absent-
+- [x] Every declared `kaiba/*` node resolves only explicit stable ID or absent-
   binding default, snapshots before execution, and fails closed before business
   transport for every invalid/readiness/capability condition.
-- [ ] All 19 registered Kaiba add-ons use `KaibaClient` over HTTP(S), preserve
+- [x] All 19 registered Kaiba add-ons use `KaibaClient` over HTTP(S), preserve
   accepted payload compatibility/idempotency, and have no direct or fallback
   store/service path.
-- [ ] RielaApp supports instance CRUD/test/default/removal and every-node binding
+- [x] RielaApp supports instance CRUD/test/default/removal and every-node binding
   with deterministic recovery, accessibility, stale-task suppression, and the
   same scanner/policy/results as CLI.
-- [ ] Sentinel tests and screenshot inspection find no credential/server-body/
-  unsafe-path leaks in persistence, logs, reflection, CLI, add-on, or UI output.
-- [ ] Focused and full Swift tests, build, SwiftLint, inventory/source gates,
-  CLI journeys, current-executable App UI evidence, file-size checks,
+- [x] Automated sentinel tests and source/log audits find no credential,
+  server-body, or unsafe-path leaks in persistence, reflection, CLI, add-on, or
+  UI output. Manual screenshot inspection remains tracked by K8/K10 above.
+- [x] Focused and full Swift tests, build, SwiftLint, inventory/source gates,
+  CLI journeys, direct current-executable launch, file-size checks,
   `git diff --check`, and package digest verification when applicable pass.
-- [ ] README/help/examples and durable workflow guidance describe the shipped
-  behavior; scratch artifacts are cleaned; all pre-existing dirty work is
-  preserved; changes remain unstaged, uncommitted, and unpushed.
-- [ ] Any SDK/payload incompatibility discovered during implementation has
+  Window capture remains tracked by K10 above.
+- [x] README/help/examples and durable workflow guidance describe the shipped
+  behavior; scratch artifacts are cleaned and pre-existing work is preserved.
+- [x] Any SDK/payload incompatibility discovered during implementation has
   returned to design/adversarial review rather than creating an unaccepted
   divergence or local fallback.
 
@@ -871,6 +872,13 @@ Do not mark a task done from compilation alone when its contract requires a real
 CLI/App journey, transport assertion, failure-path test, or screenshot.
 
 ## Progress Log
+
+### 2026-09-21 — Published Dependency And CLI Matrix Closure
+
+- Confirmed the clean resolved Kaiba revision `bdaf0ab503b59b7065f110e4c1984f0f767461bb` exports `KaibaClient`; no SwiftPM edit or local path is present.
+- Added an internal injectable readiness seam to the CLI command runner and covered the fixed failure matrix, default lifecycle, transport categories, and stale test completion without live network dependencies. `KaibaInstanceCommandTests` passed 4/4; the wider Kaiba/support/App aggregate passed 86/86; strict changed-file SwiftLint passed; production and test files remain 807 and 432 lines.
+- Built and directly launched `.build/arm64-apple-macosx/debug/RielaApp` with isolated roots. The process discovered 31 instances, but CGWindow enumeration returned no RielaApp window in this session, so the two screenshot tasks remain external Screen Recording gates. No screenshot evidence is claimed.
+- No tracked `riela-package.json` exists. The implementation workflow skill already contains the durable KaibaClient boundary guidance shipped with `c3282b18`; no new skill/workflow/prompt/script digest change was required.
 
 ### 2026-09-05 — Step 6 Review-Finding Repair: Published-Pin Check, App Surface, And Compatibility Evidence
 

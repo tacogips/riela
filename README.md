@@ -15,7 +15,7 @@ for compatibility with existing workflow bundles.
 The Swift CLI owns the production command surface for local workflow execution,
 session inspection, workflow packages, event sources, hooks, GraphQL/server
 control-plane commands, direct `call-step`/`workflow-call` execution,
-supervised `workflow run --auto-improve`, and reviewed `workflow self-improve`
+task-backed Work Runtime dispatch, and reviewed `workflow self-improve`
 mutation flows.
 
 Client command routing, subcommand validation, positional arguments, and typed
@@ -99,9 +99,10 @@ they remain readable but update/delete operations return
 `IMMUTABLE_WORKFLOW`. Either provenance can be deactivated; deactivated
 origins remain listable and inspectable but execution returns
 `WORKFLOW_DEACTIVATED`. The additive GraphQL registry surface provides list,
-fetch, mutable CRUD, activation, and consolidation; remote registry execution
-is disabled unless an embedding host supplies the complete provider,
-authorizer, and managed-reference configuration.
+fetch, mutable CRUD, activation, and consolidation. `riela serve` also receives
+ordinary remote workflow runs through the separate `executeWorkflow` mutation
+and `workflowExecution` summary query. Registry writes keep their own
+authorization; an execution bearer does not grant registry write access.
 
 Local agent backend ids remain explicit workflow compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. They no longer name
@@ -154,7 +155,7 @@ Stop generation and Undo remain available; publishing still requires Save.
 
 See
 [the design](design-docs/specs/design-workflow-graph-studio.md) and
-[implementation plan](impl-plans/active/workflow-graph-studio.md), with
+[implementation plan](impl-plans/completed/workflow-graph-studio.md), with
 [acceptance evidence](design-docs/user-qa/qa-workflow-graph-studio.md).
 
 Production execution for Claude Code, Codex, Cursor CLI, Cursor Cloud Agents,
@@ -209,9 +210,28 @@ it in command arguments or workflow artifacts. Claude Code routing also clears
 `ANTHROPIC_API_KEY` so it cannot override `ANTHROPIC_AUTH_TOKEN`.
 
 Riela-owned environment names use the `RIELA_` prefix. Remote GraphQL workflow
-runs read `RIELA_MANAGER_AUTH_TOKEN` and `RIELA_MANAGER_SESSION_ID`. Remote auto-improve input is opt-in:
-`workflow run --endpoint ...` omits `autoImprove` by default and only sends the
-supervision policy when `--auto-improve` is set.
+runs read `RIELA_MANAGER_AUTH_TOKEN` and optionally
+`RIELA_MANAGER_SESSION_ID`; the latter does not authorize execution.
+`workflow run --endpoint ...` accepts opaque `runtimeVariables`. The receiver
+rejects retired top-level `autoImprove` and `nestedSuperviser` fields by
+presence, including `false` and `null`, before starting provider work.
+
+To run against a `riela serve` host, configure a nonempty
+`RIELA_MANAGER_AUTH_TOKEN` in the server's startup environment and provide the
+same bearer to the client. For example, with the token already set in the
+client environment:
+
+```bash
+riela workflow run my-workflow --endpoint https://riela.example/graphql --output json
+```
+
+The client also accepts `--auth-token` or `--auth-token-env`. The server uses
+its selected working directory and session store for both the run and the
+following summary read; request input cannot choose either path. The mutation
+waits for a persisted result and reports the actual status and exit code,
+including a failed run. A client or proxy timeout can precede completion, and
+retrying then can start a second run. `--from-registry`, `--mock-scenario`,
+and `--supervisor-mode` are unsupported for this remote run.
 
 Codex multi-agent supervisor mode is also opt-in. Riela explicitly disables the
 Codex `multi_agent` feature for ordinary local workflow runs, regardless of the
@@ -686,6 +706,18 @@ apple-gateway permissions status --json
 
 ## Work Runtime (`RielaWork`)
 
+The P1 release remediation for Draft PR #113 registers
+`riela/chat-reply-worker@1` in the built-in catalog, so
+`riela workflow usage matrix-chat-reply --workflow-definition-dir examples --output json`
+resolves the example's reply step. Unknown add-on names and unsupported
+versions still fail validation. Current-source verification passed the focused
+P1 suite (181/181), Work/CLI/Core (2,062/2,062), and the full nonparallel
+Swift suite (2,717 passed, two disclosed skips, zero failures). See the
+[integration progress](impl-plans/progress/p1-release-integration.md) for
+commands, logs, skips, and the 21-assertion ledger. Draft PR #113 remains
+unpublished from this documentation gate; commit, non-force push, and PR head
+verification remain open.
+
 `Sources/RielaWork` is the Work Runtime module: one lifecycle for the work
 that a single workflow run is not enough to finish. An `Intent` states what is
 wanted, a `WorkTask` carries the completion contract, guard policy and
@@ -705,16 +737,109 @@ records database as the workflow snapshots, behind that store's single schema
 generation. There is no migration: a session store from an older generation is
 discarded and recreated.
 
-Two read-only commands are available today:
+Task inspection and execution are available through the CLI:
 
 ```bash
 riela task list [--state <task-state>] [--intent <intent-id>] [--workflow <name>] [--limit <n>]
 riela task show <task-id> [--scope project|user|auto] [--session-store <dir>] [--output jsonl|json|text]
+riela task run <task-id> [--scope project|user|auto] [--session-store <dir>] [--dry-run] [--output jsonl|json|text]
 ```
 
-The dispatcher, the guard detectors, the directors and `riela task run|decide`
-land in the next phase; their `SurfaceCatalog` rows are `blocked` and name it.
-The design is `design-docs/specs/design-work-runtime-consolidation.md`.
+`task run` resolves reachable root and called-workflow requirements before
+reserving an attempt. It keeps selected worker, backend, model and workspace
+choices through the existing workflow runner and authenticated worker path.
+Missing capacity, dependencies or a live eligible worker return a wait without
+allocating an attempt or session; `--dry-run` previews placement without an
+allocation. A dry run reads private copies of existing task stores and leaves
+the live database, SQLite sidecars and host profile unchanged. An active SQLite
+WAL, corrupt input or a concurrent store change returns an error instead of a
+possibly stale preview. Text and structured output report `ready` with
+prospective placement, or `waiting` with a reason, without attempt or session
+IDs. A real run reports the exact reserved IDs after admission, including when
+the admitted execution fails; pre-admission errors have no reserved IDs. A
+preview does not guarantee later admission. Once a worker has claimed a job,
+loss of that worker does not trigger a local fallback or duplicate launch. See
+[controller and worker setup](docs/distributed-workers.md) for placement and
+workspace configuration and the
+[P1-6a plan](impl-plans/completed/work-runtime-p1-selected-host-delivery.md) for
+its accepted slice and verification limits.
+
+The accepted P1-6c cancellation slice makes a cancel request and terminal
+session write arbitrate
+in the shared SQLite transaction: an accepted request waits for the owned run
+and selected host to stop before cancelled state and acknowledgment persist;
+an already terminal session rejects a later cancel. If stop cannot be proved,
+the request stays pending and the terminal write stays fenced. Replaying an
+accepted decision does not create another cancellation. The source-matched
+selected-host and focused checks passed, while the serial broad gate still
+fails on 19 classified non-slice assertions. See the
+[P1-6c progress record](impl-plans/progress/p1-dispatch.md) for verification.
+
+The accepted P1-6d slice runs one configured, bounded `.director` child through
+ordinary task dispatch. The shared store links the child to the judged attempt,
+retains the judged TaskView and host capability inputs, and applies the child's
+typed decision against the original work gates, verification and findings.
+Child success alone cannot accept the task. Reservation, replay and terminal
+reconciliation preserve one child attempt, session and cost charge; invalid,
+failed or budget-blocked child work escalates without recursive dispatch.
+Seven source-matched focused selections passed 399/399 tests, build and touched
+SwiftLint passed, and independent test-integrity, adversarial and combined-tree
+review accepted this slice. The serial broad run remains **FAILED** with 19
+classified historical non-slice assertions among 2,666 tests. Browser E2E was
+skipped because no `web/` file changed. See the
+[P1-6d progress record](impl-plans/progress/p1-dispatch.md) for exact commands
+and evidence. The P1-7b replacement bundles are now available as
+[`task-repair-loop`](examples/task-repair-loop/README.md) and
+[`task-agent-director`](examples/task-agent-director/README.md). Both are in the
+shared example catalog and its 41 deterministic mock scenarios. Task-backed
+tests check rejected-gate recovery with a second attempt, guard stop, capacity
+wait, bounded director decisions, once-only child accounting and invalid-output
+escalation. A task-reserved run retains a completed canonical session when its
+required gate rejects so the task can recover; a standalone rejected required
+gate still fails the run and preserves gate evidence. The P1-7b build, catalog
+checks, 21 task example tests, 57 before-removal tests, 115 affected work tests
+and 55 selected-host tests passed. The serial broad suite remains **FAILED**
+with 18 classified non-P1-7b assertions among 2,668 tests. Browser E2E was
+skipped because no `web/` file changed. Parent P1 and the broad failure
+follow-ups remain open. See the
+[P1-7b progress record](impl-plans/progress/p1-dispatch.md) for exact commands
+and logs.
+
+The reviewed P1-7a A1 dispatcher guard now checks the exact running attempt,
+session, execution and canonical progress inside the SQLite decision
+transaction before an inactivity stop or bounded rerun. Progress committed
+after the observer recheck makes that observation stale, so it cannot create a
+decision, cancellation or replacement reservation. A genuinely idle attempt
+still follows its configured policy; committed decisions replay once. The
+deterministic race regression and source-matched Xcode build, policy (75/75),
+before-removal (69/69), canonical (94/94), cancellation-host (49/49) and live
+(5/5) test selections passed with strict changed-file SwiftLint. Codex Sol
+(`comm-000013`) and Codex Astra (`comm-000018`) accepted A1. Browser E2E was
+skipped because no `web/` file changed. P1-7a A2/A3 has since removed the
+legacy workflow auto-improve option, result and examples after task-backed
+replacement coverage. Ordinary workflows remain task-free; specialist, event,
+loop and routine paths remain available. Current-source cancellation coverage
+passed 1/1, strict changed-file SwiftLint passed on 21 paths, and the V7
+repository lint comparison found 24 unchanged warnings across 970 Swift files.
+Both broad Swift test aggregates remain **FAILED**, exit 1: Work/CLI/Core ran
+2,061 tests and the full nonparallel suite ran 2,717 cases with two skips. Each
+matched all 21 baseline assertions across 19 failed cases. Independent
+test-integrity, adversarial and integration reviews accepted the baseline
+attribution and P1-7a A4 handoff with no material finding. The historical A0
+per-command environment snapshots are unavailable. Browser E2E was skipped
+because no `web/` file changed. The native parent continuation has since
+carried the single `p1-dispatch` branch through current-tree review. Independent
+test-integrity, Codex Sol adversarial and Codex Astra integration accepted the
+documentation-only continuation and the separate baseline attribution of both
+FAILED aggregates. The focused dispatcher/example selection remains 69/69
+passing; the Work/CLI/Core and full nonparallel aggregates remain **FAILED**,
+exit 1, with 21 baseline-matched assertions each. Browser E2E was skipped for
+this continuation because no browser-facing file changed. The accepted P1
+implementation plan is archived. Exact-file commit, non-force push and Draft
+PR #109 head verification remain pending workflow publication gates.
+See the [P1-7a progress record](impl-plans/progress/p1-dispatch.md) for commands,
+logs and review history. The design is
+[Work Runtime consolidation](design-docs/specs/design-work-runtime-consolidation.md).
 
 ## Control Surfaces
 

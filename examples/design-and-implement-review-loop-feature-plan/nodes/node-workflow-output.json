@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Publish the accepted feature-local design and implementation-plan branch result.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/workflow-output.md",

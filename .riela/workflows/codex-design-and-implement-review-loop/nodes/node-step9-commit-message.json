@@ -2,11 +2,21 @@
   "id": "step9-commit-message",
   "description": "Summarize the accepted workflow changes and emit the commit message that the command-node git step must use verbatim.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.6-sol",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/step9-commit-message.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with workflow mode, commit message, committed files, change summary, and any residual git risks before the command-node push."
+    "description": "Return JSON with workflow mode, commit message, committed files, change summary, and any residual git risks before the command-node push.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "commitMessage": { "type": "string", "minLength": 1 },
+        "committedFiles": { "type": "array", "items": { "type": "string" } },
+        "git": { "type": "object" }
+      },
+      "required": ["commitMessage", "committedFiles"]
+    }
   }
 }

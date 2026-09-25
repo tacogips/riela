@@ -1,0 +1,587 @@
+{
+  "taskId": "work-runtime-p1-20260921",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "fa686e028c811e3fd5843d743052caab611c90f6",
+  "evidenceRoot": "tmp/work-runtime-p1-20260921",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "reviewContext": {
+    "issueReference": "workflow-input:Complete Work Runtime P1 using the accepted dispatcher, guard, and director design",
+    "userProblem": "Complete every unchecked Work Runtime P1 task using the accepted dispatcher, guard, director, reservation, capability-placement, CLI, example, documentation, and verification design while retaining correct stopped-workflow changes and preserving unrelated work.",
+    "requiredOutcomes": [
+      "Implement P1-0 through P1-8 with atomic attempt and WorkflowSession reservation, one-live-attempt fencing, one-use launch authorization, and durable cancellation and rerun/recovery requests.",
+      "Persist typed guard evidence before deterministic, agent, or human decisions; enforce total ordered direction, completion reconstruction, causal evidence, optimistic concurrency, and idempotent decision replay.",
+      "Resolve reachable-node requirements, merge host capability evidence, place work deterministically before reservation, and expose host-aware doctor, workflow usage, and validation behavior.",
+      "Ship task run, side-effect-free dry-run, task decide, bounded agent-director execution, and equivalent dispatcher coverage before removing workflow auto-improve behavior.",
+      "Replace obsolete examples, reconcile documentation/help/surface catalogs, audit package digests, preserve P0, and close with complete foreground verification plus independent adversarial and combined-tree review with no open high or mid finding."
+    ],
+    "nonGoals": [
+      "Do not implement P2 loop-store folding, P3 routine/specialist/event migration or task serve, P4 repository worktree/finalization migration, P5 GraphQL task/host APIs or GUI, P6 workflow-change proposals, or P7 capability ceilings.",
+      "Do not add Jujutsu support, a new planner, remote principal authentication, specialist classification, recursive director repair, migration or compatibility for removed auto-improve state, or implicit task creation for plain workflow run.",
+      "Do not use the canonical project-scope workflow as an implementation dependency."
+    ],
+    "constraints": [
+      "Execute implementation and review only through the installed user-scope codex-design-and-implement-review-loop package on the same branch and working directory.",
+      "Do not push, integrate, create implementation worktrees, or modify Monja-owned or separate Tauri worktrees without separate authorization.",
+      "Preserve correct in-scope stopped-workflow edits and all unrelated tracked, untracked, and staged state; never reset, clean, stage all files, or overwrite from stale buffers.",
+      "Keep scratch evidence under tmp/, run commands in the foreground, poll yielded sessions through terminal exit, and retain final exit status plus complete log path.",
+      "Workers edit only their plan-owned progress file; lockfiles, shared indexes, global plan archiving, digest refresh, broad formatting, and cross-plan repair are serial reconciliation work."
+    ],
+    "designDecisionsAndRationale": [
+      "Reservation is the commit point so task version, dependency checks, attempt, unique session snapshot, lease, decision/request, placement evidence, and task advancement either commit together or roll back together.",
+      "TaskDispatcher owns orchestration while the existing workflow runner owns execution, preserving the RielaCore-to-RielaWork dependency boundary.",
+      "Guard evaluation consumes a snapshot and persists the whole violation batch before direction, providing replay-safe causal evidence.",
+      "The deterministic director uses budget, convergence, inactivity, recoverable failure or gate rejection, completion, then wait-human ordering so one snapshot yields one stable decision.",
+      "Human, policy, and agent decisions share one store-backed applier so completion, causality, task-version, cancellation, and replay rules cannot diverge.",
+      "Placement uses one reachable-node requirement projection and one merged capability snapshot before reservation, preventing unreachable nodes or stale validation from authorizing execution.",
+      "Auto-improve is removed in the same delivery cut only after the dispatcher has equivalent inactivity, bounded retry, recovery, cancellation, and replay coverage."
+    ],
+    "intentionalTradeoffs": [
+      "Explicit backend enablement may remain usable but unverified after an absent or failed probe; the failure remains visible and never becomes authenticated evidence.",
+      "Same-directory parallelism is retained for dependency-ready plans, with immutable intent records, pre-write drift checks, runtime change evidence, serial repair, and independent combined-tree review controlling overwrite risk.",
+      "Host validation is read-only and advisory unless strict-host is requested; dispatch independently refreshes and re-evaluates placement before reservation.",
+      "No browser E2E gate is required because P1 plans no web changes."
+    ],
+    "supportedEdgeCases": [
+      "Independent-connection reservation races, rollback at transactional insertion boundaries, stale task versions, missing versus unmet dependencies, duplicate attempt/session IDs, and terminal-but-unreconciled fencing.",
+      "Wrong, replayed, replaced, or uncertain launch tokens; pre- and post-authorization crashes; stale terminal writers; pending rerun/recover replay; and cancellation acknowledgment loss.",
+      "Simultaneous guard violations, exact budget and time boundaries, last-permitted-attempt completion, replay deduplication, repeated-finding fingerprints, and official SDK heartbeat exemption.",
+      "Pin-versus-policy validation, ordered fallback, unknown or stale capabilities, failed refresh, worker groups, explicit assignments, unavailable capacity, called-workflow cycles, unreachable nodes, and unknown model support.",
+      "Dry-run against absent, incompatible, or corrupt stores/configuration without creating, migrating, quarantining, caching, or mutating state; decision replay conflicts and interrupted task execution."
+    ],
+    "outOfScopeEdgeCases": [
+      "Migration of legacy loop, routine, specialist, event, supervision, or auto-improve records.",
+      "Repository-context worktree creation, commit/push finalization, GraphQL task/host mutations, Studio or Task-board UI, proposal/replan machinery, and capability ceilings.",
+      "Live agent credentials as a deterministic verification prerequisite and backend prompt translation or behavioral-equivalence guarantees."
+    ],
+    "sourcePaths": [
+      "tmp/work-runtime-p1/user-scope-artifacts-final/codex-design-and-implement-review-loop-session-1/runtime-snapshot.json",
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-sandbox.md",
+      "impl-plans/active/work-runtime-p1-reservation.md",
+      "impl-plans/active/work-runtime-p1-guard-director.md",
+      "impl-plans/active/work-runtime-p1-capabilities.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/active/work-runtime-p1-finalization.md",
+      "tmp/work-runtime-p1/step4/author-check.log",
+      "tmp/work-runtime-p1/step4/author-check-results.json",
+      "tmp/work-runtime-p1/step4/diff-check.log"
+    ],
+    "reviewDecision": "accepted_for_step6_implementation",
+    "reviewedCommunicationId": "comm-000006",
+    "codexAgentReferences": [
+      "riela-manager",
+      "step1-issue-intake",
+      "step2-design-doc-update",
+      "step3-design-review",
+      "step4-impl-plan-create",
+      "step5-impl-plan-review"
+    ],
+    "findings": [],
+    "residualRisks": [
+      "The foreground author-check rerun completed all assertions but could not rewrite its result file under the read-only Step 5 sandbox; the existing complete exit-0 log and independently matching plan hashes support acceptance.",
+      "Same-directory race risk remains and must be controlled by immutable intent records, drift checks, serial repair, rerun regressions, and independent combined-tree review."
+    ]
+  },
+  "plans": [
+    {
+      "planId": "p1-sandbox",
+      "planPath": "impl-plans/active/work-runtime-p1-sandbox.md",
+      "dependsOn": [],
+      "writePaths": [
+        ".riela/workflows/codex-design-and-implement-review-loop/nodes/node-step6-implement.json",
+        ".riela/workflows/codex-design-and-implement-review-loop/nodes/node-step8-docs-refresh.json",
+        "Tests/RielaCLITests/ImplementationWorkflowSandboxTests.swift",
+        "impl-plans/progress/p1-sandbox.md"
+      ],
+      "sharedPaths": [],
+      "sharedPathIntent": [],
+      "progressPath": "impl-plans/progress/p1-sandbox.md",
+      "evidenceDir": "tmp/work-runtime-p1-20260921/p1-sandbox",
+      "attemptDirTemplate": "tmp/work-runtime-p1-20260921/p1-sandbox/attempt-<n>",
+      "acceptanceCriteria": [
+        "P1-0: retain or repair only the canonical Step 6 and Step 8 workspace-write correction; all intake/review nodes remain read-only and prompts retain accepted-plan/review boundaries.",
+        "Validate the canonical bundle as an artifact without executing the project-scope workflow, and record the owning-package manifest audit without editing the installed package.",
+        "Build, the positive-count ImplementationWorkflowSandboxTests suite, strict touched-file lint, and diff check pass with complete foreground logs."
+      ],
+      "verification": {
+        "commands": [
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-sandbox",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-sandbox --filter 'ImplementationWorkflowSandboxTests'",
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift run --scratch-path tmp/work-runtime-p1/build/p1-sandbox riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json",
+          "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-sandbox/changed-swift-files.nul",
+          "git diff --check"
+        ],
+        "requirements": [
+          "Run in the foreground; record start/end, final exit status, complete log path, selected test names, and positive test count.",
+          "Treat zero selected tests, missing logs, timeouts, or unpolled sessions as failures."
+        ]
+      }
+    },
+    {
+      "planId": "p1-reservation",
+      "planPath": "impl-plans/active/work-runtime-p1-reservation.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Package.swift",
+        "Sources/RielaWork/WorkModels.swift",
+        "Sources/RielaWork/WorkStore.swift",
+        "Sources/RielaWork/WorkStore+Schema.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Tests/RielaWorkTests/WorkStoreTests.swift",
+        "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+        "impl-plans/progress/p1-reservation.md"
+      ],
+      "sharedPaths": [
+        "Package.swift",
+        "Sources/RielaWork/WorkModels.swift",
+        "Sources/RielaWork/WorkStore.swift",
+        "Sources/RielaWork/WorkStore+Schema.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift"
+      ],
+      "sharedPathIntent": [
+        {
+          "paths": ["Package.swift", "Sources/RielaWork/WorkModels.swift", "Sources/RielaWork/WorkStore.swift", "Sources/RielaWork/WorkStore+Reservation.swift"],
+          "intendedEdits": "Reservation owns the foundational P1 model, dependency, connection, lease, cancellation, and pending-request primitives; later plans consume the accepted signatures and any further edit is serially reconciled."
+        },
+        {
+          "paths": ["Sources/RielaWork/WorkStore+Schema.swift"],
+          "intendedEdits": "Reservation establishes the P1 reservation schema; p1-capabilities adds work_hosts only after this plan is accepted, and finalization preserves both contracts."
+        }
+      ],
+      "progressPath": "impl-plans/progress/p1-reservation.md",
+      "evidenceDir": "tmp/work-runtime-p1-20260921/p1-reservation",
+      "attemptDirTemplate": "tmp/work-runtime-p1-20260921/p1-reservation/attempt-<n>",
+      "acceptanceCriteria": [
+        "P1-1a: preserve the shared runtime-records database, schema-generation policy, P0 behavior, and RielaWork-to-RielaCore dependency direction while adding only required reservation, lease, cancellation, and pending-request storage.",
+        "P1-1b: reserveAttempt is one BEGIN IMMEDIATE transaction that atomically validates task/dependencies/budget/fence, inserts unique attempt and created session, lease, decision or request, placement evidence, and task advancement, with full rollback on injected failure.",
+        "P1-1c: one-use opaque launch tokens are digest-only and bound to the exact attempt/session; wrong, replayed, replaced, or uncertain authorization and stale terminal writers fail closed.",
+        "P1-1d: rerun/recover requests are durable and consumed once, while cancellation retains the live fence until durable runner terminal acknowledgment.",
+        "Independent-connection race, rollback, stale-version, dependency, duplicate-ID, token, crash-window, live-fence, last-attempt, replay, cancellation, P0 store, and projector tests pass."
+      ],
+      "verification": {
+        "commands": [
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-reservation",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-reservation --filter 'WorkStoreTests|WorkStoreReservationTests|WorkEvidenceProjectorTests'",
+          "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-reservation/changed-swift-files.nul",
+          "git diff --check"
+        ],
+        "requirements": [
+          "Use independent SQLite connections for concurrency acceptance tests.",
+          "Run in the foreground and record final exit status, complete log path, selected test names, and positive test count."
+        ]
+      }
+    },
+    {
+      "planId": "p1-lifecycle",
+      "planPath": "impl-plans/active/work-runtime-p1-guard-director.md",
+      "dependsOn": [
+        "p1-reservation"
+      ],
+      "writePaths": [
+        "Sources/RielaWork/WorkGuard.swift",
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Sources/RielaWork/DeterministicDirector.swift",
+        "Sources/RielaWork/DecisionApplier.swift",
+        "Sources/RielaWork/CompletionEvaluator.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkDecision.swift",
+        "Sources/RielaWork/WorkEvidence.swift",
+        "Tests/RielaWorkTests/WorkGuardTests.swift",
+        "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
+        "Tests/RielaWorkTests/DeterministicDirectorTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+        "Tests/RielaWorkTests/CompletionEvaluatorTests.swift",
+        "impl-plans/progress/p1-lifecycle.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift"
+      ],
+      "sharedPathIntent": [
+        {
+          "paths": ["Sources/RielaWork/TaskGuardCoordinator.swift", "Sources/RielaWork/WorkStore+Decisions.swift"],
+          "intendedEdits": "Lifecycle owns guard persistence and core decision semantics; p1-dispatch may integrate these accepted seams only in its later dependent wave and must rerun lifecycle regressions."
+        }
+      ],
+      "progressPath": "impl-plans/progress/p1-lifecycle.md",
+      "evidenceDir": "tmp/work-runtime-p1-20260921/p1-lifecycle",
+      "attemptDirTemplate": "tmp/work-runtime-p1-20260921/p1-lifecycle/attempt-<n>",
+      "acceptanceCriteria": [
+        "P1-2: evaluate guards from a replay-safe snapshot, persist the complete typed violation batch before any dependent decision, use the accepted boundary operators, preserve fingerprint and SDK heartbeat behavior, and gate only admission beyond the last permitted attempt.",
+        "P1-3a: implement stable total ordering across budget, convergence, inactivity, recoverable failure/gate rejection, completion, and wait-human, with correct warn, fail, askDirector, and remaining-attempt rules.",
+        "P1-3b: apply policy, human, and agent decisions through one optimistic, causal store path that reconstructs completion from the latest accepting attempt and never lets human acceptance waive failed machine gates.",
+        "P1-3c: identical decision replay is idempotent; changed replay or stale versions fail closed; rerun/recover queues once; cancel/stop/reject/inactivity-rerun waits for durable cancellation acknowledgment.",
+        "Every ordered row, boundary, causal failure, replay conflict field, crash window, cancellation state, build, focused test, and strict lint gate passes."
+      ],
+      "verification": {
+        "commands": [
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-lifecycle",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-lifecycle --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|CompletionEvaluatorTests'",
+          "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-lifecycle/changed-swift-files.nul",
+          "git diff --check"
+        ],
+        "requirements": [
+          "Use the accepted reservation signatures rather than creating a second persistence path.",
+          "Run in the foreground and record final exit status, complete log path, selected test names, and positive test count."
+        ]
+      }
+    },
+    {
+      "planId": "p1-capabilities",
+      "planPath": "impl-plans/active/work-runtime-p1-capabilities.md",
+      "dependsOn": [
+        "p1-reservation"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/BackendCapability*.swift",
+        "Sources/RielaCore/WorkflowBackendPolicy*.swift",
+        "Sources/RielaCore/WorkflowRequirement*.swift",
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/WorkflowNodeValidation.swift",
+        "Sources/RielaCore/WorkflowValidationHelpers.swift",
+        "Sources/RielaCore/DistributedWorkerModels.swift",
+        "Sources/RielaAdapters/BackendCapabilityProbe*.swift",
+        "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+        "Sources/RielaWork/BackendCapabilityPlacement*.swift",
+        "Sources/RielaWork/WorkStore+Hosts.swift",
+        "Sources/RielaWork/WorkStore+Schema.swift",
+        "Sources/RielaCLI/DoctorCommand.swift",
+        "Sources/RielaCLI/DistributedWorkerCommand.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/HostCapability*.swift",
+        "Sources/RielaServer/DistributedWorker*.swift",
+        "Tests/RielaWorkTests/BackendCapabilityPlacementTests.swift",
+        "Tests/RielaCLITests/DoctorBackendCapabilityTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+        "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+        "Tests/RielaCoreTests/WorkflowBackendPolicyTests.swift",
+        "Tests/RielaAdaptersTests/BackendCapabilityProbeTests.swift",
+        "impl-plans/progress/p1-capabilities.md",
+        "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+        "Sources/RielaAppSupport/RielaAppDaemonWorkflowStore.swift",
+        "Tests/RielaAppSupportTests/HostCapabilityConfigurationTests.swift"
+      ],
+      "sharedPaths": [
+        "Sources/RielaWork/WorkStore+Schema.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"
+      ],
+      "sharedPathIntent": [
+        {
+          "paths": ["Sources/RielaWork/WorkStore+Schema.swift"],
+          "intendedEdits": "Add work_hosts only after p1-reservation's schema contract is accepted; preserve all reservation tables and generation behavior."
+        },
+        {
+          "paths": ["Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift", "Sources/RielaCLI/WorkflowValidateInspectCommands.swift"],
+          "intendedEdits": "Capabilities owns host-aware usage and validation arguments/output in wave 2; later dispatcher/finalization edits preserve this interface and rerun host tests."
+        }
+      ],
+      "progressPath": "impl-plans/progress/p1-capabilities.md",
+      "evidenceDir": "tmp/work-runtime-p1-20260921/p1-capabilities",
+      "attemptDirTemplate": "tmp/work-runtime-p1-20260921/p1-capabilities/attempt-<n>",
+      "acceptanceCriteria": [
+        "P1-4a: add neutral Core capability, backend-policy, and reachable-requirement values; keep task placement in Work and bounded, redacted, non-mutating probes in Adapters for all seven supported backends.",
+        "P1-4b: persist work_hosts and round-trip local profile and worker declarations without validation/dry-run mutation; implement the accepted disable, explicit-enable-unverified, auth-diagnostic, declared-model, liveness, capacity, executable, and environment merge semantics.",
+        "P1-4c: reject invalid policies/models; project only statically reachable execution requirements across entries and called workflows; preserve provenance while deduplicating stably.",
+        "P1-4d: honor explicit assignments/groups, deterministic local/worker order, complete-fit capacity, finite freshness, failed refresh, in-memory validation probes, and placement evidence handed atomically to reservation.",
+        "P1-5: workflow usage, validate --host/--strict-host, doctor, planner host-snapshot variables, and generated-plan requirement resolution share the same deterministic projection and remain read-only where specified."
+      ],
+      "verification": {
+        "commands": [
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-capabilities",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-capabilities --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+          "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-capabilities/changed-swift-files.nul",
+          "git diff --check"
+        ],
+        "requirements": [
+          "Use deterministic injected probes for semantics and treat real doctor output as diagnostic evidence rather than requiring every backend locally installed.",
+          "Run in the foreground and record final exit status, complete log path, selected test names, and positive test count."
+        ]
+      }
+    },
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [
+        "p1-reservation",
+        "p1-lifecycle",
+        "p1-capabilities"
+      ],
+      "writePaths": [
+        "Sources/RielaWork/TaskDispatcher*.swift",
+        "Sources/RielaWork/AgentDirector*.swift",
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskCommandModels.swift",
+        "Sources/RielaCLI/TaskDispatch*.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowRunCommand*.swift",
+        "Sources/RielaCLI/WorkflowRun*.swift",
+        "Sources/RielaCLI/*Supervis*.swift",
+        "Sources/RielaCore/*AutoImprove*.swift",
+        "Sources/RielaAdapters/SupervisedScenarioNodeAdapter.swift",
+        "Sources/RielaCLI/RielaWebWorkflowRuntime.swift",
+        "Sources/RielaCLI/WebWorkflowRequest*.swift",
+        "Tests/RielaCLITests/TaskCommandMutationTests.swift",
+        "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "Tests/RielaCLITests/*AutoImprove*.swift",
+        "Tests/RielaCLITests/*Supervis*.swift",
+        "examples/auto-improve/**",
+        "examples/default-superviser/**",
+        "examples/supervised-mock-retry/**",
+        "examples/task-repair-loop/**",
+        "examples/task-agent-director/**",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift",
+        "Sources/RielaCLI/WorkflowRunCommand*.swift",
+        "examples/task-repair-loop/**",
+        "examples/task-agent-director/**"
+      ],
+      "sharedPathIntent": [
+        {
+          "paths": ["Sources/RielaWork/TaskGuardCoordinator.swift", "Sources/RielaWork/WorkStore+Decisions.swift"],
+          "intendedEdits": "Integrate the already accepted lifecycle guard/applier seams with the real runner after p1-lifecycle; preserve and rerun all lifecycle invariants."
+        },
+        {
+          "paths": ["Sources/RielaCLI/RielaArgumentParser+WorkflowAndMemory.swift"],
+          "intendedEdits": "Add task run/decide and remove auto-improve options after p1-capabilities has established host-aware validation arguments; preserve capability behavior."
+        },
+        {
+          "paths": ["Sources/RielaCLI/WorkflowRunCommand*.swift"],
+          "intendedEdits": "Establish dispatcher parity tests first, then remove only workflow auto-improve behavior while preserving plain workflow, loop, routine, specialist, and event behavior."
+        },
+        {
+          "paths": ["examples/task-repair-loop/**", "examples/task-agent-director/**"],
+          "intendedEdits": "Dispatch owns executable example fixtures and expected outcomes; p1-finalize may reconcile documentation only after their behavioral tests pass."
+        }
+      ],
+      "progressPath": "impl-plans/progress/p1-dispatch.md",
+      "evidenceDir": "tmp/work-runtime-p1-20260921/p1-dispatch",
+      "attemptDirTemplate": "tmp/work-runtime-p1-20260921/p1-dispatch/attempt-<n>",
+      "acceptanceCriteria": [
+        "P1-6a: resolve task plan, selected entry, dependencies, and refreshed placement before atomic reservation; execute exactly the reserved session ID; project terminal evidence before guard/completion and apply all decisions through the shared applier.",
+        "P1-6b: task run reports attempt/session or wait reason, while dry-run performs identical resolution with byte-and-row-equivalent zero mutation across databases, sidecars, work_hosts, caches, and profile configuration, including absent/incompatible/corrupt state.",
+        "P1-6c: task decide enforces exactly one action plus principal, expected version, and stable decision ID; replay is safe; Ctrl-C and all interruption windows use durable cancellation and terminal acknowledgment.",
+        "P1-6d: one bounded ordinary-workflow agent-director child preserves the judged TaskView, records child accounting once, validates allowed P1 output, and escalates invalid, failed, forbidden, or budget-blocked output without recursion.",
+        "P1-7a: dispatcher parity for inactivity, bounded retry, failure/gate recovery, cancellation, and replay passes before removing only workflow auto-improve implementation, options, state, and remote inputs.",
+        "P1-7b: task-repair-loop and task-agent-director fixtures replace obsolete examples and TaskRuntimeExampleTests drive the real task lifecycle for every documented outcome."
+      ],
+      "verification": {
+        "commands": [
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests'",
+          "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-dispatch/changed-swift-files.nul",
+          "git diff --check"
+        ],
+        "requirements": [
+          "Record a passing replacement-behavior exit and complete log before deleting auto-improve code.",
+          "Run in the foreground and record final exit status, complete log path, selected test names, and positive test count."
+        ]
+      }
+    },
+    {
+      "planId": "p1-finalize",
+      "planPath": "impl-plans/active/work-runtime-p1-finalization.md",
+      "dependsOn": [
+        "p1-sandbox",
+        "p1-reservation",
+        "p1-lifecycle",
+        "p1-capabilities",
+        "p1-dispatch"
+      ],
+      "writePaths": [
+        "README.md",
+        "Sources/RielaCore/SurfaceCatalog*.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaArgumentParser*.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCLITests/WorkflowRunHelpTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandInspectionTests.swift",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "design-docs/specs/design-control-surface-parity.md",
+        ".codex/skills/riela-impl-workflow/SKILL.md",
+        "examples/task-repair-loop/**",
+        "examples/task-agent-director/**",
+        "impl-plans/README.md",
+        "impl-plans/PROGRESS.json",
+        "impl-plans/progress/plans-index.json",
+        "impl-plans/progress/meta.json",
+        "impl-plans/progress/phases.json",
+        "impl-plans/progress/plans/**",
+        "impl-plans/active/work-runtime-p1-*.md",
+        "impl-plans/completed/work-runtime-p1-*.md",
+        "Package.swift",
+        "Package.resolved",
+        "impl-plans/progress/p1-finalize.md"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "Sources/RielaCore/SurfaceCatalog*.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaArgumentParser*.swift",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        ".codex/skills/riela-impl-workflow/SKILL.md",
+        "examples/task-repair-loop/**",
+        "examples/task-agent-director/**",
+        "impl-plans/README.md",
+        "impl-plans/PROGRESS.json",
+        "impl-plans/progress/plans-index.json",
+        "impl-plans/progress/meta.json",
+        "impl-plans/progress/phases.json",
+        "impl-plans/progress/plans/**",
+        "impl-plans/active/work-runtime-p1-*.md",
+        "Package.swift",
+        "Package.resolved"
+      ],
+      "sharedPathIntent": [
+        {
+          "paths": ["Sources/RielaCLI/RielaCommand.swift", "Sources/RielaCLI/RielaArgumentParser*.swift", "examples/task-repair-loop/**", "examples/task-agent-director/**", "Package.swift"],
+          "intendedEdits": "Serially reconcile accepted predecessor behavior, help, documentation, package topology, and examples; preserve predecessor contracts and rerun affected focused suites."
+        },
+        {
+          "paths": ["README.md", "Sources/RielaCore/SurfaceCatalog*.swift", "design-docs/specs/design-work-runtime-consolidation.md", ".codex/skills/riela-impl-workflow/SKILL.md"],
+          "intendedEdits": "Refresh user-facing documentation and surface parity only after implementation evidence is accepted; mark P5 counterparts deferred and do not reopen accepted scope."
+        },
+        {
+          "paths": ["impl-plans/README.md", "impl-plans/PROGRESS.json", "impl-plans/progress/plans-index.json", "impl-plans/progress/meta.json", "impl-plans/progress/phases.json", "impl-plans/progress/plans/**", "impl-plans/active/work-runtime-p1-*.md", "impl-plans/completed/work-runtime-p1-*.md", "Package.resolved"],
+          "intendedEdits": "Update shared indexes, lockfile, and archive state only in serial finalization after all implementation and review gates accept."
+        }
+      ],
+      "progressPath": "impl-plans/progress/p1-finalize.md",
+      "evidenceDir": "tmp/work-runtime-p1-20260921/p1-finalize",
+      "attemptDirTemplate": "tmp/work-runtime-p1-20260921/p1-finalize/attempt-<n>",
+      "acceptanceCriteria": [
+        "P1-8a: join all predecessors from runtime change evidence and immutable intents, detect drift or missing work, perform only serial repair, rerun affected tests, and obtain independent combined-tree acceptance.",
+        "P1-8b: reconcile README, help, SurfaceCatalog, parity design, workflow-authoring guidance, examples, and P1 design status while explicitly deferring GraphQL/UI counterparts and removing obsolete auto-improve guidance.",
+        "P1-8c: audit every owning riela-package.json and refresh only applicable digests with the established tool; otherwise record non-applicability without inventing or modifying external packages.",
+        "P1-8d: complete build, focused/full tests, dry-run, doctor, canonical-workflow validation, example validation/runs, removed-surface audit, strict/repository lint, diff checks, and independent test-integrity/adversarial/combined-tree review with no unresolved high or mid finding.",
+        "Only finalization updates shared checkboxes/indexes and archives all six plans; no push or base integration occurs."
+      ],
+      "verification": {
+        "commands": [
+          "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-finalize",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize --filter RielaWorkTests",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize --filter 'WorkStoreReservationTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|ImplementationWorkflowSandboxTests'",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize --filter TaskCommandMutationTests/testDryRunLeavesRuntimeDatabaseByteAndRowEquivalent",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize --filter 'WorkflowRunHelp|WorkflowCommandInspection|DistributedWorkerConfiguration|SurfaceCatalog'",
+          "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-finalize",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela doctor --output json",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela doctor --output text",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate codex-design-and-implement-review-loop --workflow-definition-dir .riela/workflows --output json",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-repair-loop --workflow-definition-dir examples --output json",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow run task-repair-loop --workflow-definition-dir examples --mock-scenario examples/task-repair-loop/mock-scenario.json --session-store tmp/work-runtime-p1/examples/task-repair-loop --output json",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow validate task-agent-director --workflow-definition-dir examples --output json",
+          "tmp/work-runtime-p1/build/p1-finalize/debug/riela workflow run task-agent-director --workflow-definition-dir examples --mock-scenario examples/task-agent-director/mock-scenario.json --session-store tmp/work-runtime-p1/examples/task-agent-director --output json",
+          "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1-20260921/p1-finalize/changed-swift-files.nul",
+          "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
+          "python3 - <<'AUDIT'\nfrom pathlib import Path\nimport subprocess\npattern = r'--auto-improve|--max-supervised-attempts|--max-workflow-patches|--monitor-interval-ms|--stall-timeout-ms|--workflow-mutation-mode|--nested-supervisor|input\\.autoImprove|input\\.nestedSuperviser'\npaths = [p for p in ['Sources','README.md','examples','.riela/workflows','.agents/skills','.codex/skills'] if Path(p).exists()]\nr = subprocess.run(['rg','-n','--',pattern,*paths], capture_output=True, text=True)\nprint(r.stdout, end=''); print(r.stderr, end='')\nassert r.returncode in (0, 1), 'removed-surface audit tool failed'\nprint('MATCHES_REQUIRE_REVIEW' if r.returncode == 0 else 'NO_MATCHES')\nAUDIT",
+          "git diff --check",
+          "git diff --name-only"
+        ],
+        "requirements": [
+          "Run every command after serial repair in the foreground with a separate complete log and final exit status; do not accept narrower filters in place of the full suite.",
+          "Require positive task-example case counts, explicit classification of every removed-surface match, P0 and unrelated loop/routine/specialist regression coverage, and independent reviews with no unresolved high or mid finding."
+        ]
+      }
+    }
+  ],
+  "reconciliation": {
+    "waveOrder": [
+      ["p1-sandbox", "p1-reservation"],
+      ["p1-lifecycle", "p1-capabilities"],
+      ["p1-dispatch"],
+      ["p1-finalize"]
+    ],
+    "serialOnly": [
+      "Resolve any unlisted write-scope overlap or missing shared contract before dependent edits continue.",
+      "Reconcile shared files, overwritten or missing intent, lockfiles, shared indexes, package digests, global plan archive state, and any required broad formatting in p1-finalize.",
+      "Aggregate runtime change evidence, compare current hashes with every immutable intent, rerun affected predecessor tests, and require independent combined-tree acceptance."
+    ]
+  },
+  "preservedWorkingState": {
+    "stagedEntries": [],
+    "intakeTrackedChanges": [
+      ".riela/workflows/codex-design-and-implement-review-loop/nodes/node-step6-implement.json",
+      ".riela/workflows/codex-design-and-implement-review-loop/nodes/node-step8-docs-refresh.json",
+      "Package.swift",
+      "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+      "Sources/RielaWork/WorkModels.swift",
+      "Sources/RielaWork/WorkStore+Schema.swift",
+      "Sources/RielaWork/WorkStore.swift",
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md"
+    ],
+    "intakeUntrackedChanges": [
+      "Sources/RielaWork/TaskGuardCoordinator.swift",
+      "Sources/RielaWork/WorkStore+Decisions.swift",
+      "Sources/RielaWork/WorkStore+Reservation.swift",
+      "Tests/RielaCLITests/ImplementationWorkflowSandboxTests.swift",
+      "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+      "Tests/RielaWorkTests/WorkGuardDispatcherTests.swift",
+      "Tests/RielaWorkTests/WorkStoreReservationTests.swift"
+    ],
+    "checkpointCommitScope": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-sandbox.md",
+      "impl-plans/active/work-runtime-p1-reservation.md",
+      "impl-plans/active/work-runtime-p1-guard-director.md",
+      "impl-plans/active/work-runtime-p1-capabilities.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/active/work-runtime-p1-finalization.md",
+      "impl-plans/active/work-runtime-p1-20260921-dispatch.json"
+    ],
+    "note": "The following scoped commit must include only the accepted design, all six accepted plans, and this dispatch manifest. Existing implementation WIP and unrelated changes remain outside the checkpoint. The worktree index was unchanged since the accepted intake reported no staged entries."
+  },
+  "checkpointVerification": {
+    "branch": "feat/remaining-impl-plans",
+    "head": "fa686e028c811e3fd5843d743052caab611c90f6",
+    "matchesIntake": true,
+    "stagedEntries": [],
+    "reviewDecision": "accepted_for_step6_implementation",
+    "findings": [],
+    "commands": [
+      "sed -n '1,20p' /Users/taco/gits/tacogips/riela/.git/worktrees/remaining-impl-plans/HEAD",
+      "sed -n '1,3p' /Users/taco/gits/tacogips/riela/.git/refs/heads/feat/remaining-impl-plans",
+      "stat -f '%m %z' /Users/taco/gits/tacogips/riela/.git/worktrees/remaining-impl-plans/index",
+      "jq empty impl-plans/active/work-runtime-p1-20260921-dispatch.json",
+      "python3 tmp/work-runtime-p1-20260921/checkpoint/attempt-1/validate-dispatch.py"
+    ],
+    "results": [
+      {
+        "command": "jq empty impl-plans/active/work-runtime-p1-20260921-dispatch.json",
+        "exitStatus": 0,
+        "completeLog": true,
+        "logPath": "tmp/work-runtime-p1-20260921/checkpoint/attempt-1/checkpoint-verification.log"
+      },
+      {
+        "command": "python3 tmp/work-runtime-p1-20260921/checkpoint/attempt-1/validate-dispatch.py",
+        "exitStatus": 0,
+        "completeLog": true,
+        "logPath": "tmp/work-runtime-p1-20260921/checkpoint/attempt-1/checkpoint-verification.log"
+      },
+      {
+        "command": "read worktree HEAD, branch ref, and index metadata directly without invoking git",
+        "exitStatus": 0,
+        "completeLog": true,
+        "logPath": "tmp/work-runtime-p1-20260921/checkpoint/attempt-1/checkpoint-verification.log"
+      }
+    ]
+  }
+}

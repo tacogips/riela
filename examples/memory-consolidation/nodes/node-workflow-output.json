@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Project the consolidation counts and the long-term recall used for prompting.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplate": "Project the latest long-term memory payload.",

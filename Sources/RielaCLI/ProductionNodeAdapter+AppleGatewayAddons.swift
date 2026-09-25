@@ -75,7 +75,7 @@ private struct AppleNotesListContext {
   init(input: WorkflowAddonExecutionInput, environment: [String: String]) throws {
     self.input = input
     self.config = input.addon.config ?? [:]
-    self.variables = addonVariables(for: input)
+    self.variables = try addonVariables(for: input)
     _ = try first()
     _ = try bool("includePlaintext", defaultValue: false)
     _ = try bool("includeBodyHtml", defaultValue: false)

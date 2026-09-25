@@ -8,7 +8,6 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
   public var status: WorkflowSessionStatus
   public var nodeExecutions: Int
   public var transitions: Int
-  public var supervision: JSONObject?
   public var loopEvidence: LoopEvidenceSummary?
   public var recovery: LoopRecoveryLineage?
 
@@ -18,7 +17,6 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
     rootOutput: JSONObject?,
     exitCode: Int32,
     transitions: Int,
-    supervision: JSONObject? = nil,
     loopEvidence: LoopEvidenceSummary? = nil,
     recovery: LoopRecoveryLineage? = nil
   ) {
@@ -29,7 +27,6 @@ public struct WorkflowRunResult: Codable, Equatable, Sendable {
     self.status = session.status
     self.nodeExecutions = session.newExecutionCount
     self.transitions = transitions
-    self.supervision = supervision
     self.loopEvidence = loopEvidence
     self.recovery = recovery
   }

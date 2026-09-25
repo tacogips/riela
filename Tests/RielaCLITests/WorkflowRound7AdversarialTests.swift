@@ -439,7 +439,11 @@ private extension WorkflowRound7AdversarialTests {
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { _ = close(descriptor) }
     var address = sockaddr_un()
-    let path = Array(socketURL.path.utf8) + [0]
+    let currentDirectory = FileManager.default.currentDirectoryPath
+    let socketBindingPath = socketURL.path.hasPrefix(currentDirectory + "/")
+      ? String(socketURL.path.dropFirst(currentDirectory.count + 1))
+      : socketURL.path
+    let path = Array(socketBindingPath.utf8) + [0]
     guard path.count <= MemoryLayout.size(ofValue: address.sun_path) else { throw POSIXError(.ENAMETOOLONG) }
     address.sun_family = sa_family_t(AF_UNIX)
     withUnsafeMutableBytes(of: &address.sun_path) { buffer in buffer.copyBytes(from: path) }

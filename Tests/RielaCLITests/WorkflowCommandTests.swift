@@ -206,7 +206,13 @@ final class WorkflowCommandTests: XCTestCase {
           "replyAs": .string("yui"),
           "replyText": .string("Yui reply"),
           "handoff_mika": .bool(true),
-          "handoff_rina": .bool(false)
+          "handoff_rina": .bool(false),
+          "_rielaInput": .object([
+            "latest": .object([
+              "fromStepId": .string("yui-codex-sdk"),
+              "payload": .object(["replyText": .string("Yui reply")])
+            ])
+          ])
         ]
       ),
       context: AdapterExecutionContext()

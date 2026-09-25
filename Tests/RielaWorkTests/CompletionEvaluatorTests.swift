@@ -21,6 +21,20 @@ final class CompletionEvaluatorTests: XCTestCase {
     )
   }
 
+  func testFailedAttemptIsUnmetEvenWhenEveryOtherCompletionInputPasses() {
+    XCTAssertEqual(
+      CompletionEvaluator.evaluate(
+        contract: contract(),
+        attemptOutcome: AttemptOutcome(
+          sessionStatus: .failed,
+          gateResults: [gate("implementation-review", .accepted)]
+        ),
+        ledger: passingLedger()
+      ),
+      .unmet([.acceptanceNotMet])
+    )
+  }
+
   func testEveryUnmetKind() {
     struct Row {
       var name: String
@@ -208,14 +222,14 @@ final class CompletionEvaluatorTests: XCTestCase {
     )
   }
 
-  func testAnEmptyContractIsSatisfiedByAnyOutcome() {
+  func testAnEmptyContractRequiresACompletedAttempt() {
     XCTAssertEqual(
       CompletionEvaluator.evaluate(
         contract: CompletionContract(),
         attemptOutcome: AttemptOutcome(sessionStatus: .failed),
         ledger: CompletionLedger()
       ),
-      .satisfied
+      .unmet([.acceptanceNotMet])
     )
   }
 
@@ -290,6 +304,13 @@ final class CompletionEvaluatorTests: XCTestCase {
     XCTAssertNil(
       GateAcceptanceParser.acceptance(requiredGates: gates, session: session(acceptance: [:])),
       "no gate carrying an acceptance object reads as absent"
+    )
+    XCTAssertNil(
+      GateAcceptanceParser.acceptance(
+        requiredGates: gates,
+        session: session(acceptance: ["step-a": true])
+      ),
+      "every required gate needs a valid acceptance judgement"
     )
     XCTAssertNil(
       GateAcceptanceParser.acceptance(

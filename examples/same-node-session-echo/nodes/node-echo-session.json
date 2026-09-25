@@ -1,6 +1,7 @@
 {
   "id": "echo-session",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-haiku-4-5",
   "modelFreeze": false,
   "sessionPolicy": {

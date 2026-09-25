@@ -51,11 +51,12 @@ public enum RielaCommand: Equatable, Sendable {
   case scoped(ScopedCommand)
 }
 
-/// Work Runtime read surface. P0 ships `show` and `list` only; `submit`,
-/// `serve`, and `decide` arrive with the dispatcher in P1.
+/// Work Runtime task inspection and execution surface.
 public enum TaskCommandKind: String, Codable, CaseIterable, Sendable {
   case show
   case list
+  case run
+  case decide
 }
 
 public struct TaskCommand: Equatable, Sendable {
@@ -290,47 +291,6 @@ public struct CLICommandOptions: Equatable, Sendable {
   }
 }
 
-public struct WorkflowValidateOptions: Equatable, Sendable {
-  public var workflowName: String
-  public var resolution: WorkflowResolutionOptions
-  public var output: WorkflowOutputFormat
-  public var executable: Bool
-  public var nodePatch: String?
-
-  public init(
-    workflowName: String,
-    resolution: WorkflowResolutionOptions,
-    output: WorkflowOutputFormat = .jsonl,
-    executable: Bool = false,
-    nodePatch: String? = nil
-  ) {
-    self.workflowName = workflowName
-    self.resolution = resolution
-    self.output = output
-    self.executable = executable
-    self.nodePatch = nodePatch
-  }
-}
-
-public struct WorkflowInspectOptions: Equatable, Sendable {
-  public var workflowName: String
-  public var resolution: WorkflowResolutionOptions
-  public var output: WorkflowOutputFormat
-  public var structure: Bool
-
-  public init(
-    workflowName: String,
-    resolution: WorkflowResolutionOptions,
-    output: WorkflowOutputFormat = .jsonl,
-    structure: Bool = false
-  ) {
-    self.workflowName = workflowName
-    self.resolution = resolution
-    self.output = output
-    self.structure = structure
-  }
-}
-
 public struct WorkflowRunOptions: Equatable, Sendable {
   public var target: String
   public var resolution: WorkflowResolutionOptions?
@@ -358,8 +318,6 @@ public struct WorkflowRunOptions: Equatable, Sendable {
   public var authTokenEnv: String?
   public var fromRegistry: Bool
   public var supervisorMode: Bool
-  public var autoImprove: Bool
-  public var autoImprovePolicy: WorkflowAutoImprovePolicy
   /// Reserved canonical session identity for durable supervisors.  Ordinary
   /// command callers leave it nil and retain normal run semantics.
   public var resumeSessionId: String?
@@ -391,8 +349,6 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     authTokenEnv: String? = nil,
     fromRegistry: Bool = false,
     supervisorMode: Bool = false,
-    autoImprove: Bool = false,
-    autoImprovePolicy: WorkflowAutoImprovePolicy = WorkflowAutoImprovePolicy(),
     resumeSessionId: String? = nil
   ) {
     self.target = target
@@ -421,77 +377,7 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     self.authTokenEnv = authTokenEnv
     self.fromRegistry = fromRegistry
     self.supervisorMode = supervisorMode
-    self.autoImprove = autoImprove
-    self.autoImprovePolicy = autoImprovePolicy
     self.resumeSessionId = resumeSessionId
-  }
-}
-
-public enum WorkflowMutationMode: String, Codable, CaseIterable, Sendable {
-  case executionCopy = "execution-copy"
-  case inPlace = "in-place"
-  case disabled
-
-  public var isForwardedToRemoteExecution: Bool {
-    switch self {
-    case .executionCopy, .inPlace:
-      true
-    case .disabled:
-      false
-    }
-  }
-
-  static var acceptedValuesDescription: String {
-    Self.allCases.map(\.rawValue).joined(separator: ", ")
-  }
-}
-
-public struct WorkflowAutoImprovePolicy: Codable, Equatable, Sendable {
-  public var maxSupervisedAttempts: Int
-  public var maxWorkflowPatches: Int
-  public var monitorIntervalMs: Int
-  public var stallTimeoutMs: Int
-  public var stallDetectionEnabled: Bool
-  public var workflowMutationMode: WorkflowMutationMode
-  public var nestedSuperviser: Bool
-
-  private enum CodingKeys: String, CodingKey {
-    case maxSupervisedAttempts
-    case maxWorkflowPatches
-    case monitorIntervalMs
-    case stallTimeoutMs
-    case stallDetectionEnabled
-    case workflowMutationMode
-    case nestedSuperviser
-  }
-
-  public init(
-    maxSupervisedAttempts: Int = 3,
-    maxWorkflowPatches: Int = 2,
-    monitorIntervalMs: Int = 1_000,
-    stallTimeoutMs: Int = 30_000,
-    stallDetectionEnabled: Bool = false,
-    workflowMutationMode: WorkflowMutationMode = .executionCopy,
-    nestedSuperviser: Bool = false
-  ) {
-    self.maxSupervisedAttempts = maxSupervisedAttempts
-    self.maxWorkflowPatches = maxWorkflowPatches
-    self.monitorIntervalMs = monitorIntervalMs
-    self.stallTimeoutMs = stallTimeoutMs
-    self.stallDetectionEnabled = stallDetectionEnabled
-    self.workflowMutationMode = workflowMutationMode
-    self.nestedSuperviser = nestedSuperviser
-  }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    maxSupervisedAttempts = try container.decode(Int.self, forKey: .maxSupervisedAttempts)
-    maxWorkflowPatches = try container.decode(Int.self, forKey: .maxWorkflowPatches)
-    monitorIntervalMs = try container.decode(Int.self, forKey: .monitorIntervalMs)
-    stallTimeoutMs = try container.decode(Int.self, forKey: .stallTimeoutMs)
-    stallDetectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .stallDetectionEnabled) ?? false
-    workflowMutationMode = try container.decode(WorkflowMutationMode.self, forKey: .workflowMutationMode)
-    nestedSuperviser = try container.decode(Bool.self, forKey: .nestedSuperviser)
   }
 }
 
@@ -809,7 +695,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     )
   }
 
-  /// `riela task show <task-id>` and `riela task list`. The shared flags are
+  /// `riela task <show|run|decide> <task-id>` and `riela task list`. The shared flags are
   /// `LoopCommand`'s, so P2 can reuse this parsing when `riela loop` is
   /// deleted and its inspections become task reads.
   private func parseTask(_ arguments: [String]) throws -> TaskCommand {
@@ -822,11 +708,11 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       )
     }
     guard !family.remainder.isEmpty else {
-      throw CLIUsageError("task show requires a task id")
+      throw CLIUsageError("task \(kind.rawValue) requires a task id")
     }
     let route = try ParsedTargetAndOptions.parseCLI(family.remainder)
     guard let target = route.target else {
-      throw CLIUsageError("task show requires a task id")
+      throw CLIUsageError("task \(kind.rawValue) requires a task id")
     }
     return TaskCommand(
       kind: kind,

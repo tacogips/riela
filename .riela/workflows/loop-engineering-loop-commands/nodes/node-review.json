@@ -2,8 +2,10 @@
   "id": "review",
   "description": "Review read-only riela loop command implementation.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/review.md",
-  "variables": {}
+  "variables": {},
+  "output": { "jsonSchema": { "type": "object" } }
 }

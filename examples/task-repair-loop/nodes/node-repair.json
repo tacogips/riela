@@ -1,0 +1,12 @@
+{
+  "id": "repair",
+  "description": "Perform one bounded repair attempt.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/repair.md",
+  "variables": {},
+  "output": {
+    "description": "Return a summary of the attempted repair and evidence for verification."
+  }
+}

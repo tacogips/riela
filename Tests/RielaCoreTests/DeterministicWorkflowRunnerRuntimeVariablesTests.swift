@@ -14,7 +14,7 @@ final class RuntimeVariablesPromptingTests: XCTestCase {
       id: "echo-node",
       executionBackend: .codexAgent,
       model: "gpt-5.5",
-      promptTemplate: "requested={{runtimeVariables.workflowInput.requestedBehavior}}"
+      agentSandbox: .readOnly, promptTemplate: "requested={{runtimeVariables.workflowInput.requestedBehavior}}"
     )
     let runtimeVariables: JSONObject = [
       "workflowInput": .object([
@@ -75,7 +75,7 @@ final class RuntimeVariablesPromptingTests: XCTestCase {
           id: "worker",
           executionBackend: .codexAgent,
           model: "gpt-5.5",
-          promptTemplate: """
+          agentSandbox: .readOnly, promptTemplate: """
           Direct requested behavior: {{runtimeVariables.workflowInput.requestedBehavior}}
           Direct target: {{runtimeVariables.workflowInput.targetFeatureArea}}
           Cross-workflow requested behavior: {{runtimeVariables.workflowCall.input.workflowInput.requestedBehavior}}

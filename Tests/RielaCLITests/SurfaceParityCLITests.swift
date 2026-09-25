@@ -88,7 +88,7 @@ final class SurfaceParityCLITests: XCTestCase {
       "workflow run", "workflow manifest validate", "session rerun", "session continue",
       "loop gates", "package install", "node run", "memory save", "instance list",
       "specialist submit", "graphql schema", "events schedules cancel", "routine create",
-      "task show", "task list",
+      "task show", "task list", "task run", "task decide",
       "serve", "serve status", "hook codex", "kaiba instance list", "auth invite",
       "worker", "worker status", "call-step", "workflow-call", "rrun", "gql", "version"
     ] {
@@ -125,7 +125,9 @@ final class SurfaceParityCLITests: XCTestCase {
   func testOptionUniverseContainsRealFlagsAndRejectsRetiredOnes() {
     let options = CLISurfaceEnumerator.optionNames()
     XCTAssertTrue(options.contains("--max-steps"))
-    XCTAssertTrue(options.contains("--auto-improve"))
+    XCTAssertFalse(options.contains("--auto-improve"))
+    XCTAssertFalse(options.contains("--no-auto-improve"))
+    XCTAssertFalse(options.contains("--nested-superviser"))
     XCTAssertTrue(options.contains("--mock-scenario"))
     XCTAssertFalse(options.contains("--supervisor-workflow"))
     XCTAssertFalse(options.contains("--no-allow-targeted-rerun"))

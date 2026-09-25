@@ -1,12 +1,20 @@
 {
   "id": "run-task",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-haiku-4-5",
   "modelFreeze": false,
   "description": "Perform the routine's task for this tick and judge whether the completion criteria is now satisfied.",
   "promptTemplateFile": "prompts/run-task.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with result (what was done), conditionMet (whether the completion criteria is now satisfied), and completionNote."
+    "description": "Return JSON with result (what was done), conditionMet (whether the completion criteria is now satisfied), and completionNote.",
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "completionNote": {"type": "string"},
+        "conditionMet": {"type": "boolean"}
+      }
+    }
   }
 }

@@ -171,6 +171,9 @@ final class AppleMailAddonTests: XCTestCase {
     XCTAssertTrue(downloadLog.contains("body-key"))
     XCTAssertTrue(downloadLog.contains("attachment-ok"))
     XCTAssertFalse(downloadLog.contains("attachment-big"))
+    let arguments = try String(contentsOf: fake.argumentLogURL)
+    XCTAssertTrue(arguments.contains("--output-dir"))
+    XCTAssertTrue(arguments.contains(downloadRoot.path))
   }
 
   func testAppleMailMessageAcceptsPrivateRuntimeDownloadDir() async throws {
@@ -481,7 +484,6 @@ final class AppleMailAddonTests: XCTestCase {
     }
   }
 
-
   private func requestId(_ output: AdapterExecutionOutput) -> String? {
     testObject(output.payload["appleMail"]).flatMap { testString($0["requestId"]) }
   }
@@ -526,10 +528,14 @@ private struct FakeAppleMailGateway {
     } > "\(environmentLogURL.path)"
     if [ "$1" = "file" ]; then
       key=""
+      output_dir=""
       while [ "$#" -gt 0 ]; do
         if [ "$1" = "--key" ]; then
           shift
           key="$1"
+        elif [ "$1" = "--output-dir" ]; then
+          shift
+          output_dir="$1"
         fi
         shift
       done
@@ -538,7 +544,10 @@ private struct FakeAppleMailGateway {
         echo "download failed" >&2
         exit 9
       fi
-      printf "downloaded-%s" "$key"
+      mkdir -p "$output_dir"
+      local_path="$output_dir/$key.download"
+      printf "downloaded-%s" "$key" > "$local_path"
+      printf '{"data":{"files":[{"downloadKey":"%s","domain":"mail","kind":"BODY_TEXT","path":"%s"}]},"extensions":{"requestId":"download-request"}}\n' "$key" "$local_path"
       exit 0
     fi
     printf "%s" "$3" > "\(queryLogURL.path)"

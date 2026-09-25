@@ -3,6 +3,15 @@ import XCTest
 @testable import RielaCore
 
 final class AddonExecutionContractsTests: XCTestCase {
+  func testChatReplyWorkerBuiltinCatalogContract() {
+    let name = "riela/chat-reply-worker"
+    XCTAssertEqual(RielaBuiltinAddonCatalog.descriptor(named: name), .init(name: name, version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: name, version: "1"))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: name, version: nil))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: "2"))
+    XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/unknown-chat-reply-worker", version: "1"))
+  }
+
   func testUnknownAddonFailsDeterministicallyWithoutInjectedResolver() async {
     let input = AddonExecutionInput(
       addonName: "third-party-addon",

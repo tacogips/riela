@@ -1,6 +1,6 @@
 # Riela Note Configurable Kanban Status Sets and Autonomous Task Orchestration
 
-- Status: Draft (pre self-review)
+- Status: Historically implemented; Riela ownership superseded by Kaiba extraction
 - Date: 2026-07-31
 - Branch: `feat/riela-note-kanban-orchestration`
 - Related designs: `design-riela-note.md`, `design-bounded-fanout-join-workflow-execution.md`,

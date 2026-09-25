@@ -1,0 +1,133 @@
+{
+  "taskId": "work-runtime-p1-6d-continuation-20260925-79eea81-comm000006",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "79eea8114b7d407e3fb7ed18faf5de5d86bce1ab",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6d-continuation-20260925-79eea81-comm000006",
+  "reviewContext": {
+    "issueReference": "Complete Work Runtime P1-6d after Step 6 finalization-boundary repair; comm-000001; intake comm-000002; accepted design comm-000004; accepted plan comm-000006",
+    "userProblem": "Assess and complete the retained P1-6d implementation on the actual current branch after the prior workflow incorrectly treated downstream review and D5 documentation as Step 6 implementation incompleteness.",
+    "requiredOutcomes": [
+      "Assess retained D0–D4 source and evidence against accepted §17.8 and the first plan section; repair only demonstrated material deficiencies.",
+      "Prove shared-store judged-work authority, bounded ordinary-runner child delivery, durable replay and once-only attempt/cost accounting with source-matched positive-count checks.",
+      "Obtain formal independent test-integrity, single adversarial and Astra combined-tree acceptance before D5 documentation and exact-file commit/non-force push.",
+      "Keep the 2,666-test broad gate FAILED with 19 classified historical assertions subject to independent review; leave P1-7b, P1-7a, parent P1 and broad follow-ups open."
+    ],
+    "nonGoals": [
+      "No P1-7b task-backed replacement bundles, P1-7a legacy removal, parent P1 closure or unrelated broad failure repair.",
+      "No recursive director, second task store, replacement planner or host-discovery architecture, main merge or Monja changes."
+    ],
+    "constraints": [
+      "Use immutable user-scope codex-design-and-implement-review-loop 0.3.30; preserve current uncommitted source/tests/plan-progress and other sessions’ changes.",
+      "One serial implementation owner handles coupled store/model/CLI edits; formal reviewers are independent and read-only advice is not acceptance.",
+      "No reset, extra worktree, broad staging, force push or main merge; all throwaway evidence remains under repository tmp/.",
+      "Reuse complete retained source-matched verification where valid; rerun checks invalidated by material edits; never label the failed broad gate green."
+    ],
+    "designDecisionsAndRationale": [
+      "Atomically reserve the .director child and persist task, judged attempt, child attempt and exact session identities so replay and shared application can verify authority.",
+      "Use the existing shared applier to reconstruct accept from durable judged-work gates, verification, acceptance and findings; child success alone cannot prove work success.",
+      "Deliver judged TaskView and hostCapabilityContext through ordinary workflow variables while preserving selected placement and other inputs."
+    ],
+    "intentionalTradeoffs": [
+      "One serial plan owns coupled store/model/CLI changes; shared design, README and indexes are reconciled serially after formal review.",
+      "The broad regression remains failed pending independently reviewed historical non-slice classification; slice-only acceptance may be explicit without parent P1 or broad-gate closure."
+    ],
+    "supportedEdgeCases": [
+      "Valid allowed accept; missing gates or blocking findings; requiresHumanAccept; stale version; newer work; missing, foreign or stale linkage; wrong child session.",
+      "Failed, malformed, forbidden and budget-blocked child; successful last-admitted work; no recursive child.",
+      "Fresh and reopened store, transaction rollback, repeated dispatch, terminal reconciliation and decision replay with unchanged judged evidence and exact once-only accounting.",
+      "Actual child node receives judged TaskView and hostCapabilityContext; selected backend/host delivery and dry-run/P1-6a/c compatibility."
+    ],
+    "outOfScopeEdgeCases": [
+      "P1-7b replacement examples and P1-7a before-removal legacy deletion.",
+      "Unrelated baseline failures and later parent P1 completion."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md §17.8",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md — first Current executable contract — P1-6d only",
+      "impl-plans/progress/p1-dispatch.md — P1-6d Step 6 implementation continuation 3",
+      "tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/source-final9.sha256",
+      "tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/final7-focused-exits.txt",
+      "tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/broad-final4.log",
+      "tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/broad4-classification.json"
+    ],
+    "reviewDecision": "Step 3 accepted design §17.8 at comm-000004; Step 5 accepted the first-section single plan at comm-000006 without findings. Read-only final_integrity3, final_adversarial3 and astra_combined3 advice reported no material high/mid defect; formal workflow reviews remain pending.",
+    "codexAgentReferences": [
+      "final_integrity3 (read-only advice)",
+      "final_adversarial3 (read-only advice)",
+      "astra_combined3 (read-only advice)"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaWork/AgentDirector.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaWork/WorkModels.swift",
+        "Sources/RielaWork/WorkStore+Schema.swift",
+        "Sources/RielaWork/TaskGuardCoordinator.swift",
+        "Sources/RielaWork/TaskDispatcher.swift",
+        "Sources/RielaWork/WorkStore+Director.swift",
+        "Sources/RielaWork/AgentDirectorModels.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/TaskDispatch+Director.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Tests/RielaWorkTests/AgentDirectorTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+        "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+        "Tests/RielaWorkTests/WorkStoreTests.swift",
+        "Tests/RielaWorkTests/AgentDirectorStoreTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/README.md",
+        "impl-plans/REMAINING-WORK-HANDOVER.md"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "attemptDirTemplate": "tmp/work-runtime-p1-6d-continuation-20260925-79eea81-comm000006/plans/p1-dispatch/attempt-<n>",
+      "sharedPathIntent": "One serial owner edits tightly coupled Work store/model/CLI and tests. Shared parent P1 design, plan and indexes are reconciled serially after reviews; read-only investigators do not edit them.",
+      "acceptanceCriteria": [
+        "Retained or repaired D0–D4 implementation satisfies the accepted §17.8 real shared-store and ordinary-runner matrix, including judged-work authority, durable replay and once-only accounting.",
+        "Source-matched build, positive-count focused suites, touched-file strict SwiftLint and diff checks have complete passing receipts; the serial broad regression has complete failed evidence and all 19 assertions are independently classified as historical non-slice failures.",
+        "Formal independent test-integrity, single adversarial and Astra combined-tree reviews accept no material P1-6d defect; D5 documents residual broad failure and downstream P1-7b/P1-7a/parent P1 work.",
+        "Only exact accepted files are committed and non-force pushed after review and documentation gates."
+      ],
+      "verification": [
+        "git status --short",
+        "git rev-parse HEAD",
+        "shasum -a 256 -c tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/source-final9.sha256",
+        "shasum -a 256 tmp/work-runtime-p1/p1-dispatch/p1-6d/attempt-3/broad-final4.log",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'AgentDirectorTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|WorkStoreReservationTests|WorkStoreTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskDryRunReadOnlyTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkStoreReservationTests|BudgetAdmissionDecisionApplierStoreTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkGuardTests|WorkGuardDispatcherTests|DeterministicDirectorTests|DecisionApplierTests|DecisionApplierStoreTests|DecisionApplierCausalityStoreTests|AgentDirectorTests|CompletionEvaluatorTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'BackendCapabilityPlacementTests|DoctorBackendCapabilityTests|WorkflowHostCapabilityTests|DistributedWorkerConfigurationTests|WorkflowBackendPolicyTests|BackendCapabilityProbeTests|HostCapabilityConfigurationTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskCancellationIntegrationTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter AgentDirectorStoreTests",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-dispatch/changed-swift-files.nul",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint --quiet --no-cache",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test",
+        "git diff --check",
+        "git diff --cached --check"
+      ]
+    }
+  ]
+}

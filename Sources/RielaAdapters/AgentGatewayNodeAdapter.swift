@@ -608,7 +608,10 @@ private func gatewayVendorArguments(
   var arguments: [String] = switch vendor {
   case .codex:
     (input.node.effort.map { ["-c", #"model_reasoning_effort="\#($0.rawValue)""#] } ?? [])
-      + (input.node.agentSandbox.map { ["--sandbox", $0.rawValue] } ?? [])
+      // `codex exec resume` accepts config overrides but not the top-level
+      // `--sandbox` spelling. Use the equivalent config form for both fresh
+      // and resumed turns so one reusable argument set is valid in both modes.
+      + (input.node.agentSandbox.map { ["-c", #"sandbox_mode="\#($0.rawValue)""#] } ?? [])
       + images.flatMap { ["--image", $0] }
   case .claudeCode:
     (input.node.effort.map { ["--effort", $0.rawValue] } ?? [])
@@ -730,12 +733,11 @@ private func normalizeGatewayOutput(
 ) throws -> OutputContractEnvelopeNormalization {
   let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
   if requiresOutputContract {
-    return try normalizeOutputContractEnvelope(try parseJSONObjectCandidate(trimmed, source: source), source: source)
-  }
-  if trimmed.hasPrefix("{"),
-     let object = try? parseJSONObjectCandidate(trimmed, source: source),
-     let normalized = try? normalizeOutputContractEnvelope(object, source: source) {
-    return normalized
+    do {
+      return try normalizeOutputContractEnvelope(try parseJSONObjectCandidate(trimmed, source: source), source: source)
+    } catch let failure as AdapterExecutionError {
+      throw WorkflowPublicationError.validationRejected(failure.message)
+    }
   }
   return OutputContractEnvelopeNormalization(
     completionPassed: true,

@@ -43,7 +43,14 @@ extension RielaApp {
       let environment = RielaAppEnvironmentFileStore(
         environmentFileURL: configURL.deletingLastPathComponent().appendingPathComponent("controller.env")
       ).mergedEnvironment()
-      let host = try DistributedControllerHost(configurationURL: configURL, environment: environment)
+      let host = try DistributedControllerHost(
+        configurationURL: configURL,
+        environment: environment,
+        capabilityStoreRoot: URL(
+          fileURLWithPath: daemonSessionStoreRoot(profileName: daemonProfileName),
+          isDirectory: true
+        ).appendingPathComponent("runtime-records", isDirectory: true).path
+      )
       distributedController = host
       distributedControllerStatus = "Worker controller: starting"
       rebuildMenu()

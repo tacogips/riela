@@ -78,7 +78,7 @@ final class WorkflowObservabilityTests: XCTestCase {
             id: "worker",
             executionBackend: .codexAgent,
             model: "gpt-5",
-            promptTemplate: "hello"
+            agentSandbox: .readOnly, promptTemplate: "hello"
           )
         ]
       )

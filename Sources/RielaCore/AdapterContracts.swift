@@ -6,6 +6,7 @@ public enum AdapterExecutionErrorCode: String, Codable, Sendable {
   case policyBlocked = "policy_blocked"
   case timeout
   case invalidOutput = "invalid_output"
+  case templateResolutionFailed = "template_resolution_failed"
 }
 
 public struct AdapterExecutionError: Error, Equatable, Sendable {

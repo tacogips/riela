@@ -1,7 +1,7 @@
 # Riela Note: Anywhere Capture, Entity Pages, Scoped Ask
 
 - Date: 2026-07-12
-- Status: Draft
+- Status: Superseded by Kaiba ownership; historical Riela proposal only
 - Provenance: persona ideation + 3-judge panel; pitches, grounding, and
   scores in `design-docs/references/riela-note-new-feature-selection-2026-07-12.json` (top three of 23
   candidates selected). Original product vision:

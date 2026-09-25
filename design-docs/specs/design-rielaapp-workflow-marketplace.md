@@ -1,7 +1,7 @@
 # Design: RielaApp Workflow Marketplace (Registered GitHub Repositories)
 
 - Date: 2026-07-15
-- Status: Draft
+- Status: Implemented and archived; plan: `impl-plans/completed/rielaapp-workflow-marketplace.md`
 - Compatibility: macOS RielaApp only (`#if os(macOS)`). No CLI behavior changes. Profile state
   format gains one optional field (backward compatible).
 

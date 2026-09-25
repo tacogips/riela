@@ -2,6 +2,7 @@
   "id": "step2-design-doc-update",
   "description": "Update the design documentation from the shared intake brief, including Codex-reference mapping when the run is reference-driven.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "sessionPolicy": {
@@ -15,6 +16,7 @@
   },
   "variables": {},
   "output": {
-    "description": "Return JSON with updated design-doc paths, issue mapping, Codex-reference mapping, key decisions, open questions, and addressed review feedback."
+    "description": "Return JSON with updated design-doc paths, issue mapping, Codex-reference mapping, key decisions, open questions, and addressed review feedback.",
+    "jsonSchema": {"type": "object"}
   }
 }

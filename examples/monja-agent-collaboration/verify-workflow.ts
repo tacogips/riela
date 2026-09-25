@@ -145,7 +145,6 @@ export async function verifyWorkflow(
 			resolve(runRoot, "sessions"),
 			"--artifact-root",
 			resolve(runRoot, "artifacts"),
-			"--no-auto-improve",
 			"--no-supervisor-mode",
 			"--output",
 			"json",

@@ -112,10 +112,9 @@ public actor ScenarioNodeAdapter: NodeAdapter {
   }
 
   private func scenarioSequenceIndex(for input: AdapterExecutionInput) -> Int {
-    guard let output = input.output else {
-      return max(1, input.executionIndex)
-    }
-    return max(1, (input.executionIndex - 1) * output.maxValidationAttempts + output.attempt)
+    let attempt = input.output?.attempt ?? 1
+    let executionFloor = max(1, input.executionIndex + attempt - 1)
+    return max((consumedCounts[input.node.id] ?? 0) + 1, executionFloor)
   }
 }
 

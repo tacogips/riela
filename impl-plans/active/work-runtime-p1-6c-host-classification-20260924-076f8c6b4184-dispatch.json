@@ -1,0 +1,224 @@
+{
+  "taskId": "work-runtime-p1-6c-host-classification-20260924-076f8c6b4184",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "30601aa89485436440728bf417b0156ea477f25d",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-6c-host-classification-20260924-076f8c6b4184",
+  "reviewContext": {
+    "issueReference": "Work Runtime P1-6c; no GitHub issue number supplied",
+    "userProblem": "Complete preserved P1-6c live cancellation using source-matched capable-host evidence, correct demonstrated catalog/projection defects, and classify a failed 24-assertion broad aggregate.",
+    "requiredOutcomes": [
+      "Verify complete host receipt and source manifest: selected-host 1/1, V11 plus live 55/55, V1 plus cancellation 50/50, with one policy start and one human cancel and unchanged replay history.",
+      "Repair missing task run/decide surface rows and failed-session projection expectation only where accepted contracts and focused tests confirm defects.",
+      "Classify all 24 broad assertions by source relevance, retain the broad gate as failed, and rerun affected final-source checks.",
+      "Preserve durable exact cancellation, proof-gated selected-host acknowledgment, uncertainty fence, prelaunch/Ctrl-C, replay and once-only replacement invariants.",
+      "Obtain independent test-integrity, adversarial and Astra combined-tree acceptance; refresh docs/progress; exact-file commit and non-force push after acceptance; leave P1-6d, P1-7a/b and parent P1 active."
+    ],
+    "nonGoals": [
+      "New architecture or unrelated baseline fixes",
+      "Direct decision-row mutation",
+      "Main merge, release, or closure of later P1 slices"
+    ],
+    "constraints": [
+      "Use immutable user-scope codex-design-and-implement-review-loop.",
+      "Preserve intake HEAD WIP and accepted P1-6a/b behavior; one serial owner edits coupled store/runner/worker code.",
+      "Keep scratch and complete logs under repository tmp; source-match host evidence; never report the failed broad aggregate as green.",
+      "Protect unrelated worktrees; no force push."
+    ],
+    "designDecisionsAndRationale": [
+      "Reuse WorkStore decisions and reservation as the durable causality and attempt-fence boundary, preserving identity, replay and version checks.",
+      "Observe exact pending requests throughout the owned run, including requests from another CLI process; persist before interruption.",
+      "Require exact cancelled terminal persistence and proven local/worker stop before acknowledgment; lease or heartbeat uncertainty retains the fence.",
+      "Route pending cancellation through exact acknowledgment before generic reconciliation and consume replacement once."
+    ],
+    "intentionalTradeoffs": [
+      "Keep bounded observation and waits inside the existing run lifetime; retain uncertain outcomes for explicit reconciliation.",
+      "Use one coupled plan with ordered internal gates because store, runner, worker and shared docs require serial ownership.",
+      "Treat unrelated evidenced aggregate failures as explicit follow-up only if independent reviews accept slice-only disposition; the broad gate remains failed."
+    ],
+    "supportedEdgeCases": [
+      "Prelaunch cancellation and authorization race",
+      "Separate-process decision and task-backed Ctrl-C",
+      "Selected-host stop proof with delayed or stale receipt",
+      "Persistence/acknowledgment failure, reopen and replay",
+      "Lease or heartbeat uncertainty",
+      "Once-only replacement under independent contenders"
+    ],
+    "outOfScopeEdgeCases": [
+      "P1-6d director execution",
+      "P1-7a/b legacy removal and examples",
+      "Unrelated baseline failure repair after evidence-backed classification"
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "tmp/work-runtime-p1-6c-host-failure/evidence.json",
+      "tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log",
+      "tmp/work-runtime-p1-6c-decision-20260924-c07910f-comm000006/continuation-2/source-test.sha256"
+    ],
+    "designReview": {
+      "decision": "accepted",
+      "communicationId": "comm-000004",
+      "stepId": "step3-design-review",
+      "findings": []
+    },
+    "planReview": {
+      "decision": "accepted",
+      "communicationId": "comm-000006",
+      "stepId": "step5-impl-plan-review",
+      "findings": []
+    },
+    "codexAgentReferences": [
+      "gpt-6-astra: design/plan author and final combined-tree reviewer",
+      "gpt-6-sol: serial implementation owner and independent reviewers"
+    ],
+    "planningVerification": [
+      {
+        "command": "python3 tmp/p1-6c-step4-host-refresh/self-check.py",
+        "exitCode": 0,
+        "completeLogPath": "tmp/p1-6c-step4-host-refresh/self-check.log"
+      },
+      {
+        "command": "git diff --check",
+        "exitCode": 0,
+        "completeLogPath": "tmp/p1-6c-step4-host-refresh/diff-check.log"
+      }
+    ],
+    "implementationVerificationPending": [
+      "swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'"
+    ],
+    "broadGate": {
+      "status": "failed",
+      "tests": 2048,
+      "assertionFailures": 24,
+      "unexpectedFailures": 7,
+      "completeLogPath": "tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log"
+    },
+    "progressFile": "impl-plans/progress/p1-dispatch.md",
+    "evidenceLayout": "plans/p1-dispatch/attempt-<number>/; reviews/<role>/; serial/attempt-<number>/; checkpoint/"
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/TaskCommandModels.swift",
+        "Sources/RielaCLI/EntryPoint.swift",
+        "Sources/RielaCLI/CLISignalCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaCore/DistributedNodeExecution.swift",
+        "Sources/RielaCore/DistributedJobController.swift",
+        "Sources/RielaCore/DistributedWorkerModels.swift",
+        "Sources/RielaServer/DistributedWorkerLoop.swift",
+        "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+        "Sources/RielaServer/DistributedWorkerProtocol.swift",
+        "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+        "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+        "Tests/RielaCLITests/TaskCommandMutationTests.swift",
+        "Tests/RielaCLITests/TaskCommandParsingTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "Tests/RielaCLITests/DistributedProcessCancellationTests.swift",
+        "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
+        "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+Finalization.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+        "Tests/RielaCLITests/TaskProjectionProofTests.swift",
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md",
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/TaskCommandModels.swift",
+        "Sources/RielaCLI/EntryPoint.swift",
+        "Sources/RielaCLI/CLISignalCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+SupervisionPersistence.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaCore/DistributedNodeExecution.swift",
+        "Sources/RielaCore/DistributedJobController.swift",
+        "Sources/RielaCore/DistributedWorkerModels.swift",
+        "Sources/RielaServer/DistributedWorkerLoop.swift",
+        "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+        "Sources/RielaServer/DistributedWorkerProtocol.swift",
+        "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+        "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+        "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+        "Tests/RielaCLITests/TaskCommandMutationTests.swift",
+        "Tests/RielaCLITests/TaskCommandParsingTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+        "Tests/RielaCLITests/DistributedProcessCancellationTests.swift",
+        "Tests/RielaCoreTests/DistributedJobControllerTests.swift",
+        "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+Finalization.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+        "Tests/RielaCLITests/TaskProjectionProofTests.swift",
+        "README.md",
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md",
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
+        "Tests/RielaCLITests/SurfaceParityCLITests.swift"
+      ],
+      "acceptanceCriteria": [
+        "Verify complete host receipt and source manifest: selected-host 1/1, V11 plus live 55/55, V1 plus cancellation 50/50, with one policy start and one human cancel and unchanged replay history.",
+        "Repair missing task run/decide surface rows and failed-session projection expectation only where accepted contracts and focused tests confirm defects.",
+        "Classify all 24 broad assertions by source relevance, retain the broad gate as failed, and rerun affected final-source checks.",
+        "Preserve durable exact cancellation, proof-gated selected-host acknowledgment, uncertainty fence, prelaunch/Ctrl-C, replay and once-only replacement invariants.",
+        "Obtain independent test-integrity, adversarial and Astra combined-tree acceptance; refresh docs/progress; exact-file commit and non-force push after acceptance; leave P1-6d, P1-7a/b and parent P1 active."
+      ],
+      "verification": [
+        "shasum -a 256 -c tmp/work-runtime-p1-6c-decision-20260924-c07910f-comm000006/continuation-2/source-test.sha256",
+        "rg -n 'Test Case .* failed \\(| error: ' tmp/work-runtime-p1-6c-host-failure/capable-host-aggregate-current.log",
+        "swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'SurfaceCatalogTests|SurfaceParityCLITests|TaskProjectionProofTests'",
+        "swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'DoctorCommandTests|RielaExampleParityTests|WorkflowCommandTests|WorkflowTemporaryRegistrationTests|WorkflowRunnerAdmissionTests'",
+        "git log -n 12 --format=oneline -- Sources/RielaCore/SurfaceCatalog+RowsCLI.swift Sources/RielaWork/CompletionEvaluator.swift Tests/RielaCLITests/TaskProjectionProofTests.swift",
+        "git diff 30601aa89485436440728bf417b0156ea477f25d -- Sources Tests",
+        "CLANG_MODULE_CACHE_PATH=tmp/work-runtime-p1/p1-6c/module-cache SWIFTPM_MODULECACHE_OVERRIDE=tmp/work-runtime-p1/p1-6c/module-cache swift test --disable-sandbox --skip-update --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build --scratch-path tmp/work-runtime-p1/build/p1-dispatch",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandMutationTests|TaskDispatcherTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|TaskCancellationIntegrationTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'WorkStoreReservationTests|WorkStoreCancellationTests|BudgetAdmissionStoreTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskDispatcherIntegrationTests|DistributedJobControllerTests|DistributedWorkerHTTPTests|TaskCancellationIntegrationTests/testTaskBackedSelectedHostCancellationWaitsForWorkerStopProof'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCommandParsingTests|DecisionApplierStoreTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskCancellationIntegrationTests|DistributedProcessCancellationTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'TaskRunResultTests|TaskDryRunReadOnlyTests'",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter TaskProjectionProofTests",
+        "/usr/bin/arch -arm64 /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --scratch-path tmp/work-runtime-p1/build/p1-dispatch --filter 'RielaCLITests|RielaWorkTests|RielaCoreTests|RielaServerTests'",
+        "xargs -0 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/arch -arm64 /usr/bin/xcrun swiftlint lint --strict --quiet --no-cache < tmp/work-runtime-p1/p1-6c/changed-swift-files.nul",
+        "git diff --check",
+        "git diff --cached --check"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md"
+    }
+  ]
+}

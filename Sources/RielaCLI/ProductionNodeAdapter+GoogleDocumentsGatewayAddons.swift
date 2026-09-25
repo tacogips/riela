@@ -155,7 +155,7 @@ private struct GoogleDocumentsGatewayAddonEngine {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
     let config = input.addon.config ?? [:]
-    var variables = addonVariables(for: input)
+    var variables = try addonVariables(for: input)
     for (name, value) in try localGatewayNowVariables(config: config, addonName: input.addon.name) {
       variables[name] = .string(value)
     }
@@ -292,7 +292,7 @@ private struct GoogleDocumentsGatewayAddonEngine {
           "\(addonName) config.argsTemplate flag '\(flagName)' must be lowercase words separated by dashes"
         )
       }
-      let rendered = renderJSONTemplates(template[flagName] ?? .null, variables: variables)
+      let rendered = try renderAddonConfig(template[flagName] ?? .null, variables: variables)
       arguments.append(contentsOf: try flagArguments(flagName, value: rendered, addonName: addonName))
     }
     return arguments

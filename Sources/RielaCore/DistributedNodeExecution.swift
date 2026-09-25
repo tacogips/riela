@@ -114,6 +114,25 @@ public struct QueuedDistributedNodeExecutor: DistributedNodeExecuting {
       }
     } catch {
       try await controller.cancel(jobId: executionId, attachment: attachment)
+      if Task.isCancelled {
+        // This wait runs in a fresh cancellation context. A controller status
+        // change alone cannot prove a claimed worker has stopped its process.
+        let stopped = try await Task.detached {
+          let deadline = Date().addingTimeInterval(5)
+          while Date() < deadline {
+            guard let job = try await controller.job(id: executionId, now: Date()) else { return false }
+            if job.status != .cancelled { return false }
+            if job.lease == nil || job.stoppedAt != nil { return true }
+            try await Task.sleep(for: .milliseconds(100))
+          }
+          return false
+        }.value
+        guard stopped else {
+          throw AdapterExecutionError(
+            .providerError, "remote cancellation has no proven worker stop", isRetryable: false
+          )
+        }
+      }
       throw error
     }
   }

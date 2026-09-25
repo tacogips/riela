@@ -2,6 +2,7 @@
   "id": "intake-or-plan",
   "description": "Confirm the read-only riela loop command slice and constraints.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/intake-or-plan.md",

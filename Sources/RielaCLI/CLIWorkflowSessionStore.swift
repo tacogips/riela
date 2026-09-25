@@ -175,6 +175,18 @@ public struct CLIWorkflowSessionStore: Sendable {
     sessionId: String,
     strictReadOnly: Bool = false
   ) throws -> PersistedCLIWorkflowSession {
+    try read(sessionId: sessionId, strictReadOnly: strictReadOnly, strictDecoding: false)
+  }
+
+  public func loadStrictReadOnly(sessionId: String) throws -> PersistedCLIWorkflowSession {
+    try read(sessionId: sessionId, strictReadOnly: true, strictDecoding: true)
+  }
+
+  private func read(
+    sessionId: String,
+    strictReadOnly: Bool,
+    strictDecoding: Bool
+  ) throws -> PersistedCLIWorkflowSession {
     guard isSafeSessionId(sessionId) else {
       throw CLIWorkflowSessionStoreError.invalidSessionId(sessionId)
     }
@@ -185,18 +197,39 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard try tableExists(db, name: "cli_workflow_sessions") else {
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
-    let rows = try mapSQLiteError {
-      try db.query(
+    let rows: [SQLiteRow]
+    do {
+      rows = try mapSQLiteError {
+        try db.query(
         "SELECT json(record_json) AS record_json FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
-      bindings: [.text(sessionId)]
-      )
+        bindings: [.text(sessionId)]
+        )
+      }
+    } catch {
+      if strictDecoding {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record query failed")
+      }
+      throw error
     }
-    guard let recordText = rows.first?["record_json"] else {
+    guard let row = rows.first else {
+      throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
+    }
+    guard let recordText = row["record_json"] else {
+      if strictDecoding {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is missing")
+      }
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
     do {
-      return try decodeRecord(recordText)
+      let record = try decodeRecord(recordText)
+      if strictDecoding, record.session.sessionId != sessionId {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session ID does not match requested ID")
+      }
+      return record
     } catch {
+      if strictDecoding {
+        throw CLIWorkflowSessionStoreError.sqliteFailed("stored session record is invalid or mismatched")
+      }
       warnAboutSkippedRecords(count: 1)
       throw CLIWorkflowSessionStoreError.notFound("session not found: \(sessionId)")
     }
@@ -214,6 +247,28 @@ public struct CLIWorkflowSessionStore: Sendable {
       try db.query("SELECT json(record_json) AS record_json FROM cli_workflow_sessions ORDER BY session_id")
     }
     return decodeRecords(rows)
+  }
+
+  func loadRawSessionIdentities() throws -> [(sessionId: String, workflowId: String)] {
+    guard FileManager.default.fileExists(atPath: databasePath) else {
+      return []
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try tableExists(db, name: "cli_workflow_sessions") else {
+      return []
+    }
+    let rows = try mapSQLiteError {
+      try db.query(
+        "SELECT session_id, workflow_id FROM cli_workflow_sessions ORDER BY session_id"
+      )
+    }
+    return rows.compactMap { row in
+      guard let sessionId = row["session_id"],
+            let workflowId = row["workflow_id"] else {
+        return nil
+      }
+      return (sessionId: sessionId, workflowId: workflowId)
+    }
   }
 
   public func list(
@@ -416,6 +471,12 @@ func seedRuntimeStoreFromPersistedCLIState(
   // session record exists. Seed those snapshots too: otherwise a fresh worker
   // reports "resume session not found" even though reservation committed.
   var seededSessionIDs = Set<String>()
+  for identity in try sessionStore.loadRawSessionIdentities() {
+    await runtimeStore.observeExistingSessionIdentity(
+      sessionId: identity.sessionId,
+      workflowId: identity.workflowId
+    )
+  }
   for existing in try sessionStore.loadAll() {
     await runtimeStore.seedSession(existing.session)
     seededSessionIDs.insert(existing.session.sessionId)

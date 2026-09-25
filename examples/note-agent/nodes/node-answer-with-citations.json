@@ -2,6 +2,7 @@
   "id": "answer-with-citations",
   "description": "Answer a Riela Note chat request using retrieved note candidates.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/answer-with-citations.md",

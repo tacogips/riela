@@ -5,7 +5,7 @@ without copying them into `./.riela`.
 
 Each workflow example directory also includes `EXPECTED_RESULTS.md`, which
 records the stable assertions used for deterministic verification. Support
-directories such as `auto-improve/`, `default-supervisor-dispatcher/`, and
+directories such as `task-repair-loop/`, `task-agent-director/`, `default-supervisor-dispatcher/`, and
 `event-sources/` document cross-workflow demos and fixtures.
 
 Shipped reference bundles use the step-addressed authored shape; repository
@@ -105,22 +105,12 @@ riela workflow run worker-only-single-step \
   --output json
 ```
 
-### `supervised-mock-retry`
+### `task-repair-loop` and `task-agent-director`
 
-Same shape as `worker-only-single-step`, but the bundled `mock-scenario.json` is
-a **two-entry sequence** for the worker: the first entry forces a failure; after
-a supervised outer rerun, the second entry returns success. Use with
-`--auto-improve` to exercise the failure-to-rerun path without custom adapters.
-See `examples/auto-improve/README.md` and `examples/supervised-mock-retry/EXPECTED_RESULTS.md`.
-
-### `default-superviser`
-
-Minimal **phase-2 nested superviser** reference bundle (`workflowId`:
-`riela-default-superviser`): one step invokes `riela/start-workflow` so a
-nested superviser run can start the paired target when the engine injects
-`supervisionRunId`, `targetSessionId`, and `superviserTargetWorkflowId` (see
-`examples/auto-improve/README.md` and `examples/default-superviser/EXPECTED_RESULTS.md`). Not
-a standalone runnable demo without a supervised target and those variables.
+These deterministic task-backed examples replace the retired workflow supervision
+examples. Run them with `riela workflow run` and their bundled mock scenarios;
+their `EXPECTED_RESULTS.md` files describe the accepted repair and director
+outcomes.
 
 ### `default-supervisor-dispatcher` (demo index)
 

@@ -426,7 +426,7 @@ private func validateGraphQLVariableDefinitionTypes(
 
 private let graphQLInputTypeNames: Set<String> = {
   var names: Set<String> = ["Boolean", "Float", "ID", "Int", "String"]
-  let schema = GraphQLContractProjector.schemaContract
+  let schema = GraphQLContractProjector.schemaContract + GraphQLSchemaGenerator.render()
   let declarationKinds: Set<String> = ["enum", "input", "scalar"]
   let words = schema.split { $0.isWhitespace || $0 == "{" || $0 == "}" }
   for index in words.indices where declarationKinds.contains(String(words[index])) {
@@ -529,10 +529,17 @@ private extension ParsedGraphQLTypeReference {
 
 private let graphQLInputSchemaIndex: GraphQLInputSchemaIndex = {
   let schema = GraphQLContractProjector.schemaContract
+  let executionSchema = GraphQLSchemaGenerator.render()
+  var queryArguments = graphQLRootArgumentTypes(in: schema, typeName: "Query")
+  queryArguments["workflowExecution"] = ["workflowExecutionId": .nonNull(.named("String"))]
+  var mutationArguments = graphQLRootArgumentTypes(in: schema, typeName: "Mutation")
+  mutationArguments["executeWorkflow"] = ["input": .nonNull(.named("ExecuteWorkflowInput"))]
+  var inputFields = graphQLInputFieldTypes(in: schema)
+  inputFields.merge(graphQLInputFieldTypes(in: executionSchema)) { existing, _ in existing }
   return GraphQLInputSchemaIndex(
-    queryArguments: graphQLRootArgumentTypes(in: schema, typeName: "Query"),
-    mutationArguments: graphQLRootArgumentTypes(in: schema, typeName: "Mutation"),
-    inputFields: graphQLInputFieldTypes(in: schema),
+    queryArguments: queryArguments,
+    mutationArguments: mutationArguments,
+    inputFields: inputFields,
     enumValues: graphQLEnumValues(in: schema),
     scalarNames: graphQLScalarNames(in: schema)
   )

@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Project the retrieval-fusion benchmark report: per-stage hits with termCoverage, isLinkedNeighbor, and PageRank-ordered graph neighbours.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplate": "Project the retrieval-fusion benchmark payload.",

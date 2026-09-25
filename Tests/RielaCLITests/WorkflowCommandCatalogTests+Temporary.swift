@@ -104,8 +104,8 @@ extension WorkflowCommandCatalogTests {
     ], environment: environment)
     XCTAssertEqual(registration.exitCode, .success, registration.stderr + registration.stdout)
 
-    let executable = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      .appendingPathComponent(".build/debug/riela")
+    let executable = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
+      .appendingPathComponent("riela")
     XCTAssertTrue(FileManager.default.isExecutableFile(atPath: executable.path), executable.path)
     let process = Process()
     let output = Pipe()

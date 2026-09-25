@@ -52,8 +52,9 @@ private struct AppleReminderEngine {
     }
 
     let config = input.addon.config ?? [:]
+    _ = try addonVariables(for: input)
     let templateVariables = appleReminderTemplateVariables(for: input)
-    let operationInputs = renderAppleReminderInputs(input.addon.inputs, variables: templateVariables)
+    let operationInputs = try renderAppleReminderInputs(input.addon.inputs, variables: templateVariables)
     let request = try graphQLRequest(
       operation: operation,
       input: input,
@@ -93,11 +94,11 @@ private struct AppleReminderEngine {
     return variables
   }
 
-  private func renderAppleReminderInputs(_ inputs: JSONObject?, variables: JSONObject) -> JSONObject {
+  private func renderAppleReminderInputs(_ inputs: JSONObject?, variables: JSONObject) throws -> JSONObject {
     guard let inputs else {
       return [:]
     }
-    return inputs.mapValues { renderJSONTemplates($0, variables: variables) }
+    return try inputs.mapValues { try renderAddonConfig($0, variables: variables) }
   }
 
   private func graphQLRequest(

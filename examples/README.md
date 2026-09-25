@@ -5,7 +5,8 @@ without copying them into `./.riela`.
 
 Each workflow example directory also includes `EXPECTED_RESULTS.md`, which
 records the stable assertions used for deterministic verification. Support
-directories such as `auto-improve/`, `default-supervisor-dispatcher/`, and
+directories such as `task-repair-loop/`, `task-agent-director/`,
+`default-supervisor-dispatcher/`, and
 `event-sources/` document cross-workflow demos and fixtures.
 
 Shipped reference bundles use the step-addressed authored shape; repository

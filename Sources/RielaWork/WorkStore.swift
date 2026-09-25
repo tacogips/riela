@@ -6,10 +6,17 @@ public struct WorkStoreError: Error, Equatable, Sendable, CustomStringConvertibl
   public var message: String
   /// Set when an optimistic-concurrency update lost the race.
   public var isVersionConflict: Bool
+  public var isAlreadyTerminal: Bool
+  public var isSelectedHostStopProofRequired: Bool
 
-  public init(_ message: String, isVersionConflict: Bool = false) {
+  public init(
+    _ message: String, isVersionConflict: Bool = false, isAlreadyTerminal: Bool = false,
+    isSelectedHostStopProofRequired: Bool = false
+  ) {
     self.message = message
     self.isVersionConflict = isVersionConflict
+    self.isAlreadyTerminal = isAlreadyTerminal
+    self.isSelectedHostStopProofRequired = isSelectedHostStopProofRequired
   }
 
   public var description: String { message }
@@ -19,6 +26,10 @@ public struct WorkStoreError: Error, Equatable, Sendable, CustomStringConvertibl
       "task '\(taskId.rawValue)' was not at version \(expected); reload it and retry",
       isVersionConflict: true
     )
+  }
+
+  static func alreadyTerminal(sessionId: String) -> WorkStoreError {
+    WorkStoreError("session '\(sessionId)' is already terminal; cancellation not applied", isAlreadyTerminal: true)
   }
 }
 
@@ -53,9 +64,16 @@ public struct WorkStore: Sendable {
   public static let maximumListLimit = 1_000
 
   public var rootDirectory: String
+  /// Set only for a private, stable copy that cannot be changed by another process.
+  public let immutableReadOnly: Bool
 
   public init(rootDirectory: String) {
+    self.init(rootDirectory: rootDirectory, immutableReadOnly: false)
+  }
+
+  public init(rootDirectory: String, immutableReadOnly: Bool) {
     self.rootDirectory = rootDirectory
+    self.immutableReadOnly = immutableReadOnly
   }
 
   public var databasePath: String {
@@ -268,6 +286,40 @@ public struct WorkStore: Sendable {
     }
   }
 
+  /// Persists one immutable guard observation batch. The immediate transaction
+  /// makes compare-and-insert atomic across concurrent coordinator replays;
+  /// equivalent records retain the first observation timestamp, while any
+  /// conflicting id rejects the whole batch without partial inserts.
+  public func saveImmutableGuardEvidence(_ records: [Evidence]) throws -> [Evidence] {
+    guard !records.isEmpty else { return [] }
+    guard records.allSatisfy({ $0.kind == .guardViolation }) else {
+      throw WorkStoreError("immutable guard batches may contain only guard-violation evidence")
+    }
+    guard Set(records.map(\.id)).count == records.count else {
+      throw WorkStoreError("immutable guard batch contains duplicate evidence ids")
+    }
+    let db = try openWritable()
+    return try db.transaction { db in
+      var canonical: [Evidence] = []
+      for record in records {
+        let existing = try db.query(
+          "SELECT json(record) AS record FROM work_evidence WHERE evidence_id = ? LIMIT 1",
+          bindings: [.text(record.id.rawValue)]
+        ).first?["record"].map { try decode(Evidence.self, json: $0) }
+        if let existing {
+          guard Self.sameImmutableGuardObservation(existing, record) else {
+            throw WorkStoreError("guard evidence '\(record.id.rawValue)' conflicts with the persisted batch")
+          }
+          canonical.append(existing)
+          continue
+        }
+        try insertEvidence(record, in: db)
+        canonical.append(record)
+      }
+      return canonical
+    }
+  }
+
   public func listEvidence(taskId: TaskID, kind: EvidenceKind? = nil) throws -> [Evidence] {
     guard let db = try openReadOnlyIfPresent() else {
       return []
@@ -329,7 +381,7 @@ public struct WorkStore: Sendable {
     return formatter.string(from: date)
   }
 
-  private func openWritable() throws -> SQLiteDatabase {
+  func openWritable() throws -> SQLiteDatabase {
     try createRootDirectoryIfNeeded()
     // Session stores hold regenerable run history, so a generation without a
     // migration path is discarded and recreated rather than hard-failing.
@@ -348,7 +400,11 @@ public struct WorkStore: Sendable {
       return nil
     }
     let db = try mapSQLiteError {
-      try SQLiteDatabase.open(path: databasePath, mode: .readOnly, options: .readOnlyDefault)
+      try SQLiteDatabase.open(
+        path: databasePath,
+        mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
+        options: .readOnlyDefault
+      )
     }
     // A database written before the Work Runtime existed has no work_* tables;
     // a read of it is empty, not an error, and the next writable open rebuilds
@@ -402,7 +458,7 @@ public struct WorkStore: Sendable {
     }
   }
 
-  private func encode<T: Encodable>(_ value: T) throws -> String {
+  func encode<T: Encodable>(_ value: T) throws -> String {
     let data: Data
     do {
       data = try Self.encoder.encode(value)
@@ -413,6 +469,12 @@ public struct WorkStore: Sendable {
       throw WorkStoreError("work record could not be encoded as UTF-8 JSON")
     }
     return json
+  }
+
+  private static func sameImmutableGuardObservation(_ lhs: Evidence, _ rhs: Evidence) -> Bool {
+    var preserved = lhs
+    preserved.createdAt = rhs.createdAt
+    return preserved == rhs
   }
 
   private func mapSQLiteError<T>(_ body: () throws -> T) throws -> T {

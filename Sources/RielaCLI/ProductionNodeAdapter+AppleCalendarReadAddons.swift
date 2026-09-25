@@ -47,7 +47,7 @@ struct AppleCalendarAddonEngine {
     }
 
     let config = input.addon.config ?? [:]
-    let inputValues = renderedInputValues(for: input)
+    let inputValues = try renderedInputValues(for: input)
     let request = try graphQLRequest(operation, input: input, config: config, inputValues: inputValues)
     let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", request.document, "--variables", try request.variables.compactJSONString()],
@@ -235,8 +235,9 @@ struct AppleCalendarAddonEngine {
     }
   }
 
-  private func renderedInputValues(for input: WorkflowAddonExecutionInput) -> JSONObject {
-    renderAddonInputs(input.addon.inputs, variables: addonTemplateVariables(for: input))
+  private func renderedInputValues(for input: WorkflowAddonExecutionInput) throws -> JSONObject {
+    _ = try addonVariables(for: input)
+    return try renderAddonInputs(input.addon.inputs, variables: addonTemplateVariables(for: input))
   }
 
   private func addonTemplateVariables(for input: WorkflowAddonExecutionInput) -> JSONObject {

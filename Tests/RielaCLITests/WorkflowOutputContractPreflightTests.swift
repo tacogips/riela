@@ -15,7 +15,7 @@ final class WorkflowOutputContractCLIPreflightTests: XCTestCase {
      "steps":[{"id":"worker","nodeId":"worker"}]}
     """.write(to: bundle.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     try """
-    {"id":"worker","executionBackend":"codex-agent","model":"model","variables":{},
+    {"id":"worker","executionBackend":"codex-agent","agentSandbox":"read-only","model":"model","variables":{},
      "output":{"jsonSchema":{"type":"object","properties":{"nested":{"if":{"type":"object"}}}}}}
     """.write(to: bundle.appendingPathComponent("nodes/worker.json"), atomically: true, encoding: .utf8)
     let result = await RielaCLIApplication().run([

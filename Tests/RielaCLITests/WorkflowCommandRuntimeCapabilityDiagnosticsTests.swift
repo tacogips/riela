@@ -47,6 +47,7 @@ extension WorkflowCommandTests {
       {
         "id": "\(nodeName)-node",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.5"
       }
       """.write(to: nodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
@@ -73,7 +74,7 @@ extension WorkflowCommandTests {
       "--output", "json"
     ])
 
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     XCTAssertTrue(inspect.stderr.isEmpty)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
@@ -115,6 +116,7 @@ extension WorkflowCommandTests {
       {
         "id": "\(nodeName)-node",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.5"
       }
       """.write(to: nodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
@@ -139,7 +141,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
       diagnostic.severity == .error &&
@@ -195,6 +197,7 @@ extension WorkflowCommandTests {
     {
       "id": "start-node",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5"
     }
     """.write(to: callerNodesDirectory.appendingPathComponent("start.json"), atomically: true, encoding: .utf8)
@@ -202,6 +205,7 @@ extension WorkflowCommandTests {
     {
       "id": "child-node",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5"
     }
     """.write(to: calleeNodesDirectory.appendingPathComponent("child.json"), atomically: true, encoding: .utf8)
@@ -225,7 +229,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
       diagnostic.severity == .error &&
@@ -292,6 +296,7 @@ extension WorkflowCommandTests {
       {
         "id": "\(nodeName)-node",
         "executionBackend": "codex-agent",
+        "agentSandbox": "read-only",
         "model": "gpt-5.5"
       }
       """.write(to: callerNodesDirectory.appendingPathComponent("\(nodeName).json"), atomically: true, encoding: .utf8)
@@ -300,6 +305,7 @@ extension WorkflowCommandTests {
     {
       "id": "child-node",
       "executionBackend": "codex-agent",
+      "agentSandbox": "read-only",
       "model": "gpt-5.5"
     }
     """.write(to: calleeNodesDirectory.appendingPathComponent("child.json"), atomically: true, encoding: .utf8)
@@ -323,7 +329,7 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", root.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertTrue(summary.runtimeCapabilityGaps.contains { diagnostic in
       diagnostic.severity == .error &&

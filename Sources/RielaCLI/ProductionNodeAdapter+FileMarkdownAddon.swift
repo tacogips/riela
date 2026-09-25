@@ -270,8 +270,8 @@ struct FileMarkdownConvertRequest {
     workingDirectory: URL
   ) throws {
     let addonName = input.addon.name
-    let variables = addonVariables(for: input)
-    let inputs = renderAddonInputs(input.addon.inputs, variables: variables)
+    let variables = try addonVariables(for: input)
+    let inputs = try renderAddonInputs(input.addon.inputs, variables: variables)
     let continueOnError = boolValue(config["continueOnError"]) ?? false
     self.format = try Self.validatedFormat(config["format"], addonName: addonName)
     self.continueOnError = continueOnError

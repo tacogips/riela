@@ -68,6 +68,7 @@ struct WorkflowBundleScaffolder: Sendable {
       id: specification.nodeId,
       description: specification.description,
       executionBackend: specification.executionBackend,
+      agentSandbox: specification.executionBackend.cliAgentBackend == nil ? nil : .readOnly,
       model: specification.model,
       modelFreeze: specification.modelFreeze,
       promptTemplateFile: "prompts/\(specification.nodeId).md",
@@ -120,6 +121,7 @@ private struct ScaffoldedWorkflowNode: Encodable {
   var id: String
   var description: String
   var executionBackend: NodeExecutionBackend
+  var agentSandbox: AgentSandboxMode?
   var model: String
   var modelFreeze: Bool
   var promptTemplateFile: String

@@ -18,6 +18,7 @@ final class DoctorCommandTests: XCTestCase {
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
     let report = try decodeJSON(DoctorCommandResult.self, from: result.stdout)
+    XCTAssertNotNil(try XCTUnwrap(report.backendCapabilities.first).observedAt)
     XCTAssertEqual(report.summary.status, .warning)
     XCTAssertEqual(report.summary.missingContainerRequirements, 1)
     XCTAssertEqual(report.summary.availableContainerRuntimes, 0)
@@ -305,7 +306,9 @@ final class DoctorCommandTests: XCTestCase {
   }
 
   private func decodeJSON<T: Decodable>(_ type: T.Type, from stdout: String) throws -> T {
-    try JSONDecoder().decode(T.self, from: Data(stdout.utf8))
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try decoder.decode(T.self, from: Data(stdout.utf8))
   }
 }
 

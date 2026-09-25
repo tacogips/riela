@@ -43,7 +43,7 @@ final class WorkflowInheritanceResolutionTests: XCTestCase {
       let patchedValidate = await app.run([
         "workflow", "validate", "derived-package", "--scope", "user",
         "--working-dir", fixture.root.path,
-        "--node-patch", #"{"worker":{"executionBackend":"cursor-cli-agent","model":"caller-model"}}"#,
+        "--node-patch", #"{"worker":{"executionBackend":"cursor-cli-agent","agentSandbox":"read-only","model":"caller-model"}}"#,
         "--output", "json"
       ])
       XCTAssertEqual(patchedValidate.exitCode, .success, patchedValidate.stderr + patchedValidate.stdout)
@@ -229,7 +229,7 @@ private struct Fixture {
     """#
     try Data(workflowJSON.utf8)
       .write(to: directory.appendingPathComponent("workflow.json"))
-    try Data(#"{"id":"worker","nodeType":"agent","executionBackend":"codex-agent","model":"gpt-5","modelFreeze":false,"promptTemplate":"ready"}"#.utf8)
+    try Data(#"{"id":"worker","nodeType":"agent","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5","modelFreeze":false,"promptTemplate":"ready"}"#.utf8)
       .write(to: directory.appendingPathComponent("nodes/worker.json"))
   }
 
@@ -241,7 +241,7 @@ private struct Fixture {
   private func writeDerived(id: String, base: String, at directory: URL) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let json = """
-    {"workflowId":"\(id)","extends":{"workflowId":"\(base)","agentNodePatch":{"executionBackend":"claude-code-agent","model":"sonnet"},"nodePatch":{"worker":{"model":"opus"}}}}
+    {"workflowId":"\(id)","extends":{"workflowId":"\(base)","agentNodePatch":{"executionBackend":"claude-code-agent","agentSandbox":"read-only","model":"sonnet"},"nodePatch":{"worker":{"model":"opus"}}}}
     """
     try Data(json.utf8).write(to: directory.appendingPathComponent("workflow.json"))
   }

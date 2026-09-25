@@ -69,6 +69,18 @@ control-plane schema is printed by:
 riela graphql schema
 ```
 
+For ordinary remote execution, POST `executeWorkflow(input: ExecuteWorkflowInput!)`
+to the host's `/graphql` route with a bearer matching its startup
+`RIELA_MANAGER_AUTH_TOKEN`. The synchronous payload contains
+`workflowExecutionId`, `sessionId`, actual `status`, and actual `exitCode` after
+the result is persisted. Query
+`workflowExecution(workflowExecutionId: String!)` with the same bearer to read
+its session, transitions, and node executions. A well-formed absent ID returns
+null; corrupt persisted data returns an error. The host fixes the working
+directory and session store. The bearer permits execution in that host context,
+not registry writes. An ambiguous timeout can leave the run continuing, so a
+retry may start a second run.
+
 Session control is a local-host operation: `rerunSession`, `resumeSession`,
 `stopSession` and `continueSession` are answered only by the process that runs
 the sessions, and `stopSession` fails closed with `session_not_running` for a
@@ -84,6 +96,19 @@ Two rules are easy to get wrong:
   trust boundary plus the host's browser-provenance/Passkey gate. Every session
   control call does check that the session belongs to the `workflowId` you
   supply.
+
+## Agent-node authoring contract
+
+CLI agent nodes (`codex-agent`, `claude-code-agent`, `cursor-cli-agent`) must
+declare `agentSandbox`; API-backed nodes must omit it. Add
+`output.jsonSchema` when an add-on template consumes the agent payload or a
+step drives labeled transitions. Payload references in add-on config/inputs
+are strict and fail before the add-on side effect when absent, while optional
+`event.*`, `workflowInput.*`, `runtime.*`, `upstream.*`, and `_rielaInput.*`
+context remains lenient. Nodes with any `output` block default to two output
+validation attempts; nodes without one publish the complete answer as a
+`text` payload. See `docs/output-contracts.md` for the exact envelope,
+classifier, and diagnostic contract.
 
 ## Command reference
 

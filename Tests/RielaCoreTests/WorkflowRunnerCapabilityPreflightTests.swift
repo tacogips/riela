@@ -147,7 +147,7 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
       workflow: workflow,
       nodePayloads: [
         "node": payload(),
-        "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "gpt-5.5")
+        "resume-node": AgentNodePayload(id: "resume-node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
       ]
     ))
 
@@ -247,7 +247,7 @@ final class WorkflowRunnerCapabilityPreflightTests: XCTestCase {
   }
 
   private func payload() -> AgentNodePayload {
-    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5")
+    AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
   }
 
   private func output() -> AdapterExecutionOutput {

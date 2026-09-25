@@ -385,66 +385,6 @@ extension WorkflowCommandTests {
     XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.backupDirectory)))
     XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(selfImproveResult.reportPath)))
 
-    let autoImprove = await app.run([
-      "workflow", "run", "supervised-mock-retry",
-      "--workflow-definition-dir", "\(root)/examples",
-      "--mock-scenario", "\(root)/examples/supervised-mock-retry/mock-scenario.json",
-      "--session-store", tempDir.appendingPathComponent("sessions", isDirectory: true).path,
-      "--auto-improve",
-      "--max-supervised-attempts", "3",
-      "--monitor-interval-ms", "1000",
-      "--stall-timeout-ms", "2000",
-      "--workflow-mutation-mode", "execution-copy",
-      "--output", "json"
-    ])
-    XCTAssertEqual(autoImprove.exitCode, .success, autoImprove.stderr)
-    let autoImproveResult = try decodeJSON(WorkflowRunResult.self, from: autoImprove.stdout)
-    XCTAssertEqual(autoImproveResult.status, .completed)
-    XCTAssertEqual(autoImproveResult.rootOutput?["status"], .string("ready"))
-    let supervision = try XCTUnwrap(autoImproveResult.supervision)
-    XCTAssertEqual(supervision["status"], .string("succeeded"))
-    XCTAssertEqual(supervision["attempts"], .number(2))
-    guard case let .object(policy)? = supervision["policy"] else {
-      return XCTFail("expected supervision policy")
-    }
-    XCTAssertEqual(policy["maxSupervisedAttempts"], .number(3))
-    XCTAssertEqual(policy["monitorIntervalMs"], .number(1000))
-    XCTAssertEqual(policy["stallTimeoutMs"], .number(2000))
-    XCTAssertEqual(policy["stallDetectionEnabled"], .bool(true))
-    XCTAssertEqual(policy["workflowMutationMode"], .string("execution-copy"))
-    guard case let .array(incidents)? = supervision["incidents"] else {
-      return XCTFail("expected supervision incidents")
-    }
-    XCTAssertEqual(incidents.count, 1)
-    guard case let .object(incident)? = incidents.first else {
-      return XCTFail("expected failure incident object")
-    }
-    XCTAssertEqual(incident["category"], .string("failure"))
-    XCTAssertEqual(incident["stepId"], .string("main-worker"))
-    guard case let .array(remediations)? = supervision["remediations"] else {
-      return XCTFail("expected supervision remediations")
-    }
-    XCTAssertEqual(remediations.count, 1)
-    guard case let .object(remediation)? = remediations.first else {
-      return XCTFail("expected rerun remediation object")
-    }
-    XCTAssertEqual(remediation["action"], .string("rerun-workflow"))
-    XCTAssertEqual(remediation["managerControl"], .string("session rerun"))
-    XCTAssertEqual(remediation["targetSessionId"], .string(autoImproveResult.session.sessionId))
-    XCTAssertNotEqual(remediation["sourceSessionId"], remediation["targetSessionId"])
-    let supervisionRecord = tempDir
-      .appendingPathComponent("sessions/runtime-records", isDirectory: true)
-      .appendingPathComponent(autoImproveResult.session.sessionId, isDirectory: true)
-      .appendingPathComponent("supervision-record.json")
-    XCTAssertTrue(FileManager.default.fileExists(atPath: supervisionRecord.path))
-    let persistedSupervision = try decodeJSON(
-      JSONObject.self,
-      from: String(contentsOf: supervisionRecord, encoding: .utf8)
-    )
-    XCTAssertEqual(persistedSupervision["status"], .string("succeeded"))
-    XCTAssertEqual(persistedSupervision["targetSessionId"], .string(autoImproveResult.session.sessionId))
-    XCTAssertEqual(persistedSupervision["attempts"], .number(2))
-
     let run = await app.run([
       "workflow", "run", "worker-only-single-step",
       "--workflow-definition-dir", "\(root)/examples",
@@ -876,9 +816,9 @@ extension WorkflowCommandTests {
       ]
     }
     """.write(to: callWorkflow.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-a","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
+    try #"{"id":"node-a","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","modelFreeze":false,"variables":{}}"#
       .write(to: callWorkflow.appendingPathComponent("nodes/node-a.json"), atomically: true, encoding: .utf8)
-    try #"{"id":"node-b","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
+    try #"{"id":"node-b","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","modelFreeze":false,"variables":{},"promptVariants":{"direct":{"promptTemplate":"direct variant"}}}"#
       .write(to: callWorkflow.appendingPathComponent("nodes/node-b.json"), atomically: true, encoding: .utf8)
     let callScenario = tempDir.appendingPathComponent("call-step-scenario.json")
     try #"{"step-b":{"provider":"scenario-mock","model":"gpt-5.5","payload":{"status":"called-step-b"}}}"#

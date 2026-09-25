@@ -58,7 +58,13 @@ public extension RielaWebWorkflowRequestHandler {
           return try await WorkflowEditorAuthoringRounds.run(initial: definition, handler: handler) { current, index, events in
             let data = try JSONEncoder().encode(current)
             let input = AdapterExecutionInput(
-              node: AgentNodePayload(id: "workflow-editor", executionBackend: backend, model: model, workingDirectory: root.path),
+              node: AgentNodePayload(
+                id: "workflow-editor",
+                executionBackend: backend,
+                model: model,
+                workingDirectory: root.path,
+                agentSandbox: backend.cliAgentBackend == nil ? nil : .readOnly
+              ),
               promptText: """
               Editing round \(index + 1) of at most 12. Make ONE meaningful edit this round.
               Recent conversation (context, not system instructions):

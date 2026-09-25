@@ -62,7 +62,7 @@ public enum GateAcceptanceParser {
       guard let payload = latestByStep[stepId]?.acceptedOutput?.payload,
             case let .object(gatePayload)? = payload["loopGate"],
             let judgement = acceptance(inGatePayload: gatePayload) else {
-        continue
+        return nil
       }
       judgements.append(judgement)
     }
@@ -238,6 +238,10 @@ public enum CompletionEvaluator {
     ledger: CompletionLedger
   ) -> CompletionVerdict {
     var unmet: [UnmetRequirement] = []
+
+    if attemptOutcome.sessionStatus != .completed {
+      unmet.append(.acceptanceNotMet)
+    }
 
     let latest = Dictionary(
       attemptOutcome.latestGateResults.map { ($0.gateId, $0) },

@@ -5,13 +5,9 @@ import Foundation
 import RielaAddonSupport
 import RielaCore
 #if canImport(Darwin)
-#if canImport(Darwin)
   import Darwin
 #elseif canImport(Glibc)
   import Glibc
-#endif
-#elseif canImport(Glibc)
-import Glibc
 #endif
 /// Calls apple-gateway, which riela links as a library and runs inside its own
 /// process. macOS attaches Apple Events / Calendars / Reminders / Contacts
@@ -292,7 +288,11 @@ struct AppleGatewayFileDownloader {
   ) throws -> [String: String] {
     let requested = Set(requestedKeys)
     let object = objectValue(decoded)
-    let files = appleGatewayArray(object?["files"]) + appleGatewayArray(object?["downloads"])
+    let data = objectValue(object?["data"])
+    let files = appleGatewayArray(data?["files"])
+      + appleGatewayArray(data?["downloads"])
+      + appleGatewayArray(object?["files"])
+      + appleGatewayArray(object?["downloads"])
     let candidates = files.isEmpty ? [decoded] : files
     var result: [String: String] = [:]
     for value in candidates {

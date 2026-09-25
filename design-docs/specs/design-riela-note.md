@@ -1,5 +1,8 @@
 # Riela Note
 
+Status: historical design. The in-repo Note subsystem was extracted to Kaiba
+by `d4268c34`; archived plan: `impl-plans/completed/riela-note.md`.
+
 ## Summary
 
 Riela Note is an ontology-oriented personal knowledge store ("external

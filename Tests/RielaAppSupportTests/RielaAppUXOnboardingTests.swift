@@ -112,6 +112,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
       statusMessage: ""
     )
     let root = try XCTUnwrap(controller.window?.contentView)
+    controller.showInstancesList()
     controller.window?.layoutIfNeeded()
 
     XCTAssertFalse(controller.emptyInstancesGuideView.isHidden)
@@ -142,13 +143,13 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
       assistantAssistance: "",
       statusMessage: ""
     )
-    controller.showInstancesPane()
+    controller.showInstancesList()
     controller.instanceSearchField.stringValue = "does-not-match"
     controller.instanceSearchChanged()
     controller.window?.layoutIfNeeded()
 
     XCTAssertTrue(controller.emptyInstancesGuideView.isHidden)
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "No instances match the current filter." })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "検索条件に一致する実行設定はありません。" })
   }
 
   func testInstanceDetailShowsSnapshotDetailAndCanOpenWebUI() throws {
@@ -179,14 +180,15 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
       statusMessage: ""
     )
     controller.selectCandidate(identity: "chat-instance")
+    controller.showInstancesList()
     controller.tableClicked(controller.instanceTable)
     let root = try XCTUnwrap(controller.window?.contentView)
     controller.window?.layoutIfNeeded()
 
     XCTAssertEqual(controller.instanceRows.first?.stateDetail, "event source failed")
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Failed - event source failed" })
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Configure in Riela", in: root)).accessibilityPerformPress())
-    XCTAssertEqual(openedContext, "Web Config")
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "設定", in: root)).accessibilityPerformPress())
+    XCTAssertEqual(openedContext, "#/workflows/user-workflow%3Achat/configurations/chat-instance/settings")
   }
 
   func testInstanceRemovalRequiresConfirmationAndKeepsSourceScopeVisible() throws {
@@ -210,13 +212,14 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
       statusMessage: ""
     )
     controller.selectCandidate(identity: "daily-instance")
+    controller.showInstancesList()
     controller.tableClicked(controller.instanceTable)
     controller.removeSelectedInstance()
     let root = try XCTUnwrap(controller.window?.contentView)
     controller.window?.layoutIfNeeded()
 
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Confirm Removal" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("The workflow source is not deleted.") })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("ワークフローは保持されます。") })
     XCTAssertNil(removedIdentity)
 
     controller.confirmRemoveSelectedInstance()
@@ -246,7 +249,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     controller.selectCandidate(identity: "chat-instance")
     controller.tableClicked(controller.instanceTable)
     controller.openSelectedInstanceInWebUI()
-    XCTAssertEqual(openedContext, "Web Config")
+    XCTAssertEqual(openedContext, "#/workflows/user-workflow%3Achat/configurations/chat-instance/settings")
   }
 
   private func makeController(

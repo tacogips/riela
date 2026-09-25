@@ -12,6 +12,8 @@ public enum RielaCLIMain {
       FileHandle.standardError.write(Data("invalid specialist monitor launch binding\n".utf8))
       Foundation.exit(CLIExitCode.failure.rawValue)
     }
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    let taskSignalState = arguments.starts(with: ["task", "run"]) ? TaskRunSignalState() : nil
     let app = RielaCLIApplication(
       runCommand: runCommand,
       sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter),
@@ -22,11 +24,11 @@ public enum RielaCLIMain {
       loopCommandRunner: LoopCommandRunner(
         sessionRerunCommand: SessionRerunCommand(jsonlRecordWriter: jsonlRecordWriter)
       ),
+      taskCommandRunner: taskSignalState.map(TaskCommandRunner.init(signalState:)) ?? TaskCommandRunner(),
       sessionContinueCommand: SessionContinueCommand(
         sessionResumeCommand: SessionResumeCommand(jsonlRecordWriter: jsonlRecordWriter)
       )
     )
-    let arguments = Array(CommandLine.arguments.dropFirst())
     let runTask = Task {
       if arguments.first == "worker" {
         return await DistributedWorkerCommand().run(arguments: arguments) { line in
@@ -40,8 +42,12 @@ public enum RielaCLIMain {
       }
       return await app.run(arguments)
     }
-    let signalCancellation = CLISignalCancellation { _ in
-      runTask.cancel()
+    let signalCancellation = CLISignalCancellation { signal in
+      if let taskSignalState {
+        taskSignalState.request(signal)
+      } else {
+        runTask.cancel()
+      }
     }
     let result = await runTask.value
     signalCancellation.cancel()

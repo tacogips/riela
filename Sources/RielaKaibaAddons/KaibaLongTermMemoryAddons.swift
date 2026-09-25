@@ -12,7 +12,7 @@ extension KaibaAddonCatalog {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    let values = KaibaAddonInputs(input: input, environment: [:])
+    let values = try KaibaAddonInputs(input: input, environment: [:])
     do {
       let payload: JSONObject
       switch operation {

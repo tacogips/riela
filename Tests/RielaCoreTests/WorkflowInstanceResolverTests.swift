@@ -71,6 +71,45 @@ final class WorkflowInstanceResolverTests: XCTestCase {
     }
   }
 
+  func testNodePatchAppliesExplicitAgentSandboxWithBackendOverride() throws {
+    let patches = try WorkflowInstanceResolver.nodePatches(from: [
+      "worker": .object([
+        "executionBackend": .string("claude-code-agent"),
+        "agentSandbox": .string("workspace-write")
+      ])
+    ])
+
+    let resolved = try WorkflowInstanceResolver.resolve(
+      workflowId: "wf",
+      base: nil,
+      runNodePatch: patches,
+      nodePayloads: ["worker": payload(id: "worker", model: "gpt-5")]
+    )
+
+    XCTAssertEqual(resolved.nodePayloads["worker"]?.executionBackend, .claudeCodeAgent)
+    XCTAssertEqual(resolved.nodePayloads["worker"]?.agentSandbox, .workspaceWrite)
+    XCTAssertEqual(patches["worker"]?.jsonObject["agentSandbox"], .string("workspace-write"))
+  }
+
+  func testAPIBackendOverrideClearsInheritedCLISandbox() throws {
+    let resolved = try WorkflowInstanceResolver.resolve(
+      workflowId: "wf",
+      base: nil,
+      runNodePatch: ["worker": WorkflowInstanceNodePatch(executionBackend: .officialOpenAISDK)],
+      nodePayloads: [
+        "worker": AgentNodePayload(
+          id: "worker",
+          executionBackend: .codexAgent,
+          model: "gpt-5",
+          agentSandbox: .readOnly
+        )
+      ]
+    )
+
+    XCTAssertEqual(resolved.nodePayloads["worker"]?.executionBackend, .officialOpenAISDK)
+    XCTAssertNil(resolved.nodePayloads["worker"]?.agentSandbox)
+  }
+
   func testKaibaInstancePatchProjectsOnlyIntoEffectiveKaibaAddonConfig() throws {
     let nodes = [
       WorkflowNodeRef(
@@ -129,6 +168,6 @@ final class WorkflowInstanceResolverTests: XCTestCase {
   }
 
   private func payload(id: String, model: String, modelFreeze: Bool = false) -> AgentNodePayload {
-    AgentNodePayload(id: id, executionBackend: .codexAgent, model: model, modelFreeze: modelFreeze)
+    AgentNodePayload(id: id, executionBackend: .codexAgent, model: model, modelFreeze: modelFreeze, agentSandbox: .readOnly)
   }
 }

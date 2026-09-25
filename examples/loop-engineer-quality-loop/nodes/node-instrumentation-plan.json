@@ -2,6 +2,7 @@
   "id": "instrumentation-plan",
   "description": "Define instrumentation and deterministic probes for the next loop pass.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/instrumentation-plan.md",

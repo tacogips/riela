@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.1.55"
+let rielaVersion = "0.2.0"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -120,7 +120,8 @@ let package = Package(
       name: "RielaWork",
       dependencies: [
         "RielaCore",
-        "RielaSQLite"
+        "RielaSQLite",
+        .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
     .target(
@@ -172,7 +173,7 @@ let package = Package(
     .target(name: "RielaEvents", dependencies: ["RielaCore"]),
     .target(name: "RielaGraphQL", dependencies: ["RielaCore"]),
     .target(name: "RielaServer", dependencies: [
-      "RielaCore", "RielaGraphQL", "RielaObservability",
+      "RielaCore", "RielaGraphQL", "RielaObservability", "RielaWork",
       .product(name: "WebAuthn", package: "swift-webauthn"),
       .product(name: "SwiftCBOR", package: "SwiftCBOR"),
       .product(name: "Crypto", package: "swift-crypto")
@@ -328,7 +329,7 @@ let package = Package(
     ),
     .testTarget(name: "RielaHookTests", dependencies: ["RielaCore", "RielaHook"]),
     .testTarget(name: "RielaGraphQLTests", dependencies: ["RielaCore", "RielaGraphQL"]),
-    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability"]),
+    .testTarget(name: "RielaServerTests", dependencies: ["RielaCore", "RielaGraphQL", "RielaServer", "RielaObservability", "RielaWork"]),
     .testTarget(name: "RielaViewerTests", dependencies: ["RielaCore", "RielaViewer"]),
     .testTarget(
       name: "RielaAppSupportTests",
@@ -359,10 +360,12 @@ let package = Package(
       name: "RielaCLITests",
       dependencies: [
         "RielaCore",
+        "RielaAddonSupport",
         "RielaEvents",
         "RielaAdapters",
         "RielaAppSupport",
         "RielaCLI",
+        "RielaKaibaSupport",
         "RielaServer",
         "RielaWorkflowRegistry",
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway")

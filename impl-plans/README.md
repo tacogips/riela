@@ -33,8 +33,17 @@ impl-plans/
 
 ## Active Plans
 
-Status and unchecked-checkbox counts below are reconciled from the actual plan
-files as of 2026-07-12. Workstream tags (W0–W13) map to
+For the P1 release remediation on Draft PR #113,
+[`p1-release-integration`](active/work-runtime-p1-release-integration.md)
+remains active pending documentation closure, exact-file commit, non-force push,
+and local/remote/PR head equality. The accepted CLI and runtime predecessors
+are archived below. Current-source Work/CLI/Core passed 2,062/2,062; the full
+nonparallel Swift suite passed 2,717 cases with two disclosed skips and zero
+failures. See the [integration progress](progress/p1-release-integration.md).
+
+Unchecked-checkbox counts below are reconciled from the actual plan files as of
+2026-09-21; the Work Runtime status was refreshed on 2026-09-26. Workstream tags
+(W0–W13) map to
 `impl-plans/REMAINING-WORK-HANDOVER.md`. "Unchecked" counts remaining plan
 checkboxes; zero-unchecked plans marked *archive candidate* are complete pending
 only the W13 read-through/move to `completed/`.
@@ -70,8 +79,7 @@ only the W13 read-through/move to `completed/`.
 | `active/riela-note` | Hierarchical-tags/folder-class/notebook-progress work package accepted complete 2026-07-24; retained active only for three explicit baseline deferrals (libsql sync, remote listener, vector/RAG), each with owner + activation trigger | W8 |
 | `active/swift-cli-runtime-parity-gap-closure` | Implementation largely present; TypeScript deletion gate blocked on accepted review/adversarial metadata + final evidence | W9 |
 | `active/hermes-inspired-capabilities` | Planning; explicitly deferred pending the user's adoption-set decision (owner: user; trigger: H-A…H-E confirmation). Self-evolution substrate note corrected 2026-07-12 | W11 |
-| `active/distributed-registry-container-node-roadmap` | Foundation implemented; release publication is an explicitly accepted external deferral (owner: maintainer with release access; trigger: next release window) | W12 |
-| `active/workflow-runtime-fanout-capabilities` | Planning; owns the runtime fanout / `run.maxConcurrency` / cross-workflow-resume capability gaps (created 2026-07-12); explicitly deferred (owner: next runtime-capabilities session; trigger: a workflow author needs live fanout) | W10 |
+| `active/monja-typescript-sdk-command-node` | Owned by the separate Monja branch/worktree specified by the user; do not modify from this continuation | external ownership |
 
 **W5 package plans — superseded by the Swift migration (reconciled 2026-07-12):**
 
@@ -111,6 +119,26 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`work-runtime-p1-release-cli`](completed/work-runtime-p1-release-cli.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; 19 historical assertion rows including the version-1 chat reply catalog repair, focused CLI 165/165, unknown add-on rejection retained. Publication is owned by the active integration plan. |
+| [`work-runtime-p1-release-runtime`](completed/work-runtime-p1-release-runtime.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; IDs 08/19 and focused 16/16, with combined-tree verification in the integration progress. Publication is owned by the active integration plan. |
+| `work-runtime-p1-dispatcher-guard-director` | 2026-09-26 | `design-work-runtime-consolidation` P1 accepted implementation and native join; independent test-integrity, Codex Sol adversarial and Codex Astra integration accepted. N7 exact-file commit, non-force push and Draft PR #109 head equality remain a workflow publication gate. Both broad Swift aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; A0 environment snapshots and older slice-local receipts are unavailable. Historical unchecked boxes are preserved in the archived plan |
+| `work-runtime-p1-selected-host-delivery` | 2026-09-24 | `design-work-runtime-consolidation` P1-6a selected-host delivery; independent reviews accepted the slice with a bounded V5 CLI/Core exception (22 failing cases, 24 assertions). Parent P1 remains open |
+| `cli-session-store-decode-resilience` | 2026-09-21 | `design-cli-session-store-decode-resilience` (resilient strict decoding, aggregate warning, raw identity collision prevention) |
+| `rielaapp-instance-execution-timeline` | 2026-09-21 | Historical AppKit design superseded by Web UI in `684eeca7`; retained viewer/trace contract verified with Swift, Web unit/typecheck, and Playwright evidence |
+| `workflow-runtime-fanout-capabilities` | 2026-09-21 | `design-bounded-fanout-join-workflow-execution` plus cross-workflow/recovery and child-session observability |
+| `swift-cli-runtime-parity-gap-closure` | 2026-09-21 | `design-swift-cli-runtime-parity-gap-closure` (accepted deletion gate and completed TypeScript source removal) |
+| `specialist-task-supervisor` | 2026-09-21 | `specialist-task-supervisor` (durable ownership, process/recovery fencing, Matrix/Wrike boundaries, independent acceptance) |
+| `distributed-registry-container-node-roadmap` | 2026-09-21 | `design-distributed-registry-container-node-roadmap` (local scope complete; external release deferral retained) |
+| `apple-mail-addons` | 2026-09-21 | `gateway-built-ins#built-in-rielaapple-mail-` and confirmed apple-gateway `file download` JSON-manifest contract |
+| `issue-94-inheritance-minimal` | 2026-09-21 | `design-workflow-json#swift-inheritance-resolution-issue-94` |
+| `workflow-graph-studio` | 2026-09-10 | `design-workflow-graph-studio` |
+| `work-runtime-p0-model-and-store` | 2026-09-21 | `design-work-runtime-consolidation` P0 (model/store/projection/completion evaluator and read-only task surface) |
+| `session-follow-rollup-backend-liveness` | 2026-07-24 | `design-workflow-progress-observability#session-follow-rollup-and-backend-liveness-extension-2026-07-23` |
+| `agent-node-output-contract` | 2026-09-21 | `design-agent-node-output-contract` (explicit CLI sandbox, producer-schema validation, strict addon payload templates, output-contract retry defaults) |
+| `loop-engineering-default-guardrails-and-terminal-preservation` | 2026-09-21 | `design-loop-engineering-convergence-and-operations` S9/S9a |
+| `native-remote-01-graphql-contract` | 2026-09-25 | `design-native-remote-workflow-execution` (accepted GraphQL contract and authorization; progress: `active/native-remote-nre-01-progress.md`) |
+| `native-remote-02-strict-storage` | 2026-09-25 | `design-native-remote-workflow-execution` (accepted strict persisted summary reads; progress: `active/native-remote-nre-02-progress.md`) |
+| `native-remote-03-provider-host-integration` | 2026-09-25 | `design-native-remote-workflow-execution` (adversarial and Astra integration reviews accepted; aggregate Swift exit 1 independently attributed to baseline App failures; browser E2E rerun passed 42/42 with writable task TMPDIR; Draft PR #110 remains open; progress: `active/native-remote-nre-03-progress.md`) |
 | `control-surface-parity` | 2026-09-21 | `design-control-surface-parity` (one `SurfaceCatalog` gating CLI, GraphQL, web API, library and skills; generated SDL; session-control mutations; console reads on GraphQL) |
 | `safe-built-in-git-finalization-addons` | 2026-08-06 | `core-built-in-workers`, `design-node-addon-catalog-and-chat-reply-worker` |
 | `riela-note-parent-scoped-folder-identity` | 2026-08-04 | `design-riela-note-parent-scoped-folder-identity` |

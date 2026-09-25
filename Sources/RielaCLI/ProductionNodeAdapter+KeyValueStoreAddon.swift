@@ -12,7 +12,7 @@ enum BuiltinKeyValueAddon: String {
 
 func keyValueSetValue(config: JSONObject, variables: JSONObject) throws -> MemoryJSONValue {
   if let valueTemplate = config["valueTemplate"] ?? variables["valueTemplate"] {
-    return try memoryJSONValue(from: renderJSONTemplates(valueTemplate, variables: variables))
+    return try memoryJSONValue(from: renderAddonConfig(valueTemplate, variables: variables))
   }
   if let value = config["value"] ?? variables["value"] {
     return try memoryJSONValue(from: value)
@@ -70,7 +70,7 @@ extension BuiltinWorkflowAddonResolver {
     }
 
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let workflowInput = memoryAddonJSONObject(variables["workflowInput"])
     let kvRoot = memoryConfigString("kvRoot", config: config, variables: variables)
       ?? nonEmptyString(variables["kvRoot"])

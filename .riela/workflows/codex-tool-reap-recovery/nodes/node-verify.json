@@ -2,6 +2,7 @@
   "id": "verify",
   "description": "Run final deterministic verification and report completion evidence.",
   "executionBackend": "claude-code-agent",
+  "agentSandbox": "read-only",
   "model": "claude-opus-4-8",
   "promptTemplateFile": "prompts/verify.md",
   "variables": {}

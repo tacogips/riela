@@ -10,8 +10,7 @@ struct ParsedTaskFamily: RielaClientFamilyArguments {
   @Argument(parsing: .captureForPassthrough) var remainder: [String] = []
 }
 
-/// `riela task show` and `riela task list`: read-only projections of the Work
-/// Runtime store (P0-6).
+/// Task inspection and mutation through the Work Runtime store.
 ///
 /// The store lives beside the runtime snapshots, so the options and the store
 /// resolution are `LoopCommandRunner`'s: `--scope`, `--working-dir`,
@@ -20,14 +19,29 @@ struct ParsedTaskFamily: RielaClientFamilyArguments {
 /// inspections become task reads.
 public struct TaskCommandRunner: Sendable {
   public init() {}
+  var signalState: TaskRunSignalState?
 
-  public func run(_ command: TaskCommand) -> CLICommandResult {
+  init(signalState: TaskRunSignalState) {
+    self.signalState = signalState
+  }
+
+  public func run(_ command: TaskCommand) async -> CLICommandResult {
     do {
       switch command.kind {
       case .show:
         return try runShow(command)
       case .list:
         return try runList(command)
+      case .run:
+        guard let taskId = command.options.target, !taskId.isEmpty else {
+          throw CLIUsageError("task run requires a task id")
+        }
+        let parsed = try ParsedTaskRunOptions.resolve(command.options.arguments)
+        return await TaskDispatch(signalState: signalState).run(
+          taskId: taskId, options: parsed.shared, dryRun: parsed.dryRun, output: command.options.output
+        )
+      case .decide:
+        return try runDecide(command)
       }
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
@@ -226,15 +240,100 @@ public struct TaskCommandRunner: Sendable {
     }
   }
 
+  // MARK: - decide
+
+  private func runDecide(_ command: TaskCommand) throws -> CLICommandResult {
+    guard let taskId = command.options.target, !taskId.isEmpty else {
+      throw CLIUsageError("task decide requires a task id")
+    }
+    let parsed = try ParsedTaskDecideOptions.resolve(command.options.arguments)
+    let identifier = TaskID(taskId)
+    guard let located = try locateTask(identifier, in: parsed.shared) else {
+      throw CLIUsageError("task '\(taskId)' was not found in \(storeRootSummary(parsed.shared))")
+    }
+    let store = located.store
+    let decisionId = DecisionID(parsed.decisionId)
+    let existing = try store.listDecisions(taskId: identifier).first { $0.id == decisionId }
+    let attempts = try store.listAttempts(taskId: identifier)
+    let attemptId = existing?.attemptId ?? attempts.last?.id
+    let reason: String
+    switch parsed.kind {
+    case .accept: reason = "human accepted"
+    case let .reject(value): reason = value
+    case .rerun: reason = "human requested rerun"
+    case .cancel: reason = "human cancelled"
+    default: throw CLIUsageError("unsupported human task decision")
+    }
+    let causedBy: [EvidenceID]
+    if let existing {
+      causedBy = existing.causedBy
+    } else {
+      let evidence = try store.listEvidence(taskId: identifier)
+        .filter { $0.attemptId == attemptId }
+        .sorted { lhs, rhs in
+          lhs.createdAt == rhs.createdAt ? lhs.id.rawValue < rhs.id.rawValue : lhs.createdAt < rhs.createdAt
+        }
+      guard let latest = evidence.last else {
+        throw CLIUsageError("task decide requires persisted causal evidence for its latest attempt")
+      }
+      causedBy = [latest.id]
+    }
+    let decision = Decision(
+      id: decisionId,
+      taskId: identifier,
+      attemptId: attemptId,
+      producer: .human(principal: parsed.principal),
+      kind: parsed.kind,
+      reason: reason,
+      causedBy: causedBy,
+      createdAt: Date()
+    )
+    let pendingReservation: PendingAttemptReservation?
+    if case let .rerun(fromStepId) = parsed.kind {
+      pendingReservation = PendingAttemptReservation(
+        id: "pending-\(decisionId.rawValue)",
+        taskId: identifier,
+        decisionId: decisionId,
+        predecessorAttemptId: attemptId,
+        entry: .rerunFromStep(fromStepId)
+      )
+    } else {
+      pendingReservation = nil
+    }
+    let application = try store.applyDecision(
+      decision,
+      expectedTaskVersion: parsed.expectedVersion,
+      completion: .unmet([]),
+      decisionEvidenceId: EvidenceID("evidence-\(decisionId.rawValue)"),
+      pendingReservation: pendingReservation
+    )
+    let result = TaskDecisionCommandResult(
+      taskId: taskId,
+      decisionId: parsed.decisionId,
+      state: application.task.state,
+      version: application.task.version,
+      attemptId: application.attempt?.id.rawValue
+    )
+    switch command.options.output {
+    case .json, .jsonl:
+      return CLICommandResult(exitCode: .success, stdout: try jsonString(result))
+    case .text, .table:
+      return CLICommandResult(
+        exitCode: .success,
+        stdout: "taskId: \(result.taskId)\ndecisionId: \(result.decisionId)\nstate: \(result.state.rawValue)\nversion: \(result.version)\n"
+      )
+    }
+  }
+
   // MARK: - Store resolution
 
-  private struct LocatedTask {
+  struct LocatedTask {
     var task: WorkTask
     var store: WorkStore
     var root: String
   }
 
-  private func locateTask(_ id: TaskID, in options: TaskStoreOptions) throws -> LocatedTask? {
+  func locateTask(_ id: TaskID, in options: TaskStoreOptions) throws -> LocatedTask? {
     for root in storeRoots(options) {
       let store = WorkStore(rootDirectory: root)
       if let task = try store.loadTask(id: id) {
@@ -247,7 +346,7 @@ public struct TaskCommandRunner: Sendable {
   /// The same roots `riela loop list` reads: an explicit `--session-store` or
   /// `RIELA_SESSION_STORE` pins one root, and `--scope auto` reads the
   /// project store then the user store.
-  private func storeRoots(_ options: TaskStoreOptions) -> [String] {
+  func storeRoots(_ options: TaskStoreOptions) -> [String] {
     sessionStoreRoots(options).map { canonicalRuntimeStoreRoot(sessionStoreRoot: $0) }
   }
 
@@ -303,6 +402,95 @@ struct TaskStoreOptions {
   var scope: WorkflowScope
   var workingDirectory: String
   var sessionStore: String?
+}
+
+struct ParsedTaskRunOptions: RielaClientFamilyArguments {
+  @Option var scope = "auto"
+  @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+  var workingDirectory = FileManager.default.currentDirectoryPath
+  @Option var sessionStore: String?
+  @Flag var dryRun = false
+  @Option var output: String?
+
+  static func resolve(_ arguments: [String]) throws -> (shared: TaskStoreOptions, dryRun: Bool) {
+    let parsed = try parseCLI(arguments)
+    return (
+      TaskStoreOptions(
+        scope: try resolveScope(parsed.scope),
+        workingDirectory: parsed.workingDirectory,
+        sessionStore: parsed.sessionStore
+      ),
+      parsed.dryRun
+    )
+  }
+}
+
+struct TaskDecisionOptions {
+  var shared: TaskStoreOptions
+  var kind: DecisionKind
+  var principal: String
+  var expectedVersion: Int
+  var decisionId: String
+}
+
+struct ParsedTaskDecideOptions: RielaClientFamilyArguments {
+  @Option var scope = "auto"
+  @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
+  var workingDirectory = FileManager.default.currentDirectoryPath
+  @Option var sessionStore: String?
+  @Flag var accept = false
+  @Option var reject: String?
+  @Flag var rerun = false
+  @Flag var cancel = false
+  @Option var principal: String?
+  @Option var expectedVersion: Int?
+  @Option var decisionId: String?
+  @Option var output: String?
+  @Argument var rerunStepId: String?
+
+  static func resolve(_ arguments: [String]) throws -> TaskDecisionOptions {
+    let parsed = try parseCLI(arguments)
+    let actionCount = [parsed.accept, parsed.reject != nil, parsed.rerun, parsed.cancel].filter { $0 }.count
+    guard actionCount == 1 else {
+      throw CLIUsageError("task decide requires exactly one of --accept, --reject, --rerun, or --cancel")
+    }
+    guard let principal = parsed.principal?.trimmingCharacters(in: .whitespacesAndNewlines), !principal.isEmpty else {
+      throw CLIUsageError("task decide requires --principal")
+    }
+    guard let expectedVersion = parsed.expectedVersion, expectedVersion >= 0 else {
+      throw CLIUsageError("task decide requires a nonnegative --expected-version")
+    }
+    guard let decisionId = parsed.decisionId?.trimmingCharacters(in: .whitespacesAndNewlines), !decisionId.isEmpty else {
+      throw CLIUsageError("task decide requires --decision-id")
+    }
+    guard parsed.rerun || parsed.rerunStepId == nil else {
+      throw CLIUsageError("a rerun step requires --rerun")
+    }
+    let kind: DecisionKind
+    if parsed.accept {
+      kind = .accept
+    } else if let reason = parsed.reject {
+      guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        throw CLIUsageError("--reject requires a nonempty reason")
+      }
+      kind = .reject(reason: reason)
+    } else if parsed.rerun {
+      kind = .rerun(fromStepId: parsed.rerunStepId)
+    } else {
+      kind = .cancel
+    }
+    return TaskDecisionOptions(
+      shared: TaskStoreOptions(
+        scope: try resolveScope(parsed.scope),
+        workingDirectory: parsed.workingDirectory,
+        sessionStore: parsed.sessionStore
+      ),
+      kind: kind,
+      principal: principal,
+      expectedVersion: expectedVersion,
+      decisionId: decisionId
+    )
+  }
 }
 
 /// `riela task show` flags. Declared at file scope, not nested, so

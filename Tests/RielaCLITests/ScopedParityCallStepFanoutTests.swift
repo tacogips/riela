@@ -60,7 +60,7 @@ extension WorkflowCommandTests {
     """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     for node in ["dispatch", "branch", "join"] {
       try """
-      {"id":"\(node)-node","executionBackend":"codex-agent","model":"gpt-5.5","modelFreeze":false,"variables":{}}
+      {"id":"\(node)-node","executionBackend":"codex-agent","agentSandbox":"workspace-write","model":"gpt-5.5","modelFreeze":false,"variables":{}}
       """.write(to: nodesDirectory.appendingPathComponent("\(node).json"), atomically: true, encoding: .utf8)
     }
 

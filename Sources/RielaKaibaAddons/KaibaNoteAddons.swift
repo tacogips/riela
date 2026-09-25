@@ -16,7 +16,7 @@ extension KaibaAddonCatalog {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
     }
-    let values = KaibaAddonInputs(input: input, environment: [:])
+    let values = try KaibaAddonInputs(input: input, environment: [:])
     let payload: JSONObject
     do {
       switch operation {
@@ -363,7 +363,9 @@ private func isAgentMemo(_ value: JSONValue) -> Bool {
 
 func addonOutput(input: WorkflowAddonExecutionInput, operation: String, payload: JSONObject, values: KaibaAddonInputs) -> AdapterExecutionOutput {
   var body: JSONObject = ["status": .string("ok"), "addon": .string(input.addon.name), "operation": .string(operation), "stepId": .string(input.stepId)]
-  if case let .object(pass)? = values.config["passthrough"].map({ renderJSONTemplates($0, variables: values.variables) }) { body.merge(pass) { _, incoming in incoming } }
+  if case let .object(pass)? = values.config["passthrough"] {
+    body.merge(pass) { _, incoming in incoming }
+  }
   body.merge(payload) { _, incoming in incoming }
   return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true, when: ["always": true], payload: body)
 }

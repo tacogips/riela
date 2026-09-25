@@ -2,9 +2,11 @@
   "id": "review",
   "description": "Review loop metadata validation changes.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "effort": "low",
   "promptTemplateFile": "prompts/review.md",
-  "variables": {}
+  "variables": {},
+  "output": { "jsonSchema": { "type": "object" } }
 }

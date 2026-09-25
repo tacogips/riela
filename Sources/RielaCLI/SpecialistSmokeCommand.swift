@@ -21,7 +21,9 @@ struct SpecialistSmokeCommand: Sendable {
     "steps":[{"id":"work","nodeId":"work","role":"worker"}]}
     """
     let node = """
-    {"id":"work","executionBackend":"codex-agent","model":"gpt-5.4-mini","modelFreeze":false,"promptTemplateFile":"prompts/work.md","variables":{},"output":{"description":"Return a smoke result."}}
+    {"id":"work","executionBackend":"codex-agent","agentSandbox":"read-only",
+    "model":"gpt-5.4-mini","modelFreeze":false,"promptTemplateFile":"prompts/work.md",
+    "variables":{},"output":{"description":"Return a smoke result."}}
     """
     let scenario = """
     {"work":{"provider":"scenario-mock","model":"gpt-5.4-mini","when":{"always":true},"payload":{"status":"ok"}}}

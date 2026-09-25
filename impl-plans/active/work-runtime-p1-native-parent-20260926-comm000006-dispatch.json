@@ -1,0 +1,116 @@
+{
+  "taskId": "work-runtime-p1-native-parent-20260926-comm000006",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans",
+  "baseBranch": "feat/remaining-impl-plans",
+  "remote": "origin",
+  "originalHead": "f8b0d886d277a3f3517f60c344cf6ce9df9b3799",
+  "designDocPaths": [
+    "design-docs/specs/design-work-runtime-consolidation.md",
+    "design-docs/specs/design-native-remote-workflow-execution.md"
+  ],
+  "evidenceRoot": "tmp/work-runtime-p1-native-parent-20260926-comm000006",
+  "reviewContext": {
+    "issueReference": {
+      "repository": "tacogips/riela",
+      "draftPR": 109,
+      "intakeCommunication": "comm-000002",
+      "acceptedDesignReview": "comm-000004",
+      "acceptedPlanReview": "comm-000006",
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-1"
+    },
+    "userProblem": "Complete Work Runtime P1 parent acceptance from the preserved ledger through runtime-owned native fanout join, current-tree reviews and Draft PR #109 publication.",
+    "requiredOutcomes": [
+      "Account for every dispatched native branch and prove both inherited ledger edits survive in the combined tree using runtime-owned join evidence.",
+      "Obtain independent test-integrity, Codex Sol adversarial and Codex Astra integration acceptance of the current tree, including separate dispositions for both FAILED aggregates and resolution of P1-CURRENT-WAVE-PROVENANCE.",
+      "Review P1-only status updates in both designs, the plan, progress ledger and index, then commit exact reviewed files and push non-force until local HEAD, remote tip and Draft PR #109 head match with a clean worktree."
+    ],
+    "nonGoals": [
+      "Do not reimplement completed P1-6a through P1-7b work or repeat source-matched broad tests without material input invalidation.",
+      "Do not repair unrelated source or tests, edit archived rielflow or Monja branches, merge main, release or force push."
+    ],
+    "constraints": [
+      "Use the immutable user-scope workflow and one serial mutation owner for the single p1-dispatch plan.",
+      "Preserve dirty plan and progress ledger hunks, prior tmp receipts, unrelated tracked/untracked/staged state and complete foreground command logs under fresh per-attempt tmp directories.",
+      "Require actual runtime join metadata; standalone rerun and Git hashes cannot substitute for current-wave completeness.",
+      "Each FAILED aggregate keeps exit 1, 21 baseline-matched assertions and its own direct attempt-6 comparison JSON; retain the successful V1 focused 69/69 receipt in verification evidence."
+    ],
+    "designDecisionsAndRationale": [
+      "Section 17.12 continues the completed 36-box and C01-C12 ledger without reopening the source audit because the 2,766-entry seal showed documentation-only differences and no production gap.",
+      "The runtime joins the native branch before independent current-tree reviews so reviewers can assess complete fanout and surviving ledger edits.",
+      "One serial p1-dispatch plan keeps ledger ownership ordered; shared design and index status changes wait for serial reconciliation and review."
+    ],
+    "intentionalTradeoffs": [
+      "Historical A0 environment snapshots and some older tmp receipts remain unavailable and are not reconstructed.",
+      "Both broad aggregates remain FAILED after accepted baseline attribution; review acceptance never converts them to passing results."
+    ],
+    "supportedEdgeCases": [
+      "Missing or unsuccessful native branch evidence keeps the join gate open; inherited ledger hunks require surviving-hunk proof even with a committed preimage.",
+      "Source, dependency, configuration or evidence invalidation triggers only affected verification and renewed review.",
+      "Final status updates preserve unrelated plan states and historical box text."
+    ],
+    "outOfScopeEdgeCases": [
+      "No new native receiver protocol, workflow registry discovery, speculative source amendment, package digest update or lockfile generation is planned.",
+      "No broad rerun, archived rielflow repair, main merge or release is planned."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-runtime-consolidation.md §17.12",
+      "design-docs/specs/design-native-remote-workflow-execution.md",
+      "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "impl-plans/progress/p1-dispatch.md",
+      "impl-plans/progress/plans-index.json",
+      "tmp/p1-final-closure-child-rerun-2.jsonl",
+      "tmp/p1-native-parent-step4-20260926/self-check.log",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1/after-removal/V1-focused/log.txt",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-comparison.json",
+      "tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-comparison.json"
+    ],
+    "reviewDecision": "Step 5 accepts the single-plan N0-N7 continuation; native join, current-tree reviews and publication remain execution gates.",
+    "findings": [],
+    "codexAgentReferences": [
+      "Codex Sol adversarial: prior comm-000020",
+      "Codex Astra integration: P1-CURRENT-WAVE-PROVENANCE remains open"
+    ]
+  },
+  "plans": [
+    {
+      "planId": "p1-dispatch",
+      "planPath": "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+      "dependsOn": [],
+      "writePaths": [
+        "impl-plans/active/work-runtime-p1-dispatcher-guard-director.md",
+        "impl-plans/progress/p1-dispatch.md"
+      ],
+      "sharedPaths": [
+        "design-docs/specs/design-work-runtime-consolidation.md",
+        "design-docs/specs/design-native-remote-workflow-execution.md",
+        "impl-plans/progress/plans-index.json"
+      ],
+      "progressFile": "impl-plans/progress/p1-dispatch.md",
+      "acceptanceCriteria": [
+        "Runtime-owned join accounts for the complete p1-dispatch fanout and proves both preserved ledger changes in the combined tree.",
+        "Independent test-integrity, Sol adversarial and Astra integration reviews accept the current tree, separately attribute both FAILED aggregates and resolve P1-CURRENT-WAVE-PROVENANCE without unresolved high/mid findings.",
+        "Reviewed P1-only docs and index status preserve other plans; exact-file non-force publication leaves a clean worktree with local HEAD, remote tip and Draft PR #109 head equal."
+      ],
+      "verification": [
+        "git rev-parse HEAD",
+        "git symbolic-ref --short HEAD",
+        "git status --porcelain=v1 --untracked-files=all",
+        "git diff --cached --name-status",
+        "git diff --name-status f8b0d886d277a3f3517f60c344cf6ce9df9b3799 -- Sources Tests Package.swift Package.resolved",
+        "git diff --name-status f8b0d886d277a3f3517f60c344cf6ce9df9b3799",
+        "shasum -a 256 impl-plans/active/work-runtime-p1-dispatcher-guard-director.md impl-plans/progress/p1-dispatch.md",
+        "cat tmp/work-runtime-p1-final-acceptance-20260925-comm000006/p1-dispatch/attempt-1/source-reconciliation.json",
+        "cat tmp/work-runtime-p1-final-acceptance-20260925-comm000006/p1-dispatch/attempt-1/final-selfcheck.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/V5-comparison.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-6/full-comparison.json",
+        "cat tmp/work-runtime-p1-7a-native-a2-a5/plans/p1-dispatch/attempt-1/after-removal/V1-focused/log.txt",
+        "git diff --check",
+        "git diff --cached --check",
+        "python3 -m json.tool impl-plans/progress/plans-index.json",
+        "git ls-remote --heads origin feat/remaining-impl-plans",
+        "gh pr view 109 --repo tacogips/riela --json number,isDraft,headRefName,headRefOid"
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@
   "id": "workflow-output",
   "description": "Summarize the read-only riela loop command slice.",
   "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "promptTemplateFile": "prompts/workflow-output.md",

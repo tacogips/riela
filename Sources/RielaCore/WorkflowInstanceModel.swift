@@ -2,6 +2,7 @@ import Foundation
 
 public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public var executionBackend: NodeExecutionBackend?
+  public var agentSandbox: AgentSandboxMode?
   public var model: String?
   public var effort: NodeReasoningEffort?
   /// A stable named Kaiba API instance override for a `kaiba/*` node.
@@ -12,12 +13,14 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
 
   public init(
     executionBackend: NodeExecutionBackend? = nil,
+    agentSandbox: AgentSandboxMode? = nil,
     model: String? = nil,
     effort: NodeReasoningEffort? = nil,
     kaibaInstanceId: String? = nil,
     clearsKaibaInstanceId: Bool = false
   ) {
     self.executionBackend = executionBackend
+    self.agentSandbox = agentSandbox
     self.model = model
     self.effort = effort
     self.kaibaInstanceId = kaibaInstanceId
@@ -26,6 +29,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
 
   public var isEmpty: Bool {
     executionBackend == nil
+      && agentSandbox == nil
       && normalizedModel == nil
       && effort == nil
       && kaibaInstanceId == nil
@@ -36,6 +40,9 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     var object: JSONObject = [:]
     if let executionBackend {
       object["executionBackend"] = .string(executionBackend.rawValue)
+    }
+    if let agentSandbox {
+      object["agentSandbox"] = .string(agentSandbox.rawValue)
     }
     if let normalizedModel {
       object["model"] = .string(normalizedModel)
@@ -64,6 +71,12 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
           throw WorkflowInstanceResolutionError.invalidFieldValue(field)
         }
         executionBackend = backend
+      case "agentSandbox":
+        guard let raw = Self.stringValue(jsonObject[field]),
+              let sandbox = AgentSandboxMode(rawValue: raw) else {
+          throw WorkflowInstanceResolutionError.invalidFieldValue(field)
+        }
+        agentSandbox = sandbox
       case "model":
         guard let model = Self.stringValue(jsonObject[field]),
               !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -93,10 +106,13 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     _ = nodeId
   }
 
-  private static let supportedFields: Set<String> = ["executionBackend", "model", "effort", "kaibaInstanceId"]
+  private static let supportedFields: Set<String> = [
+    "executionBackend", "agentSandbox", "model", "effort", "kaibaInstanceId"
+  ]
 
   private enum CodingKeys: String, CodingKey {
     case executionBackend
+    case agentSandbox
     case model
     case effort
     case kaibaInstanceId
@@ -105,6 +121,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
+    agentSandbox = try container.decodeIfPresent(AgentSandboxMode.self, forKey: .agentSandbox)
     model = try container.decodeIfPresent(String.self, forKey: .model)
     effort = try container.decodeIfPresent(NodeReasoningEffort.self, forKey: .effort)
     if container.contains(.kaibaInstanceId) {
@@ -120,6 +137,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encodeIfPresent(executionBackend, forKey: .executionBackend)
+    try container.encodeIfPresent(agentSandbox, forKey: .agentSandbox)
     try container.encodeIfPresent(model, forKey: .model)
     try container.encodeIfPresent(effort, forKey: .effort)
     if clearsKaibaInstanceId {
@@ -133,6 +151,9 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     var merged = self
     if let executionBackend = override.executionBackend {
       merged.executionBackend = executionBackend
+    }
+    if let agentSandbox = override.agentSandbox {
+      merged.agentSandbox = agentSandbox
     }
     if let model = override.model {
       merged.model = model

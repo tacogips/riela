@@ -27,3 +27,10 @@ runtime session.
 If the scope expansion is declined, the implementation can deliver resilient
 reads and warnings but cannot honestly satisfy the stated requirement that
 session numbering remain correct without depending on decoded `record_json`.
+
+## Decision
+
+Approved on 2026-09-21 by the user's directive to implement all remaining
+TODOs and implementation-plan work. The implementation may add the recommended
+minimal raw-identity observation seam; it must retain every non-mutation and
+non-exposure constraint above.

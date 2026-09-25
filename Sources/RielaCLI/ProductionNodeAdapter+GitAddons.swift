@@ -64,7 +64,7 @@ extension BuiltinWorkflowAddonResolver: WorkflowAddonFinalizationAcknowledging,
     guard case let .string(template) = value else {
       throw policyError("riela/git-commit config.commitMessageTemplate is required")
     }
-    let rendered = renderJSONTemplates(.string(template), variables: variables)
+    let rendered = try renderAddonConfig(.string(template), variables: variables)
     guard case let .string(message) = rendered else {
       throw policyError("riela/git-commit commit message must resolve to a string")
     }
@@ -79,7 +79,7 @@ extension BuiltinWorkflowAddonResolver: WorkflowAddonFinalizationAcknowledging,
     guard case let .string(template) = value else {
       throw policyError("riela/git-commit config.committedFilesTemplate is required")
     }
-    let rendered = renderJSONTemplates(.string(template), variables: variables)
+    let rendered = try renderAddonConfig(.string(template), variables: variables)
     guard case let .array(values) = rendered, !values.isEmpty, values.count <= 2_048 else {
       throw policyError("riela/git-commit committed files must resolve to a non-empty array")
     }

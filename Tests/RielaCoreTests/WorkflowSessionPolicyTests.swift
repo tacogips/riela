@@ -72,7 +72,7 @@ final class WorkflowSessionPolicyTests: XCTestCase {
       id: "node",
       executionBackend: .codexAgent,
       model: "model",
-      promptTemplate: "ordinary",
+      agentSandbox: .readOnly, promptTemplate: "ordinary",
       sessionStartPromptTemplate: "session start"
     )
     let runner = DeterministicWorkflowRunner(adapter: adapter)
@@ -104,7 +104,7 @@ final class WorkflowSessionPolicyTests: XCTestCase {
             "node": AgentNodePayload(
               id: "node",
               executionBackend: .codexAgent,
-              model: "model"
+              model: "model", agentSandbox: .readOnly
             )
           ]
         ))

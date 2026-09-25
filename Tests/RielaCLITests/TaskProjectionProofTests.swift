@@ -105,6 +105,7 @@ final class TaskProjectionProofTests: XCTestCase {
     XCTAssertEqual(
       projected.verdict,
       .unmet([
+        .acceptanceNotMet,
         .gateNotAccepted(gateId: "implementation-review"),
         .openBlockingFinding(fingerprint: "id:missing-regression-test"),
         .openBlockingFinding(

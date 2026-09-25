@@ -23,7 +23,7 @@ func memoryPayload(
   input: WorkflowAddonExecutionInput
 ) throws -> MemoryJSONValue {
   if let payloadTemplate = config["payloadTemplate"] ?? variables["payloadTemplate"] {
-    let rendered = renderJSONTemplates(payloadTemplate, variables: variables)
+    let rendered = try renderAddonConfig(payloadTemplate, variables: variables)
     return try memoryJSONValue(from: rendered)
   }
 
@@ -395,7 +395,7 @@ extension BuiltinWorkflowAddonResolver {
     }
 
     let config = input.addon.config ?? [:]
-    let variables = addonVariables(for: input)
+    let variables = try addonVariables(for: input)
     let memoryId = memoryConfigString("memoryId", config: config, variables: variables)
       ?? nonEmptyString(variables["memoryId"]) ?? "chat-memory"
     let nodeId = memoryConfigString("nodeId", config: config, variables: variables)

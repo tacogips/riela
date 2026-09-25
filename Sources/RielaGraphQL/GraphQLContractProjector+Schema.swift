@@ -9,6 +9,39 @@ extension GraphQLContractProjector {
   public static let schemaContract = """
   scalar JSON
   scalar JSONObject
+  input ExecuteWorkflowInput {
+    workflowName: String!
+    runtimeVariables: JSONObject
+    instanceIdentity: String
+    nodePatch: JSONObject
+    maxSteps: Int
+    maxConcurrency: Int
+    maxLoopIterations: Int
+    disableDefaultLoopGuard: Boolean
+    defaultTimeoutMs: Int
+  }
+  type ExecuteWorkflowPayload {
+    workflowExecutionId: String!
+    sessionId: String!
+    status: String!
+    exitCode: Int!
+  }
+  type WorkflowExecutionSummary {
+    session: WorkflowExecutionSessionSummary!
+    nodeExecutions: [WorkflowExecutionNodeSummary!]!
+  }
+  type WorkflowExecutionSessionSummary {
+    sessionId: String!
+    workflowName: String!
+    workflowId: String!
+    transitions: [WorkflowExecutionTransitionSummary!]!
+  }
+  type WorkflowExecutionTransitionSummary {
+    when: String
+  }
+  type WorkflowExecutionNodeSummary {
+    nodeExecId: String!
+  }
   type ControlPlaneResult {
     accepted: Boolean!
     status: String!
@@ -540,6 +573,7 @@ extension GraphQLContractProjector {
   \(routineGraphQLSchemaTypes)
   type Query {
     workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
+    workflowExecution(workflowExecutionId: String!): WorkflowExecutionSummary
     workflows(filter: WorkflowFilter): WorkflowListPayload!
     workflowSessions(workflowName: String, status: String, limit: Int): [WorkflowSessionSummary!]!
     workflowSession(workflowId: String!, sessionId: String!): WorkflowSession
@@ -560,6 +594,7 @@ extension GraphQLContractProjector {
     configuration: RielaConfiguration!
   }
   type Mutation {
+    executeWorkflow(input: ExecuteWorkflowInput!): ExecuteWorkflowPayload!
     registerMutableWorkflow(input: RegisterMutableWorkflowInput!): WorkflowMutationPayload!
     updateMutableWorkflow(input: UpdateMutableWorkflowInput!): WorkflowMutationPayload!
     deleteMutableWorkflow(input: DeleteMutableWorkflowInput!): WorkflowMutationPayload!

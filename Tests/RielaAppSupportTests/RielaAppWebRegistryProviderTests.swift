@@ -6,6 +6,29 @@ import RielaGraphQL
 import XCTest
 
 final class RielaAppWebRegistryProviderTests: XCTestCase {
+  func testDesktopExecutionCompositionPreservesBrowserSourcePolicy() throws {
+    // Source-policy evidence only; ServeWebHostTests covers real browser execution.
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let router = try String(contentsOf: repository.appendingPathComponent(
+      "Sources/RielaApp/RielaAppWebRouter.swift"
+    ), encoding: .utf8)
+    let graphQL = try String(contentsOf: repository.appendingPathComponent(
+      "Sources/RielaApp/RielaAppWebGraphQL.swift"
+    ), encoding: .utf8)
+    let route = try XCTUnwrap(router.range(of: "if request.path == \"/graphql\""))
+    let rejection = try XCTUnwrap(router.range(
+      of: "if let rejection = securityRejection(for: request)", range: route.lowerBound..<router.endIndex
+    ))
+    let dispatch = try XCTUnwrap(router.range(of: "app.webGraphQLResponse(for: request)"))
+    XCTAssertLessThan(rejection.lowerBound, dispatch.lowerBound)
+    let profileGate = try XCTUnwrap(graphQL.range(of: "guard request.headers[\"x-riela-profile\"]"))
+    let provider = try XCTUnwrap(graphQL.range(of: "WorkflowExecutionProvider("))
+    XCTAssertLessThan(profileGate.lowerBound, provider.lowerBound)
+    XCTAssertTrue(graphQL.contains("daemonSessionStoreRoot(profileName: daemonProfileName)"))
+    XCTAssertTrue(graphQL.contains("WorkflowExecutionAuthorizationWrapper(expectedBearer: nil"))
+  }
+
   func testSharedProviderPreservesBundleAndCanonicalActivationDuringWebCRUD() async throws {
     let home = try makeHome()
     defer { try? FileManager.default.removeItem(at: home) }

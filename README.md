@@ -99,9 +99,10 @@ they remain readable but update/delete operations return
 `IMMUTABLE_WORKFLOW`. Either provenance can be deactivated; deactivated
 origins remain listable and inspectable but execution returns
 `WORKFLOW_DEACTIVATED`. The additive GraphQL registry surface provides list,
-fetch, mutable CRUD, activation, and consolidation; remote registry execution
-is disabled unless an embedding host supplies the complete provider,
-authorizer, and managed-reference configuration.
+fetch, mutable CRUD, activation, and consolidation. `riela serve` also receives
+ordinary remote workflow runs through the separate `executeWorkflow` mutation
+and `workflowExecution` summary query. Registry writes keep their own
+authorization; an execution bearer does not grant registry write access.
 
 Local agent backend ids remain explicit workflow compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. They no longer name
@@ -209,9 +210,27 @@ it in command arguments or workflow artifacts. Claude Code routing also clears
 `ANTHROPIC_API_KEY` so it cannot override `ANTHROPIC_AUTH_TOKEN`.
 
 Riela-owned environment names use the `RIELA_` prefix. Remote GraphQL workflow
-runs read `RIELA_MANAGER_AUTH_TOKEN` and `RIELA_MANAGER_SESSION_ID`. Remote auto-improve input is opt-in:
-`workflow run --endpoint ...` omits `autoImprove` by default and only sends the
-supervision policy when `--auto-improve` is set.
+runs read `RIELA_MANAGER_AUTH_TOKEN` and optionally
+`RIELA_MANAGER_SESSION_ID`; the latter does not authorize execution.
+`workflow run --endpoint ...` omits `autoImprove` by default. Supplying
+`--auto-improve` sends unsupported input, which the receiver rejects.
+
+To run against a `riela serve` host, configure a nonempty
+`RIELA_MANAGER_AUTH_TOKEN` in the server's startup environment and provide the
+same bearer to the client. For example, with the token already set in the
+client environment:
+
+```bash
+riela workflow run my-workflow --endpoint https://riela.example/graphql --output json
+```
+
+The client also accepts `--auth-token` or `--auth-token-env`. The server uses
+its selected working directory and session store for both the run and the
+following summary read; request input cannot choose either path. The mutation
+waits for a persisted result and reports the actual status and exit code,
+including a failed run. A client or proxy timeout can precede completion, and
+retrying then can start a second run. `--auto-improve`, `--from-registry`,
+`--mock-scenario`, and `--supervisor-mode` are unsupported for this remote run.
 
 Codex multi-agent supervisor mode is also opt-in. Riela explicitly disables the
 Codex `multi_agent` feature for ordinary local workflow runs, regardless of the

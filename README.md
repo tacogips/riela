@@ -704,6 +704,36 @@ gateway permissions before live notification runs:
 apple-gateway permissions status --json
 ```
 
+## Built-in Add-on Host Catalog
+
+Issue [#116](https://github.com/tacogips/riela/issues/116) adds 12 existing
+version-1 adapter names to the built-in host catalog: the chat persona, memory,
+digest, SDK worker, time signal, and deferred container gateway add-ons. Bundled
+workflows using these names validate without declaring external add-on
+executables. Unknown names and unsupported versions still fail closed. The
+`riela/gmail-gateway-read` and `riela/x-gateway-read` entries retain their
+existing `status: ok` no-op response and make no gateway request; they do not
+represent live gateway reads.
+
+With the built source CLI, validation accounts for all 75 bundled examples:
+74 valid, one invalid, and zero `unresolvedAddonExecutable` diagnostics. The
+remaining `x-follower-ai-business-digest` example references undeclared
+`replyText` in its output schema; see
+[`EXAMPLE-116-01`](impl-plans/active/builtin-addon-116-verification-findings.md).
+The installed 0.2.1 CLI does not include this catalog change. To check an
+example with the built CLI, run:
+
+```bash
+swift build --skip-update
+.build/arm64-apple-macosx/debug/riela workflow validate <example-name> --workflow-definition-dir examples --output json
+```
+
+The source verification used `swift test --skip-update` with the
+`RielaBuiltinAddonCatalog`, `WorkflowHostCapabilityTests`, and
+`DeferredContainerAddonTests` filters, plus
+`/usr/bin/xcrun swiftlint --quiet --no-cache`, `swift build --skip-update`,
+and `git diff --check`.
+
 ## Work Runtime (`RielaWork`)
 
 The P1 release remediation for Draft PR #113 registers

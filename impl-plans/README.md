@@ -33,6 +33,15 @@ impl-plans/
 
 ## Active Plans
 
+Issue [#116](https://github.com/tacogips/riela/issues/116):
+[`builtin-addon-116-03-verification`](active/builtin-addon-116-03-verification.md)
+remains active for the final completion record, exact-file commit, non-force
+push, and remote-head check. Accepted source verification found 74/75 examples
+valid and zero `unresolvedAddonExecutable` diagnostics; the separate
+[`EXAMPLE-116-01`](active/builtin-addon-116-verification-findings.md) schema
+finding remains with example contract migration. The completed catalog and
+deferred-response slices are indexed below.
+
 For the P1 release remediation on Draft PR #113,
 [`p1-release-integration`](active/work-runtime-p1-release-integration.md)
 remains active pending documentation closure, exact-file commit, non-force push,
@@ -116,6 +125,15 @@ three accepted hardening findings were confirmed implemented+tested (0 open
 boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
+
+Issue [#116](https://github.com/tacogips/riela/issues/116):
+[`builtin-addon-116-01-catalog`](completed/builtin-addon-116-01-catalog.md)
+and [`builtin-addon-116-02-deferred`](completed/builtin-addon-116-02-deferred.md)
+completed their assigned implementation, focused tests, and accepted reviews
+on 2026-09-27. Their [catalog progress](completed/builtin-addon-116-01-catalog-progress.md)
+and [deferred progress](completed/builtin-addon-116-02-deferred-progress.md)
+retain command logs and final exit status paths. Publication remains with the
+active verification plan.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

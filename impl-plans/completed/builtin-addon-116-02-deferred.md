@@ -1,18 +1,16 @@
-# builtin-addon-116-01-catalog
+# builtin-addon-116-02-deferred
 
 ```json
 {
-  "planId": "builtin-addon-116-01-catalog",
-  "planPath": "impl-plans/active/builtin-addon-116-01-catalog.md",
+  "planId": "builtin-addon-116-02-deferred",
+  "planPath": "impl-plans/completed/builtin-addon-116-02-deferred.md",
   "dependsOn": [],
   "writePaths": [
-    "Sources/RielaAddons/RielaAddons.swift",
-    "Tests/RielaAddonsTests/RielaBuiltinAddonCatalogTests.swift",
-    "Tests/RielaCLITests/WorkflowHostCapabilityTests+BuiltinCatalog.swift",
-    "impl-plans/active/builtin-addon-116-01-catalog-progress.md"
+    "Tests/RielaCLITests/DeferredContainerAddonTests.swift",
+    "impl-plans/completed/builtin-addon-116-02-deferred-progress.md"
   ],
   "sharedPaths": [],
-  "progressLog": "impl-plans/active/builtin-addon-116-01-catalog-progress.md"
+  "progressLog": "impl-plans/completed/builtin-addon-116-02-deferred-progress.md"
 }
 ```
 
@@ -41,15 +39,14 @@ export PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.x
 
 ## Tasks and exact changes
 
-1. Fresh-read catalog, `WorkflowValidateInspectCommands.swift` host-requirement builder, `WorkflowRequirements.swift`, and existing host tests. Keep production changes confined to `Sources/RielaAddons/RielaAddons.swift`.
-2. Add version `1` descriptors for exactly: `riela/chat-persona-router`, `riela/chat-persona-memory-read`, `riela/chat-persona-memory-write`, `riela/memory-save`, `riela/memory-load`, `riela/gmail-digest`, `riela/x-digest`, `riela/gemini-sdk-worker`, `riela/codex-sdk-worker`, `riela/time-signal`, `riela/gmail-gateway-read`, `riela/x-gateway-read`. Add small coherent groups to `all`; identify the last two as deferred no-op entries in comments/group naming. Preserve existing descriptors and `supports` matching logic; add no other names.
-3. Create `RielaBuiltinAddonCatalogTests.swift`, class `RielaBuiltinAddonCatalogTests`. Independently enumerate the 12 expected names; assert descriptor version 1, nil/1 supported, 2 rejected, unique catalog names, unknown `riela/issue-116-unknown` and `example/issue-116-unknown` rejected. Do not derive expected names from the catalog under test.
-4. Extend `WorkflowHostCapabilityTests` in new companion file `WorkflowHostCapabilityTests+BuiltinCatalog.swift`. The existing file is 1081 lines; avoid growing it or unrelated splitting. Add file-local fixtures with distinct names because existing helpers are private. Use existing `WorkflowValidateCommand`, an injected bundle resolver and capability resolver, one used add-on node/step per bundle, no manifest/dependency declaration and empty executable map. Table-test all 12 with nil and version 1: valid strict-local host resolution without an external executable. For version 2 and both unknown names assert failure and `unresolvedAddonExecutable`, not merely nonzero exit. These tests must never call adapter execution or ambient backend probes. Preserve environment requirements and existing local-command tests.
+1. Read `Sources/RielaCLI/ProductionNodeAdapter.swift` deferred dispatch and `Tests/RielaCLITests/GmailGatewayAddonTests.swift` runner injection fixtures. Create only `Tests/RielaCLITests/DeferredContainerAddonTests.swift`, class `DeferredContainerAddonTests`.
+2. Test both `riela/gmail-gateway-read` and `riela/x-gateway-read` using `BuiltinWorkflowAddonResolver(environment: [:], localGatewayGraphQLRunner: ...)`, fixed workflow/step/node IDs, version 1, empty inputs/variables and `AdapterExecutionContext`. Use a recording runner that fails if called; assert call count zero after execution. Use existing recording type only if visible; otherwise add a small test-local concurrency-safe recorder. No production injection framework or adapter edits.
+3. Assert exact payload keys/values (`status: ok`, add-on name, fixed stepId), provider `riela-builtin-addon`, model equal to add-on name, empty prompt and completionPassed true. This captures actual current semantics, not a mock replacement response. Do not reinterpret the response as fetched mail/posts or invoke provider workers.
 
 ## Invariants and acceptance
 
-All twelve references resolve as built-ins only at supported catalog versions. Unknown names and unsupported versions do not gain a fallback; legitimate package/dependency matching remains unchanged. Deferred catalog entries do not claim gateway connectivity. No changes to host resolver or production adapter are expected; if tests reveal a required change there, report evidence to serial owner before expanding scope.
+Both deferred names keep their exact no-op response and perform no gateway request. The distinct live `riela/gmail-gateway-reader` is neither aliased nor changed. Tests must fail if deferred execution starts using the injected gateway runner or changes its output contract.
 
 ## Verification and completion
 
-Run `swift test --skip-update --filter RielaBuiltinAddonCatalog` and `swift test --skip-update --filter WorkflowHostCapabilityTests`; retain logs, actual test counts and exit codes. `--skip-update` prevents dependency refresh; required test filters remain unchanged. Existing local-command positive/negative coverage must remain passing. Run `git diff --check`. Deliver source/tests, progress and immutable change evidence. Integration lint/build and 75-example verification belong to plan 03; this worker does not wait for formal downstream review or commit.
+Run `swift test --skip-update --filter DeferredContainerAddonTests` and `git diff --check`; record nonzero matched test count, full logs and exit codes. This plan is independent of catalog additions and can author tests in parallel with plan 01; serialize SwiftPM invocations. Deliver tests, own progress and immutable change evidence. Final build/lint and review belong downstream.

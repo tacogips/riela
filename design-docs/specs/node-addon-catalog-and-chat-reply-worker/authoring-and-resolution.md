@@ -462,8 +462,10 @@ Persistence rules:
 
 ## Issue #116: built-in host catalog parity
 
-Status: design authored for independent Step 3 review; implementation and
-verification remain downstream. Workflow mode: `issue-resolution`.
+Status: Step 3 design, Step 6 implementation verification, and independent
+adversarial and combined-tree reviews accepted. Commit and non-force push remain
+downstream.
+Workflow mode: `issue-resolution`.
 Issue: https://github.com/tacogips/riela/issues/116.
 The Step 1 intake and effective workflow input define this scope. No
 codex-agent reference or Cursor behavior change is requested.
@@ -475,8 +477,7 @@ At `cf69a96223cc3f65c83414a2efecbb0d5afceaf5`, 75 example directories contain
 report 59 valid and 16 invalid examples; the invalid results report
 `unresolvedAddonExecutable`. Comparing example add-on references with
 `Sources/RielaAddons/RielaAddons.swift` identifies the 12 names below.
-These are baseline observations, not post-fix verification or proof of live
-provider readiness.
+These are baseline observations, not proof of live provider readiness.
 
 `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` consults
 `RielaBuiltinAddonCatalog.supports(name:version:)` when constructing host
@@ -541,22 +542,22 @@ must not alter production dispatch or the local gateway engine.
 
 Use the Xcode Swift toolchain and record its path/version. Run in the foreground,
 retaining complete stdout/stderr logs and final exit codes under
-`tmp/example-contract-migration/`. Required commands:
+`tmp/builtin-addon-116-20260927-comm000006/`. Required commands:
 
 ```text
-swift test --filter RielaBuiltinAddonCatalog
-swift test --filter WorkflowHostCapabilityTests
+swift test --skip-update --filter RielaBuiltinAddonCatalog
+swift test --skip-update --filter WorkflowHostCapabilityTests
 swiftlint --quiet --no-cache
-swift build
-swift build --show-bin-path
+swift build --skip-update
+swift build --skip-update --show-bin-path
 git diff --check
 ```
 
 Also run the focused deferred-response tests selected by their final test names.
 Use the built executable from the reported binary directory, never the installed
-`riela` 0.2.1 executable, to run `workflow validate <absolute-example-directory>
---output json` for each of the 75 example directories. Confirm direct-directory
-syntax from source CLI help before execution. This validates the examples, not
+`riela` 0.2.1 executable, to run `workflow validate <example-name>
+--workflow-definition-dir <absolute-examples-root> --output json` for each of
+the 75 example directories. This validates the examples, not
 the executing workflow package. Record each directory, exact command, executable
 path, exit code, JSON diagnostics and complete log path; aggregate counts must
 sum to 75. Validation must not execute workflow nodes. Do not substitute a mock
@@ -584,8 +585,24 @@ is outside this documentation/catalog change.
 No unresolved user decision or architectural question remains for this design.
 The issue title/body were unavailable at intake; the supplied issue reference,
 problem statement and effective acceptance criteria are authoritative here.
-Post-fix outcomes are pending implementation, not an unresolved design decision.
+Source CLI validation after the catalog change accounts for all 75 examples:
+74 valid and one invalid. All 16 baseline `unresolvedAddonExecutable` failures
+are absent; 15 of those examples now validate. The remaining
+`x-follower-ai-business-digest` reports a separate schema reference error:
+`referenced payload field 'replyText' used by step 'send-telegram-digest' must be
+declared in schema.properties` at
+`workflow.nodes.summarize-posts.output.jsonSchema.properties.replyText`.
+Its example files are unchanged from original HEAD. See
+`tmp/builtin-addon-116-20260927-comm000006/builtin-addon-116-03-verification/attempt-2/example-summary.json`
+for every exact command, exit code, diagnostic and log path, and
+`impl-plans/active/builtin-addon-116-verification-findings.md` for the separate
+finding. The first absolute-directory sweep produced 75 CLI usage errors; the
+supported `<name> --workflow-definition-dir <examples-root>` syntax produced the
+reported results. The installed 0.2.1 CLI remains stale until release.
+Catalog membership and the deferred `status: ok` envelope still do not prove
+live provider or gateway behavior.
 The material risk is interpreting successful validation or deferred `status: ok`
 as evidence of live provider behavior; the classification and regression contract
-above explicitly prevent that interpretation. Independent design review and
-implementation review remain required before final acceptance.
+above explicitly prevent that interpretation. Design, implementation, and
+combined-tree reviews accepted this bounded behavior; commit and non-force
+push are the remaining publication gates.

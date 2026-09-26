@@ -202,7 +202,8 @@ private func validateAgentOutputDependencies(
     guard let label = transition.label else { return false }
     return label != "always"
   }) {
-    guard let payload = nodePayloads[step.nodeId], payload.output?.jsonSchema == nil else { continue }
+    guard let payload = nodePayloads[step.nodeId],
+      isAgentNode(payload), payload.output?.jsonSchema == nil else { continue }
     diagnostics.append(error(
       "workflow.nodes.\(step.nodeId).output.jsonSchema",
       "agent node '\(step.nodeId)' drives conditional transition labels from step '\(step.id)' and must declare output.jsonSchema"
@@ -210,7 +211,7 @@ private func validateAgentOutputDependencies(
   }
 
   for producerNodeId in dependenciesByProducer.keys.sorted() {
-    guard let payload = nodePayloads[producerNodeId] else { continue }
+    guard let payload = nodePayloads[producerNodeId], isAgentNode(payload) else { continue }
     let dependencies = dependenciesByProducer[producerNodeId, default: []].sorted {
       ($0.consumerStepId, $0.path) < ($1.consumerStepId, $1.path)
     }
@@ -233,6 +234,10 @@ private func validateAgentOutputDependencies(
   }
 }
 
+private func isAgentNode(_ payload: AgentNodePayload) -> Bool {
+  payload.nodeType == .agent || payload.executionBackend != nil
+}
+
 private func requiredProducerNodeIds(
   before consumerStepId: String,
   incoming: [String: [WorkflowStepRef]],
@@ -244,9 +249,10 @@ private func requiredProducerNodeIds(
   var pending = incoming[consumerStepId] ?? []
   while let step = pending.popLast() {
     guard visited.insert(step.id).inserted else { continue }
-    if nodePayloads[step.nodeId] != nil {
-      producers.insert(step.nodeId)
-    } else if registryById[step.nodeId]?.addon != nil {
+    if let payload = nodePayloads[step.nodeId] {
+      if isAgentNode(payload) { producers.insert(step.nodeId) }
+    } else if let addon = registryById[step.nodeId]?.addon,
+      !["riela/git-commit", "riela/git-push"].contains(addon.name) {
       pending.append(contentsOf: incoming[step.id] ?? [])
     }
   }

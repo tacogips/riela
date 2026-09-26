@@ -88,6 +88,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       try refuseStableNonterminalTransactions(candidates: candidates)
     }
     var errors: [String] = []
+    var firstInvalidCandidateError: Error?
     var deactivatedOrigins: [WorkflowOriginIdentity] = []
     var deactivatedDependencyFailure: WorkflowRegistryError?
     for candidate in candidates {
@@ -196,6 +197,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         guard options.scope == .auto else {
           throw error
         }
+        firstInvalidCandidateError = firstInvalidCandidateError ?? error
         errors.append("\(candidate.directory.path) invalid: \(workflowResolutionErrorDescription(error))")
         continue
       }
@@ -210,6 +212,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
         workflowId: options.workflowName,
         originId: deactivatedOrigins.count == 1 ? deactivatedOrigins[0].originId : nil
       )
+    }
+    if let firstInvalidCandidateError {
+      throw firstInvalidCandidateError
     }
     throw WorkflowResolutionError.notFound(options.workflowName, errors)
   }

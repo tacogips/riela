@@ -159,6 +159,42 @@ final class WorkflowBackendPolicyTests: XCTestCase {
     XCTAssertEqual(requirement.requiredEnvironment, ["CUSTOM_API_KEY"])
   }
 
+  func testRequirementProjectionHandlesDeepCycleAndLargeSchemaWithoutStackOverflow() throws {
+    let stepCount = 256
+    let steps = (0..<stepCount).map { index in
+      WorkflowStepRef(
+        id: "step-\(index)", nodeId: "agent",
+        transitions: [WorkflowStepTransition(toStepId: "step-\((index + 1) % stepCount)")]
+      )
+    }
+    let schemaProperties = Dictionary(uniqueKeysWithValues: (0..<256).map { index in
+      ("field\(index)", JSONValue.object(["type": .string("string")]))
+    })
+    let workflow = WorkflowDefinition(
+      workflowId: "deep-cycle",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 1_000, maxLoopIterations: 1),
+      entryStepId: "step-0",
+      nodeRegistry: [.init(id: "agent", nodeFile: "agent.json")],
+      steps: steps,
+      nodes: []
+    )
+    let payload = AgentNodePayload(
+      id: "agent", executionBackend: .codexAgent, model: "gpt",
+      agentSandbox: .readOnly,
+      output: NodeOutputContract(jsonSchema: [
+        "type": .string("object"), "properties": .object(schemaProperties)
+      ])
+    )
+
+    let requirements = try WorkflowRequirementResolver().resolve(
+      workflowId: workflow.workflowId,
+      workflows: [workflow.workflowId: workflow],
+      nodePayloads: [workflow.workflowId: ["agent": payload]]
+    )
+    XCTAssertEqual(requirements.count, 1)
+    XCTAssertEqual(requirements[0].provenance.count, stepCount)
+  }
+
   func testExplicitCommandPlacementProjectsProvenanceWithoutBackendPolicy() throws {
     let workflow = WorkflowDefinition(
       workflowId: "command-placement",

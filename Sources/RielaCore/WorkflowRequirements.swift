@@ -117,94 +117,63 @@ public struct WorkflowRequirementResolver: Sendable {
     visited: inout Set<String>,
     requirements: inout [WorkflowBackendRequirement]
   ) throws {
-    let visitKey = "\(workflow.workflowId):\(stepId)"
-    guard visited.insert(visitKey).inserted else { return }
-    guard let step = workflow.steps.first(where: { $0.id == stepId }) else {
-      throw WorkflowRequirementResolutionError.unknownStep(workflowId: workflow.workflowId, stepId: stepId)
-    }
-    if !reusedPrefixStepIds.contains(visitKey) {
-      let payload = nodePayloads[workflow.workflowId]?[step.nodeId]
-      let hostRequirement = nodeHostRequirements[workflow.workflowId]?[step.nodeId]
-      let isAddonNode = workflow.nodeRegistry.contains { $0.id == step.nodeId && $0.addon != nil }
-      guard payload != nil || hostRequirement != nil || isAddonNode else {
-        throw WorkflowRequirementResolutionError.unknownNode(workflowId: workflow.workflowId, nodeId: step.nodeId)
+    var pending = [(workflowId: workflow.workflowId, stepId: stepId)]
+    while let current = pending.popLast() {
+      guard let currentWorkflow = workflows[current.workflowId] else {
+        throw WorkflowRequirementResolutionError.unknownWorkflow(current.workflowId)
       }
-      if isAddonNode, hostRequirement == nil {
-        throw WorkflowRequirementResolutionError.unresolvedAddonExecutable(
-          workflowId: workflow.workflowId,
-          nodeId: step.nodeId
+      let visitKey = "\(current.workflowId):\(current.stepId)"
+      guard visited.insert(visitKey).inserted else { continue }
+      guard let step = currentWorkflow.steps.first(where: { $0.id == current.stepId }) else {
+        throw WorkflowRequirementResolutionError.unknownStep(
+          workflowId: current.workflowId, stepId: current.stepId
         )
       }
-      if step.placement != nil || payload?.executionBackend != nil || payload?.backendPolicy != nil
-        || hostRequirement?.addonExecutable != nil
-        || hostRequirement?.requiredEnvironment.isEmpty == false
-        || payload?.agentEnvironment.values.contains(where: { $0.required }) == true
-        || payload?.apiKeyEnvironment != nil {
-        let environment = (payload?.agentEnvironment.values.compactMap { binding in
-          binding.required ? binding.fromEnv : nil
-        } ?? []) + [payload?.apiKeyEnvironment].compactMap { $0 }
-          + (hostRequirement?.requiredEnvironment ?? [])
-        requirements.append(WorkflowBackendRequirement(
-          pin: payload?.executionBackend,
-          policy: payload?.backendPolicy,
-          explicitModel: payload?.model.isEmpty == false ? payload?.model : nil,
-          addonExecutable: hostRequirement?.addonExecutable,
-          requiredEnvironment: Array(Set(environment)).sorted(),
-          provenance: [.init(workflowId: workflow.workflowId, stepId: step.id, nodeId: step.nodeId)]
-        ))
-      }
-    }
-    for transition in step.transitions ?? [] {
-      if let targetWorkflowId = transition.toWorkflowId {
-        guard let target = workflows[targetWorkflowId] else {
-          throw WorkflowRequirementResolutionError.unknownWorkflow(targetWorkflowId)
-        }
-        try visit(
-          workflow: target,
-          stepId: transition.toStepId,
-          workflows: workflows,
-          nodePayloads: nodePayloads,
-          nodeHostRequirements: nodeHostRequirements,
-          reusedPrefixStepIds: reusedPrefixStepIds,
-          visited: &visited,
-          requirements: &requirements
-        )
-        if let resumeStepId = transition.resumeStepId {
-          try visit(
-            workflow: workflow,
-            stepId: resumeStepId,
-            workflows: workflows,
-            nodePayloads: nodePayloads,
-            nodeHostRequirements: nodeHostRequirements,
-            reusedPrefixStepIds: reusedPrefixStepIds,
-            visited: &visited,
-            requirements: &requirements
+      if !reusedPrefixStepIds.contains(visitKey) {
+        let payload = nodePayloads[current.workflowId]?[step.nodeId]
+        let hostRequirement = nodeHostRequirements[current.workflowId]?[step.nodeId]
+        let isAddonNode = currentWorkflow.nodeRegistry.contains { $0.id == step.nodeId && $0.addon != nil }
+        guard payload != nil || hostRequirement != nil || isAddonNode else {
+          throw WorkflowRequirementResolutionError.unknownNode(
+            workflowId: current.workflowId, nodeId: step.nodeId
           )
         }
-      } else {
-        try visit(
-          workflow: workflow,
-          stepId: transition.toStepId,
-          workflows: workflows,
-          nodePayloads: nodePayloads,
-          nodeHostRequirements: nodeHostRequirements,
-          reusedPrefixStepIds: reusedPrefixStepIds,
-          visited: &visited,
-          requirements: &requirements
-        )
+        if isAddonNode, hostRequirement == nil {
+          throw WorkflowRequirementResolutionError.unresolvedAddonExecutable(
+            workflowId: current.workflowId, nodeId: step.nodeId
+          )
+        }
+        if step.placement != nil || payload?.executionBackend != nil || payload?.backendPolicy != nil
+          || hostRequirement?.addonExecutable != nil
+          || hostRequirement?.requiredEnvironment.isEmpty == false
+          || payload?.agentEnvironment.values.contains(where: { $0.required }) == true
+          || payload?.apiKeyEnvironment != nil {
+          let environment = (payload?.agentEnvironment.values.compactMap { binding in
+            binding.required ? binding.fromEnv : nil
+          } ?? []) + [payload?.apiKeyEnvironment].compactMap { $0 }
+            + (hostRequirement?.requiredEnvironment ?? [])
+          requirements.append(WorkflowBackendRequirement(
+            pin: payload?.executionBackend,
+            policy: payload?.backendPolicy,
+            explicitModel: payload?.model.isEmpty == false ? payload?.model : nil,
+            addonExecutable: hostRequirement?.addonExecutable,
+            requiredEnvironment: Array(Set(environment)).sorted(),
+            provenance: [.init(workflowId: current.workflowId, stepId: step.id, nodeId: step.nodeId)]
+          ))
+        }
       }
-      if let joinStepId = transition.fanout?.joinStepId {
-        try visit(
-          workflow: workflow,
-          stepId: joinStepId,
-          workflows: workflows,
-          nodePayloads: nodePayloads,
-          nodeHostRequirements: nodeHostRequirements,
-          reusedPrefixStepIds: reusedPrefixStepIds,
-          visited: &visited,
-          requirements: &requirements
-        )
+      var successors: [(workflowId: String, stepId: String)] = []
+      for transition in step.transitions ?? [] {
+        let targetWorkflowId = transition.toWorkflowId ?? current.workflowId
+        successors.append((targetWorkflowId, transition.toStepId))
+        if let resumeStepId = transition.resumeStepId, transition.toWorkflowId != nil {
+          successors.append((current.workflowId, resumeStepId))
+        }
+        if let joinStepId = transition.fanout?.joinStepId {
+          successors.append((current.workflowId, joinStepId))
+        }
       }
+      pending.append(contentsOf: successors.reversed())
     }
   }
 

@@ -206,7 +206,7 @@ authoring pass.
 
 ## Issue #117 follow-up: installed local-command dependencies
 
-Status: design authored; implementation and independent review pending. This
+Status: resumption design updated from pushed WIP `7435d6ce735ebc0a02609d7dcf14e10205d6aba0`; final verification and independent review pending. This
 section extends the native/container baseline above and governs the current
 `issue-resolution` execution, `codex-design-and-implement-review-loop-session-1`,
 Step 1 `comm-000002`, for <https://github.com/tacogips/riela/issues/117>.
@@ -218,16 +218,15 @@ there is no unresolved user decision and no user-QA document is needed.
 
 ### Observed gap and bounded change
 
-`Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift` currently permits
-native, container, and declarative dependency locks only. Merely adding
-`localCommand` to that set would be insufficient:
-`Sources/RielaCLI/WorkflowValidateInspectCommands.swift` treats every verified
-dependency as host-neutral, and its executable-availability projection only
-handles add-ons declared directly by the workflow package.
-
-Extend this existing verification result to carry the matched installed add-on
-and its verified executable location when it is a local command. Use that same
-verified result for dependency host requirements and local availability. Keep
+`Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift` at WIP `7435d6c`
+already verifies explicit local-command locks and returns the canonical executable
+path alongside dependency, lock, and scope evidence.
+`Sources/RielaCLI/WorkflowValidateInspectCommands.swift` consumes that verified
+path for dependency host requirements and local availability. Preserve this
+narrow implementation while completing missing negative coverage and final
+source-matched verification. The installed descriptor must be checked within the
+verifier; carrying a duplicate descriptor in the returned value is not required
+when consumers need only the verified identity and executable path. Keep
 `Sources/RielaCLI/WorkflowResolution.swift` ownership and selection semantics,
 and the unresolved-add-on guard in
 `Sources/RielaCore/WorkflowRequirements.swift`. Core remains independent of
@@ -237,8 +236,13 @@ engine, automatic lock migration, or package-repository change is required.
 ### Verification contract and data flow
 
 1. Resolve the owning installed workflow through the existing bundle resolver.
-   Package ID, workflow name, and direct installed package-directory selection
-   must retain the same owning manifest and dependency identity. An unrelated
+   Package ID, workflow name, and direct selection of the manifest-declared
+   installed workflow directory must retain the same owning manifest and
+   dependency identity. For the synthetic fixture, the manifest declares
+   `workflows/youtube-flow`, so direct selection uses
+   `.riela/packages/@issue117/youtube-flow/workflows/youtube-flow`. The package
+   root is not a workflow bundle. Do not extend
+   `Sources/RielaCLI/WorkflowResolution.swift` to accept that root. An unrelated
    authored copy must not inherit that identity, including when its name matches.
 2. Match the complete qualified dependency reference, or exactly one unqualified
    reference, within the owner's declared node-addon dependencies. An explicit
@@ -290,7 +294,7 @@ and command evidence under `tmp/issue-117-local-command/`; never edit
 `riela-packages`, sibling worktrees, or the real legacy YouTube locks.
 
 Both validate and inspect must pass for package-ID, workflow-name, and direct
-installed package-directory selection. Assert retained identity and the actual
+manifest-declared installed workflow-directory selection. Assert retained identity and the actual
 executable requirement, not just absence of an error. Negative cases must assert
 nonzero status and relevant diagnostics for missing kind, kind/version/identity/
 registry/digest or lock-summary mismatch, missing/non-executable/directory or
@@ -307,15 +311,15 @@ calls or local-command execution.
 Implementation gates (planned, not claimed as executed by Step 2):
 
 ```bash
-swift test --filter WorkflowInstalledAddonMetadataTests
+swift test --filter 'WorkflowInstalledAddonMetadataTests|WorkflowInstalledLocalCommandTests'
 swift test --filter WorkflowHostCapabilityTests
 swift build
 swiftlint
 # From the synthetic project, repeat both commands for all three selections:
 <source-riela> workflow validate <package-id-or-workflow-name> --scope project --output json
 <source-riela> workflow inspect <package-id-or-workflow-name> --scope project --output json
-<source-riela> workflow validate <workflow-name> --workflow-definition-dir <installed-package-directory> --output json
-<source-riela> workflow inspect <workflow-name> --workflow-definition-dir <installed-package-directory> --output json
+<source-riela> workflow validate <workflow-name> --workflow-definition-dir <installed-workflow-directory> --output json
+<source-riela> workflow inspect <workflow-name> --workflow-definition-dir <installed-workflow-directory> --output json
 # Validate each of the 75 checked-in examples with the source-built executable:
 <source-riela> workflow validate <example-name> --workflow-definition-dir <repository>/examples --output json
 git diff --check
@@ -329,11 +333,46 @@ until downstream review consumes it, then remove throwaway files. Prior
 native/container test logs are historical and cannot establish this extension's
 acceptance. No background processes or incomplete logs qualify as passing gates.
 
+### Resumption evidence and planning handoff
+
+Preserve WIP commit `7435d6c` and the historical evidence in
+`impl-plans/progress/issue-117-installed-local-command.md`. That log reports
+12 focused tests and 22 host tests passing, but the CLI driver exited 1 with
+79/81 positives and 16/16 negatives. This is a failed gate, not completion.
+The two failing package-root commands describe an incorrect acceptance command,
+not a resolver defect requiring a broader implementation.
+
+Step 4 must reconcile `impl-plans/active/issue-117-installed-local-command.md`
+and `impl-plans/active/issue-117-dispatch.json` with this declared-directory
+selection and WIP starting point before implementation resumes. Keep the resolver
+outside the implementation write scope. Append the corrected interpretation and
+new evidence to the progress log without erasing the failed attempt. Reconcile
+the plan's descriptor-carriage wording with the verified-path contract above.
+
+The final positive CLI gate requires all six installed commands (validate and
+inspect for each of three selections) plus all 75 example validations: at least
+81/81 positives with no failed command. Negative CLI cases must cover the
+accepted rejection matrix above, each with a numeric nonzero exit and matching
+diagnostic; the historical 16/16 does not waive missing cases. Isolate each
+mutation so the intended rejection is exercised, rather than an incidental stale
+checksum masking it. Record source revision and working-tree diff identity,
+source-built executable identity, complete log paths, final numeric exits, and
+aggregate counts for the final source. Any subsequent source change requires
+rerunning affected gates; historical logs alone cannot accept the final tree.
+
+The planned pre-production failing baseline was not captured. Preserve that
+historical limitation explicitly; do not fabricate it or label it passing.
+Final regression evidence and independent review must assess the resulting
+coverage. This does not authorize restoring or rewriting the preserved WIP.
+
 ### Author decisions and rollout
 
-One design author updates this existing document. No current Step 3/5 feedback
-was supplied; prior review acceptance applies only to the baseline. Independent
-adversarial review remains required. Implementation, review, commit, and non-force
+One design author updates this existing document. The existing dispatch records
+prior Step 3 acceptance (`comm-000004`) and Step 5 acceptance (`comm-000006`);
+those decisions do not establish acceptance of the resumed final source. The
+current intake supersedes their package-root selection requirement. No new
+Step 3/5 finding payload was supplied. Independent adversarial review remains
+required. Implementation, review, commit, and non-force
 push target `fix/example-contract-migration`; release and merge remain outside
 scope. Runtime-owned workflow provenance is authoritative for this execution.
 

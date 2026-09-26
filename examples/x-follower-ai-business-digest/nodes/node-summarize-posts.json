@@ -6,14 +6,85 @@
   "model": "gpt-5.4-mini",
   "modelFreeze": true,
   "promptTemplateFile": "prompts/summarize-posts.md",
-  "variables": {
-    "codexAdditionalArgs": [
-      "--sandbox",
-      "workspace-write"
-    ]
-  },
   "output": {
     "description": "Return JSON with when.should_send_telegram, payload.replyText, payload.maxFetchedPostId, and payload.topicDigests.",
-    "jsonSchema": {"type": "object", "properties": {"replyText": {"type": "string"}}}
+    "jsonSchema": {
+      "type": "object",
+      "properties": {
+        "when": {
+          "type": "object",
+          "properties": {
+            "should_send_telegram": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "should_send_telegram"
+          ]
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "shouldSendTelegram": {
+              "type": "boolean"
+            },
+            "maxFetchedPostId": {
+              "type": "string"
+            },
+            "replyText": {
+              "type": "string"
+            },
+            "topicDigests": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "sourcePostIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  },
+                  "articleUrl": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "topic",
+                  "reason",
+                  "summary",
+                  "sourcePostIds"
+                ]
+              }
+            },
+            "discardedCount": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "shouldSendTelegram",
+            "maxFetchedPostId",
+            "replyText",
+            "topicDigests",
+            "discardedCount"
+          ]
+        }
+      },
+      "required": [
+        "when",
+        "payload"
+      ]
+    }
   }
 }

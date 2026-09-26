@@ -2,7 +2,7 @@
   "id": "step2-design-doc-update",
   "description": "Create or revise feature-local design documentation for one fanout branch.",
   "executionBackend": "codex-agent",
-  "agentSandbox": "read-only",
+  "agentSandbox": "workspace-write",
   "model": "gpt-5.5",
   "modelFreeze": false,
   "sessionPolicy": {

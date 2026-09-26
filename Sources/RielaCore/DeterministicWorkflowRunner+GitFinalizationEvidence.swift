@@ -261,7 +261,11 @@ extension DeterministicWorkflowRunner {
             context.payload["basePushStatus"] == .string(pushStatus) else {
         throw invalidGitFinalizationEvidence("base integration evidence is missing or mismatched")
       }
-      if mergeStatus == "pr-open" {
+      if mergeStatus == "branch-only" {
+        guard pushStatus == "not-requested", pushedBranch != baseBranch else {
+          throw invalidGitFinalizationEvidence("branch-only handoff is missing or contradicts a base-branch push")
+        }
+      } else if mergeStatus == "pr-open" {
         guard pushStatus == "not-requested",
               let pullRequestURL = stringValue(integration["pullRequestURL"]),
               let parsedURL = URL(string: pullRequestURL),

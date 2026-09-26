@@ -458,3 +458,134 @@ Persistence rules:
 - workflow save/edit APIs preserve `addon` references and do not write generated
   `nodeFile` payloads unless an explicit future `workflow vendor-addon` command
   asks for that
+
+
+## Issue #116: built-in host catalog parity
+
+Status: design authored for independent Step 3 review; implementation and
+verification remain downstream. Workflow mode: `issue-resolution`.
+Issue: https://github.com/tacogips/riela/issues/116.
+The Step 1 intake and effective workflow input define this scope. No
+codex-agent reference or Cursor behavior change is requested.
+
+### Observed defect and boundary
+
+At `cf69a96223cc3f65c83414a2efecbb0d5afceaf5`, 75 example directories contain
+`workflow.json`. Existing results in `tmp/example-contract-migration/baseline/`
+report 59 valid and 16 invalid examples; the invalid results report
+`unresolvedAddonExecutable`. Comparing example add-on references with
+`Sources/RielaAddons/RielaAddons.swift` identifies the 12 names below.
+These are baseline observations, not post-fix verification or proof of live
+provider readiness.
+
+`Sources/RielaCLI/WorkflowValidateInspectCommands.swift` consults
+`RielaBuiltinAddonCatalog.supports(name:version:)` when constructing host
+requirements. A recognized built-in needs no external add-on executable;
+its declared environment requirements remain intact. An unrecognized reference
+without a matching package/dependency declaration leaves requirements unresolved,
+and `Sources/RielaCore/WorkflowRequirements.swift` fails closed. The production
+adapter already dispatches these names. Correct the finite catalog at this
+boundary; do not bypass requirement resolution or accept the entire namespace.
+
+### Required classification
+
+Every name in this table receives an explicit version `1` descriptor. Omitted
+versions continue to resolve to the catalog entry; any other explicit version
+must fail catalog lookup. Catalog membership means a built-in dispatch path
+exists, not that a provider is reachable or that all configurations succeed.
+
+| Exact add-on name | Existing runtime behavior | Source evidence |
+| --- | --- | --- |
+| `riela/chat-persona-router` | Selects a configured persona from input | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `executeChatPersonaRouter` |
+| `riela/chat-persona-memory-read` | Reads persona memory | `Sources/RielaCLI/ProductionNodeAdapter.swift`, dispatch to `executeChatPersonaMemoryRead` |
+| `riela/chat-persona-memory-write` | Writes persona memory | `Sources/RielaCLI/ProductionNodeAdapter.swift`, dispatch to `executeChatPersonaMemoryWrite` |
+| `riela/memory-save` | Persists memory through the existing memory engine | `Sources/RielaCLI/ProductionNodeAdapter+MemoryAddonCore.swift`, `BuiltinMemoryAddon`; `ProductionNodeAdapter+StatefulAddonDispatch.swift` |
+| `riela/memory-load` | Loads memory through the existing memory engine | Same memory enum and stateful dispatch |
+| `riela/gmail-digest` | Executes configured digest operations, including state and attachment handling | `Sources/RielaCLI/ProductionNodeAdapter+GmailDigest.swift` |
+| `riela/x-digest` | Executes configured digest normalization, validation and state operations | `Sources/RielaCLI/ProductionNodeAdapter+XDigest.swift` |
+| `riela/gemini-sdk-worker` | Invokes the Gemini worker adapter | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `executeGeminiSDKWorker` dispatch |
+| `riela/codex-sdk-worker` | Invokes the configured SDK worker adapter | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `BuiltinSDKWorker` and `executeSDKWorker` |
+| `riela/time-signal` | Calculates announcement flags and text from timestamp, timezone and interval | `Sources/RielaCLI/ProductionNodeAdapter+TimeSignal.swift` |
+| `riela/gmail-gateway-read` | Deferred no-op: returns `status: ok`, add-on name and step ID with completion passed; no gateway request | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `deferredContainerAddons` |
+| `riela/x-gateway-read` | Same deferred no-op response; no gateway request | Same deferred dispatch |
+
+The two deferred entries must be visibly identified as deferred in catalog
+organization/comments and documentation. Do not route them to the local gateway
+engine or equate `riela/gmail-gateway-read` with the distinct implemented
+`riela/gmail-gateway-reader`. Their existing success envelope remains unchanged.
+No new gateway execution, aliases, runtime version policy, capabilities schema,
+or general catalog-generation framework is required. Other names discovered in
+runtime enums are outside this example-driven correction.
+
+### Regression contract
+
+Add focused `RielaBuiltinAddonCatalog` tests under `Tests/RielaAddonsTests/`
+for all 12 exact names: descriptor version `1`, omitted-version acceptance,
+version `1` acceptance, and version `2` rejection. Check unique catalog names
+and rejection of a genuinely unknown `riela/` name and unknown vendor name.
+Extend `Tests/RielaCLITests/WorkflowHostCapabilityTests.swift` using isolated
+single-add-on bundles and injected capability snapshots: all 12 pass host
+requirement resolution without an external executable; unsupported versions and
+unknown names without package declarations fail with
+`unresolvedAddonExecutable`. Preserve package/dependency resolution and existing
+local-command executable failure coverage.
+
+Use deterministic direct adapter tests for both deferred names to assert the
+existing exact envelope and absence of gateway invocation through a recording
+or failing injected runner. Do not execute SDK workers, digest attachment
+network operations, or live chat/provider calls to prove catalog membership.
+Reuse existing deterministic adapter coverage where sufficient; the change
+must not alter production dispatch or the local gateway engine.
+
+### Verification and delivery contract
+
+Use the Xcode Swift toolchain and record its path/version. Run in the foreground,
+retaining complete stdout/stderr logs and final exit codes under
+`tmp/example-contract-migration/`. Required commands:
+
+```text
+swift test --filter RielaBuiltinAddonCatalog
+swift test --filter WorkflowHostCapabilityTests
+swiftlint --quiet --no-cache
+swift build
+swift build --show-bin-path
+git diff --check
+```
+
+Also run the focused deferred-response tests selected by their final test names.
+Use the built executable from the reported binary directory, never the installed
+`riela` 0.2.1 executable, to run `workflow validate <absolute-example-directory>
+--output json` for each of the 75 example directories. Confirm direct-directory
+syntax from source CLI help before execution. This validates the examples, not
+the executing workflow package. Record each directory, exact command, executable
+path, exit code, JSON diagnostics and complete log path; aggregate counts must
+sum to 75. Validation must not execute workflow nodes. Do not substitute a mock
+success result for validation. Any execution coverage uses deterministic mocks.
+
+After correction, none of the 12 names at supported versions may produce
+`unresolvedAddonExecutable`. Remaining failures require exact per-example
+classification and evidence; do not silently skip or repair unrelated examples.
+For test/lint failures claimed pre-existing, compare against original HEAD using
+the same toolchain/configuration and an isolated source snapshot under `tmp/`
+without changing this worktree's branch or creating another worktree. Record
+matching diagnostics, baseline/current exit codes and a separate tracked finding.
+A failure lacking baseline proof remains unresolved. Missing tooling is a
+verification gap, never a pass.
+
+The installed 0.2.1 CLI remains stale until a later release. This work authorizes
+review, commit and non-force push to `origin/fix/example-contract-migration`,
+following the workflow's review gates; it authorizes neither release nor merge.
+Preserve this worktree, checkpointed example changes and sibling repositories.
+No workflow, prompt, script or skill edits are needed, so package digest refresh
+is outside this documentation/catalog change.
+
+### Open questions and risks
+
+No unresolved user decision or architectural question remains for this design.
+The issue title/body were unavailable at intake; the supplied issue reference,
+problem statement and effective acceptance criteria are authoritative here.
+Post-fix outcomes are pending implementation, not an unresolved design decision.
+The material risk is interpreting successful validation or deferred `status: ok`
+as evidence of live provider behavior; the classification and regression contract
+above explicitly prevent that interpretation. Independent design review and
+implementation review remain required before final acceptance.

@@ -92,6 +92,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     var deactivatedOrigins: [WorkflowOriginIdentity] = []
     var deactivatedDependencyFailure: WorkflowRegistryError?
     for candidate in candidates {
+      if candidate.ambiguousInstalledWorkflow {
+        throw CLIUsageError("installed workflow '\(options.workflowName)' is ambiguous in \(candidate.scope.rawValue) scope")
+      }
       do {
         try sharedNodeActivationPolicy.requireActiveCandidate(
           name: options.workflowName,
@@ -450,6 +453,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     var packageManifest: WorkflowPackageManifest?
     var packageDirectory: URL?
     var provenance: WorkflowProvenance
+    var ambiguousInstalledWorkflow: Bool
 
     init(
       directory: URL,
@@ -457,7 +461,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       scope: WorkflowScope,
       packageManifest: WorkflowPackageManifest? = nil,
       packageDirectory: URL? = nil,
-      provenance: WorkflowProvenance = .immutable
+      provenance: WorkflowProvenance = .immutable,
+      ambiguousInstalledWorkflow: Bool = false
     ) {
       self.directory = directory
       self.rootDirectory = rootDirectory
@@ -465,6 +470,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       self.packageManifest = packageManifest
       self.packageDirectory = packageDirectory
       self.provenance = provenance
+      self.ambiguousInstalledWorkflow = ambiguousInstalledWorkflow
     }
   }
 
@@ -473,9 +479,12 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     if let workflowDefinitionDir = options.workflowDefinitionDir {
       let directRoot = absoluteURL(workflowDefinitionDir, relativeTo: workingDirectory).standardizedFileURL
       let named = directRoot.appendingPathComponent(options.workflowName)
+      let installedRoots = packageRoots(scope: .auto, workingDirectory: workingDirectory)
       return [
-        CandidateDirectory(directory: named.standardizedFileURL, rootDirectory: directRoot, scope: .direct),
-        CandidateDirectory(directory: directRoot, rootDirectory: directRoot, scope: .direct)
+        try installedPackageCandidate(for: named.standardizedFileURL, scope: .direct, roots: installedRoots)
+          ?? CandidateDirectory(directory: named.standardizedFileURL, rootDirectory: directRoot, scope: .direct),
+        try installedPackageCandidate(for: directRoot, scope: .direct, roots: installedRoots)
+          ?? CandidateDirectory(directory: directRoot, rootDirectory: directRoot, scope: .direct)
       ]
     }
     let safeWorkflowName = isSafeScopedWorkflowName(options.workflowName)
@@ -514,6 +523,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     }
     var candidates = workflowCandidates
       + (safePackageName ? try packageCandidateDirectories(for: options, workingDirectory: workingDirectory) : [])
+    if safeWorkflowName {
+      candidates += try installedWorkflowCandidates(for: options, workingDirectory: workingDirectory)
+    }
     if safeWorkflowName, options.scope != .project {
       let mutableRoot = WorkflowMutableRegistry().root
       candidates.append(CandidateDirectory(
@@ -533,7 +545,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
     var candidates: [CandidateDirectory] = []
     for (scope, root) in packageRoots(scope: options.scope, workingDirectory: workingDirectory) {
       let packageDirectory = root.appendingPathComponent(options.workflowName, isDirectory: true).standardizedFileURL
-      guard isContained(packageDirectory, in: root) else {
+      guard isContained(packageDirectory, in: root),
+        isContained(packageDirectory.resolvingSymlinksInPath(), in: root.resolvingSymlinksInPath()) else {
         continue
       }
       let manifestURL = packageDirectory.appendingPathComponent("riela-package.json")
@@ -543,6 +556,9 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       let manifest = try JSONDecoder().decode(WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL))
       guard manifest.kind == .workflow else {
         continue
+      }
+      guard manifest.name == options.workflowName else {
+        throw CLIUsageError("installed package identity does not match requested package '\(options.workflowName)'")
       }
       let issues = WorkflowPackageManifestValidator.validate(manifest)
         + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
@@ -565,6 +581,80 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       ))
     }
     return candidates
+  }
+
+  private func installedWorkflowCandidates(
+    for options: WorkflowResolutionOptions,
+    workingDirectory: URL
+  ) throws -> [CandidateDirectory] {
+    var candidates: [CandidateDirectory] = []
+    for (scope, root) in packageRoots(scope: options.scope, workingDirectory: workingDirectory) {
+      guard FileManager.default.fileExists(atPath: root.path) else { continue }
+      var matches: [CandidateDirectory] = []
+      for manifestURL in try packageManifestURLs(in: root) {
+        let packageDirectory = manifestURL.deletingLastPathComponent()
+        guard let manifest = try? JSONDecoder().decode(
+          WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL)
+        ), manifest.kind == .workflow,
+          let relative = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".")
+        else { continue }
+        let directory = packageDirectory.appendingPathComponent(relative, isDirectory: true)
+        guard authoredWorkflowId(at: directory.appendingPathComponent("workflow.json")) == options.workflowName,
+          let candidate = try installedPackageCandidate(for: directory, scope: scope, roots: [(scope, root)])
+        else { continue }
+        matches.append(candidate)
+      }
+      if matches.count == 1 {
+        candidates += matches
+      } else if matches.count > 1 {
+        var ambiguous = matches[0]
+        ambiguous.ambiguousInstalledWorkflow = true
+        candidates.append(ambiguous)
+      }
+    }
+    return candidates
+  }
+
+  private func installedPackageCandidate(
+    for selectedDirectory: URL,
+    scope: WorkflowScope,
+    roots: [(WorkflowScope, URL)]
+  ) throws -> CandidateDirectory? {
+    let selected = selectedDirectory.resolvingSymlinksInPath().standardizedFileURL
+    var matches: [CandidateDirectory] = []
+    for (_, root) in roots where FileManager.default.fileExists(atPath: root.path) {
+      for manifestURL in try packageManifestURLs(in: root) {
+        let packageDirectory = manifestURL.deletingLastPathComponent().standardizedFileURL
+        guard let manifest = try? JSONDecoder().decode(
+          WorkflowPackageManifest.self, from: Data(contentsOf: manifestURL)
+        ), manifest.kind == .workflow,
+          root.appendingPathComponent(manifest.name, isDirectory: true).standardizedFileURL == packageDirectory,
+          isContained(packageDirectory.resolvingSymlinksInPath(), in: root.resolvingSymlinksInPath()),
+          let relative = WorkflowPackageManifestValidator.normalizePackageRelativePath(manifest.workflowDirectory ?? ".")
+        else { continue }
+        let workflowDirectory = packageDirectory.appendingPathComponent(relative, isDirectory: true)
+          .resolvingSymlinksInPath().standardizedFileURL
+        guard workflowDirectory == selected,
+          isContained(workflowDirectory, in: packageDirectory.resolvingSymlinksInPath().standardizedFileURL)
+        else { continue }
+        let issues = WorkflowPackageManifestValidator.validate(manifest)
+          + WorkflowPackageManifestValidator.validateWorkflowBundle(manifest, packageRoot: packageDirectory)
+        guard issues.isEmpty else {
+          throw CLIUsageError("package source validation failed: \(issues.map { "\($0.path): \($0.message)" }.joined(separator: "; "))")
+        }
+        matches.append(CandidateDirectory(
+          directory: workflowDirectory,
+          rootDirectory: workflowDirectory.deletingLastPathComponent(),
+          scope: scope,
+          packageManifest: manifest,
+          packageDirectory: packageDirectory
+        ))
+      }
+    }
+    guard matches.count < 2 else {
+      throw CLIUsageError("installed package ownership is ambiguous for \(selected.path)")
+    }
+    return matches.first
   }
 
   private func packageRoots(scope: WorkflowScope, workingDirectory: URL) -> [(WorkflowScope, URL)] {

@@ -77,8 +77,9 @@ Coverage must prove:
 
 ## Issue #117: Preserve Locked Add-on Metadata During Validate/Inspect
 
-Status: authored for independent design review; implementation and behavioral
-verification pending. Workflow mode: `issue-resolution`. Issue:
+Status: branch implementation and behavioral verification complete; branch
+test-integrity and adversarial rereview accepted in `comm-000017`, with combined-tree
+integration acceptance and final commit/push pending. Workflow mode: `issue-resolution`. Issue:
 <https://github.com/tacogips/riela/issues/117>. Source of scope: Step 1 intake
 `comm-000002` and effective `workflowInput` for
 `codex-design-and-implement-review-loop-session-1`. The issue body was unavailable
@@ -198,6 +199,7 @@ scope/lock selection. The ownership, mismatch, ambiguity, and precedence cases
 above are mandatory acceptance evidence. No unresolved user decision is needed;
 therefore no user-QA document is added. The exact metadata-loss branch must be
 confirmed by the synthetic reproduction during implementation, before selecting
-the smallest source change. This is pending implementation evidence, not a
-reason to broaden the design. No Step 3/5 feedback was supplied for this initial
+the smallest source change. The baseline reproduction and final verification are
+recorded in `impl-plans/progress/issue-117-installed-addon-metadata.md`; this did
+not broaden the accepted design. No Step 3/5 feedback was supplied for this initial
 authoring pass.

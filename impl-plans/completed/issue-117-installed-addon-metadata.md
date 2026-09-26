@@ -3,7 +3,7 @@
 ## Contract
 
 - planId: `issue-117-installed-addon-metadata`
-- planPath: `impl-plans/active/issue-117-installed-addon-metadata.md`
+- planPath: `impl-plans/completed/issue-117-installed-addon-metadata.md`
 - dependsOn: `[]` (single implementation unit; tasks below form a serial DAG)
 - workflowMode: `issue-resolution`
 - issueReference: https://github.com/tacogips/riela/issues/117
@@ -43,7 +43,7 @@ Record the exact subset selected after reproduction in the progress log.
 | `Tests/RielaCLITests/WorkflowHostCapabilityTests+AddonRequirements.swift` (new only if needed) | Moved add-on requirement tests with no unrelated behavior changes. |
 | `design-docs/specs/design-installed-package-workflow-resolution.md` | Post-review implementation/evidence status update within the accepted addendum. |
 | `README.md` | Only a directly affected installed-workflow validate/inspect clarification, if existing text is inaccurate; otherwise record review/no change. |
-| `impl-plans/active/issue-117-installed-addon-metadata.md` | Task completion/evidence pointers only, under serial ownership. |
+| `impl-plans/completed/issue-117-installed-addon-metadata.md` | Task completion/evidence pointers only, under serial ownership. |
 | `impl-plans/progress/issue-117-installed-addon-metadata.md` | Owner's progress, findings, commands, exit statuses, and evidence pointers. |
 | `tmp/issue-117/` | Isolated fixtures, verification driver, snapshots, logs; never stage. |
 
@@ -160,6 +160,11 @@ all precisely classified failures in the progress log. No high/mid implementatio
 finding or missing required implementation verification may be called complete.
 Formal independent review, final documentation, commit and push remain downstream;
 their pending status alone does not make Step 6 implementation incomplete.
+After Step 7 `comm-000013`, TASK-117-04 also requires explicit ambiguous
+same-scope workflow rejection before lower-priority package selection and
+declared dependency-registry equality with installed/locked metadata. Both
+repairs and final-source evidence are recorded in the plan-local progress log;
+independent rereview accepted them in `comm-000017`.
 
 ### TASK-117-05 — Reviewed finalization (dependsOn: [TASK-117-04, external-independent-review-accept])
 
@@ -323,7 +328,7 @@ unreviewed plan. There are no parallel implementation tasks in this coupled unit
 Progress log records each task as pending/in_progress/completed/blocked, exact
 changed files, pre/post hashes, decisions, findings with severity, verification
 commands and final exit codes/log paths. TASK-117-05 stays explicitly downstream
-until independent review; do not claim final push from implementation evidence.
+for integration review and publication; do not claim final push from implementation evidence.
 Retain scratch evidence until downstream consumption, then remove it without
 staging it. Durable progress/doc references must include essential outcomes even
 when scratch is later removed.
@@ -337,3 +342,23 @@ changed-file allowlist and evidence delivered. Overall issue completion addition
 requires TASK-117-05, independent acceptance, current documentation, and matching
 local/remote source commit. No unresolved user decisions or design defects are
 known. No Step 5 feedback has been supplied for this first plan authoring pass.
+
+## Step 6 implementation handoff
+
+TASK-117-01 through TASK-117-04 are complete on the shared working tree. The
+real resolver baseline failed workflow-name selection (`notFound("youtube-flow")`),
+while the final source passed 9 focused installed-metadata tests, 22 existing
+host-capability tests, strict selected-file SwiftLint, source build, 12 installed
+native/container CLI selections, and all 75 example validations. Full command
+logs, numeric exits, fixture identities, per-edit intentions/hashes, and the
+87-command final summary are under `tmp/issue-117/implementation/`; durable
+details are in `impl-plans/progress/issue-117-installed-addon-metadata.md`.
+Step 8 refreshed README's installed add-on validate/inspect contract and the
+implementation-plan index, then archived this accepted implementation plan.
+The implementation workflow skill was reviewed and needs no issue-specific
+instruction change.
+The branch's independent test-integrity and adversarial rereview decisions in
+`comm-000017` accepted the final implementation with no findings. Combined-tree
+integration acceptance, exact-file staging, commit, and
+non-force push remain TASK-117-05 downstream work.
+Archiving records accepted implementation, not overall issue publication.

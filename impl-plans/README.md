@@ -126,6 +126,15 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+Issue [#117](https://github.com/tacogips/riela/issues/117):
+[`issue-117-installed-addon-metadata`](completed/issue-117-installed-addon-metadata.md)
+was archived after branch adversarial and test-integrity rereview accepted the
+implementation in `comm-000017`. Nine focused tests, 22 host tests, build,
+SwiftLint, 12 installed native/container selections, and all 75 example
+validations passed. Combined-tree integration review, exact-file commit,
+non-force push, and remote-head verification remain TASK-117-05 publication
+gates. [Progress and complete evidence](progress/issue-117-installed-addon-metadata.md).
+
 Issue [#116](https://github.com/tacogips/riela/issues/116):
 [`builtin-addon-116-01-catalog`](completed/builtin-addon-116-01-catalog.md)
 and [`builtin-addon-116-02-deferred`](completed/builtin-addon-116-02-deferred.md)

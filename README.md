@@ -35,6 +35,17 @@ For failed sequential agent workflows, [history-preserving recovery](docs/preser
 reuses accepted discussion without rerunning earlier agents and records explicit
 source lineage in the new session.
 
+Fanout change evidence accepts explicit repository-relative file or directory
+`writePaths`, including paths that do not exist yet. Directory snapshots include
+hidden descendants and empty directories. At reduce, Riela re-enumerates the
+declared roots and reports added or removed entries, kind changes, directory
+membership changes, and content or mode changes with path and branch attribution.
+Selections reject traversal, Git metadata, symlinks, special or unreadable
+entries. Each capture or reduce allows 1–512 declared paths, at most 512 unique
+expanded entries, 8,000,000 bytes per file, and 64,000,000 total file bytes.
+Snapshots occur at workflow node boundaries, so writes that begin and end
+within one agent invocation may not appear in the evidence.
+
 Local command nodes run foreground work: their process group is reclaimed when
 the command leader exits, including background children that retain its pipes.
 Foreground exit status and captured logs remain available. Commands must not

@@ -1,0 +1,82 @@
+{
+  "taskId": "issue-118",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/fanout-directory-change-tracking",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "fd7d495ad8f02c714f2c5ad9613e8d9fa7d41935",
+  "designDocPaths": [
+    "design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md"
+  ],
+  "evidenceRoot": "tmp/issue-118",
+  "reviewContext": {
+    "issueReference": "https://github.com/tacogips/riela/issues/118",
+    "userProblem": "Explicit bounded directory writePaths fail after the first fanout dependency wave, and reduce cannot observe newly created or removed directory descendants.",
+    "requiredOutcomes": [
+      "Capture safe bounded directory roots and their membership at each node boundary.",
+      "Re-enumerate declared roots at reduce and report added, removed, replaced, membership, content and mode drift with path and branch attribution.",
+      "Verify two dependency waves and a deterministic 60-path/407-file scale fixture."
+    ],
+    "nonGoals": [
+      "Scheduler or schema changes, cross-wave actor state, filesystem watchers or atomic snapshots.",
+      "Registry discovery, package changes, release, merge or sibling worktree writes."
+    ],
+    "constraints": [
+      "Keep source changes in WorkflowFanoutChangeEvidence.swift and focused tests in WorkflowFanoutMapReduceTests.swift.",
+      "Reject traversal, Git metadata, symlinks, special or unreadable entries; never silently skip unsafe entries.",
+      "Enforce 1 to 512 declared paths, at most 512 unique expanded entries, 8,000,000 bytes per file and 64,000,000 aggregate bytes at capture and reduce.",
+      "Keep scratch and complete verification logs under tmp/issue-118; use per-plan and per-attempt subdirectories; record terminal exit codes.",
+      "Workers do not stage, commit or push; serial reconciliation and independent review precede final commit and non-force push."
+    ],
+    "designDecisionsAndRationale": [
+      "Retain declared roots with each immutable evidence record so reduce can discover descendants absent at capture.",
+      "Use deterministic sorted directory entries and immediate child lists to expose membership drift without adding a watcher.",
+      "Keep collector, reducer and tests in one serial plan because they share one tightly coupled source contract."
+    ],
+    "intentionalTradeoffs": [
+      "Node-boundary snapshots can miss transient writes within an agent invocation.",
+      "The reported package plan is represented by a deterministic scale fixture because its original manifest was not supplied."
+    ],
+    "supportedEdgeCases": [
+      "Hidden and empty directories, overlapping roots, missing-root creation, file/directory replacement and directory removal.",
+      "New and removed descendants, mode and byte drift, dangling or ancestor symlinks, concurrent mutation and inclusive or exceeded limits."
+    ],
+    "outOfScopeEdgeCases": [
+      "Atomic filesystem consistency and crash recovery across external edits.",
+      "Replay of the original 60-path/407-file package plan without its manifest."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md",
+      "impl-plans/active/fanout-directory-change-tracking.md",
+      "Sources/RielaCore/WorkflowFanoutChangeEvidence.swift",
+      "Tests/RielaCoreTests/WorkflowFanoutMapReduceTests.swift"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "Step 3 design and Step 5 plan accepted without findings; T1 through T4 proceed serially, followed by reconciliation and independent review."
+  },
+  "plans": [
+    {
+      "planId": "fanout-directory-change-tracking",
+      "planPath": "impl-plans/active/fanout-directory-change-tracking.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowFanoutChangeEvidence.swift",
+        "Tests/RielaCoreTests/WorkflowFanoutMapReduceTests.swift",
+        "impl-plans/progress/fanout-directory-change-tracking.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Directory capture and reduce preserve exact-file behavior, safety bounds and immutable evidence while exposing membership drift.",
+        "Focused tests pass for dependency waves, directory and missing-root transitions, unsafe entries, races, limits and the 60-path/407-file fixture.",
+        "Self-review and all required source gates pass with complete logs and terminal exit codes in the plan progress file."
+      ],
+      "verification": [
+        "swift test --filter WorkflowFanoutMapReduceTests",
+        "swift test --filter DeterministicWorkflowRunnerFanoutTests",
+        "swiftlint lint --strict --no-cache Sources/RielaCore/WorkflowFanoutChangeEvidence.swift Tests/RielaCoreTests/WorkflowFanoutMapReduceTests.swift",
+        "swift build",
+        "git diff --check"
+      ]
+    }
+  ]
+}

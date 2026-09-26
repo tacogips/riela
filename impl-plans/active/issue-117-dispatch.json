@@ -15,13 +15,13 @@
     "designReviewCommunication": "comm-000004",
     "reviewDecisions": [
       "Step 3 accepted the resumed design with no findings (comm-000004): direct selection uses the manifest-declared workflow directory; historical 79/81 remains a failed gate.",
-      "Step 5 accepted the revised implementation plan against that design with no findings (comm-000006); implementation, final-source independent review, documentation reconciliation, commit, and non-force push remain pending."
+      "Step 5 accepted the revised implementation plan against that design with no findings (comm-000006); final-source independent and integration reviews accepted attempt-4 evidence with no blocking findings. Documentation reconciliation is complete; commit and non-force push remain pending."
     ],
     "codexAgentReferences": [],
     "userProblem": "Finish WIP 7435d6c: correct direct-selection commands, complete missing local-command negative coverage and source-matched gates without changing resolver semantics.",
     "sourcePaths": [
       "design-docs/specs/design-installed-package-workflow-resolution.md",
-      "impl-plans/active/issue-117-installed-local-command.md",
+      "impl-plans/completed/issue-117-installed-local-command.md",
       "Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift",
       "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
       "Sources/RielaCLI/WorkflowAddonHostRequirements.swift",
@@ -73,7 +73,7 @@
     ]
   },
   "serialOnlyPaths": [
-    "impl-plans/active/issue-117-installed-local-command.md",
+    "impl-plans/completed/issue-117-installed-local-command.md",
     "impl-plans/active/issue-117-dispatch.json",
     "design-docs/specs/design-installed-package-workflow-resolution.md",
     "README.md"
@@ -81,7 +81,7 @@
   "plans": [
     {
       "planId": "issue-117-installed-local-command",
-      "planPath": "impl-plans/active/issue-117-installed-local-command.md",
+      "planPath": "impl-plans/completed/issue-117-installed-local-command.md",
       "dependsOn": [],
       "writePaths": [
         "Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift",

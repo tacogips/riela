@@ -122,12 +122,40 @@ final class WorkflowInstalledAddonMetadataTests: XCTestCase {
           ))
         }
       case "lowerPriority":
+        let userOwner = fixture.home.appendingPathComponent(
+          ".riela/packages/@issue117/youtube-flow", isDirectory: true
+        )
         let userDependency = fixture.home.appendingPathComponent(
           ".riela/packages/@issue117/youtube-tools", isDirectory: true
         )
         try FileManager.default.createDirectory(at: userDependency.deletingLastPathComponent(),
           withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixture.packageDirectory, to: userOwner)
         try FileManager.default.copyItem(at: fixture.dependencyDirectory, to: userDependency)
+        let userManifestURL = userOwner.appendingPathComponent("riela-package.json")
+        var userManifest = try JSONDecoder().decode(WorkflowPackageManifest.self,
+          from: Data(contentsOf: userManifestURL))
+        for addonIndex in userManifest.dependencies[0].addons.indices {
+          userManifest.dependencies[0].addons[addonIndex].sourceScope = "user"
+        }
+        userManifest.checksum = try WorkflowPackageChecksum.md5(packageRoot: userOwner)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(userManifest).write(to: userManifestURL)
+        try FileManager.default.copyItem(at: fixture.project.appendingPathComponent("riela-lock.json"),
+          to: fixture.home.appendingPathComponent(".riela/riela-lock.json"))
+        let userOptions = WorkflowResolutionOptions(workflowName: fixture.workflowId,
+          scope: .user, workingDirectory: fixture.project.path)
+        try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": fixture.home.path]) {
+          let validate = await WorkflowValidateCommand().run(WorkflowValidateOptions(
+            workflowName: fixture.workflowId, resolution: userOptions, output: .json
+          ))
+          XCTAssertEqual(validate.exitCode, .success, "user scope: \(validate.stdout)")
+          let inspect = await WorkflowInspectCommand().run(WorkflowInspectOptions(
+            workflowName: fixture.workflowId, resolution: userOptions, output: .json
+          ))
+          XCTAssertEqual(inspect.exitCode, .success, "user scope: \(inspect.stdout)")
+        }
         try FileManager.default.removeItem(at: fixture.dependencyDirectory)
       default:
         XCTFail("unexpected matrix case")

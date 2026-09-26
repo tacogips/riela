@@ -206,7 +206,7 @@ authoring pass.
 
 ## Issue #117 follow-up: installed local-command dependencies
 
-Status: resumption design updated from pushed WIP `7435d6ce735ebc0a02609d7dcf14e10205d6aba0`; final verification and independent review pending. This
+Status: resumption design updated from pushed WIP `7435d6ce735ebc0a02609d7dcf14e10205d6aba0`; final source verification and independent review accepted; commit and non-force push pending. This
 section extends the native/container baseline above and governs the current
 `issue-resolution` execution, `codex-design-and-implement-review-loop-session-1`,
 Step 1 `comm-000002`, for <https://github.com/tacogips/riela/issues/117>.
@@ -342,7 +342,7 @@ Preserve WIP commit `7435d6c` and the historical evidence in
 The two failing package-root commands describe an incorrect acceptance command,
 not a resolver defect requiring a broader implementation.
 
-Step 4 must reconcile `impl-plans/active/issue-117-installed-local-command.md`
+Step 4 reconciled `impl-plans/completed/issue-117-installed-local-command.md`
 and `impl-plans/active/issue-117-dispatch.json` with this declared-directory
 selection and WIP starting point before implementation resumes. Keep the resolver
 outside the implementation write scope. Append the corrected interpretation and
@@ -367,14 +367,17 @@ coverage. This does not authorize restoring or rewriting the preserved WIP.
 
 ### Author decisions and rollout
 
-One design author updates this existing document. The existing dispatch records
-prior Step 3 acceptance (`comm-000004`) and Step 5 acceptance (`comm-000006`);
-those decisions do not establish acceptance of the resumed final source. The
-current intake supersedes their package-root selection requirement. No new
-Step 3/5 finding payload was supplied. Independent adversarial review remains
-required. Implementation, review, commit, and non-force
-push target `fix/example-contract-migration`; release and merge remain outside
-scope. Runtime-owned workflow provenance is authoritative for this execution.
+Step 3 (`comm-000004`) and Step 5 (`comm-000006`) accepted the resumed design
+and plan. The corrected direct-selection command uses the declared workflow
+directory. Final source verification and independent adversarial review accepted
+the implementation with no blocking findings. Attempt 4 recorded 12 focused
+tests, 22 host tests, build, SwiftLint, 83 positive CLI commands (six required
+installed selections, 75 examples, and two user-scope preconditions), and 52
+expected rejections with complete logs and numeric exits. Browser E2E was
+skipped because no browser-facing file changed. The historical pre-production
+failing baseline remains unavailable. Commit and non-force push target
+`fix/example-contract-migration`; release and merge remain outside scope.
+Runtime-owned workflow provenance is authoritative for this execution.
 
 The principal risks are granting command readiness from an incorrect dependency
 match and accepting legacy missing-kind locks. Exact matching, entrypoint

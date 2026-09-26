@@ -105,14 +105,20 @@ and `workflowExecution` summary query. Registry writes keep their own
 authorization; an execution bearer does not grant registry write access.
 
 For installed package workflows, `riela workflow validate` and `inspect` keep
-the owning package's locked native or container add-on metadata when selecting
-the installed package by name or its workflow directory. A dependency resolves
-only when the installed package, scope lockfile, add-on identity, version,
-digest, and execution kind agree. Unknown or ambiguous add-ons and copied
-workflows still report unresolved add-on requirements. Validation continues to
-check package integrity and host readiness; it does not execute the add-on.
-See [issue #117](https://github.com/tacogips/riela/issues/117) and the
-[completed implementation plan](impl-plans/completed/issue-117-installed-addon-metadata.md).
+the owning package's locked native, container, or local-command add-on metadata
+when selecting by package ID, workflow name, or the manifest-declared installed
+workflow directory. The package root is not a workflow directory. A dependency
+resolves only when the installed package, selected-scope lockfile, add-on
+identity, version, registry, digest, and explicit execution kind agree. An
+installed local-command add-on also needs an executable entrypoint contained in
+its package. Validation and inspection expose its canonical executable and
+required environment as host requirements; remote hosts must satisfy those
+requirements independently. Unknown or ambiguous add-ons, copied workflows,
+missing execution kinds, and cross-scope substitutions remain unresolved.
+Validation checks package integrity and host readiness without executing the
+add-on. See [issue #117](https://github.com/tacogips/riela/issues/117), the
+[native/container plan](impl-plans/completed/issue-117-installed-addon-metadata.md),
+and the [local-command plan](impl-plans/completed/issue-117-installed-local-command.md).
 
 Local agent backend ids remain explicit workflow compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. They no longer name

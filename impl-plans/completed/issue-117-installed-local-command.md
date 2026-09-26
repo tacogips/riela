@@ -3,7 +3,7 @@
 ## Executable contract
 
 - planId: `issue-117-installed-local-command`
-- planPath: `impl-plans/active/issue-117-installed-local-command.md`
+- planPath: `impl-plans/completed/issue-117-installed-local-command.md`
 - dependsOn: `[]`; one coupled implementation unit, serial task DAG below.
 - writePaths: exact files in the ownership table below, plus ignored evidence root.
 - sharedPaths: `[]` between implementation workers; serial-only paths listed below.

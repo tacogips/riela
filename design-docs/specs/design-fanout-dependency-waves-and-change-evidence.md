@@ -64,10 +64,14 @@ recovery, not a claim of transactional exactly-once agent execution after a cras
 The host binds `DeterministicWorkflowRunner.fanoutWorkspaceRoot` to the actual
 execution directory. The CLI supplies its resolved working directory; library
 hosts opt in explicitly. No workflow-authored root can redirect snapshots.
-`pathsFrom` names exact repository-relative file paths, including expected new
-or deleted files. Reject traversal, Git metadata and symlink ancestry, directories,
-oversized files and excessive snapshots. Defaults limit a snapshot to 512 paths,
-8 MB per file and 64 MB total content.
+`pathsFrom` names explicit repository-relative file or directory paths, including
+expected new or deleted paths. Directories recursively include their descendants;
+these are bounded selections, not globs or permission to scan the workspace.
+Reject traversal, Git metadata, symlink ancestry and entries, special files,
+oversized files and excessive snapshots. Limits remain 512 declared paths,
+512 unique expanded entries, 8 MB per file and 64 MB total content. Directory
+and missing entries count toward the expanded-entry limit; overlapping selections
+count each repository-relative entry and its file bytes only once.
 
 Preflight every selected branch's paths before starting any writer. Capture
 before and after each workflow node (including called workflow nodes), preserving
@@ -107,3 +111,115 @@ protected finalization evidence. Registry mock runs cover multiple branches,
 planning-only, branch review revisions and serial overwrite repair. Live model
 quality, crash recovery across external edits and remote Git policies remain
 separate integration concerns and are not established by mocks.
+
+## Issue #118: bounded directory snapshots
+
+Source of truth: Step 1 intake for
+<https://github.com/tacogips/riela/issues/118>, mode `issue-resolution`, and the
+effective workflow input. The reported failure is an explicit directory
+`writePaths` selection rejected after the first dependency wave. `writePaths`
+is an item field selected by `changeTracking.pathsFrom`; no new schema or
+scheduler behavior is required. Implementation is limited to
+`Sources/RielaCore/WorkflowFanoutChangeEvidence.swift` and focused tests in
+`Tests/RielaCoreTests/WorkflowFanoutMapReduceTests.swift`.
+
+### Snapshot and reduce contract
+
+- Retain each capture's original declared roots alongside its expanded `files`
+  map in the private evidence record. Capture roots before dispatch and at the
+  existing node boundaries. Preserve immutable artifacts, file bytes, hashes,
+  modes, branch/step attribution and the existing join envelope.
+- Walk directories in deterministic repository-relative order, including hidden
+  entries and empty directories. Record directory kind, mode and sorted immediate
+  child names, regular-file state in the existing format, and explicit missing
+  roots. Do not synthesize missing descendants during enumeration.
+- A missing root can become a file or directory in a later capture or wave.
+  File/directory replacement, removal of an entire directory and empty-directory
+  membership changes must remain observable. A later wave snapshots its current
+  roots; it does not reuse an earlier wave's expansion or imply cross-wave
+  persistence of the actor's records.
+- Reduce re-enumerates each record's declared roots after workers stop and
+  compares the sorted union of recorded and current entry keys. Absence on one
+  side differs from presence on the other. Emit observations for newly added
+  and removed files as well as changed content, mode, kind or directory
+  membership. Preserve the existing `content-or-mode-drift` reason for regular
+  file-state changes; use `directory-membership-drift` for changed directory
+  child lists and `entry-added`, `entry-removed`, or `entry-kind-drift` for those
+  cases. Prefer added/removed, then kind, then membership, then content/mode
+  when more than one description applies to an entry. Keep `hasDrift` derived
+  from observations and `requiresSemanticReview: true`.
+
+### Safety and limits
+
+Validate every declared and discovered path using the existing relative-path
+rules. Reject any symlink, including dangling links and symlink ancestors,
+`.git` entries, traversal, non-regular/non-directory entries and unreadable
+entries. Enumeration errors fail the capture; never skip hidden or unsafe
+entries. Only genuine absence of a declared root is a missing state. Reject
+selections containing the actor's evidence directory so capture cannot recursively
+observe its own artifacts. This needs no blanket exclusion of other `tmp/` data.
+
+Enforce 1...512 declared paths before deduplication, at most 512 unique expanded
+entries (including selected directories and missing roots), 8,000,000 bytes per
+regular file and 64,000,000 aggregate regular-file bytes per snapshot. Apply the
+same limits in preflight, node captures and reduce; reaching a limit is allowed,
+exceeding it fails without publishing a partial record. Enforce entry limits
+during traversal and byte limits before content loading and against actual bytes
+read. Overlapping roots must not bypass bounds or double-charge content.
+
+Retain before/after file identity, size and modification checks and recheck file
+type, mode and symlink safety. Recheck directory identity and sorted membership
+after reading descendants; detected disappearance, replacement or mutation
+during traversal fails with a retryable snapshot error. Unsafe paths remain
+policy failures. These checks preserve the cooperative node-boundary model;
+they do not promise an atomic filesystem view or eliminate transient races.
+
+### Acceptance and verification handoff
+
+Focused tests must cover stable nested directories, hidden files, empty
+directories, overlapping roots, missing-root creation, file/directory replacement,
+new and removed descendants, directory removal, overwritten bytes and mode drift.
+Exercise two dependency waves using a directory created/populated in the first
+wave and snapshotted again for the second, then assert reduce observations by
+path and branch. Preserve existing ordering, acceptance and exact-file tests.
+Test traversal, direct/ancestor/dangling symlinks, discovered `.git` and special
+entries, enumeration failures, and detected concurrent mutation without relying
+on timing-only success. Test inclusive and exceeded entry, per-file and aggregate
+limits, including over-limit growth first seen at reduce.
+
+The intake reports a 60-path/407-file package plan but supplies no manifest or
+fixture path. Add a deterministic fixture with 60 declared paths and 407 unique
+regular files, with explicit directory and overlap counts that keep total
+expanded entries within 512. Verify capture, a subsequent wave and reduce drift
+for added/removed descendants. Record the fixture's actual counts. This proves
+the reported scale; it must not be described as replaying the original package
+plan. If the original manifest is supplied downstream, replay it locally within
+the same limits and record its identity; do not rediscover workflow registries.
+
+Implementation verification commands, run in the foreground with complete logs
+and terminal exit codes under repository `tmp/issue-118/`, are:
+
+```sh
+swift test --filter WorkflowFanoutMapReduceTests
+swift test --filter DeterministicWorkflowRunnerFanoutTests
+swiftlint lint --strict --path Sources/RielaCore/WorkflowFanoutChangeEvidence.swift
+swiftlint lint --strict --path Tests/RielaCoreTests/WorkflowFanoutMapReduceTests.swift
+swift build
+git diff --check
+```
+
+Use the installed SwiftLint's equivalent file-selection syntax if `--path` is
+unsupported and record the exact executed command. These are downstream gates,
+not passing results from this design-only step. Self-review and the required
+independent adversarial review precede final commit and non-force push on
+`fix/fanout-directory-change-tracking`; do not release, merge or write sibling
+worktrees. No workflow, prompt, script, skill or package-manifest change is needed.
+
+### Open questions and reference mapping
+
+No unresolved user design decisions. The original 60-path/407-file manifest is
+an evidence limitation, not a design or workflow-readiness blocker. The issue
+title/body were unavailable at intake, so this section uses the supplied brief.
+No codex-agent references or Cursor CLI behavior were supplied; no adapter
+mapping or intentional reference divergence applies. No Step 3 or Step 5 review
+feedback was supplied to this execution.

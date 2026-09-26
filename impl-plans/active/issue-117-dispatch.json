@@ -1,0 +1,102 @@
+{
+  "taskId": "issue-117",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/example-contract-migration",
+  "baseBranch": "fix/example-contract-migration",
+  "remote": "origin",
+  "originalHead": "0c66cb19ffa2619af440ab640701756d35b443a4",
+  "designDocPaths": [
+    "design-docs/specs/design-installed-package-workflow-resolution.md"
+  ],
+  "evidenceRoot": "tmp/issue-117",
+  "reviewContext": {
+    "issueReference": "https://github.com/tacogips/riela/issues/117",
+    "userProblem": "Installed package workflow validate/inspect loses locked external add-on dependency metadata and reports false unresolvedAddonExecutable for native/container add-ons.",
+    "requiredOutcomes": [
+      "Preserve verified owning-package identity and locked native/container add-on metadata through installed workflow name and direct-directory resolution.",
+      "Keep unrelated direct workflows and unknown, ambiguous, or mismatched dependencies failing closed while preserving scope precedence and environment requirements.",
+      "Run focused Swift tests, SwiftLint, source build, installed-package validate/inspect, and all 75 example validations with complete exit-status evidence.",
+      "Obtain independent implementation review acceptance, then commit and non-force push the source fix for package migration verification."
+    ],
+    "nonGoals": [
+      "No provider/model/network calls, native/container execution, package repository edits, release, or merge.",
+      "No schema migration, new registry protocol, global vendor allowlist, generalized resolver framework, or broad cleanup."
+    ],
+    "constraints": [
+      "Preserve #116 and the all-75-example schema correction already at source HEAD 0c66cb19ffa2619af440ab640701756d35b443a4.",
+      "Keep all scratch in repository-root tmp/, with per-plan and per-attempt evidence and final numeric exit statuses; preserve unrelated worktrees.",
+      "Reproduce with the real filesystem resolver before changing production code; use the built source CLI and isolated child HOME for fixtures.",
+      "One implementation owner writes its progress file; reconcile shared tree serially before independent review and Git finalization."
+    ],
+    "designDecisionsAndRationale": [
+      "Carry manifest and package directory together in ResolvedWorkflowBundle only when canonical selected workflow directory proves package ownership; names and vendor prefixes do not prove ownership.",
+      "Reuse existing installed dependency and integrity checks to require a unique exact identity, lock version, digest, execution-kind, and scope match before host projection.",
+      "Retain Core's unresolvedAddonExecutable guard and native/container readiness checks; verified dependencies need no invented host executable.",
+      "Resolve reachable callees with their own package context and preserve current validate/inspect JSON and exit conventions."
+    ],
+    "intentionalTradeoffs": [
+      "A narrow resolution/projection fix defers broad resolver refactoring.",
+      "Remaining unrelated example failures may be accepted only with exact command, diagnostic, baseline comparison, and review disposition."
+    ],
+    "supportedEdgeCases": [
+      "Scoped package IDs, omitted node versions bound to locks, and installed workflow name or direct-directory selection.",
+      "Unrelated/copied direct workflows, unknown or ambiguous add-ons, mismatched identity/version/digest/execution kind, and project/user collisions fail closed.",
+      "Required package/node environment bindings, independent readiness, cross-workflow callees, built-ins, declarative add-ons, and local-command executable checks."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live native/container or provider execution and package migration in the sibling package repository.",
+      "New add-on registry protocols or authorization inferred from a name alone."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-installed-package-workflow-resolution.md",
+      "impl-plans/active/issue-117-installed-addon-metadata.md",
+      "Sources/RielaCLI/WorkflowResolution.swift",
+      "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift",
+      "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+      "Sources/RielaCore/WorkflowRequirements.swift",
+      "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift"
+    ],
+    "reviewDecisions": [
+      "Step 3 independent design review accepted with no findings (comm-000004).",
+      "Step 5 independent plan review accepted with no findings (comm-000006)."
+    ],
+    "codexAgentReferences": [],
+    "intakeCommunication": "comm-000002",
+    "planReviewCommunication": "comm-000006",
+    "evidencePolicy": "Store new implementation evidence under tmp/issue-117/implementation/<planId>/attempt-N; retained tmp/issue-117 planning evidence remains read-only context."
+  },
+  "plans": [
+    {
+      "planId": "issue-117-installed-addon-metadata",
+      "planPath": "impl-plans/active/issue-117-installed-addon-metadata.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowResolution.swift",
+        "Sources/RielaWorkflowRegistry/WorkflowRegistryBundleLoader.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift",
+        "Tests/RielaCLITests/WorkflowInstalledAddonMetadataTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests+AddonRequirements.swift",
+        "design-docs/specs/design-installed-package-workflow-resolution.md",
+        "README.md",
+        "impl-plans/active/issue-117-installed-addon-metadata.md",
+        "impl-plans/progress/issue-117-installed-addon-metadata.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Real installed native/container package workflows validate and inspect without false unresolvedAddonExecutable and preserve exact locked metadata.",
+        "Unrelated direct workflows and unknown, ambiguous, mismatched, or lower-priority dependencies fail closed without weakening integrity or readiness checks.",
+        "Focused tests, lint, build, installed-package CLI matrix, and all 75 example validations have complete evidence or precisely reviewed remaining failures."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowInstalledAddonMetadataTests",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowHostCapabilityTests",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint",
+        "python3 tmp/issue-117/implementation/verify.py",
+        "git diff --check"
+      ]
+    }
+  ]
+}

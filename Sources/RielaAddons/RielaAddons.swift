@@ -90,6 +90,11 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/kv-list", version: "1")
   ]
 
+  public static let gitAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/git-commit", version: "1"),
+    .init(name: "riela/git-push", version: "1")
+  ]
+
   public static let routineAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/routine-create", version: "1"),
     .init(name: "riela/routine-complete", version: "1"),
@@ -149,6 +154,7 @@ public enum RielaBuiltinAddonCatalog {
     + workflowAddons
     + documentAddons
     + keyValueStoreAddons
+    + gitAddons
     + routineAddons
     + wrikeGatewayAddons
     + googleServiceGatewayAddons

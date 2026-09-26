@@ -127,6 +127,52 @@ final class AgentNodeOutputContractValidationTests: XCTestCase {
     XCTAssertTrue(diagnostics.contains { $0.message.contains("conditional transition labels") })
   }
 
+  func testConditionalCommandNodeDoesNotRequireAgentSchema() {
+    let workflow = baseWorkflow(
+      registry: [WorkflowNodeRegistryRef(id: "check", nodeFile: "nodes/check.json")],
+      steps: [WorkflowStepRef(
+        id: "check", nodeId: "check",
+        transitions: [WorkflowStepTransition(toStepId: "check", label: "continue")]
+      )]
+    )
+    let command = AgentNodePayload(
+      id: "check", nodeType: .command, model: "", command: .init(executable: "/usr/bin/true")
+    )
+
+    let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: ["check": command])
+    XCTAssertFalse(diagnostics.contains { $0.path.hasSuffix("output.jsonSchema") })
+  }
+
+  func testGitCommitOutputDoesNotRequireUpstreamAgentToDeclareGitField() {
+    let workflow = baseWorkflow(
+      registry: [
+        WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json"),
+        WorkflowNodeRegistryRef(id: "commit", addon: WorkflowNodeAddonRef(
+          name: "riela/git-commit",
+          config: ["commitMessageTemplate": .string("{{inbox.latest.output.payload.commitMessage}}")]
+        )),
+        WorkflowNodeRegistryRef(id: "push", addon: WorkflowNodeAddonRef(
+          name: "riela/git-push",
+          config: ["expectedCommitHashTemplate": .string("{{inbox.latest.output.payload.git.commitHash}}")]
+        ))
+      ],
+      steps: [
+        WorkflowStepRef(id: "plan", nodeId: "agent", transitions: [WorkflowStepTransition(toStepId: "commit")]),
+        WorkflowStepRef(id: "commit", nodeId: "commit", transitions: [WorkflowStepTransition(toStepId: "push")]),
+        WorkflowStepRef(id: "push", nodeId: "push")
+      ]
+    )
+    let schema = NodeOutputContract(jsonSchema: [
+      "type": .string("object"),
+      "properties": .object(["commitMessage": .object(["type": .string("string")])])
+    ])
+
+    let diagnostics = DefaultWorkflowValidator().validate(
+      workflow, nodePayloads: ["agent": compliantAgent(output: schema)]
+    )
+    XCTAssertFalse(diagnostics.contains { $0.path.hasSuffix("properties.git") })
+  }
+
   private func validate(singleAgent payload: AgentNodePayload) -> [WorkflowValidationDiagnostic] {
     DefaultWorkflowValidator().validate(
       baseWorkflow(

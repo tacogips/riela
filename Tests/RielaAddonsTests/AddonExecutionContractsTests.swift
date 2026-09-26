@@ -12,6 +12,14 @@ final class AddonExecutionContractsTests: XCTestCase {
     XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: "riela/unknown-chat-reply-worker", version: "1"))
   }
 
+  func testGitBuiltinCatalogContract() {
+    for name in ["riela/git-commit", "riela/git-push"] {
+      XCTAssertEqual(RielaBuiltinAddonCatalog.descriptor(named: name), .init(name: name, version: "1"))
+      XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: name, version: nil))
+      XCTAssertFalse(RielaBuiltinAddonCatalog.supports(name: name, version: "2"))
+    }
+  }
+
   func testUnknownAddonFailsDeterministicallyWithoutInjectedResolver() async {
     let input = AddonExecutionInput(
       addonName: "third-party-addon",

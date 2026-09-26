@@ -28,6 +28,27 @@ final class WorkflowCommandCatalogTests: XCTestCase {
 }
 
 extension WorkflowCommandTests {
+  func testAutoScopeReportsInvalidCandidateInsteadOfNotFound() async throws {
+    let tempDir = URL(fileURLWithPath: repositoryRoot())
+      .appendingPathComponent("tmp/issue-114-invalid-candidate-\(UUID().uuidString)", isDirectory: true)
+    let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+    let homeRoot = tempDir.appendingPathComponent("home", isDirectory: true)
+    let workflowDir = projectRoot.appendingPathComponent(".riela/workflows/broken", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try FileManager.default.createDirectory(at: workflowDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: homeRoot, withIntermediateDirectories: true)
+    try #"{"workflowId": "broken","#.write(
+      to: workflowDir.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8
+    )
+
+    let result = await RielaCLIApplication().run([
+      "workflow", "usage", "broken", "--working-dir", projectRoot.path, "--output", "json"
+    ], environment: ["HOME": homeRoot.path])
+    XCTAssertEqual(result.exitCode, .failure)
+    XCTAssertFalse((result.stderr + result.stdout).contains("notFound("))
+    XCTAssertTrue((result.stderr + result.stdout).contains("invalid"))
+  }
+
   func testAutoScopeSkipsInvalidProjectWorkflowWhenUserWorkflowIsValid() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory

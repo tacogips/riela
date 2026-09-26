@@ -326,6 +326,159 @@ final class WorkflowInstalledAddonMetadataTests: XCTestCase {
   }
 }
 
+final class WorkflowInstalledLocalCommandTests: XCTestCase {
+  func testInstalledSelectionsProjectThreeCanonicalExecutables() async throws {
+    let fixture = try InstalledAddonFixture(localCommand: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": fixture.home.path]) {
+      let resolver = FileSystemWorkflowBundleResolver()
+      let selections = [
+        WorkflowResolutionOptions(workflowName: fixture.packageId, scope: .project,
+          workingDirectory: fixture.project.path),
+        WorkflowResolutionOptions(workflowName: fixture.workflowId, scope: .project,
+          workingDirectory: fixture.project.path),
+        WorkflowResolutionOptions(workflowName: fixture.workflowId,
+          workflowDefinitionDir: fixture.workflowDirectory.path,
+          workingDirectory: fixture.project.path)
+      ]
+      for options in selections {
+        let bundle = try resolver.resolve(options)
+        let maps = try await reachableWorkflowMaps(bundle: bundle, resolution: options, resolver: resolver)
+        XCTAssertEqual(bundle.packageManifest?.name, fixture.packageId)
+        for name in fixture.localAddonNames {
+          let expected = fixture.dependencyDirectory.appendingPathComponent("addons/\(name)/run.sh")
+            .resolvingSymlinksInPath().path
+          XCTAssertEqual(maps.nodeHostRequirements[fixture.workflowId]?[name]?.addonExecutable, expected)
+          XCTAssertEqual(maps.localAddonExecutables[expected], true)
+        }
+        let validate = await WorkflowValidateCommand(resolver: resolver).run(WorkflowValidateOptions(
+          workflowName: options.workflowName, resolution: options, output: .json
+        ))
+        XCTAssertEqual(validate.exitCode, .success, validate.stdout)
+        XCTAssertFalse(validate.stdout.contains("unresolvedAddonExecutable"), validate.stdout)
+        let inspect = await WorkflowInspectCommand(resolver: resolver).run(WorkflowInspectOptions(
+          workflowName: options.workflowName, resolution: options, output: .json
+        ))
+        XCTAssertEqual(inspect.exitCode, .success, inspect.stdout)
+        XCTAssertFalse(inspect.stdout.contains("unresolvedAddonExecutable"), inspect.stdout)
+      }
+    }
+  }
+
+  func testMissingKindAndMismatchedInstalledEvidenceFailClosed() async throws {
+    for testCase in ["missingKind", "registry", "digest", "summaryKind", "missingEntrypoint",
+      "nonExecutable", "directoryEntrypoint", "absoluteEntrypoint", "traversalEntrypoint",
+      "symlinkEscape", "unknown", "ambiguousMissingKind"] {
+      let fixture = try InstalledAddonFixture(localCommand: true)
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      switch testCase {
+      case "missingKind":
+        try fixture.updateOwner { $0.dependencies[0].addons[0].executionKind = nil }
+      case "registry":
+        try fixture.updateOwner { $0.dependencies[0].registry = "other" }
+      case "digest":
+        try fixture.updateOwner { $0.dependencies[0].addons[0].contentDigest = "sha256:" + String(repeating: "b", count: 64) }
+      case "summaryKind":
+        try fixture.updateLock { $0.packages["@issue117/youtube-tools"]?.addons[0].executionKind = .container }
+      case "missingEntrypoint":
+        try FileManager.default.removeItem(at: fixture.dependencyDirectory
+          .appendingPathComponent("addons/download-video/run.sh"))
+      case "nonExecutable":
+        try FileManager.default.setAttributes([.posixPermissions: 0o644],
+          ofItemAtPath: fixture.dependencyDirectory.appendingPathComponent("addons/download-video/run.sh").path)
+      case "directoryEntrypoint":
+        try FileManager.default.removeItem(at: fixture.dependencyDirectory
+          .appendingPathComponent("addons/download-video/run.sh"))
+        try FileManager.default.createDirectory(at: fixture.dependencyDirectory
+          .appendingPathComponent("addons/download-video/run.sh"), withIntermediateDirectories: true)
+      case "absoluteEntrypoint":
+        try fixture.updateDependency { $0.nodeAddons[0].execution?.entrypoint = "/bin/sh" }
+      case "traversalEntrypoint":
+        try fixture.updateDependency { $0.nodeAddons[0].execution?.entrypoint = "../../run.sh" }
+      case "symlinkEscape":
+        let entrypoint = fixture.dependencyDirectory.appendingPathComponent("addons/download-video/run.sh")
+        try FileManager.default.removeItem(at: entrypoint)
+        try FileManager.default.createSymbolicLink(atPath: entrypoint.path, withDestinationPath: "/bin/sh")
+      case "unknown":
+        try fixture.writeWorkflow(addonName: "unknown")
+      case "ambiguousMissingKind":
+        try fixture.writeWorkflow(addonName: "download-video")
+        try fixture.updateOwner { manifest in
+          var competing = manifest.dependencies[0].addons[0]
+          competing.executionKind = nil
+          manifest.dependencies.append(WorkflowPackageDependency(
+            packageId: "@issue117/other-tools", kind: .nodeAddon, addons: [competing]
+          ))
+        }
+      default:
+        XCTFail("unexpected case")
+      }
+      let options = WorkflowResolutionOptions(workflowName: fixture.workflowId,
+        scope: .project, workingDirectory: fixture.project.path)
+      try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": fixture.home.path]) {
+        let validate = await WorkflowValidateCommand().run(WorkflowValidateOptions(
+          workflowName: fixture.workflowId, resolution: options, output: .json
+        ))
+        XCTAssertEqual(validate.exitCode, .failure, "\(testCase): \(validate.stdout)")
+        XCTAssertTrue(validate.stdout.contains("unresolvedAddonExecutable"), "\(testCase): \(validate.stdout)")
+        let inspect = await WorkflowInspectCommand().run(WorkflowInspectOptions(
+          workflowName: fixture.workflowId, resolution: options, output: .json
+        ))
+        XCTAssertEqual(inspect.exitCode, .failure, "\(testCase): \(inspect.stdout)")
+        XCTAssertTrue(inspect.stdout.contains("unresolvedAddonExecutable"), "\(testCase): \(inspect.stdout)")
+      }
+    }
+  }
+
+  func testInstalledLocalCommandHostRequiresExactPathsAndEnvironment() async throws {
+    let fixture = try InstalledAddonFixture(localCommand: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.updateOwner { $0.environmentVariables = [WorkflowPackageEnvironmentVariable(name: "PACKAGE_TOKEN")] }
+    try fixture.setNodeRequiredEnvironment()
+    let options = WorkflowResolutionOptions(workflowName: fixture.workflowId,
+      scope: .project, workingDirectory: fixture.project.path)
+    try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": fixture.home.path]) {
+      let resolver = FileSystemWorkflowBundleResolver()
+      let bundle = try resolver.resolve(options)
+      let maps = try await reachableWorkflowMaps(bundle: bundle, resolution: options, resolver: resolver)
+      XCTAssertEqual(maps.nodeHostRequirements[fixture.workflowId]?["download-video"]?.requiredEnvironment,
+        ["NODE_TOKEN", "PACKAGE_TOKEN"])
+      let paths = fixture.localAddonNames.map { name in
+        fixture.dependencyDirectory.appendingPathComponent("addons/\(name)/run.sh")
+          .resolvingSymlinksInPath().path
+      }
+      XCTAssertEqual(Set(paths).count, 3)
+      let fullExecutables = Dictionary(uniqueKeysWithValues: paths.map { ($0, true) })
+      for (host, executables, environment, expected) in [
+        ("local", [String: Bool](), [String: Bool](), CLIExitCode.failure),
+        ("local", [String: Bool](), ["PACKAGE_TOKEN": true, "NODE_TOKEN": true], CLIExitCode.success),
+        ("remote", ["run.sh": true], ["PACKAGE_TOKEN": true, "NODE_TOKEN": true], CLIExitCode.failure),
+        ("remote", [paths[0]: true], ["PACKAGE_TOKEN": true, "NODE_TOKEN": true], CLIExitCode.failure),
+        ("remote", fullExecutables, ["PACKAGE_TOKEN": true, "NODE_TOKEN": true], CLIExitCode.success)
+      ] {
+        var hostBundle = bundle
+        if host == "remote" {
+          for index in hostBundle.workflow.steps.indices {
+            hostBundle.workflow.steps[index].placement = DistributedExecutionPlacement(
+              target: DistributedWorkerTarget(workerId: "remote"), workspace: fixture.project.path
+            )
+          }
+        }
+        let snapshot = HostCapabilitySnapshot(hostId: host, capacity: 3, backends: [],
+          addonExecutables: executables, environment: environment, refreshedAt: Date())
+        let command = WorkflowValidateCommand(resolver: HostValidationBundleResolver(bundle: hostBundle),
+          hostResolver: HostValidationCapabilityResolver(snapshot: snapshot))
+        let result = await command.run(WorkflowValidateOptions(
+          workflowName: fixture.workflowId, resolution: options, output: .json,
+          host: host, strictHost: true
+        ))
+        XCTAssertEqual(result.exitCode, expected, result.stdout)
+        XCTAssertFalse(result.stdout.contains("unresolvedAddonExecutable"), result.stdout)
+      }
+    }
+  }
+}
+
 private struct InstalledAddonFixture {
   let root: URL
   let project: URL
@@ -336,10 +489,14 @@ private struct InstalledAddonFixture {
   let contentDigest: String
   let packageId = "@issue117/youtube-flow"
   let workflowId = "youtube-flow"
+  let localAddonNames = ["download-video", "transcribe-video", "extract-audio"]
 
-  init() throws {
+  init(localCommand: Bool = false) throws {
     let repository = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-    root = repository.appendingPathComponent("tmp/issue-117/tests/\(UUID().uuidString)", isDirectory: true)
+    root = repository.appendingPathComponent(
+      "tmp/issue-117-local-command/issue-117-installed-local-command/tests/\(UUID().uuidString)",
+      isDirectory: true
+    )
     project = root.appendingPathComponent("project", isDirectory: true)
     home = root.appendingPathComponent("home", isDirectory: true)
     packageDirectory = project.appendingPathComponent(".riela/packages/@issue117/youtube-flow", isDirectory: true)
@@ -347,47 +504,68 @@ private struct InstalledAddonFixture {
     dependencyDirectory = project.appendingPathComponent(".riela/packages/@issue117/youtube-tools", isDirectory: true)
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
-    let addonRoot = dependencyDirectory.appendingPathComponent("addons/download-video", isDirectory: true)
-    try FileManager.default.createDirectory(at: addonRoot, withIntermediateDirectories: true)
-    let bundleURL = addonRoot.appendingPathComponent("DownloadVideo.bundle")
-    try "synthetic native bundle\n".write(to: bundleURL, atomically: true, encoding: .utf8)
-    let digest = try sha256Digest(for: bundleURL)
-    contentDigest = digest
+    var nodeAddons: [WorkflowPackageNodeAddon] = []
+    var addonLocks: [WorkflowPackageManifestAddonDependencyLock] = []
+    for name in localCommand ? localAddonNames : ["download-video"] {
+      let addonRoot = dependencyDirectory.appendingPathComponent("addons/\(name)", isDirectory: true)
+      try FileManager.default.createDirectory(at: addonRoot, withIntermediateDirectories: true)
+      let entrypoint = localCommand ? "run.sh" : "DownloadVideo.bundle"
+      let entrypointURL = addonRoot.appendingPathComponent(entrypoint)
+      try (localCommand ? "#!/bin/sh\nexit 0\n" : "synthetic native bundle\n")
+        .write(to: entrypointURL, atomically: true, encoding: .utf8)
+      if localCommand {
+        try FileManager.default.setAttributes([.posixPermissions: 0o755],
+          ofItemAtPath: entrypointURL.path)
+      }
+      let digest = try sha256Digest(for: entrypointURL)
+      let kind: WorkflowPackageAddonExecutionKind = localCommand ? .localCommand : .nativeBundle
+      nodeAddons.append(WorkflowPackageNodeAddon(
+        name: name, version: "1", sourcePath: "addons/\(name)",
+        execution: WorkflowPackageAddonExecutionDescriptor(kind: kind,
+          entrypoint: entrypoint, abiVersion: localCommand ? nil : 1,
+          bundleIdentifier: localCommand ? nil : "dev.issue117.download"),
+        capabilities: [WorkflowAddonCapability(name: "attachment.read", scope: "attachments/input")],
+        contentDigest: digest
+      ))
+      addonLocks.append(WorkflowPackageManifestAddonDependencyLock(
+        name: name, version: "1", contentDigest: digest,
+        executionKind: kind, abiVersion: localCommand ? nil : 1,
+        bundleIdentifier: localCommand ? nil : "dev.issue117.download",
+        dependencyClosureDigest: digest, sourceScope: "project"
+      ))
+    }
+    contentDigest = try XCTUnwrap(addonLocks.first?.contentDigest)
     var dependencyManifest = WorkflowPackageManifest(
       name: "@issue117/youtube-tools", version: "1.0.0", kind: .nodeAddon,
       description: "Synthetic YouTube tools", registry: "local",
       checksum: "pending", checksumAlgorithm: "md5",
-      nodeAddons: [WorkflowPackageNodeAddon(
-        name: "download-video", version: "1", sourcePath: "addons/download-video",
-        execution: WorkflowPackageAddonExecutionDescriptor(kind: .nativeBundle,
-          entrypoint: "DownloadVideo.bundle", abiVersion: 1,
-          bundleIdentifier: "dev.issue117.download"),
-        capabilities: [WorkflowAddonCapability(name: "attachment.read", scope: "attachments/input")],
-        contentDigest: digest
-      )]
+      nodeAddons: nodeAddons
     )
     dependencyManifest.checksum = try WorkflowPackageChecksum.md5(packageRoot: dependencyDirectory)
     try Self.writeManifest(dependencyManifest, to: dependencyDirectory)
+    let nodesJSON = (localCommand ? localAddonNames : ["download-video"]).map { name in
+      "{ \"id\": \"\(name)\", \"addon\": { \"name\": \"@issue117/youtube-tools/\(name)\" } }"
+    }.joined(separator: ",")
+    let stepsJSON = (localCommand ? localAddonNames : ["download-video"]).enumerated().map { index, name in
+      let transition = localCommand && index + 1 < localAddonNames.count
+        ? ", \"transitions\": [{ \"toStepId\": \"\(localAddonNames[index + 1])\" }]" : ""
+      return "{ \"id\": \"\(name)\", \"nodeId\": \"\(name)\", \"role\": \"worker\"\(transition) }"
+    }.joined(separator: ",")
     try """
     {
       "workflowId": "youtube-flow",
       "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 120000 },
-      "entryStepId": "run",
-      "nodes": [{ "id": "download-video", "addon": { "name": "@issue117/youtube-tools/download-video" } }],
-      "steps": [{ "id": "run", "nodeId": "download-video", "role": "worker" }]
+      "entryStepId": "\(localCommand ? "download-video" : "run")",
+      "nodes": [\(nodesJSON)],
+      "steps": [\(localCommand ? stepsJSON : "{ \"id\": \"run\", \"nodeId\": \"download-video\", \"role\": \"worker\" }")]
     }
     """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
     var ownerManifest = WorkflowPackageManifest(
       name: packageId, version: "1.0.0", description: "YouTube fixture",
       registry: "local", checksum: "pending", checksumAlgorithm: "md5",
       workflowDirectory: "workflows/youtube-flow",
-      dependencies: [WorkflowPackageDependency(packageId: dependencyManifest.name, kind: .nodeAddon,
-        addons: [WorkflowPackageManifestAddonDependencyLock(
-          name: "download-video", version: "1", contentDigest: digest,
-          executionKind: .nativeBundle, abiVersion: 1,
-          bundleIdentifier: "dev.issue117.download", dependencyClosureDigest: digest,
-          sourceScope: "project"
-        )])]
+      dependencies: [WorkflowPackageDependency(packageId: dependencyManifest.name,
+        registry: "local", kind: .nodeAddon, addons: addonLocks)]
     )
     ownerManifest.checksum = try WorkflowPackageChecksum.md5(packageRoot: packageDirectory)
     try Self.writeManifest(ownerManifest, to: packageDirectory)

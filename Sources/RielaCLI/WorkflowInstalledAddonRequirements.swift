@@ -7,6 +7,19 @@ struct VerifiedInstalledAddon {
   let dependency: WorkflowPackageDependency
   let lock: WorkflowPackageManifestAddonDependencyLock
   let sourceScope: WorkflowScope
+  let executablePath: String?
+
+  init(
+    dependency: WorkflowPackageDependency,
+    lock: WorkflowPackageManifestAddonDependencyLock,
+    sourceScope: WorkflowScope,
+    executablePath: String? = nil
+  ) {
+    self.dependency = dependency
+    self.lock = lock
+    self.sourceScope = sourceScope
+    self.executablePath = executablePath
+  }
 }
 
 private struct InstalledDependencyRoot {
@@ -26,13 +39,15 @@ func verifiedInstalledAddon(
     dependency.addons.compactMap { lock -> VerifiedInstalledAddon? in
       guard reference.name == lock.name || reference.name == "\(dependency.packageId)/\(lock.name)",
         reference.version == nil || reference.version == lock.version,
-        dependency.kind == .nodeAddon,
-        lock.executionKind == .nativeBundle || lock.executionKind == .container || lock.executionKind == .declarative
+        dependency.kind == .nodeAddon
       else { return nil }
       return VerifiedInstalledAddon(dependency: dependency, lock: lock, sourceScope: bundle.sourceScope)
     }
   }
   guard matches.count == 1, let match = matches.first else { return nil }
+  guard match.lock.executionKind == .nativeBundle || match.lock.executionKind == .container
+    || match.lock.executionKind == .declarative || match.lock.executionKind == .localCommand
+  else { return nil }
 
   let project = URL(fileURLWithPath: workingDirectory, isDirectory: true)
   let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
@@ -113,8 +128,25 @@ func verifiedInstalledAddon(
         .appendingPathComponent(entrypoint).path)
     else { return nil }
   }
+  var executablePath: String?
+  if match.lock.executionKind == .localCommand {
+    guard let entrypoint = addon.execution?.entrypoint,
+      let normalized = WorkflowPackageManifestValidator.normalizePackageRelativePath(entrypoint),
+      normalized != "."
+    else { return nil }
+    let addonRoot = dependencyURL.appendingPathComponent(addon.sourcePath, isDirectory: true)
+      .resolvingSymlinksInPath().standardizedFileURL
+    let executable = addonRoot.appendingPathComponent(normalized)
+      .resolvingSymlinksInPath().standardizedFileURL
+    guard executable.path.hasPrefix(addonRoot.path + "/"),
+      (try? executable.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true,
+      FileManager.default.isExecutableFile(atPath: executable.path)
+    else { return nil }
+    executablePath = executable.path
+  }
   return VerifiedInstalledAddon(
-    dependency: match.dependency, lock: match.lock, sourceScope: selectedRoot.scope
+    dependency: match.dependency, lock: match.lock, sourceScope: selectedRoot.scope,
+    executablePath: executablePath
   )
 }
 

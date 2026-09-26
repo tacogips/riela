@@ -442,7 +442,9 @@ func reachableWorkflowMaps(
       throw WorkflowRequirementResolutionError.unknownStep(workflowId: next.workflowId, stepId: next.stepId)
     }
     if let currentBundle = bundles[next.workflowId] {
-      localAddonExecutables.merge(localAddonExecutableAvailability(in: currentBundle, nodeId: step.nodeId)) {
+      localAddonExecutables.merge(localAddonExecutableAvailability(
+        in: currentBundle, nodeId: step.nodeId, workingDirectory: resolution.workingDirectory
+      )) {
         $0 && $1
       }
     }
@@ -494,10 +496,13 @@ private func addonHostRequirements(
       }) else {
       let dependencyAddon = verifiedInstalledAddon(
         reference, in: bundle, workingDirectory: workingDirectory
-      ) != nil
+      )
       if RielaBuiltinAddonCatalog.supports(name: reference.name, version: reference.version)
-        || dependencyAddon {
-        requirements[node.id] = WorkflowNodeHostRequirement(requiredEnvironment: requiredEnvironment)
+        || dependencyAddon != nil {
+        requirements[node.id] = WorkflowNodeHostRequirement(
+          addonExecutable: dependencyAddon?.executablePath,
+          requiredEnvironment: requiredEnvironment
+        )
       }
       continue
     }
@@ -516,25 +521,31 @@ private func addonHostRequirements(
 
 private func localAddonExecutableAvailability(
   in bundle: ResolvedWorkflowBundle,
-  nodeId: String
+  nodeId: String,
+  workingDirectory: String
 ) -> [String: Bool] {
   guard let manifest = bundle.packageManifest,
     let packageDirectory = bundle.packageDirectory else { return [:] }
   let packageRoot = URL(fileURLWithPath: packageDirectory, isDirectory: true)
   var availability: [String: Bool] = [:]
   for node in bundle.workflow.nodeRegistry where node.id == nodeId {
-    guard let reference = node.addon,
-      let addon = manifest.nodeAddons.first(where: {
+    guard let reference = node.addon else { continue }
+    if let addon = manifest.nodeAddons.first(where: {
         $0.name == reference.name && (reference.version == nil || $0.version == reference.version)
       }),
       addon.execution?.kind == .localCommand,
       let executable = addon.execution?.entrypoint,
-      !executable.isEmpty else { continue }
-    let candidate = packageRoot
-      .appendingPathComponent(addon.sourcePath, isDirectory: true)
-      .appendingPathComponent(executable, isDirectory: false)
-    let isExecutable = FileManager.default.isExecutableFile(atPath: candidate.path)
-    availability[executable] = (availability[executable] ?? true) && isExecutable
+      !executable.isEmpty {
+      let candidate = packageRoot
+        .appendingPathComponent(addon.sourcePath, isDirectory: true)
+        .appendingPathComponent(executable, isDirectory: false)
+      let isExecutable = FileManager.default.isExecutableFile(atPath: candidate.path)
+      availability[executable] = (availability[executable] ?? true) && isExecutable
+    } else if let executable = verifiedInstalledAddon(
+      reference, in: bundle, workingDirectory: workingDirectory
+    )?.executablePath {
+      availability[executable] = FileManager.default.isExecutableFile(atPath: executable)
+    }
   }
   return availability
 }

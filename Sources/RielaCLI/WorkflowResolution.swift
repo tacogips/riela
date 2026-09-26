@@ -281,6 +281,32 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       sharedNodeActivationPolicy: sharedNodeActivationPolicy,
       inheritanceAncestry: inheritanceAncestry,
       inheritanceBaseResolver: { baseWorkflowId, nextAncestry in
+        if let definitionRoot = options.workflowDefinitionDir {
+          let workingDirectory = URL(fileURLWithPath: options.workingDirectory).standardizedFileURL
+          let root = absoluteURL(definitionRoot, relativeTo: workingDirectory).standardizedFileURL
+          let localBase = root.appendingPathComponent(baseWorkflowId).appendingPathComponent("workflow.json")
+          if FileManager.default.fileExists(atPath: localBase.path) {
+            let base = try resolveCoordinated(
+              WorkflowResolutionOptions(
+                workflowName: baseWorkflowId,
+                scope: .direct,
+                workflowDefinitionDir: root.path,
+                workingDirectory: options.workingDirectory,
+                includeDeactivated: options.includeDeactivated
+              ),
+              sharedNodeActivationPolicy: sharedNodeActivationPolicy,
+              inheritanceAncestry: nextAncestry
+            )
+            guard base.workflow.workflowId == baseWorkflowId else {
+              throw WorkflowInheritanceError.missingBase(
+                derivedWorkflowId: options.workflowName,
+                baseWorkflowId: baseWorkflowId,
+                searchedRoots: [root.path]
+              )
+            }
+            return base
+          }
+        }
         let baseName = try installedUserWorkflowName(
           workflowId: baseWorkflowId,
           workingDirectory: options.workingDirectory

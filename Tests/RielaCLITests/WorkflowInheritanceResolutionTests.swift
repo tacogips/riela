@@ -91,6 +91,26 @@ final class WorkflowInheritanceResolutionTests: XCTestCase {
     }
   }
 
+  func testDirectCatalogInheritanceUsesLocalBaseBeforeInstalledUserBase() throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    try fixture.writeOrdinary(id: "base") // Older installed version without an output contract.
+    let catalog = try fixture.writeDirectCatalog()
+
+    try CLIRuntimeEnvironment.$overrides.withValue(["HOME": fixture.home.path]) {
+      let resolver = FileSystemWorkflowBundleResolver(enforcesTransactionBlock: false)
+      let derived = try resolver.resolve(WorkflowResolutionOptions(
+        workflowName: "derived",
+        scope: .direct,
+        workflowDefinitionDir: catalog.path,
+        workingDirectory: fixture.root.path
+      ))
+      XCTAssertEqual(derived.workflow.workflowId, "derived")
+      XCTAssertEqual(derived.nodePayloads["worker"]?.executionBackend, .claudeCodeAgent)
+      XCTAssertNotNil(derived.nodePayloads["worker"]?.output?.jsonSchema)
+    }
+  }
+
   func testMissingBaseAndDirectCycleFail() throws {
     let fixture = try Fixture()
     defer { fixture.remove() }
@@ -214,6 +234,24 @@ private struct Fixture {
   func writeOrdinary(id: String, directoryName: String) throws {
     let directory = workflows.appendingPathComponent(directoryName)
     try writeOrdinary(id: id, at: directory)
+  }
+
+  func writeDirectCatalog() throws -> URL {
+    let catalog = root.appendingPathComponent("catalog")
+    let base = catalog.appendingPathComponent("base")
+    try writeOrdinary(id: "base", at: base)
+    let payload = #"""
+    {
+      "id":"worker","nodeType":"agent","executionBackend":"codex-agent",
+      "agentSandbox":"read-only","model":"gpt-5","modelFreeze":false,
+      "promptTemplate":"ready","output":{"jsonSchema":{"type":"object",
+      "properties":{"status":{"type":"string"}},"required":["status"]}}
+    }
+    """#
+    try Data(payload.utf8)
+      .write(to: base.appendingPathComponent("nodes/worker.json"))
+    try writeDerived(id: "derived", base: "base", at: catalog.appendingPathComponent("derived"))
+    return catalog
   }
 
   private func writeOrdinary(id: String, at directory: URL) throws {

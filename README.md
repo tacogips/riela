@@ -115,6 +115,22 @@ ordinary remote workflow runs through the separate `executeWorkflow` mutation
 and `workflowExecution` summary query. Registry writes keep their own
 authorization; an execution bearer does not grant registry write access.
 
+For installed package workflows, `riela workflow validate` and `inspect` keep
+the owning package's locked native, container, or local-command add-on metadata
+when selecting by package ID, workflow name, or the manifest-declared installed
+workflow directory. The package root is not a workflow directory. A dependency
+resolves only when the installed package, selected-scope lockfile, add-on
+identity, version, registry, digest, and explicit execution kind agree. An
+installed local-command add-on also needs an executable entrypoint contained in
+its package. Validation and inspection expose its canonical executable and
+required environment as host requirements; remote hosts must satisfy those
+requirements independently. Unknown or ambiguous add-ons, copied workflows,
+missing execution kinds, and cross-scope substitutions remain unresolved.
+Validation checks package integrity and host readiness without executing the
+add-on. See [issue #117](https://github.com/tacogips/riela/issues/117), the
+[native/container plan](impl-plans/completed/issue-117-installed-addon-metadata.md),
+and the [local-command plan](impl-plans/completed/issue-117-installed-local-command.md).
+
 Local agent backend ids remain explicit workflow compatibility contracts:
 `codex-agent`, `claude-code-agent`, and `cursor-cli-agent`. They no longer name
 Riela-owned executables or targets. The `official/*` backend ids are also
@@ -714,6 +730,36 @@ gateway permissions before live notification runs:
 ```bash
 apple-gateway permissions status --json
 ```
+
+## Built-in Add-on Host Catalog
+
+Issue [#116](https://github.com/tacogips/riela/issues/116) adds 12 existing
+version-1 adapter names to the built-in host catalog: the chat persona, memory,
+digest, SDK worker, time signal, and deferred container gateway add-ons. Bundled
+workflows using these names validate without declaring external add-on
+executables. Unknown names and unsupported versions still fail closed. The
+`riela/gmail-gateway-read` and `riela/x-gateway-read` entries retain their
+existing `status: ok` no-op response and make no gateway request; they do not
+represent live gateway reads.
+
+With the built source CLI, validation accounts for all 75 bundled examples:
+74 valid, one invalid, and zero `unresolvedAddonExecutable` diagnostics. The
+remaining `x-follower-ai-business-digest` example references undeclared
+`replyText` in its output schema; see
+[`EXAMPLE-116-01`](impl-plans/active/builtin-addon-116-verification-findings.md).
+The installed 0.2.1 CLI does not include this catalog change. To check an
+example with the built CLI, run:
+
+```bash
+swift build --skip-update
+.build/arm64-apple-macosx/debug/riela workflow validate <example-name> --workflow-definition-dir examples --output json
+```
+
+The source verification used `swift test --skip-update` with the
+`RielaBuiltinAddonCatalog`, `WorkflowHostCapabilityTests`, and
+`DeferredContainerAddonTests` filters, plus
+`/usr/bin/xcrun swiftlint --quiet --no-cache`, `swift build --skip-update`,
+and `git diff --check`.
 
 ## Work Runtime (`RielaWork`)
 

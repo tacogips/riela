@@ -280,40 +280,20 @@ public struct NativeBundleAddonInspection: Codable, Equatable, Sendable {
 }
 
 func nativeBundleAddonInspections(
-  workflow: WorkflowDefinition,
-  packageManifest: WorkflowPackageManifest?,
-  sourceScope: WorkflowScope
+  bundle: ResolvedWorkflowBundle,
+  workingDirectory: String
 ) -> [NativeBundleAddonInspection] {
-  guard let packageManifest else {
-    return []
-  }
-  let nativeLocks = packageManifest.dependencies.flatMap { dependency in
-    dependency.addons.compactMap { lock -> (WorkflowPackageDependency, WorkflowPackageManifestAddonDependencyLock)? in
-      lock.executionKind == .nativeBundle ? (dependency, lock) : nil
-    }
-  }
-  guard !nativeLocks.isEmpty else {
-    return []
-  }
-
-  return workflow.nodeRegistry.compactMap { node in
-    guard let addon = node.addon else {
-      return nil
-    }
-    guard let match = nativeLocks.first(where: { dependency, lock in
-      let versionMatches = addon.version == nil || lock.version == addon.version
-      let nameMatches = lock.name == addon.name || "\(dependency.packageId)/\(lock.name)" == addon.name
-      return nameMatches && versionMatches
-    }) else {
-      return nil
-    }
-    let dependency = match.0
-    let lock = match.1
+  bundle.workflow.nodeRegistry.compactMap { node in
+    guard let addon = node.addon,
+      let match = verifiedInstalledAddon(addon, in: bundle, workingDirectory: workingDirectory),
+      match.lock.executionKind == .nativeBundle else { return nil }
+    let dependency = match.dependency
+    let lock = match.lock
     return NativeBundleAddonInspection(
       nodeId: node.id,
       addon: addon.name,
       sourceKind: WorkflowPackageAddonExecutionKind.nativeBundle.rawValue,
-      sourceScope: lock.sourceScope ?? sourceScope.rawValue,
+      sourceScope: lock.sourceScope ?? match.sourceScope.rawValue,
       packageName: dependency.packageId,
       bundleIdentifier: lock.bundleIdentifier ?? "",
       abiVersion: lock.abiVersion ?? 0,
@@ -438,7 +418,7 @@ func reachableWorkflowMaps(
   var workflows = [bundle.workflow.workflowId: bundle.workflow]
   var nodePayloads = [bundle.workflow.workflowId: bundle.nodePayloads]
   var nodeHostRequirements = [
-    bundle.workflow.workflowId: addonHostRequirements(in: bundle)
+    bundle.workflow.workflowId: addonHostRequirements(in: bundle, workingDirectory: resolution.workingDirectory)
   ]
   var bundles = [bundle.workflow.workflowId: bundle]
   var localAddonExecutables: [String: Bool] = [:]
@@ -454,13 +434,17 @@ func reachableWorkflowMaps(
       bundles[next.workflowId] = callee
       workflows[next.workflowId] = callee.workflow
       nodePayloads[next.workflowId] = callee.nodePayloads
-      nodeHostRequirements[next.workflowId] = addonHostRequirements(in: callee)
+      nodeHostRequirements[next.workflowId] = addonHostRequirements(
+        in: callee, workingDirectory: resolution.workingDirectory
+      )
     }
     guard let step = workflows[next.workflowId]?.steps.first(where: { $0.id == next.stepId }) else {
       throw WorkflowRequirementResolutionError.unknownStep(workflowId: next.workflowId, stepId: next.stepId)
     }
     if let currentBundle = bundles[next.workflowId] {
-      localAddonExecutables.merge(localAddonExecutableAvailability(in: currentBundle, nodeId: step.nodeId)) {
+      localAddonExecutables.merge(localAddonExecutableAvailability(
+        in: currentBundle, nodeId: step.nodeId, workingDirectory: resolution.workingDirectory
+      )) {
         $0 && $1
       }
     }
@@ -487,7 +471,8 @@ func reachableWorkflowMaps(
 }
 
 private func addonHostRequirements(
-  in bundle: ResolvedWorkflowBundle
+  in bundle: ResolvedWorkflowBundle,
+  workingDirectory: String
 ) -> [String: WorkflowNodeHostRequirement] {
   var requirements: [String: WorkflowNodeHostRequirement] = [:]
   let packageEnvironment = bundle.packageManifest?.environmentVariables
@@ -509,17 +494,15 @@ private func addonHostRequirements(
     guard let addon = bundle.packageManifest?.nodeAddons.first(where: {
         $0.name == reference.name && (reference.version == nil || $0.version == reference.version)
       }) else {
-      let dependencyAddon = bundle.packageManifest?.dependencies.contains { dependency in
-        dependency.addons.contains { lock in
-          (lock.name == reference.name || "\(dependency.packageId)/\(lock.name)" == reference.name)
-            && (reference.version == nil || lock.version == reference.version)
-            && (lock.executionKind == .nativeBundle || lock.executionKind == .declarative
-              || lock.executionKind == .container)
-        }
-      } == true
+      let dependencyAddon = verifiedInstalledAddon(
+        reference, in: bundle, workingDirectory: workingDirectory
+      )
       if RielaBuiltinAddonCatalog.supports(name: reference.name, version: reference.version)
-        || dependencyAddon {
-        requirements[node.id] = WorkflowNodeHostRequirement(requiredEnvironment: requiredEnvironment)
+        || dependencyAddon != nil {
+        requirements[node.id] = WorkflowNodeHostRequirement(
+          addonExecutable: dependencyAddon?.executablePath,
+          requiredEnvironment: requiredEnvironment
+        )
       }
       continue
     }
@@ -538,25 +521,31 @@ private func addonHostRequirements(
 
 private func localAddonExecutableAvailability(
   in bundle: ResolvedWorkflowBundle,
-  nodeId: String
+  nodeId: String,
+  workingDirectory: String
 ) -> [String: Bool] {
   guard let manifest = bundle.packageManifest,
     let packageDirectory = bundle.packageDirectory else { return [:] }
   let packageRoot = URL(fileURLWithPath: packageDirectory, isDirectory: true)
   var availability: [String: Bool] = [:]
   for node in bundle.workflow.nodeRegistry where node.id == nodeId {
-    guard let reference = node.addon,
-      let addon = manifest.nodeAddons.first(where: {
+    guard let reference = node.addon else { continue }
+    if let addon = manifest.nodeAddons.first(where: {
         $0.name == reference.name && (reference.version == nil || $0.version == reference.version)
       }),
       addon.execution?.kind == .localCommand,
       let executable = addon.execution?.entrypoint,
-      !executable.isEmpty else { continue }
-    let candidate = packageRoot
-      .appendingPathComponent(addon.sourcePath, isDirectory: true)
-      .appendingPathComponent(executable, isDirectory: false)
-    let isExecutable = FileManager.default.isExecutableFile(atPath: candidate.path)
-    availability[executable] = (availability[executable] ?? true) && isExecutable
+      !executable.isEmpty {
+      let candidate = packageRoot
+        .appendingPathComponent(addon.sourcePath, isDirectory: true)
+        .appendingPathComponent(executable, isDirectory: false)
+      let isExecutable = FileManager.default.isExecutableFile(atPath: candidate.path)
+      availability[executable] = (availability[executable] ?? true) && isExecutable
+    } else if let executable = verifiedInstalledAddon(
+      reference, in: bundle, workingDirectory: workingDirectory
+    )?.executablePath {
+      availability[executable] = FileManager.default.isExecutableFile(atPath: executable)
+    }
   }
   return availability
 }
@@ -722,9 +711,8 @@ public struct WorkflowInspectCommand: Sendable {
       node.addon.map { "\(node.id):\($0.name)" }
     }
     let nativeBundleAddons = nativeBundleAddonInspections(
-      workflow: workflow,
-      packageManifest: bundle.packageManifest,
-      sourceScope: bundle.sourceScope
+      bundle: bundle,
+      workingDirectory: resolution.workingDirectory
     )
     let readiness = workflow.nodeRegistry.map { node -> String in
       guard let payload = bundle.nodePayloads[node.id] else {

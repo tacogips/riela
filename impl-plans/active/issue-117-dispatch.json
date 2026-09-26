@@ -1,0 +1,148 @@
+{
+  "taskId": "issue-117-local-command",
+  "workflowMode": "issue-resolution",
+  "issueReference": "https://github.com/tacogips/riela/issues/117",
+  "implementationBranch": "fix/example-contract-migration",
+  "baseBranch": "fix/example-contract-migration",
+  "remote": "origin",
+  "originalHead": "7435d6ce735ebc0a02609d7dcf14e10205d6aba0",
+  "designDocPaths": [
+    "design-docs/specs/design-installed-package-workflow-resolution.md"
+  ],
+  "evidenceRoot": "tmp/issue-117-local-command",
+  "reviewContext": {
+    "intakeCommunication": "comm-000002",
+    "designReviewCommunication": "comm-000004",
+    "reviewDecisions": [
+      "Step 3 accepted the resumed design with no findings (comm-000004): direct selection uses the manifest-declared workflow directory; historical 79/81 remains a failed gate.",
+      "Step 5 accepted the revised implementation plan against that design with no findings (comm-000006); final-source independent and integration reviews accepted attempt-4 evidence with no blocking findings. Documentation reconciliation is complete; commit and non-force push remain pending."
+    ],
+    "codexAgentReferences": [],
+    "userProblem": "Finish WIP 7435d6c: correct direct-selection commands, complete missing local-command negative coverage and source-matched gates without changing resolver semantics.",
+    "sourcePaths": [
+      "design-docs/specs/design-installed-package-workflow-resolution.md",
+      "impl-plans/completed/issue-117-installed-local-command.md",
+      "Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift",
+      "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+      "Sources/RielaCLI/WorkflowAddonHostRequirements.swift",
+      "Sources/RielaCLI/WorkflowResolution.swift",
+      "Sources/RielaCore/WorkflowRequirements.swift",
+      "Tests/RielaCLITests/WorkflowInstalledAddonMetadataTests.swift",
+      "Tests/RielaCLITests/WorkflowInstalledLocalCommandTests.swift",
+      "Tests/RielaCLITests/WorkflowHostCapabilityTests+AddonRequirements.swift"
+    ],
+    "constraints": [
+      "Use installed user-scope codex-design-and-implement-review-loop and preserve native/container identity, lock, digest, and host checks.",
+      "Keep implementation narrow and all throwaway evidence under repository tmp/; do not modify riela-packages or sibling worktrees.",
+      "Use foreground verification with complete logs, numeric exit statuses, and per-plan/per-attempt directories.",
+      "Review, commit, and non-force push fix/example-contract-migration; do not release or merge.",
+      "Preserve WIP 7435d6c and the progress log; do not extend WorkflowResolution.swift for package-root input."
+    ],
+    "evidencePolicy": "Preserve historical evidence; planning logs: tmp/issue-117-local-command/plan-resumption. Implementation uses the next unused attempt-N with complete foreground logs, numeric exits and source/diff/binary identities.",
+    "issueReference": "https://github.com/tacogips/riela/issues/117",
+    "planReviewCommunication": "comm-000006",
+    "requiredOutcomes": [
+      "Validate and inspect through package ID, workflow name and direct manifest-declared workflow directory .riela/packages/@issue117/youtube-flow/workflows/youtube-flow.",
+      "Require explicit executionKind, exact registry/lock/digest/identity agreement, a contained executable entrypoint, and accurate host executable/environment requirements.",
+      "Reject missing kind, mismatched evidence, unavailable entrypoints, unknown or ambiguous references, unrelated copies, and scope collisions while preserving native/container behavior.",
+      "Run focused and host tests, source build, SwiftLint, the six-command installed CLI matrix, and all 75 example validations with complete foreground logs and numeric exits.",
+      "Obtain independent implementation review, then commit and push the branch without release or merge."
+    ],
+    "nonGoals": [
+      "No migration of legacy YouTube package locks or edits to riela-packages or sibling worktrees.",
+      "No schema, registry protocol, resolver framework, execution engine, provider integration, release, or merge change."
+    ],
+    "designDecisionsAndRationale": [
+      "Retain the WIP verified canonical executable path and checked identity; the descriptor is checked inside the verifier and need not be duplicated in its result.",
+      "Count reference candidates before filtering execution-kind validity so a missing-kind competing lock cannot authorize an ambiguous unqualified reference.",
+      "Use the verified canonical executable path in both host requirement and local availability projections; remote hosts independently prove executable and environment capabilities.",
+      "Retain Core unresolved-add-on rejection and resolve each reachable callee with its own package context."
+    ],
+    "intentionalTradeoffs": [
+      "Keep coupled verifier and host projection edits with one implementation owner; leave documentation and Git finalization to serial reconciliation.",
+      "Keep legacy locks without executionKind rejected until their package metadata is explicitly updated."
+    ],
+    "supportedEdgeCases": [
+      "Qualified and unique unqualified add-ons, omitted node versions bound to locks, three installed selection modes, and scoped package IDs.",
+      "Missing/non-executable/escaping entrypoints, mismatched registry/digest/kind/identity, ambiguity, unrelated copies, and project/user scope conflicts fail closed.",
+      "Package and node environments, same-basename executable isolation, remote host capability checks, callee-owned context, and native/container compatibility."
+    ],
+    "outOfScopeEdgeCases": [
+      "Provider or local-command payload execution and edits to real legacy YouTube package locks.",
+      "Authorization by vendor or name alone, automatic migration, and new remote readiness inferred from local files."
+    ]
+  },
+  "serialOnlyPaths": [
+    "impl-plans/completed/issue-117-installed-local-command.md",
+    "impl-plans/active/issue-117-dispatch.json",
+    "design-docs/specs/design-installed-package-workflow-resolution.md",
+    "README.md"
+  ],
+  "plans": [
+    {
+      "planId": "issue-117-installed-local-command",
+      "planPath": "impl-plans/completed/issue-117-installed-local-command.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/WorkflowAddonHostRequirements.swift",
+        "Tests/RielaCLITests/WorkflowInstalledAddonMetadataTests.swift",
+        "Tests/RielaCLITests/WorkflowInstalledLocalCommandTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests+AddonRequirements.swift",
+        "impl-plans/progress/issue-117-installed-local-command.md"
+      ],
+      "sharedPaths": [],
+      "progressPath": "impl-plans/progress/issue-117-installed-local-command.md",
+      "acceptanceCriteria": [
+        "Package ID, workflow name and manifest-declared workflow-directory selections validate and inspect with canonical executable requirements.",
+        "Missing-kind, identity/registry/digest/entrypoint/ambiguity/scope failures reject with diagnostics.",
+        "Host capabilities remain accurate; native/container regressions pass.",
+        "Focused/host tests, build, SwiftLint, all 75 examples and six installed positives (81/81) pass with complete source-matched logs and numeric exits; every LC-03 rejection row has negative CLI evidence where prescribed."
+      ],
+      "verification": [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter 'WorkflowInstalledAddonMetadataTests|WorkflowInstalledLocalCommandTests'",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift test --filter WorkflowHostCapabilityTests",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift build",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint",
+        "python3 tmp/issue-117-local-command/verify.py",
+        "git diff --check"
+      ],
+      "tasks": [
+        {
+          "taskId": "LC-01",
+          "dependsOn": [],
+          "deliverable": "WIP baseline, preserved progress and case-to-test coverage audit"
+        },
+        {
+          "taskId": "LC-02",
+          "dependsOn": [
+            "LC-01"
+          ],
+          "deliverable": "Retained-or-repaired verifier/projection decision with focused tests"
+        },
+        {
+          "taskId": "LC-03",
+          "dependsOn": [
+            "LC-02"
+          ],
+          "deliverable": "Complete isolated local-command adversarial and host coverage"
+        },
+        {
+          "taskId": "LC-04",
+          "dependsOn": [
+            "LC-03"
+          ],
+          "deliverable": "Corrected driver, 81/81 positives, full negatives and final gates"
+        },
+        {
+          "taskId": "LC-05",
+          "dependsOn": [
+            "LC-04"
+          ],
+          "deliverable": "Serial reconciliation and review handoff; downstream finalization pending"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "taskId": "builtin-addon-116-20260927-comm000006",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/example-contract-migration",
+  "baseBranch": "fix/example-contract-migration",
+  "remote": "origin",
+  "originalHead": "cf69a96223cc3f65c83414a2efecbb0d5afceaf5",
+  "designDocPaths": [
+    "design-docs/specs/node-addon-catalog-and-chat-reply-worker/authoring-and-resolution.md"
+  ],
+  "evidenceRoot": "tmp/builtin-addon-116-20260927-comm000006",
+  "reviewContext": {
+    "issueReference": "https://github.com/tacogips/riela/issues/116",
+    "userProblem": "The finite built-in add-on host catalog omits 12 names used by bundled examples and dispatched by the production adapter; the baseline has 16 unresolvedAddonExecutable failures among 75 examples.",
+    "requiredOutcomes": [
+      "Classify the 12 exact names against actual runtime behavior and add catalog, host-resolution, and deferred-response regressions.",
+      "Keep unsupported catalog versions and genuinely unknown names failing closed.",
+      "Validate all 75 examples with the built source CLI and classify every remaining failure with exact evidence.",
+      "Run targeted Swift tests, SwiftLint, build, independent reviews, final commit and non-force push to the implementation branch."
+    ],
+    "nonGoals": [
+      "No live model, network, provider, or gateway calls; deferred gateway entries remain no-op.",
+      "No namespace-wide acceptance, new aliases or providers, unrelated refactors, sibling-repository edits, release, or merge."
+    ],
+    "constraints": [
+      "Preserve the existing worktree and fix/example-contract-migration branch; use Xcode Swift toolchain and cached dependencies.",
+      "Keep scratch and complete command logs under the evidence root, with per-plan and per-attempt subdirectories and final exit codes.",
+      "Use source CLI for validation; installed Riela 0.2.1 remains stale until released.",
+      "Serialize SwiftPM and shared-tree reconciliation; workers edit their own progress files, not this manifest."
+    ],
+    "designDecisionsAndRationale": [
+      "Add exactly 12 explicit version-1 descriptors to RielaBuiltinAddonCatalog because host requirements already consult its finite supports lookup and production adapter dispatch exists.",
+      "Keep the two deferred container gateway names visibly classified as no-op; direct adapter tests guard their current envelope and zero gateway calls.",
+      "Use injected host capability fixtures to test catalog resolution without executing providers or relying on ambient executables."
+    ],
+    "intentionalTradeoffs": [
+      "Catalog membership proves an existing dispatch path, not live provider readiness.",
+      "Remaining unrelated example failures may be precisely classified instead of expanded into this minimal fix."
+    ],
+    "supportedEdgeCases": [
+      "Omitted version and explicit version 1 resolve for each of the 12 names.",
+      "Version 2, unknown riela/ name, and unknown vendor name fail with unresolvedAddonExecutable without package declarations.",
+      "Both deferred names preserve status-ok no-op output and make zero gateway calls."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live gateway, SDK, digest-provider, and chat-provider execution.",
+      "Other runtime names beyond the 12 example-driven omissions."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/node-addon-catalog-and-chat-reply-worker/authoring-and-resolution.md",
+      "Sources/RielaAddons/RielaAddons.swift",
+      "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+      "Sources/RielaCLI/ProductionNodeAdapter.swift",
+      "Sources/RielaCore/WorkflowRequirements.swift",
+      "Tests/RielaCLITests/WorkflowHostCapabilityTests.swift",
+      "tmp/example-contract-migration/baseline/"
+    ],
+    "reviewDecisions": [
+      "Step 3 independent design review accepted with no findings (comm-000004).",
+      "Step 5 independent plan review returned needs_design_revision=false, needs_revision=false, planning_only=false (comm-000006)."
+    ],
+    "codexAgentReferences": [],
+    "historicalEvidenceRoot": "tmp/example-contract-migration",
+    "evidencePolicy": "Store new dispatch evidence under tmp/builtin-addon-116-20260927-comm000006; the historical tmp/example-contract-migration path remains baseline and authored-plan context."
+  },
+  "plans": [
+    {
+      "planId": "builtin-addon-116-01-catalog",
+      "planPath": "impl-plans/active/builtin-addon-116-01-catalog.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Tests/RielaAddonsTests/RielaBuiltinAddonCatalogTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests+BuiltinCatalog.swift",
+        "impl-plans/active/builtin-addon-116-01-catalog-progress.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "All 12 exact built-ins resolve at omitted or explicit version 1 without an external executable.",
+        "Version 2 and genuinely unknown names fail closed with unresolvedAddonExecutable; existing local-command tests pass."
+      ],
+      "verification": [
+        "swift test --skip-update --filter RielaBuiltinAddonCatalog",
+        "swift test --skip-update --filter WorkflowHostCapabilityTests",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "builtin-addon-116-02-deferred",
+      "planPath": "impl-plans/active/builtin-addon-116-02-deferred.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Tests/RielaCLITests/DeferredContainerAddonTests.swift",
+        "impl-plans/active/builtin-addon-116-02-deferred-progress.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Both deferred gateway names retain their exact no-op success envelope and never invoke the injected gateway runner."
+      ],
+      "verification": [
+        "swift test --skip-update --filter DeferredContainerAddonTests",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "builtin-addon-116-03-verification",
+      "planPath": "impl-plans/active/builtin-addon-116-03-verification.md",
+      "dependsOn": [
+        "builtin-addon-116-01-catalog",
+        "builtin-addon-116-02-deferred"
+      ],
+      "writePaths": [
+        "design-docs/specs/node-addon-catalog-and-chat-reply-worker/authoring-and-resolution.md",
+        "impl-plans/active/builtin-addon-116-verification-findings.md",
+        "impl-plans/active/builtin-addon-116-03-verification-progress.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Tests/RielaAddonsTests/RielaBuiltinAddonCatalogTests.swift",
+        "Tests/RielaCLITests/WorkflowHostCapabilityTests+BuiltinCatalog.swift",
+        "Tests/RielaCLITests/DeferredContainerAddonTests.swift"
+      ],
+      "acceptanceCriteria": [
+        "Reconcile implementation evidence and account for all 75 source CLI validation outcomes.",
+        "Catalog-caused unresolvedAddonExecutable failures are removed; remaining failures are precisely classified.",
+        "Required tests, lint, and build pass or a pre-existing failure is proven at original HEAD and separately tracked."
+      ],
+      "verification": [
+        "swift test --skip-update --filter RielaBuiltinAddonCatalog",
+        "swift test --skip-update --filter WorkflowHostCapabilityTests",
+        "swift test --skip-update --filter DeferredContainerAddonTests",
+        "/usr/bin/xcrun swiftlint --quiet --no-cache",
+        "swift build --skip-update",
+        "swift build --skip-update --show-bin-path",
+        "python3 tmp/builtin-addon-116-20260927-comm000006/builtin-addon-116-03-verification/attempt-1/validate-all-examples.py",
+        "git diff --check"
+      ]
+    }
+  ]
+}

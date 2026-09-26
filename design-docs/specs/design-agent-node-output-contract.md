@@ -1,5 +1,8 @@
 # Agent-node output contract: sandbox declaration, payload validation, and template resolution failures
 
+Example migration follow-up: §12 defines the separate 75-bundle Riela 0.2.1
+repair work package; its implementation and independent review are pending.
+
 Status: implemented and verified 2026-09-21; accepted design revised the same day after independent
 review, twice (D2a extended to bare payload references; D3 rescoped from
 surface to path class; the classifier's exclusions made per surface after the
@@ -913,3 +916,123 @@ or before the runtime release so the flagship package validates on day one.
   examples — `telegram-sdk-trio-chat/workflow.json:41-45`), strict prompts
   (breaks optional prose context), schemas-alone (non-required fields still
   render `""`), per-consumer emptiness guards (today's wrong-actor error).
+
+## 12. Example contract migration for Riela 0.2.1
+
+### Scope and traceability
+
+This is the design for `workflowMode: issue-resolution`, execution
+`codex-design-and-implement-review-loop-session-1`, Step 1 communication
+`comm-000002`: review and repair all 75 `examples/**/workflow.json` bundles,
+including inline/file-backed nodes, prompts, mock scenarios, README material,
+and `EXPECTED_RESULTS.md`. Issue reference is null; codex-agent reference list
+is empty. No Codex-reference or Cursor parity migration was requested, so no
+reference-repository investigation or new adapter is required. Existing Cursor
+CLI examples obey the same role and payload contracts as other CLI agents;
+backend-specific translation remains in existing adapters.
+
+Use the existing branch `fix/example-contract-migration`, whose intake HEAD is
+`fd7d495ad8f02c714f2c5ad9613e8d9fa7d41935`. The runner owns resolution of the
+already selected orchestration workflow; this design concerns example bundles
+only. No package-registry edits, `riela-packages` changes, runtime redesign,
+new abstraction layer, model migration, or unrelated cleanup are included.
+
+### Required behavior and repair boundaries
+
+1. Inventory all 75 bundles by repository-relative path, including nested
+   bundles and called workflows. Review every node, referenced prompt, scenario,
+   and expected-results file even when baseline validation says `valid: true`.
+   Record unchanged bundles as reviewed; a successful validation is not proof
+   that prompts, permissions, fixtures, and documented outcomes agree.
+2. Assign `agentSandbox` only to backends that consume it. Use `read-only` for
+   analysis, review, chat, and reporting that need no repository writes; use
+   `workspace-write` for roles that author files or execute required writable
+   verification. Determine this from the complete prompt and tools, not the
+   node's name. Do not grant `danger-full-access` merely to make a sample pass;
+   any retained elevated requirement needs an explicit teaching justification.
+3. Trace business payloads from producer through forwarding add-ons and called
+   workflows to conditional routing and template consumers. Required schemas
+   describe actual objects, required consumed fields, nested types, and finite
+   decision values where the example defines them. An empty schema or generic
+   object is not a repair. Keep envelope routing metadata separate from the
+   business payload schema. Align prompts and mock outputs with that schema;
+   preserve terminal description-only outputs where no schema is required.
+4. Preserve each example's teaching behavior: step ordering, branches, joins,
+   intentional rejection/failure paths, call boundaries, and external-service
+   responsibilities. Repair incorrect references, arguments, local executable
+   paths, and SDK/add-on setup instructions only when evidence shows a defect.
+   Resolve shipped files relative to the bundle or documented working directory;
+   never embed this checkout's absolute paths or a developer's installed SDK path.
+5. Mock verification must not contact a live model, provider, chat gateway, or
+   external service. Inspect scenario coverage and command/add-on execution
+   before running: mock mode alone is not evidence that all side effects are
+   substituted. Use existing deterministic fixtures and local stubs where
+   supported. Otherwise record the exact unmocked operation as a blocked check;
+   do not run it live or claim that a substitute proves the real integration.
+6. Distinguish authoring defects from missing external SDKs, credentials, or
+   host capabilities. An `unresolvedAddonExecutable` diagnostic alone does not
+   settle which category applies: inspect the referenced executable and bundle
+   setup first. Preserve the original diagnostic, command, and prerequisite.
+   A suspected engine defect requires a minimal reproduction and upstream
+   report before any engine fix; it must not silently expand this example task.
+
+### Verification and evidence flow
+
+Inventory -> static contract review -> bounded bundle repairs -> per-bundle
+validate/inspect -> safe deterministic scenario runs -> focused source tests ->
+independent adversarial review -> documentation refresh -> commit and push.
+Independent review must resolve material high/mid findings before finalization.
+
+Later verification must use the installed CLI and record `riela --version`
+as 0.2.1. For each inventoried bundle, use its actual workflow ID and containing
+definition root; the following templates apply only to example workflows:
+
+```sh
+riela workflow validate <example-id> --workflow-definition-dir <example-root> --output json
+riela workflow inspect <example-id> --workflow-definition-dir <example-root> --output json
+riela workflow run <example-id> --workflow-definition-dir <example-root> --mock-scenario <scenario-path> --output json
+swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'
+git diff --check
+```
+
+Run every existing `mock-scenario.json`, including nested fixture locations,
+and the named alternative scenarios that cover changed decisions. Compare
+stable status, executed steps/branches, business payloads, and expected
+rejections against `EXPECTED_RESULTS.md`; exclude timestamps, run IDs, and
+machine paths. Bounded loops must terminate or reach their documented mock
+outcome. Supply explicit fixture variables and isolate writable run artifacts
+under `tmp/example-contract-migration/`. Before each example test script runs,
+check that it obeys the same no-network rule. Candidate existing suites include
+`bun test examples/monja-agent-collaboration` and
+`bun test examples/monja-project-task-orchestrator/scheduler.test.ts`; select
+additional source tests from actual repairs. If Swift is edited in an accepted
+follow-up scope, run `swiftlint lint --quiet --no-cache` as well.
+
+Keep a per-bundle evidence row with reviewed paths, findings, repair decision,
+exact commands, CLI version, final exit codes, complete stdout/stderr log paths,
+scenario/assertion results, and separately classified environment limitations.
+All throwaway evidence belongs under `tmp/example-contract-migration/`; retain
+it through downstream review, never commit it, and remove disposable scratch
+after evidence handoff. Execute commands in the foreground, poll any retained
+session through exit, and never mark an incomplete log as passing. Preserve
+durable verification summaries and commands in affected example documentation
+and the implementation-plan handoff before scratch cleanup.
+
+### Acceptance, open questions, and rollout
+
+Acceptance requires 75 reviewed inventory rows, validate/inspect attempts for
+all 75 using 0.2.1, and deterministic scenario results with matching docs.
+Environment-limited checks are explicitly classified exceptions, not passes;
+unexplained failures or unrepaired authoring defects prevent completion.
+Relevant tests must pass, and independent review, exact changed-file evidence,
+commit hash, and non-force push evidence on the dedicated branch are required
+in downstream steps. This design authoring step does not perform those gates.
+
+No unresolved user decision is needed to author the implementation plan.
+Remaining investigation is per-bundle defect identification and classification
+of baseline host/add-on diagnostics, not an architectural choice. Baseline
+files in `tmp/example-contract-migration/baseline/` are intake evidence, not
+fresh verification. Risks are broad cross-bundle regressions, mocks masking
+real SDK behavior, and host prerequisites preventing complete execution;
+full inventory, contract tracing, and explicit evidence classification address
+those risks without claiming live integration coverage.

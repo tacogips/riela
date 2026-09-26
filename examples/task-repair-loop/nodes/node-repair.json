@@ -2,7 +2,7 @@
   "id": "repair",
   "description": "Perform one bounded repair attempt.",
   "executionBackend": "codex-agent",
-  "agentSandbox": "read-only",
+  "agentSandbox": "workspace-write",
   "model": "gpt-5.4-mini",
   "promptTemplateFile": "prompts/repair.md",
   "variables": {},

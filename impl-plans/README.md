@@ -39,6 +39,15 @@ verification and review. Final commit and push remain workflow steps.
 
 ## Active Plans
 
+Issue [#116](https://github.com/tacogips/riela/issues/116):
+[`builtin-addon-116-03-verification`](active/builtin-addon-116-03-verification.md)
+remains active for the final completion record, exact-file commit, non-force
+push, and remote-head check. Accepted source verification found 74/75 examples
+valid and zero `unresolvedAddonExecutable` diagnostics; the separate
+[`EXAMPLE-116-01`](active/builtin-addon-116-verification-findings.md) schema
+finding remains with example contract migration. The completed catalog and
+deferred-response slices are indexed below.
+
 For the P1 release remediation on Draft PR #113,
 [`p1-release-integration`](active/work-runtime-p1-release-integration.md)
 remains active pending documentation closure, exact-file commit, non-force push,
@@ -122,6 +131,35 @@ three accepted hardening findings were confirmed implemented+tested (0 open
 boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
+
+Issue [#117](https://github.com/tacogips/riela/issues/117):
+[`issue-117-installed-local-command`](completed/issue-117-installed-local-command.md)
+was archived after accepted implementation and integration reviews. The
+source-matched final gates passed 12 focused tests, 22 host tests, build,
+SwiftLint, six installed selections, 75 example validations, two user-scope
+precondition checks, and 52 expected CLI rejections. Browser E2E was skipped
+because no browser-facing file changed. The historical pre-production failing
+baseline was not captured. Commit and non-force push remain downstream workflow
+steps. [Progress and complete logs](progress/issue-117-installed-local-command.md).
+
+Issue [#117](https://github.com/tacogips/riela/issues/117), earlier
+native/container slice:
+[`issue-117-installed-addon-metadata`](completed/issue-117-installed-addon-metadata.md)
+was archived after branch adversarial and test-integrity rereview accepted the
+implementation in `comm-000017`. Nine focused tests, 22 host tests, build,
+SwiftLint, 12 installed native/container selections, and all 75 example
+validations passed. Combined-tree integration review, exact-file commit,
+non-force push, and remote-head verification remain TASK-117-05 publication
+gates. [Progress and complete evidence](progress/issue-117-installed-addon-metadata.md).
+
+Issue [#116](https://github.com/tacogips/riela/issues/116):
+[`builtin-addon-116-01-catalog`](completed/builtin-addon-116-01-catalog.md)
+and [`builtin-addon-116-02-deferred`](completed/builtin-addon-116-02-deferred.md)
+completed their assigned implementation, focused tests, and accepted reviews
+on 2026-09-27. Their [catalog progress](completed/builtin-addon-116-01-catalog-progress.md)
+and [deferred progress](completed/builtin-addon-116-02-deferred-progress.md)
+retain command logs and final exit status paths. Publication remains with the
+active verification plan.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

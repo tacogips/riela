@@ -269,6 +269,7 @@ export class RielaExecutor {
 					"nodes/plan.json": {
 						id: "plan",
 						executionBackend: "codex-agent",
+						agentSandbox: "read-only",
 						model: "gpt-5.6-luna",
 						modelFreeze: true,
 						variables: {},

@@ -11,79 +11,59 @@
     "jsonSchema": {
       "type": "object",
       "properties": {
-        "when": {
-          "type": "object",
-          "properties": {
-            "should_send_telegram": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "should_send_telegram"
-          ]
+        "shouldSendTelegram": {
+          "type": "boolean"
         },
-        "payload": {
-          "type": "object",
-          "properties": {
-            "shouldSendTelegram": {
-              "type": "boolean"
-            },
-            "maxFetchedPostId": {
-              "type": "string"
-            },
-            "replyText": {
-              "type": "string"
-            },
-            "topicDigests": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "topic": {
-                    "type": "string"
-                  },
-                  "reason": {
-                    "type": "string"
-                  },
-                  "summary": {
-                    "type": "string"
-                  },
-                  "sourcePostIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    },
-                    "minItems": 1
-                  },
-                  "articleUrl": {
-                    "type": "string"
-                  }
+        "maxFetchedPostId": {
+          "type": "string"
+        },
+        "replyText": {
+          "type": "string"
+        },
+        "topicDigests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "topic": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "sourcePostIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
                 },
-                "required": [
-                  "topic",
-                  "reason",
-                  "summary",
-                  "sourcePostIds"
-                ]
+                "minItems": 1
+              },
+              "articleUrl": {
+                "type": "string"
               }
             },
-            "discardedCount": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          "required": [
-            "shouldSendTelegram",
-            "maxFetchedPostId",
-            "replyText",
-            "topicDigests",
-            "discardedCount"
-          ]
+            "required": [
+              "topic",
+              "reason",
+              "summary",
+              "sourcePostIds"
+            ]
+          }
+        },
+        "discardedCount": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "required": [
-        "when",
-        "payload"
+        "shouldSendTelegram",
+        "maxFetchedPostId",
+        "replyText",
+        "topicDigests",
+        "discardedCount"
       ]
     }
   }

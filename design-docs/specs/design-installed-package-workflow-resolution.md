@@ -77,9 +77,9 @@ Coverage must prove:
 
 ## Issue #117: Preserve Locked Add-on Metadata During Validate/Inspect
 
-Status: branch implementation and behavioral verification complete; branch
-test-integrity and adversarial rereview accepted in `comm-000017`, with combined-tree
-integration acceptance and final commit/push pending. Workflow mode: `issue-resolution`. Issue:
+Historical native/container baseline: implemented in `b75dcfb25b2c386550dfd947773cd138e621f689`.
+The earlier branch review accepted that scope in `comm-000017`; it does not
+constitute acceptance of the local-command extension below. Workflow mode: `issue-resolution`. Issue:
 <https://github.com/tacogips/riela/issues/117>. Source of scope: Step 1 intake
 `comm-000002` and effective `workflowInput` for
 `codex-design-and-implement-review-loop-session-1`. The issue body was unavailable
@@ -203,3 +203,143 @@ the smallest source change. The baseline reproduction and final verification are
 recorded in `impl-plans/progress/issue-117-installed-addon-metadata.md`; this did
 not broaden the accepted design. No Step 3/5 feedback was supplied for this initial
 authoring pass.
+
+## Issue #117 follow-up: installed local-command dependencies
+
+Status: design authored; implementation and independent review pending. This
+section extends the native/container baseline above and governs the current
+`issue-resolution` execution, `codex-design-and-implement-review-loop-session-1`,
+Step 1 `comm-000002`, for <https://github.com/tacogips/riela/issues/117>.
+The authoritative intake describes three YouTube local-command dependencies;
+legacy locks without `executionKind` must remain rejected. The effective input
+and intake govern scope. No Codex-agent reference, Cursor adapter, or reference
+repository comparison applies. Latest issue comments were unavailable at intake;
+there is no unresolved user decision and no user-QA document is needed.
+
+### Observed gap and bounded change
+
+`Sources/RielaCLI/WorkflowInstalledAddonRequirements.swift` currently permits
+native, container, and declarative dependency locks only. Merely adding
+`localCommand` to that set would be insufficient:
+`Sources/RielaCLI/WorkflowValidateInspectCommands.swift` treats every verified
+dependency as host-neutral, and its executable-availability projection only
+handles add-ons declared directly by the workflow package.
+
+Extend this existing verification result to carry the matched installed add-on
+and its verified executable location when it is a local command. Use that same
+verified result for dependency host requirements and local availability. Keep
+`Sources/RielaCLI/WorkflowResolution.swift` ownership and selection semantics,
+and the unresolved-add-on guard in
+`Sources/RielaCore/WorkflowRequirements.swift`. Core remains independent of
+package metadata. No new resolver framework, schema, CLI option, execution
+engine, automatic lock migration, or package-repository change is required.
+
+### Verification contract and data flow
+
+1. Resolve the owning installed workflow through the existing bundle resolver.
+   Package ID, workflow name, and direct installed package-directory selection
+   must retain the same owning manifest and dependency identity. An unrelated
+   authored copy must not inherit that identity, including when its name matches.
+2. Match the complete qualified dependency reference, or exactly one unqualified
+   reference, within the owner's declared node-addon dependencies. An explicit
+   node version must match; an omitted version uses the lock. Count matching
+   declarations before accepting one: an invalid or missing-kind competing lock
+   must not be discarded to turn an ambiguous unqualified name into permission.
+3. Require explicit `executionKind: local-command` in the dependency lock and
+   agreement with the installed add-on descriptor and package-lock summary.
+   Missing kind never defaults from the installed descriptor or vendor/name.
+   Preserve existing owner containment/integrity, dependency package identity,
+   versions, registry agreement, checksums/integrity, add-on content digest,
+   source path, and lock-summary checks. Do not relax native/container checks.
+4. Locate the dependency only in the owning installation's selected scope.
+   Respect explicit lock scope and existing project/user precedence. Conflicting
+   scope evidence fails; a missing or mismatched selected-scope dependency must
+   not borrow a same-named valid dependency from a lower-priority scope. Ordinary
+   project-over-user selection remains valid; ambiguous candidates in the
+   selected scope fail instead of falling through.
+5. Resolve the nonempty declared entrypoint beneath the installed dependency's
+   add-on source directory. Preserve package-relative path validation and
+   canonical containment; escaping paths or symlinks cannot authorize an external
+   command. Require an existing executable file, not a directory. A missing or
+   non-executable entrypoint fails verification even without `--host`. Never
+   substitute a command found on PATH or execute the payload during validation.
+6. Project a verified local-command dependency as a real `addonExecutable`
+   requirement with package-required and node-required environment bindings.
+   Use the verified canonical executable path as the dependency executable key
+   in both requirement and local-availability maps, preventing two dependencies
+   with the same entrypoint basename from sharing readiness. Preserve existing
+   package-owned local-command and native/container projection semantics.
+7. Each reachable workflow uses its own verified bundle and executable evidence.
+   Local filesystem availability informs the local snapshot only; remote host
+   snapshots must independently satisfy the projected requirement. Missing
+   executable capability or required environment still fails strict host checks.
+   Do not manufacture remote readiness from the local installation.
+8. Validate and inspect agree on resolution and failure. Verification failure
+   leaves the external node unresolved and produces existing failure diagnostics
+   and nonzero status; do not suppress independent host/runtime diagnostics.
+   This projection does not grant a new execution permission or bypass existing
+   runtime execution checks.
+
+### Acceptance matrix and evidence
+
+Extend `Tests/RielaCLITests/WorkflowInstalledAddonMetadataTests.swift` with a
+synthetic installed project workflow package and local-command dependency using
+explicit registry values, execution-kind locks, matching package-lock metadata,
+valid digests, and a harmless executable entrypoint. Keep test homes, fixtures,
+and command evidence under `tmp/issue-117-local-command/`; never edit
+`riela-packages`, sibling worktrees, or the real legacy YouTube locks.
+
+Both validate and inspect must pass for package-ID, workflow-name, and direct
+installed package-directory selection. Assert retained identity and the actual
+executable requirement, not just absence of an error. Negative cases must assert
+nonzero status and relevant diagnostics for missing kind, kind/version/identity/
+registry/digest or lock-summary mismatch, missing/non-executable/directory or
+escaping entrypoint, unknown reference, ambiguous reference (including a
+missing-kind competing declaration), unrelated authored copy, and cross-scope
+substitution. Preserve positive native/container and scope-precedence cases.
+
+Extend `Tests/RielaCLITests/WorkflowHostCapabilityTests.swift` or the installed
+fixture suite to assert required environment propagation, accurate executable
+keys, local and remote capability rejection, same-basename dependency isolation,
+and callee-owned context. All tests use deterministic fixtures without provider
+calls or local-command execution.
+
+Implementation gates (planned, not claimed as executed by Step 2):
+
+```bash
+swift test --filter WorkflowInstalledAddonMetadataTests
+swift test --filter WorkflowHostCapabilityTests
+swift build
+swiftlint
+# From the synthetic project, repeat both commands for all three selections:
+<source-riela> workflow validate <package-id-or-workflow-name> --scope project --output json
+<source-riela> workflow inspect <package-id-or-workflow-name> --scope project --output json
+<source-riela> workflow validate <workflow-name> --workflow-definition-dir <installed-package-directory> --output json
+<source-riela> workflow inspect <workflow-name> --workflow-definition-dir <installed-package-directory> --output json
+# Validate each of the 75 checked-in examples with the source-built executable:
+<source-riela> workflow validate <example-name> --workflow-definition-dir <repository>/examples --output json
+git diff --check
+```
+
+The implementation plan must supply concrete binary/fixture paths and a
+foreground matrix driver enumerating all 75 examples. Record complete stdout,
+stderr, numeric final status per command, and aggregate counts; expected negative
+cases count as passing only when their failure diagnostics match. Retain evidence
+until downstream review consumes it, then remove throwaway files. Prior
+native/container test logs are historical and cannot establish this extension's
+acceptance. No background processes or incomplete logs qualify as passing gates.
+
+### Author decisions and rollout
+
+One design author updates this existing document. No current Step 3/5 feedback
+was supplied; prior review acceptance applies only to the baseline. Independent
+adversarial review remains required. Implementation, review, commit, and non-force
+push target `fix/example-contract-migration`; release and merge remain outside
+scope. Runtime-owned workflow provenance is authoritative for this execution.
+
+The principal risks are granting command readiness from an incorrect dependency
+match and accepting legacy missing-kind locks. Exact matching, entrypoint
+readiness, and negative-case coverage above are required to close them. There are
+no unresolved architectural or user decisions. This design introduces no package
+migration: legacy packages remain rejected until separately updated with valid,
+explicit lock metadata.

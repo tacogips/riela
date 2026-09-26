@@ -31,6 +31,12 @@ impl-plans/
 └── templates/
 ```
 
+Issue [#118](https://github.com/tacogips/riela/issues/118) directory change
+evidence is implemented and accepted. Its plan is archived at
+[`completed/fanout-directory-change-tracking.md`](completed/fanout-directory-change-tracking.md);
+the [progress log](progress/fanout-directory-change-tracking.md) records focused
+verification and review. Final commit and push remain workflow steps.
+
 ## Active Plans
 
 For the P1 release remediation on Draft PR #113,
@@ -119,6 +125,7 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 | Plan                                               | Completed  | Design Reference                                                                                                                                                                            |
 | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`fanout-directory-change-tracking`](completed/fanout-directory-change-tracking.md) | 2026-09-27 | [Fanout change evidence design](../design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md) §Issue #118; bounded directory snapshots and membership drift accepted, with [focused verification and reviews](progress/fanout-directory-change-tracking.md). Final commit and push remain workflow steps. |
 | [`work-runtime-p1-release-cli`](completed/work-runtime-p1-release-cli.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; 19 historical assertion rows including the version-1 chat reply catalog repair, focused CLI 165/165, unknown add-on rejection retained. Publication is owned by the active integration plan. |
 | [`work-runtime-p1-release-runtime`](completed/work-runtime-p1-release-runtime.md) | 2026-09-26 | [P1 release design](../design-docs/specs/design-work-runtime-consolidation.md) §17.13; IDs 08/19 and focused 16/16, with combined-tree verification in the integration progress. Publication is owned by the active integration plan. |
 | `work-runtime-p1-dispatcher-guard-director` | 2026-09-26 | `design-work-runtime-consolidation` P1 accepted implementation and native join; independent test-integrity, Codex Sol adversarial and Codex Astra integration accepted. N7 exact-file commit, non-force push and Draft PR #109 head equality remain a workflow publication gate. Both broad Swift aggregates remain **FAILED**, exit 1, with 21 baseline-matched assertions each; A0 environment snapshots and older slice-local receipts are unavailable. Historical unchecked boxes are preserved in the archived plan |

@@ -1,9 +1,14 @@
 # Issue 118: bounded fanout directory change evidence
 
+Archived after implementation, test-integrity, adversarial and combined
+integration reviews accepted the reconciled source tree. The JSON block below
+retains the original plan identity; the dispatch manifest remains checkpoint
+provenance. Final commit and non-force push remain workflow steps.
+
 ```json
 {
   "planId": "fanout-directory-change-tracking",
-  "planPath": "impl-plans/active/fanout-directory-change-tracking.md",
+  "planPath": "impl-plans/completed/fanout-directory-change-tracking.md",
   "dependsOn": [],
   "writePaths": [
     "Sources/RielaCore/WorkflowFanoutChangeEvidence.swift",
@@ -12,7 +17,7 @@
   ],
   "sharedPaths": [],
   "progressLog": "impl-plans/progress/fanout-directory-change-tracking.md",
-  "status": "planned; Step 5 review pending"
+  "status": "implementation complete; adversarial and integration reviews accepted; publication pending"
 }
 ```
 
@@ -21,9 +26,9 @@
 Mode: `issue-resolution`. Issue: <https://github.com/tacogips/riela/issues/118>.
 Source: `design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md`,
 especially `Issue #118: bounded directory snapshots`. Step 3 communication
-`comm-000004` accepted that design without findings. No Step 5 feedback has been
-supplied. No codex-agent references, Cursor adapter mapping or reference
-divergences apply.
+`comm-000004` accepted that design without findings. The original plan text
+below records the planning-stage state; subsequent review acceptance is recorded
+in `impl-plans/progress/fanout-directory-change-tracking.md`.
 
 Users need explicit directory `writePaths` to work after the first dependency
 wave and reduce to report newly created and removed descendants. Currently

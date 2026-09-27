@@ -38,7 +38,7 @@
     "impl-plans/progress/plans-index.json"
   ],
   "progressLog": "impl-plans/progress/gateway-sdk-05.md",
-  "status": "planned; independent plan review pending; implementation not authorized"
+  "status": "planned; design accepted; implementation authorized; plan review pending"
 }
 ```
 
@@ -47,16 +47,16 @@
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md` (no GitHub issue).
 Source of truth: `design-docs/specs/design-gateway-sdk-addons.md` and
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Current Step 3
-`comm-000004`, execution `step3-design-review-attempt-1-exec-4`, accepted both
-with no findings. This is distinct from the historical rejected review recorded
+`comm-000006` accepted both with no findings. This is distinct from the historical rejected review recorded
 in QA. No codex-agent reference or Cursor behavior mapping applies.
 
 Intent: add typed operation mode beside compatible passthrough, static schema
 lookup, CLI discovery, and validation using public gateway SDKs. Google Documents
 0.3.3 supersedes the historical 0.3.1 gap; never rewrite that historical finding.
-This plan is authored in planning-only mode. Execute its implementation tasks only
-in a later implementation-authorized run after independent plan acceptance.
-Commit the accepted design and ALL five plans before native Riela fanout. Use the
+The effective workflow input authorizes implementation now on
+`feat/remaining-impl-plans-20260927`; obtain independent plan acceptance before
+native Riela implementation fanout. Commit the accepted design and ALL five
+plans before fanout. Use the
 same branch and working directory; no worktrees, private branches, concurrent git
 operations, or background shell processes. No merge to main is authorized here.
 
@@ -68,7 +68,7 @@ workflow registry/provenance rediscovery. Preserve unrelated Riela/Monja work.
 Read this plan and the accepted design fresh before every edit. Before editing a
 file, record SHA-256 (or ABSENT for a new file), save its preimage and a write-once
 intent snapshot identifying the exact requirement and intended change under
-`tmp/gateway-sdk-implementation/<planId>/<attempt>/`. Recheck the prehash immediately
+`tmp/remaining-impl-plans/gateway-sdk/<planId>/<attempt>/`. Recheck the prehash immediately
 before applying the edit; if changed, reread and reconcile, never overwrite from
 an old snapshot. Record posthash and patch. At join compare current files with
 worker posthashes and accepted intent snapshots; investigate drift, including
@@ -135,7 +135,7 @@ an explicit bounded ownership update before editing, not silent scope expansion.
   explicit transferred ownership in this progress log. Rerun affected focused
   suites. Keep dependency resolution and lockfile repair serial; no unrelated
   upgrades. Update only this feature's entries in shared plan indexes at final
-  acceptance; do not archive this planning-only package as implemented.
+  acceptance; do not archive the package as implemented before evidence is complete.
 - [ ] Run full verification below, collect independent adversarial review of
   combined execution authority, error classification, provenance, static lookup,
   platform guards and graph. Fix all high/mid findings before completion.
@@ -167,8 +167,8 @@ never delete or reuse another execution's session artifacts.
 arch -arm64 /bin/zsh -lc 'swift build -c release'
 arch -arm64 /bin/zsh -lc "swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests|AddonExecutionContractsTests|RielaExampleParityTests|WorkflowValidation|WorkflowGatewayValidationTests|GatewaySchemaTests|CommandParsingTests'"
 arch -arm64 /bin/zsh -lc 'swift test'
-.build/release/riela workflow run gmail-operation-thread-digest --workflow-definition-dir examples --mock-scenario examples/gmail-operation-thread-digest/mock-scenario.json --session-store tmp/gateway-sdk-implementation/gateway-sdk-05/gmail-sessions --output jsonl
-.build/release/riela workflow run gateway-schema-lookup --workflow-definition-dir examples --mock-scenario examples/gateway-schema-lookup/mock-scenario.json --session-store tmp/gateway-sdk-implementation/gateway-sdk-05/schema-sessions --output jsonl
+.build/release/riela workflow run gmail-operation-thread-digest --workflow-definition-dir examples --mock-scenario examples/gmail-operation-thread-digest/mock-scenario.json --session-store tmp/remaining-impl-plans/gateway-sdk/gateway-sdk-05/gmail-sessions --output jsonl
+.build/release/riela workflow run gateway-schema-lookup --workflow-definition-dir examples --mock-scenario examples/gateway-schema-lookup/mock-scenario.json --session-store tmp/remaining-impl-plans/gateway-sdk/gateway-sdk-05/schema-sessions --output jsonl
 .build/release/riela addon schema gmail-gateway --tier draft --grep '(?i)draft'
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint
 swift package show-dependencies --format json
@@ -197,16 +197,20 @@ No browser/type-script gate is required: no browser source is in scope.
 
 All five progress logs must show completed deliverables, intact merged intent,
 complete verification evidence and independent implementation acceptance before
-claiming implementation complete. This current run may publish only accepted
-planning artifacts on feat/gateway-sdk-addons after Step 5 plan review; it cannot
-execute these tasks, change Swift, merge to main, or claim their gates passed.
-Later implementation commit/push follows that later run's explicit authority.
+claiming implementation complete. This effective workflow input authorizes
+implementation on `feat/remaining-impl-plans-20260927` after independent plan
+acceptance. Commit the accepted design and all five plans before implementation
+fanout. After implementation, verification, and independent adversarial and
+integration acceptance, commit and non-force push accepted results to the same
+branch and provide a PR handoff. Do not merge main, alter other branches,
+release, or merge the PR. Never claim a gate passed without a complete log and
+terminal exit status.
 
-## Step 5 revision response
+## Historical planning Step 5 revision response
 
 `comm-000006` identified one mid finding: missing ownership and completion checks
 for the required skill documentation when its repository directory is absent.
-Plan 05 now owns creation/update of the exact SKILL.md path and requires both
-existence checks and semantic coverage review. Design acceptance is unchanged;
-independent plan re-review remains pending. No skill or Swift implementation is
-created during this planning-only revision.
+Plan 05 was revised to own creation/update of the exact SKILL.md path and
+require both existence checks and semantic coverage review. That planning
+revision did not create the skill or Swift implementation; current implementation
+authorization and branch are stated above.

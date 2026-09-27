@@ -46,8 +46,8 @@
 
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md` (no GitHub issue).
 Source of truth: `design-docs/specs/design-gateway-sdk-addons.md` and
-`design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Current Step 3
-`comm-000006` accepted both with no findings. This is distinct from the historical rejected review recorded
+`design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Session 5 Step 3
+`comm-000022` accepted both with no findings. This is distinct from the historical rejected review recorded
 in QA. No codex-agent reference or Cursor behavior mapping applies.
 
 Intent: add typed operation mode beside compatible passthrough, static schema
@@ -195,16 +195,21 @@ No browser/type-script gate is required: no browser source is in scope.
 
 ## Completion and publication boundary
 
-All five progress logs must show completed deliverables, intact merged intent,
+All five progress logs must show completed deliverables, including plan 01's
+positive-count focused test, intact merged intent,
 complete verification evidence and independent implementation acceptance before
 claiming implementation complete. This effective workflow input authorizes
 implementation on `feat/remaining-impl-plans-20260927` after independent plan
 acceptance. Commit the accepted design and all five plans before implementation
 fanout. After implementation, verification, and independent adversarial and
 integration acceptance, commit and non-force push accepted results to the same
-branch and provide a PR handoff. Do not merge main, alter other branches,
-release, or merge the PR. Never claim a gate passed without a complete log and
-terminal exit status.
+branch and provide a PR handoff targeting `main`. In serial finalization after
+the push, run `git rev-parse HEAD` and
+`git ls-remote --exit-code origin refs/heads/feat/remaining-impl-plans-20260927`;
+compare the hashes and record both exact outputs, complete logs, and exit codes.
+If live remote lookup fails, record that external blocker rather than claiming
+remote-head equality. Do not merge main, alter other branches, release, or merge
+the PR. Never claim a gate passed without a complete log and terminal exit status.
 
 ## Historical planning Step 5 revision response
 

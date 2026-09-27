@@ -1,15 +1,18 @@
 # Operation-mode gateway SDK add-ons and schema discovery
 
-Status: implementation-authorized baseline for plans 01–05 on
-`feat/remaining-impl-plans-20260927`; the current Step 3 review is assessing this
-handoff. Historical dependency finding D1 is resolved by the operator-approved
-Google Documents v0.3.3 decision. No implementation verification is claimed here.
+Status: accepted design baseline for plans 01–05 on
+`feat/remaining-impl-plans-20260927`. The prior implementation run left plan 01
+dependency and lockfile changes in the working tree, but its progress gate still
+requires a focused behavioral test with a positive test count. Historical
+dependency finding D1 is resolved by the operator-approved Google Documents
+v0.3.3 decision. This design does not claim implementation acceptance.
 The dependency decision is recorded in
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`
 
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md`
 
-Workflow: `codex-design-and-implement-review-loop-session-1`
+Workflow: `codex-design-and-implement-review-loop-session-5` (continuing the
+accepted design and preserving plan 01 work from session 1)
 
 Reference contract: `docs/briefs/gateway-sdk-2026-09-04.md`, especially sections 2 and 4
 
@@ -349,13 +352,30 @@ and the earlier planning-only handoff. Implement plans 01–05 in dependency ord
 retain complete verification evidence, and obtain independent adversarial and
 integration acceptance with no unresolved material findings. Commit and
 non-force push accepted work to `feat/remaining-impl-plans-20260927`, then provide
-a PR handoff. Do not merge main, alter other branches, release, or merge the PR.
+a PR handoff targeting `main`. Final local HEAD must equal the live remote branch
+head. Do not merge main, alter other branches, release, or merge the PR.
 The review must explicitly check
 the resolved SwiftPM graph, execution policy, error classification, provenance,
 static/no-network schema behavior, platform guards, validation injection, and
 preservation of unrelated add-ons.
 
 ## Verification contract
+
+Before plans 02–05, preserve the existing plan 01 `Package.swift` and
+`Package.resolved` changes and their recorded posthashes. The successful
+`swift package show-dependencies --format json` graph and lockfile checks do
+not complete its behavioral gate. Run a focused Swift test filter that compiles
+and exercises the changed gateway dependency integration, and record its actual
+positive selected test count, zero failures, complete stdout/stderr log, and
+terminal exit code in `impl-plans/progress/gateway-sdk-01.md`. Re-evaluate that
+gate from the evidence; a zero-test or incomplete run cannot pass.
+
+For each plan-specific focused filter and the final release build, aggregate
+Swift suite, strict SwiftLint, example runs, dependency graph, and
+`git diff --check`, retain the exact command, complete log path, final exit
+code, and observed assertions. Run verification in the foreground. Independent
+review must inspect operation construction, authorization boundaries, error
+classification, and payload provenance before integration acceptance.
 
 ```bash
 arch -arm64 /bin/zsh -lc 'swift build -c release'
@@ -442,8 +462,8 @@ runner contract and does not adopt the facade's separate file/execution policies
 
 The earlier planning review rejected the previous design for D1. Intake
 `comm-000002` supplied the corrected release decision; the five implementation
-plans now exist. The current Step 3 review `comm-000004` requires this handoff
+plans now exist. Historical Step 3 feedback `comm-000004` required a handoff
 correction because the old planning-only and branch instructions conflicted with
-the effective workflow input. This design-author node claims no Swift edits,
-package resolution, implementation verification, commit, or push. No unresolved
-user decision remains.
+the effective workflow input. Session 5 intake `comm-000020` now requires plan
+01 behavioral test evidence before later-plan work. No unresolved user decision
+remains.

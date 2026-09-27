@@ -22,8 +22,8 @@
 
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md` (no GitHub issue).
 Source of truth: `design-docs/specs/design-gateway-sdk-addons.md` and
-`design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Current Step 3
-`comm-000006` accepted both with no findings. This is distinct from the historical rejected review recorded
+`design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Session 5 Step 3
+`comm-000022` accepted both with no findings. This is distinct from the historical rejected review recorded
 in QA. No codex-agent reference or Cursor behavior mapping applies.
 
 Intent: add typed operation mode beside compatible passthrough, static schema
@@ -82,6 +82,15 @@ an explicit bounded ownership update before editing, not silent scope expansion.
   Core target dependencies or unrelated package versions.
 - [ ] Generate `Package.resolved` once, serially, with the manifest changes.
   Compare against its preimage; reject unrelated upgrades and local/mirror URLs.
+- [ ] Preserve the existing session 1 changes in `Package.swift`,
+  `Package.resolved`, and `impl-plans/progress/gateway-sdk-01.md`. Recheck the
+  recorded posthashes before any edit. The graph, lockfile, and lint checks
+  already recorded in the progress log are evidence, but do not complete this
+  plan. Run the focused gateway behavioral filter below and append its actual
+  positive selected test count, zero failures, complete log path, and final exit
+  code to that progress log. Re-evaluate the plan gate from all evidence before
+  releasing dependent plans; do not invent counts or rerun resolution merely
+  because this plan was revised.
 
 | Public dependency URL | Exact version |
 | --- | --- |
@@ -100,12 +109,16 @@ not conflicting versions. Google Documents revision must equal
 `4baeb285f459adb9031273490b922abc8204dedb`. Preserve RielaCore's SDK-free boundary.
 No release build or dependent implementation starts until graph checks pass.
 The runner's workflow provenance is already authoritative and is not this gate.
+The plan 01 completion gate also requires a passing focused behavioral test
+that compiles and exercises the changed gateway dependency integration. Zero
+selected tests, a missing final exit code, or an incomplete log is not a pass.
 
 ## Verification commands and evidence
 
 ```bash
 swift package resolve
 swift package show-dependencies --format json
+swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests'
 git diff -- Package.swift Package.resolved
 git diff --check
 ```
@@ -114,7 +127,10 @@ Both SwiftPM commands must exit 0 without conflicting-identity warnings. Inspect
 the complete graph and lockfile for all table URLs/versions and the Documents
 commit; record the comparison in this plan's progress log. Diff must show only
 requested dependency edits; whitespace check must pass. These commands are
-required implementation gates and are not claimed as run by this plan-author step.
+required implementation gates. Session 1 recorded graph and lockfile success;
+the focused test has not yet run. Its log must show a positive actual test count
+and zero failures. Record each command's complete stdout/stderr log and terminal
+exit code in `impl-plans/progress/gateway-sdk-01.md`; retain the prior records.
 
 ## Scheduling
 

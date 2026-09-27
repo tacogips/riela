@@ -9,5 +9,17 @@
       "provider": "telegram",
       "conversationId": "-1001234567890"
     }
+  },
+  "summarize-posts": {
+    "when": {
+      "should_send_telegram": false
+    },
+    "payload": {
+      "shouldSendTelegram": false,
+      "maxFetchedPostId": "",
+      "replyText": "",
+      "topicDigests": [],
+      "discardedCount": 0
+    }
   }
 }

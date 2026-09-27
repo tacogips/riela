@@ -102,6 +102,42 @@ final class WorkflowGitFinalizationEvidenceTests: XCTestCase {
     XCTAssertNoThrow(try validatePRHandoff(makePRHandoffContext()))
   }
 
+  func testAcceptsBranchOnlyHandoffWithoutPullRequest() throws {
+    var context = try makePRHandoffContext()
+    let index = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "base-branch-integrate" })
+    context.session.executions[index].acceptedOutput?.payload["mergeStatus"] = .string("branch-only")
+    context.session.executions[index].acceptedOutput?.payload["baseBranch"] = .string("main")
+    for key in ["pullRequestURL", "pullRequestNumber", "pullRequestDraft", "pullRequestBaseBranch"] {
+      context.session.executions[index].acceptedOutput?.payload.removeValue(forKey: key)
+      context.payload.removeValue(forKey: key)
+    }
+    context.payload["mergeStatus"] = .string("branch-only")
+    context.payload["baseBranch"] = .string("main")
+    XCTAssertNoThrow(try validatePRHandoff(context))
+  }
+
+  func testRejectsBranchOnlyHandoffWhenBaseWasPushed() throws {
+    var context = try makePRHandoffContext()
+    let index = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "base-branch-integrate" })
+    context.session.executions[index].acceptedOutput?.payload["mergeStatus"] = .string("branch-only")
+    context.session.executions[index].acceptedOutput?.payload["basePushStatus"] = .string("not-requested")
+    context.payload["mergeStatus"] = .string("branch-only")
+    context.payload["basePushStatus"] = .string("not-requested")
+    context.session.executions[index].acceptedOutput?.payload["baseBranch"] = .string("feat/native-remote")
+    context.payload["baseBranch"] = .string("feat/native-remote")
+    XCTAssertThrowsError(try validatePRHandoff(context))
+
+    context = try makePRHandoffContext()
+    let pushedIndex = try XCTUnwrap(context.session.executions.firstIndex { $0.stepId == "base-branch-integrate" })
+    context.session.executions[pushedIndex].acceptedOutput?.payload["mergeStatus"] = .string("branch-only")
+    context.session.executions[pushedIndex].acceptedOutput?.payload["basePushStatus"] = .string("pushed")
+    context.session.executions[pushedIndex].acceptedOutput?.payload["baseBranch"] = .string("main")
+    context.payload["mergeStatus"] = .string("branch-only")
+    context.payload["basePushStatus"] = .string("pushed")
+    context.payload["baseBranch"] = .string("main")
+    XCTAssertThrowsError(try validatePRHandoff(context))
+  }
+
   func testRejectsMissingOrChangedOpenPRHandoffIdentity() throws {
     let alterations: [(String, JSONValue)] = [
       ("pullRequestURL", .string("https://example.invalid/pull/999")),

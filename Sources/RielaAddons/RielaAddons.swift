@@ -79,6 +79,37 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/chat-reply-worker", version: "1")
   ]
 
+  public static let chatPersonaAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/chat-persona-router", version: "1"),
+    .init(name: "riela/chat-persona-memory-read", version: "1"),
+    .init(name: "riela/chat-persona-memory-write", version: "1")
+  ]
+
+  public static let memoryAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/memory-save", version: "1"),
+    .init(name: "riela/memory-load", version: "1")
+  ]
+
+  public static let digestAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gmail-digest", version: "1"),
+    .init(name: "riela/x-digest", version: "1")
+  ]
+
+  public static let workerAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gemini-sdk-worker", version: "1"),
+    .init(name: "riela/codex-sdk-worker", version: "1")
+  ]
+
+  public static let timeAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/time-signal", version: "1")
+  ]
+
+  // These container gateway dispatches currently return a no-op success envelope.
+  public static let deferredContainerGatewayAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/gmail-gateway-read", version: "1"),
+    .init(name: "riela/x-gateway-read", version: "1")
+  ]
+
   public static let documentAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/file-markdown-convert", version: "1")
   ]
@@ -152,6 +183,12 @@ public enum RielaBuiltinAddonCatalog {
     + appleGatewayAdminAddons
     + noteAddons
     + workflowAddons
+    + chatPersonaAddons
+    + memoryAddons
+    + digestAddons
+    + workerAddons
+    + timeAddons
+    + deferredContainerGatewayAddons
     + documentAddons
     + keyValueStoreAddons
     + gitAddons

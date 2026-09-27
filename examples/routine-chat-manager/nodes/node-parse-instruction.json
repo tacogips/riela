@@ -8,18 +8,42 @@
   "promptTemplateFile": "prompts/parse-instruction.md",
   "variables": {},
   "output": {
-    "description": "Return JSON with name, task, schedule (six-field cron), timezone, completionCriteria, and replyText.",
+    "description": "Return JSON with required name, task, six-field cron schedule, timezone, and completionCriteria.",
     "jsonSchema": {
       "type": "object",
       "properties": {
-        "completionCriteria": {"type": "string"},
-        "name": {"type": "string"},
-        "routine": {"type": "object"},
-        "routineId": {"type": "string"},
-        "schedule": {"type": "string"},
-        "task": {"type": "string"},
-        "timezone": {"type": "string"}
-      }
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "completionCriteria": {
+          "type": "string"
+        },
+        "routine": {
+          "type": "object"
+        },
+        "routineId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "task",
+        "schedule",
+        "timezone",
+        "completionCriteria"
+      ]
     }
   }
 }

@@ -9,6 +9,6 @@
   "variables": {},
   "output": {
     "description": "Return JSON with replyText containing the exact Slack reply text to send.",
-    "jsonSchema": {"type": "object", "properties": {"replyText": {"type": "string"}}}
+    "jsonSchema": {"type": "object", "required": ["replyText"], "properties": {"replyText": {"type": "string", "minLength": 1}}}
   }
 }

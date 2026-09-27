@@ -1,8 +1,9 @@
 # Operation-mode gateway SDK add-ons and schema discovery
 
-Status: revised for independent Step 3 review; historical dependency finding D1
-is resolved by the operator-approved Google Documents v0.3.3 decision. Design
-acceptance is pending; no implementation plan or Swift implementation is authored here.
+Status: implementation-authorized baseline for plans 01–05 on
+`feat/remaining-impl-plans-20260927`; the current Step 3 review is assessing this
+handoff. Historical dependency finding D1 is resolved by the operator-approved
+Google Documents v0.3.3 decision. No implementation verification is claimed here.
 The dependency decision is recorded in
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`
 
@@ -29,10 +30,9 @@ gateway request.
 
 This is one feature. It does not change container add-ons,
 `google-service-gateway`, unrelated Apple add-on families, unrelated package versions, or
-release state. This execution is planning-only; implementation and provider calls
-are not authorized. Step 2 authors design; independent design review and detailed
-implementation-plan authoring remain later workflow steps. It must not modify the GatewaySDKKit checkout, any gateway
-worktree, or the main Riela checkout.
+release state. The effective workflow input authorizes implementation and
+verification of the five existing plans on `feat/remaining-impl-plans-20260927`.
+Preserve the GatewaySDKKit checkout, gateway worktrees, and main Riela checkout.
 
 ## Dependency and platform boundary
 
@@ -344,13 +344,13 @@ is preserved. Workflow, prompt, script, or skill edits require refreshed
 `riela-package.json` digests; ordinary source, test, example, README, and this
 design document do not trigger that refresh.
 
-The effective workflow input supersedes the brief's historical no-push instruction.
-Only accepted design, QA, brief, implementation-plan and necessary index changes
-may be committed and pushed on `feat/gateway-sdk-addons`; main integration requires
-a later implementation run and its independent review; no merge to main is
-authorized in this planning-only run. Independent Step 3 design acceptance
-must precede actionable plan authoring, and the plan needs its own independent
-review before publication. Step 2 performs none of these publication actions. The review must explicitly check
+The effective workflow input supersedes the brief's historical no-push instruction
+and the earlier planning-only handoff. Implement plans 01–05 in dependency order,
+retain complete verification evidence, and obtain independent adversarial and
+integration acceptance with no unresolved material findings. Commit and
+non-force push accepted work to `feat/remaining-impl-plans-20260927`, then provide
+a PR handoff. Do not merge main, alter other branches, release, or merge the PR.
+The review must explicitly check
 the resolved SwiftPM graph, execution policy, error classification, provenance,
 static/no-network schema behavior, platform guards, validation injection, and
 preservation of unrelated add-ons.
@@ -440,9 +440,10 @@ intentionally diverges from the brief's invoke closure for Gmail catalog parity.
 The Google Documents buildArgv/runner split intentionally preserves the existing
 runner contract and does not adopt the facade's separate file/execution policies.
 
-Historical Step 3 feedback `comm-000004` rejected the previous design for D1.
-Current intake `comm-000002` supplies the corrected release decision. This
-revision addresses D1 using v0.3.3 evidence, preserves the historical v0.3.1
-finding in QA, and awaits a new independent Step 3 decision. No actionable
-implementation plan, Swift edits, package resolution, commit, or push occurs
-in this author node. No unresolved user decision remains.
+The earlier planning review rejected the previous design for D1. Intake
+`comm-000002` supplied the corrected release decision; the five implementation
+plans now exist. The current Step 3 review `comm-000004` requires this handoff
+correction because the old planning-only and branch instructions conflicted with
+the effective workflow input. This design-author node claims no Swift edits,
+package resolution, implementation verification, commit, or push. No unresolved
+user decision remains.

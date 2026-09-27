@@ -1,0 +1,273 @@
+{
+  "taskId": "gateway-sdk-addons-20260927-comm000008",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/remaining-impl-plans-20260927",
+  "baseBranch": "feat/remaining-impl-plans-20260927",
+  "remote": "origin",
+  "originalHead": "56f0b5143f115ca815670dc056d3cf9777ef77e3",
+  "designDocPaths": [
+    "design-docs/specs/design-gateway-sdk-addons.md",
+    "design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md"
+  ],
+  "evidenceRoot": "tmp/gateway-sdk-addons-20260927-comm000008",
+  "reviewContext": {
+    "issueReference": "docs/briefs/gateway-sdk-addons-2026-09-04.md",
+    "userProblem": "Existing local gateway add-ons lack typed catalog operation mode, shared static schema discovery, and validation for the new configuration shapes.",
+    "requiredOutcomes": [
+      "Implement the accepted five-plan work package in dependency order: 01; 02 and 03; 04; 05.",
+      "Use the six approved public exact-version packages, including Google Documents 0.3.3, without substitutions or unrelated upgrades.",
+      "Pass the plan-specific and final verification gates with complete exit-code evidence; obtain independent adversarial and integration acceptance.",
+      "Commit and non-force push accepted implementation on the current branch, then provide PR handoff without merging."
+    ],
+    "nonGoals": [
+      "Gateway or kit source changes; new provider operations; generalized frameworks or broad cleanup.",
+      "Container, google-service, unrelated Apple families, x64/App Store release, or any release.",
+      "Merging main or the eventual PR."
+    ],
+    "constraints": [
+      "Workflow mode is issue-resolution; implementation authorized after this checkpoint.",
+      "Use GPT-6 Sol medium, not Astra; preserve unrelated Riela/Monja work and other worktrees.",
+      "Serialize shared SwiftPM work; keep scratch and full logs beneath evidenceRoot; do not stage scratch.",
+      "Plans 03 to 04 transfer shared adapter and Apple files sequentially; plan 05 alone reconciles Package.resolved and shared catalogs/indexes.",
+      "Each plan writes its own progress file; workers do not edit this manifest."
+    ],
+    "designDecisionsAndRationale": [
+      "Keep passthrough and add operation/arguments/selection; the SDK catalog builds typed requests while existing gateway policy, tier, environment, and deadlines remain fixed.",
+      "Build GraphQL once, execute that exact document, and record it to align behavior and provenance.",
+      "For Google Documents 0.3.3 use facade buildArgv then the existing Riela runner, preserving runner policy and provider normalization; do not imply SDK execute file policies apply.",
+      "Keep RielaCore SDK-free via an injected catalog projection so shape validation works on Linux.",
+      "Use static catalog lookup for add-on and CLI; bridge only the documented ASCII-literal (?i) prefix to kit search.",
+      "Approve public exact versions to resolve the historical Documents 0.3.1 facade gap."
+    ],
+    "intentionalTradeoffs": [
+      "Google Documents retains Riela command runner rather than switching to SDK execute/invoke; its file policy and snapshot behavior remain Riela-owned.",
+      "Core callers without an available catalog skip only operation existence checks, while runtime and shape checks remain enforced.",
+      "Existing macOS gateway guards remain; Linux validates shapes and mocks without concrete catalogs."
+    ],
+    "supportedEdgeCases": [
+      "Null and conflicting mode keys, typed template arguments, malformed selections, unknown operations, and deterministic suggestions.",
+      "Gmail passthrough variables; Apple input precedence and prohibited binaryPath/addon.env; Documents auth-command refusal in both modes.",
+      "Malformed raw provider output versus normalized provider errors; deadline and cancellation behavior.",
+      "No-pattern SDL versus regex matches, kind/reference/limit options, and unavailable catalogs."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live provider credentials or network calls in tests and schema discovery.",
+      "New credential/file-policy options or provider operations.",
+      "New CI infrastructure solely for Linux execution."
+    ],
+    "sourcePaths": [
+      "docs/briefs/gateway-sdk-addons-2026-09-04.md",
+      "docs/briefs/gateway-sdk-2026-09-04.md",
+      "design-docs/specs/design-gateway-sdk-addons.md",
+      "design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md",
+      "impl-plans/active/gateway-sdk-addons-01-dependency-preparation.md",
+      "impl-plans/active/gateway-sdk-addons-02-core-validation.md",
+      "impl-plans/active/gateway-sdk-addons-03-gateway-execution.md",
+      "impl-plans/active/gateway-sdk-addons-04-schema-cli-integration.md",
+      "impl-plans/active/gateway-sdk-addons-05-examples-final-verification.md"
+    ],
+    "planningReview": {
+      "communicationId": "comm-000008",
+      "decision": "accepted",
+      "findings": [],
+      "codexAgentReferences": [],
+      "verification": [
+        {
+          "command": "python3 plan metadata and DAG audit",
+          "exitCode": 0,
+          "completeLog": "tmp/remaining-impl-plans/gateway-sdk/plan-authoring/plan-audit.log"
+        },
+        {
+          "command": "git diff --check",
+          "exitCode": 0,
+          "completeLog": "tmp/remaining-impl-plans/gateway-sdk/plan-authoring/diff-check.log"
+        },
+        {
+          "command": "rg -n 'planning-only|implementation not authorized|later implementation-authorized|feat/gateway-sdk-addons|tmp/gateway-sdk-implementation|comm-000004' impl-plans/active/gateway-sdk-addons-0*.md",
+          "exitCode": 1,
+          "result": "No matches",
+          "completeLog": "tmp/remaining-impl-plans/gateway-sdk/plan-authoring/stale-scan.log"
+        }
+      ]
+    }
+  },
+  "plans": [
+    {
+      "planId": "gateway-sdk-01",
+      "planPath": "impl-plans/active/gateway-sdk-addons-01-dependency-preparation.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Package.swift",
+        "Package.resolved",
+        "impl-plans/progress/gateway-sdk-01.md"
+      ],
+      "sharedPaths": [
+        "Package.resolved"
+      ],
+      "acceptanceCriteria": [
+        "Resolve six public exact-version dependencies, with five distinct gateway identities and one kit identity at 0.1.0; Google Documents revision is 4baeb285f459adb9031273490b922abc8204dedb.",
+        "Preserve RielaCore SDK independence, macOS product conditions, and unrelated versions."
+      ],
+      "verification": [
+        "swift package resolve",
+        "swift package show-dependencies --format json",
+        "git diff -- Package.swift Package.resolved",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "gateway-sdk-02",
+      "planPath": "impl-plans/active/gateway-sdk-addons-02-core-validation.md",
+      "dependsOn": [
+        "gateway-sdk-01"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowValidation.swift",
+        "Sources/RielaCore/WorkflowNodeValidation.swift",
+        "Sources/RielaCore/WorkflowGatewayAddonValidation.swift",
+        "Tests/RielaCoreTests/WorkflowGatewayValidationTests.swift",
+        "impl-plans/progress/gateway-sdk-02.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Validate both mode shapes, typed arguments and selection, Apple effective input precedence, and schema options on all platforms.",
+        "Use an optional catalog projection for deterministic operation checks while preserving shape checks and existing validator initialization."
+      ],
+      "verification": [
+        "swift test --filter 'WorkflowGatewayValidationTests|WorkflowValidation'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "gateway-sdk-03",
+      "planPath": "impl-plans/active/gateway-sdk-addons-03-gateway-execution.md",
+      "dependsOn": [
+        "gateway-sdk-01"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+LocalGatewaySupport.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+WrikeGatewayAddons.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GoogleAnalyticsGatewayAddons.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GmailGatewayCLIAddons.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GoogleDocumentsGatewayAddons.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAdminAddons.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+AppleGatewaySupport.swift",
+        "Tests/RielaCLITests/LocalGatewayAddonTestSupport.swift",
+        "Tests/RielaCLITests/WrikeGatewayAddonTests.swift",
+        "Tests/RielaCLITests/GoogleAnalyticsGatewayAddonTests.swift",
+        "Tests/RielaCLITests/GmailGatewayAddonTests.swift",
+        "Tests/RielaCLITests/GoogleDocumentsGatewayAddonTests.swift",
+        "Tests/RielaCLITests/AppleGatewayAdminAddonTests.swift",
+        "impl-plans/progress/gateway-sdk-03.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAdminAddons.swift",
+        "Tests/RielaCLITests/AppleGatewayAdminAddonTests.swift"
+      ],
+      "acceptanceCriteria": [
+        "Preserve existing gateway payload, tier, environment, deadlines, Apple and Documents policies; record exact executed document or argv and authoring mode.",
+        "Distinguish construction policy failures, malformed output, and provider failures with focused stand-in tests."
+      ],
+      "verification": [
+        "swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests'",
+        "rg -n 'localGatewayGraphQLRunner|LocalGatewayGraphQLRunner|acceptsVariables' Sources/RielaCLI Tests/RielaCLITests",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "gateway-sdk-04",
+      "planPath": "impl-plans/active/gateway-sdk-addons-04-schema-cli-integration.md",
+      "dependsOn": [
+        "gateway-sdk-02",
+        "gateway-sdk-03"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/GatewaySchemaService.swift",
+        "Sources/RielaCLI/AddonSchemaCommand.swift",
+        "Sources/RielaCLI/RielaClientCommandRouter.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAdminAddons.swift",
+        "Sources/RielaAddons/RielaAddons.swift",
+        "Tests/RielaCLITests/GatewaySchemaTests.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift",
+        "Tests/RielaCLITests/AppleGatewayAdminAddonTests.swift",
+        "Tests/RielaAddonsTests/AddonExecutionContractsTests.swift",
+        "impl-plans/progress/gateway-sdk-04.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+AppleGatewayAdminAddons.swift",
+        "Tests/RielaCLITests/AppleGatewayAdminAddonTests.swift"
+      ],
+      "acceptanceCriteria": [
+        "Serve static credential-free catalog discovery through add-on, Apple schema extension, CLI, and explicit CLI validation injection.",
+        "Verify provider/tier coverage, search compatibility, output and error behavior, platform fallback, and existing Core caller compatibility."
+      ],
+      "verification": [
+        "swift test --filter 'GatewaySchemaTests|CommandParsingTests|AppleGatewayAdminAddonTests|AddonExecutionContractsTests|WorkflowGatewayValidationTests'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "gateway-sdk-05",
+      "planPath": "impl-plans/active/gateway-sdk-addons-05-examples-final-verification.md",
+      "dependsOn": [
+        "gateway-sdk-04"
+      ],
+      "writePaths": [
+        "examples/gmail-operation-thread-digest/workflow.json",
+        "examples/gmail-operation-thread-digest/prompts/summarize.md",
+        "examples/gmail-operation-thread-digest/mock-scenario.json",
+        "examples/gmail-operation-thread-digest/README.md",
+        "examples/gmail-operation-thread-digest/EXPECTED_RESULTS.md",
+        "examples/gateway-schema-lookup/workflow.json",
+        "examples/gateway-schema-lookup/prompts/explain-schema.md",
+        "examples/gateway-schema-lookup/mock-scenario.json",
+        "examples/gateway-schema-lookup/README.md",
+        "examples/gateway-schema-lookup/EXPECTED_RESULTS.md",
+        "examples/wrike-project-kanban-agent/workflow.json",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "README.md",
+        ".agents/skills/riela-node-addons/SKILL.md",
+        "Package.resolved",
+        "impl-plans/README.md",
+        "impl-plans/PROGRESS.json",
+        "impl-plans/progress/plans-index.json",
+        "impl-plans/progress/gateway-sdk-05.md"
+      ],
+      "sharedPaths": [
+        "Package.resolved",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "impl-plans/README.md",
+        "impl-plans/PROGRESS.json",
+        "impl-plans/progress/plans-index.json"
+      ],
+      "acceptanceCriteria": [
+        "Ship two new examples, update the Wrike example, catalog, README, skill, and progress documentation with content review.",
+        "Pass release build, focused and full Swift tests, example mock runs, public schema CLI check, strict SwiftLint, graph audit, and independent adversarial and integration review with complete logs and exit codes."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build -c release'",
+        "arch -arm64 /bin/zsh -lc \"swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests|AddonExecutionContractsTests|RielaExampleParityTests|WorkflowValidation|WorkflowGatewayValidationTests|GatewaySchemaTests|CommandParsingTests'\"",
+        "arch -arm64 /bin/zsh -lc 'swift test'",
+        ".build/release/riela workflow run gmail-operation-thread-digest --workflow-definition-dir examples --mock-scenario examples/gmail-operation-thread-digest/mock-scenario.json --session-store tmp/remaining-impl-plans/gateway-sdk/gateway-sdk-05/gmail-sessions --output jsonl",
+        ".build/release/riela workflow run gateway-schema-lookup --workflow-definition-dir examples --mock-scenario examples/gateway-schema-lookup/mock-scenario.json --session-store tmp/remaining-impl-plans/gateway-sdk/gateway-sdk-05/schema-sessions --output jsonl",
+        ".build/release/riela addon schema gmail-gateway --tier draft --grep '(?i)draft'",
+        "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint",
+        "swift package show-dependencies --format json",
+        "test -s .agents/skills/riela-node-addons/SKILL.md",
+        "cat .agents/skills/riela-node-addons/SKILL.md",
+        "rg -n 'queryTemplate|operation|arguments|selection|variablesTemplate|command|argsTemplate|riela/gateway-schema|riela addon schema|--tier|--grep|0\\.3\\.3' .agents/skills/riela-node-addons/SKILL.md",
+        "git diff --check",
+        "git status --short"
+      ]
+    }
+  ]
+}

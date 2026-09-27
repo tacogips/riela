@@ -14,7 +14,7 @@
     "Package.resolved"
   ],
   "progressLog": "impl-plans/progress/gateway-sdk-01.md",
-  "status": "planned; independent plan review pending; implementation not authorized"
+  "status": "planned; design accepted; implementation authorized; plan review pending"
 }
 ```
 
@@ -23,16 +23,16 @@
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md` (no GitHub issue).
 Source of truth: `design-docs/specs/design-gateway-sdk-addons.md` and
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Current Step 3
-`comm-000004`, execution `step3-design-review-attempt-1-exec-4`, accepted both
-with no findings. This is distinct from the historical rejected review recorded
+`comm-000006` accepted both with no findings. This is distinct from the historical rejected review recorded
 in QA. No codex-agent reference or Cursor behavior mapping applies.
 
 Intent: add typed operation mode beside compatible passthrough, static schema
 lookup, CLI discovery, and validation using public gateway SDKs. Google Documents
 0.3.3 supersedes the historical 0.3.1 gap; never rewrite that historical finding.
-This plan is authored in planning-only mode. Execute its implementation tasks only
-in a later implementation-authorized run after independent plan acceptance.
-Commit the accepted design and ALL five plans before native Riela fanout. Use the
+The effective workflow input authorizes implementation now on
+`feat/remaining-impl-plans-20260927`; obtain independent plan acceptance before
+native Riela implementation fanout. Commit the accepted design and ALL five
+plans before fanout. Use the
 same branch and working directory; no worktrees, private branches, concurrent git
 operations, or background shell processes. No merge to main is authorized here.
 
@@ -44,7 +44,7 @@ workflow registry/provenance rediscovery. Preserve unrelated Riela/Monja work.
 Read this plan and the accepted design fresh before every edit. Before editing a
 file, record SHA-256 (or ABSENT for a new file), save its preimage and a write-once
 intent snapshot identifying the exact requirement and intended change under
-`tmp/gateway-sdk-implementation/<planId>/<attempt>/`. Recheck the prehash immediately
+`tmp/remaining-impl-plans/gateway-sdk/<planId>/<attempt>/`. Recheck the prehash immediately
 before applying the edit; if changed, reread and reconcile, never overwrite from
 an old snapshot. Record posthash and patch. At join compare current files with
 worker posthashes and accepted intent snapshots; investigate drift, including
@@ -114,7 +114,7 @@ Both SwiftPM commands must exit 0 without conflicting-identity warnings. Inspect
 the complete graph and lockfile for all table URLs/versions and the Documents
 commit; record the comparison in this plan's progress log. Diff must show only
 requested dependency edits; whitespace check must pass. These commands are
-future implementation gates, not executed by the planning node.
+required implementation gates and are not claimed as run by this plan-author step.
 
 ## Scheduling
 

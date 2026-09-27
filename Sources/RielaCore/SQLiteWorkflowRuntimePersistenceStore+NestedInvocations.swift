@@ -270,6 +270,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
     try validate(reservation)
     guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else { return nil }
     let db = try openDatabase(readOnly: true)
+    guard try db.tableExists("workflow_nested_invocations") else { return nil }
     return try nestedInvocationRecord(key: nestedInvocationKey(reservation), in: db)
   }
 
@@ -282,6 +283,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       return []
     }
     let db = try openDatabase(readOnly: true)
+    guard try db.tableExists("workflow_nested_invocations") else { return [] }
     let rows = try db.query(
       """
       SELECT json(reservation_json) AS reservation_json,
@@ -357,6 +359,7 @@ public extension SQLiteWorkflowRuntimePersistenceStore {
       return nil
     }
     let db = try openDatabase(readOnly: true)
+    guard try db.tableExists("workflow_nested_invocations") else { return nil }
     return try nestedInvocationRecord(
       key: nestedInvocationKey(
         parentSessionId: parentSessionId,

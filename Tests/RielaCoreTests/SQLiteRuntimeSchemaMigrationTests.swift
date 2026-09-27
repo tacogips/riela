@@ -45,6 +45,20 @@ final class SQLiteRuntimeSchemaMigrationTests: XCTestCase {
     }
   }
 
+  func testNestedReadersSeeEmptyStateWhileDatabaseSchemaIsBeingCreated() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let path = SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+    let database = try SQLiteDatabase.open(path: path, mode: .readWriteCreate)
+    try database.execute("CREATE TABLE bootstrap (id INTEGER PRIMARY KEY)")
+
+    let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    XCTAssertNil(try store.nestedInvocationRecord(
+      parentSessionId: "parent", sourceStepExecutionId: "source-exec", branchId: "fanout-1"
+    ))
+    XCTAssertEqual(try store.nestedInvocationRecords(parentSessionId: "parent"), [])
+  }
+
   /// The regenerable-data policy: an older session store is deleted and
   /// rebuilt at the current generation rather than hard-failing every open.
   func testAnOlderSessionStoreIsDiscardedAndRecreatedAtTheCurrentGeneration() throws {

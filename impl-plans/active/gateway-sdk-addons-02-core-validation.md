@@ -24,8 +24,8 @@
 
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md` (no GitHub issue).
 Source of truth: `design-docs/specs/design-gateway-sdk-addons.md` and
-`design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Current Step 3
-`comm-000006` accepted both with no findings. This is distinct from the historical rejected review recorded
+`design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`. Session 5 Step 3
+`comm-000022` accepted both with no findings. This is distinct from the historical rejected review recorded
 in QA. No codex-agent reference or Cursor behavior mapping applies.
 
 Intent: add typed operation mode beside compatible passthrough, static schema

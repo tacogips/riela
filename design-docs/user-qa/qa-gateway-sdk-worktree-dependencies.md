@@ -79,8 +79,9 @@ reject local path/mirror substitution and unrelated dependency changes. Neither
 command was run during the earlier planning Step 2: the feature manifest was
 then unmodified, and such a graph would not have validated the proposed set.
 
-No other operator decision is pending. The current Step 3 design review must
-accept the corrected implementation handoff before this workflow proceeds.
+No other operator decision is pending. The corrected design was accepted in
+the earlier planning workflow; current implementation progress is tracked in
+`impl-plans/progress/gateway-sdk-01.md`.
 
 ## Historical Step 3 review response — comm-000004
 
@@ -143,8 +144,11 @@ are historical; the current effective workflow input supersedes them.
 Implement and verify existing plans 01–05 on
 `feat/remaining-impl-plans-20260927`. Record complete logs and terminal exit
 codes under repository-root `tmp/remaining-impl-plans/gateway-sdk/`. After
+the plan 01 graph and lockfile gate, record a focused behavioral test with a
+positive selected count and zero failures before advancing to plans 02–05. After
 independent adversarial and integration reviews accept the combined work with
 no unresolved material findings, commit and non-force push to this same branch
-and provide a PR handoff. Do not merge main, alter other branches, release, or
-merge the PR. The dependency graph, build, test, lint, and runtime gates remain
-unverified by this design-author step.
+and provide a PR handoff against `main`. Final local HEAD must equal the live
+remote branch head. Do not merge main, alter other branches, release, or merge
+the PR. Session 1 recorded successful graph and lockfile checks; the focused
+behavioral test and subsequent implementation gates remain unverified here.

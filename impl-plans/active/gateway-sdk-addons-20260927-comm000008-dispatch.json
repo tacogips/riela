@@ -2,9 +2,9 @@
   "taskId": "gateway-sdk-addons-20260927-comm000008",
   "workflowMode": "issue-resolution",
   "implementationBranch": "feat/remaining-impl-plans-20260927",
-  "baseBranch": "feat/remaining-impl-plans-20260927",
+  "baseBranch": "main",
   "remote": "origin",
-  "originalHead": "56f0b5143f115ca815670dc056d3cf9777ef77e3",
+  "originalHead": "009c944c95906a2e208b6d66f70007956cfca01b",
   "designDocPaths": [
     "design-docs/specs/design-gateway-sdk-addons.md",
     "design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md"
@@ -26,10 +26,12 @@
     ],
     "constraints": [
       "Workflow mode is issue-resolution; implementation authorized after this checkpoint.",
-      "Use GPT-6 Sol medium, not Astra; preserve unrelated Riela/Monja work and other worktrees.",
+      "Use installed immutable user-scope GPT-6 Sol medium workflow; no Astra, release, x64, App Store, or main merge.",
       "Serialize shared SwiftPM work; keep scratch and full logs beneath evidenceRoot; do not stage scratch.",
       "Plans 03 to 04 transfer shared adapter and Apple files sequentially; plan 05 alone reconciles Package.resolved and shared catalogs/indexes.",
-      "Each plan writes its own progress file; workers do not edit this manifest."
+      "Each plan writes its own progress file; workers do not edit this manifest.",
+      "Preserve reviewed checkpoint 009c944 and uncommitted Package.swift, Package.resolved, and impl-plans/progress/gateway-sdk-01.md from session 1.",
+      "Before plans 02–05, plan 01 must record an actual positive focused test count, zero failures, complete log, and terminal exit code in impl-plans/progress/gateway-sdk-01.md."
     ],
     "designDecisionsAndRationale": [
       "Keep passthrough and add operation/arguments/selection; the SDK catalog builds typed requests while existing gateway policy, tier, environment, and deadlines remain fixed.",
@@ -67,28 +69,33 @@
       "impl-plans/active/gateway-sdk-addons-05-examples-final-verification.md"
     ],
     "planningReview": {
-      "communicationId": "comm-000008",
-      "decision": "accepted",
+      "communicationId": "comm-000024",
+      "decision": "accepted all five active plans against Step 3 design decision comm-000022",
+      "designDecisionCommunicationId": "comm-000022",
+      "workflowExecutionId": "codex-design-and-implement-review-loop-session-5",
+      "fromStepId": "step5-impl-plan-review",
       "findings": [],
       "codexAgentReferences": [],
       "verification": [
         {
-          "command": "python3 plan metadata and DAG audit",
+          "command": "python3 plan-metadata and dependency-DAG check",
           "exitCode": 0,
-          "completeLog": "tmp/remaining-impl-plans/gateway-sdk/plan-authoring/plan-audit.log"
+          "completeLogPath": "tmp/gateway-sdk-plan-session5/plan-structure.log",
+          "exitRecordPath": "tmp/gateway-sdk-plan-session5/plan-structure.exit"
         },
         {
           "command": "git diff --check",
           "exitCode": 0,
-          "completeLog": "tmp/remaining-impl-plans/gateway-sdk/plan-authoring/diff-check.log"
-        },
-        {
-          "command": "rg -n 'planning-only|implementation not authorized|later implementation-authorized|feat/gateway-sdk-addons|tmp/gateway-sdk-implementation|comm-000004' impl-plans/active/gateway-sdk-addons-0*.md",
-          "exitCode": 1,
-          "result": "No matches",
-          "completeLog": "tmp/remaining-impl-plans/gateway-sdk/plan-authoring/stale-scan.log"
+          "completeLogPath": "tmp/gateway-sdk-plan-session5/git-diff-check.log",
+          "exitRecordPath": "tmp/gateway-sdk-plan-session5/git-diff-check.exit"
         }
       ]
+    },
+    "implementationGate": {
+      "planId": "gateway-sdk-01",
+      "command": "swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests'",
+      "evidenceTarget": "impl-plans/progress/gateway-sdk-01.md",
+      "requirement": "Positive actual test count, zero failures, complete log, terminal exit code before plans 02–05."
     }
   },
   "plans": [
@@ -111,6 +118,7 @@
       "verification": [
         "swift package resolve",
         "swift package show-dependencies --format json",
+        "swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests'",
         "git diff -- Package.swift Package.resolved",
         "git diff --check"
       ]
@@ -257,8 +265,8 @@
         "arch -arm64 /bin/zsh -lc 'swift build -c release'",
         "arch -arm64 /bin/zsh -lc \"swift test --filter 'WrikeGatewayAddonTests|GmailGatewayAddonTests|GoogleAnalyticsGatewayAddonTests|GoogleDocumentsGatewayAddonTests|AppleGatewayAdminAddonTests|AddonExecutionContractsTests|RielaExampleParityTests|WorkflowValidation|WorkflowGatewayValidationTests|GatewaySchemaTests|CommandParsingTests'\"",
         "arch -arm64 /bin/zsh -lc 'swift test'",
-        ".build/release/riela workflow run gmail-operation-thread-digest --workflow-definition-dir examples --mock-scenario examples/gmail-operation-thread-digest/mock-scenario.json --session-store tmp/remaining-impl-plans/gateway-sdk/gateway-sdk-05/gmail-sessions --output jsonl",
-        ".build/release/riela workflow run gateway-schema-lookup --workflow-definition-dir examples --mock-scenario examples/gateway-schema-lookup/mock-scenario.json --session-store tmp/remaining-impl-plans/gateway-sdk/gateway-sdk-05/schema-sessions --output jsonl",
+        ".build/release/riela workflow run gmail-operation-thread-digest --workflow-definition-dir examples --mock-scenario examples/gmail-operation-thread-digest/mock-scenario.json --session-store tmp/gateway-sdk-addons-20260927-comm000008/gateway-sdk-05/gmail-sessions --output jsonl",
+        ".build/release/riela workflow run gateway-schema-lookup --workflow-definition-dir examples --mock-scenario examples/gateway-schema-lookup/mock-scenario.json --session-store tmp/gateway-sdk-addons-20260927-comm000008/gateway-sdk-05/schema-sessions --output jsonl",
         ".build/release/riela addon schema gmail-gateway --tier draft --grep '(?i)draft'",
         "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk TOOLCHAINS=com.apple.dt.toolchain.XcodeDefault PATH=/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin:$PATH /usr/bin/xcrun swiftlint",
         "swift package show-dependencies --format json",

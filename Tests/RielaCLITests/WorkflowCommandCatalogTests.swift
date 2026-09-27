@@ -143,9 +143,9 @@ extension WorkflowCommandTests {
     XCTAssertTrue(failure.error.contains("missing add-on resolver"))
   }
 
-  func testInspectReportsNativeBundleAddonMetadataWithoutPassiveLoading() async throws {
-    let tempDir = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cli-native-bundle-\(UUID().uuidString)", isDirectory: true)
+  func testForgedNativeBundleMetadataIsNotTrustedWithoutInstalledDependency() async throws {
+    let tempDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+      .appendingPathComponent("tmp/riela-cli-native-bundle/\(UUID().uuidString)", isDirectory: true)
     let workflowDir = tempDir.appendingPathComponent("native-demo", isDirectory: true)
     try FileManager.default.createDirectory(at: workflowDir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: tempDir) }
@@ -202,9 +202,10 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", tempDir.path,
       "--output", "json"
     ])
-    XCTAssertEqual(validate.exitCode, .success)
+    XCTAssertEqual(validate.exitCode, .failure, validate.stdout)
     let validation = try decodeJSON(WorkflowValidationCommandResult.self, from: validate.stdout)
-    XCTAssertTrue(validation.valid)
+    XCTAssertFalse(validation.valid)
+    XCTAssertTrue(validate.stdout.contains("unresolvedAddonExecutable"), validate.stdout)
     XCTAssertEqual(validation.sourceKind, .package)
     XCTAssertEqual(validation.packageDirectory, workflowDir.path)
     XCTAssertEqual(validation.mutable, false)
@@ -215,25 +216,13 @@ extension WorkflowCommandTests {
       "--workflow-definition-dir", tempDir.path,
       "--output", "json"
     ])
-    XCTAssertEqual(inspect.exitCode, .success)
+    XCTAssertEqual(inspect.exitCode, .failure, inspect.stdout)
     let summary = try decodeJSON(WorkflowInspectionSummary.self, from: inspect.stdout)
     XCTAssertEqual(summary.sourceKind, .package)
     XCTAssertEqual(summary.packageDirectory, workflowDir.path)
     XCTAssertEqual(summary.mutable, false)
-    let native = try XCTUnwrap(summary.nativeBundleAddons.first)
-    XCTAssertEqual(native.nodeId, "native-node")
-    XCTAssertEqual(native.addon, "native-runner")
-    XCTAssertEqual(native.sourceKind, "native-bundle")
-    XCTAssertEqual(native.sourceScope, "project")
-    XCTAssertEqual(native.packageName, "native-addon-package")
-    XCTAssertEqual(native.bundleIdentifier, "com.example.riela.NativeRunner")
-    XCTAssertEqual(native.abiVersion, 1)
-    XCTAssertEqual(native.contentDigest, contentDigest)
-    XCTAssertEqual(native.dependencyClosureDigest, dependencyDigest)
-    XCTAssertTrue(native.signingRequired)
-    XCTAssertNil(native.signingVerified)
-    XCTAssertEqual(native.cacheStatus, "not_loaded")
-    XCTAssertNil(native.preflightHelperStatus)
+    XCTAssertTrue(summary.nativeBundleAddons.isEmpty)
+    XCTAssertTrue(inspect.stdout.contains("unresolvedAddonExecutable"), inspect.stdout)
 
     let executable = await app.run([
       "workflow", "validate", "native-demo",
@@ -244,7 +233,7 @@ extension WorkflowCommandTests {
     XCTAssertEqual(executable.exitCode, .failure)
     let executableValidation = try decodeJSON(WorkflowValidationCommandResult.self, from: executable.stdout)
     XCTAssertFalse(executableValidation.valid)
-    XCTAssertTrue(executableValidation.nodeValidationResults.first?.message.contains("preflight helper unavailable") == true)
+    XCTAssertTrue(executable.stdout.contains("unresolvedAddonExecutable"), executable.stdout)
   }
 
   func testValidateJSONFailureReturnsParseableEnvelopeForMissingWorkflow() async throws {

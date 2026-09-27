@@ -59,8 +59,12 @@ final class WorkflowInstalledAddonMetadataTests: XCTestCase {
         ) as? [String: Any])
         let nativeAddons = try XCTUnwrap(inspectionJSON["nativeBundleAddons"] as? [[String: Any]])
         XCTAssertEqual(nativeAddons.first?["packageName"] as? String, "@issue117/youtube-tools")
+        XCTAssertEqual(nativeAddons.first?["sourceScope"] as? String, "project")
+        XCTAssertEqual(nativeAddons.first?["bundleIdentifier"] as? String, "dev.issue117.download")
+        XCTAssertEqual(nativeAddons.first?["abiVersion"] as? Int, 1)
         XCTAssertEqual(nativeAddons.first?["contentDigest"] as? String, fixture.contentDigest)
         XCTAssertEqual(nativeAddons.first?["dependencyClosureDigest"] as? String, fixture.contentDigest)
+        XCTAssertEqual(nativeAddons.first?["cacheStatus"] as? String, "not_loaded")
         XCTAssertFalse(inspect.stdout.contains("unresolvedAddonExecutable"), inspect.stdout)
       }
     }

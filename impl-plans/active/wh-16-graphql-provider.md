@@ -20,7 +20,52 @@
     "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
     "impl-plans/progress/wh-16-graphql-provider.md"
   ],
-  "sharedPaths": [],
+  "sharedPaths": [
+    "Sources/RielaCLI/TaskDispatch+Director.swift",
+    "Sources/RielaCLI/TaskDispatch+Handover.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/TaskHandoverRuntime.swift",
+    "Sources/RielaCLI/TaskHandoverSupport.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/HandoverBriefRenderer.swift",
+    "Sources/RielaWork/HandoverCoordinator.swift",
+    "Sources/RielaWork/HandoverPacketBuilder.swift",
+    "Sources/RielaWork/HandoverProtocols.swift",
+    "Sources/RielaWork/HandoverRedaction.swift",
+    "Sources/RielaWork/TaskGuardCoordinator.swift",
+    "Sources/RielaWork/WorkHandover.swift",
+    "Sources/RielaWork/WorkStore+Adoption.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Director.swift",
+    "Sources/RielaWork/WorkStore+HandoverRequests.swift",
+    "Sources/RielaWork/WorkStore+Handovers.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Sources/RielaWork/WorkStore+Isolation.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift",
+    "Sources/RielaWork/WorkStore+Takeover.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
+    "Tests/RielaCLITests/TaskHandoverDispatchTests.swift",
+    "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
+    "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierTests.swift",
+    "Tests/RielaWorkTests/DeterministicDirectorHandoverTests.swift",
+    "Tests/RielaWorkTests/HandoverCoordinatorTests.swift",
+    "Tests/RielaWorkTests/HandoverPacketBuilderTests.swift",
+    "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
+    "Tests/RielaWorkTests/WorkStoreHandoverRequestTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift"
+  ],
   "progressLog": "impl-plans/progress/wh-16-graphql-provider.md"
 }
 ```
@@ -175,3 +220,8 @@ git diff --check
 grep -rn 'consumed:' Sources/RielaWork
 ```
 The last grep must print nothing (exit 1). Update the progress log's Blocked completion section to resolved, citing these logs.
+
+### Serial-wave shared ownership (2026-10-01, after run session-11)
+
+The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store and decision file that no remaining plan owns (listed in this plan's `sharedPaths`). Do not block on those files; fix the defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.
+For wh-16 specifically: completed `reportAttempt` fails with "reported task attempt has no recorded decision" in `TaskDispatch+Handover.swift` (tmp/work-handover/wh-16-graphql-provider/focused-r31-retry.log). Fix it so a completed remote report is reconciled and the director records its decision, exactly as for a local attempt. A partial wh-16 is committed ('wip: continue wh-16 ...'); complete it.

@@ -17,7 +17,51 @@
   "sharedPaths": [
     "Sources/RielaCLI/RielaCommand.swift",
     "Sources/RielaCLI/TaskCommands.swift",
-    "Sources/RielaCLI/TaskHandoverCommands.swift"
+    "Sources/RielaCLI/TaskDispatch+Director.swift",
+    "Sources/RielaCLI/TaskDispatch+Handover.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/TaskHandoverCommands.swift",
+    "Sources/RielaCLI/TaskHandoverRuntime.swift",
+    "Sources/RielaCLI/TaskHandoverSupport.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/HandoverBriefRenderer.swift",
+    "Sources/RielaWork/HandoverCoordinator.swift",
+    "Sources/RielaWork/HandoverPacketBuilder.swift",
+    "Sources/RielaWork/HandoverProtocols.swift",
+    "Sources/RielaWork/HandoverRedaction.swift",
+    "Sources/RielaWork/TaskGuardCoordinator.swift",
+    "Sources/RielaWork/WorkHandover.swift",
+    "Sources/RielaWork/WorkStore+Adoption.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Director.swift",
+    "Sources/RielaWork/WorkStore+HandoverRequests.swift",
+    "Sources/RielaWork/WorkStore+Handovers.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Sources/RielaWork/WorkStore+Isolation.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift",
+    "Sources/RielaWork/WorkStore+Takeover.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
+    "Tests/RielaCLITests/TaskHandoverDispatchTests.swift",
+    "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
+    "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierTests.swift",
+    "Tests/RielaWorkTests/DeterministicDirectorHandoverTests.swift",
+    "Tests/RielaWorkTests/HandoverCoordinatorTests.swift",
+    "Tests/RielaWorkTests/HandoverPacketBuilderTests.swift",
+    "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
+    "Tests/RielaWorkTests/WorkStoreHandoverRequestTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift"
   ],
   "sharedPathNotes": [
     {
@@ -116,3 +160,7 @@ Record the test names in the progress log.
 
 - [ ] Remote takeover and serve are implemented to the flow above; the auth and fence behaviors are tested
 - [ ] The tests pass; the progress log is complete
+
+### Serial-wave shared ownership (2026-10-01, after run session-11)
+
+The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store and decision file that no remaining plan owns (listed in this plan's `sharedPaths`). Do not block on those files; fix the defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.

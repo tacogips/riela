@@ -30,6 +30,9 @@
     "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
     "Sources/RielaCLI/WorkflowRunCommand.swift",
     "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
+    "Tests/RielaCLITests/GitBranchWorkspaceRuntimeTests.swift",
+    "Tests/RielaCLITests/HandoverSinkTests.swift",
+    "Tests/RielaCoreTests/RielaDataGarbageCollectorHandoverTests.swift",
     "impl-plans/progress/wh-14-task-dispatch-runtime.md"
   ],
   "sharedPaths": [
@@ -68,8 +71,9 @@ Non-goals: command parsing and rendering (wh-15), GraphQL (wh-16), the remote su
 ## Execution rules
 
 Follow the umbrella common execution contract (hashes and intents in `tmp/work-handover/wh-14-task-dispatch-runtime/`,
-writePaths only plus the shared edits stated above, arm64 logs; tests use temp stores and repos under `tmp/`; no
-project-repo git state changes; own progress log).
+writePaths only plus the shared edits stated above, arm64 logs; test session stores may live under `tmp/`, but every
+git repository a test creates lives under `FileManager.default.temporaryDirectory` (see "Resume with design §21 R29" at
+the end); no project-repo git state changes; own progress log).
 
 ## Pinned runtime API (`TaskHandoverRuntime.swift`)
 
@@ -618,3 +622,185 @@ Do these BEFORE running any test again:
 3. Regression tests: adopting a session in a dirty checkout leaves branch, HEAD, index, working tree and remotes unchanged; and the publisher refuses a checkout it does not own.
 
 Then continue the remaining wh-14 work (unborn-HEAD adoption refusal, end-to-end orphan-worktree takeover, refreshed progress log).
+
+### Resume with design §21 R29 (run session-9): the executable STOP-FIRST contract
+
+This section wins over every earlier section where they differ. It turns the STOP-FIRST items above into file-level work.
+It **supersedes** "B. R27" items 4 and 6, and in "C" the case "Adoption in a git repo with a bare remote and a dirty tracked
+file" (the `.published` expectation). "A. R28", B items 1–3 and 5, the other C cases, and D/E still apply, except where this
+section changes them. Design: §9.1 "Ownership", §10.5, §15.1 "Hermetic repository tests", §21 R29. User-qa Q10 default (a).
+
+**Order.** Do H (hermetic fixtures) and P (product) before running **any** `swift test`. `swift build` is allowed earlier.
+Before the first test command, record the real-checkout snapshot (V1).
+
+**Still forbidden.** Do not edit the accepted `Sources/RielaWork/TaskAdoption.swift`, `WorkStore+Adoption.swift`,
+`WorkHandover.swift`, `HandoverProtocols.swift`, `Sources/RielaCLI/GitBranchWorkspaceRuntime.swift` or
+`ProductionNodeAdapter+GitPublishBranch.swift`. `Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift`
+(`TaskExampleHarness`) is not in scope either. Its `repository` is the real checkout, so use it only as a read-only
+bundle/example source. Never pass it as the working directory of a test that can run git: that means adoption and any task
+with a `.repository` context.
+
+#### P. Product (Q10)
+
+P1. `Sources/RielaCLI/TaskHandoverRuntime.swift`
+- Add a stored property to `struct TaskHandoverRuntime`, after `now`:
+  `var gitEnvironment: [String: String] = ProcessInfo.processInfo.environment`. Existing memberwise call sites keep compiling.
+- `runAdoptionGit` becomes an instance method that passes `gitEnvironment` as the invocation environment.
+- `adoptAndSeal` keeps, unchanged and in order: the lock, the snapshot load, the running check, `rev-parse --show-toplevel`,
+  the `HEAD^{commit}` refusal, the branch-name derivation, `check-ref-format`, the `show-ref` absence refusal,
+  `TaskAdoption.adopt`, and the derived-branch drift check.
+- **Delete** the `git switch -c` claim and its `session adoption claim failed` error. Delete `stderrHead` if it becomes unused.
+- After the drift check, still call `recordAdoptedAttemptIsolation` with
+  `IsolationRef(path: <top level>, branch: <derived branch>, baseRevision: <HEAD sha>)`. Require `true`, as today, and set it
+  on the in-memory attempt. The branch is **not** created.
+- Seal with `ownerAlive: false, adoptedWithoutLease: true`.
+- Invariant: the only git subcommands this file runs are `rev-parse`, `check-ref-format` and `show-ref`. The read-only
+  `status` runs inside the publisher.
+
+P2. `Sources/RielaCLI/TaskHandoverSupport.swift`, `TaskDeliverablePublisher`
+- `reservationFence` goes back to non-optional `Int`. Add `var adopted: Bool = false`.
+- In `TaskHandoverRuntime.seal`, pass `reservationFence: (try? located.store.loadLease(attemptId: attempt.id)?.fence) ?? -1`
+  unconditionally and `adopted: adoptedWithoutLease`.
+- New order inside `publish` (keep the existing `task.context` and isolation guards first):
+  1. `adopted` → no checkpoint, no publish. Append
+     `.repository(RepositoryDeliverable(root: isolation.path, remote: policy.remote, branch: branch, baseRevision: baseRevision, headCommit: nil, state: .unpublished(lastKnown: baseRevision), dirtyPaths: (try? await workspace.dirtyPaths(isolation)) ?? []))`
+     and return.
+  2. `ownerAlive`, ownership guard first: when `branch` does not match `policy.branchAllowlist`, append
+     `.checkpointFailed(reason: "isolation branch is not attempt-owned")` (root, remote, branch and baseRevision as in the fenced
+     case) and return before any git call. The matcher is a small private static helper in this file. It copies the glob
+     semantics of `ProductionNodeAdapter+GitPublishBranch.swift:matchesBranchAllowlist` (escape the pattern, `\*` → `.*`,
+     anchored). Do not edit that file.
+  3. Lease-fence comparison, exactly as today (`checkpointFailed("fenced")`).
+  4. `checkpoint` then `publish`, unchanged. `checkpoint` already refuses when the checked-out branch is not `isolation.branch`,
+     and that error lands in the existing `catch` as `.checkpointFailed(reason)`.
+  5. The `ownerAlive == false` orphan branch is unchanged (`.unpublished(lastKnown: nil)`).
+- Pitfalls:
+  - Never skip the fence for a non-adopted attempt.
+  - Never convert `adopted` into a checkpoint "just to capture the dirty work". That is Q10 (b)/(c).
+  - Do not call `ensureBranch` or `materialize` from adoption.
+
+P3. `Sources/RielaCLI/TaskDispatch+Handover.swift`: no change is expected. `.unpublished` already materializes (R28), and a
+takeover materializes into `options.workingDirectory` under the task's isolation. Adopted tasks are `.shared`, so a dirty
+successor root is refused by accepted wh-07 code. Do not add special cases for adopted tasks.
+
+#### H. Hermetic fixtures (tests only)
+
+H1. `Tests/RielaCLITests/TaskHandoverTestSupport.swift`
+- Add `enum TaskHandoverHermeticGit` with these members:
+  - `static func makeRoot(_ prefix: String) throws -> URL`: creates
+    `FileManager.default.temporaryDirectory/<prefix>-<UUID>` and returns it `.resolvingSymlinksInPath()`. On macOS `/var` is
+    `/private/var`, and git reports resolved paths.
+  - `static func environment(ceiling: URL) -> [String: String]`: the process environment plus `GIT_TERMINAL_PROMPT=0` and
+    `GIT_CEILING_DIRECTORIES=<ceiling.path>`. It **removes** `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+    `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR`, which leak in when tests run under a git hook.
+  - `static func assertTopLevel(of directory: URL, isInside root: URL, environment:) throws`: runs
+    `rev-parse --show-toplevel` and throws unless the resolved result has the prefix `root.path + "/"`.
+- `TaskHandoverRepositoryFixture.init`: `root = makeRoot("riela-wh14-repo")`. `runGit` uses `environment(ceiling:
+  root.deletingLastPathComponent())`. After the initial push, call `assertTopLevel(of: clone, isInside: root)`, and do the same
+  in `secondClone`. Add `func snapshot(_ directory: URL? = nil) throws -> [String]`, which returns, in order:
+  - `symbolic-ref --short HEAD`
+  - `rev-parse HEAD`
+  - `ls-files --stage`
+  - `status --porcelain=v1 -z --untracked-files=all`
+  - `for-each-ref --format=%(refname) %(objectname)`
+  - `ls-remote <bareRemote.path>`
+
+  Used for the invariance assertions.
+- Delete every `FileManager.default.currentDirectoryPath` use in this file.
+
+H2. `Tests/RielaCLITests/TaskHandoverDispatchTests.swift` `testAdoptAndSealCreatesOperatorMovePacket`
+- `project` = `TaskHandoverHermeticGit.makeRoot("riela-wh14-nonrepo")/adoption-project`.
+- Delete the fake `.git` file (`missing-git-dir`) hack.
+- Set `runtime.gitEnvironment = TaskHandoverHermeticGit.environment(ceiling: <root>.deletingLastPathComponent())`.
+- Before adoption, assert that `rev-parse --show-toplevel` with that environment in `project` exits non-zero.
+- Keep the existing assertions and add: no `.repository` deliverable, and `adopted.context == nil`. The plan C case
+  "`requestTakeover` plus a dispatch → succeeded" uses a temp working directory, not `harness.repository`.
+- Remove the root in `defer`.
+
+H3. `Tests/RielaCLITests/GitBranchWorkspaceRuntimeTests.swift` (`BranchRuntimeRepository.init`, line ~290),
+`Tests/RielaCLITests/HandoverSinkTests.swift` (`setUpWithError`, line ~13) and
+`Tests/RielaCoreTests/RielaDataGarbageCollectorHandoverTests.swift` (`makeRoot`, line ~139)
+- Replace the `currentDirectoryPath`-based root with a `FileManager.default.temporaryDirectory` root resolved with
+  `.resolvingSymlinksInPath()`. The first two files may call `TaskHandoverHermeticGit.makeRoot`. The GC test is in the
+  `RielaCoreTests` target, so inline the same two lines there.
+- Add `GIT_CEILING_DIRECTORIES=<root parent>` to each file's private git runner environment.
+- After each fixture `init`/`clone`, assert that the top level is inside the root.
+- Change nothing else. These are accepted wh-07/wh-09/wh-13 suites: every existing assertion must keep passing unchanged.
+- Pitfall: if a GC assertion compares report paths with the root, build the expected paths from the same resolved root.
+
+#### T. Tests to add or rewrite
+
+`Tests/RielaCLITests/TaskHandoverDispatchTests.swift`: rename `testAdoptedRepositorySessionPublishesAndTakesOverFromSecondClone` to
+`testAdoptedDirtyCheckoutIsUnpublishedUnchangedAndTakesOverFromSecondClone`.
+- Setup: fixture clone plus `README.md` modified, `staged.txt` added with `git add`, `notes/untracked.txt` untracked. Take
+  `before = repository.snapshot()` (`.riela/` workflow files are untracked but filtered from `dirtyPaths`, and they are part of
+  both snapshots).
+- Keep the existing-branch refusal and branch-delete retry at the start. Take the snapshot after the retry's branch delete.
+- Adopt → `repository.snapshot() == before` (branch, HEAD, index, working tree, local refs, bare remote).
+- The deliverable is `.unpublished(lastKnown: <HEAD>)` with `headCommit == nil` and `baseRevision == HEAD`.
+- `branch == "riela/task/<adopted.id>/g<generation>"`, and `git show-ref --verify refs/heads/<branch>` exits non-zero.
+- `Set(dirtyPaths) == ["README.md", "notes/untracked.txt", "staged.txt"]`.
+- The adopted attempt's stored `isolation` is `{<resolved clone>, branch, HEAD}`.
+- `requestTakeover`, then dispatch with the working directory `repository.secondClone()` → exit `.success`, and the task is
+  `.succeeded`. The second clone's `rev-parse HEAD` equals the adopted HEAD.
+- Finally the first five `repository.snapshot()` entries (everything except the bare `ls-remote`) equal `before`'s: the
+  successor never touched the adopted checkout.
+
+`testAdoptionRefusesUnbornHead` (same file):
+- A temp root from `makeRoot` with `git init <root>/repo` and no commit, plus one untracked file.
+- `runtime.gitEnvironment` is the hermetic environment.
+- → throws a message containing `session adoption refused: HEAD is not a commit`. `loadTask(id: "task-adopted-<session>")`
+  is nil. `status --porcelain` and `for-each-ref` are unchanged.
+
+`Tests/RielaCLITests/TaskHandoverRepositoryTests.swift`:
+- `testPublisherRefusesIsolationOutsideAllowlist`:
+  - A leased attempt, set up as in `testFencedLiveOwnerCannotPublishRepositoryBranch`, with `reservationFence` equal to the
+    lease fence.
+  - `isolation.branch` = the fixture clone's current branch (read with `symbolic-ref`, never hard-coded).
+  - A dirty file is written.
+  - `publish(ownerAlive: true)` → `.checkpointFailed(reason: "isolation branch is not attempt-owned")`, and
+    `snapshot() == before`.
+- `testPublisherRefusesAllowlistedBranchThatIsNotCheckedOut`:
+  - The same setup, with `isolation.branch = "riela/task/<taskId>/g1"`, which was never created or checked out.
+  - → `.checkpointFailed` whose reason contains `isolation branch or HEAD changed`, and `snapshot() == before`.
+- Existing `testFencedLiveOwnerCannotPublishRepositoryBranch` must still pass (`checkpointFailed("fenced")`).
+
+#### V. Verification (run-subdir `tmp/work-handover/wh-14-task-dispatch-runtime/step6-implement-resume-9/`)
+
+V1. Before the first test, record the real-checkout snapshot. From the worktree root:
+`{ git symbolic-ref --short HEAD; git rev-parse HEAD; git status --porcelain=v1 -uall; git for-each-ref --format='%(refname) %(objectname)' refs/heads; } > <subdir>/checkout-before.txt`.
+- Uncommitted wh-14 edits appear in `status`. That is expected, and V4 compares against this same state.
+- Do not stage, commit or stash to make the snapshot "clean".
+
+V2. The six manifest test commands (build, focused, regression, workstore, persistence, hermetic), with `<subdir>` in place
+of the plain log directory.
+- Each log ends `exit=0` with a non-zero executed count and 0 failures.
+- Focused must exceed 11 executed tests, workstore 20 and persistence 26. Regression stays at 84.
+- The hermetic executed count must equal the number of `func test` declarations in those three files, counted with
+  `grep -c "func test"` before any edit (not by running them) and recorded in the progress log. No test may be removed.
+
+V3. Strict SwiftLint on the changed Swift files, as in progress update 7, plus `git diff --check`.
+
+V4. Record `<subdir>/checkout-after.txt` with the V1 command, run after the last test.
+`cmp <subdir>/checkout-before.txt <subdir>/checkout-after.txt` must exit 0.
+
+V5. Run these greps and store their output in `<subdir>/hermetic-greps.log`:
+- `grep -n "currentDirectoryPath" Tests/RielaCLITests/TaskHandoverTestSupport.swift Tests/RielaCLITests/GitBranchWorkspaceRuntimeTests.swift Tests/RielaCLITests/HandoverSinkTests.swift Tests/RielaCoreTests/RielaDataGarbageCollectorHandoverTests.swift` → no output.
+- `grep -c "GIT_CEILING_DIRECTORIES"` on the same four files → each ≥ 1.
+- `grep -c "TaskHandoverHermeticGit.environment" Tests/RielaCLITests/TaskHandoverDispatchTests.swift` → ≥ 2 (the non-repository and
+  unborn-HEAD adoption tests).
+- `grep -rn "missing-git-dir" Tests/` → no output.
+- `grep -n -E '"(switch|checkout|add|commit|stash|reset|push|branch)"' Sources/RielaCLI/TaskHandoverRuntime.swift` → no output.
+- `grep -n "is not attempt-owned" Sources/RielaCLI/TaskHandoverSupport.swift` → one match.
+
+#### E'. Done criteria (in addition to E, which still applies)
+
+- V1–V5 evidence exists with the stated results.
+- The four new or rewritten tests in T exist and pass in the V2 focused log.
+- `impl-plans/progress/wh-14-task-dispatch-runtime.md` gains a "session-9 R29" update:
+  - It maps signal 3 to `testRepositoryBranchCheckpointPublishAndSecondCloneMaterialization` and the adopted-dirty test.
+  - It maps signal 4 to the revived-owner and orphan-worktree tests.
+  - It lists the Q10 regression tests.
+  - It lists the V commands with their `exit=` lines and log paths, and the `cmp` result.
+- If E and E' are both met, tick the plan's checkboxes with that evidence. The plan stays in `impl-plans/active/`: archiving
+  is wh-20's job.

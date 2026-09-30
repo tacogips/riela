@@ -43,7 +43,9 @@ writePaths only, no git state changes, own progress log). Markdown only.
   its bounds; statuses (`suspended`, `failed(.stalled|.cancelled|.leaseLost)`); the recipes "answer on the server, the server
   continues" (`task answer` + `task takeover`/`task run`), "take over on the laptop" (`task takeover --endpoint … --traits
   userReachable [--clone-into]`, `task serve --takeover`), orphan recovery (`task takeover --force-orphan`, `task reconcile
-  --expired-leases`), plain sessions (`session resume` with an answer, `session handover [--task]`); sinks and locators (`kind:locator#sha256:…`,
+  --expired-leases`), plain sessions (`session resume` with an answer, `session handover [--task]`; adoption never
+  switches, commits or pushes the user's checkout: the repository deliverable is `unpublished` at `HEAD` with the dirty paths
+  listed, and uncommitted work stays in the checkout — design §10.5, §21 R29, user-qa Q10); sinks and locators (`kind:locator#sha256:…`,
   `--packet`); host traits (profile `hostTraits`, `worker.json traits`, `--traits`); lease defaults (300 s / 15 s, `guard.lease`);
   branch policy (`riela/task/<taskId>/g<n>`, never force, checkpoints with the `Riela-Checkpoint` trailer); `riela gc`; handover
   notifications (`loop.notifications.on: ["handover"]`); security notes (redaction, sinks publish outward, token handling).

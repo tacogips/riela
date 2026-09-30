@@ -162,6 +162,14 @@ make only the edit stated in its `sharedPathNotes`.
    because it is user configuration, not a store.
 10. Imitate the cited existing code. Do not refactor, reformat or rename unrelated
     code. New tests must exercise behavior, not echo constants.
+11. Hermetic git tests (added 2026-10-01, design §15.1). Any test that runs git creates its
+    repository and local bare remote under `FileManager.default.temporaryDirectory`, never
+    under the process working directory or the checkout's `tmp/`. It passes that root
+    explicitly and asserts that the resolved `git rev-parse --show-toplevel` is inside it.
+    A "non-repository" fixture runs git with `GIT_CEILING_DIRECTORIES` set to its temp
+    parent. No test resolves, switches, commits to or pushes from the real checkout;
+    `session handover` / adoption tests use a temp working directory. Reuse the wh-14
+    helper in `Tests/RielaCLITests/TaskHandoverTestSupport.swift` inside `RielaCLITests`.
 
 ## Module Status
 

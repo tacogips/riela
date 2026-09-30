@@ -13,6 +13,12 @@ Revised 2026-09-30 (implementation intake): seam claims re-checked against
 source are corrected in place and summarized in §21. No decision was
 redesigned.
 
+Revised 2026-10-01 (safety, user-qa Q10 default (a)): adoption of a plain
+session no longer claims, commits or publishes the user's checkout; the
+repository deliverable of an adopted attempt is `unpublished`, and
+publication runs only for attempt-owned isolation (§9.1, §10.5, §21 R29).
+Repository tests are hermetic (§15.1).
+
 Requirements source: user direction 2026-09-30 — when a riela worker
 executes work and stalls mid-way because the user must confirm or do
 something, and the user cannot reach that worker, another worker must be
@@ -773,6 +779,14 @@ Behavior:
   branch and never on the operator's branches. `DistributedWorkerNodeExecutor`'s
   denial list is narrowed accordingly; `riela/git-commit` and
   `riela/git-push` stay denied on workers.
+- **Ownership (user-qa Q10, §21 R29).** Checkpoint and publish run only for
+  an attempt-owned isolation: an attempt that holds a lease, whose
+  `isolation.branch` matches `handover.publish.branchAllowlist` and is the
+  branch checked out at `isolation.path` (the dispatcher's `ensureBranch`
+  or `materialize` result). Anything else gets no git write from the
+  handover runtime: an adopted attempt records `.unpublished(lastKnown:
+  HEAD)`, and a leased attempt whose isolation fails the check records
+  `.checkpointFailed(reason)` with no commit and no push.
 - **At takeover** the successor calls `materialize`: fetch the branch,
   create `<root>/.riela/worktrees/<attemptId>` (or check out in place when
   the root is a dedicated clone), and record the new `IsolationRef`. If
@@ -900,11 +914,19 @@ handover as for any attempt. Adoption is recorded as `Evidence.kind =
 for a suspended plain session on the same store when the user does not want
 a task; adoption is only for handover.
 
-An adopted session never ran on a `riela/task/*` branch, so adoption claims
-the current checkout before sealing (§21 R27): it creates the attempt branch
-in place at the current `HEAD`, keeping the working tree, records it as the
-adopted attempt's `isolation`, and then seals as a live owner, which
-checkpoints and publishes the branch like any other handover.
+An adopted session ran in a checkout the attempt does not own (the user's
+own branch, possibly dirty), so adoption never switches branches, commits,
+creates refs or pushes there (§21 R29, user-qa Q10 default (a)). It only
+reads the repository: it resolves the top level, refuses an unborn `HEAD`,
+checks that the successor branch name is valid and unused, and records the
+adopted attempt's `isolation` as `{path: <top level>, branch: <successor
+branch, not created>, baseRevision: <HEAD>}`. The seal records the
+repository deliverable as `.unpublished(lastKnown: HEAD)` with the
+checkout's `dirtyPaths`, which the brief lists. The user's files stay where
+they are; a takeover starts from `HEAD` (R28) under the task's isolation,
+so uncommitted adopted work is not carried unless the user commits it
+before handing over. An explicit publish opt-in (Q10 (b)) is not part of
+this design.
 
 ## 11. Leases and fencing
 
@@ -1080,6 +1102,16 @@ cannot branch on input (§2):
   store) through the in-process GraphQL executor with the authorization
   wrapper. A live two-host check is optional operator evidence under
   `tmp/work-handover/`, not a completion criterion.
+- **Hermetic repository tests (2026-10-01).** Every test that runs git
+  creates its own temporary repository and local bare remote, passes that
+  root explicitly, and asserts that the resolved top level is inside its
+  temporary directory. A "non-repository" fixture bounds git discovery with
+  `GIT_CEILING_DIRECTORIES` so it cannot reach an enclosing checkout. No
+  test resolves the process working directory's repository, switches its
+  branch, commits to it or pushes to its `origin`. Q10 regressions: adopting
+  a session in a dirty checkout leaves branch, `HEAD`, index, working tree
+  and remote refs unchanged; the publisher refuses an isolation it does not
+  own (§21 R29).
 - **Baseline.** Full serial `swift test` is recorded on base commit
   `01b38f02` before implementation; every failure afterwards is classified
   against it.
@@ -1134,6 +1166,10 @@ cannot branch on input (§2):
   is refused (the publish step re-checks the fence), so the branch cannot
   diverge after a takeover; local dirty files on the old host are lost and
   listed.
+- **Adopted uncommitted work is not carried.** Under Q10 (a) an adopted
+  session's dirty files stay in the user's checkout and are only listed in
+  the packet; the successor starts from `HEAD`. This trades continuity for
+  never pushing a user's unrelated changes.
 - **Budget accounting across hosts** depends on `reportAttempt` carrying
   costs; a successor that never reports leaves the task with an expired
   lease and no outcome, which `task reconcile` turns into another packet.
@@ -1161,9 +1197,9 @@ cannot branch on input (§2):
 Recorded in `design-docs/user-qa/qa-work-handover-and-takeover.md`:
 
 The file also holds Q6 (automatic adoption), Q7 (per-invocation
-`--traits`), Q8 (sink configuration scope) and Q9 (takeover of a
-`checkpointFailed` repository deliverable); all proceed on their
-defaults.
+`--traits`), Q8 (sink configuration scope), Q9 (takeover of a
+`checkpointFailed` repository deliverable) and Q10 (publishing from a
+checkout the attempt does not own); all proceed on their defaults.
 
 1. Branch template default `riela/task/<taskId>/g<generation>` and whether
    checkpoints should be squashed at accept-time finalization.
@@ -1260,5 +1296,6 @@ Reconciliation at `076652a0` (wh-14 resume, adopted-session takeover, 2026-10-01
 
 | # | Was | Now | Source evidence |
 | --- | --- | --- | --- |
-| R27 | §10.5 adopts a plain session with `context: .repository(<working dir>)` "when it is a git repository" and then hands it over "as for any attempt", without saying where the adopted attempt's branch and `isolation` come from | (1) `adoptAndSeal` passes a repository root to `TaskAdoption.adopt` only when `git rev-parse --show-toplevel` succeeds in the working directory, and it passes that top-level path. Otherwise the task has no context and the packet has no repository deliverable. (2) For a repository, **before** `TaskAdoption.adopt` writes any row, and while the `SessionExecutionLock` is held, `adoptAndSeal` preflights every refusable claim condition. `git rev-parse --verify HEAD^{commit}` must succeed (an unborn `HEAD` is refused, because `baseRevision` needs a commit). The branch name computed from the task's `PublicationPolicy.branchTemplate`, using the generation the adoption will assign (1 for a new task, the task's next generation for an existing task), must pass `git check-ref-format --branch`. `refs/heads/<branch>` must not exist (`git show-ref --verify --quiet`). Any failed check refuses the adoption with no row written and no packet sealed, so the session stays adoptable once the condition is fixed. After adoption and before sealing, and while the lock is still held, adoption **claims the checkout**. It creates that branch in place at the current `HEAD` with `git switch -c`, so the working tree and index are carried unchanged. The claim does not refuse a dirty tree, because that tree is the adopted work. `ensureBranch(.shared)` keeps its clean-tree refusal for dispatch starts and is not used here. The only remaining post-adoption failure is `git switch -c` itself failing after a passed preflight (for example, a concurrent external ref write or an index lock), which is a residual edge case. The preflight and the claim run git through the existing `GitCommandRunning` seam. (3) The adopted attempt's stored record gets `isolation = {path: <top-level>, branch, baseRevision: <HEAD sha before the claim>}`. That attempt is already `terminal`, and it is the only terminal attempt whose `isolation` may be set once, from null. The prepared/running update stays as is for dispatch. (4) Adoption seals as a live owner (`ownerAlive: true`), so the publisher checkpoints (trailer `Riela-Checkpoint: <attemptId>/handover`) and publishes, and the deliverable is `.published` with `headCommit`. An adopted attempt holds no lease, so the publisher is given no reservation fence and skips the lease-fence comparison. The held `SessionExecutionLock` provides exclusivity. Every leased attempt keeps the comparison, and a leased attempt with a missing or different fence still yields `checkpointFailed("fenced")`. | `TaskHandoverRuntime.adoptAndSeal` passes `repositoryRoot: workingDirectory` unconditionally and seals with the default `ownerAlive: false` (`TaskHandoverRuntime.swift:73-125,209-266`). `TaskAdoption.adopt` builds the attempt with no `isolation` (`TaskAdoption.swift:21-23`). `TaskDeliverablePublisher.publish` then emits `.checkpointFailed("attempt isolation is unavailable")` with `branch: ""` (`TaskHandoverSupport.swift:53-60`), and the takeover dispatch rejects it with "takeover repository deliverable is not published" (`TaskDispatch+Handover.swift:124-135`). `updateAttemptIsolation` only matches `prepared`/`running` (`WorkStore+Isolation.swift:9-20`). The publisher's fence check compares `loadLease(...)?.fence` with `reservationFence`, which is `-1` for a lease-less attempt (`TaskHandoverSupport.swift:63-69`, `TaskHandoverRuntime.swift:255-259`). This is the open failure in the `076652a0` commit message. `WorkStore.adoptSession` refuses a second adoption of the same session (`WorkStore+Adoption.swift:9-11`). |
+| R27 (items 2 claim, 3 and 4 superseded by R29) | §10.5 adopts a plain session with `context: .repository(<working dir>)` "when it is a git repository" and then hands it over "as for any attempt", without saying where the adopted attempt's branch and `isolation` come from | (1) `adoptAndSeal` passes a repository root to `TaskAdoption.adopt` only when `git rev-parse --show-toplevel` succeeds in the working directory, and it passes that top-level path. Otherwise the task has no context and the packet has no repository deliverable. (2) For a repository, **before** `TaskAdoption.adopt` writes any row, and while the `SessionExecutionLock` is held, `adoptAndSeal` preflights every refusable claim condition. `git rev-parse --verify HEAD^{commit}` must succeed (an unborn `HEAD` is refused, because `baseRevision` needs a commit). The branch name computed from the task's `PublicationPolicy.branchTemplate`, using the generation the adoption will assign (1 for a new task, the task's next generation for an existing task), must pass `git check-ref-format --branch`. `refs/heads/<branch>` must not exist (`git show-ref --verify --quiet`). Any failed check refuses the adoption with no row written and no packet sealed, so the session stays adoptable once the condition is fixed. After adoption and before sealing, and while the lock is still held, adoption **claims the checkout**. It creates that branch in place at the current `HEAD` with `git switch -c`, so the working tree and index are carried unchanged. The claim does not refuse a dirty tree, because that tree is the adopted work. `ensureBranch(.shared)` keeps its clean-tree refusal for dispatch starts and is not used here. The only remaining post-adoption failure is `git switch -c` itself failing after a passed preflight (for example, a concurrent external ref write or an index lock), which is a residual edge case. The preflight and the claim run git through the existing `GitCommandRunning` seam. (3) The adopted attempt's stored record gets `isolation = {path: <top-level>, branch, baseRevision: <HEAD sha before the claim>}`. That attempt is already `terminal`, and it is the only terminal attempt whose `isolation` may be set once, from null. The prepared/running update stays as is for dispatch. (4) Adoption seals as a live owner (`ownerAlive: true`), so the publisher checkpoints (trailer `Riela-Checkpoint: <attemptId>/handover`) and publishes, and the deliverable is `.published` with `headCommit`. An adopted attempt holds no lease, so the publisher is given no reservation fence and skips the lease-fence comparison. The held `SessionExecutionLock` provides exclusivity. Every leased attempt keeps the comparison, and a leased attempt with a missing or different fence still yields `checkpointFailed("fenced")`. | `TaskHandoverRuntime.adoptAndSeal` passes `repositoryRoot: workingDirectory` unconditionally and seals with the default `ownerAlive: false` (`TaskHandoverRuntime.swift:73-125,209-266`). `TaskAdoption.adopt` builds the attempt with no `isolation` (`TaskAdoption.swift:21-23`). `TaskDeliverablePublisher.publish` then emits `.checkpointFailed("attempt isolation is unavailable")` with `branch: ""` (`TaskHandoverSupport.swift:53-60`), and the takeover dispatch rejects it with "takeover repository deliverable is not published" (`TaskDispatch+Handover.swift:124-135`). `updateAttemptIsolation` only matches `prepared`/`running` (`WorkStore+Isolation.swift:9-20`). The publisher's fence check compares `loadLease(...)?.fence` with `reservationFence`, which is `-1` for a lease-less attempt (`TaskHandoverSupport.swift:63-69`, `TaskHandoverRuntime.swift:255-259`). This is the open failure in the `076652a0` commit message. `WorkStore.adoptSession` refuses a second adoption of the same session (`WorkStore+Adoption.swift:9-11`). |
 | R28 | §9.1 says a successor starts from `lastKnown` for `.unpublished`, but the takeover dispatch accepts only `.published` and does not say what happens to `.checkpointFailed` | A takeover handles the packet's repository deliverable by its state. `.published`: `materialize` at `headCommit` (unchanged). `.unpublished(lastKnown:)`: `materialize` from `lastKnown` when that commit exists locally, else from `baseRevision`. The packet's `dirtyPaths` are already in the brief. This is the `ownerLost` (orphan/reconcile) path for repository tasks. `.checkpointFailed(reason:)`: refused **before** any attempt is reserved, with `takeover repository deliverable checkpoint failed: <reason>`. The task stays `waiting(.handover)`, and no attempt, lease or fence is created. The refusal is made where the unanswered-question refusal is made (`WorkStore.requestTakeover`), and the dispatch repeats the same check before `reserveAttempt`. Recovery is an operator decision (user-qa Q9, default: refuse). | `TaskDispatch+Handover.swift:133-135` throws for every non-`.published` state after reservation. `GitBranchWorkspaceRuntime.materialize` already implements `.unpublished` and throws for `.checkpointFailed` (`GitBranchWorkspaceRuntime.swift:154-172`). `sealOrphan` seals with `ownerAlive: false`, which yields `.unpublished(lastKnown: nil)` (`TaskHandoverSupport.swift:92-97`). |
+| R29 | R27 (2)–(4): adoption claims the checkout with `git switch -c <branch>` (carrying a dirty tree), then seals as a live owner, which checkpoints (commits everything) and publishes (pushes) the branch | User-qa Q10 default (a). (1) R27 (1) is unchanged: the repository root is the `git rev-parse --show-toplevel` result, and a non-repository working directory gives a task with no context and a packet with no repository deliverable. (2) The R27 (2) preflight stays and stays read-only: `HEAD^{commit}` must resolve (an unborn `HEAD` is refused), and the successor branch name from `PublicationPolicy.branchTemplate` must pass `git check-ref-format --branch` and must not exist under `refs/heads/`. A failed check writes no row. (3) Adoption runs no git command that writes: no `switch`, `checkout`, `add`, `commit`, `stash`, `reset`, branch or ref creation, and no `push`. Only `rev-parse`, `check-ref-format`, `show-ref` and `status --porcelain` run. (4) The adopted attempt's `isolation` is still recorded once, from null (`recordAdoptedAttemptIsolation`), as `{path: <top level>, branch: <successor branch>, baseRevision: <HEAD sha>}`; the branch is the name a successor will materialize, and adoption does not create it. (5) The adopted attempt is sealed in the publisher's adopted, lease-less mode (the existing `adoptedWithoutLease` seam). In that mode the publisher never checkpoints or publishes; it emits `.repository(root: <top level>, remote: policy.remote, branch: <successor branch>, baseRevision: <HEAD>, headCommit: nil, state: .unpublished(lastKnown: <HEAD>), dirtyPaths: <read-only status, ≤ 512, excluding .riela>)`. (6) For every other seal the publisher checks ownership before any git write. `isolation.branch` must match `policy.branchAllowlist`, otherwise the deliverable is `.checkpointFailed("isolation branch is not attempt-owned")`. `checkpoint` keeps its existing refusal when the branch checked out at `isolation.path` is not `isolation.branch`, which also ends as `.checkpointFailed(reason)`. The lease-fence comparison stays for leased attempts. None of these paths commits or pushes. (7) Takeover of an adopted task follows R28 for `.unpublished` (materialize from `lastKnown` when it exists locally, else `baseRevision`) and the task's isolation (`.shared` from `TaskAdoption`, which is unchanged). A shared materialize refuses a dirty root. On a clean root, the takeover attempt that the operator started in that working directory creates and owns its branch, as any shared repository task start does. A successor on another clone needs `HEAD` reachable from its remote. (8) There is no `--publish` opt-in (Q10 (b)). | `TaskHandoverRuntime.adoptAndSeal` runs `git switch -c` in the resolved checkout and seals with `ownerAlive: true, adoptedWithoutLease: true` (`TaskHandoverRuntime.swift:144-155,186`). `TaskDeliverablePublisher.publish` runs `checkpoint`, which does `git add -A` and commit, and then `publish` for every live owner whose fence check passes or is skipped (`TaskHandoverSupport.swift:62-86`). `publish` checks the allowlist only after the checkpoint commit (`GitBranchWorkspaceRuntime.swift:100-108`). Run session-8 incident: a test resolved the real worktree, and the publisher committed its uncommitted work (6bd80077) and pushed `riela/task/task-adopted-adopted-handover-session/g1` to `origin` (wh-14 plan, STOP-FIRST section). |

@@ -5,9 +5,7 @@
   "planId": "wh-15-task-commands",
   "planPath": "impl-plans/active/wh-15-task-commands.md",
   "wave": "W4",
-  "dependsOn": [
-    "wh-14-task-dispatch-runtime"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/TaskCommands.swift",
     "Sources/RielaCLI/TaskCommandModels.swift",
@@ -111,3 +109,8 @@ This plan proves acceptance signals 1, 2, 4 (`--force-orphan` flag) and 5 at CLI
 
 - [ ] Every command and flag above is implemented with strict parsing; `task show` additions are present
 - [ ] The tests pass; the progress log is complete
+
+
+## Resume notes (2026-10-01, after run session-9)
+
+wh-14 is accepted and committed. A partial wh-15 implementation is committed ('wip: partial wh-15 task handover commands'): the package builds with tests, but focused tests have not run. Complete and verify it; do not restart it. The remaining wave now runs strictly serially (wh-15 -> wh-16 -> wh-17 -> wh-18 -> wh-19 -> wh-20) because parallel branches in one shared tree broke each other's builds.

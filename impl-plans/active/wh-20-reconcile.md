@@ -6,10 +6,6 @@
   "planPath": "impl-plans/active/wh-20-reconcile.md",
   "wave": "W6 (serial)",
   "dependsOn": [
-    "wh-15-task-commands",
-    "wh-16-graphql-provider",
-    "wh-17-examples",
-    "wh-18-remote-takeover",
     "wh-19-docs-skills"
   ],
   "writePaths": [

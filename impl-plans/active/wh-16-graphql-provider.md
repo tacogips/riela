@@ -6,7 +6,7 @@
   "planPath": "impl-plans/active/wh-16-graphql-provider.md",
   "wave": "W4",
   "dependsOn": [
-    "wh-14-task-dispatch-runtime"
+    "wh-15-task-commands"
   ],
   "writePaths": [
     "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
@@ -14,6 +14,8 @@
     "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
     "Sources/RielaCLI/RielaLibrary.swift",
     "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
+    "Sources/RielaWork/TaskDispatcher.swift",
+    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
     "impl-plans/progress/wh-16-graphql-provider.md"
   ],
   "sharedPaths": [],
@@ -93,3 +95,8 @@ Both must end with exit=0 and a non-zero count; the existing GraphQL and serve s
 
 - [ ] All seven fields are executable over serve, the parity document command and the library; auth is enforced in serve
 - [ ] The tests pass; the progress log is complete
+
+
+## Scope amendment (2026-10-01, after run session-9)
+
+`Sources/RielaWork/TaskDispatcher.swift` and `Tests/RielaWorkTests/TaskDispatcherTests.swift` are now owned by this plan: `TaskDispatcher.reserve` needs a `hostId` parameter forwarded to `AttemptReservationRequest` so `takeoverTask` reserves the successor on `input.hostId` (default stays "local"). Add a regression for the forwarded host. wh-16 now depends on wh-15 and runs alone.

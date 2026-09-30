@@ -6,8 +6,7 @@
   "planPath": "impl-plans/active/wh-19-docs-skills.md",
   "wave": "W5",
   "dependsOn": [
-    "wh-15-task-commands",
-    "wh-16-graphql-provider"
+    "wh-18-remote-takeover"
   ],
   "writePaths": [
     "docs/work-handover.md",

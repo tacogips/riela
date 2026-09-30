@@ -6,8 +6,7 @@
   "planPath": "impl-plans/active/wh-18-remote-takeover.md",
   "wave": "W5",
   "dependsOn": [
-    "wh-15-task-commands",
-    "wh-16-graphql-provider"
+    "wh-17-examples"
   ],
   "writePaths": [
     "Sources/RielaCLI/TaskRemoteTakeover.swift",

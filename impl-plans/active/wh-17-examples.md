@@ -6,7 +6,7 @@
   "planPath": "impl-plans/active/wh-17-examples.md",
   "wave": "W4",
   "dependsOn": [
-    "wh-14-task-dispatch-runtime"
+    "wh-16-graphql-provider"
   ],
   "writePaths": [
     "examples/task-handover-answer",
@@ -106,3 +106,8 @@ If the validate flag spelling differs, use the form `riela workflow validate --h
 
 - [ ] The three examples exist with all six artifact kinds; the catalog and count are updated; the suspended set is asserted; the revived-owner fence assertions are in the orphan test
 - [ ] The harness flows pass; the parity loop passes; the progress log is complete
+
+
+## Resume notes (2026-10-01, after run session-9)
+
+A partial wh-17 implementation from run session-9 was parked because it broke the shared build: `tmp/work-handover/parked/wh-17-tracked.patch` (README.md, RielaExampleCatalog.swift, RielaExampleParityTests.swift) and `tmp/work-handover/parked/wh-17-untracked.tar` (TaskHandoverExampleTests.swift, the three examples/task-handover-* bundles, the progress log). Restore them first (`git apply tmp/work-handover/parked/wh-17-tracked.patch` and `tar -xf tmp/work-handover/parked/wh-17-untracked.tar`), then fix `TaskHandoverExampleTests.swift`, which passes an unsupported `beforeExecution` argument to `TaskDispatch.run`, against the current API. wh-17 now depends on wh-16 and runs alone.

@@ -1,0 +1,9 @@
+{
+  "id": "report",
+  "description": "Report publication status.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/report.md",
+  "output": { "jsonSchema": { "type": "object", "required": ["summary"], "properties": { "summary": { "type": "string" } } } }
+}

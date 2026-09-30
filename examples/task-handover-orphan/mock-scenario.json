@@ -1,0 +1,4 @@
+{
+  "work": { "provider": "scenario-mock", "model": "task-repair-loop", "when": { "always": true }, "payload": { "summary": "Completed the bounded work." } },
+  "finish": { "provider": "scenario-mock", "model": "task-repair-loop", "when": { "always": true }, "payload": { "completed": true } }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "publish",
+  "description": "Publish after credentials are available.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "workspace-write",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/publish.md",
+  "output": { "jsonSchema": { "type": "object", "required": ["published"], "properties": { "published": { "type": "boolean" } } } }
+}

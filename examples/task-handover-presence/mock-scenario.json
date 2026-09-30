@@ -1,0 +1,18 @@
+{
+  "check-login": {
+    "provider": "scenario-mock",
+    "model": "task-repair-loop",
+    "when": { "always": true },
+    "payload": {
+      "ready": false,
+      "handover": {
+        "reason": "userPresenceRequired",
+        "presence": { "traits": ["userReachable"], "instructions": "Run `gh auth login` on this host" },
+        "progressNote": "Publishing needs an authenticated user on a reachable host.",
+        "resumeStepId": "publish"
+      }
+    }
+  },
+  "publish": { "provider": "scenario-mock", "model": "task-repair-loop", "when": { "always": true }, "payload": { "published": true } },
+  "report": { "provider": "scenario-mock", "model": "task-repair-loop", "when": { "always": true }, "payload": { "summary": "Release published." } }
+}

@@ -1,0 +1,1 @@
+Prepare a concise deployment plan. Ask the user whether to deploy to staging or production. Return the plan as business JSON and request a handover with question id `q-deploy-target`, answer schema requiring string `option`, and resume step `apply`.

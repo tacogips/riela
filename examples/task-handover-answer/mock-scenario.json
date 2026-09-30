@@ -1,0 +1,27 @@
+{
+  "plan": {
+    "provider": "scenario-mock",
+    "model": "task-repair-loop",
+    "when": { "always": true },
+    "payload": {
+      "summary": "Prepared a safe deployment plan.",
+      "handover": {
+        "reason": "userInputRequired",
+        "question": {
+          "id": "q-deploy-target",
+          "text": "Choose the deployment target.",
+          "options": [{"id": "staging", "label": "Staging"}, {"id": "production", "label": "Production"}],
+          "answerSchema": {
+            "type": "object",
+            "required": ["option"],
+            "properties": { "option": { "type": "string", "enum": ["staging", "production"] } }
+          }
+        },
+        "progressNote": "The deployment plan is ready; waiting for the target.",
+        "resumeStepId": "apply"
+      }
+    }
+  },
+  "apply": { "provider": "scenario-mock", "model": "task-repair-loop", "when": { "always": true }, "payload": { "applied": true } },
+  "report": { "provider": "scenario-mock", "model": "task-repair-loop", "when": { "always": true }, "payload": { "summary": "Deployment completed." } }
+}

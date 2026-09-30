@@ -11,8 +11,12 @@ final class RielaExampleParityTests: XCTestCase {
 
   private enum ExampleCatalog {
     static let directoryName = "examples"
-    static let expectedMockScenarioCount = 40
+    static let expectedMockScenarioCount = 43
     static let expectedNodeMockScenarioCount = 0
+    static let expectedSuspendedMockScenarioExamples: Set<String> = [
+      "task-handover-answer",
+      "task-handover-presence"
+    ]
   }
 
   private enum WorkflowPackage {
@@ -339,12 +343,20 @@ final class RielaExampleParityTests: XCTestCase {
         XCTFail("\(workflowName) exceeded the bounded fixture output contract; runtime history must not be recursively forwarded")
         return
       }
-      XCTAssertEqual(result.exitCode, .success, "\(workflowName): \(result.stderr)\n\(result.stdout)")
+      let expectsSuspended = ExampleCatalog.expectedSuspendedMockScenarioExamples.contains(workflowName)
+      XCTAssertEqual(
+        result.exitCode,
+        expectsSuspended ? .suspended : .success,
+        "\(workflowName): \(result.stderr)\n\(result.stdout)"
+      )
       let decoder = JSONDecoder()
       decoder.dateDecodingStrategy = .iso8601
       let payload = try decoder.decode(WorkflowRunResult.self, from: Data(result.stdout.utf8))
       XCTAssertEqual(payload.workflowId, workflowName)
-      XCTAssertEqual(payload.status, .completed, workflowName)
+      XCTAssertEqual(payload.status, expectsSuspended ? .suspended : .completed, workflowName)
+      if expectsSuspended {
+        XCTAssertNotNil(payload.session.suspend, workflowName)
+      }
       if workflowName.hasSuffix("-agent-trio-chat") {
         assertIsolatedPersonaMemory(payload, sessionStore: sessionStore)
       }

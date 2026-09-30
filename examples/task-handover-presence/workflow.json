@@ -1,0 +1,17 @@
+{
+  "workflowId": "task-handover-presence",
+  "description": "Pause for user presence on a capable host before publishing.",
+  "defaults": { "maxLoopIterations": 1, "nodeTimeoutMs": 120000 },
+  "prompts": { "workerSystemPromptTemplate": "Return concise business JSON." },
+  "entryStepId": "check-login",
+  "nodes": [
+    { "id": "check-login", "nodeFile": "nodes/check-login.json" },
+    { "id": "publish", "nodeFile": "nodes/publish.json" },
+    { "id": "report", "nodeFile": "nodes/report.json" }
+  ],
+  "steps": [
+    { "id": "check-login", "nodeId": "check-login", "role": "worker", "transitions": [{ "toStepId": "publish" }] },
+    { "id": "publish", "nodeId": "publish", "role": "worker", "transitions": [{ "toStepId": "report" }] },
+    { "id": "report", "nodeId": "report", "role": "worker" }
+  ]
+}

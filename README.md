@@ -844,8 +844,11 @@ skipped because no `web/` file changed. See the
 [P1-6d progress record](impl-plans/progress/p1-dispatch.md) for exact commands
 and evidence. The P1-7b replacement bundles are now available as
 [`task-repair-loop`](examples/task-repair-loop/README.md) and
-[`task-agent-director`](examples/task-agent-director/README.md). Both are in the
-shared example catalog and its 41 deterministic mock scenarios. Task-backed
+[`task-agent-director`](examples/task-agent-director/README.md). The new
+[`task-handover-answer`](examples/task-handover-answer/README.md),
+[`task-handover-presence`](examples/task-handover-presence/README.md), and
+[`task-handover-orphan`](examples/task-handover-orphan/README.md) examples show resumable task handovers.
+The three new examples join the shared catalog and raise its deterministic mock scenario count to 43. Task-backed
 tests check rejected-gate recovery with a second attempt, guard stop, capacity
 wait, bounded director decisions, once-only child accounting and invalid-output
 escalation. A task-reserved run retains a completed canonical session when its

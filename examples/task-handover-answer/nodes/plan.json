@@ -1,0 +1,15 @@
+{
+  "id": "plan",
+  "description": "Prepare a deployment plan and ask for the target.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/plan.md",
+  "output": {
+    "jsonSchema": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": { "summary": { "type": "string" } }
+    }
+  }
+}

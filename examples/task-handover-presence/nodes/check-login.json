@@ -1,0 +1,9 @@
+{
+  "id": "check-login",
+  "description": "Check whether publishing credentials are available.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/check-login.md",
+  "output": { "jsonSchema": { "type": "object", "required": ["ready"], "properties": { "ready": { "type": "boolean" } } } }
+}

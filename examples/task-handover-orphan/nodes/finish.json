@@ -1,0 +1,9 @@
+{
+  "id": "finish",
+  "description": "Summarize the completed work.",
+  "executionBackend": "codex-agent",
+  "agentSandbox": "read-only",
+  "model": "gpt-5.4-mini",
+  "promptTemplateFile": "prompts/finish.md",
+  "output": { "jsonSchema": { "type": "object", "required": ["completed"], "properties": { "completed": { "type": "boolean" } } } }
+}

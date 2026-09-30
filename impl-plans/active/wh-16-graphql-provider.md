@@ -267,4 +267,8 @@ Tests to add:
 
 Verification: use the session-11 gate commands above (`build-s11.log`, `work-s11.log`, `focused-s11.log`, `git diff --check`, and the `consumed:` grep). Each must end with `exit=0`, and each test log must show a non-zero test count and 0 failures. Then tick this plan's Done criteria and the progress log's completion criteria, citing those logs.
 
-Coverage note (not in scope): the replay regression covers only sequential replay. Two concurrent reports can both pass `verifyLeaseToken` before the lease row is deleted. Log this in the progress log as a finding with a severity field; do not fix it here.
+Coverage note (not in scope): the replay regression covers only sequential replay. Two concurrent reports can both pass `verifyLeaseToken` before the lease row is deleted. Superseded 2026-10-01: fix it in this plan (see the concurrent replay amendment below).
+
+### Concurrent replay amendment (2026-10-01, after run session-12)
+
+wh-16 is feature-complete and committed ('wip: wh-16 GraphQL provider feature-complete ...'). The one remaining item is the medium finding it logged: two concurrent `reportAttempt` calls can both pass `verifyLeaseToken` before the first reconciliation deletes the lease row. Fix it in this plan: verify and consume the lease credential atomically inside the same write transaction that reconciles the report (for example a conditional `DELETE ... WHERE attempt_id = ? AND token_digest = ?` whose affected-row count must be 1, or an equivalent compare-and-swap), so exactly one report wins and the loser gets `unauthorized` with no state or decision change. Add a regression that issues two reports concurrently and asserts one success, one `unauthorized`, one decision. Keep sequential replay rejection. Then report no open finding for it.

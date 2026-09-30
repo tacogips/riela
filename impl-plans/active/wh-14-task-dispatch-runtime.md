@@ -391,3 +391,47 @@ Added verification. The log must end `exit=0` with a non-zero executed count:
 Non-goals: do not change `WorkflowSessionFailureKind`, the session schema generation, `acknowledgeAttemptCancellation`,
 `persistJoinedCancellation` or the `terminalSnapshotConflict` predicate. Do not touch `DeterministicDirector.swift`,
 `TaskGuardCoordinator.swift` or `BackendCapabilityPlacement.swift`.
+
+### Resume status at 62b284c6 (run session-7, source-verified)
+
+The "R26 alignment" text above was written against `76e9ea43`. Commit `62b284c6` already implements R26 items 1–6 in source. Do **not**
+re-implement them. Read them only as invariants that must still hold:
+`DeterministicWorkflowRunRequest.cancellationCause` (field, init, assignment); the runner mapping in
+`DeterministicWorkflowRunner+Cancellation.swift`; `TaskPlacementExecutionContext.cancellationCause` wired in `WorkflowRunCommand.swift`
+and set in `TaskDispatch.swift` from the same `TaskRunHandoverTriggerState`; the pending-handover case in
+`SQLiteWorkflowRuntimePersistenceStore.validateTaskTerminalWrite`; reload-and-compare with no save in `sealHandoverIfNeeded`; and
+the `leaseLost` early return. `FailClosedSQLiteWorkflowRuntimeStore.swift` delegates to `SQLiteWorkflowRuntimePersistenceStore`,
+so leave it unedited. `work_cancellations.attempt_id` is the primary key, so an attempt has at most one pending row.
+`TaskHandoverRuntime.swift` already declares `forceOrphan`, `reconcileExpired`, `adoptAndSeal`, `sealTriggered` and `sealOrphan`.
+The observer already calls the `timer` checkpoint (`TaskRunCancellation.swift`).
+
+Tests present at 62b284c6 (8 in the focused filter): `TaskHandoverDispatchTests` (envelope→answer→takeover, director inactivity,
+presence traits without backend requirements), `TaskHandoverLeaseTests.testHeartbeatExtendsLeaseDuringLongRunningAttempt`,
+`TaskHandoverRepositoryTests.testTimerCheckpointsAreSerializedAndUseUniqueTrailers` (coordination only, no real git commit), and the
+three `HandoverRequestAddonTests`.
+
+Work still to do. It is all in this plan's writePaths. Fix source only when a new test exposes a defect.
+1. `WorkflowCommandLivePersistenceTests`: the three R26 guard cases and the runner nil-cause case from "Tests to add" above.
+   None of them exists yet. The 26 tests in the earlier persistence run are pre-existing tests.
+2. `TaskHandoverLeaseTests`:
+   - revived owner → `failed(.leaseLost)`, one packet, and a failure result
+   - `forceOrphan` refused before expiry and accepted after → `ownerLost` packet → a takeover completes
+   - `reconcileExpired` with dry-run true/false
+   Drive expiry with an injected `now` (resume checklist item 4).
+3. `TaskHandoverRepositoryTests` (temp repo, bare remote and second clone under the harness temp dir):
+   - branch `riela/task/<taskId>/g1` checked out at attempt start, with `Attempt.isolation` set
+   - step-boundary checkpoint commits carrying the trailer
+   - branch published at handover, and the repository deliverable is `published` with `headCommit`
+   - second-clone materialization at `headCommit`, then the task completes
+   - fenced owner → `checkpointFailed("fenced")` and nothing pushed
+   - `everyMs(50)` with a sleeping node → at least one commit whose trailer starts with `Riela-Checkpoint: <attemptId>/timer-`
+4. `TaskHandoverDispatchTests`, the remaining cases from the Tests section:
+   - `.start` while a handover is pending
+   - unanswered takeover refused with the answer hint
+   - file sink, and a failing command sink
+   - wait signal → `userPresenceRequired` + `failed(.stalled)`
+   - cooperative `requestHandover`, both immediate false and immediate true
+   - `adoptAndSeal` followed by takeover
+5. Progress log: record the test names for acceptance signals 1–5, run all five Verification commands (build, focused, regression,
+   workstore, persistence) into fresh logs under `tmp/work-handover/wh-14-task-dispatch-runtime/<run-subdir>/`, each ending with `exit=0` and a
+   non-zero executed count, and tick the Done criteria only when that evidence exists.

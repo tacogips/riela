@@ -211,6 +211,74 @@ final class WorkStoreTakeoverTests: XCTestCase {
     XCTAssertEqual(try store.latestAnswer(handoverId: HandoverID("handover-1"))?.payload, answerPayload)
   }
 
+  func testSameSecondAnswerAfterSealAllowsTakeover() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let question = HandoverQuestion(id: "same-second", text: "Proceed?")
+    var task = sampleTask()
+    task.state = .waiting
+    try store.saveTask(task)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .reconciled))
+    var sealedPacket = packet(reason: .userInputRequired(question))
+    sealedPacket.createdAt = fixedNow.addingTimeInterval(0.5)
+    try store.saveHandover(try sealedPacket.sealed())
+
+    let payload = ["approved": JSONValue.bool(true)]
+    _ = try store.recordAnswer(
+      taskId: task.id, questionId: question.id, payload: payload,
+      producer: .human(principal: "operator"), decisionId: DecisionID("answer-same-second"),
+      now: fixedNow.addingTimeInterval(0.8)
+    )
+
+    XCTAssertEqual(try store.latestAnswer(handoverId: sealedPacket.id)?.payload, payload)
+    let changed = try store.requestTakeover(
+      taskId: task.id, placement: TakeoverPlacement(hostId: "local"),
+      producer: .human(principal: "operator"), decisionId: DecisionID("takeover-same-second"),
+      now: fixedNow.addingTimeInterval(0.9)
+    )
+    XCTAssertEqual(changed.state, .scheduled)
+    let pending = try XCTUnwrap(TaskDispatcher(store: store).pendingReservation(taskId: task.id))
+    XCTAssertEqual(pending.entry, .takeover(fromAttemptId: AttemptID("attempt-1"), handoverId: sealedPacket.id))
+  }
+
+  func testLatestAnswerRejectsForeignAttempt() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try setupHandover(store, reason: .userInputRequired(HandoverQuestion(id: "q-1", text: "Proceed?")))
+    let answer = HandoverAnswer(
+      questionId: "q-1", payload: ["approved": .bool(true)],
+      answeredBy: .human(principal: "operator"), answeredAt: fixedNow.addingTimeInterval(1)
+    )
+    try store.saveDecision(Decision(
+      id: DecisionID("answer-foreign-attempt"), taskId: TaskID("task-1"), attemptId: AttemptID("attempt-foreign"),
+      producer: .human(principal: "operator"), kind: .answer(answer),
+      reason: "Answer handover 'handover-1' question 'q-1'", createdAt: fixedNow.addingTimeInterval(1)
+    ))
+
+    XCTAssertNil(try store.latestAnswer(handoverId: HandoverID("handover-1")))
+  }
+
+  func testAnswerBeforeSealDoesNotAllowTakeover() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let question = HandoverQuestion(id: "pre-seal", text: "Proceed?")
+    var task = sampleTask()
+    task.state = .waiting
+    try store.saveTask(task)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .reconciled))
+    var sealedPacket = packet(reason: .userInputRequired(question))
+    sealedPacket.createdAt = fixedNow.addingTimeInterval(1)
+    try store.saveHandover(try sealedPacket.sealed())
+    _ = try store.recordAnswer(
+      taskId: task.id, questionId: question.id, payload: ["approved": .bool(true)],
+      producer: .human(principal: "operator"), decisionId: DecisionID("answer-before-seal"), now: fixedNow
+    )
+
+    XCTAssertNil(try store.latestAnswer(handoverId: sealedPacket.id))
+    XCTAssertThrowsError(try store.requestTakeover(
+      taskId: task.id, placement: TakeoverPlacement(hostId: "local"),
+      producer: .human(principal: "operator"), decisionId: DecisionID("takeover-before-seal"),
+      now: fixedNow.addingTimeInterval(2)
+    )) { error in XCTAssertTrue(String(describing: error).contains("riela task answer")) }
+  }
+
   func testFenceOrphanRequiresExpiryAndLateReconcileIsIgnored() throws {
     let store = WorkStore(rootDirectory: root.path)
     var task = sampleTask()

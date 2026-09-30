@@ -204,9 +204,7 @@ extension TaskDispatch {
         packet: takeoverPacket, handoverId: handoverId,
         reservation: reservation, sessionRoot: located.root, store: store
       )
-      let answer = try latestAnswer(
-        handoverId: handoverId, packet: takeoverPacket, taskId: taskId, store: store
-      )
+      let answer = try store.latestAnswer(handoverId: handoverId)
       var handover: JSONObject = [
         "id": .string(handoverId.rawValue),
         "reasonKind": .string(takeoverPacket.reason.kindName),
@@ -375,9 +373,7 @@ extension TaskDispatch {
       handoverId: handoverId.rawValue
     ))
     var messages = try await runtime.listMessages(for: reservation.attempt.sessionId, toStepId: nil)
-    if let answer = try latestAnswer(
-      handoverId: handoverId, packet: packet, taskId: reservation.task.id, store: store
-    ),
+    if let answer = try store.latestAnswer(handoverId: handoverId),
        let sourceExecution = imported.executions.last {
       let answerMessage = WorkflowMessageRecord(
         communicationId: "handover-answer-\(handoverId.rawValue)-\(reservation.attempt.id.rawValue)",
@@ -397,22 +393,6 @@ extension TaskDispatch {
       loopEvidence: target.loopEvidence, loopMetadata: target.loopMetadata
     )
     try persistence.save(snapshot)
-  }
-
-  private func latestAnswer(
-    handoverId: HandoverID,
-    packet: HandoverPacket,
-    taskId: TaskID,
-    store: WorkStore
-  ) throws -> HandoverAnswer? {
-    guard case let .userInputRequired(question) = packet.reason else { return nil }
-    let decision = try store.listDecisions(taskId: taskId).last { decision in
-      guard decision.reason.contains(handoverId.rawValue),
-            case let .answer(answer) = decision.kind else { return false }
-      return answer.questionId == question.id
-    }
-    guard case let .answer(answer)? = decision?.kind else { return nil }
-    return answer
   }
 
   static func jsonValue<T: Encodable>(_ value: T) throws -> JSONValue {

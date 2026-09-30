@@ -206,13 +206,19 @@ public extension WorkStore {
     }
     guard let questionId = questionId(of: packet) else { return nil }
     let decisions = try decodeDecisionRows(Decision.self, from: database.query(
-      "SELECT json(record) AS record FROM work_decisions WHERE task_id = ? AND kind = 'answer' ORDER BY created_at DESC, decision_id DESC",
-      bindings: [.text(taskId)]
+      """
+      SELECT json(decision.record) AS record
+      FROM work_decisions AS decision
+      JOIN work_handovers AS handover ON handover.task_id = decision.task_id
+      WHERE handover.handover_id = ? AND decision.task_id = ? AND decision.attempt_id = ?
+        AND decision.kind = 'answer' AND decision.created_at >= handover.created_at
+      ORDER BY decision.created_at DESC, decision.decision_id DESC
+      """,
+      bindings: [.text(handoverId.rawValue), .text(taskId), .text(packet.fromAttemptId.rawValue)]
     ))
     for decision in decisions {
       if case let .answer(answer) = decision.kind, answer.questionId == questionId,
-         decision.reason.contains(handoverId.rawValue),
-         decision.createdAt >= packet.createdAt { return answer }
+         decision.reason.contains(handoverId.rawValue) { return answer }
     }
     return nil
   }

@@ -1,8 +1,22 @@
 import Foundation
+import RielaAdapters
 import RielaCore
 import RielaWork
 import XCTest
 @testable import RielaCLI
+
+private actor StallingHandoverScenarioAdapter: NodeAdapter {
+  let scenario: ScenarioNodeAdapter
+
+  init(scenarioPath: String) throws {
+    scenario = ScenarioNodeAdapter(scenario: try WorkflowMockScenarioLoader().loadScenario(at: scenarioPath))
+  }
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    try await Task.sleep(for: .milliseconds(500))
+    return try await scenario.execute(input, context: context)
+  }
+}
 
 private struct HandoverTraitHostResolver: HostCapabilityResolving {
   var traits: [HostTrait] = []
@@ -95,6 +109,55 @@ final class TaskHandoverDispatchTests: XCTestCase {
       return answer["choice"] == .string("A")
     }))
     XCTAssertEqual(try harness.store.loadTask(id: taskId)?.state, .succeeded)
+  }
+
+  func testDirectorInactivityHandoverAcknowledgesCancellationAndAcceptsTakeover() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-repair-loop")
+    task.guardPolicy = GuardPolicy(
+      inactivity: InactivityGuard(
+        stallTimeoutMs: 100, monitorIntervalMs: 50, heartbeatBackends: ["codex-agent"]
+      ),
+      onViolation: .askDirector,
+      handover: HandoverPolicy()
+    )
+    task.director.deterministic.handoverOnInactivity = true
+    try harness.store.saveTask(task)
+
+    let scenarioPath = harness.examples.appendingPathComponent("task-repair-loop/mock-scenario.json").path
+    let adapter = try StallingHandoverScenarioAdapter(scenarioPath: scenarioPath)
+    let result = try await harness.dispatch("task-repair-loop", nodeAdapter: adapter)
+    XCTAssertEqual(result.exitCode, .suspended, "stderr: \(result.stderr); stdout: \(result.stdout)")
+    let run = try harness.decode(result)
+    let predecessor = try XCTUnwrap(harness.store.loadAttempt(id: AttemptID(try XCTUnwrap(run.attemptId))))
+    let packets = try harness.store.listHandovers(taskId: task.id)
+    let packet = try XCTUnwrap(packets.first)
+    guard case .inactivity = packet.reason else { return XCTFail("unexpected handover reason: \(packet.reason)") }
+    XCTAssertEqual(packets.count, 1)
+    XCTAssertEqual(predecessor.outcome?.failureKind, .stalled)
+    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
+      .load(sessionId: predecessor.sessionId)
+    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.failureKind, .stalled)
+    let cancellation = try harness.store.attemptCancellation(
+      taskId: task.id, attemptId: predecessor.id, sessionId: predecessor.sessionId
+    )
+    XCTAssertTrue(cancellation == nil || cancellation?.acknowledged == true)
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .waiting)
+
+    let runtime = TaskHandoverRuntime(
+      located: TaskCommandRunner.LocatedTask(task: task, store: harness.store, root: harness.store.rootDirectory),
+      options: TaskStoreOptions(
+        scope: .project, workingDirectory: harness.repository.path, sessionStore: harness.sessionStore.path
+      )
+    )
+    let scheduled = try runtime.requestTakeover(
+      taskId: task.id, traits: [], producer: .human(principal: "test")
+    )
+    XCTAssertEqual(scheduled.state, .scheduled)
+    let pending = try XCTUnwrap(TaskDispatcher(store: harness.store).pendingReservation(taskId: task.id))
+    XCTAssertEqual(pending.entry, .takeover(fromAttemptId: predecessor.id, handoverId: packet.id))
   }
 
   func testPresenceTakeoverRequiresTraitsWithoutBackendRequirements() async throws {

@@ -52,8 +52,9 @@ and the `WorkStore` APIs (wh-01, wh-03):
 - `takeoverTask`: the input traits must ⊇ the packet's required traits, else `conflict` "host-traits-unavailable: …".
   `requestTakeover(traits:)` (no-op if already pending), then reserve through `TaskDispatcher.reserve` with
   `AttemptReservationRequest.hostId = input.hostId`, session id `task-session-<uuid>`, entry step = resume step, and placement
-  evidence `{remoteHost, traits}`, then `authorizeAttemptLaunch`. Return `{attemptId, sessionId, fence, expiresAt, heartbeatToken:
-  launch token, heartbeatMs: lease policy, packet}`. The controller does **not** run the workflow.
+  evidence `{remoteHost, traits}`, then launch authorization. Return `{attemptId, sessionId, fence, expiresAt, heartbeatToken:
+  the lease credential minted by launch authorization (design §14, §21 R31; not the launch token), heartbeatMs: lease policy,
+  packet}`. The controller does **not** run the workflow.
 - `heartbeatAttempt`: no lease row → `{fenced: true}`; token mismatch (`verifyLeaseToken`) → `unauthorized`; otherwise
   `store.heartbeat` → `{fenced: !ok, fence, expiresAt}`.
 - `reportAttempt`: `verifyLeaseToken`. Decode `snapshot` into `WorkflowRuntimePersistenceSnapshot` and `deliverables` into
@@ -67,8 +68,8 @@ and the `WorkStore` APIs (wh-01, wh-03):
 
 ## Pitfalls
 
-- The token is single-use for launch but is reused as the heartbeat and report credential. Only its digest is stored (lease row).
-  Never log the token.
+- The launch token is single-use. The heartbeat and report credential is the separate lease credential that launch
+  authorization mints (R31). Only its digest is stored (lease row). Never log either token.
 - `reportAttempt` must run the director and verification exactly as a local terminal does. Do not re-implement them; call wh-14's entry.
 - The reservation path must go through the one-live-attempt fence and the pending reservation (never insert rows directly).
 
@@ -106,3 +107,71 @@ Both must end with exit=0 and a non-zero count; the existing GraphQL and serve s
 ### Scope amendment (2026-10-01, after run session-10)
 
 wh-15 is accepted and committed. A partial wh-16 is committed ('wip: partial wh-16 ...'); complete it, do not restart it. This plan now also owns `WorkStore+Reservation.swift`, `WorkStore+Leases.swift`, `WorkStoreLeaseTests.swift` and `WorkStoreReservationTests.swift`. `authorizeAttemptLaunch` rotates the lease token digest, so the token `takeoverTask` returns cannot authenticate `heartbeatAttempt` or `reportAttempt` (focused 40/41, see tmp/work-handover/wh-16-graphql-provider/focused-retry3.log). Fix it so the token handed to the successor verifies against the stored lease digest after launch authorization, without weakening the one-use launch-token guarantee for local runs (for example a separate heartbeat token digest, or return the post-authorization token). Add regressions for heartbeat plus completed and suspended reportAttempt.
+
+### Lease credential fix (2026-10-01, run session-11; design §14 and §21 R31)
+
+This section decides the choice the session-10 amendment left open. Where it conflicts with the text above, this section wins.
+
+Resume from HEAD, where the partial provider is at f4daa148. Do not restart the provider, the executor chains or the serve wiring.
+The only failing behavior is the token handed to the successor. The provider currently returns `reservation.launchToken`
+(`TaskHandoverGraphQLProvider.swift:196`). After `authorizeAttemptLaunch` (`WorkStore+Reservation.swift:342-356`), the lease
+digest is `SHA256("consumed:<attemptId>:<sessionId>")`. That value can be derived from public ids, and the token
+`verifyLeaseToken` (`WorkStore+Leases.swift:39-45`) is given fails to match it.
+
+File-level changes:
+- `Sources/RielaWork/WorkStore+Reservation.swift`
+  - Add `public struct AuthorizedAttemptLaunch: Sendable { public var attempt: Attempt; public var leaseCredential: String }`.
+  - Add `func authorizeAttemptLaunchIssuingLeaseCredential(attemptId: AttemptID, launchToken: String, now: Date = Date()) throws -> AuthorizedAttemptLaunch`.
+    It holds today's `authorizeAttemptLaunch` body with one change: in place of the `consumed:` digest, mint
+    `UUID().uuidString.lowercased()` (the idiom at `WorkStore+Reservation.swift:211` and `WorkStore+Director.swift:50`). Write
+    `launchTokenDigest(credential)` to both `attempt.launch.tokenDigest` and `work_leases.token_digest` in the same
+    transaction. Keep the `WHERE ... token_digest = <launch digest>` guard and the `changed == 1` check.
+  - Keep `authorizeAttemptLaunch(attemptId:launchToken:now:) -> Attempt` with the same signature. It delegates to the new
+    function and returns `.attempt`, discarding the credential. About 20 callers in files outside writePaths (for example
+    `WorkStoreTakeoverTests.swift:212`, `DecisionApplierStoreTests.swift:568`, `TaskRuntimeExampleTests.swift:582`) must compile
+    unchanged.
+  - Remove the `consumed:` digest line entirely. No derivable digest may remain.
+- `Sources/RielaWork/WorkStore+Leases.swift`: no behavior change is expected. `verifyLeaseToken` already compares against
+  `work_leases.token_digest`. Touch it only if a test shows a gap.
+- `Sources/RielaWork/TaskDispatcher.swift`: add `authorizeIssuingLeaseCredential(_ reservation: AttemptReservation, now: Date = Date()) throws -> AuthorizedAttemptLaunch`
+  next to `authorize(_:now:)`, which stays as it is (`TaskDispatcherTests.swift:106-107` depend on it).
+- `Sources/RielaCLI/TaskHandoverGraphQLProvider.swift`: `takeoverTask` calls `dispatcher.authorizeIssuingLeaseCredential` and
+  returns `.leaseCredential` as `heartbeatToken`. `heartbeatAttempt` and `reportAttempt` keep using `verifyLeaseToken`.
+
+Invariants, which a careless fix would break:
+- Afterwards, `attempt.launch.tokenDigest == work_leases.token_digest` still holds. `markAttemptNodeStarted`
+  (`WorkStore+Reservation.swift:373-380`) and the director child rotation (`WorkStore+Director.swift:46-56`) rely on it.
+- Replaying the launch token after authorization still throws, because the digest is gone and the phase is no longer
+  `reserved`.
+- Do not add a column, and do not bump `schemaGeneration`. Store only the digest. Never write the credential to a log, an
+  evidence payload, a progress log or a test failure message.
+- Do not change `recoverPreLaunchReservation` or any pre-authorization path.
+- Do not edit `TaskDispatch+Handover.swift` or other files outside writePaths. If `reconcileExternalTerminal` misbehaves,
+  record it in the progress log as a finding.
+
+Tests to add:
+- `WorkStoreReservationTests`: after authorization, the lease digest equals `launchTokenDigest(leaseCredential)`, differs from
+  the launch-token digest and from `launchTokenDigest("consumed:<attemptId>:<sessionId>")`, and equals
+  `attempt.launch.tokenDigest`. A second authorization with the launch token throws. `markAttemptNodeStarted` still succeeds
+  after authorization.
+- `WorkStoreLeaseTests`: `verifyLeaseToken(leaseCredential)` succeeds, and `verifyLeaseToken(launchToken)` and
+  `verifyLeaseToken("consumed:<attemptId>:<sessionId>")` both throw.
+- `TaskDispatcherTests`: `authorizeIssuingLeaseCredential` returns a non-empty credential that differs from
+  `reservation.launchToken`.
+- `TaskHandoverGraphQLProviderTests`:
+  - `takeoverTask` → the returned `heartbeatToken` makes `heartbeatAttempt` extend `expiresAt` with `fenced: false`.
+  - The launch token → `unauthorized`.
+  - `reportAttempt` with that token and a completed snapshot → task `succeeded` and an accept decision.
+  - With a suspended snapshot → a new `handoverId`.
+  - A wrong token → `unauthorized`.
+
+Verification: the log directory is `tmp/work-handover/wh-16-graphql-provider/`. Each command must end with `exit=0`, and each test
+command must report a non-zero test count and 0 failures.
+```
+arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-16-graphql-provider/build-s11.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/build-s11.log'
+arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreLeaseTests|WorkStoreReservationTests|TaskDispatcherTests|WorkStoreTakeoverTests|DecisionApplierStoreTests|WorkStoreCancellationTests" > tmp/work-handover/wh-16-graphql-provider/work-s11.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/work-s11.log'
+arch -arm64 /bin/zsh -lc 'swift test --filter "TaskHandoverGraphQLProviderTests|TaskHandoverGraphQLTests|WorkflowExecutionGraphQLTests|ServeWeb" > tmp/work-handover/wh-16-graphql-provider/focused-s11.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/focused-s11.log'
+git diff --check
+grep -rn 'consumed:' Sources/RielaWork
+```
+The last grep must print nothing (exit 1). Update the progress log's Blocked completion section to resolved, citing these logs.

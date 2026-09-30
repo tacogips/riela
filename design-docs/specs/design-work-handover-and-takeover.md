@@ -845,7 +845,9 @@ uses `riela/memory-*` or `riela/kv-*` without a kaiba mirror step.
    session, as `executeWorkflow` is).
 2. `takeoverTask(input: {taskId, handoverId, hostId, traits, backend,
    model})` reserves the attempt on the controller's store and returns the
-   attempt id, the lease (`fence`, `expiresAt`) and a heartbeat token.
+   attempt id, the lease (`fence`, `expiresAt`) and a heartbeat token. The
+   heartbeat token is the lease credential that launch authorization mints
+   (§14, R31), not the consumed launch token.
 3. The successor executes locally in its own session store. It heartbeats
    with `heartbeatAttempt(attemptId, token)` every `heartbeatMs`.
 4. At terminal it calls `reportAttempt(attemptId, token, outcome,
@@ -1041,10 +1043,21 @@ mutations). The catalog parity gates cover every new row.
   bounded excerpts, never full transcripts. `handover.sinks` is explicit
   opt-in per task/workflow/config; the store sink alone publishes nothing.
 - **Takeover authority.** `takeoverTask`, `answerTask` and `reportAttempt`
-  require the manager session bearer as `executeWorkflow` does; the
-  successor's lease token is single-use per attempt and only its digest is
-  stored. `--force-orphan` is a human decision recorded with the CLI
-  principal.
+  require the manager session bearer as `executeWorkflow` does. An attempt
+  has two credentials in sequence, and the store keeps only the digest of
+  the current one (`attempt.launch.tokenDigest` = `work_leases.token_digest`):
+  - the **launch token**, minted by reservation and consumed exactly once by
+    `authorizeAttemptLaunch`; a replay fails because its digest is gone and
+    the launch phase is no longer `reserved`;
+  - the **lease credential**, a fresh random value that
+    `authorizeAttemptLaunch` mints when it consumes the launch token and
+    returns to its caller. `heartbeatAttempt` and `reportAttempt` verify it
+    against the stored digest. `takeoverTask` returns it as
+    `heartbeatToken`; local runs discard it. The stored digest must never be
+    derivable from public ids (no `consumed:<attemptId>:<sessionId>`
+    digest), the credential is never logged or persisted in clear, and a
+    later rotation (the director child relaunch) invalidates it.
+  `--force-orphan` is a human decision recorded with the CLI principal.
 - **Fencing beats trust.** A successor cannot be blocked by a dead owner,
   and a live owner cannot silently continue after a takeover; the fence is
   checked on the owner's side too.
@@ -1305,3 +1318,4 @@ Reconciliation at `ffec37fc` (wh-15 resume, 2026-10-01):
 | # | Was | Now | Source evidence |
 | --- | --- | --- | --- |
 | R30 | §12 lists `task handover … [--reason]` as optional | `--reason <text>` is required for `task handover`; `session handover` keeps `[--reason]` | accepted `impl-plans/active/wh-15-task-commands.md:57` and the wh-15 WIP (`TaskHandoverCommands.swift:321`, commit `33d05e75`) require it; an operator handover is recorded as a `Decision`, whose reason is mandatory |
+| R31 | §14 "the successor's lease token is single-use per attempt"; §10.2 returns "a heartbeat token" without saying which | the launch token stays one-use; `authorizeAttemptLaunch` mints a random lease credential, stores only its digest in place of the launch digest, and returns it; `takeoverTask` returns it as `heartbeatToken`, which `heartbeatAttempt` and `reportAttempt` (completed and suspended) verify. No new column and no schema-generation bump | at `09953552`, `authorizeAttemptLaunch` (`WorkStore+Reservation.swift:342-356`) replaces the lease digest with `SHA256("consumed:<attemptId>:<sessionId>")`, so the returned launch token fails `verifyLeaseToken` (`WorkStore+Leases.swift:39-45`; wh-16 focused 40/41). Returning that consumed value instead would make the credential derivable from public ids. A separate heartbeat digest column would need a schema change the single-digest form avoids. `markAttemptNodeStarted` and the director child rotation (`WorkStore+Director.swift:46-58`) already match the lease row on `attempt.launch.tokenDigest`, so they keep working |

@@ -84,3 +84,34 @@ optional to attach to an existing task.
 
 **Impact**: Automatic adoption is what makes the feature usable for
 `workflow run` sessions without a Work Runtime setup.
+
+## Q7. Per-invocation host traits (added 2026-09-30, design §10.3 / §21 R5)
+
+**Question**: May `task takeover --traits userReachable` (and `task serve
+--takeover --traits …`) declare traits for that invocation, in addition to
+the persistent declaration in the app profile / `worker.json`?
+
+**Context**: There is no `riela config` command; persistent local traits
+live in the app profile state beside backend declarations. A user sitting
+at the successor host is itself the evidence of `userReachable`.
+
+**Options**: (a) allow `--traits`, recorded in the takeover's placement
+evidence; (b) persistent declaration only.
+
+**Default until answered**: (a).
+
+**Impact**: (b) forces a profile edit before every first takeover on a
+laptop; (a) lets an operator claim a trait the host does not have, which is
+visible in the evidence.
+
+## Q8. Handover sink configuration scope (added 2026-09-30, design §8 / §21 R6)
+
+**Question**: Configure sinks only on the task and the workflow (plus
+`--sink` on `task handover` / `session handover`), with no user-profile
+default?
+
+**Default until answered**: yes, task and workflow only. Consistent with
+Q2 (store only unless opted in).
+
+**Impact**: A user-wide default sink would need a new profile field and
+would publish packets from every task without per-task opt-in.

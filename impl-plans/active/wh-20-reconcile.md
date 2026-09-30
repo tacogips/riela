@@ -1,0 +1,94 @@
+# wh-20: Serial reconciliation — join audit, catalog rows, SDL, gates, full verification, plan closure
+
+```json
+{
+  "planId": "wh-20-reconcile",
+  "planPath": "impl-plans/active/wh-20-reconcile.md",
+  "wave": "W6 (serial)",
+  "dependsOn": ["wh-13-gc-sweep", "wh-15-task-commands", "wh-16-graphql-provider", "wh-17-examples", "wh-18-remote-takeover", "wh-19-docs-skills"],
+  "writePaths": [
+    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+    "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+    "impl-plans/active/work-handover-and-takeover.md",
+    "impl-plans/README.md",
+    "impl-plans/progress/wh-20-reconcile.md"
+  ],
+  "sharedPaths": [
+    "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+    "README.md",
+    "impl-plans/completed"
+  ],
+  "sharedPathNotes": [
+    {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "Only if the GraphQL-only operation rows live here rather than in +RowsCLI: add the handover field rows."},
+    {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Only if a parity gate reports a missing session subcommand or option enumeration for the new commands."},
+    {"path": "README.md", "intendedEdit": "One link to docs/work-handover.md in the Work Runtime section."},
+    {"path": "impl-plans/completed", "intendedEdit": "Move the umbrella plan and wh-00…wh-20 here only if every completion criterion has evidence; otherwise leave everything active."}
+  ],
+  "progressLog": "impl-plans/progress/wh-20-reconcile.md"
+}
+```
+
+## Intent and context
+
+This plan is the single serial owner of shared indexes, generated SDL, parity gates and final evidence (umbrella "Common
+execution contract" rule 7). It runs after every other plan has joined. **Serial repair authority:** to fix a
+regression or drift found here, it may edit any file in the union of earlier plans' `writePaths`. Record each such edit
+with its cause, and rerun that plan's focused verification.
+
+Non-goals: new features, redesign, and anything outside the accepted scope. A defect that needs a design change is recorded as
+a finding and the plan stays active.
+
+## Tasks
+
+1. **Join audit.** For each plan, compare the current file hashes with the posthashes in its progress log. Investigate every drift
+   (another plan's later edit is fine if it matches that plan's sharedPathNotes). Confirm that `git status --porcelain=v1 -uall`
+   contains no scratch files outside `tmp/`.
+2. **Catalog rows.** Imitate `taskMutationRows` (`SurfaceCatalog+RowsCLI.swift:76-106`):
+   - CLI rows: `task.handover`, `task.takeover`, `task.answer`, `task.handovers`, `task.reconcile`, `task.serve`,
+     `session.handover`, each with its exact `cliOptions` as implemented (read each parser). Kinds: mutation for handover/answer/reconcile,
+     process for takeover/serve, query for handovers. GraphQL column bound where a field exists
+     (`task.handover` ↔ `requestTaskHandover`, `task.answer` ↔ `answerTask`, `task.takeover` ↔ `takeoverTask`) via
+     `graphQLMutation(...)`, as `routineCLIRows` does. Otherwise use the P5 `.blocked` evidence. Skills: `["riela-workflow-run"]`.
+   - GraphQL-only rows for `taskHandover`, `tasksAwaitingHandover`, `heartbeatAttempt`, `reportAttempt` (skills
+     `["riela-workflow-reference"]`), in the file where other GraphQL-only rows live.
+3. **SDL.** Add the seven signatures to `GraphQLSchemaGenerator.rootFields` (exact wh-12 arguments and types). Add
+   `taskHandoverGraphQLSchemaTypes` to `handWrittenSchemaBlocks` and to `handWrittenSchemaBlockNames`. Then run
+   `scripts/surface-parity/generate-sdl.sh`, and run it again to prove an empty diff on the second pass.
+4. **Gates and focused suites, serially.** Run the parity suites, then every child plan's focused filter, then the example checks with the built binary.
+5. **Full suite** compared with the wh-00 baseline. Classify each failure as `pre-existing` (in the baseline list), `flake` (passes on
+   an isolated rerun, with both logs kept) or `regression` (fix it under the serial repair authority and rerun).
+6. **Lint.** `swiftlint --strict` on every Swift file changed on the branch since `01b38f02`.
+7. **Closure.** Update the umbrella Module Status, check each Completion Criteria box with evidence (test names and log paths),
+   update the umbrella and `impl-plans/README.md` Active Plans line, and add the README docs link. Archive only if **every** box has
+   evidence. Otherwise leave the plans active with an accurate progress log. Do not commit or push here; that is a workflow step.
+
+## Verification (record every log and exit line)
+
+```
+arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-20-reconcile/build.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/build.log'
+scripts/surface-parity/generate-sdl.sh > tmp/work-handover/wh-20-reconcile/sdl-1.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/sdl-1.log
+scripts/surface-parity/generate-sdl.sh > tmp/work-handover/wh-20-reconcile/sdl-2.log 2>&1; git diff --stat -- Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift > tmp/work-handover/wh-20-reconcile/sdl-2-diff.txt
+arch -arm64 /bin/zsh -lc 'swift test --filter "SurfaceParity" > tmp/work-handover/wh-20-reconcile/parity.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/parity.log'
+arch -arm64 /bin/zsh -lc 'swift test --filter "HandoverContractsTests|JSONCanonicalTests|WorkHandoverModelsTests|WorkStoreHandoverRecordsTests|DeterministicWorkflowRunnerSuspendTests|SessionResumeSuspendedTests|WorkStoreLeaseTests|WorkStoreTakeoverTests|WorkStoreHandoverRequestTests|HandoverPacketBuilderTests|HandoverCoordinatorTests|TaskAdoptionTests|RuntimeHistoryImportHandoverTests|BackendWaitSignalClassifierTests|GitBranchWorkspaceRuntimeTests|GitPublishBranchAddonTests|DeliverableCollectorTests|HandoverSinkTests|BackendCapabilityPlacementTraitsTests|HostTraitsResolverTests|DeterministicDirectorHandoverTests|LoopNotificationHandoverTests|TaskHandoverGraphQLTests|RielaDataGarbageCollectorHandoverTests|TaskHandoverDispatchTests|TaskHandoverLeaseTests|TaskHandoverRepositoryTests|HandoverRequestAddonTests|TaskHandoverCommandTests|TaskHandoverGraphQLProviderTests|TaskHandoverExampleTests|RielaExampleParityTests|TaskRemoteTakeoverTests" > tmp/work-handover/wh-20-reconcile/focused.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/focused.log'
+arch -arm64 /bin/zsh -lc 'for w in task-handover-answer task-handover-presence task-handover-orphan; do .build/debug/riela workflow validate $w --workflow-definition-dir examples; echo "validate $w exit=$?"; .build/debug/riela workflow run $w --workflow-definition-dir examples --mock-scenario examples/$w/mock-scenario.json --session-store tmp/work-handover/wh-20-reconcile/sessions --output json; echo "run $w exit=$?"; done > tmp/work-handover/wh-20-reconcile/examples.log 2>&1'
+arch -arm64 /bin/zsh -lc 'swift test > tmp/work-handover/wh-20-reconcile/full-swift-test.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/full-swift-test.log'
+arch -arm64 /bin/zsh -lc 'git diff --name-only 01b38f02 -- "*.swift" | xargs swiftlint lint --strict > tmp/work-handover/wh-20-reconcile/swiftlint.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/swiftlint.log'
+git diff --check
+```
+
+The expected results are:
+- The build, parity and focused runs end with exit=0.
+- `sdl-2-diff.txt` is empty.
+- `examples.log` shows validate exit=0 three times, `run task-handover-answer exit=5`, `run task-handover-presence exit=5` and `run task-handover-orphan exit=0`.
+- Every failure in the full suite is classified, with no unfixed regression.
+- swiftlint ends with exit=0.
+
+Use the flag spellings each command's `--help` shows, and record any adjustment.
+
+## Done criteria
+
+- [ ] The join audit is clean; the catalog rows and SDL are in place; the parity gates are green
+- [ ] All focused suites and example checks pass; the full suite has no new failures against wh-00
+- [ ] The umbrella Completion Criteria are checked with evidence; archive or keep active accordingly; the README and index are updated

@@ -8,6 +8,11 @@ cases, old stores are discarded as today. Plan:
 `impl-plans/active/work-handover-and-takeover.md`. Open user decisions:
 `design-docs/user-qa/qa-work-handover-and-takeover.md`.
 
+Revised 2026-09-30 (implementation intake): seam claims re-checked against
+`feat/work-handover-and-takeover` `01b38f02`; contradictions with the
+source are corrected in place and summarized in §21. No decision was
+redesigned.
+
 Requirements source: user direction 2026-09-30 — when a riela worker
 executes work and stalls mid-way because the user must confirm or do
 something, and the user cannot reach that worker, another worker must be
@@ -141,6 +146,43 @@ Facts were read from the tree at `main` `49718e08`; line numbers move.
   `WorkspaceInstanceRef`, `ResolvedExecutionEnvironment`, `ChangeRuntime`)
   is design-only; its plan has no code written. This design must not wait
   for it and must not conflict with it (§20).
+- **Module and file boundaries** (re-checked on `01b38f02`). One schema
+  generation guard, `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration
+  = 8` (`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift:115`),
+  covers the session tables and the `work_*` tables in the same file; a
+  mismatched store is discarded, no migration is registered.
+  `RielaWork` depends on `RielaCore`, never the reverse (`Package.swift`), so
+  every type a runner, adapter or `SuspendRecord` reads must live in
+  `RielaCore`. `RielaGraphQL` depends on `RielaCore` only; its surfaces are
+  DTO contracts plus a `…GraphQLProviding` protocol implemented elsewhere
+  (`RoutineGraphQL.swift:227` → `RielaWorkflowRegistry/RoutineGraphQLProvider.swift`).
+  `normalizeOutputContractEnvelope` is in `Sources/RielaCore/AdapterContracts.swift:335`;
+  `DistributedWorkerNodeExecutor` (git add-on denial at line 108) is in
+  `Sources/RielaCore`; `ServeWebHost` is in `Sources/RielaCLI`. The runner
+  returns the `WorkflowRunResult` struct (`status`, `exitCode`), not an
+  enum; `CLIExitCode` uses 0–4. `TaskCommandKind` is `show | list | run |
+  decide`; there is no `task serve` and no `riela config` command. Local
+  host capabilities come from the app profile state
+  (`RielaAppDaemonWorkflowState.backends`, read by
+  `HostCapabilityResolver.swift:125-143`); workers declare them in
+  `worker.json`. `BackendCapabilityPlacementResolver` takes
+  `requirements: [WorkflowBackendRequirement]`. `WorkflowFanoutChangeEvidence`
+  is an internal actor of `RielaCore`. The git runner seam in `RielaCLI` is
+  the internal `GitCommandRunning` protocol with `GitFinalizationStore`.
+  The deterministic director already has `rerunOnInactivity`
+  (`DeterministicDirector.swift:77-86`). Task rows live in
+  `SurfaceCatalog.taskMutationRows` (`SurfaceCatalog+RowsCLI.swift:76-106`)
+  with GraphQL `.blocked(P5)`; the checked-in SDL is
+  `Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift`, rewritten by
+  `scripts/surface-parity/generate-sdl.sh`.
+- **Example parity.** `RielaExampleParityTests.testMockScenarioExamplesRunThroughSwiftCLI`
+  runs every example with a `mock-scenario.json` through plain `workflow
+  run` and asserts exit `.success` and `status == .completed`
+  (`expectedMockScenarioCount = 40`). Mock responses are chosen by
+  per-node sequence index (`ScenarioNodeAdapter.swift:114-118`) and cannot
+  branch on input. Task-level example flows are proven by harness tests
+  (`TaskRuntimeExampleTests` with `TaskExampleHarness`, which sets
+  `TaskDispatch.mockScenarioPath`; `task run` has no `--mock-scenario` flag).
 
 ## 3. Design decisions
 
@@ -241,26 +283,22 @@ extension WorkflowSessionFailureKind {
   public static let leaseLost = WorkflowSessionFailureKind(rawValue: "leaseLost")   // fenced out by a takeover
 }
 
+// RielaCore cannot import RielaWork, so the suspend record carries a
+// Core-side reason kind; the full HandoverReason lives on the packet.
 public struct SuspendRecord: Codable, Equatable, Sendable {
-  public var reason: HandoverReason
-  public var stepId: String                 // step to re-enter
+  public var reasonKind: SuspendReasonKind  // userInputRequired | userPresenceRequired | operatorMove
+  public var stepId: String                 // step to re-enter (= resumeStepId)
   public var stepExecutionId: String?       // execution that declared or was interrupted
   public var question: HandoverQuestion?    // S1
   public var presence: PresenceRequirement? // S2
   public var progressNote: String?          // agent-authored, ≤ 8 KiB
   public var suspendedAt: Date
-  public var producer: EvidenceProducer     // stepExecution | runtime | human
+  public var producer: SuspendProducer      // stepExecution(id) | runtime | human(principal)
 }
+// S3 and inactivity end the session failed(.leaseLost | .stalled), never suspended.
 
-// RielaWork — handover side
-
-public enum HandoverReason: Codable, Equatable, Sendable {
-  case userInputRequired(HandoverQuestion)
-  case userPresenceRequired(PresenceRequirement)
-  case ownerLost(OwnerLossEvidence)         // lease expired + fence bumped
-  case inactivity(stepId: String, idleMs: Int)
-  case operatorMove(reason: String)
-}
+// RielaCore/HandoverContracts.swift — read by the runner, adapters and RielaWork
+// (HandoverQuestion, HandoverOption, PresenceRequirement, HostTrait below)
 
 public struct HandoverQuestion: Codable, Equatable, Sendable {
   public var id: String                     // stable per question; answers reference it
@@ -282,6 +320,16 @@ public struct PresenceRequirement: Codable, Equatable, Sendable {
 
 public enum HostTrait: String, Codable, CaseIterable, Sendable {
   case userReachable, interactive, tccApproved, hardwareKey, gui
+}
+
+// RielaWork — handover side
+
+public enum HandoverReason: Codable, Equatable, Sendable {
+  case userInputRequired(HandoverQuestion)
+  case userPresenceRequired(PresenceRequirement)
+  case ownerLost(OwnerLossEvidence)         // lease expired + fence bumped
+  case inactivity(stepId: String, idleMs: Int)
+  case operatorMove(reason: String)
 }
 
 public struct OwnerLossEvidence: Codable, Equatable, Sendable {
@@ -374,7 +422,7 @@ public struct HandoverContinuationContract: Codable, Equatable, Sendable {
   public var completion: CompletionContract  // lifted from the task
   public var verification: [VerificationRequirement]
   public var guardPolicy: GuardPolicy
-  public var answer: HandoverAnswer?         // filled at takeover time when S1 was answered
+  // No answer field (R19): the answer is Decision.answer, delivered at takeover.
 }
 
 public struct HandoverAnswer: Codable, Equatable, Sendable {
@@ -443,14 +491,21 @@ public struct AttemptLease: Codable, Equatable, Sendable {
 
 ```swift
 public struct HandoverPolicy: Codable, Equatable, Sendable {
-  public var onInactivity: InactivityHandoverAction   // rerun (today) | handover | stop
   public var onWaitSignal: Bool                       // treat classified backend wait signals as S2 (default true)
   public var checkpoint: CheckpointPolicy             // none | stepBoundary (default) | everyMs(Int)
   public var sinks: [HandoverSinkConfig]              // in addition to the store
   public var publish: PublicationPolicy               // remote, branchTemplate, allowCreateBranch (default true for riela/*)
-  public var notify: [LoopNotificationTarget]         // reuses LB4 targets
+  // No notify field (R14): workflow loop.notifications with on: ["handover"].
 }
 ```
+
+The inactivity choice is a director rule, not a guard field:
+`DeterministicDirectorRules` gains `handoverOnInactivity: Bool` (default
+`false`), evaluated before the existing `rerunOnInactivity` (§6.3).
+
+A suspended run returns `WorkflowRunResult` with `status: .suspended`,
+`session.suspend` set, and the new exit code `CLIExitCode.suspended = 5`
+(non-zero, distinct from `failure`).
 
 ## 5. Lifecycle
 
@@ -531,7 +586,7 @@ declare a handover:
   }
   ```
 
-  `normalizeOutputContractEnvelope` (`RuntimeOutputExtraction.swift`) strips
+  `normalizeOutputContractEnvelope` (`AdapterContracts.swift`) strips
   and validates the block against a fixed `HandoverEnvelope` schema before
   the business payload is validated against the node's `output.jsonSchema`.
   A malformed `handover` block is a `validationRejected` attempt like any
@@ -568,11 +623,14 @@ are exempt, as they are for the inactivity guard today.
 ### 6.3 Inactivity (S3 without a signal)
 
 `InactivityGuard` already fires `GuardViolation.inactivity`. The
-deterministic director's `inactivity-*` rule consults
-`handover.onInactivity`: `rerun` keeps today's behavior, `handover` cancels
-the attempt through the existing cancellation path and seals a packet with
-`HandoverReason.inactivity`, `stop` keeps today's stop. The session is
-`failed(.stalled)`, the failure kind the Work Runtime design promised.
+deterministic director's inactivity branch checks
+`director.deterministic.handoverOnInactivity` first: when true (and the
+attempt budget allows) it returns `Decision.handover(.inactivity)` with rule
+`inactivity-handover`, cancels the attempt through the existing
+cancellation path and seals a packet; otherwise today's
+`inactivity-rerun` / `inactivity-stop` rules apply unchanged. On the
+handover branch the session is `failed(.stalled)`, the failure kind the
+Work Runtime design promised.
 
 ### 6.4 Operator (S4, and S3 recovery)
 
@@ -646,9 +704,11 @@ takeover --packet <locator|path>` resolves it; without `--packet` the
 command asks the store (local or `--endpoint`). The digest in the locator
 is verified against the bytes read; a mismatch refuses the takeover.
 
-Sinks are configured on the task (`handover.sinks`), on the workflow
-(`workflow.json` top-level `handover`) and in configuration (`riela config`
-profile, user scope), merged in that order. The kaiba sink requires the
+Sinks are configured on the task (`guard.handover.sinks`) and on the
+workflow (`workflow.json` top-level `handover.sinks`), merged task first,
+plus any `--sink` given to `task handover` / `session handover`. There is
+no user-profile sink configuration (no `riela config` command exists; Q2
+default is store only). The kaiba sink requires the
 instance to pass the same startup check every kaiba add-on needs; a
 handover whose sink write fails still succeeds (the store row is the
 contract) and records `Evidence.kind = .publication` with the failure.
@@ -667,9 +727,15 @@ public protocol WorkspaceHandoverRuntime: Sendable {
   func checkpoint(_ isolation: IsolationRef, message: String, paths: [String]?) async throws -> RevisionRef?   // nil = nothing to commit
   func publish(_ isolation: IsolationRef, remote: String, allowCreate: Bool) async throws -> PublishedRef
   func materialize(_ deliverable: RepositoryDeliverable, into root: String, worktree: Bool) async throws -> IsolationRef
-  func snapshot(_ isolation: IsolationRef) async throws -> ChangeSnapshot   // reuses fanout change capture
+  func dirtyPaths(_ isolation: IsolationRef) async throws -> [String]   // `git status --porcelain=v1 -z`, ≤ 512 paths
 }
 ```
+
+`GitBranchWorkspaceRuntime` runs git through the existing internal
+`GitCommandRunning` seam and journals checkpoints through
+`GitFinalizationStore`, so it stays in `RielaCLI`. The fanout change
+capture actor is internal to `RielaCore` and is not reused; `dirtyPaths`
+only needs path names.
 
 Behavior:
 
@@ -774,7 +840,9 @@ uses `riela/memory-*` or `riela/kv-*` without a kaiba mirror step.
    takeover fences the successor as §11 describes.
 
 `task serve --takeover [--traits userReachable,…]` on the successor host
-polls `tasksAwaitingHandover(traits:)` and runs takeovers unattended; the
+polls `tasksAwaitingHandover(traits:)` and runs takeovers unattended.
+`task serve` does not exist yet; H6 adds it with `--takeover` as its only
+mode (invoking it without `--takeover` is a usage error until P3). The
 S2 case still requires the user to act on that host, so the poller only
 takes tasks whose required traits it declares.
 
@@ -782,11 +850,16 @@ takes tasks whose required traits it declares.
 
 `HostCapabilitySnapshot` and `DistributedWorkerRegistration` gain
 `traits: Set<HostTrait>`. They are declared, never probed: `worker.json`
-`traits: ["userReachable"]`, or `riela config set host.traits
-userReachable,interactive` for the local host. `BackendCapabilityPlacementResolver`
-gains `requiredTraits` in its requirements and reports
-`host-traits-unavailable: <list>` in the same failure shape as
-`backend-unavailable:`. `riela doctor` shows traits with the backend
+`traits: ["userReachable"]` for a worker, and for the local host the app
+profile state that already declares backends
+(`RielaAppDaemonWorkflowState.hostTraits`, read by `HostCapabilityResolver`
+where it builds the `local` snapshot). `task takeover` and `task serve
+--takeover` accept `--traits a,b` to declare traits for that invocation
+only (the user at the keyboard is the evidence); it is recorded in the
+takeover's placement evidence. `BackendCapabilityPlacementResolver` gains a
+`requiredTraits: Set<HostTrait>` parameter beside `requirements:
+[WorkflowBackendRequirement]` and reports `host-traits-unavailable: <list>`
+in the same failure shape as `backend-unavailable:`. `riela doctor` shows traits with the backend
 table; `riela task run --dry-run` shows the trait check.
 
 ### 10.4 Answering (S1)
@@ -863,7 +936,18 @@ added for each):
 
 GraphQL (first fields of the P5 task API, under manager-session
 authentication, executable over `/graphql` in `riela serve`, not only
-through the CLI parity commands):
+through the CLI parity commands). Module split, following the routine
+surface: `Sources/RielaGraphQL/TaskHandoverGraphQL.swift` holds the DTOs
+(the packet travels as its canonical JSON object plus `digest`), the field
+executor and a `TaskHandoverGraphQLProviding` protocol, because
+`RielaGraphQL` cannot import `RielaWork`; the provider over `WorkStore`,
+`HandoverCoordinator` and `TaskDispatch` is
+`Sources/RielaCLI/TaskHandoverGraphQLProvider.swift`, wired in
+`Sources/RielaCLI/ServeWebHost.swift` behind
+`WorkflowExecutionAuthorizationWrapper`. Catalog rows extend
+`SurfaceCatalog.taskMutationRows`; the new rows bind their GraphQL column
+to these fields instead of `.blocked(P5)`, and the SDL is regenerated with
+`scripts/surface-parity/generate-sdl.sh`.
 
 ```graphql
 type Query {
@@ -899,7 +983,10 @@ mutations). The catalog parity gates cover every new row.
 - `work_leases` columns as §11; `work_tasks.fence` generated.
 - `cli_workflow_sessions` / `workflow_runtime_snapshots`: `session_status`
   generated columns accept `suspended`; `WorkflowSession` gains
-  `suspend: SuspendRecord?`. Schema generation 9.
+  `suspend: SuspendRecord?`. Schema generation 9 is the single
+  `SQLiteWorkflowRuntimePersistenceStore.schemaGeneration` bump; it also
+  covers `work_handovers`, `work_handover_requests` and the new
+  `work_leases` columns (same file, same guard, no migration registered).
 - `distributed/jobs.json` snapshot and `work_hosts` records gain `traits`.
 - Sink files under `<session-store>/handovers/`; git refs under
   `refs/riela/handovers/`; `riela gc` learns both, keeping packets whose
@@ -937,7 +1024,7 @@ mutations). The catalog parity gates cover every new row.
 | --- | --- | --- |
 | H0 session suspend | `suspended` status, `SuspendRecord`, `stalled`/`leaseLost` kinds, resume from suspended, schema gen 9 | — |
 | H1 packet and takeover entry | `HandoverPacket` + builder + brief, `work_handovers`, `AttemptEntry.takeover`, `DecisionKind.handover/answer/takeover`, `WaitReason.handover`, evidence kinds, same-store `task takeover` without deliverables | H0 |
-| H2 triggers | envelope + `riela/handover-request`, wait-signal classifier, `onInactivity: handover`, `task handover`, `handover` run event and notification | H1 |
+| H2 triggers | envelope + `riela/handover-request`, wait-signal classifier, `handoverOnInactivity` director rule, `task handover`, `handover` run event and notification | H1 |
 | H3 answers and history | `task answer`, answer injection, `RuntimeHistoryImport` from suspended/bundle, `session handover` adoption | H1 |
 | H4 deliverables | `GitBranchWorkspaceRuntime` (branch, checkpoint, publish, materialize), `Attempt.isolation` populated, worker allowance, document deliverable collection, `riela/git-publish-branch` | H1 |
 | H5 leases | heartbeat/expiry/fence, owner-side fence check, `--force-orphan`, `task reconcile`, superseded reconciliation | H1 |
@@ -946,6 +1033,45 @@ mutations). The catalog parity gates cover every new row.
 
 H1 alone already lets a second process on the same host continue a task
 that declared a handover, which is the smallest useful slice.
+
+### 15.1 Example and end-to-end verification contract
+
+"Passes in mock mode" means both of the following, because the generic
+example parity loop only runs plain `workflow run` and mock responses
+cannot branch on input (§2):
+
+- **Generic parity loop.** Each of the three examples ships a
+  `mock-scenario.json`, is listed in `rielaExampleWorkflowNames()`, and
+  `expectedMockScenarioCount` rises 40 → 43. The loop gains one explicit
+  set, `ExampleCatalog.expectedSuspendedMockScenarioExamples =
+  ["task-handover-answer", "task-handover-presence"]`, for which it asserts
+  exit `.suspended`, `status == .suspended` and a non-nil
+  `session.suspend`; every other example keeps the `.success` /
+  `.completed` assertion. `task-handover-orphan`'s plain run completes.
+- **Harness flow tests.** `Tests/RielaCLITests/TaskHandoverExampleTests.swift`
+  drives each example through `TaskExampleHarness` (the
+  `TaskRuntimeExampleTests` precedent): answer — `task run` suspends and
+  seals a packet with a stable digest, `task answer`, `task takeover`
+  completes with the answer in the resume step's `inputSnapshot` and the
+  history imported; presence — takeover refused without `userReachable`,
+  accepted with `--traits userReachable`; orphan — owner stopped after
+  launch, injected clock past `expiresAt`, `task takeover --force-orphan`
+  completes, the revived owner's heartbeat returns fenced and it persists
+  `failed(.leaseLost)`.
+- **Deterministic mock takeover.** The answer and presence examples
+  declare the handover from a step whose business output is accepted and
+  set `resumeStepId` to the next step, so the successor never re-runs the
+  declaring node and the per-node mock sequence cannot re-emit the
+  envelope.
+- **Multi-clone and cross-host.** Second-clone materialization is proven
+  with temporary repositories sharing a bare remote (no network); remote
+  takeover is proven by a two-store test (controller store + successor
+  store) through the in-process GraphQL executor with the authorization
+  wrapper. A live two-host check is optional operator evidence under
+  `tmp/work-handover/`, not a completion criterion.
+- **Baseline.** Full serial `swift test` is recorded on base commit
+  `01b38f02` before implementation; every failure afterwards is classified
+  against it.
 
 ## 16. Rejected alternatives
 
@@ -1023,6 +1149,10 @@ that declared a handover, which is the smallest useful slice.
 
 Recorded in `design-docs/user-qa/qa-work-handover-and-takeover.md`:
 
+The file also holds Q6 (automatic adoption), Q7 (per-invocation
+`--traits`) and Q8 (sink configuration scope); all proceed on their
+defaults.
+
 1. Branch template default `riela/task/<taskId>/g<generation>` and whether
    checkpoints should be squashed at accept-time finalization.
    Recommendation: keep checkpoints; finalization squashes only when the
@@ -1058,3 +1188,39 @@ Recorded in `design-docs/user-qa/qa-work-handover-and-takeover.md`:
 - `design-agent-node-output-contract.md` D2: the `handover` envelope key is
   validated before the business payload, as envelope normalization already
   does for its existing keys.
+
+## 21. Source reconciliation (2026-09-30)
+
+Corrections made when the design was checked against `01b38f02` before
+implementation. Each replaces a statement that contradicted the source;
+none changes a §3 decision.
+
+| # | Was | Now | Source evidence |
+| --- | --- | --- | --- |
+| R1 | `SuspendRecord.reason: HandoverReason`, `producer: EvidenceProducer` | `reasonKind: SuspendReasonKind`, `producer: SuspendProducer`; question/presence/trait types in `RielaCore/HandoverContracts.swift` | `RielaWork` depends on `RielaCore`, not the reverse (`Package.swift`) |
+| R2 | envelope normalization in `RuntimeOutputExtraction.swift` | `AdapterContracts.swift:335` | grep |
+| R3 | runner result gains `.suspended(SuspendRecord)` | `WorkflowRunResult.status == .suspended` + `session.suspend`; `CLIExitCode.suspended = 5` | `WorkflowRunResult.swift:3`, `RielaCommand.swift:10-19` |
+| R4 | `HandoverPolicy.onInactivity: rerun\|handover\|stop` | `DeterministicDirectorRules.handoverOnInactivity: Bool` before `rerunOnInactivity` | avoids two knobs for one rule (`DeterministicDirector.swift:77-86`) |
+| R5 | `riela config set host.traits` | profile state `hostTraits` + worker.json `traits` + per-invocation `--traits` | no `config` command; local snapshot built from `RielaAppDaemonWorkflowState` |
+| R6 | sink config merged task → workflow → `riela config` profile | task → workflow, plus `--sink` | no `config` command |
+| R7 | `snapshot` reuses fanout change capture | `dirtyPaths` via `git status --porcelain=v1 -z` | `WorkflowFanoutChangeEvidence` is internal to `RielaCore` |
+| R8 | GraphQL resolvers in `RielaGraphQL` over RielaWork types | DTOs + `TaskHandoverGraphQLProviding` in `RielaGraphQL`; provider in `RielaCLI`; host wiring in `RielaCLI/ServeWebHost.swift` | `RielaGraphQL` depends on `RielaCore` only; `ServeWebHost` is in `RielaCLI` |
+| R9 | worker git allowance edits a `RielaCLI` executor | `Sources/RielaCore/DistributedWorkerNodeExecutor.swift:108` | grep |
+| R10 | placement "requirements gain `requiredTraits`" | new `requiredTraits` parameter beside `[WorkflowBackendRequirement]` | `BackendCapabilityPlacement.swift:52-76` |
+| R11 | `task serve --takeover` extends an existing command | `task serve` is new, `--takeover` only | `TaskCommandKind` = show/list/run/decide |
+| R12 | "examples pass in mock mode" undefined | §15.1 contract (suspended set in the parity loop + harness flow tests) | `RielaExampleParityTests.swift:245-347` asserts `.completed` |
+
+Refinements made while decomposing the implementation plan (same date):
+
+| # | Was | Now | Reason |
+| --- | --- | --- | --- |
+| R13 | skills `riela-workflow`, `riela-troubleshooting`, `riela-manager-control`, `riela-node-addons` updated | in-repo `Resources/skills/riela-workflow-run` and `riela-workflow-reference` updated; the other four live in the riela-packages repository and are a recorded follow-up | only two skills are in this repository (`SurfaceParitySkillTests.skillsRoot`) |
+| R14 | `HandoverPolicy.notify: [LoopNotificationTarget]` | no `notify` field; handover notifications use the workflow's `loop.notifications` channels when `on` contains `handover` | one channel declaration, LB4 dispatcher reused as is |
+| R15 | `output.projection.deliverables` | `output.deliverables` (`NodeOutputContract.deliverables`) | `WorkflowOutputProjection` is a single-`kind` struct |
+| R16 | a remote successor that hands over "reports a new packet" | it reports its suspended snapshot and deliverables; the controller seals the packet | only the controller holds the task, ledger and store |
+| R17 | canonical JSON "no floats" | integers verbatim, other numbers as Swift shortest round-trip `Double.description`, dates UTC ISO-8601 with milliseconds (rounded), sets encoded as sorted arrays; the digest is recomputed from a canonical re-encoding with `sinks = []`, `digest = ""` | accepted outputs legitimately contain decimals; re-encoding must be byte-stable |
+| R18 | checkpoints journaled through the finalization store | checkpoints rely on git's atomic commit and ref update; a crash leaves staged changes that the next checkpoint or the successor's `dirtyPaths` reports | the finalization journal is keyed to add-on executions |
+| R19 | `HandoverContinuationContract.answer` filled at takeover time | removed; the answer is `Decision.answer` and reaches the successor as variable `handover.answer` and a delivered message | a sealed packet is immutable (digest) |
+| R20 | S2 and S4 always end `suspended` | boundary handovers (envelope, add-on, cooperative `task handover`) end `suspended`; handovers that interrupt a running node end `failed` with `.stalled` (inactivity, wait signal), `.cancelled` (`task handover --now`) or `.leaseLost` (fence) | a cancelled node cannot be recorded as a clean suspend; history import accepts all of these sources |
+| R21 | `riela/handover-request` resume step defaults | `resumeStepId` is required in its config and must be the add-on step's selected next step | re-running the add-on would request again |
+| R22 | cooperative `task handover` "observed by the owner's `TaskRunCancellation` loop" | the loop records the request; the runner consults a boundary-handover hook on `DeterministicWorkflowRunRequest` after each accepted step and suspends before the next step | only the runner knows the step boundary |

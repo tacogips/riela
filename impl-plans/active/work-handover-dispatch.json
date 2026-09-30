@@ -1,0 +1,750 @@
+{
+  "taskId": "work-handover",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/work-handover-and-takeover",
+  "baseBranch": "feat/work-handover-and-takeover",
+  "remote": "origin",
+  "originalHead": "01b38f02fb8c126528d5a46aebe737adb429736f",
+  "designDocPaths": [
+    "design-docs/specs/design-work-handover-and-takeover.md",
+    "design-docs/user-qa/qa-work-handover-and-takeover.md"
+  ],
+  "umbrellaPlanPath": "impl-plans/active/work-handover-and-takeover.md",
+  "acceptedPlanPaths": [
+    "impl-plans/active/work-handover-and-takeover.md",
+    "impl-plans/active/wh-00-baseline.md",
+    "impl-plans/active/wh-01-contracts.md",
+    "impl-plans/active/wh-02-runner-suspend.md",
+    "impl-plans/active/wh-03-work-store.md",
+    "impl-plans/active/wh-04-packet-coordinator.md",
+    "impl-plans/active/wh-05-history-import.md",
+    "impl-plans/active/wh-06-wait-signal.md",
+    "impl-plans/active/wh-07-git-branch-runtime.md",
+    "impl-plans/active/wh-08-deliverable-collector.md",
+    "impl-plans/active/wh-09-handover-sinks.md",
+    "impl-plans/active/wh-10-host-traits.md",
+    "impl-plans/active/wh-11-director-notify.md",
+    "impl-plans/active/wh-12-graphql-contracts.md",
+    "impl-plans/active/wh-13-gc-sweep.md",
+    "impl-plans/active/wh-14-task-dispatch-runtime.md",
+    "impl-plans/active/wh-15-task-commands.md",
+    "impl-plans/active/wh-16-graphql-provider.md",
+    "impl-plans/active/wh-17-examples.md",
+    "impl-plans/active/wh-18-remote-takeover.md",
+    "impl-plans/active/wh-19-docs-skills.md",
+    "impl-plans/active/wh-20-reconcile.md"
+  ],
+  "evidenceRoot": "tmp/work-handover",
+  "reviewContext": {
+    "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228.",
+    "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
+    "requiredOutcomes": [
+      "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",
+      "task answer + task takeover (same store) continues at the resume step with the answer in the step input and the history imported.",
+      "A repository task publishes riela/task/<id>/g<n> at handover; a takeover on a second clone materializes it and continues.",
+      "An attempt whose owner is killed is taken over with --force-orphan after lease expiry; the killed owner, if revived, fails with leaseLost.",
+      "A presence handover is refused on a host without the userReachable trait and accepted on one with it.",
+      "Remote takeover over /graphql heartbeats and reports; the controller runs verification and director on the reported outcome.",
+      "kaiba, gitRef, file and command sinks round-trip the packet with digest verification.",
+      "Three examples (task-handover-answer, task-handover-presence, task-handover-orphan) pass in mock mode; skills, docs, catalog rows and SDL updated; full swift test has no new failures against the wh-00 base-commit baseline."
+    ],
+    "nonGoals": [
+      "A cancelled session status; session fork and idleSuspendMs.",
+      "The execution-environment consolidation; P3 chat intake and MonjaTrackerAdapter; the full P5 task API.",
+      "Cross-host vendor thread continuation; copying cwd-local memory or KV into packets.",
+      "Force-push or publication outside riela/task/*; skills that live outside this repository (design R13).",
+      "A SessionBackendActivityVerdict.awaiting-user case (dropped; not in the design).",
+      "Merging into main, pushing main, or opening/merging a PR into main."
+    ],
+    "constraints": [
+      "Branch-only handoff on feat/work-handover-and-takeover; workers make no git state changes (no add/commit/push/stash/reset/worktree).",
+      "No backward compatibility: session schema generation 8 -> 9, strict closed-enum decoding, fixtures updated instead of shims (only the user profile hostTraits field uses decodeIfPresent).",
+      "Every swift build/test/swiftlint runs in the foreground under arch -arm64 /bin/zsh -lc with a full log ending in an exit= line under tmp/work-handover/<planId>/.",
+      "Fresh read, prehash, preimage and intent snapshot under tmp/work-handover/<planId>/<attempt>/ before each edit; edit only writePaths and the stated sharedPathNotes edit.",
+      "Workers do not run SurfaceParity*, generate-sdl.sh, RielaExampleParityTests or the full suite; parity/SDL gates are expected red from wh-01 until wh-20.",
+      "Codex sandboxes cannot run riela mock workflows or CLI integration tests touching ~/.riela; those run in Opus review/verification steps.",
+      "Register new examples in rielaExampleWorkflowNames() and raise expectedMockScenarioCount 40 -> 43; add SurfaceCatalog rows and regenerate the SDL (wh-20).",
+      "Scratch only under tmp/ (gitignored); each plan edits only its own impl-plans/progress/<planId>.md; full-suite failures are classified against the wh-00 baseline, never hidden."
+    ],
+    "designDecisionsAndRationale": [
+      "The task is the unit of handover: a handover is a new Attempt with entry .takeover, reusing the one-live-attempt fence, evidence ledger, placement and guard budget (design §3.1).",
+      "The digest-sealed HandoverPacket is the predecessor/successor contract, built by the runtime from durable records; the agent only adds a bounded progressNote and question (§3.2).",
+      "suspended is a real session status with a SuspendRecord; runner/resume exit code CLIExitCode.suspended = 5 (§3.3, R1-R22).",
+      "Agent-declared, runtime-detected and operator triggers all produce Decision .handover(HandoverReason) and the same packet (§3.4).",
+      "Deliverables are published before sealing: attempt branch riela/task/<taskId>/g<n> via GitBranchWorkspaceRuntime, document ids via DeliverableCollector, local-only state listed (§3.5, §9).",
+      "The work store work_handovers row is canonical; kaiba/gitRef/file/command sinks are digest-verified mirrors (§3.6, §8).",
+      "Answers are DecisionKind.answer validated against answerSchema and delivered as runtime variable plus delivered message (§3.7).",
+      "Hosts declare traits (profile hostTraits, worker.json traits, per-invocation --traits per Q7); placement treats required traits like backends (§3.8, §10.3).",
+      "Leases gain heartbeat_at, expires_at and a monotonic fence; the fence, not expiry, excludes a revived owner which fails with leaseLost (§3.9, §11).",
+      "Cross-host takeover is pull-based over /graphql (takeoverTask, heartbeatAttempt, reportAttempt) under manager-session auth; the controller runs director and verification on reports (§3.10, §10.2)."
+    ],
+    "intentionalTradeoffs": [
+      "Mid-node interruption (S3, --now) re-runs the step; step-boundary checkpoints bound repository loss to one step.",
+      "The wait-signal classifier uses typed ACP tool-call status only, never free text; unclassified events fall back to inactivity.",
+      "The schema generation bump discards existing session stores.",
+      "A repository without a remote can only be handed over on the same host; --endpoint takeover of such a task is refused.",
+      "The wh-17 orphan example uses a never-launched owner; the running-owner leaseLost leg is proven by wh-14 TaskHandoverLeaseTests.",
+      "Parity/SDL gates stay red between wh-01 and wh-20; wh-20 owns catalog rows, SDL and the serial join audit."
+    ],
+    "supportedEdgeCases": [
+      "Answer (S1), presence (S2), inactivity (S3 via handoverOnInactivity), operator (S4) and orphan (--force-orphan after lease expiry) handovers.",
+      "History import from suspended or failed(stalled|cancelled|leaseLost) same-store sessions and from packet bundles; truncated bundles refused.",
+      "Presence takeover refused without required traits (waiting host-traits-unavailable) and accepted with them.",
+      "Revived owner heartbeat returns fenced and the predecessor is reconciled failed/leaseLost.",
+      "Sink tamper detection via kind:locator#sha256 digest verification.",
+      "riela gc removes handover files/refs of terminal or absent tasks, keeps non-terminal ones, fails closed on a missing or locked database."
+    ],
+    "outOfScopeEdgeCases": [
+      "Cross-host vendor thread (backendSessionId) continuation.",
+      "Moving cwd-local riela memory or KV into packets (listed as local-only only).",
+      "Remote ref deletion or force-push.",
+      "Probing host traits (traits are declared, never probed)."
+    ],
+    "residualRisks": [
+      "wh-12 TaskHandoverGraphQLDocumentExecutor must join the domain preflight RoutineGraphQLDocumentExecutor takes part in (RoutineGraphQL.swift:346); wh-20 or the gates catch drift.",
+      "wh-02 adds a field to WorkflowPublicationResult; it must be defaulted so test fakes compile.",
+      "wh-19 docs are written in the same wave as wh-18; wh-20 re-checks docs against final --help.",
+      "ACP pending-status raw value, kaiba note-create input names and the validate flag spelling must be confirmed by workers with recorded evidence."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-work-handover-and-takeover.md",
+      "design-docs/user-qa/qa-work-handover-and-takeover.md",
+      "impl-plans/active/work-handover-and-takeover.md",
+      "Sources/RielaWork",
+      "Sources/RielaCore",
+      "Sources/RielaCLI",
+      "Sources/RielaGraphQL",
+      "Sources/RielaServer",
+      "Sources/RielaAdapters",
+      "Sources/RielaAddons/RielaAddons.swift",
+      "examples/task-repair-loop"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions)."
+  },
+  "plans": [
+    {
+      "planId": "wh-00-baseline",
+      "planPath": "impl-plans/active/wh-00-baseline.md",
+      "dependsOn": [],
+      "writePaths": [
+        "impl-plans/progress/wh-00-baseline.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "No code drift from 01b38f02 is proven and recorded with HEAD.",
+        "Build and full serial swift test logs end with exit= lines and summary counts; the sorted unique failure list is recorded in the progress log (or a blocked baseline with the partial log path)."
+      ],
+      "verification": [
+        "git diff --stat 01b38f02 -- Sources Tests Package.swift Package.resolved examples Resources",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-00/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-00/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test > tmp/work-handover/wh-00/full-swift-test.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-00/full-swift-test.log'"
+      ]
+    },
+    {
+      "planId": "wh-01-contracts",
+      "planPath": "impl-plans/active/wh-01-contracts.md",
+      "dependsOn": ["wh-00-baseline"],
+      "writePaths": [
+        "Sources/RielaCore/HandoverContracts.swift",
+        "Sources/RielaCore/JSONCanonical.swift",
+        "Sources/RielaCore/RuntimeSession.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Sources/RielaCore/WorkflowRunEvent.swift",
+        "Sources/RielaCore/LoopOutcomeNotification.swift",
+        "Sources/RielaCore/BackendCapability.swift",
+        "Sources/RielaCore/DistributedWorkerModels.swift",
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/WorkflowNodeContracts.swift",
+        "Sources/RielaCore/WorkflowValidation.swift",
+        "Sources/RielaWork/WorkHandover.swift",
+        "Sources/RielaWork/HandoverProtocols.swift",
+        "Sources/RielaWork/WorkModels.swift",
+        "Sources/RielaWork/WorkDecision.swift",
+        "Sources/RielaWork/WorkEvidence.swift",
+        "Sources/RielaWork/WorkStore+Schema.swift",
+        "Sources/RielaWork/WorkStore+Handovers.swift",
+        "Tests/RielaCoreTests/HandoverContractsTests.swift",
+        "Tests/RielaCoreTests/JSONCanonicalTests.swift",
+        "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
+        "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
+        "impl-plans/progress/wh-01-contracts.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaCore/SessionObservability.swift",
+        "Sources/RielaCore/LoopSessionOverview.swift",
+        "Sources/RielaCore/RuntimeMessageInputResolver.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift",
+        "Sources/RielaCLI/SpecialistCommands.swift",
+        "Sources/RielaWork/DecisionApplier.swift",
+        "Tests/RielaWorkTests/Fixtures"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add only `case suspended = 5` to CLIExitCode. Do not touch TaskCommandKind or SessionCommand."},
+        {"path": "Sources/RielaCore/RuntimeStore.swift", "intendedEdit": "Only the exhaustive-switch arms the compiler requires for the new status cases. wh-02 owns behavior later."},
+        {"path": "Sources/RielaCore/SessionObservability.swift", "intendedEdit": "Only exhaustive-switch arms: suspended is non-terminal and not active, and renders as \"suspended\"."},
+        {"path": "Sources/RielaCore/LoopSessionOverview.swift", "intendedEdit": "Only exhaustive-switch arms for suspended."},
+        {"path": "Sources/RielaCore/RuntimeMessageInputResolver.swift", "intendedEdit": "Only exhaustive-switch arms for step status suspended (treated like failed: not an accepted producer)."},
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift", "intendedEdit": "Only exhaustive-switch arms for the new .handover run event. Emission is wh-02."},
+        {"path": "Sources/RielaCLI/SpecialistCommands.swift", "intendedEdit": "Only exhaustive-switch arms for suspended."},
+        {"path": "Sources/RielaWork/DecisionApplier.swift", "intendedEdit": "Only exhaustive-switch arms for the new DecisionKind cases, each throwing WorkStoreError; wh-03 replaces them."},
+        {"path": "Tests/RielaWorkTests/Fixtures", "intendedEdit": "Update JSON fixtures encoding DeterministicDirectorRules, WorkTask or lease rows to carry the new required keys (handoverOnInactivity, fence)."}
+      ],
+      "acceptanceCriteria": [
+        "Every contract type and enum case exists with a Codable round-trip test.",
+        "Schema generation 9, the new tables and lease columns are in place and tableNames is updated.",
+        "sealHandoverRecords is atomic and tested.",
+        "Build and focused suite are green; exhaustive-switch edits and hashes are listed in the progress log."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-01-contracts/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-01-contracts/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"HandoverContractsTests|JSONCanonicalTests|WorkHandoverModelsTests|WorkStoreHandoverRecordsTests|WorkModelsCodableTests|WorkStoreTests|WorkStoreReservationTests|DeterministicDirectorTests|RuntimeStoreTests|WorkflowValidation\" > tmp/work-handover/wh-01-contracts/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-01-contracts/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-02-runner-suspend",
+      "planPath": "impl-plans/active/wh-02-runner-suspend.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaCore/AdapterContracts.swift",
+        "Sources/RielaCore/RuntimeOutputCandidate.swift",
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Suspend.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+        "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+        "Sources/RielaCLI/SessionObservabilityRendering.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerSuspendTests.swift",
+        "Tests/RielaCLITests/SessionResumeSuspendedTests.swift",
+        "impl-plans/progress/wh-02-runner-suspend.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/RuntimeStore.swift", "intendedEdit": "Add suspendSession(_:) to the WorkflowRuntimeStore protocol with a throwing default, implement it in InMemoryWorkflowRuntimeStore, and clear session.suspend where the store moves a session back to .running."},
+        {"path": "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift", "intendedEdit": "Add emitHandoverEvent(...), modelled on the existing silence/step event emitters."},
+        {"path": "Sources/RielaCLI/SessionCommands.swift", "intendedEdit": "Resume handling for suspended sessions only (question gate, answer message injection, exit code). session handover is wh-15."},
+        {"path": "Sources/RielaCLI/WorkflowRunCommand.swift", "intendedEdit": "Map runner exit code 5 to CLIExitCode.suspended and print the suspend hint in text output. wh-14 later adds task hooks."}
+      ],
+      "acceptanceCriteria": [
+        "Envelope extraction, publication, runner suspend, store, resume and CLI deliverables are implemented; the new WorkflowPublicationResult field is defaulted.",
+        "DeterministicWorkflowRunnerSuspendTests and SessionResumeSuspendedTests pass; focused regressions are green or baseline-classified.",
+        "The progress log has hashes, commands and log paths."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-02-runner-suspend/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-02-runner-suspend/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeterministicWorkflowRunnerSuspendTests|SessionResumeSuspendedTests|DeterministicWorkflowRunnerFailureStateTests|RuntimeStoreTests|SessionPreservedHistoryTests|SessionObservabilityCommandTests|AgentGatewayNodeAdapterTests\" > tmp/work-handover/wh-02-runner-suspend/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-02-runner-suspend/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-03-work-store",
+      "planPath": "impl-plans/active/wh-03-work-store.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaWork/WorkStore+Decisions.swift",
+        "Sources/RielaWork/WorkStore+Leases.swift",
+        "Sources/RielaWork/WorkStore+Takeover.swift",
+        "Sources/RielaWork/WorkStore+HandoverRequests.swift",
+        "Sources/RielaWork/TaskDispatcher.swift",
+        "Tests/RielaWorkTests/WorkStoreLeaseTests.swift",
+        "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
+        "Tests/RielaWorkTests/WorkStoreHandoverRequestTests.swift",
+        "impl-plans/progress/wh-03-work-store.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaWork/DecisionApplier.swift"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaWork/DecisionApplier.swift", "intendedEdit": "Replace wh-01's throwing arms: .handover is applied like .stop (requires live cancellation, no pending reservation); .answer and .takeover keep throwing because they are only created by recordAnswer/requestTakeover."}
+      ],
+      "acceptanceCriteria": [
+        "Every pinned store API (takeover reservation, leases/heartbeat/fence, fenceOrphan, answers, handover requests, superseded reconciliation) exists and is tested; reservation invariants hold.",
+        "Existing Work store reservation and cancellation tests are green or baseline-classified; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-03-work-store/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-03-work-store/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkStoreLeaseTests|WorkStoreTakeoverTests|WorkStoreHandoverRequestTests|WorkStoreReservationTests|WorkStoreCancellationTests|DecisionApplier|TaskDispatcherTests|BudgetAdmissionStoreTests\" > tmp/work-handover/wh-03-work-store/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-03-work-store/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-04-packet-coordinator",
+      "planPath": "impl-plans/active/wh-04-packet-coordinator.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaWork/HandoverPacketBuilder.swift",
+        "Sources/RielaWork/HandoverBriefRenderer.swift",
+        "Sources/RielaWork/HandoverRedaction.swift",
+        "Sources/RielaWork/HandoverCoordinator.swift",
+        "Sources/RielaWork/TaskAdoption.swift",
+        "Sources/RielaWork/WorkStore+Adoption.swift",
+        "Tests/RielaWorkTests/HandoverPacketBuilderTests.swift",
+        "Tests/RielaWorkTests/HandoverCoordinatorTests.swift",
+        "Tests/RielaWorkTests/TaskAdoptionTests.swift",
+        "Tests/RielaWorkTests/Fixtures/handover-brief-golden.md",
+        "impl-plans/progress/wh-04-packet-coordinator.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Packet builder, brief renderer, redaction, handover coordinator and task adoption are implemented to the pinned APIs.",
+        "Determinism, bounds, ordering and failure tests pass with a non-zero count; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-04-packet-coordinator/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-04-packet-coordinator/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"HandoverPacketBuilderTests|HandoverCoordinatorTests|TaskAdoptionTests|WorkStoreHandoverRecordsTests\" > tmp/work-handover/wh-04-packet-coordinator/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-04-packet-coordinator/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-05-history-import",
+      "planPath": "impl-plans/active/wh-05-history-import.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaCore/RuntimeHistoryImport.swift",
+        "Tests/RielaCoreTests/RuntimeHistoryImportHandoverTests.swift",
+        "impl-plans/progress/wh-05-history-import.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "HistoryImportSource, the bundle init and the import rules are implemented; the existing API stays source-compatible.",
+        "RuntimeHistoryImportHandoverTests pass; preserved-history suites are green or baseline-classified; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-05-history-import/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-05-history-import/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RuntimeHistoryImport|PreservedHistory|SessionPreservedHistoryTests\" > tmp/work-handover/wh-05-history-import/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-05-history-import/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-06-wait-signal",
+      "planPath": "impl-plans/active/wh-06-wait-signal.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaAdapters/BackendWaitSignalClassifier.swift",
+        "Tests/RielaAdaptersTests/BackendWaitSignalClassifierTests.swift",
+        "impl-plans/progress/wh-06-wait-signal.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "The classifier matches the pinned API and its default table is derived from the real ACP tool-call status enum, with evidence in the progress log.",
+        "BackendWaitSignalClassifierTests pass with a non-zero count."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-06-wait-signal/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-06-wait-signal/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BackendWaitSignalClassifierTests\" > tmp/work-handover/wh-06-wait-signal/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-06-wait-signal/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-07-git-branch-runtime",
+      "planPath": "impl-plans/active/wh-07-git-branch-runtime.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaCLI/GitBranchWorkspaceRuntime.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GitPublishBranch.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+GitAddons.swift",
+        "Tests/RielaCLITests/GitBranchWorkspaceRuntimeTests.swift",
+        "Tests/RielaCLITests/GitPublishBranchAddonTests.swift",
+        "impl-plans/progress/wh-07-git-branch-runtime.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaAddons/RielaAddons.swift"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaAddons/RielaAddons.swift", "intendedEdit": "Append .init(name: \"riela/git-publish-branch\", version: \"1\") to gitAddons only. wh-14 later adds the handover-request descriptor."}
+      ],
+      "acceptanceCriteria": [
+        "GitBranchWorkspaceRuntime and riela/git-publish-branch@1 are implemented; existing git add-on suites stay green.",
+        "Every listed test passes against temp repositories and a bare remote (no network); the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-07-git-branch-runtime/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-07-git-branch-runtime/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"GitBranchWorkspaceRuntimeTests|GitPublishBranchAddonTests|GitWorkflowAddonTests|GitWorkflowAddonContractTests\" > tmp/work-handover/wh-07-git-branch-runtime/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-07-git-branch-runtime/focused.log'",
+        "git status --porcelain=v1 -uall",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-08-deliverable-collector",
+      "planPath": "impl-plans/active/wh-08-deliverable-collector.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaWork/DeliverableCollector.swift",
+        "Tests/RielaWorkTests/DeliverableCollectorTests.swift",
+        "impl-plans/progress/wh-08-deliverable-collector.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "DeliverableCollector is implemented to the pinned API and collection rules (kaiba, output.deliverables, memory/KV local-only, deterministic merge and order).",
+        "DeliverableCollectorTests pass with a non-zero count; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-08-deliverable-collector/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-08-deliverable-collector/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeliverableCollectorTests\" > tmp/work-handover/wh-08-deliverable-collector/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-08-deliverable-collector/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-09-handover-sinks",
+      "planPath": "impl-plans/active/wh-09-handover-sinks.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaCLI/HandoverSinks/StoreHandoverSink.swift",
+        "Sources/RielaCLI/HandoverSinks/KaibaHandoverSink.swift",
+        "Sources/RielaCLI/HandoverSinks/GitRefHandoverSink.swift",
+        "Sources/RielaCLI/HandoverSinks/FileHandoverSink.swift",
+        "Sources/RielaCLI/HandoverSinks/CommandHandoverSink.swift",
+        "Sources/RielaCLI/HandoverSinks/HandoverSinkFactory.swift",
+        "Tests/RielaCLITests/HandoverSinkTests.swift",
+        "impl-plans/progress/wh-09-handover-sinks.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "The five sinks, locator digest verification and the factory are implemented to the pinned shapes.",
+        "kaiba, gitRef, file and command round-trip and tamper tests pass; the four test names are recorded in the progress log."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-09-handover-sinks/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-09-handover-sinks/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"HandoverSinkTests\" > tmp/work-handover/wh-09-handover-sinks/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-09-handover-sinks/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-10-host-traits",
+      "planPath": "impl-plans/active/wh-10-host-traits.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaWork/BackendCapabilityPlacement.swift",
+        "Sources/RielaCLI/HostCapabilityResolver.swift",
+        "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
+        "Sources/RielaCLI/DistributedWorkerCommand.swift",
+        "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
+        "Sources/RielaCLI/DoctorCommand.swift",
+        "Tests/RielaWorkTests/BackendCapabilityPlacementTraitsTests.swift",
+        "Tests/RielaCLITests/HostTraitsResolverTests.swift",
+        "impl-plans/progress/wh-10-host-traits.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "Traits flow from the app profile hostTraits, the local override and worker.json into host snapshots, trait-aware placement (host-traits-unavailable) and doctor output.",
+        "New trait tests pass; existing placement, doctor and worker suites are green or baseline-classified; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-10-host-traits/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-10-host-traits/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"BackendCapabilityPlacementTraitsTests|BackendCapabilityPlacementTests|HostTraitsResolverTests|DoctorCommand|DistributedWorker\" > tmp/work-handover/wh-10-host-traits/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-10-host-traits/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-11-director-notify",
+      "planPath": "impl-plans/active/wh-11-director-notify.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaWork/DeterministicDirector.swift",
+        "Sources/RielaCLI/LoopNotificationDispatcher.swift",
+        "Tests/RielaWorkTests/DeterministicDirectorHandoverTests.swift",
+        "Tests/RielaCLITests/LoopNotificationHandoverTests.swift",
+        "impl-plans/progress/wh-11-director-notify.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "The inactivity-handover director rule and LoopNotificationDispatcher.dispatchHandover are implemented.",
+        "DeterministicDirectorHandoverTests and LoopNotificationHandoverTests pass; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-11-director-notify/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-11-director-notify/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeterministicDirectorHandoverTests|DeterministicDirectorTests|LoopNotificationHandoverTests|LoopNotification\" > tmp/work-handover/wh-11-director-notify/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-11-director-notify/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-12-graphql-contracts",
+      "planPath": "impl-plans/active/wh-12-graphql-contracts.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaGraphQL/TaskHandoverGraphQL.swift",
+        "Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift",
+        "impl-plans/progress/wh-12-graphql-contracts.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "The DTOs, TaskHandoverGraphQLProviding protocol, document executor and SDL block match the pinned names; the executor participates in the same domain preflight as RoutineGraphQLDocumentExecutor.",
+        "TaskHandoverGraphQLTests and RoutineGraphQLTests pass; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-12-graphql-contracts/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-12-graphql-contracts/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskHandoverGraphQLTests|RoutineGraphQLTests\" > tmp/work-handover/wh-12-graphql-contracts/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-12-graphql-contracts/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-13-gc-sweep",
+      "planPath": "impl-plans/active/wh-13-gc-sweep.md",
+      "dependsOn": ["wh-01-contracts"],
+      "writePaths": [
+        "Sources/RielaCore/RielaDataGarbageCollector.swift",
+        "Tests/RielaCoreTests/RielaDataGarbageCollectorHandoverTests.swift",
+        "impl-plans/progress/wh-13-gc-sweep.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "riela gc sweeps handover files and local refs/riela/handovers refs of terminal or absent tasks, fail-closed, with dry-run reporting.",
+        "RielaDataGarbageCollectorHandoverTests pass and existing gc tests stay green; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-13-gc-sweep/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-13-gc-sweep/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaDataGarbageCollector|GarbageCollection\" > tmp/work-handover/wh-13-gc-sweep/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-13-gc-sweep/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-14-task-dispatch-runtime",
+      "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md",
+      "dependsOn": [
+        "wh-02-runner-suspend",
+        "wh-03-work-store",
+        "wh-04-packet-coordinator",
+        "wh-05-history-import",
+        "wh-06-wait-signal",
+        "wh-07-git-branch-runtime",
+        "wh-08-deliverable-collector",
+        "wh-09-handover-sinks",
+        "wh-10-host-traits",
+        "wh-11-director-notify"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/TaskDispatch+Handover.swift",
+        "Sources/RielaCLI/TaskHandoverRuntime.swift",
+        "Sources/RielaCLI/TaskHandoverSupport.swift",
+        "Sources/RielaCLI/TaskRunCancellation.swift",
+        "Sources/RielaCLI/WorkflowRunCommand+TaskReservation.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter+HandoverRequestAddon.swift",
+        "Sources/RielaWork/WorkStore+Isolation.swift",
+        "Tests/RielaCLITests/TaskHandoverTestSupport.swift",
+        "Tests/RielaCLITests/TaskHandoverDispatchTests.swift",
+        "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
+        "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
+        "Tests/RielaCLITests/HandoverRequestAddonTests.swift",
+        "impl-plans/progress/wh-14-task-dispatch-runtime.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/ProductionNodeAdapter.swift",
+        "Sources/RielaAddons/RielaAddons.swift"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/WorkflowRunCommand.swift", "intendedEdit": "In the run-event handler, await taskContext?.stepBoundaryHook?(event) for .stepCompleted; set boundaryHandover from taskContext?.boundaryHandover when building the task run request. wh-02's suspended mapping stays."},
+        {"path": "Sources/RielaCLI/ProductionNodeAdapter.swift", "intendedEdit": "One dispatch branch for input.addon.name == \"riela/handover-request\" calling executeHandoverRequest(input), beside the other riela/* branches."},
+        {"path": "Sources/RielaAddons/RielaAddons.swift", "intendedEdit": "Add public static let handoverAddons = [.init(name: \"riela/handover-request\", version: \"1\")] and include it in all."}
+      ],
+      "acceptanceCriteria": [
+        "The pinned TaskHandoverRuntime API and TaskDispatch additions exist; every trigger seals exactly once.",
+        "Takeover, answer injection, repository branch, lease/fence, orphan, reconcile and adoption tests pass; acceptance signals 1-5 are mapped to test names in the progress log.",
+        "Existing task suites are green or baseline-classified; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-14-task-dispatch-runtime/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-14-task-dispatch-runtime/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskHandoverDispatchTests|TaskHandoverLeaseTests|TaskHandoverRepositoryTests|HandoverRequestAddonTests\" > tmp/work-handover/wh-14-task-dispatch-runtime/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-14-task-dispatch-runtime/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskDispatcherIntegrationTests|TaskCancellationIntegrationTests|TaskRuntimeExampleTests|TaskRunResultTests|WorkflowTaskAddonTests\" > tmp/work-handover/wh-14-task-dispatch-runtime/regression.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-14-task-dispatch-runtime/regression.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-15-task-commands",
+      "planPath": "impl-plans/active/wh-15-task-commands.md",
+      "dependsOn": ["wh-14-task-dispatch-runtime"],
+      "writePaths": [
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskCommandModels.swift",
+        "Sources/RielaCLI/TaskHandoverCommands.swift",
+        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
+        "impl-plans/progress/wh-15-task-commands.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add TaskCommandKind cases handover, takeover, answer, handovers, reconcile (in this order after decide) and SessionCommand.handover(CLICommandOptions). Keep CLIExitCode as wh-01 left it."},
+        {"path": "Sources/RielaCLI/SessionCommands.swift", "intendedEdit": "Add the session handover handler that calls TaskHandoverRuntime.adoptAndSeal; do not change wh-02's resume logic."},
+        {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Only if session subcommands are a hard-coded list: add handover. Task subcommands come from TaskCommandKind.allRawValues automatically."}
+      ],
+      "acceptanceCriteria": [
+        "task handover|takeover|answer|handovers|reconcile, task show additions and session handover are implemented with strict parsing (including --force-orphan, --traits, --task).",
+        "TaskHandoverCommandTests and existing command suites pass or are baseline-classified; acceptance signals 1, 2, 4 and 5 are mapped to CLI test names in the progress log."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-15-task-commands/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-15-task-commands/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskHandoverCommandTests|TaskCommandTests|TaskCommandParsingTests|TaskCommandMutationTests|SessionObservabilityCommandTests\" > tmp/work-handover/wh-15-task-commands/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-15-task-commands/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-16-graphql-provider",
+      "planPath": "impl-plans/active/wh-16-graphql-provider.md",
+      "dependsOn": ["wh-12-graphql-contracts", "wh-14-task-dispatch-runtime"],
+      "writePaths": [
+        "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
+        "Sources/RielaCLI/ServeWebHost.swift",
+        "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
+        "Sources/RielaCLI/RielaLibrary.swift",
+        "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
+        "impl-plans/progress/wh-16-graphql-provider.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "All seven task-handover GraphQL fields are executable over serve, the parity document command and the library; manager-session auth is enforced in serve.",
+        "TaskHandoverGraphQLProviderTests pass; existing GraphQL and serve suites are green or baseline-classified; the progress log is complete."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-16-graphql-provider/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-16-graphql-provider/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskHandoverGraphQLProviderTests|TaskHandoverGraphQLTests|WorkflowExecutionGraphQLTests|ServeWeb\" > tmp/work-handover/wh-16-graphql-provider/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-16-graphql-provider/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-17-examples",
+      "planPath": "impl-plans/active/wh-17-examples.md",
+      "dependsOn": ["wh-14-task-dispatch-runtime"],
+      "writePaths": [
+        "examples/task-handover-answer",
+        "examples/task-handover-presence",
+        "examples/task-handover-orphan",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "Tests/RielaCLITests/TaskHandoverExampleTests.swift",
+        "impl-plans/progress/wh-17-examples.md"
+      ],
+      "sharedPaths": [
+        "README.md"
+      ],
+      "sharedPathNotes": [
+        {"path": "README.md", "intendedEdit": "Next to the task-repair-loop example link, add one sentence linking the three new examples' READMEs."}
+      ],
+      "acceptanceCriteria": [
+        "The three examples exist with workflow.json, nodes, prompts, mock-scenario.json, EXPECTED_RESULTS.md and README.md; the catalog and expectedMockScenarioCount (43) are updated; the suspended set is asserted.",
+        "TaskHandoverExampleTests harness flows (answer, presence, orphan with revived-owner fence assertions) and the parity loop pass; validate shows exit=0 three times or is recorded as blocked for wh-20; the progress log records the orphan divergence."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-17-examples/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-17-examples/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskHandoverExampleTests|RielaExampleParityTests|TaskRuntimeExampleTests\" > tmp/work-handover/wh-17-examples/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-17-examples/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'for w in task-handover-answer task-handover-presence task-handover-orphan; do .build/debug/riela workflow validate $w --workflow-definition-dir examples; echo \"validate $w exit=$?\"; done > tmp/work-handover/wh-17-examples/validate.log 2>&1'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-18-remote-takeover",
+      "planPath": "impl-plans/active/wh-18-remote-takeover.md",
+      "dependsOn": ["wh-15-task-commands", "wh-16-graphql-provider"],
+      "writePaths": [
+        "Sources/RielaCLI/TaskRemoteTakeover.swift",
+        "Sources/RielaCLI/TaskServeTakeover.swift",
+        "Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
+        "impl-plans/progress/wh-18-remote-takeover.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/TaskCommands.swift",
+        "Sources/RielaCLI/TaskHandoverCommands.swift"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add case serve to TaskCommandKind (after reconcile)."},
+        {"path": "Sources/RielaCLI/TaskCommands.swift", "intendedEdit": "Route .serve to TaskServeTakeover."},
+        {"path": "Sources/RielaCLI/TaskHandoverCommands.swift", "intendedEdit": "In the takeover parser add --endpoint, --auth-token, --auth-token-env and --manager-session-id; route --endpoint to TaskRemoteTakeover; --endpoint with --force-orphan is a usage error."}
+      ],
+      "acceptanceCriteria": [
+        "task takeover --endpoint (materialize branch, import bundle, heartbeat, report) and task serve --takeover are implemented; auth and fence behaviors are tested.",
+        "TaskRemoteTakeoverTests pass; acceptance signals 3 (second clone over remote path) and 6 are mapped to test names in the progress log."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-18-remote-takeover/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-18-remote-takeover/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskRemoteTakeoverTests|TaskHandoverCommandTests|TaskHandoverGraphQLProviderTests\" > tmp/work-handover/wh-18-remote-takeover/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-18-remote-takeover/focused.log'",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-19-docs-skills",
+      "planPath": "impl-plans/active/wh-19-docs-skills.md",
+      "dependsOn": ["wh-15-task-commands", "wh-16-graphql-provider"],
+      "writePaths": [
+        "docs/work-handover.md",
+        "docs/distributed-workers.md",
+        "docs/preserved-history-recovery.md",
+        "Resources/skills/riela-workflow-run/SKILL.md",
+        "Resources/skills/riela-workflow-reference/SKILL.md",
+        "impl-plans/progress/wh-19-docs-skills.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "docs/work-handover.md is written and distributed-workers/preserved-history-recovery docs and the two in-repo skills are updated for every new command, flag, exit code 5 and GraphQL field.",
+        "Each grep count is at least 7; the external-skills follow-up (design R13) is recorded in the progress log."
+      ],
+      "verification": [
+        "grep -c -E \"task (handover|takeover|answer|handovers|reconcile|serve)|session handover\" Resources/skills/riela-workflow-run/SKILL.md",
+        "grep -c -E \"taskHandover|tasksAwaitingHandover|requestTaskHandover|answerTask|takeoverTask|heartbeatAttempt|reportAttempt\" Resources/skills/riela-workflow-reference/SKILL.md",
+        "git diff --check"
+      ]
+    },
+    {
+      "planId": "wh-20-reconcile",
+      "planPath": "impl-plans/active/wh-20-reconcile.md",
+      "dependsOn": [
+        "wh-13-gc-sweep",
+        "wh-15-task-commands",
+        "wh-16-graphql-provider",
+        "wh-17-examples",
+        "wh-18-remote-takeover",
+        "wh-19-docs-skills"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+        "impl-plans/active/work-handover-and-takeover.md",
+        "impl-plans/README.md",
+        "impl-plans/progress/wh-20-reconcile.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "README.md",
+        "impl-plans/completed"
+      ],
+      "sharedPathNotes": [
+        {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "Only if the GraphQL-only operation rows live here rather than in +RowsCLI: add the handover field rows."},
+        {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Only if a parity gate reports a missing session subcommand or option enumeration for the new commands."},
+        {"path": "README.md", "intendedEdit": "One link to docs/work-handover.md in the Work Runtime section."},
+        {"path": "impl-plans/completed", "intendedEdit": "Move the umbrella plan and wh-00..wh-20 here only if every completion criterion has evidence; otherwise leave everything active."}
+      ],
+      "acceptanceCriteria": [
+        "The join audit is clean (serial repair authority over earlier plans' writePaths, each repair recorded); catalog rows and SDL are in place; SurfaceParity gates are green and the second SDL regeneration diff is empty.",
+        "All focused suites and example checks pass (validate exit=0 x3; answer and presence run exit=5; orphan run exit=0); the full suite has no unclassified or unfixed regression against wh-00; swiftlint --strict exits 0.",
+        "Umbrella Completion Criteria are checked with evidence; plans are archived only if every box has evidence; README and impl-plans index updated."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-20-reconcile/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/build.log'",
+        "scripts/surface-parity/generate-sdl.sh > tmp/work-handover/wh-20-reconcile/sdl-1.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/sdl-1.log",
+        "scripts/surface-parity/generate-sdl.sh > tmp/work-handover/wh-20-reconcile/sdl-2.log 2>&1; git diff --stat -- Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift > tmp/work-handover/wh-20-reconcile/sdl-2-diff.txt",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SurfaceParity\" > tmp/work-handover/wh-20-reconcile/parity.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/parity.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"HandoverContractsTests|JSONCanonicalTests|WorkHandoverModelsTests|WorkStoreHandoverRecordsTests|DeterministicWorkflowRunnerSuspendTests|SessionResumeSuspendedTests|WorkStoreLeaseTests|WorkStoreTakeoverTests|WorkStoreHandoverRequestTests|HandoverPacketBuilderTests|HandoverCoordinatorTests|TaskAdoptionTests|RuntimeHistoryImportHandoverTests|BackendWaitSignalClassifierTests|GitBranchWorkspaceRuntimeTests|GitPublishBranchAddonTests|DeliverableCollectorTests|HandoverSinkTests|BackendCapabilityPlacementTraitsTests|HostTraitsResolverTests|DeterministicDirectorHandoverTests|LoopNotificationHandoverTests|TaskHandoverGraphQLTests|RielaDataGarbageCollectorHandoverTests|TaskHandoverDispatchTests|TaskHandoverLeaseTests|TaskHandoverRepositoryTests|HandoverRequestAddonTests|TaskHandoverCommandTests|TaskHandoverGraphQLProviderTests|TaskHandoverExampleTests|RielaExampleParityTests|TaskRemoteTakeoverTests\" > tmp/work-handover/wh-20-reconcile/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'for w in task-handover-answer task-handover-presence task-handover-orphan; do .build/debug/riela workflow validate $w --workflow-definition-dir examples; echo \"validate $w exit=$?\"; .build/debug/riela workflow run $w --workflow-definition-dir examples --mock-scenario examples/$w/mock-scenario.json --session-store tmp/work-handover/wh-20-reconcile/sessions --output json; echo \"run $w exit=$?\"; done > tmp/work-handover/wh-20-reconcile/examples.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test > tmp/work-handover/wh-20-reconcile/full-swift-test.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/full-swift-test.log'",
+        "arch -arm64 /bin/zsh -lc 'git diff --name-only 01b38f02 -- \"*.swift\" | xargs swiftlint lint --strict > tmp/work-handover/wh-20-reconcile/swiftlint.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/swiftlint.log'",
+        "git diff --check"
+      ]
+    }
+  ]
+}

@@ -150,3 +150,15 @@ a publish failure (for example, an unreachable remote) needs an operator.
 **Default until answered**: (a). (b) can be added later as an opt-in.
 
 **Impact**: (c) can push a user's unrelated uncommitted work to a remote.
+
+## Q11. Replayed `reportAttempt` (added 2026-10-01, design §10.2 / §14)
+
+**Question**: What happens when a remote successor sends `reportAttempt` a second time with the same lease credential, after the first report was reconciled?
+
+**Context**: The first reconciled report applies a terminal decision or seals a handover, and both delete the attempt's `work_leases` row (completed: `reconcileAttempt`, `WorkStore+Reservation.swift:725`; suspended: `WorkStore+Handovers.swift:172`; decision application: `WorkStore+Decisions.swift:173`). `verifyLeaseToken` (`WorkStore+Leases.swift:39-45`) then finds no lease, and the provider maps that to `unauthorized`.
+
+**Options**: (a) refuse: the replay gets `unauthorized` and changes nothing; (b) idempotent replay: return the first reconciliation result again.
+
+**Default until answered**: (a). It needs no new state. A successor that loses the first response can read the outcome with `taskHandover` or `riela task show`.
+
+**Impact**: under (a), a successor that retries after a lost response sees an error even though its report was applied.

@@ -225,3 +225,46 @@ The last grep must print nothing (exit 1). Update the progress log's Blocked com
 
 The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store and decision file that no remaining plan owns (listed in this plan's `sharedPaths`). Do not block on those files; fix the defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.
 For wh-16 specifically: completed `reportAttempt` fails with "reported task attempt has no recorded decision" in `TaskDispatch+Handover.swift` (tmp/work-handover/wh-16-graphql-provider/focused-r31-retry.log). Fix it so a completed remote report is reconciled and the director records its decision, exactly as for a local attempt. A partial wh-16 is committed ('wip: continue wh-16 ...'); complete it.
+
+### Completed-report root cause and fix (2026-10-01, run session-12; design §10.2 step 4, user-QA Q11)
+
+This section is diagnosis and direction only. It adds no scope beyond the section above. Where the two differ, this section wins.
+
+The failing test already exists and reproduces the defect: `TaskHandoverGraphQLProviderTests.testReportCompletedAttemptAcceptsLeaseCredentialAndReconcilesTask` fails in `focused-r31-retry.log` (43 tests, 1 failure). Keep that test and its assertions (`taskState == succeeded`, `decisionKind == "accept"`).
+
+Root cause:
+- `reconcileExternalTerminal` (`TaskDispatch+Handover.swift:461`) looks for the reserving decision with `listDecisions(taskId:).last(where: { $0.attemptId == attempt.id })`.
+- A takeover successor is reserved from a pending typed takeover decision. `reserveAttempt` reuses that stored decision, and it requires `decision.attemptId == predecessor_attempt_id` (`WorkStore+Reservation.swift:248-271`). The decision therefore names the predecessor, and the lookup can never match the successor.
+- The durable link from the successor to its reserving decision is `work_pending_reservations.consumed_attempt_id`. It is declared `TEXT UNIQUE` (`WorkStore+Schema.swift:137`) and written by `consumePendingReservation` (`WorkStore+Reservation.swift:954-970`).
+- Reservations made without a pending request insert a decision whose `attemptId == attempt.id` (`WorkStore+Reservation.swift:256-265, 294`).
+
+File-level changes:
+- `Sources/RielaWork/WorkStore+Reservation.swift` (writePath). Add a read API:
+  `func reservationDecision(attemptId: AttemptID) throws -> Decision?`
+  - Look up `decision_id` in `work_pending_reservations` where `consumed_attempt_id = attemptId`, then load that decision with `storedDecision` (`WorkStore+Decisions.swift:246`).
+  - When no row matches, fall back to the latest decision whose `attemptId == attemptId`.
+  - Imitate the read-database idiom that the other `WorkStore` read helpers use.
+- `Sources/RielaCLI/TaskDispatch+Handover.swift` (sharedPath). Replace the lookup at line 461 with `store.reservationDecision(attemptId: attempt.id)`.
+  - Keep the error text for the nil case unchanged.
+  - Keep the rest of the function unchanged: evidence save, `AttemptReservation(... launchToken: "")`, and `reconcileTerminal`.
+  - `reconcileTerminal` (`TaskDispatch.swift:358`) reads only `reservation.task` and `reservation.attempt`, so the reserving decision only needs to be the real stored one.
+- Record this shared edit in the progress log with the file, the reason and the test.
+
+Invariants and pitfalls:
+- Do not insert or synthesize a decision to satisfy the lookup.
+- Do not change `reserveAttempt`, `consumePendingReservation` or the pending-reservation predecessor check.
+- Do not add a column, and do not bump `schemaGeneration`.
+- Verification and the director must still run only through `reconcileTerminal`. Do not re-implement them in the provider.
+- If the director does not produce `accept` after the lookup fix, find the reason in the director or verification evidence. Fix the fixture only if it lacks something a local attempt would also need. Never weaken the test's assertions.
+- The suspended path (`sealSuspended`) is unaffected and must stay green.
+
+Tests to add:
+- `WorkStoreReservationTests`:
+  - A takeover reserved through a pending request makes `reservationDecision(attemptId: successor)` return the pending takeover decision.
+  - A plain reservation makes it return the decision whose `attemptId` is that attempt.
+  - An unknown attempt returns `nil`.
+- `TaskHandoverGraphQLProviderTests`: sequential replay (Q11 default (a)). A second `reportAttempt` with the same `heartbeatToken`, sent after a completed report, throws `unauthorized`, and neither the task state nor the decision count changes. The lease row was deleted by `reconcileAttempt` (`WorkStore+Reservation.swift:725`).
+
+Verification: use the session-11 gate commands above (`build-s11.log`, `work-s11.log`, `focused-s11.log`, `git diff --check`, and the `consumed:` grep). Each must end with `exit=0`, and each test log must show a non-zero test count and 0 failures. Then tick this plan's Done criteria and the progress log's completion criteria, citing those logs.
+
+Coverage note (not in scope): the replay regression covers only sequential replay. Two concurrent reports can both pass `verifyLeaseToken` before the lease row is deleted. Log this in the progress log as a finding with a severity field; do not fix it here.

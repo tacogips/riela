@@ -1,5 +1,7 @@
 # wh-00: Full-suite baseline before any source edit
 
+**Status**: Completed 2026-09-30 in session `opus-luna-design-and-implement-review-loop-session-228`. Evidence: `impl-plans/progress/wh-00-baseline.md`. Removed from the dispatch DAG; later plans no longer depend on it.
+
 ```json
 {
   "planId": "wh-00-baseline",
@@ -23,16 +25,16 @@ Non-goals: do not fix any failure, do not edit sources or tests, and do not reru
 
 ## Tasks
 
-- [ ] Prove there is no code drift: `git diff --stat 01b38f02 -- Sources Tests Package.swift Package.resolved examples Resources`
+- [x] Prove there is no code drift: `git diff --stat 01b38f02 -- Sources Tests Package.swift Package.resolved examples Resources`
       must print nothing. Record the output and `git rev-parse HEAD`.
-- [ ] `mkdir -p tmp/work-handover/wh-00`, then build and run the full serial suite:
+- [x] `mkdir -p tmp/work-handover/wh-00`, then build and run the full serial suite:
   - `arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-00/build.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-00/build.log'`
   - `arch -arm64 /bin/zsh -lc 'swift test > tmp/work-handover/wh-00/full-swift-test.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-00/full-swift-test.log'`
     (`swift test` is serial by default. Do not pass `--parallel`.)
-- [ ] Extract every failing test (`error: -[… ]` / `failed (` lines) into
+- [x] Extract every failing test (`error: -[… ]` / `failed (` lines) into
       `tmp/work-handover/wh-00/baseline-failures.txt`, sorted and unique, with the
       total executed/failed/skipped counts from the summary line.
-- [ ] Record in the progress log: HEAD, the drift proof, both log paths, both `exit=`
+- [x] Record in the progress log: HEAD, the drift proof, both log paths, both `exit=`
       lines, counts and the failure list. Tag known environment-dependent tests
       (for example the interleaved-submit timing flake) as `known-flake` only when the log shows it.
 

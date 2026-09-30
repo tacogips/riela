@@ -39,8 +39,8 @@ this repository (R13); a `SessionBackendActivityVerdict.awaiting-user` case
 
 | Wave | Plans (parallel within a wave) | Depends on |
 | --- | --- | --- |
-| W0 (serial) | `wh-00-baseline` | — |
-| W1 | `wh-01-contracts` | wh-00 |
+| W0 (serial) | `wh-00-baseline` — COMPLETED 2026-09-30 (session 228), removed from the dispatch DAG | — |
+| W1 | `wh-01-contracts` | — (baseline already recorded) |
 | W2 | `wh-02-runner-suspend`, `wh-03-work-store`, `wh-04-packet-coordinator`, `wh-05-history-import`, `wh-06-wait-signal`, `wh-07-git-branch-runtime`, `wh-08-deliverable-collector`, `wh-09-handover-sinks`, `wh-10-host-traits`, `wh-11-director-notify`, `wh-12-graphql-contracts`, `wh-13-gc-sweep` | wh-01 |
 | W3 | `wh-14-task-dispatch-runtime` | wh-02 … wh-11 |
 | W4 | `wh-15-task-commands`, `wh-16-graphql-provider`, `wh-17-examples` | wh-14 (wh-16 also needs wh-12) |
@@ -167,7 +167,7 @@ make only the edit stated in its `sharedPathNotes`.
 
 | Plan | Status | Evidence |
 | --- | --- | --- |
-| wh-00-baseline | NOT_STARTED | — |
+| wh-00-baseline | COMPLETED | `impl-plans/progress/wh-00-baseline.md` |
 | wh-01-contracts | NOT_STARTED | — |
 | wh-02 … wh-13 | NOT_STARTED | — |
 | wh-14-task-dispatch-runtime | NOT_STARTED | — |
@@ -206,6 +206,11 @@ box has evidence (wh-20). Otherwise they stay active with an accurate progress l
 **Tasks In Progress**: None
 **Blockers**: None. Q1–Q8 proceed on their defaults
 **Notes**: The baseline (wh-00) must run before any source edit
+
+### Session: 2026-09-30 (run session-228)
+**Tasks Completed**: wh-00 baseline at 56aed135: 2778 run, 2775 passed, 2 skipped, 1 failed (`WorkflowCommandCrossWorkflowDispatchTests.testSubprocessAbruptTerminationCheckpointsReopenCanonicalSQLiteWithoutDuplicatingDurableEffect`, 180 s scratch-build subprocess timeout). Logs under `tmp/work-handover/wh-00/`.
+**Blockers**: The run stopped because the branch progress check treats a failing full-suite command as materially unverified, even for the baseline plan whose job is to record failures.
+**Notes**: wh-00 was removed from the dispatch DAG. The wh-20 full-suite gate is now a baseline-comparison command (exit 0 iff no failure outside the wh-00 baseline); the raw `swift test` exit is reported as `suiteExit`.
 
 ## Related Plans
 

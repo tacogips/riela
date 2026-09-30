@@ -92,3 +92,8 @@ Use the flag spellings each command's `--help` shows, and record any adjustment.
 - [ ] The join audit is clean; the catalog rows and SDL are in place; the parity gates are green
 - [ ] All focused suites and example checks pass; the full suite has no new failures against wh-00
 - [ ] The umbrella Completion Criteria are checked with evidence; archive or keep active accordingly; the README and index are updated
+
+
+## Full-suite gate (amended 2026-09-30)
+
+The base commit already fails one test (`WorkflowCommandCrossWorkflowDispatchTests.testSubprocessAbruptTerminationCheckpointsReopenCanonicalSQLiteWithoutDuplicatingDurableEffect`, a 180 s scratch-build subprocess timeout; see `impl-plans/progress/wh-00-baseline.md`). So the raw `swift test` exit status is informational: report it as `suiteExit`. The behavioral full-suite gate is the baseline-comparison command in the dispatch manifest. It exits 0 only when the suite log ends with an `exit=` line and `tmp/work-handover/wh-20-reconcile/new-failures.txt` is empty. If a baseline test newly passes or the timing test fails differently, record it and do not treat it as a regression. Any other new failure must be fixed or classified with evidence.

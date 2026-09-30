@@ -20,6 +20,8 @@
     "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
     "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
     "Tests/RielaCLITests/HandoverRequestAddonTests.swift",
+    "Sources/RielaWork/WorkStore+Takeover.swift",
+    "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
     "impl-plans/progress/wh-14-task-dispatch-runtime.md"
   ],
   "sharedPaths": [
@@ -284,3 +286,7 @@ Everything below stays inside this plan's writePaths. Do not edit `Sources/Riela
    Repository fixtures live under the harness temp dir (a temp repo, a bare remote and a second clone). Never use the project repo.
 6. **Progress log.** Update `impl-plans/progress/wh-14-task-dispatch-runtime.md` with the test names per acceptance signal (1–5),
    the three Verification commands with `exit=` lines and log paths, and tick the Done criteria only with evidence.
+
+### Scope amendment (2026-10-01, after run session-4)
+
+`Sources/RielaWork/WorkStore+Takeover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` are now owned by this plan. `WorkStore.latestAnswer(handoverId:)` returns nil although a matching `.answer` decision is stored (see `tmp/work-handover/wh-14-task-dispatch-runtime/step6-implement-resume-3/dispatch-answer-db-diagnostic.log`). Its filter `decision.createdAt >= packet.createdAt` compares timestamps that fall in the same second and may be stored with different precision; find the real cause, fix it without weakening the check that the answer belongs to this handover, add a direct `requestTakeover`-after-answer regression test in WorkStoreTakeoverTests, and rerun the wh-14 focused suite. Continue the committed wh-14 work; do not restart it.

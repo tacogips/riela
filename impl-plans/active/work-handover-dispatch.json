@@ -156,6 +156,8 @@
     "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
     "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
     "Tests/RielaCLITests/HandoverRequestAddonTests.swift",
+    "Sources/RielaWork/WorkStore+Takeover.swift",
+    "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
     "impl-plans/progress/wh-14-task-dispatch-runtime.md"
    ],
    "sharedPaths": [

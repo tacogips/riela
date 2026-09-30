@@ -406,7 +406,8 @@ public actor DistributedJobController {
         }.map(\.id),
         lastSeenAt: lastSeen,
         online: lastSeen.map { now.timeIntervalSince($0) < offlineAfter } ?? false,
-        capabilities: worker.capabilities
+        capabilities: worker.capabilities,
+        traits: worker.traits
       )
     }
   }

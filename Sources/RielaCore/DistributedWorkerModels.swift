@@ -77,6 +77,7 @@ public struct DistributedWorkerStatus: Codable, Equatable, Sendable {
   public let lastSeenAt: Date?
   public let online: Bool
   public let capabilities: [BackendCapability]
+  public let traits: [HostTrait]
 
   public init(
     workerId: String,
@@ -85,7 +86,8 @@ public struct DistributedWorkerStatus: Codable, Equatable, Sendable {
     activeJobIds: [String],
     lastSeenAt: Date?,
     online: Bool,
-    capabilities: [BackendCapability] = []
+    capabilities: [BackendCapability] = [],
+    traits: [HostTrait] = []
   ) {
     self.workerId = workerId
     self.groups = groups
@@ -94,6 +96,7 @@ public struct DistributedWorkerStatus: Codable, Equatable, Sendable {
     self.lastSeenAt = lastSeenAt
     self.online = online
     self.capabilities = capabilities
+    self.traits = Array(Set(traits)).sorted()
   }
 }
 

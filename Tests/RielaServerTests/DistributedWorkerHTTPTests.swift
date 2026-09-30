@@ -245,6 +245,35 @@ final class DistributedWorkerHTTPTests: XCTestCase {
     XCTAssertEqual(try store.loadHostSnapshots().first?.traits, [.gui, .userReachable])
   }
 
+  func testRegisteredWorkerStatusPublishesSortedTraits() async throws {
+    let controller = try controller()
+    let route = try router(controller)
+    let body = try JSONEncoder().encode(DistributedWorkerRequest(
+      operation: .register, capacity: 1, traits: [.userReachable, .gui]
+    ))
+    let response = await route.response(for: RielaHTTPRequest(
+      method: "POST", path: DistributedWorkerHTTPRouter.path,
+      headers: ["content-type": "application/json", "authorization": "Bearer " + tokenA],
+      body: body
+    ))
+    XCTAssertEqual(response.status, 200)
+    let statuses = try await controller.inspectWorkers(now: Date())
+    XCTAssertEqual(statuses.first?.traits, [.gui, .userReachable])
+  }
+
+  func testRegisteredWorkerStatusDefaultsToEmptyTraits() async throws {
+    let controller = try controller()
+    let route = try router(controller)
+    let body = try JSONEncoder().encode(DistributedWorkerRequest(operation: .register, capacity: 1))
+    let response = await route.response(for: RielaHTTPRequest(
+      method: "POST", path: DistributedWorkerHTTPRouter.path,
+      headers: ["content-type": "application/json", "authorization": "Bearer " + tokenA], body: body
+    ))
+    XCTAssertEqual(response.status, 200)
+    let statusesWithoutTraits = try await controller.inspectWorkers(now: Date())
+    XCTAssertEqual(statusesWithoutTraits.first?.traits, [])
+  }
+
   func testAuthenticationContentTypeAndBrowserRequestsFailClosed() async throws {
     let router = try router(controller())
     let body = try JSONEncoder().encode(DistributedWorkerRequest(operation: .register, capacity: 1))

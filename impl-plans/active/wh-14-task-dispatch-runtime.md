@@ -435,3 +435,174 @@ Work still to do. It is all in this plan's writePaths. Fix source only when a ne
 5. Progress log: record the test names for acceptance signals 1–5, run all five Verification commands (build, focused, regression,
    workstore, persistence) into fresh logs under `tmp/work-handover/wh-14-task-dispatch-runtime/<run-subdir>/`, each ending with `exit=0` and a
    non-zero executed count, and tick the Done criteria only when that evidence exists.
+
+### Resume status at 076652a0 with design §21 R27/R28 (run session-8, source-verified)
+
+Where this section and "Resume status at 62b284c6" differ, this section wins. The R26 invariants (items 1–6) still hold. Do not
+re-implement them and do not restart the plan. All edits below are inside this plan's writePaths. Do **not** edit these accepted
+wh-01/wh-03/wh-07 files: `Sources/RielaWork/TaskAdoption.swift`, `Sources/RielaWork/WorkStore+Adoption.swift`,
+`Sources/RielaWork/WorkHandover.swift`, `Sources/RielaWork/HandoverProtocols.swift` and `Sources/RielaCLI/GitBranchWorkspaceRuntime.swift`.
+
+**Intent.** Two kinds of work must be takeover-able: an adopted plain session (`session handover`, §10.5) and an orphaned repository
+task (`--force-orphan` / `task reconcile`). Today both fail:
+- The adopted attempt has no `isolation`. The publisher therefore seals `checkpointFailed("attempt isolation is unavailable")` with
+  `branch: ""`.
+- The dispatch accepts only `.published` (`guard case .published` in `TaskDispatch+Handover.swift` `prepareTaskExecution`).
+
+Design §21 R27 (adoption claims the checkout) and R28 (takeover by deliverable state) fix both. Under the user-qa Q9 default, a
+`checkpointFailed` deliverable is refused.
+
+**Already done at 076652a0.** Keep these and only re-verify them:
+- `TaskHandoverLeaseTests.testRevivedOwnerFailsLeaseLostWithoutSealingSecondPacket`: expiry refusal, force-orphan seal, one packet,
+  `failed(.leaseLost)`, and the queued takeover completes.
+- `TaskHandoverLeaseTests.testReconcileExpiredDryRunDoesNotMutateAndSealsOwnerLost`.
+- `TaskHandoverDispatchTests.testAdoptAndSealCreatesOperatorMovePacket`.
+- The R25 regressions `WorkStoreTakeoverTests.testSameSecondAnswerAfterSealAllowsTakeover`, `testLatestAnswerRejectsForeignAttempt`
+  and `testAnswerBeforeSealDoesNotAllowTakeover`.
+
+#### A. R28: takeover by deliverable state (independent of B, do it first)
+
+1. `Sources/RielaWork/WorkStore+Takeover.swift`: in the existing `public extension WorkStore`, add one pure helper with this pinned
+   signature: `public static func takeoverRepositoryRefusal(_ packet: HandoverPacket) -> String?`.
+   - It returns `"takeover repository deliverable checkpoint failed: <reason>"` when any `.repository` deliverable is
+     `.checkpointFailed(reason)`, and nil otherwise.
+2. Same file, `requestTakeover`: when the helper returns non-nil, throw `WorkStoreError(<refusal>)`.
+   - Place the check after the unanswered-question check and before the pending-reservation lookup and any insert.
+   - The transaction then writes nothing, so the task stays `waiting` with no decision and no `work_pending_reservations` row.
+3. `Sources/RielaCLI/TaskDispatch+Handover.swift` `prepareDispatchPlan`: right after `takeoverPacket` is resolved for a `.takeover`
+   entry, throw the same refusal when the helper returns non-nil.
+   - This covers both the stored packet and `packetOverride`.
+   - It runs before `dispatcher.reserve` in `TaskDispatch.run`, so no attempt, lease or fence is created.
+4. Same file, `prepareTaskExecution`: replace `guard case .published` with a switch on the deliverable state.
+   - `.published` and `.unpublished` call `workspace.materialize(...)` unchanged. `materialize` already handles `.unpublished`: it
+     starts from `lastKnown` when that commit exists locally, and from `baseRevision` otherwise.
+   - `.checkpointFailed` throws the helper's message. This is defensive, because step 3 already refused it.
+   - Delete the "is not published" string.
+- Pitfall: do not convert `.checkpointFailed` into `.unpublished`. That is Q9 option (b), not the default.
+- Pitfall: accepted wh-07 behavior refuses an orphan successor on a **shared** root that the dead owner left dirty ("shared repository
+  is dirty"). A same-root `.worktree` successor is refused too: the predecessor's worktree
+  `<root>/.riela/worktrees/<predecessorAttempt>` still holds the deliverable branch, and `git worktree add -B` refuses a branch that is
+  checked out in another worktree. The orphan repository takeover test therefore runs the successor from a SECOND CLONE of the bare
+  remote, passed as the dispatch working directory. `.worktree` isolation is still fine there. Do not change
+  `GitBranchWorkspaceRuntime.swift`.
+
+#### B. R27: adoption claims the checkout
+
+The work is in `Sources/RielaCLI/TaskHandoverRuntime.swift` `adoptAndSeal`, plus the hooks in items 5–6. The ordering below is the
+contract (design R27 (2)).
+1. Resolve the repository after the lock is acquired, the snapshot is loaded and the running check passes.
+   - Run `git rev-parse --show-toplevel` in `workingDirectory` through `FoundationGitCommandRunner` / `GitCommandInvocation`
+     (`/usr/bin/git`), as `GitBranchWorkspaceRuntime` does.
+   - A non-zero exit means "not a repository". Pass `repositoryRoot: nil` to `TaskAdoption.adopt`, skip the rest of B and seal as
+     today. With `task.context == nil`, no repository deliverable is produced.
+2. Preflight **before `TaskAdoption.adopt` writes any row**. Every check must pass. On any failure, throw
+   `WorkStoreError("session adoption refused: <reason>")` and write nothing.
+   - `git rev-parse --verify HEAD^{commit}` must succeed, and its sha is the `baseRevision`. An unborn HEAD is refused.
+   - The branch name is `PublicationPolicy.branchTemplate` with `{taskId}` and `{generation}` substituted:
+     - Task id: `existingTaskId`, else exactly the id `TaskAdoption.adopt` derives (`"task-adopted-"` + the session id, with
+       `[^A-Za-z0-9._-]` replaced by `-`).
+     - Policy: the existing task's `guardPolicy.handover?.publish`, else `PublicationPolicy()`.
+     - Generation: 1 for a new task. For an existing task it is `max(listAttempts(taskId:).generation) + 1`, mirroring
+       `WorkStore.nextGeneration`.
+   - `git check-ref-format --branch <name>` must exit 0.
+   - `git show-ref --verify --quiet refs/heads/<name>` must exit non-zero, because the branch must not exist yet.
+3. Call `TaskAdoption.adopt(..., repositoryRoot: <top-level>)`. Throw unless the returned task id and attempt `generation` produce
+   the preflight branch name. This catches drift in the derivation mirrored in item 2.
+4. Claim the checkout: run `git switch -c <name>` at the top-level, carrying the working tree and index.
+   - Do **not** call `ensureBranch(.shared)`, which refuses a dirty tree by design.
+   - Run no `add`, `stash`, `reset` or `checkout`.
+   - On failure, throw `WorkStoreError("session adoption claim failed: <stderr head>")`. This is a documented residual edge case;
+     add no rollback code.
+5. `Sources/RielaWork/WorkStore+Isolation.swift`: add
+   `func recordAdoptedAttemptIsolation(attemptId: AttemptID, isolation: IsolationRef) throws -> Bool`.
+   - Imitate `updateAttemptIsolation`, with
+     `WHERE attempt_id = ? AND state = 'terminal' AND json_extract(record, '$.isolation') IS NULL`.
+   - Do not widen `updateAttemptIsolation`'s prepared/running predicate.
+   - `adoptAndSeal` requires `true`. It then sets `attempt.isolation = IsolationRef(path: <top-level>, branch: <name>, baseRevision:
+     <HEAD sha>)` on the in-memory attempt passed to `seal`.
+6. Seal as a live owner with no reservation fence.
+   - In `TaskHandoverSupport.swift`, `TaskDeliverablePublisher.reservationFence` becomes `Int?`. `nil` skips only the lease-fence
+     comparison; checkpoint and publish run as usual.
+   - The private `seal(...)` gains `adoptedWithoutLease: Bool = false` and passes `nil` only when it is true. Every other caller
+     keeps `(try? loadLease(attemptId:)?.fence) ?? -1`.
+   - `adoptAndSeal` calls `seal(..., ownerAlive: true, adoptedWithoutLease: true)`.
+- Pitfall: never map "lease row missing" to `nil` in general. A leased attempt whose lease is gone or has a different fence must still
+  produce `checkpointFailed("fenced")` and push nothing.
+- Pitfall: keep the `SessionExecutionLock` held from item 1 through the seal.
+- Invariant: for a non-repository working directory, the behavior matches today's, except that the bogus repository deliverable is
+  gone.
+
+#### C. Remaining tests (fix source only when a test exposes a defect)
+
+`Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift` (R26; none of these exist yet):
+- A pending `work_cancellations` row whose decision kind is `handover` → saving `failed(.stalled)` succeeds.
+- The same row with a non-handover decision → `failed(.stalled)` throws `cancellationPending`, and `failed(.cancelled)` succeeds.
+- A session already saved as `failed(.cancelled)` → saving `failed(.stalled)` throws `terminalSnapshotConflict`.
+- A cancelled run whose `cancellationCause` returns nil → `failed(.cancelled)` with reason `"workflow run cancelled"`.
+
+`Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (R28):
+- A packet with a repository deliverable `.checkpointFailed(reason: "remote unreachable")` → `requestTakeover` throws a message
+  containing `checkpoint failed: remote unreachable`. The task is still `waiting`, with no takeover decision and no pending reservation.
+- A packet with `.unpublished(lastKnown: nil)` → `requestTakeover` succeeds and enqueues one pending `.takeover`.
+
+`Tests/RielaCLITests/TaskHandoverRepositoryTests.swift` uses a temp repo, a bare remote and a second clone, all under the test's own
+temp dir. Add a small fixture in `TaskHandoverTestSupport.swift` that imitates the private `BranchRuntimeRepository` in
+`GitBranchWorkspaceRuntimeTests.swift`. Never touch the project repository or its `origin`. Cases:
+- A repository task start → branch `riela/task/<taskId>/g1` is checked out, and `Attempt.isolation` is stored with branch and
+  baseRevision.
+- Step boundaries → commits whose trailer is `Riela-Checkpoint: <attemptId>/<stepExecutionId>`.
+- An envelope handover → the bare remote has `refs/heads/riela/task/<taskId>/g1` at the deliverable's `headCommit`, and the state is
+  `.published`.
+- A takeover with the second clone as working directory → materialized at `headCommit`, and the task ends `succeeded`.
+- `TaskDeliverablePublisher.publish` for a live owner whose lease fence differs from `reservationFence` → `.checkpointFailed("fenced")`,
+  and `git ls-remote <bare>` shows no `riela/task/*` ref.
+- `checkpoint: everyMs(50)` with a node that writes a file into the isolation path and then sleeps ≥ 500 ms → at least one commit whose
+  trailer starts with `Riela-Checkpoint: <attemptId>/timer-`. Assert ≥ 1, never an exact count.
+- An orphaned `.worktree` repository task whose owner left an uncommitted file → the deliverable is `.unpublished(lastKnown: nil)` and
+  its `dirtyPaths` contains that file. The base commit is pushed to the bare remote before the task starts. The takeover dispatch uses
+  the second clone (cloned from the bare remote) as its working directory and materializes a worktree inside that clone at
+  `baseRevision`, and the task ends `succeeded`.
+- Adoption in a git repo with a bare remote and a dirty tracked file:
+  - The deliverable is `.published` on branch `riela/task/<adopted.id>/g<attempt.generation>`.
+  - `headCommit` contains the dirty change, and the adopted attempt's stored `isolation` is set.
+  - `requestTakeover` plus a dispatch from the second clone → the task ends `succeeded`.
+- Adoption refusals:
+  - The branch already exists → the call throws `session adoption refused` and `loadTask(id:)` is nil. After the branch is deleted,
+    the same session adopts successfully.
+  - An unborn HEAD → refused, with no task row.
+
+`Tests/RielaCLITests/TaskHandoverDispatchTests.swift`:
+- A `.start` dispatch while a handover is unclaimed → waiting `handover`, and no attempt is created.
+- A takeover of an unanswered `userInputRequired` packet → refused with the `riela task answer` hint.
+- A file sink on the task → the packet file exists and the sink ref is recorded.
+- A failing command sink → publication evidence is recorded, and the seal still succeeds.
+- A wait signal (a fake adapter emits a pending tool call, then goes silent) → reason `userPresenceRequired`, and the session ends
+  `failed(.stalled)` from a single write.
+- A cooperative `requestHandover(immediate: false)` during step 1 → suspended before step 2 with reason `operatorMove`.
+- A cooperative `requestHandover(immediate: true)` → `failed(.cancelled)` and exactly one packet.
+- `adoptAndSeal` in a non-git working directory → the packet has no repository deliverable. `requestTakeover` plus a dispatch → the
+  task ends `succeeded`.
+
+#### D. Verification
+
+Write every log into a fresh run-subdir, for example `tmp/work-handover/wh-14-task-dispatch-runtime/step6-implement-resume-9/`. Run
+the five manifest commands (build, focused, regression, workstore, persistence) with that subdir in place of the plain log directory,
+then `git diff --check` and strict SwiftLint on the changed Swift files (as in progress update 7). Each swift log must end `exit=0`,
+and each test log must show a non-zero executed count with 0 failures. The executed counts must exceed the 076652a0 numbers
+(focused 11, workstore 20, persistence 26). Regression is expected to stay at 84.
+
+#### E. Done criteria for this resume (mechanically checkable)
+
+- `grep -n "is not published" Sources/RielaCLI/TaskDispatch+Handover.swift` returns nothing.
+- `grep -n "takeoverRepositoryRefusal"` shows the helper in `WorkStore+Takeover.swift` and call sites in both `requestTakeover` and
+  `TaskDispatch+Handover.swift`.
+- `grep -n "recordAdoptedAttemptIsolation"` shows the method in `WorkStore+Isolation.swift` and its one caller in
+  `TaskHandoverRuntime.swift`.
+- `git diff 076652a0 -- Sources/RielaWork/TaskAdoption.swift Sources/RielaCLI/GitBranchWorkspaceRuntime.swift Sources/RielaWork/WorkHandover.swift`
+  is empty.
+- Every test named in C exists and passes in the D logs.
+- `impl-plans/progress/wh-14-task-dispatch-runtime.md` gains an update that:
+  - maps acceptance signals 1–5 to test names (signal 3 names the repository publish/second-clone test; signal 4 names the
+    revived-owner and orphan-worktree tests);
+  - lists the D commands with their `exit=` lines and log paths;
+  - ticks the Done criteria only with that evidence.

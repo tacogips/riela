@@ -115,3 +115,26 @@ Q2 (store only unless opted in).
 
 **Impact**: A user-wide default sink would need a new profile field and
 would publish packets from every task without per-task opt-in.
+
+## Q9. Takeover of a `checkpointFailed` repository deliverable (added 2026-10-01, design §9.1 / §21 R28)
+
+**Question**: When the predecessor's handover checkpoint or publish failed,
+and the packet's repository deliverable is `checkpointFailed(reason:)`,
+should a takeover be refused, or should it start from `baseRevision` the
+way an `unpublished` deliverable does?
+
+**Context**: A `checkpointFailed` packet names the branch and base, but the
+predecessor's commits and working tree never reached the remote. Starting
+from `baseRevision` silently drops that work. Refusing leaves the task
+`waiting(.handover)` until an operator acts.
+
+**Options**: (a) refuse before reserving an attempt, with
+`takeover repository deliverable checkpoint failed: <reason>`, and the
+operator recovers through `task decide`; (b) start from `baseRevision`,
+with the failure reason and `dirtyPaths` in the brief.
+
+**Default until answered**: (a).
+
+**Impact**: (a) never loses predecessor work without a human seeing it, but
+a publish failure (for example, an unreachable remote) needs an operator.
+(b) keeps the task moving at the cost of discarded work.

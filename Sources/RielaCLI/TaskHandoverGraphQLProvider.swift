@@ -238,11 +238,6 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
   ) async throws -> GraphQLReportAttemptPayload {
     let attemptId = AttemptID(input.attemptId)
     let located = try locateAttempt(attemptId, context: context)
-    do {
-      _ = try located.store.verifyLeaseToken(attemptId: attemptId, token: input.token)
-    } catch {
-      throw TaskHandoverGraphQLError(code: "unauthorized", message: "lease token does not match")
-    }
     let snapshotData = try JSONEncoder().encode(JSONValue.object(input.snapshot))
     let snapshot = try JSONCanonical.decoder().decode(WorkflowRuntimePersistenceSnapshot.self, from: snapshotData)
     guard let attempt = try located.store.loadAttempt(id: attemptId),
@@ -251,6 +246,9 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
     }
     let deliverablesData = try JSONEncoder().encode(JSONValue.array(input.deliverables.map(JSONValue.object)))
     let deliverables = try JSONCanonical.decoder().decode([DeliverableRef].self, from: deliverablesData)
+    guard try located.store.claimLeaseForReport(attemptId: attemptId, token: input.token) else {
+      throw TaskHandoverGraphQLError(code: "unauthorized", message: "lease token does not match")
+    }
     let result = try await TaskDispatch().reconcileExternalTerminal(
       attemptId: attemptId,
       snapshot: snapshot,

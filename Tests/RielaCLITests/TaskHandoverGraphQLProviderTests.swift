@@ -6,6 +6,11 @@ import RielaWork
 import XCTest
 @testable import RielaCLI
 
+private enum ConcurrentReportOutcome: Equatable, Sendable {
+  case success(taskState: String?, decisionKind: String?)
+  case unauthorized
+}
+
 @MainActor
 final class TaskHandoverGraphQLProviderTests: XCTestCase {
   func testPacketLookupAndAwaitingHandoverTraitFiltering() async throws {
@@ -166,6 +171,71 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
     }
     XCTAssertEqual(try harness.store.loadTask(id: task.id), taskAfterFirstReport)
     XCTAssertEqual(try harness.store.listDecisions(taskId: task.id).count, decisionCountAfterFirstReport)
+  }
+
+  func testConcurrentReportsWithSameCredentialReconcileExactlyOnce() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let task = try harness.seed("task-repair-loop", state: .waiting)
+    let predecessorId = AttemptID("attempt-report-concurrent-predecessor")
+    try savePredecessor(task: task, attemptId: predecessorId, store: harness.store)
+    let packet = try savePresencePacket(task: task, fromAttemptId: predecessorId, store: harness.store)
+    let provider = provider(harness)
+    let context = context(harness)
+    let reservation = try await provider.takeoverTask(
+      GraphQLTakeoverTaskInput(
+        taskId: task.id.rawValue, handoverId: packet.id.rawValue,
+        hostId: "worker-concurrent", traits: ["userReachable"]
+      ),
+      context: context
+    )
+    let attemptId = try XCTUnwrap(reservation.attemptId)
+    let token = try XCTUnwrap(reservation.heartbeatToken)
+    let now = Date()
+    let session = WorkflowSession(
+      workflowId: "task-repair-loop", sessionId: try XCTUnwrap(reservation.sessionId),
+      status: .completed, entryStepId: "repair", currentStepId: nil,
+      createdAt: now, updatedAt: now
+    )
+    let snapshot = try snapshotObject(WorkflowRuntimePersistenceSnapshot(session: session))
+    let taskBeforeReports = try XCTUnwrap(harness.store.loadTask(id: task.id))
+
+    let outcomes = try await withThrowingTaskGroup(of: ConcurrentReportOutcome.self) { group in
+      for _ in 0..<2 {
+        group.addTask {
+          do {
+            let report = try await provider.reportAttempt(
+              GraphQLReportAttemptInput(
+                attemptId: attemptId, token: token, snapshot: snapshot, deliverables: []
+              ),
+              context: context
+            )
+            return .success(taskState: report.taskState, decisionKind: report.decisionKind)
+          } catch let error as TaskHandoverGraphQLError where error.code == "unauthorized" {
+            return .unauthorized
+          }
+        }
+      }
+      var collected: [ConcurrentReportOutcome] = []
+      for try await outcome in group { collected.append(outcome) }
+      return collected
+    }
+
+    let successes = outcomes.compactMap { outcome -> (String?, String?)? in
+      guard case let .success(taskState, decisionKind) = outcome else { return nil }
+      return (taskState, decisionKind)
+    }
+    XCTAssertEqual(successes.count, 1)
+    XCTAssertEqual(successes.first?.0, TaskState.succeeded.rawValue)
+    XCTAssertEqual(successes.first?.1, "accept")
+    XCTAssertEqual(outcomes.filter { $0 == .unauthorized }.count, 1)
+
+    let decisions = try harness.store.listDecisions(taskId: task.id)
+    XCTAssertEqual(decisions.filter { $0.attemptId == AttemptID(attemptId) && $0.kind.kindName == "accept" }.count, 1)
+    let taskAfterReports = try XCTUnwrap(harness.store.loadTask(id: task.id))
+    XCTAssertEqual(taskAfterReports.state, .succeeded)
+    // One terminal reconciliation moves running to verifying; its single accept moves to succeeded.
+    XCTAssertEqual(taskAfterReports.version, taskBeforeReports.version + 2)
   }
 
   func testReportSuspendedAttemptAcceptsLeaseCredentialAndSealsHandover() async throws {

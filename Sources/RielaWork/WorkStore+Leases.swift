@@ -44,6 +44,29 @@ public extension WorkStore {
     return lease
   }
 
+  /// Claims one report by rotating the presented lease credential to an
+  /// unreturned digest before report reconciliation begins.
+  func claimLeaseForReport(attemptId: AttemptID, token: String, now: Date = Date()) throws -> Bool {
+    let database = try openWritable()
+    return try database.transaction { database in
+      let replacementDigest = Self.launchTokenDigest(UUID().uuidString.lowercased())
+      let changed = try database.executeAndReturnChangedRowCount(
+        "UPDATE work_leases SET token_digest = ?, updated_at = ? WHERE attempt_id = ? AND token_digest = ?",
+        bindings: [
+          .text(replacementDigest), .text(Self.timestamp(now)), .text(attemptId.rawValue),
+          .text(Self.launchTokenDigest(token))
+        ]
+      )
+      guard changed == 1 else { return false }
+
+      var attempt = try requiredAttempt(attemptId, in: database)
+      attempt.launch?.tokenDigest = replacementDigest
+      attempt.launch?.updatedAt = now
+      try replaceAttempt(attempt, in: database)
+      return true
+    }
+  }
+
   func expiredLeases(now: Date) throws -> [AttemptLease] {
     guard let database = try readLeaseDatabase() else { return [] }
     let rows = try database.query(

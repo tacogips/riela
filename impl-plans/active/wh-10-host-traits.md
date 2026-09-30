@@ -102,4 +102,26 @@ Run session-1 blocked this plan twice, correctly, because carrying `worker.json`
 
 wh-01 through wh-09 and wh-11 through wh-13 are accepted and committed (`d043cbad`). Build on them; do not re-implement them.
 
-- `Sources/RielaCore/DistributedWorkerModels.swift` (added after run session-2): add `traits` to `DistributedWorkerStatus` so worker status and doctor show them. The partial wh-10 implementation from session-2 is committed; complete it rather than restart.
+- `Sources/RielaCore/DistributedWorkerModels.swift` (added after run session-2): add `traits` to `DistributedWorkerStatus` so worker status shows them (design §21 R24). The partial wh-10 implementation from session-2 is committed; complete it rather than restart.
+
+## Resume checklist (from 08d4fc10, design §21 R23/R24)
+
+Everything above except the `DistributedWorkerStatus` field is already committed at `08d4fc10` and recorded in
+`impl-plans/progress/wh-10-host-traits.md`. Do not rewrite it. The only remaining source work:
+
+1. `DistributedWorkerModels.swift:DistributedWorkerStatus`: add `public let traits: [HostTrait]` and an init parameter
+   `traits: [HostTrait] = []` placed after `capabilities`. Normalize it the same way `DistributedWorkerRegistration`
+   does (`Array(Set(traits)).sorted()`). Keep the synthesized `Codable`, so decoding stays strict: a payload without
+   `traits` fails and no `decodeIfPresent` is used (R23, no back-compat). Update any fixture that fails to decode.
+2. `DistributedJobController.swift:workerStatuses(now:offlineAfter:)`: pass `traits: worker.traits` from the stored
+   registration. Change nothing else in that function.
+3. `DistributedWorkerHTTPTests`: add a case where a worker registers with `[.userReachable, .gui]` →
+   `controller.inspectWorkers(now:)` returns that worker with `traits == [.gui, .userReachable]`. Add a second case
+   where registration without traits → `traits == []`. Imitate
+   `testRegistrationPublishesDeclaredTraitsToWorkHostStore`.
+4. Rerun the three Verification commands. Overwrite `build.log` and `focused.log`, and update the progress log: tick the
+   amended worker-status criterion and remove the "Blocker and handoff" section, replacing it with the new evidence.
+
+Not in scope: `doctor` (it reports local host traits only), `Sources/RielaApp` worker status UI, and the CLI `--traits` flag (wh-15/wh-18).
+Done when: `grep -n "traits" Sources/RielaCore/DistributedWorkerModels.swift` shows the status field, `focused.log` ends with
+`exit=0` and lists the two new test names as passed, and `git diff --check` is empty.

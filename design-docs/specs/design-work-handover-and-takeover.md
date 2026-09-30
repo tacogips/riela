@@ -1224,3 +1224,10 @@ Refinements made while decomposing the implementation plan (same date):
 | R20 | S2 and S4 always end `suspended` | boundary handovers (envelope, add-on, cooperative `task handover`) end `suspended`; handovers that interrupt a running node end `failed` with `.stalled` (inactivity, wait signal), `.cancelled` (`task handover --now`) or `.leaseLost` (fence) | a cancelled node cannot be recorded as a clean suspend; history import accepts all of these sources |
 | R21 | `riela/handover-request` resume step defaults | `resumeStepId` is required in its config and must be the add-on step's selected next step | re-running the add-on would request again |
 | R22 | cooperative `task handover` "observed by the owner's `TaskRunCancellation` loop" | the loop records the request; the runner consults a boundary-handover hook on `DeterministicWorkflowRunRequest` after each accepted step and suspends before the next step | only the runner knows the step boundary |
+
+Reconciliation at `c0a138b9` (before finishing wh-10, same date):
+
+| # | Was | Now | Source evidence |
+| --- | --- | --- | --- |
+| R23 | `traits: Set<HostTrait>` / `requiredTraits: Set<HostTrait>` (§4, §10.3) | `[HostTrait]` deduplicated and sorted at init, strict decode (unknown value fails); placement compares as sets | accepted wh-01 source: `HandoverContracts.swift:34-42`, `DistributedWorkerModels.swift:28-67`, `WorkHandover.swift:187,248`, `BackendCapabilityPlacement.swift:64,209`; R17 already encodes sets as sorted arrays |
+| R24 | worker traits reach registration and the controller-side `HostCapabilitySnapshot` only | `DistributedWorkerStatus` also gains `traits: [HostTrait]` (strict decode), filled from the stored registration in `DistributedJobController.workerStatuses`, so `workers()`/`inspectWorkers()` expose declared worker traits; `doctor` keeps showing the local host's traits only | `DistributedWorkerModels.swift:72-98` has no `traits`; `DistributedJobController.swift:398-410` builds status from the registration; wh-10 scope amendment |

@@ -171,4 +171,52 @@ At HEAD 09953552, `beforeExecution` is a stored property on `TaskDispatch` (`Sou
 
 The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store, decision and GraphQL-provider file that no remaining plan owns (listed in `sharedPaths`). Do not block on those files; fix a defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.
 
-For wh-17: a partial wh-17 is committed ('wip: partial wh-17 task handover examples'); complete it. The orphan example exposed a runtime defect: successor guard evaluation at `Sources/RielaCLI/TaskDispatch.swift:432-439` rejects the takeover with "task attempt has no durable terminal session for guard evaluation" when the fenced dead predecessor never persisted a terminal session (tmp/work-handover/wh-17-examples/orphan-after-review.log). Fix it in the runtime so guard evaluation accepts a fenced, reconciled `failed(.leaseLost)` or never-launched predecessor without violating R26 (single terminal write), add a runtime regression, then make the orphan example pass end to end with a real session (no fake session).
+For wh-17: a partial wh-17 is committed ('wip: partial wh-17 task handover examples'); complete it. The orphan example exposed a runtime defect: successor guard evaluation at `Sources/RielaCLI/TaskDispatch.swift:432-439` rejects the takeover with "task attempt has no durable terminal session for guard evaluation" when the fenced dead predecessor never persisted a terminal session (tmp/work-handover/wh-17-examples/orphan-after-review.log). Fix it in the runtime so guard evaluation accepts a fenced, reconciled `failed(.leaseLost)` or never-launched predecessor without violating R26 (single terminal write), add a runtime regression, then make the orphan example pass end to end with a real session (no fake session). The exact rule is design §21 R33, pinned in the next section. "Never-launched" means a never-launched predecessor that is **fenced**. An attempt that is not fenced gets no relaxation.
+
+### R33 fenced-predecessor guard fix (2026-10-01, run session-14)
+
+Source of truth: `design-docs/specs/design-work-handover-and-takeover.md` §11 (last bullet) and §21 R33. Do this fix first, before the example work.
+
+Current failure: the orphan harness takeover exits `failure` with "task attempt has no durable terminal session for guard evaluation", and the task stays `verifying` (`tmp/work-handover/wh-17-examples/orphan-after-review.log`). The never-launched predecessor's session exists, but it is not terminal.
+
+File-level changes (all in `sharedPaths`, so record each in the progress log):
+
+1. `Sources/RielaWork/WorkStore+Takeover.swift`: add two public helpers next to `fenceOrphan`. Do not put them in `WorkModels.swift`, which is outside this plan's paths.
+   - The predicate `public extension Attempt { var isLeaseFenced: Bool }`: true iff `state == .reconciled && supersededByFence != nil && outcome?.sessionStatus == .failed && outcome?.failureKind == .leaseLost`. Compare the fields; do not use `outcome == AttemptOutcome(...)`, because `gateResults` and `costs` would make that equality fail.
+   - The wall-clock seam, shared by all three call sites:
+     `public static func attemptWallClockMs(_ attempt: Attempt, terminalStatuses: Set<WorkflowSessionStatus>, loadSession: () throws -> WorkflowSession) throws -> Int?`
+     (use the session type the loaders actually return). Its rules:
+     - If `attempt.isLeaseFenced` is true: call `loadSession()`. On `WorkflowRuntimePersistenceStoreError.notFound` return `0`. Any other error is rethrown. Otherwise return `max(0, updatedAt − createdAt)` in ms, whatever the status.
+     - If `attempt.isLeaseFenced` is false: load the session. If the sessionId differs or the status is not in `terminalStatuses`, return `nil`. The caller throws its existing message. Otherwise return the duration. Errors, including `notFound`, propagate as they do today.
+2. `Sources/RielaCLI/TaskDispatch.swift` `reconcileTerminal` (loop at ~432-443): the current attempt keeps `snapshot.session`. For every other attempt, call the seam with `[.completed, .failed, .suspended]` and a loader using `loadStrictReadOnly(sessionId:)`. `nil` → throw the unchanged message. Keep the overflow-saturating sum.
+3. `Sources/RielaCLI/TaskDispatch+Director.swift` `validateDirectorWallClockBudget`: same seam, with `[.completed, .failed]` and `loadStrictReadOnly`. `nil` → throw its existing message.
+4. `Sources/RielaWork/WorkStore+Reservation.swift` `requireAgentWallClockBudget`: same seam, with `[.completed, .failed]` and a loader using `sessions.load(sessionId:in: database)`, so it stays inside the transaction. `nil` → throw its existing message.
+
+Invariants (do NOT break):
+- Guard and budget code only reads. It never saves, repairs or finalizes a predecessor's session (R26). Do not call `markSessionFailed`, `save` or any session writer for a fenced attempt, and do not add a fake terminal session in tests.
+- Do not change `fenceOrphan`, the heartbeat `UPDATE … WHERE fence = ?`, `reconcileAttempt`'s fenced short-circuit, or the runner's `leaseLost` path. A revived owner must still fail its heartbeat and write its own `failed(.leaseLost)` without sealing (wh-14 `TaskHandoverLeaseTests.testRevivedOwnerFailsLeaseLostWithoutSealingSecondPacket` must stay green).
+- Do not add a schema column, a generation bump or a new error type.
+
+Tests to add:
+- `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (shared). Cover `Attempt.isLeaseFenced` and `WorkStore.attemptWallClockMs` with in-memory `Attempt` values and closure loaders; no git:
+  - fenced attempt + loader throwing `.notFound` → `0`
+  - fenced attempt + `running` session with a 1.5 s span → `1500`
+  - fenced attempt + loader throwing `.sqliteFailed` → rethrows
+  - a `reconciled` attempt with `failed(.leaseLost)` but `supersededByFence == nil` + `running` session → `nil`, because it is not fenced
+  - a `reconciled` attempt with `supersededByFence` set but outcome `failed(.cancelled)` + `running` session → `nil`
+  - a non-fenced attempt + loader throwing `.notFound` → rethrows `.notFound`
+  - a non-fenced `completed` session → its duration
+- `Tests/RielaCLITests/TaskHandoverExampleTests.swift`: `testOrphanExampleFencesNeverLaunchedOwner` must pass unchanged in intent (takeover `.success`, task `.succeeded`, old-fence heartbeat `false`). Add `testOrphanExampleTakeoverWithinWallClockBudget`, the same flow with `task.guardPolicy.budget = BudgetGuard(maxWallClockMs: 600_000)` → takeover `.success`, task `.succeeded`. This exercises the budget sums over the fenced predecessor.
+
+Extra verification (run before the plan's Verification block):
+
+```
+arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreTakeoverTests|TaskHandoverLeaseTests|TaskHandoverExampleTests|TaskDispatcherIntegrationTests" > tmp/work-handover/wh-17-examples/r33-focused.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-17-examples/r33-focused.log'
+```
+
+`r33-focused.log` must end with `exit=0` and show 0 failures. Report `testsRun` and `failureCount` from its summary lines.
+
+R33 done criteria:
+- [ ] `isLeaseFenced` and `attemptWallClockMs` exist in `WorkStore+Takeover.swift`, and the three wall-clock loops call the seam (`grep -n attemptWallClockMs Sources` shows 1 definition + 3 call sites)
+- [ ] The seven seam unit cases and the two orphan harness tests pass; `TaskHandoverLeaseTests` is green; `r33-focused.log` ends `exit=0`
+- [ ] The progress log records the four shared-file edits (file, reason, test)

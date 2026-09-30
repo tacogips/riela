@@ -49,6 +49,15 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     )
     let registryIds = Set(workflow.nodeRegistry.map(\.id))
     let stepIds = Set(workflow.steps.map(\.id))
+    let addonNames = workflow.nodeRegistry.compactMap(\.addon?.name)
+    if addonNames.contains(where: { $0.hasPrefix("riela/memory-") || $0.hasPrefix("riela/kv-") })
+      && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
+      diagnostics.append(WorkflowValidationDiagnostic(
+        severity: .warning,
+        path: "workflow.nodes",
+        message: "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
+      ))
+    }
 
     if !stepIds.contains(workflow.entryStepId) {
       diagnostics.append(error("workflow.entryStepId", "must reference workflow.steps[] entry '\(workflow.entryStepId)'"))
@@ -111,6 +120,9 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
       if let schema = payload.output?.jsonSchema,
          let reason = DefaultWorkflowOutputValidator().validateContractSchema(schema) {
         diagnostics.append(error("workflow.nodes.\(nodeId).output.jsonSchema", reason))
+      }
+      if case let .object(properties)? = payload.output?.jsonSchema?["properties"], properties["handover"] != nil {
+        diagnostics.append(error("workflow.nodes.\(nodeId).output.jsonSchema", "output.jsonSchema must not declare the reserved 'handover' key"))
       }
     }
     validateAgentOutputDependencies(workflow, nodePayloads: nodePayloads, diagnostics: &diagnostics)
@@ -252,7 +264,7 @@ private func requiredProducerNodeIds(
     if let payload = nodePayloads[step.nodeId] {
       if isAgentNode(payload) { producers.insert(step.nodeId) }
     } else if let addon = registryById[step.nodeId]?.addon,
-      !["riela/git-commit", "riela/git-push"].contains(addon.name) {
+      !["riela/git-commit", "riela/git-push", "riela/git-publish-branch"].contains(addon.name) {
       pending.append(contentsOf: incoming[step.id] ?? [])
     }
   }
@@ -566,6 +578,7 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     nodeRegistry: workflow.nodes,
     steps: steps,
     nodes: runtimeNodes,
-    loop: workflow.loop
+    loop: workflow.loop,
+    handover: workflow.handover
   )
 }

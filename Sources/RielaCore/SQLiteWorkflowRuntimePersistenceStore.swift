@@ -112,7 +112,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// uniqueness with uniqueness over unconsumed requests only. No migration
   /// is registered for either shape: the Work Runtime design forbids backward
   /// compatibility, so `discardIncompatibleStoreIfNeeded` recreates them.
-  public static let schemaGeneration: Int64 = 8
+  public static let schemaGeneration: Int64 = 9 // Generation 9 adds the suspended status, the handover tables and lease fencing.
 
   /// Ordered `from → from+1` upgrade steps for the session store database
   /// (covers the snapshot, message-log, CLI session, and Work Runtime tables —

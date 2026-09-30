@@ -689,6 +689,9 @@ extension WorkStore {
     case .resume, .director: return .resume
     case let .rerunFromStep(stepId): return .rerun(fromStepId: stepId)
     case let .recoverFromGate(gateId): return .recover(fromGateId: gateId)
+    case .takeover:
+      // Takeover reservation records its typed decision in the handover coordinator.
+      return .resume
     }
   }
 

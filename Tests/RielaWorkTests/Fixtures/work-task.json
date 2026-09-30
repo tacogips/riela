@@ -47,6 +47,7 @@
       "recoverOnGateRejection" : true,
       "rerunOnAdapterFailure" : true,
       "rerunOnInactivity" : true,
+      "handoverOnInactivity" : false,
       "rerunOnNodeTimeout" : true
     },
     "humanEscalation" : {
@@ -89,5 +90,6 @@
     "kind" : "schedule",
     "timezone" : "Asia/Tokyo"
   },
-  "version" : 3
+  "version" : 3,
+  "fence" : 0
 }

@@ -171,6 +171,8 @@ extension DeterministicWorkflowRunner {
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.backend.event", attributes: attributes))
     case .silenceWarning:
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.silence.warning", attributes: attributes))
+    case .handover:
+      break
     case .loopStall:
       await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.loop.stall", severity: "WARNING", attributes: attributes))
     case .budgetExceeded:
@@ -203,7 +205,7 @@ extension DeterministicWorkflowRunner {
         attributes: attributes
       ))
       await telemetry.recordMetric(RielaTelemetryMetric(name: "riela.workflow.run.complete.count", value: 1, attributes: attributes))
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .budgetExceeded:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .handover, .loopStall, .budgetExceeded:
       break
     }
   }

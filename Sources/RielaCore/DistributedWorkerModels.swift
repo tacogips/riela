@@ -25,6 +25,7 @@ public struct DistributedWorkerRegistration: Codable, Equatable, Sendable {
   public let environment: [String: Bool]
   public let addonExecutables: [String: Bool]
   public let capabilitiesObservedAt: Date?
+  public let traits: [HostTrait]
 
   public init(
     workerId: String,
@@ -34,7 +35,8 @@ public struct DistributedWorkerRegistration: Codable, Equatable, Sendable {
     capabilities: [BackendCapability] = [],
     environment: [String: Bool] = [:],
     addonExecutables: [String: Bool] = [:],
-    capabilitiesObservedAt: Date? = nil
+    capabilitiesObservedAt: Date? = nil,
+    traits: [HostTrait] = []
   ) {
     self.workerId = workerId
     self.incarnation = incarnation
@@ -44,10 +46,11 @@ public struct DistributedWorkerRegistration: Codable, Equatable, Sendable {
     self.environment = environment
     self.addonExecutables = addonExecutables
     self.capabilitiesObservedAt = capabilitiesObservedAt
+    self.traits = Array(Set(traits)).sorted()
   }
 
   private enum CodingKeys: String, CodingKey {
-    case workerId, incarnation, groups, capacity, capabilities, environment, addonExecutables, capabilitiesObservedAt
+    case workerId, incarnation, groups, capacity, capabilities, environment, addonExecutables, capabilitiesObservedAt, traits
   }
 
   public init(from decoder: Decoder) throws {
@@ -60,7 +63,8 @@ public struct DistributedWorkerRegistration: Codable, Equatable, Sendable {
       capabilities: try container.decodeIfPresent([BackendCapability].self, forKey: .capabilities) ?? [],
       environment: try container.decodeIfPresent([String: Bool].self, forKey: .environment) ?? [:],
       addonExecutables: try container.decodeIfPresent([String: Bool].self, forKey: .addonExecutables) ?? [:],
-      capabilitiesObservedAt: try container.decodeIfPresent(Date.self, forKey: .capabilitiesObservedAt)
+      capabilitiesObservedAt: try container.decodeIfPresent(Date.self, forKey: .capabilitiesObservedAt),
+      traits: try container.decode([HostTrait].self, forKey: .traits)
     )
   }
 }

@@ -63,11 +63,13 @@ public enum WaitReason: Codable, Equatable, Sendable {
   case human
   case clarification(question: String)
   case until(Date)
+  case handover(HandoverID)
 
   private enum CodingKeys: String, CodingKey {
     case kind
     case question
     case date
+    case handoverId
   }
 
   private enum Kind: String, Codable {
@@ -76,6 +78,7 @@ public enum WaitReason: Codable, Equatable, Sendable {
     case human
     case clarification
     case until
+    case handover
   }
 
   public init(from decoder: Decoder) throws {
@@ -91,6 +94,8 @@ public enum WaitReason: Codable, Equatable, Sendable {
       self = .clarification(question: try container.decode(String.self, forKey: .question))
     case .until:
       self = .until(try container.decode(Date.self, forKey: .date))
+    case .handover:
+      self = .handover(try container.decode(HandoverID.self, forKey: .handoverId))
     }
   }
 
@@ -109,6 +114,9 @@ public enum WaitReason: Codable, Equatable, Sendable {
     case let .until(date):
       try container.encode(Kind.until, forKey: .kind)
       try container.encode(date, forKey: .date)
+    case let .handover(id):
+      try container.encode(Kind.handover, forKey: .kind)
+      try container.encode(id, forKey: .handoverId)
     }
   }
 }
@@ -149,6 +157,9 @@ public enum DecisionKind: Codable, Equatable, Sendable {
   case reject(reason: String)
   case cancel
   case stop(GuardViolationRef)
+  case handover(HandoverReason)
+  case answer(HandoverAnswer)
+  case takeover(handoverId: HandoverID, placement: TakeoverPlacement)
 
   private enum CodingKeys: String, CodingKey {
     case kind
@@ -159,6 +170,10 @@ public enum DecisionKind: Codable, Equatable, Sendable {
     case proposal
     case reason
     case violation
+    case handoverReason
+    case answer
+    case handoverId
+    case placement
   }
 
   private enum Kind: String, Codable {
@@ -173,6 +188,9 @@ public enum DecisionKind: Codable, Equatable, Sendable {
     case reject
     case cancel
     case stop
+    case handover
+    case answer
+    case takeover
   }
 
   /// The `work_decisions.kind` filter column.
@@ -189,6 +207,9 @@ public enum DecisionKind: Codable, Equatable, Sendable {
     case .reject: return Kind.reject.rawValue
     case .cancel: return Kind.cancel.rawValue
     case .stop: return Kind.stop.rawValue
+    case .handover: return Kind.handover.rawValue
+    case .answer: return Kind.answer.rawValue
+    case .takeover: return Kind.takeover.rawValue
     }
   }
 
@@ -217,6 +238,13 @@ public enum DecisionKind: Codable, Equatable, Sendable {
       self = .cancel
     case .stop:
       self = .stop(try container.decode(GuardViolationRef.self, forKey: .violation))
+    case .handover:
+      self = .handover(try container.decode(HandoverReason.self, forKey: .handoverReason))
+    case .answer:
+      self = .answer(try container.decode(HandoverAnswer.self, forKey: .answer))
+    case .takeover:
+      self = .takeover(handoverId: try container.decode(HandoverID.self, forKey: .handoverId),
+                       placement: try container.decode(TakeoverPlacement.self, forKey: .placement))
     }
   }
 
@@ -252,6 +280,16 @@ public enum DecisionKind: Codable, Equatable, Sendable {
     case let .stop(violation):
       try container.encode(Kind.stop, forKey: .kind)
       try container.encode(violation, forKey: .violation)
+    case let .handover(reason):
+      try container.encode(Kind.handover, forKey: .kind)
+      try container.encode(reason, forKey: .handoverReason)
+    case let .answer(answer):
+      try container.encode(Kind.answer, forKey: .kind)
+      try container.encode(answer, forKey: .answer)
+    case let .takeover(handoverId, placement):
+      try container.encode(Kind.takeover, forKey: .kind)
+      try container.encode(handoverId, forKey: .handoverId)
+      try container.encode(placement, forKey: .placement)
     }
   }
 }

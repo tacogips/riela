@@ -117,6 +117,9 @@ final class WorkModelsCodableTests: XCTestCase {
     object.removeValue(forKey: "version")
     let data = try JSONEncoder().encode(JSONValue.object(object))
     XCTAssertThrowsError(try decoder().decode(WorkTask.self, from: data))
+    object = try encodedObject(try decodeFixture(WorkTask.self, named: "work-task"))
+    object.removeValue(forKey: "fence")
+    XCTAssertThrowsError(try decoder().decode(WorkTask.self, from: JSONEncoder().encode(JSONValue.object(object))))
   }
 
   // MARK: - Every payload case survives a round trip

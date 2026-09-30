@@ -272,17 +272,23 @@ public struct GuardPolicy: Codable, Equatable, Sendable {
   public var convergence: ConvergenceGuard?
   public var budget: BudgetGuard?
   public var onViolation: ViolationAction
+  public var lease: LeasePolicy?
+  public var handover: HandoverPolicy?
 
   public init(
     inactivity: InactivityGuard? = nil,
     convergence: ConvergenceGuard? = nil,
     budget: BudgetGuard? = nil,
-    onViolation: ViolationAction = .fail
+    onViolation: ViolationAction = .fail,
+    lease: LeasePolicy? = nil,
+    handover: HandoverPolicy? = nil
   ) {
     self.inactivity = inactivity
     self.convergence = convergence
     self.budget = budget
     self.onViolation = onViolation
+    self.lease = lease
+    self.handover = handover
   }
 }
 
@@ -294,17 +300,20 @@ public struct DeterministicDirectorRules: Codable, Equatable, Sendable {
   public var rerunOnNodeTimeout: Bool
   public var rerunOnInactivity: Bool
   public var recoverOnGateRejection: Bool
+  public var handoverOnInactivity: Bool
 
   public init(
     rerunOnAdapterFailure: Bool = true,
     rerunOnNodeTimeout: Bool = true,
     rerunOnInactivity: Bool = true,
-    recoverOnGateRejection: Bool = true
+    recoverOnGateRejection: Bool = true,
+    handoverOnInactivity: Bool = false
   ) {
     self.rerunOnAdapterFailure = rerunOnAdapterFailure
     self.rerunOnNodeTimeout = rerunOnNodeTimeout
     self.rerunOnInactivity = rerunOnInactivity
     self.recoverOnGateRejection = recoverOnGateRejection
+    self.handoverOnInactivity = handoverOnInactivity
   }
 }
 
@@ -450,6 +459,7 @@ public struct WorkTask: Codable, Equatable, Sendable {
   public var state: TaskState
   /// Optimistic concurrency, as `SpecialistSupervisorStore` does today.
   public var version: Int
+  public var fence: Int
 
   private enum CodingKeys: String, CodingKey {
     case id
@@ -467,6 +477,7 @@ public struct WorkTask: Codable, Equatable, Sendable {
     case owner
     case state
     case version
+    case fence
   }
 
   public init(
@@ -484,7 +495,8 @@ public struct WorkTask: Codable, Equatable, Sendable {
     trigger: TaskTrigger = .manual,
     owner: OwnerAssignment? = nil,
     state: TaskState = .draft,
-    version: Int = 1
+    version: Int = 1,
+    fence: Int = 0
   ) {
     self.id = id
     self.intentId = intentId
@@ -501,6 +513,7 @@ public struct WorkTask: Codable, Equatable, Sendable {
     self.owner = owner
     self.state = state
     self.version = version
+    self.fence = fence
   }
 }
 
@@ -556,11 +569,14 @@ public enum AttemptEntry: Codable, Equatable, Sendable {
   /// An agent director round, recorded as an attempt so its cost counts
   /// against the budget (design section 6).
   case director
+  case takeover(fromAttemptId: AttemptID, handoverId: HandoverID)
 
   private enum CodingKeys: String, CodingKey {
     case kind
     case stepId
     case gateId
+    case fromAttemptId
+    case handoverId
   }
 
   private enum Kind: String, Codable {
@@ -569,6 +585,7 @@ public enum AttemptEntry: Codable, Equatable, Sendable {
     case rerunFromStep
     case recoverFromGate
     case director
+    case takeover
   }
 
   public init(from decoder: Decoder) throws {
@@ -584,6 +601,9 @@ public enum AttemptEntry: Codable, Equatable, Sendable {
       self = .recoverFromGate(try container.decode(String.self, forKey: .gateId))
     case .director:
       self = .director
+    case .takeover:
+      self = .takeover(fromAttemptId: try container.decode(AttemptID.self, forKey: .fromAttemptId),
+                       handoverId: try container.decode(HandoverID.self, forKey: .handoverId))
     }
   }
 
@@ -602,6 +622,10 @@ public enum AttemptEntry: Codable, Equatable, Sendable {
       try container.encode(gateId, forKey: .gateId)
     case .director:
       try container.encode(Kind.director, forKey: .kind)
+    case let .takeover(fromAttemptId, handoverId):
+      try container.encode(Kind.takeover, forKey: .kind)
+      try container.encode(fromAttemptId, forKey: .fromAttemptId)
+      try container.encode(handoverId, forKey: .handoverId)
     }
   }
 }
@@ -652,6 +676,8 @@ public struct Attempt: Codable, Equatable, Sendable {
   /// Set only for a director child. The child's own ID and session complete
   /// the durable link to the reconciled work this round judges.
   public var judgedAttemptId: AttemptID?
+  public var takeoverLineage: TakeoverLineage?
+  public var supersededByFence: Int?
 
   public init(
     id: AttemptID,
@@ -664,7 +690,9 @@ public struct Attempt: Codable, Equatable, Sendable {
     state: AttemptState = .prepared,
     outcome: AttemptOutcome? = nil,
     launch: AttemptLaunchMetadata? = nil,
-    judgedAttemptId: AttemptID? = nil
+    judgedAttemptId: AttemptID? = nil,
+    takeoverLineage: TakeoverLineage? = nil,
+    supersededByFence: Int? = nil
   ) {
     self.id = id
     self.taskId = taskId
@@ -677,5 +705,7 @@ public struct Attempt: Codable, Equatable, Sendable {
     self.outcome = outcome
     self.launch = launch
     self.judgedAttemptId = judgedAttemptId
+    self.takeoverLineage = takeoverLineage
+    self.supersededByFence = supersededByFence
   }
 }

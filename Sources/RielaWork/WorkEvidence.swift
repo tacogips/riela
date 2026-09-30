@@ -19,6 +19,10 @@ public enum EvidenceKind: String, Codable, CaseIterable, Sendable {
   case decision
   case delivery
   case contextSnapshot
+  case handover
+  case handoverAnswer
+  case publication
+  case leaseFence
 }
 
 /// What produced a ledger record.

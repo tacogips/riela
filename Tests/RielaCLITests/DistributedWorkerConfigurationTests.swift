@@ -119,18 +119,22 @@ final class DistributedWorkerConfigurationTests: XCTestCase {
     XCTAssertEqual(multiWorkspaceMetadata.addonExecutables["bin/tool"], false)
   }
 
-  func testWorkerBackendDeclarationsDecodeAndRegistrationDefaultsRemainCompatible() throws {
+  func testWorkerBackendDeclarationsDecodeAndRegistrationRequiresTraits() throws {
     let config = try decode(#"{"tokenEnvironment":"WORKER_TOKEN","backends":{"codex-agent":{"enabled":true,"models":["gpt"]},"claude-code-agent":{"enabled":false,"reason":"disabled"}}}"#)
     XCTAssertEqual(config.backends?["codex-agent"]?.models, ["gpt"])
     XCTAssertEqual(config.backends?["claude-code-agent"]?.enabled, false)
 
-    let legacy = try JSONDecoder().decode(
+    let registration = try JSONDecoder().decode(
+      DistributedWorkerRegistration.self,
+      from: Data(#"{"workerId":"worker","incarnation":"one","groups":[],"capacity":1,"traits":[]}"#.utf8)
+    )
+    XCTAssertEqual(registration.capabilities, [])
+    XCTAssertEqual(registration.environment, [:])
+    XCTAssertEqual(registration.addonExecutables, [:])
+    XCTAssertThrowsError(try JSONDecoder().decode(
       DistributedWorkerRegistration.self,
       from: Data(#"{"workerId":"worker","incarnation":"one","groups":[],"capacity":1}"#.utf8)
-    )
-    XCTAssertEqual(legacy.capabilities, [])
-    XCTAssertEqual(legacy.environment, [:])
-    XCTAssertEqual(legacy.addonExecutables, [:])
+    ))
 
     let capability = BackendCapability(
       backend: .codexAgent,

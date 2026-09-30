@@ -3,12 +3,14 @@ import Foundation
 public enum WorkflowSessionStatus: String, Codable, Sendable, CaseIterable {
   case created
   case running
+  case suspended
   case completed
   case failed
 }
 
 public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
   case running
+  case suspended
   case completed
   case skipped
   case failed
@@ -39,6 +41,8 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
   public static let internalFailure = WorkflowSessionFailureKind(rawValue: "internal")
   public static let loopNotConverging = WorkflowSessionFailureKind(rawValue: "loopNotConverging")
   public static let budgetExceeded = WorkflowSessionFailureKind(rawValue: "budgetExceeded")
+  public static let stalled = WorkflowSessionFailureKind(rawValue: "stalled")
+  public static let leaseLost = WorkflowSessionFailureKind(rawValue: "leaseLost")
 
   public var compatibilityDiagnostic: String? {
     guard !Self.knownRawValues.contains(rawValue) else {
@@ -55,7 +59,9 @@ public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, 
     nodeTimeout.rawValue,
     internalFailure.rawValue,
     loopNotConverging.rawValue,
-    budgetExceeded.rawValue
+    budgetExceeded.rawValue,
+    stalled.rawValue,
+    leaseLost.rawValue
   ]
 }
 
@@ -345,6 +351,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     case parentSessionId
     case rootSessionId
     case effectiveStepBudget
+    case suspend
   }
 
   public var workflowId: String
@@ -368,6 +375,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var parentSessionId: String?
   public var rootSessionId: String?
   public var effectiveStepBudget: Int?
+  public var suspend: SuspendRecord?
   public var newExecutionCount: Int { executions.filter { $0.importedFrom == nil }.count }
 
   public var workflowExecutionId: String {
@@ -396,7 +404,8 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     instanceConfiguration: JSONObject? = nil,
     parentSessionId: String? = nil,
     rootSessionId: String? = nil,
-    effectiveStepBudget: Int? = nil
+    effectiveStepBudget: Int? = nil,
+    suspend: SuspendRecord? = nil
   ) {
     self.workflowId = workflowId
     self.sessionId = sessionId
@@ -419,6 +428,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.parentSessionId = parentSessionId
     self.rootSessionId = rootSessionId
     self.effectiveStepBudget = effectiveStepBudget
+    self.suspend = suspend
   }
 
   public init(from decoder: Decoder) throws {
@@ -444,6 +454,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     self.parentSessionId = try container.decodeIfPresent(String.self, forKey: .parentSessionId)
     self.rootSessionId = try container.decodeIfPresent(String.self, forKey: .rootSessionId)
     self.effectiveStepBudget = try container.decodeIfPresent(Int.self, forKey: .effectiveStepBudget)
+    self.suspend = try container.decodeIfPresent(SuspendRecord.self, forKey: .suspend)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -469,6 +480,7 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
     try container.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
     try container.encodeIfPresent(rootSessionId, forKey: .rootSessionId)
     try container.encodeIfPresent(effectiveStepBudget, forKey: .effectiveStepBudget)
+    try container.encodeIfPresent(suspend, forKey: .suspend)
   }
 }
 

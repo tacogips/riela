@@ -533,7 +533,7 @@ public struct SessionObservabilityService: Sendable {
     return switch session.status {
     case .completed, .failed:
       true
-    case .created, .running:
+    case .created, .running, .suspended:
       false
     }
   }
@@ -546,7 +546,7 @@ public struct SessionObservabilityService: Sendable {
       switch node.digest.status {
       case .completed, .failed:
         rootTerminal = true
-      case .created, .running:
+      case .created, .running, .suspended:
         rootTerminal = false
       }
     }

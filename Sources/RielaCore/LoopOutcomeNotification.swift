@@ -59,6 +59,7 @@ public enum LoopOutcome: String, Codable, Equatable, Sendable, CaseIterable {
   case accepted
   case rejected
   case stalled
+  case handover
   case failed
 }
 
@@ -80,6 +81,8 @@ public enum LoopOutcomeClassifier {
       return allAccepted ? .accepted : .rejected
     case .failed:
       return session.failureKind == .loopNotConverging ? .stalled : .failed
+    case .suspended:
+      return nil
     default:
       return nil
     }

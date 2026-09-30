@@ -5,6 +5,7 @@ public enum WorkflowRunEventType: String, Codable, Equatable, Sendable {
   case stepStarted = "step_started"
   case backendEvent = "backend_event"
   case silenceWarning = "silence_warning"
+  case handover = "handover"
   case loopStall = "loop_stall"
   case budgetExceeded = "budget_exceeded"
   case stepCompleted = "step_completed"
@@ -101,6 +102,19 @@ public struct SilenceWarningPayload: Codable, Equatable, Sendable {
   }
 }
 
+public struct HandoverEventPayload: Codable, Equatable, Sendable {
+  public var reasonKind: SuspendReasonKind
+  public var resumeStepId: String
+  public var questionId: String?
+  public var questionText: String?
+  public init(reasonKind: SuspendReasonKind, resumeStepId: String, questionId: String? = nil, questionText: String? = nil) {
+    self.reasonKind = reasonKind
+    self.resumeStepId = resumeStepId
+    self.questionId = questionId
+    self.questionText = questionText
+  }
+}
+
 public struct LoopStallPayload: Codable, Equatable, Sendable {
   public var gateId: String
   public var violationKind: String
@@ -175,6 +189,7 @@ public enum WorkflowRunEvent: Equatable, Sendable {
   case stepStarted(SessionEnvelope, StepEnvelope)
   case backendEvent(SessionEnvelope, StepEnvelope, BackendEventPayload)
   case silenceWarning(SessionEnvelope, StepEnvelope, SilenceWarningPayload)
+  case handover(SessionEnvelope, HandoverEventPayload)
   case loopStall(SessionEnvelope, StepEnvelope, LoopStallPayload)
   case budgetExceeded(SessionEnvelope, StepEnvelope, LoopBudgetExceededPayload)
   case stepCompleted(SessionEnvelope, StepEnvelope, StepCompletionPayload)
@@ -215,7 +230,11 @@ public enum WorkflowRunEvent: Equatable, Sendable {
     loopBudgetMaxWallClockMs: Int? = nil,
     exitCode: Int32? = nil,
     nodeExecutions: Int? = nil,
-    transitions: Int? = nil
+    transitions: Int? = nil,
+    handoverReasonKind: SuspendReasonKind? = nil,
+    handoverResumeStepId: String? = nil,
+    handoverQuestionId: String? = nil,
+    handoverQuestionText: String? = nil
   ) {
     let session = SessionEnvelope(
       workflowId: workflowId,
@@ -259,6 +278,13 @@ public enum WorkflowRunEvent: Equatable, Sendable {
           silenceThresholdMs: silenceThresholdMs ?? 0
         )
       )
+    case .handover:
+      self = .handover(session, HandoverEventPayload(
+        reasonKind: handoverReasonKind ?? .userInputRequired,
+        resumeStepId: handoverResumeStepId ?? "",
+        questionId: handoverQuestionId,
+        questionText: handoverQuestionText
+      ))
     case .loopStall:
       self = .loopStall(
         session,
@@ -312,6 +338,8 @@ public extension WorkflowRunEvent {
       .backendEvent
     case .silenceWarning:
       .silenceWarning
+    case .handover:
+      .handover
     case .loopStall:
       .loopStall
     case .budgetExceeded:
@@ -399,7 +427,7 @@ public extension WorkflowRunEvent {
       step.nodeExecutions
     case let .sessionCompleted(_, payload):
       payload.nodeExecutions
-    case .sessionStarted:
+    case .sessionStarted, .handover:
       nil
     }
   }
@@ -410,7 +438,7 @@ public extension WorkflowRunEvent {
       payload.transitions
     case let .sessionCompleted(_, payload):
       payload.transitions
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .budgetExceeded:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .handover, .loopStall, .budgetExceeded:
       nil
     }
   }
@@ -421,6 +449,7 @@ public extension WorkflowRunEvent {
          let .stepStarted(session, _),
          let .backendEvent(session, _, _),
          let .silenceWarning(session, _, _),
+         let .handover(session, _),
          let .loopStall(session, _, _),
          let .budgetExceeded(session, _, _),
          let .stepCompleted(session, _, _),
@@ -438,7 +467,7 @@ public extension WorkflowRunEvent {
          let .budgetExceeded(_, step, _),
          let .stepCompleted(_, step, _):
       step
-    case .sessionStarted, .sessionCompleted:
+    case .sessionStarted, .sessionCompleted, .handover:
       nil
     }
   }
@@ -447,7 +476,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .backendEvent(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .silenceWarning, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .silenceWarning, .handover, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -456,7 +485,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .sessionCompleted(_, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .budgetExceeded, .stepCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .handover, .loopStall, .budgetExceeded, .stepCompleted:
       nil
     }
   }
@@ -465,7 +494,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .loopStall(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .budgetExceeded, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .handover, .budgetExceeded, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -474,7 +503,7 @@ public extension WorkflowRunEvent {
     switch self {
     case let .budgetExceeded(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .loopStall, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .silenceWarning, .handover, .loopStall, .stepCompleted, .sessionCompleted:
       nil
     }
   }
@@ -482,6 +511,11 @@ public extension WorkflowRunEvent {
   var silentForMs: Int? {
     silenceWarningPayload?.silentForMs
   }
+
+  var handoverReasonKind: SuspendReasonKind? { handoverPayload?.reasonKind }
+  var handoverResumeStepId: String? { handoverPayload?.resumeStepId }
+  var handoverQuestionId: String? { handoverPayload?.questionId }
+  var handoverQuestionText: String? { handoverPayload?.questionText }
 
   var silenceThresholdMs: Int? {
     silenceWarningPayload?.silenceThresholdMs
@@ -491,9 +525,14 @@ public extension WorkflowRunEvent {
     switch self {
     case let .silenceWarning(_, _, payload):
       payload
-    case .sessionStarted, .stepStarted, .backendEvent, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
+    case .sessionStarted, .stepStarted, .backendEvent, .handover, .loopStall, .budgetExceeded, .stepCompleted, .sessionCompleted:
       nil
     }
+  }
+
+  private var handoverPayload: HandoverEventPayload? {
+    if case let .handover(_, payload) = self { return payload }
+    return nil
   }
 }
 
@@ -534,6 +573,10 @@ extension WorkflowRunEvent: Codable {
     case exitCode
     case nodeExecutions
     case transitions
+    case handoverReasonKind
+    case handoverResumeStepId
+    case handoverQuestionId
+    case handoverQuestionText
   }
 
   public init(from decoder: Decoder) throws {
@@ -573,7 +616,11 @@ extension WorkflowRunEvent: Codable {
       loopBudgetMaxWallClockMs: try container.decodeIfPresent(Int.self, forKey: .loopBudgetMaxWallClockMs),
       exitCode: try container.decodeIfPresent(Int32.self, forKey: .exitCode),
       nodeExecutions: try container.decodeIfPresent(Int.self, forKey: .nodeExecutions),
-      transitions: try container.decodeIfPresent(Int.self, forKey: .transitions)
+      transitions: try container.decodeIfPresent(Int.self, forKey: .transitions),
+      handoverReasonKind: try container.decodeIfPresent(SuspendReasonKind.self, forKey: .handoverReasonKind),
+      handoverResumeStepId: try container.decodeIfPresent(String.self, forKey: .handoverResumeStepId),
+      handoverQuestionId: try container.decodeIfPresent(String.self, forKey: .handoverQuestionId),
+      handoverQuestionText: try container.decodeIfPresent(String.self, forKey: .handoverQuestionText)
     )
   }
 
@@ -614,6 +661,10 @@ extension WorkflowRunEvent: Codable {
     try container.encodeIfPresent(exitCode, forKey: .exitCode)
     try container.encodeIfPresent(nodeExecutions, forKey: .nodeExecutions)
     try container.encodeIfPresent(transitions, forKey: .transitions)
+    try container.encodeIfPresent(handoverReasonKind, forKey: .handoverReasonKind)
+    try container.encodeIfPresent(handoverResumeStepId, forKey: .handoverResumeStepId)
+    try container.encodeIfPresent(handoverQuestionId, forKey: .handoverQuestionId)
+    try container.encodeIfPresent(handoverQuestionText, forKey: .handoverQuestionText)
   }
 }
 

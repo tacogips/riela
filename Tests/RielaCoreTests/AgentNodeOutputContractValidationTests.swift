@@ -111,7 +111,12 @@ final class AgentNodeOutputContractValidationTests: XCTestCase {
       registry: [WorkflowNodeRegistryRef(id: "addon", addon: WorkflowNodeAddonRef(name: "riela/kv-set"))],
       steps: [WorkflowStepRef(id: "only", nodeId: "addon", transitions: [WorkflowStepTransition(toStepId: "only")])]
     )
-    XCTAssertTrue(DefaultWorkflowValidator().validate(workflow, nodePayloads: [:]).isEmpty)
+    let addonDiagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: [:])
+    XCTAssertFalse(addonDiagnostics.contains { $0.severity == .error })
+    XCTAssertTrue(addonDiagnostics.contains {
+      $0.severity == .warning
+        && $0.message == "riela memory/KV state is cwd-local and becomes a localOnly deliverable on handover; add a kaiba mirror step"
+    })
 
     workflow = baseWorkflow(
       registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],

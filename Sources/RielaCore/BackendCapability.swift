@@ -91,6 +91,7 @@ public struct HostCapabilitySnapshot: Codable, Equatable, Sendable {
   public var capacity: Int?
   public var live: Bool
   public var backends: [BackendCapability]
+  public var traits: [HostTrait]
   public var addonExecutables: [String: Bool]
   public var environment: [String: Bool]
   public var capabilitiesObservedAt: Date?
@@ -105,13 +106,15 @@ public struct HostCapabilitySnapshot: Codable, Equatable, Sendable {
     addonExecutables: [String: Bool] = [:],
     environment: [String: Bool] = [:],
     capabilitiesObservedAt: Date? = nil,
-    refreshedAt: Date
+    refreshedAt: Date,
+    traits: [HostTrait] = []
   ) {
     self.hostId = hostId
     self.groups = groups
     self.capacity = capacity
     self.live = live
     self.backends = backends
+    self.traits = Array(Set(traits)).sorted()
     self.addonExecutables = addonExecutables
     self.environment = environment
     self.capabilitiesObservedAt = capabilitiesObservedAt ?? refreshedAt

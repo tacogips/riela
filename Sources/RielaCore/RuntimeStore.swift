@@ -538,6 +538,8 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
         session.failedAt = date
       }
       session.status = .failed
+    case .suspended:
+      session.status = .suspended
     case .completed where input.acceptedOutput?.isRootOutput == true || input.completesRootWithoutOutput:
       session.status = .completed
     case .skipped where input.completesRootWithoutOutput:
@@ -831,6 +833,8 @@ private extension WorkflowStepExecutionStatus {
     case .completed, .failed, .skipped:
       return true
     case .running:
+      return false
+    case .suspended:
       return false
     }
   }

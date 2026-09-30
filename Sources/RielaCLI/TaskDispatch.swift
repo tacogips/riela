@@ -580,6 +580,8 @@ struct TaskDispatch: Sendable {
       stepId = gate.stepId
     case .director:
       throw WorkStoreError("director child requires bounded director dispatch")
+    case .takeover:
+      throw WorkStoreError("takeover entry requires handover packet resume-step resolution")
     }
     guard workflow.steps.contains(where: { $0.id == stepId }) else {
       throw WorkStoreError("task entry step '\(stepId)' does not exist")

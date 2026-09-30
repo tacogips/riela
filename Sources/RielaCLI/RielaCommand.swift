@@ -16,6 +16,8 @@ public enum CLIExitCode: Int32, Codable, Equatable, Sendable {
   case gateCheckFailed = 3
   /// No loop evidence was recorded for the session (`loop gates --check`).
   case noLoopEvidence = 4
+  /// A workflow run or resume ended suspended for a handover.
+  case suspended = 5
 }
 
 public enum WorkflowOutputFormat: String, Codable, Sendable {

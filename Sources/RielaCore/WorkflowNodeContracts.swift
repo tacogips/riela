@@ -40,17 +40,20 @@ public struct NodeOutputContract: Codable, Equatable, Sendable {
   public var jsonSchema: JSONObject?
   public var maxValidationAttempts: Int?
   public var projection: WorkflowOutputProjection?
+  public var deliverables: WorkflowDeliverableProjection?
 
   public init(
     description: String? = nil,
     jsonSchema: JSONObject? = nil,
     maxValidationAttempts: Int? = nil,
-    projection: WorkflowOutputProjection? = nil
+    projection: WorkflowOutputProjection? = nil,
+    deliverables: WorkflowDeliverableProjection? = nil
   ) {
     self.description = description
     self.jsonSchema = jsonSchema
     self.maxValidationAttempts = maxValidationAttempts
     self.projection = projection
+    self.deliverables = deliverables
   }
 }
 

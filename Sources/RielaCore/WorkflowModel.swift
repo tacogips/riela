@@ -503,6 +503,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
   public var nodes: [WorkflowNodeRegistryRef]
   public var steps: [WorkflowStepRef]?
   public var loop: WorkflowLoopMetadata?
+  public var handover: WorkflowHandoverDeclaration?
 
   public init(
     workflowId: String,
@@ -514,7 +515,8 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     entryStepId: String? = nil,
     nodes: [WorkflowNodeRegistryRef],
     steps: [WorkflowStepRef]? = nil,
-    loop: WorkflowLoopMetadata? = nil
+    loop: WorkflowLoopMetadata? = nil,
+    handover: WorkflowHandoverDeclaration? = nil
   ) {
     self.workflowId = workflowId
     self.description = description
@@ -526,6 +528,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     self.nodes = nodes
     self.steps = steps
     self.loop = loop
+    self.handover = handover
   }
 }
 
@@ -591,6 +594,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
   public var steps: [WorkflowStepRef]
   public var nodes: [WorkflowNodeRef]
   public var loop: WorkflowLoopMetadata?
+  public var handover: WorkflowHandoverDeclaration?
 
   public init(
     workflowId: String,
@@ -603,7 +607,8 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     nodeRegistry: [WorkflowNodeRegistryRef],
     steps: [WorkflowStepRef],
     nodes: [WorkflowNodeRef],
-    loop: WorkflowLoopMetadata? = nil
+    loop: WorkflowLoopMetadata? = nil,
+    handover: WorkflowHandoverDeclaration? = nil
   ) {
     self.workflowId = workflowId
     self.description = description
@@ -616,6 +621,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     self.steps = steps
     self.nodes = nodes
     self.loop = loop
+    self.handover = handover
   }
 }
 

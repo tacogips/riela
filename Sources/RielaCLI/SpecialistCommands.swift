@@ -553,7 +553,7 @@ public struct SpecialistCommandRunner: Sendable {
       uncertain: snapshot.session.status == .created || snapshot.session.status == .running
     )
     switch snapshot.session.status {
-    case .created, .running:
+    case .created, .running, .suspended:
       return false
     case .completed, .failed:
       let resultJSON = String(

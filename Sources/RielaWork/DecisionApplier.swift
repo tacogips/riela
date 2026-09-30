@@ -91,6 +91,12 @@ public enum DecisionApplier {
     case .stop:
       reconcile(&updatedAttempt)
       updatedTask.state = .failed
+    case .handover:
+      throw DecisionApplicationError("decision kind 'handover' is applied by the handover store APIs")
+    case .answer:
+      throw DecisionApplicationError("decision kind 'answer' is applied by the handover store APIs")
+    case .takeover:
+      throw DecisionApplicationError("decision kind 'takeover' is applied by the handover store APIs")
     }
     return DecisionApplication(task: updatedTask, attempt: updatedAttempt, requestedEntry: requestedEntry)
   }

@@ -29,16 +29,23 @@ extension ScopedParityCommandRunner {
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
         localProvider: FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
       ),
-      fallback: SessionControlGraphQLDocumentExecutor(
-        provider: RielaSessionControlProvider(
+      fallback: TaskHandoverGraphQLDocumentExecutor(
+        provider: TaskHandoverGraphQLProvider(
           workingDirectory: workingDirectory,
           sessionStore: parsed.sessionStore,
           scope: parsed.scope
         ),
-        next: RoutineGraphQLDocumentExecutor(
-          provider: FileRoutineGraphQLProvider(
+        next: SessionControlGraphQLDocumentExecutor(
+          provider: RielaSessionControlProvider(
             workingDirectory: workingDirectory,
-            environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            sessionStore: parsed.sessionStore,
+            scope: parsed.scope
+          ),
+          next: RoutineGraphQLDocumentExecutor(
+            provider: FileRoutineGraphQLProvider(
+              workingDirectory: workingDirectory,
+              environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            )
           )
         )
       )

@@ -160,6 +160,7 @@ public struct TaskDispatcher: Sendable {
     judgedAttemptId: AttemptID? = nil,
     placementEvidence: Evidence? = nil,
     pendingRequestId: String? = nil,
+    hostId: String = "local",
     now: Date = Date()
   ) throws -> AttemptReservationResult {
     try store.reserveAttempt(AttemptReservationRequest(
@@ -176,6 +177,7 @@ public struct TaskDispatcher: Sendable {
       reason: reason,
       placementEvidence: placementEvidence,
       pendingRequestId: pendingRequestId,
+      hostId: hostId,
       now: now
     ))
   }

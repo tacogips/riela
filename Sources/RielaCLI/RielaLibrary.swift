@@ -120,17 +120,24 @@ public struct RielaLibrary: Sendable {
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(
         localProvider: FileWorkflowRegistryGraphQLProvider(workingDirectory: workingDirectory)
       ),
-      fallback: SessionControlGraphQLDocumentExecutor(
-        provider: RielaSessionControlProvider(
+      fallback: TaskHandoverGraphQLDocumentExecutor(
+        provider: TaskHandoverGraphQLProvider(
           workingDirectory: workingDirectory,
           sessionStore: sessionStore,
-          scope: scope,
-          workflowDefinitionDir: workflowDefinitionDir
+          scope: scope
         ),
-        next: RoutineGraphQLDocumentExecutor(
-          provider: FileRoutineGraphQLProvider(
+        next: SessionControlGraphQLDocumentExecutor(
+          provider: RielaSessionControlProvider(
             workingDirectory: workingDirectory,
-            environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            sessionStore: sessionStore,
+            scope: scope,
+            workflowDefinitionDir: workflowDefinitionDir
+          ),
+          next: RoutineGraphQLDocumentExecutor(
+            provider: FileRoutineGraphQLProvider(
+              workingDirectory: workingDirectory,
+              environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+            )
           )
         )
       )

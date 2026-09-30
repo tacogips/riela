@@ -107,6 +107,29 @@ final class TaskDispatcherTests: XCTestCase {
     XCTAssertThrowsError(try dispatcher.authorize(reservation))
   }
 
+  func testReservationForwardsSelectedHostIdToLease() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let dispatcher = TaskDispatcher(store: store)
+    guard case let .ready(ready) = try preview(dispatcher) else {
+      return XCTFail("expected ready preview")
+    }
+    let result = try dispatcher.reserve(
+      ready,
+      attemptId: AttemptID("attempt-remote"),
+      sessionId: "remote-session",
+      decisionId: DecisionID("decision-remote"),
+      producer: .human(principal: "remote-worker"),
+      reason: "remote takeover",
+      hostId: "remote-worker"
+    )
+    guard case let .reserved(reservation) = result else {
+      return XCTFail("expected reservation")
+    }
+    XCTAssertEqual(try store.loadLease(attemptId: reservation.attempt.id)?.hostId, "remote-worker")
+  }
+
   func testDependencyChangeBetweenPreviewAndReservationDeniesLaunch() throws {
     let store = WorkStore(rootDirectory: root.path)
     var dependency = sampleTask(id: "dependency")

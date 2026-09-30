@@ -5,7 +5,7 @@
  "baseBranch": "feat/work-handover-and-takeover",
  "remote": "origin",
  "originalHead": "01b38f02fb8c126528d5a46aebe737adb429736f",
- "checkpointParentHead": "6e18f9f53d766d112e3a529d0f67f32877963884",
+ "checkpointParentHead": "7182232d",
  "designDocPaths": [
   "design-docs/specs/design-work-handover-and-takeover.md",
   "design-docs/user-qa/qa-work-handover-and-takeover.md"
@@ -37,7 +37,7 @@
  ],
  "evidenceRoot": "tmp/work-handover",
  "reviewContext": {
-  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []).",
+  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20.",
   "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
   "requiredOutcomes": [
    "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",
@@ -68,16 +68,16 @@
    "Scratch only under tmp/ (gitignored); each plan edits only its own impl-plans/progress/<planId>.md; full-suite failures are classified against the wh-00 baseline, never hidden."
   ],
   "designDecisionsAndRationale": [
-   "The task is the unit of handover: a handover is a new Attempt with entry .takeover, reusing the one-live-attempt fence, evidence ledger, placement and guard budget (design \u00a73.1).",
-   "The digest-sealed HandoverPacket is the predecessor/successor contract, built by the runtime from durable records; the agent only adds a bounded progressNote and question (\u00a73.2).",
-   "suspended is a real session status with a SuspendRecord; runner/resume exit code CLIExitCode.suspended = 5 (\u00a73.3, R1-R22).",
-   "Agent-declared, runtime-detected and operator triggers all produce Decision .handover(HandoverReason) and the same packet (\u00a73.4).",
-   "Deliverables are published before sealing: attempt branch riela/task/<taskId>/g<n> via GitBranchWorkspaceRuntime, document ids via DeliverableCollector, local-only state listed (\u00a73.5, \u00a79).",
-   "The work store work_handovers row is canonical; kaiba/gitRef/file/command sinks are digest-verified mirrors (\u00a73.6, \u00a78).",
-   "Answers are DecisionKind.answer validated against answerSchema and delivered as runtime variable plus delivered message (\u00a73.7).",
-   "Hosts declare traits (profile hostTraits, worker.json traits, per-invocation --traits per Q7); placement treats required traits like backends (\u00a73.8, \u00a710.3).",
-   "Leases gain heartbeat_at, expires_at and a monotonic fence; the fence, not expiry, excludes a revived owner which fails with leaseLost (\u00a73.9, \u00a711).",
-   "Cross-host takeover is pull-based over /graphql (takeoverTask, heartbeatAttempt, reportAttempt) under manager-session auth; the controller runs director and verification on reports (\u00a73.10, \u00a710.2)."
+   "The task is the unit of handover: a handover is a new Attempt with entry .takeover, reusing the one-live-attempt fence, evidence ledger, placement and guard budget (design §3.1).",
+   "The digest-sealed HandoverPacket is the predecessor/successor contract, built by the runtime from durable records; the agent only adds a bounded progressNote and question (§3.2).",
+   "suspended is a real session status with a SuspendRecord; runner/resume exit code CLIExitCode.suspended = 5 (§3.3, R1-R22).",
+   "Agent-declared, runtime-detected and operator triggers all produce Decision .handover(HandoverReason) and the same packet (§3.4).",
+   "Deliverables are published before sealing: attempt branch riela/task/<taskId>/g<n> via GitBranchWorkspaceRuntime, document ids via DeliverableCollector, local-only state listed (§3.5, §9).",
+   "The work store work_handovers row is canonical; kaiba/gitRef/file/command sinks are digest-verified mirrors (§3.6, §8).",
+   "Answers are DecisionKind.answer validated against answerSchema and delivered as runtime variable plus delivered message (§3.7).",
+   "Hosts declare traits (profile hostTraits, worker.json traits, per-invocation --traits per Q7); placement treats required traits like backends (§3.8, §10.3).",
+   "Leases gain heartbeat_at, expires_at and a monotonic fence; the fence, not expiry, excludes a revived owner which fails with leaseLost (§3.9, §11).",
+   "Cross-host takeover is pull-based over /graphql (takeoverTask, heartbeatAttempt, reportAttempt) under manager-session auth; the controller runs director and verification on reports (§3.10, §10.2)."
   ],
   "intentionalTradeoffs": [
    "Mid-node interruption (S3, --now) re-runs the step; step-boundary checkpoints bound repository loss to one step.",
@@ -109,7 +109,11 @@
    "Shared files (RuntimeStore.swift, DeterministicWorkflowRunner+Events.swift, DecisionApplier.swift, RielaAddons.swift, WorkflowRunCommand.swift, SessionCommands.swift, RielaCommand.swift) are edited in DAG order by several plans; each edit needs a fresh read and wh-20 reruns earlier focused suites (tmp/work-handover/wh-20-reconcile/focused.log).",
    "Plan line-number citations may shift as earlier waves land; the named symbols are authoritative.",
    "Progress-log gap: impl-plans/progress/wh-01-contracts.md does not list the strict 'fence' decoding assertion in Tests/RielaWorkTests/WorkModelsCodableTests.swift; the wh-01 re-verify dispatch records it.",
-   "Placeholder exposure: until wh-03 and wh-14 land, the TaskDispatch .takeover arm throws and decisionKind(for: .takeover) returns .resume; the wh-01 adversarial review confirms no production path reaches them."
+   "Placeholder exposure: until wh-14 lands, the TaskDispatch .takeover arm and the completed||failed guard at TaskDispatch.swift:282 remain the pre-handover behaviour; wh-14 replaces them.",
+   "Wave-label drift: plan headers say W2 (wh-10) and W3 (wh-14) while manifest plans[].wave is null; dispatch readiness follows dependsOn only (wh-10 -> wh-14 -> {wh-15, wh-16, wh-17} -> {wh-18, wh-19} -> wh-20).",
+   "Baseline commit wording: design section 15.1 and wh-20 name 01b38f02 as the swiftlint diff base while the baseline ran at the code-identical 56aed135; the comparison command is unaffected.",
+   "Parity gate window: SurfaceParity stays red between wh-15/wh-16 and wh-20 by design; wh-15/16 focused filters exclude SurfaceParity.",
+   "Environment boundary: wh-17 validate.log and wh-20 examples.log mock runs use .build/debug/riela with ~/.riela access and must run in Opus verification steps, not the Codex sandbox."
   ],
   "sourcePaths": [
    "design-docs/specs/design-work-handover-and-takeover.md",
@@ -125,7 +129,7 @@
    "examples/task-repair-loop"
   ],
   "codexAgentReferences": [],
-  "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions). Session -231 (comm-002964) re-accepted all 20 plans at 6e18f9f5 with no findings: writePaths/sharedPaths concrete and disjoint, DAG headers agree with the manifest, no source drift since 01b38f02. Session -1 (comm-000006) re-accepted all 20 plans at bb33bbf0 with no findings: the amended wh-01 scope covers all 36 committed wh-01 files, and the new overlaps (WorkStore+Reservation.swift with wh-03, TaskDispatch.swift with wh-14) are serialized by dependsOn."
+  "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions). Session -231 (comm-002964) re-accepted all 20 plans at 6e18f9f5 with no findings: writePaths/sharedPaths concrete and disjoint, DAG headers agree with the manifest, no source drift since 01b38f02. Session -1 (comm-000006) re-accepted all 20 plans at bb33bbf0 with no findings: the amended wh-01 scope covers all 36 committed wh-01 files, and the new overlaps (WorkStore+Reservation.swift with wh-03, TaskDispatch.swift with wh-14) are serialized by dependsOn. Session -2 (comm-000093) re-accepted the 8 remaining plans (wh-10, wh-14..wh-20) at 7182232d with no findings: paths concrete and existing, overlaps (RielaCommand.swift, TaskCommands.swift, TaskHandoverCommands.swift, CLISurfaceEnumeration.swift, README.md) serialized by dependsOn, source anchors verified, filters name real test classes, baseline gate executable."
  },
  "plans": [
   {
@@ -442,7 +446,7 @@
     "arch -arm64 /bin/zsh -lc 'swift test > tmp/work-handover/wh-20-reconcile/full-swift-test.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/full-swift-test.log'",
     "arch -arm64 /bin/zsh -lc 'git diff --name-only 01b38f02 -- \"*.swift\" | xargs swiftlint lint --strict > tmp/work-handover/wh-20-reconcile/swiftlint.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/swiftlint.log'",
     "git diff --check",
-    "/bin/zsh -c 'P=\"Test Case .-\\[[^]]*\\]. failed|\u2718 Test [^ ]* failed\"; grep -oE \"$P\" tmp/work-handover/wh-00/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/baseline-failing.txt; grep -oE \"$P\" tmp/work-handover/wh-20-reconcile/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/current-failing.txt; comm -13 tmp/work-handover/wh-20-reconcile/baseline-failing.txt tmp/work-handover/wh-20-reconcile/current-failing.txt > tmp/work-handover/wh-20-reconcile/new-failures.txt; grep -q \"^exit=\" tmp/work-handover/wh-20-reconcile/full-swift-test.log && test ! -s tmp/work-handover/wh-20-reconcile/new-failures.txt'"
+    "/bin/zsh -c 'P=\"Test Case .-\\[[^]]*\\]. failed|✘ Test [^ ]* failed\"; grep -oE \"$P\" tmp/work-handover/wh-00/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/baseline-failing.txt; grep -oE \"$P\" tmp/work-handover/wh-20-reconcile/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/current-failing.txt; comm -13 tmp/work-handover/wh-20-reconcile/baseline-failing.txt tmp/work-handover/wh-20-reconcile/current-failing.txt > tmp/work-handover/wh-20-reconcile/new-failures.txt; grep -q \"^exit=\" tmp/work-handover/wh-20-reconcile/full-swift-test.log && test ! -s tmp/work-handover/wh-20-reconcile/new-failures.txt'"
    ]
   }
  ],
@@ -452,6 +456,78 @@
    "status": "completed",
    "evidence": "impl-plans/progress/wh-00-baseline.md",
    "note": "Completed in session opus-luna-design-and-implement-review-loop-session-228. Baseline at 56aed135: 2778 run, 2775 passed, 2 skipped, 1 failed (WorkflowCommandCrossWorkflowDispatchTests.testSubprocessAbruptTerminationCheckpointsReopenCanonicalSQLiteWithoutDuplicatingDurableEffect, 180 s scratch-build subprocess timeout). Logs under tmp/work-handover/wh-00/."
+  },
+  {
+   "planId": "wh-01-contracts",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-01-contracts.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-02-runner-suspend",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-02-runner-suspend.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-03-work-store",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-03-work-store.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-04-packet-coordinator",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-04-packet-coordinator.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-05-history-import",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-05-history-import.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-06-wait-signal",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-06-wait-signal.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-07-git-branch-runtime",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-07-git-branch-runtime.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-08-deliverable-collector",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-08-deliverable-collector.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-09-handover-sinks",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-09-handover-sinks.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-11-director-notify",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-11-director-notify.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-12-graphql-contracts",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-12-graphql-contracts.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-13-gc-sweep",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-13-gc-sweep.md",
+   "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
   }
  ],
  "acceptedDependencies": [
@@ -463,51 +539,64 @@
   },
   {
    "planId": "wh-01-contracts",
-   "planPath": "impl-plans/active/wh-01-contracts.md"
+   "planPath": "impl-plans/active/wh-01-contracts.md",
+   "commit": "d043cbad",
+   "provides": "Shared handover contracts (initial wh-01 WIP at bb33bbf0, completed and accepted in d043cbad)."
   },
   {
    "planId": "wh-02-runner-suspend",
-   "planPath": "impl-plans/active/wh-02-runner-suspend.md"
+   "planPath": "impl-plans/active/wh-02-runner-suspend.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-03-work-store",
-   "planPath": "impl-plans/active/wh-03-work-store.md"
+   "planPath": "impl-plans/active/wh-03-work-store.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-04-packet-coordinator",
-   "planPath": "impl-plans/active/wh-04-packet-coordinator.md"
+   "planPath": "impl-plans/active/wh-04-packet-coordinator.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-05-history-import",
-   "planPath": "impl-plans/active/wh-05-history-import.md"
+   "planPath": "impl-plans/active/wh-05-history-import.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-06-wait-signal",
-   "planPath": "impl-plans/active/wh-06-wait-signal.md"
+   "planPath": "impl-plans/active/wh-06-wait-signal.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-07-git-branch-runtime",
-   "planPath": "impl-plans/active/wh-07-git-branch-runtime.md"
+   "planPath": "impl-plans/active/wh-07-git-branch-runtime.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-08-deliverable-collector",
-   "planPath": "impl-plans/active/wh-08-deliverable-collector.md"
+   "planPath": "impl-plans/active/wh-08-deliverable-collector.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-09-handover-sinks",
-   "planPath": "impl-plans/active/wh-09-handover-sinks.md"
+   "planPath": "impl-plans/active/wh-09-handover-sinks.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-11-director-notify",
-   "planPath": "impl-plans/active/wh-11-director-notify.md"
+   "planPath": "impl-plans/active/wh-11-director-notify.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-12-graphql-contracts",
-   "planPath": "impl-plans/active/wh-12-graphql-contracts.md"
+   "planPath": "impl-plans/active/wh-12-graphql-contracts.md",
+   "commit": "d043cbad"
   },
   {
    "planId": "wh-13-gc-sweep",
-   "planPath": "impl-plans/active/wh-13-gc-sweep.md"
+   "planPath": "impl-plans/active/wh-13-gc-sweep.md",
+   "commit": "d043cbad"
   }
  ]
 }

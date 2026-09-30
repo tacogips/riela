@@ -86,9 +86,26 @@
     "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
     "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
     "Tests/RielaWorkTests/WorkStoreTests.swift",
+    "impl-plans/progress/wh-14-task-dispatch-runtime.md",
     "impl-plans/completed"
   ],
   "sharedPathNotes": [
+    {
+      "path": "Sources/RielaCLI/TaskHandoverRuntime.swift",
+      "intendedEdit": "Design §21 R35(b): gitEnvironment becomes `static func gitEnvironment() -> [String: String]` returning CLIRuntimeEnvironment.mergedProcessEnvironment() unchanged (no GIT_CEILING_DIRECTORIES assignment); update runAdoptionGit and the publisher GitBranchWorkspaceRuntime call site. Nothing else in this file changes."
+    },
+    {
+      "path": "Sources/RielaCLI/TaskDispatch+Handover.swift",
+      "intendedEdit": "Design §21 R35(b): the two GitBranchWorkspaceRuntime(environment:) call sites (~lines 125 and 167) call TaskHandoverRuntime.gitEnvironment() without a ceiling argument. Nothing else changes."
+    },
+    {
+      "path": "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
+      "intendedEdit": "Design §21 R35(b) regression: add testSessionHandoverHonorsApplicationGitCeilingForNonRepositoryWorkingDirectory (see 'R35 amendment')."
+    },
+    {
+      "path": "impl-plans/progress/wh-14-task-dispatch-runtime.md",
+      "intendedEdit": "wh-14 low finding (stale progress entries): append one closing section only; do not rewrite or delete earlier entries."
+    },
     {
       "path": "Sources/RielaCore/SurfaceCatalog+Rows.swift",
       "intendedEdit": "Only if the GraphQL-only operation rows live here rather than in +RowsCLI: add the handover field rows."
@@ -176,6 +193,7 @@ Use the flag spellings each command's `--help` shows, and record any adjustment.
 - [ ] The join audit is clean; the catalog rows and SDL are in place; the parity gates are green
 - [ ] All focused suites and example checks pass; the full suite has no new failures against wh-00
 - [ ] The umbrella Completion Criteria are checked with evidence; archive or keep active accordingly; the README and index are updated
+- [ ] R35 amendment: SDL uses the design §12 / wh-12 signatures; gitEnvironment uses mergedProcessEnvironment with no ceiling; the ceiling regression test passes (r35-ceiling.log exit=0) and failed before the fix (r35-ceiling-prefix.log); wh-14 closure note appended
 
 
 ## Full-suite gate (amended 2026-09-30)
@@ -202,3 +220,55 @@ If a provider-backed test fails once the branch is gone, it is a regression: fix
 ### wh-19 folded in (2026-10-01, after run session-15)
 
 wh-01..wh-18 are accepted and committed. wh-19's docs and skills work is committed ('wip: work handover docs and skills (wh-19)') but its only behavioral gate, `SurfaceParitySkillTests`, needs this plan's surface catalog rows: it currently fails 2 of 7 (`testEveryDocumentedCommandResolvesToACatalogRow`, `testEveryDocumentedFlagIsAnOptionSomeParserAccepts`; see tmp/work-handover/recovery/skill-parity.log). So wh-20 now also owns wh-19's docs and skills files. Add the catalog rows and SDL for every new task/session/GraphQL surface (including the takeoverTask answer fields added by wh-18), finish and correct the docs and skills against the shipped surfaces, make SurfaceParitySkillTests pass, then do the reconcile work below (low findings from wh-14, full suite against the wh-00 baseline, plan archive).
+
+### R35 amendment (2026-10-01, run session-16 design intake)
+
+The accepted design gained §21 R35 (design review accepted, session-16, no findings). It makes three wh-20 items exact. Nothing else in this plan changes: no new plan, and no renumbering.
+
+**A. SDL signatures (design §12, R35(a)).** In step 3, the seven root fields are the ones in the design §12 block. They match `impl-plans/active/wh-12-graphql-contracts.md:41-49` and the provider protocol in `Sources/RielaGraphQL/TaskHandoverGraphQL.swift`: `String` arguments (not `ID`), `traits: [String!]`, and the `*Payload!` return types. Pitfall: do not copy the pre-R35 draft names (`TakeoverReservation`, `LeaseState`, `[HostTrait!]` and the others). They are not in the schema block, and SDL validation would reject them. Register `taskHandoverGraphQLSchemaTypes` unchanged. Do not edit that block.
+
+**B. Catalog options (design §12 note).** For each CLI row, list every `@Option`/`@Flag` the parser declares:
+- `ParsedTaskHandoverOptions`, `ParsedTaskTakeoverOptions`, `ParsedTaskAnswerOptions`, `ParsedTaskSharedOptions` (handovers) and `ParsedTaskReconcileOptions` in `Sources/RielaCLI/TaskHandoverCommands.swift`.
+- `task serve` in `Sources/RielaCLI/TaskServeTakeover.swift`: `--takeover`, `--endpoint`, `--poll-interval-ms`, `--once`, `--traits`, the auth options and the store options.
+- `session handover` in `ParsedSessionHandoverOptions`.
+
+Include the shared store options (`--scope`, `--working-dir`, `--session-store`, `--output`, `--principal` where declared) and, where declared, the remote options (`--auth-token`, `--auth-token-env`, `--manager-session-id`, `--handover-id`). Pitfall: the design §12 table is a summary. Rows built from it alone miss `--traits`/`--sink`, and SurfaceParitySkillTests keeps failing.
+
+**C. wh-14 low findings (R35(b)).** There are three.
+1. *Ceiling.* Change the call sites listed in the `sharedPathNotes` above:
+   - `TaskHandoverRuntime.gitEnvironment()` takes no argument and returns `CLIRuntimeEnvironment.mergedProcessEnvironment()` exactly.
+   - Update all four callers: `runAdoptionGit`, the publisher in `TaskHandoverRuntime`, and `TaskDispatch+Handover.swift` about lines 125 and 167.
+   - Do not set, remove or rewrite `GIT_CEILING_DIRECTORIES` in production code.
+   - Do not touch `GitBranchWorkspaceRuntime.swift`'s default initializer. R35 does not list it.
+
+   Pitfalls:
+   - Setting the ceiling to the parent directory in production breaks R27 item 1: adoption from a subdirectory must resolve the enclosing top level.
+   - Using `ProcessInfo.processInfo.environment` drops the test's application-level ceiling. `RielaCLIApplication.run(environment:)` sets it through the `CLIRuntimeEnvironment.$overrides` task-local (`Sources/RielaCLI/RielaCLIApplication.swift:100`).
+2. *reservationFence.* No change. It stays `Int?`: `nil` only for the lease-less adopted attempt, and `-1` for a leased attempt with a missing lease. Record "no change, per R35" in the progress log.
+3. *Stale progress entries.* Append one section, "Closure note (wh-20)", to `impl-plans/progress/wh-14-task-dispatch-runtime.md`. It states that the earlier "remaining work" lists are superseded by the continuation-1 evidence and by the acceptance at `2cd392b8`. Do not edit or delete the earlier text.
+
+Regression test: `TaskHandoverCommandTests.testSessionHandoverHonorsApplicationGitCeilingForNonRepositoryWorkingDirectory`. Imitate `testSessionHandoverAdoptsSuspendedSessionInHermeticRepository` and the existing `run(_:project:)` helper.
+
+The fixture:
+- A resolved temp root `T`.
+- `git init` of an outer repository `T/outer` with one commit and a local bare remote under `T`.
+- A plain directory `T/outer/inner`, which is not a repository.
+- A suspended session whose working directory is `T/outer/inner`.
+
+Run `session handover <sessionId> --reason r --scope project --working-dir T/outer/inner --session-store <store>` with the application `environment:` containing `GIT_CEILING_DIRECTORIES=T/outer` and `RIELA_SESSION_STORE`. `T/outer` is a proper ancestor of `inner`, so git must not walk into `outer`.
+
+Expected outcomes:
+- The command succeeds.
+- The adopted task has no repository `context`, and its packet has no repository deliverable.
+- `git -C T/outer` shows an unchanged branch, `HEAD` sha and `for-each-ref` output, and no `riela/task/*` ref.
+- Every git call the test makes itself uses `TaskHandoverHermeticGit.environment(ceiling: T)`.
+- Assert that the resolved top level of `outer` is inside `T`.
+
+Before the fix, the production ceiling (`inner` itself) is ignored and the application ceiling is lost, so git finds `outer` and the task gets a repository context. The test must fail on the old code. Record that failing run in `tmp/work-handover/wh-20-reconcile/r35-ceiling-prefix.log` before applying the fix.
+
+Evidence (append to the verification list; each command's log ends with `exit=`):
+- `! grep -q "GIT_CEILING_DIRECTORIES" Sources/RielaCLI/TaskHandoverRuntime.swift` exits 0.
+- `grep -q "mergedProcessEnvironment" Sources/RielaCLI/TaskHandoverRuntime.swift` exits 0.
+- `arch -arm64 /bin/zsh -lc 'swift test --filter "TaskHandoverCommandTests|TaskHandoverDispatchTests|TaskHandoverRepositoryTests" > tmp/work-handover/wh-20-reconcile/r35-ceiling.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/r35-ceiling.log'` ends `exit=0` with 0 failures and includes the new test.
+
+Order: do C before step 4, so the focused and full runs include it. A and B belong to steps 2–3.

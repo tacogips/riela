@@ -37,7 +37,7 @@
  ],
  "evidenceRoot": "tmp/work-handover",
  "reviewContext": {
-  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20. Re-accepted at HEAD c0a138b9 (partial wh-10 committed at 08d4fc10; design \u00a721 R23/R24 and the wh-10 resume checklist added) by step5-impl-plan-review in communication comm-000106 of workflow execution opus-luna-design-and-implement-review-loop-session-3 (accepted, findings []). Re-accepted at HEAD d32077b0 (wh-10 completed in a45b6eb1 and marked accepted in d32077b0; partial wh-14 committed at 4983c5aa; wh-14 resume checklist added and its director .handover step self-repaired) by step5-impl-plan-review in communication comm-000128 of workflow execution opus-luna-design-and-implement-review-loop-session-4 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 9cb176a4 (wip wh-14 continued at 5e40e45a; wh-14 given ownership of the takeover answer lookup in 9cb176a4; design \u00a721 R25 same-second answer binding plus the wh-14 answer-lookup fix section and verification added, uncommitted) by step5-impl-plan-review in communication comm-000143 of workflow execution opus-luna-design-and-implement-review-loop-session-5 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 76e9ea43 (wip wh-14 continued at 80e82d5d; wh-14 given the terminal persistence and cancellation layer in 76e9ea43; design \u00a721 R26 single-terminal-write rule plus the wh-14 'R26 alignment' section and persistence.log verification added, uncommitted) by step5-impl-plan-review in communication comm-000158 of workflow execution opus-luna-design-and-implement-review-loop-session-6 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 62b284c6 (wip wh-14 continued at 7f78b606/62b284c6 with R26 items 1-2 implemented; a 'Resume status at 62b284c6' section appended to the wh-14 plan, uncommitted) by step5-impl-plan-review in communication comm-000171 of workflow execution opus-luna-design-and-implement-review-loop-session-7 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 71958339 (wip wh-14 continued at 076652a0/225af1e3; stop-first safety fix 71958339; design \u00a79.1 Ownership, \u00a710.5, \u00a715.1 and \u00a721 R29 read-only adoption plus attempt-owned publication and hermetic git tests, user-qa Q10 default (a), wh-14 R29 P1/P2/P3/H/T/V section, wh-19 clause and umbrella rule 11 added, uncommitted) by step5-impl-plan-review in communication comm-000199 of workflow execution opus-luna-design-and-implement-review-loop-session-9 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 09953552 (wh-14 accepted; wh-15 completed at e95096c3; partial wh-16 at f4daa148 with the WorkStore lease/reservation scope amendment; design \u00a710.2/\u00a714 and \u00a721 R31 lease credential, the wh-16 'Lease credential fix (session-11)' section and the wh-17 beforeExecution resume note added, uncommitted) by step5-impl-plan-review in communication comm-000249 of workflow execution opus-luna-design-and-implement-review-loop-session-11 (accepted, findings []); remaining plans wh-16..wh-20, strictly serial. Re-accepted at HEAD 65eff09d (wip wh-16 continued at b0813536 with the heartbeat token fix; serial shared ownership of dispatch internals granted to wh-16 and wh-18 in 65eff09d; the wh-16 'Completed-report root cause and fix (2026-10-01, run session-12)' section and user-qa Q11 replayed reportAttempt with default (a) added, uncommitted) by step5-impl-plan-review in communication comm-000262 of workflow execution opus-luna-design-and-implement-review-loop-session-12 (accepted, findings []); remaining plans wh-16..wh-20, strictly serial. Re-accepted at HEAD 3f9bcea2 (wip wh-16 feature-complete at a9ba7f15, pending the concurrent reportAttempt replay fix required by 05e51abd/3f9bcea2; design \u00a714 Report claim and \u00a721 R32 compare-and-swap rotate, user-qa Q11 update and the wh-16 'Concurrent report claim (2026-10-01, run session-13)' section added, uncommitted) by step5-impl-plan-review in communication comm-000275 of workflow execution opus-luna-design-and-implement-review-loop-session-13 (accepted, findings []); remaining plans wh-16..wh-20, strictly serial. Re-accepted at HEAD 17424551 (wh-16 completed at dadfa601 and accepted in 17424551; partial wh-17 at 91e4b0f1; design \u00a711 last bullet and \u00a721 R33 fenced-predecessor guard evaluation, widened to the director and agent wall-clock budget sums, plus the wh-17 'R33 fenced-predecessor guard fix (2026-10-01, run session-14)' section added, uncommitted) by step5-impl-plan-review in communication comm-000300 of workflow execution opus-luna-design-and-implement-review-loop-session-14 (accepted, designAmendmentReview accepted, findings []); remaining plans wh-17..wh-20, strictly serial. Re-accepted at HEAD 3d75d601 (wh-17 completed at 2476bcbe and accepted in 3d75d601; partial wh-18 at 1e04c8d5; design §10.2 steps 2-3 and §21 R34 S1 answer in the takeoverTask GraphQL contract, the wh-18 'Answer delivery amendment' R34 section with the fractional-second answeredAt parse self-repair, and the wh-20 schema/pending-branch removal step added, uncommitted) by step5-impl-plan-review in communication comm-000325 of workflow execution opus-luna-design-and-implement-review-loop-session-15 (accepted, findings []); remaining plans wh-18..wh-20, strictly serial.",
+  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20. Re-accepted at HEAD c0a138b9 (partial wh-10 committed at 08d4fc10; design \u00a721 R23/R24 and the wh-10 resume checklist added) by step5-impl-plan-review in communication comm-000106 of workflow execution opus-luna-design-and-implement-review-loop-session-3 (accepted, findings []). Re-accepted at HEAD d32077b0 (wh-10 completed in a45b6eb1 and marked accepted in d32077b0; partial wh-14 committed at 4983c5aa; wh-14 resume checklist added and its director .handover step self-repaired) by step5-impl-plan-review in communication comm-000128 of workflow execution opus-luna-design-and-implement-review-loop-session-4 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 9cb176a4 (wip wh-14 continued at 5e40e45a; wh-14 given ownership of the takeover answer lookup in 9cb176a4; design \u00a721 R25 same-second answer binding plus the wh-14 answer-lookup fix section and verification added, uncommitted) by step5-impl-plan-review in communication comm-000143 of workflow execution opus-luna-design-and-implement-review-loop-session-5 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 76e9ea43 (wip wh-14 continued at 80e82d5d; wh-14 given the terminal persistence and cancellation layer in 76e9ea43; design \u00a721 R26 single-terminal-write rule plus the wh-14 'R26 alignment' section and persistence.log verification added, uncommitted) by step5-impl-plan-review in communication comm-000158 of workflow execution opus-luna-design-and-implement-review-loop-session-6 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 62b284c6 (wip wh-14 continued at 7f78b606/62b284c6 with R26 items 1-2 implemented; a 'Resume status at 62b284c6' section appended to the wh-14 plan, uncommitted) by step5-impl-plan-review in communication comm-000171 of workflow execution opus-luna-design-and-implement-review-loop-session-7 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 71958339 (wip wh-14 continued at 076652a0/225af1e3; stop-first safety fix 71958339; design \u00a79.1 Ownership, \u00a710.5, \u00a715.1 and \u00a721 R29 read-only adoption plus attempt-owned publication and hermetic git tests, user-qa Q10 default (a), wh-14 R29 P1/P2/P3/H/T/V section, wh-19 clause and umbrella rule 11 added, uncommitted) by step5-impl-plan-review in communication comm-000199 of workflow execution opus-luna-design-and-implement-review-loop-session-9 (accepted, findings []); remaining plans wh-14..wh-20. Re-accepted at HEAD 09953552 (wh-14 accepted; wh-15 completed at e95096c3; partial wh-16 at f4daa148 with the WorkStore lease/reservation scope amendment; design \u00a710.2/\u00a714 and \u00a721 R31 lease credential, the wh-16 'Lease credential fix (session-11)' section and the wh-17 beforeExecution resume note added, uncommitted) by step5-impl-plan-review in communication comm-000249 of workflow execution opus-luna-design-and-implement-review-loop-session-11 (accepted, findings []); remaining plans wh-16..wh-20, strictly serial. Re-accepted at HEAD 65eff09d (wip wh-16 continued at b0813536 with the heartbeat token fix; serial shared ownership of dispatch internals granted to wh-16 and wh-18 in 65eff09d; the wh-16 'Completed-report root cause and fix (2026-10-01, run session-12)' section and user-qa Q11 replayed reportAttempt with default (a) added, uncommitted) by step5-impl-plan-review in communication comm-000262 of workflow execution opus-luna-design-and-implement-review-loop-session-12 (accepted, findings []); remaining plans wh-16..wh-20, strictly serial. Re-accepted at HEAD 3f9bcea2 (wip wh-16 feature-complete at a9ba7f15, pending the concurrent reportAttempt replay fix required by 05e51abd/3f9bcea2; design \u00a714 Report claim and \u00a721 R32 compare-and-swap rotate, user-qa Q11 update and the wh-16 'Concurrent report claim (2026-10-01, run session-13)' section added, uncommitted) by step5-impl-plan-review in communication comm-000275 of workflow execution opus-luna-design-and-implement-review-loop-session-13 (accepted, findings []); remaining plans wh-16..wh-20, strictly serial. Re-accepted at HEAD 17424551 (wh-16 completed at dadfa601 and accepted in 17424551; partial wh-17 at 91e4b0f1; design \u00a711 last bullet and \u00a721 R33 fenced-predecessor guard evaluation, widened to the director and agent wall-clock budget sums, plus the wh-17 'R33 fenced-predecessor guard fix (2026-10-01, run session-14)' section added, uncommitted) by step5-impl-plan-review in communication comm-000300 of workflow execution opus-luna-design-and-implement-review-loop-session-14 (accepted, designAmendmentReview accepted, findings []); remaining plans wh-17..wh-20, strictly serial. Re-accepted at HEAD 3d75d601 (wh-17 completed at 2476bcbe and accepted in 3d75d601; partial wh-18 at 1e04c8d5; design \u00a710.2 steps 2-3 and \u00a721 R34 S1 answer in the takeoverTask GraphQL contract, the wh-18 'Answer delivery amendment' R34 section with the fractional-second answeredAt parse self-repair, and the wh-20 schema/pending-branch removal step added, uncommitted) by step5-impl-plan-review in communication comm-000325 of workflow execution opus-luna-design-and-implement-review-loop-session-15 (accepted, findings []); remaining plans wh-18..wh-20, strictly serial.",
   "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
   "requiredOutcomes": [
    "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",
@@ -180,16 +180,25 @@
  },
  "plans": [
   {
-   "planId": "wh-18-remote-takeover",
-   "planPath": "impl-plans/active/wh-18-remote-takeover.md",
+   "planId": "wh-20-reconcile",
+   "planPath": "impl-plans/active/wh-20-reconcile.md",
    "dependsOn": [],
    "writePaths": [
-    "Sources/RielaCLI/TaskRemoteTakeover.swift",
-    "Sources/RielaCLI/TaskServeTakeover.swift",
-    "Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
-    "impl-plans/progress/wh-18-remote-takeover.md"
+    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
+    "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
+    "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
+    "impl-plans/active/work-handover-and-takeover.md",
+    "impl-plans/README.md",
+    "docs/work-handover.md",
+    "docs/distributed-workers.md",
+    "docs/preserved-history-recovery.md",
+    "Resources/skills/riela-workflow-run/SKILL.md",
+    "Resources/skills/riela-workflow-reference/SKILL.md",
+    "impl-plans/progress/wh-20-reconcile.md"
    ],
    "sharedPaths": [
+    "README.md",
+    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
     "Sources/RielaCLI/RielaCommand.swift",
     "Sources/RielaCLI/RielaLibrary.swift",
     "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
@@ -202,133 +211,9 @@
     "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
     "Sources/RielaCLI/TaskHandoverRuntime.swift",
     "Sources/RielaCLI/TaskHandoverSupport.swift",
+    "Sources/RielaCLI/TaskRemoteTakeover.swift",
     "Sources/RielaCLI/TaskRunCancellation.swift",
-    "Sources/RielaGraphQL/TaskHandoverGraphQL.swift",
-    "Sources/RielaWork/DecisionApplier.swift",
-    "Sources/RielaWork/HandoverBriefRenderer.swift",
-    "Sources/RielaWork/HandoverCoordinator.swift",
-    "Sources/RielaWork/HandoverPacketBuilder.swift",
-    "Sources/RielaWork/HandoverProtocols.swift",
-    "Sources/RielaWork/HandoverRedaction.swift",
-    "Sources/RielaWork/TaskDispatcher.swift",
-    "Sources/RielaWork/TaskGuardCoordinator.swift",
-    "Sources/RielaWork/WorkHandover.swift",
-    "Sources/RielaWork/WorkStore+Adoption.swift",
-    "Sources/RielaWork/WorkStore+Decisions.swift",
-    "Sources/RielaWork/WorkStore+Director.swift",
-    "Sources/RielaWork/WorkStore+HandoverRequests.swift",
-    "Sources/RielaWork/WorkStore+Handovers.swift",
-    "Sources/RielaWork/WorkStore+Hosts.swift",
-    "Sources/RielaWork/WorkStore+Isolation.swift",
-    "Sources/RielaWork/WorkStore+Leases.swift",
-    "Sources/RielaWork/WorkStore+Reservation.swift",
-    "Sources/RielaWork/WorkStore+Schema.swift",
-    "Sources/RielaWork/WorkStore+Takeover.swift",
-    "Sources/RielaWork/WorkStore.swift",
-    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
-    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
-    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
-    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
-    "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
-    "Tests/RielaCLITests/TaskHandoverDispatchTests.swift",
-    "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
-    "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
-    "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
-    "Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
-    "Tests/RielaWorkTests/DecisionApplierTests.swift",
-    "Tests/RielaWorkTests/DeterministicDirectorHandoverTests.swift",
-    "Tests/RielaWorkTests/HandoverCoordinatorTests.swift",
-    "Tests/RielaWorkTests/HandoverPacketBuilderTests.swift",
-    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
-    "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
-    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
-    "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
-    "Tests/RielaWorkTests/WorkStoreHandoverRequestTests.swift",
-    "Tests/RielaWorkTests/WorkStoreLeaseTests.swift",
-    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
-    "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
-    "Tests/RielaWorkTests/WorkStoreTests.swift"
-   ],
-   "sharedPathNotes": [
-    {
-     "path": "Sources/RielaCLI/RielaCommand.swift",
-     "intendedEdit": "Add case serve to TaskCommandKind (after reconcile)."
-    },
-    {
-     "path": "Sources/RielaCLI/TaskCommands.swift",
-     "intendedEdit": "Route .serve to TaskServeTakeover."
-    },
-    {
-     "path": "Sources/RielaCLI/TaskHandoverCommands.swift",
-     "intendedEdit": "In the takeover parser add --endpoint, --auth-token, --auth-token-env and --manager-session-id; route --endpoint to TaskRemoteTakeover; --endpoint with --force-orphan is a usage error."
-    }
-   ],
-   "acceptanceCriteria": [
-    "task takeover --endpoint (materialize branch, import bundle, heartbeat, report) and task serve --takeover are implemented; auth and fence behaviors are tested.",
-    "TaskRemoteTakeoverTests pass; acceptance signals 3 (second clone over remote path) and 6 are mapped to test names in the progress log.",
-    "Design §21 R34: GraphQLTakeoverTaskPayload.answer (HandoverAnswerPayload questionId/payload/answeredBy/answeredAt) is returned for an answered S1 handover and is nil otherwise; the provider refuses an unanswered S1 handover with code conflict before any reservation; TaskRemoteTakeover delivers handover.answer, the delivered variable and the handover-answer-<handoverId>-<attemptId> delivered message to resumeStepId, and fails before launch when an S1 response lacks the answer; a provider-backed answered-S1 test exists (strict isPendingSchemaRegistration branch until wh-20 step 3); the schema change is recorded in the progress log for wh-20."
-   ],
-   "verification": [
-    "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-18-remote-takeover/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-18-remote-takeover/build.log'",
-    "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskRemoteTakeoverTests|TaskHandoverCommandTests|TaskHandoverGraphQLProviderTests|TaskHandoverGraphQLTests\" > tmp/work-handover/wh-18-remote-takeover/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-18-remote-takeover/focused.log'",
-    "grep -c \"isPendingSchemaRegistration(\" Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
-    "git diff --check"
-   ]
-  },
-  {
-   "planId": "wh-19-docs-skills",
-   "planPath": "impl-plans/active/wh-19-docs-skills.md",
-   "dependsOn": [
-    "wh-18-remote-takeover"
-   ],
-   "writePaths": [
-    "docs/work-handover.md",
-    "docs/distributed-workers.md",
-    "docs/preserved-history-recovery.md",
-    "Resources/skills/riela-workflow-run/SKILL.md",
-    "Resources/skills/riela-workflow-reference/SKILL.md",
-    "impl-plans/progress/wh-19-docs-skills.md"
-   ],
-   "sharedPaths": [],
-   "acceptanceCriteria": [
-    "docs/work-handover.md is written and distributed-workers/preserved-history-recovery docs and the two in-repo skills are updated for every new command, flag, exit code 5 and GraphQL field.",
-    "Each grep count is at least 7; the external-skills follow-up (design R13) is recorded in the progress log."
-   ],
-   "verification": [
-    "grep -c -E \"task (handover|takeover|answer|handovers|reconcile|serve)|session handover\" Resources/skills/riela-workflow-run/SKILL.md",
-    "grep -c -E \"taskHandover|tasksAwaitingHandover|requestTaskHandover|answerTask|takeoverTask|heartbeatAttempt|reportAttempt\" Resources/skills/riela-workflow-reference/SKILL.md",
-    "git diff --check"
-   ]
-  },
-  {
-   "planId": "wh-20-reconcile",
-   "planPath": "impl-plans/active/wh-20-reconcile.md",
-   "dependsOn": [
-    "wh-19-docs-skills"
-   ],
-   "writePaths": [
-    "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
-    "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
-    "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
-    "impl-plans/active/work-handover-and-takeover.md",
-    "impl-plans/README.md",
-    "impl-plans/progress/wh-20-reconcile.md"
-   ],
-   "sharedPaths": [
-    "README.md",
-    "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-    "Sources/RielaCLI/RielaLibrary.swift",
-    "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
-    "Sources/RielaCLI/ServeWebHost.swift",
-    "Sources/RielaCLI/TaskDispatch+Director.swift",
-    "Sources/RielaCLI/TaskDispatch+Handover.swift",
-    "Sources/RielaCLI/TaskDispatch.swift",
-    "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
-    "Sources/RielaCLI/TaskHandoverRuntime.swift",
-    "Sources/RielaCLI/TaskHandoverSupport.swift",
-    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaCLI/TaskServeTakeover.swift",
     "Sources/RielaCore/SurfaceCatalog+Rows.swift",
     "Sources/RielaGraphQL/TaskHandoverGraphQL.swift",
     "Sources/RielaWork/DecisionApplier.swift",
@@ -407,9 +292,11 @@
     "All focused suites and example checks pass (validate exit=0 x3; answer and presence run exit=5; orphan run exit=0); the full suite has no unclassified or unfixed regression against wh-00; swiftlint --strict exits 0.",
     "Umbrella Completion Criteria are checked with evidence; plans are archived only if every box has evidence; README and impl-plans index updated.",
     "The full-suite gate is the baseline-comparison command (exit 0 iff the suite log has an exit= line and no failing test outside tmp/work-handover/wh-00 baseline). The raw swift test exit status is informational because the baseline has a pre-existing failure; report it as suiteExit, not as the behavioral test result.",
-    "Design §21 R34 schema and pending-branch removal: HandoverAnswerPayload appears in the generated SDL; Tests/RielaCLITests/TaskRemoteTakeoverTests.swift contains no isPendingSchemaRegistration or XCTExpectFailure; TaskRemoteTakeoverTests passes in focused.log with no expected failures."
+    "Design \u00a721 R34 schema and pending-branch removal: HandoverAnswerPayload appears in the generated SDL; Tests/RielaCLITests/TaskRemoteTakeoverTests.swift contains no isPendingSchemaRegistration or XCTExpectFailure; TaskRemoteTakeoverTests passes in focused.log with no expected failures.",
+    "Folded-in wh-19 (2026-10-01): docs/work-handover.md, docs/distributed-workers.md, docs/preserved-history-recovery.md and the riela-workflow-run / riela-workflow-reference skills are complete and consistent with the shipped CLI and GraphQL surfaces, and SurfaceParitySkillTests passes (every documented command resolves to a catalog row and every documented flag is accepted by a parser)."
    ],
    "verification": [
+    "arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceParitySkillTests > tmp/work-handover/wh-20-reconcile/skill-parity.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/skill-parity.log'",
     "! grep -q -E \"isPendingSchemaRegistration|XCTExpectFailure\" Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
     "grep -q \"HandoverAnswerPayload\" Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
     "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-20-reconcile/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/build.log'",
@@ -626,6 +513,15 @@
    "planPath": "impl-plans/active/wh-17-examples.md",
    "commit": "2476bcbe",
    "provides": "task-handover-answer, task-handover-presence and task-handover-orphan examples with mock scenarios and TaskHandoverExampleTests, plus the R33 fenced-predecessor guard evaluation in TaskDispatch/WorkStore takeover and reservation."
+  },
+  {
+   "planId": "wh-18-remote-takeover",
+   "planPath": "impl-plans/active/wh-18-remote-takeover.md"
+  },
+  {
+   "planId": "wh-19-docs-skills",
+   "planPath": "impl-plans/active/wh-19-docs-skills.md",
+   "note": "folded into wh-20 on 2026-10-01; its docs/skills work is committed and finished inside wh-20"
   }
  ]
 }

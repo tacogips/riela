@@ -1,5 +1,7 @@
 # wh-19: Operator docs and in-repo skills
 
+**Status**: Folded into wh-20-reconcile on 2026-10-01; docs and skills work committed, finished there.
+
 ```json
 {
   "planId": "wh-19-docs-skills",

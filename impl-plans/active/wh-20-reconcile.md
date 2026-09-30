@@ -5,30 +5,38 @@
   "planId": "wh-20-reconcile",
   "planPath": "impl-plans/active/wh-20-reconcile.md",
   "wave": "W6 (serial)",
-  "dependsOn": [
-    "wh-19-docs-skills"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
     "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
     "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
     "impl-plans/active/work-handover-and-takeover.md",
     "impl-plans/README.md",
+    "docs/work-handover.md",
+    "docs/distributed-workers.md",
+    "docs/preserved-history-recovery.md",
+    "Resources/skills/riela-workflow-run/SKILL.md",
+    "Resources/skills/riela-workflow-reference/SKILL.md",
     "impl-plans/progress/wh-20-reconcile.md"
   ],
   "sharedPaths": [
     "README.md",
     "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+    "Sources/RielaCLI/RielaCommand.swift",
     "Sources/RielaCLI/RielaLibrary.swift",
     "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
     "Sources/RielaCLI/ServeWebHost.swift",
+    "Sources/RielaCLI/TaskCommands.swift",
     "Sources/RielaCLI/TaskDispatch+Director.swift",
     "Sources/RielaCLI/TaskDispatch+Handover.swift",
     "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/TaskHandoverCommands.swift",
     "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
     "Sources/RielaCLI/TaskHandoverRuntime.swift",
     "Sources/RielaCLI/TaskHandoverSupport.swift",
+    "Sources/RielaCLI/TaskRemoteTakeover.swift",
     "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaCLI/TaskServeTakeover.swift",
     "Sources/RielaCore/SurfaceCatalog+Rows.swift",
     "Sources/RielaGraphQL/TaskHandoverGraphQL.swift",
     "Sources/RielaWork/DecisionApplier.swift",
@@ -190,3 +198,7 @@ Evidence:
 - In `focused.log`, `TaskRemoteTakeoverTests` passes with no expected failures.
 
 If a provider-backed test fails once the branch is gone, it is a regression: fix it under the serial repair authority. Never restore the branch.
+
+### wh-19 folded in (2026-10-01, after run session-15)
+
+wh-01..wh-18 are accepted and committed. wh-19's docs and skills work is committed ('wip: work handover docs and skills (wh-19)') but its only behavioral gate, `SurfaceParitySkillTests`, needs this plan's surface catalog rows: it currently fails 2 of 7 (`testEveryDocumentedCommandResolvesToACatalogRow`, `testEveryDocumentedFlagIsAnOptionSomeParserAccepts`; see tmp/work-handover/recovery/skill-parity.log). So wh-20 now also owns wh-19's docs and skills files. Add the catalog rows and SDL for every new task/session/GraphQL surface (including the takeoverTask answer fields added by wh-18), finish and correct the docs and skills against the shipped surfaces, make SurfaceParitySkillTests pass, then do the reconcile work below (low findings from wh-14, full suite against the wh-00 baseline, plan archive).

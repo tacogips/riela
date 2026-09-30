@@ -33,6 +33,71 @@ private struct HandoverTraitHostResolver: HostCapabilityResolving {
 }
 
 final class TaskHandoverDispatchTests: XCTestCase {
+  func testAdoptAndSealCreatesOperatorMovePacket() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let workflowId = "adopted-handover-fixture"
+    let project = harness.sessionStore.appendingPathComponent("adoption-project", isDirectory: true)
+    let workflowDirectory = project.appendingPathComponent(".riela/workflows/\(workflowId)", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    let workflow: [String: Any] = [
+      "workflowId": workflowId,
+      "defaults": ["nodeTimeoutMs": 2_000, "maxLoopIterations": 1],
+      "entryStepId": "start",
+      "nodes": [["id": "node", "nodeFile": "node.json"]],
+      "steps": [
+        ["id": "start", "nodeId": "node", "transitions": [["toStepId": "resume"]]],
+        ["id": "resume", "nodeId": "node"]
+      ]
+    ]
+    let node: [String: Any] = [
+      "id": "node", "nodeType": "command", "model": "", "modelFreeze": false,
+      "command": ["executable": "/usr/bin/true", "arguments": []]
+    ]
+    try JSONSerialization.data(withJSONObject: workflow, options: [.sortedKeys])
+      .write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+    try JSONSerialization.data(withJSONObject: node, options: [.sortedKeys])
+      .write(to: workflowDirectory.appendingPathComponent("node.json"))
+
+    let sessionId = "adopted-handover-session"
+    let now = Date()
+    let session = WorkflowSession(
+      workflowId: workflowId, sessionId: sessionId, status: .suspended,
+      entryStepId: "start", currentStepId: "resume", createdAt: now, updatedAt: now,
+      suspend: SuspendRecord(
+        reasonKind: .operatorMove, stepId: "resume", progressNote: "Resume adopted work",
+        suspendedAt: now, producer: .runtime
+      )
+    )
+    let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: harness.sessionStore.path)
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).save(
+      WorkflowRuntimePersistenceSnapshot(session: session)
+    )
+    let placeholder = WorkTask(
+      id: TaskID("task-adoption-placeholder"), intentId: IntentID("intent-adoption-placeholder"),
+      title: "Adoption runtime", instruction: "unused", plan: .workflow(WorkflowReference(name: workflowId))
+    )
+    let options = TaskStoreOptions(
+      scope: .project, workingDirectory: project.path, sessionStore: harness.sessionStore.path
+    )
+    let runtime = TaskHandoverRuntime(
+      located: TaskCommandRunner.LocatedTask(task: placeholder, store: harness.store, root: harness.store.rootDirectory),
+      options: options
+    )
+    let (adopted, packet) = try await runtime.adoptAndSeal(
+      sessionId: sessionId, workingDirectory: project.path, reason: "move to a worker",
+      principal: "test", cliSinks: []
+    )
+    guard case let .operatorMove(reason) = packet.reason else {
+      return XCTFail("expected operatorMove packet, got \(packet.reason)")
+    }
+    XCTAssertEqual(reason, "move to a worker")
+    XCTAssertEqual(packet.contract.resumeStepId, "resume")
+    XCTAssertEqual(try harness.store.loadTask(id: adopted.id)?.state, .waiting)
+    XCTAssertEqual(try harness.store.loadHandover(id: packet.id)?.digest, packet.digest)
+    XCTAssertEqual(try harness.store.listAttempts(taskId: adopted.id).last?.sessionId, sessionId)
+  }
+
   func testEnvelopeSealsThenAnswerTakeoverImportsHistoryAndCompletes() async throws {
     let harness = try TaskExampleHarness()
     defer { harness.remove() }

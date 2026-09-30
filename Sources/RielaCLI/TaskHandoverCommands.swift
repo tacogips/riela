@@ -12,7 +12,7 @@ struct TaskHandoverCommandRunner: Sendable {
       case .answer: return try answer(command)
       case .handovers: return try handovers(command)
       case .reconcile: return await reconcile(command)
-      case .show, .list, .run, .decide: throw CLIUsageError("unsupported task handover command")
+      case .show, .list, .run, .decide, .serve: throw CLIUsageError("unsupported task handover command")
       }
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
@@ -53,6 +53,15 @@ struct TaskHandoverCommandRunner: Sendable {
       let taskId = try requiredTaskId(command)
       let parsed = try ParsedTaskTakeoverOptions.resolve(command.options.arguments)
       var shared = parsed.shared
+      if let endpoint = parsed.endpoint {
+        guard !parsed.forceOrphan else { throw CLIUsageError("--endpoint cannot be combined with --force-orphan") }
+        return await TaskRemoteTakeover().run(TaskRemoteTakeoverOptions(
+          taskId: taskId, handoverId: parsed.handoverId, endpoint: endpoint, auth: parsed.auth,
+          traits: parsed.traits, workingDirectory: shared.workingDirectory,
+          cloneInto: parsed.cloneInto, sessionStore: shared.sessionStore,
+          scope: shared.scope, output: command.options.output
+        ))
+      }
       let located = try locate(taskId, options: shared)
       let runtime = TaskHandoverRuntime(located: located, options: shared)
       var packet: HandoverPacket?
@@ -329,6 +338,8 @@ private struct ParsedTaskHandoverOptions: RielaClientFamilyArguments {
 private struct TaskTakeoverOptions {
   var shared: TaskStoreOptions; var packet: String?; var forceOrphan: Bool; var cloneInto: String?
   var traits: [HostTrait]; var sinks: [HandoverSinkKind]; var principal: String
+  var endpoint: String?; var auth: TaskRemoteAuth
+  var handoverId: String?
 }
 private struct ParsedTaskTakeoverOptions: RielaClientFamilyArguments {
   @Option var scope = "auto"
@@ -341,12 +352,22 @@ private struct ParsedTaskTakeoverOptions: RielaClientFamilyArguments {
   @Option var sink: String?
   @Option var principal: String?
   @Option var output: String?
+  @Option var endpoint: String?
+  @Option var handoverId: String?
+  @Option var authToken: String?
+  @Option var authTokenEnv: String?
+  @Option var managerSessionId: String?
   static func resolve(_ args: [String]) throws -> TaskTakeoverOptions {
     let value = try parseCLI(args)
+    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let tokenName = value.authTokenEnv ?? "RIELA_MANAGER_AUTH_TOKEN"
     return TaskTakeoverOptions(
       shared: try shared(value.scope, value.workingDirectory, value.sessionStore), packet: value.packet,
       forceOrphan: value.forceOrphan, cloneInto: value.cloneInto, traits: try parsedTraits(value.traits),
-      sinks: try sinks(value.sink), principal: resolvedPrincipal(value.principal)
+      sinks: try sinks(value.sink), principal: resolvedPrincipal(value.principal), endpoint: value.endpoint,
+      auth: TaskRemoteAuth(token: value.authToken ?? environment[tokenName],
+                           managerSessionId: value.managerSessionId ?? environment["RIELA_MANAGER_SESSION_ID"]),
+      handoverId: value.handoverId
     )
   }
 }

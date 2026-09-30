@@ -42,6 +42,8 @@ public struct TaskCommandRunner: Sendable {
         )
       case .decide:
         return try runDecide(command)
+      case .serve:
+        return await TaskServeTakeover().run(command.options.arguments, signalState: signalState)
       case .handover, .takeover, .answer, .handovers, .reconcile:
         return await TaskHandoverCommandRunner().run(command, signalState: signalState)
       }

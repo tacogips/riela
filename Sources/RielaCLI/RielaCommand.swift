@@ -64,6 +64,7 @@ public enum TaskCommandKind: String, Codable, CaseIterable, Sendable {
   case answer
   case handovers
   case reconcile
+  case serve
 }
 
 public struct TaskCommand: Equatable, Sendable {
@@ -715,7 +716,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
         options: try parseGeneric(scope: "task", command: kind.rawValue, arguments: family.remainder)
       )
     }
-    if kind == .reconcile {
+    if kind == .reconcile || kind == .serve {
       return TaskCommand(
         kind: kind,
         options: try parseGeneric(scope: "task", command: kind.rawValue, arguments: family.remainder)

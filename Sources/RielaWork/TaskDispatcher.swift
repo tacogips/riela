@@ -190,4 +190,16 @@ public struct TaskDispatcher: Sendable {
       now: now
     )
   }
+
+  /// Consumes the one-time launch token and returns the credential used for lease heartbeats.
+  public func authorizeIssuingLeaseCredential(
+    _ reservation: AttemptReservation,
+    now: Date = Date()
+  ) throws -> AuthorizedAttemptLaunch {
+    try store.authorizeAttemptLaunchIssuingLeaseCredential(
+      attemptId: reservation.attempt.id,
+      launchToken: reservation.launchToken,
+      now: now
+    )
+  }
 }

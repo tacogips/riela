@@ -180,12 +180,22 @@ final class WorkStoreReservationTests: XCTestCase {
       attemptId: reservation.attempt.id,
       launchToken: "wrong"
     ))
-    let authorized = try store.authorizeAttemptLaunch(
+    let authorization = try store.authorizeAttemptLaunchIssuingLeaseCredential(
       attemptId: reservation.attempt.id,
       launchToken: reservation.launchToken
     )
+    let authorized = authorization.attempt
     XCTAssertEqual(authorized.launch?.phase, .authorized)
     XCTAssertEqual(authorized.state, .running)
+    let lease = try XCTUnwrap(store.loadLease(attemptId: reservation.attempt.id))
+    let credentialDigest = WorkStore.launchTokenDigest(authorization.leaseCredential)
+    XCTAssertEqual(authorized.launch?.tokenDigest, credentialDigest)
+    XCTAssertEqual(lease.tokenDigest, credentialDigest)
+    XCTAssertNotEqual(credentialDigest, WorkStore.launchTokenDigest(reservation.launchToken))
+    XCTAssertNotEqual(
+      credentialDigest,
+      WorkStore.launchTokenDigest("consumed:\(reservation.attempt.id.rawValue):\(reservation.attempt.sessionId)")
+    )
     XCTAssertThrowsError(try store.authorizeAttemptLaunch(
       attemptId: reservation.attempt.id,
       launchToken: reservation.launchToken

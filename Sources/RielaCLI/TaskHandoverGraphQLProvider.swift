@@ -184,7 +184,7 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
     guard case let .reserved(reservation) = result else {
       throw TaskHandoverGraphQLError(code: "conflict", message: "task takeover reservation is waiting")
     }
-    _ = try dispatcher.authorize(reservation)
+    let authorized = try dispatcher.authorizeIssuingLeaseCredential(reservation)
     guard let lease = try located.store.loadLease(attemptId: reservation.attempt.id) else {
       throw WorkStoreError("authorized takeover has no lease")
     }
@@ -193,7 +193,7 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
       sessionId: reservation.attempt.sessionId,
       fence: lease.fence,
       expiresAt: Self.timestamp(lease.expiresAt),
-      heartbeatToken: reservation.launchToken,
+      heartbeatToken: authorized.leaseCredential,
       heartbeatMs: located.task.guardPolicy.lease?.heartbeatMs ?? LeasePolicy().heartbeatMs,
       packet: try graphQLPacket(packet)
     )

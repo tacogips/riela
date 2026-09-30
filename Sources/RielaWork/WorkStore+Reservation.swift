@@ -63,6 +63,16 @@ public struct AttemptReservationRequest: Equatable, Sendable {
   }
 }
 
+public struct AuthorizedAttemptLaunch: Sendable {
+  public var attempt: Attempt
+  public var leaseCredential: String
+
+  public init(attempt: Attempt, leaseCredential: String) {
+    self.attempt = attempt
+    self.leaseCredential = leaseCredential
+  }
+}
+
 enum AttemptReservationFailurePoint: CaseIterable, Sendable {
   case attempt, decisionOrRequest, lease, evidence, task, session
 }
@@ -331,6 +341,19 @@ public extension WorkStore {
   /// Exchanges the one-time opaque token for launch authorization. Replays
   /// and every state other than the exact reserved phase fail closed.
   func authorizeAttemptLaunch(attemptId: AttemptID, launchToken: String, now: Date = Date()) throws -> Attempt {
+    try authorizeAttemptLaunchIssuingLeaseCredential(
+      attemptId: attemptId,
+      launchToken: launchToken,
+      now: now
+    ).attempt
+  }
+
+  /// Consumes the one-time launch token and returns a separate random lease credential.
+  func authorizeAttemptLaunchIssuingLeaseCredential(
+    attemptId: AttemptID,
+    launchToken: String,
+    now: Date = Date()
+  ) throws -> AuthorizedAttemptLaunch {
     let database = try openWritable()
     return try database.transaction { database in
       var attempt = try requiredAttempt(attemptId, in: database)
@@ -339,9 +362,10 @@ public extension WorkStore {
         throw WorkStoreError("attempt '\(attempt.id.rawValue)' is not awaiting launch authorization")
       }
       try rejectPendingCancellation(for: attempt.id, in: database)
-      let consumedDigest = Self.launchTokenDigest("consumed:\(attempt.id.rawValue):\(attempt.sessionId)")
+      let leaseCredential = UUID().uuidString.lowercased()
+      let leaseDigest = Self.launchTokenDigest(leaseCredential)
       attempt.launch?.phase = .authorized
-      attempt.launch?.tokenDigest = consumedDigest
+      attempt.launch?.tokenDigest = leaseDigest
       attempt.launch?.authorizedAt = now
       attempt.launch?.updatedAt = now
       attempt.state = .running
@@ -349,12 +373,12 @@ public extension WorkStore {
       let changed = try database.executeAndReturnChangedRowCount(
         "UPDATE work_leases SET token_digest = ?, updated_at = ? WHERE attempt_id = ? AND session_id = ? AND token_digest = ?",
         bindings: [
-          .text(consumedDigest), .text(Self.timestamp(now)), .text(attempt.id.rawValue),
+          .text(leaseDigest), .text(Self.timestamp(now)), .text(attempt.id.rawValue),
           .text(attempt.sessionId), .text(Self.launchTokenDigest(launchToken))
         ]
       )
       guard changed == 1 else { throw WorkStoreError("attempt launch lease is missing or replaced") }
-      return attempt
+      return AuthorizedAttemptLaunch(attempt: attempt, leaseCredential: leaseCredential)
     }
   }
 

@@ -130,6 +130,22 @@ final class TaskDispatcherTests: XCTestCase {
     XCTAssertEqual(try store.loadLease(attemptId: reservation.attempt.id)?.hostId, "remote-worker")
   }
 
+  func testAuthorizeIssuingLeaseCredentialReturnsSeparateCredential() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let dispatcher = TaskDispatcher(store: store)
+    guard case let .ready(ready) = try preview(dispatcher),
+          case let .reserved(reservation) = try reserve(dispatcher, ready: ready) else {
+      return XCTFail("expected reservation")
+    }
+
+    let authorization = try dispatcher.authorizeIssuingLeaseCredential(reservation)
+    XCTAssertFalse(authorization.leaseCredential.isEmpty)
+    XCTAssertNotEqual(authorization.leaseCredential, reservation.launchToken)
+    XCTAssertEqual(authorization.attempt.launch?.phase, .authorized)
+  }
+
   func testDependencyChangeBetweenPreviewAndReservationDeniesLaunch() throws {
     let store = WorkStore(rootDirectory: root.path)
     var dependency = sampleTask(id: "dependency")

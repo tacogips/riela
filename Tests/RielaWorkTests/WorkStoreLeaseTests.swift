@@ -55,6 +55,27 @@ final class WorkStoreLeaseTests: XCTestCase {
     XCTAssertTrue(try store.expiredLeases(now: now.addingTimeInterval(5)).isEmpty)
   }
 
+  func testAuthorizedLaunchRotatesToRandomLeaseCredential() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let reservation = try store.reserveAttempt(request(task: task, now: Date()))
+    let authorization = try store.authorizeAttemptLaunchIssuingLeaseCredential(
+      attemptId: reservation.attempt.id,
+      launchToken: reservation.launchToken
+    )
+
+    XCTAssertEqual(
+      try store.verifyLeaseToken(attemptId: reservation.attempt.id, token: authorization.leaseCredential).attemptId,
+      reservation.attempt.id
+    )
+    XCTAssertThrowsError(try store.verifyLeaseToken(attemptId: reservation.attempt.id, token: reservation.launchToken))
+    XCTAssertThrowsError(try store.verifyLeaseToken(
+      attemptId: reservation.attempt.id,
+      token: "consumed:\(reservation.attempt.id.rawValue):\(reservation.attempt.sessionId)"
+    ))
+  }
+
   private func request(
     task: WorkTask, attemptId: String = "attempt-1", sessionId: String = "session-1",
     decisionId: String = "decision-1", now: Date, hostId: String = "local"

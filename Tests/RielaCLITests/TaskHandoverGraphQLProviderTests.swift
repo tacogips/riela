@@ -112,6 +112,84 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
     XCTAssertGreaterThan(try XCTUnwrap(heartbeat.expiresAt), try XCTUnwrap(reservation.expiresAt))
   }
 
+  func testReportCompletedAttemptAcceptsLeaseCredentialAndReconcilesTask() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let task = try harness.seed("task-repair-loop", state: .waiting)
+    let predecessorId = AttemptID("attempt-report-completed-predecessor")
+    try savePredecessor(task: task, attemptId: predecessorId, store: harness.store)
+    let packet = try savePresencePacket(task: task, fromAttemptId: predecessorId, store: harness.store)
+    let provider = provider(harness)
+    let context = context(harness)
+    let reservation = try await provider.takeoverTask(
+      GraphQLTakeoverTaskInput(
+        taskId: task.id.rawValue, handoverId: packet.id.rawValue,
+        hostId: "worker-completed", traits: ["userReachable"]
+      ),
+      context: context
+    )
+    let attemptId = try XCTUnwrap(reservation.attemptId)
+    let now = Date()
+    let session = WorkflowSession(
+      workflowId: "task-repair-loop", sessionId: try XCTUnwrap(reservation.sessionId),
+      status: .completed, entryStepId: "repair", currentStepId: nil,
+      createdAt: now, updatedAt: now
+    )
+
+    let report = try await provider.reportAttempt(
+      GraphQLReportAttemptInput(
+        attemptId: attemptId,
+        token: try XCTUnwrap(reservation.heartbeatToken),
+        snapshot: snapshotObject(WorkflowRuntimePersistenceSnapshot(session: session)),
+        deliverables: []
+      ),
+      context: context
+    )
+    XCTAssertEqual(report.taskState, TaskState.succeeded.rawValue)
+    XCTAssertEqual(report.decisionKind, "accept")
+  }
+
+  func testReportSuspendedAttemptAcceptsLeaseCredentialAndSealsHandover() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let task = try harness.seed("task-repair-loop", state: .waiting)
+    let predecessorId = AttemptID("attempt-report-suspended-predecessor")
+    try savePredecessor(task: task, attemptId: predecessorId, store: harness.store)
+    let packet = try savePresencePacket(task: task, fromAttemptId: predecessorId, store: harness.store)
+    let provider = provider(harness)
+    let context = context(harness)
+    let reservation = try await provider.takeoverTask(
+      GraphQLTakeoverTaskInput(
+        taskId: task.id.rawValue, handoverId: packet.id.rawValue,
+        hostId: "worker-suspended", traits: ["userReachable"]
+      ),
+      context: context
+    )
+    let attemptId = try XCTUnwrap(reservation.attemptId)
+    let now = Date()
+    let session = WorkflowSession(
+      workflowId: "task-repair-loop", sessionId: try XCTUnwrap(reservation.sessionId),
+      status: .suspended, entryStepId: "repair", currentStepId: "repair",
+      createdAt: now, updatedAt: now,
+      suspend: SuspendRecord(
+        reasonKind: .operatorMove, stepId: "repair", progressNote: "Continue elsewhere",
+        suspendedAt: now, producer: .runtime
+      )
+    )
+
+    let report = try await provider.reportAttempt(
+      GraphQLReportAttemptInput(
+        attemptId: attemptId,
+        token: try XCTUnwrap(reservation.heartbeatToken),
+        snapshot: snapshotObject(WorkflowRuntimePersistenceSnapshot(session: session)),
+        deliverables: []
+      ),
+      context: context
+    )
+    XCTAssertNotNil(report.handoverId)
+    XCTAssertNotEqual(report.handoverId, packet.id.rawValue)
+  }
+
   func testServeRequiresManagerBearerForTaskHandoverFields() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("wh16-serve-\(UUID().uuidString)")
     let home = root.appendingPathComponent("home")
@@ -149,6 +227,10 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
       sessionStore: harness.sessionStore.path,
       scope: .project
     )
+  }
+
+  private func snapshotObject(_ snapshot: WorkflowRuntimePersistenceSnapshot) throws -> JSONObject {
+    try JSONDecoder().decode(JSONObject.self, from: JSONCanonical.encode(snapshot))
   }
 
   private func context(_ harness: TaskExampleHarness) -> GraphQLDocumentRequest {

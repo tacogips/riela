@@ -138,3 +138,15 @@ with the failure reason and `dirtyPaths` in the brief.
 **Impact**: (a) never loses predecessor work without a human seeing it, but
 a publish failure (for example, an unreachable remote) needs an operator.
 (b) keeps the task moving at the cost of discarded work.
+
+## Q10. Publishing from a checkout the attempt does not own
+
+**Question**: When a plain `workflow run` session is adopted and handed over, may the runtime commit and push its repository state if the session ran in the user's own checkout (possibly dirty, on the user's branch)?
+
+**Context**: 2026-10-01 a test resolved the real checkout; the publisher created a `riela/task/*` branch there, committed all uncommitted work and pushed it to origin.
+
+**Options**: (a) never: record `unpublished(lastKnown: HEAD)` with `dirtyPaths`, publish only attempt-owned `riela/task/*` branches or worktrees; (b) allow with an explicit `--publish` opt-in on `session handover`; (c) always publish.
+
+**Default until answered**: (a). (b) can be added later as an opt-in.
+
+**Impact**: (c) can push a user's unrelated uncommitted work to a remote.

@@ -606,3 +606,15 @@ and each test log must show a non-zero executed count with 0 failures. The execu
     revived-owner and orphan-worktree tests);
   - lists the D commands with their `exit=` lines and log paths;
   - ticks the Done criteria only with that evidence.
+
+### STOP-FIRST safety fix (2026-10-01, after run session-8)
+
+Run session-8 found (high finding) that the adopted-session test resolved the REAL worktree as its repository root. The handover publisher then checked out `riela/task/task-adopted-adopted-handover-session/g1` in the operator's checkout, committed all of its uncommitted wh-14 work (commit 6bd80077), and pushed that branch to the real `origin` (GitHub). The operator restored `feat/work-handover-and-takeover` without changing files, left the stray remote branch for the user, and installed a temporary pre-push hook that refuses `refs/heads/riela/task/*`.
+
+Do these BEFORE running any test again:
+
+1. Test hermeticity: every repository, adoption, publication and materialization test creates its own temporary git repository with a local bare remote, passes that root explicitly, and asserts the resolved repository root is inside the test's temporary directory. No test may resolve the process working directory or any ancestor repository. A 'non-repository' fixture must be a temporary directory with no enclosing repository, or must set GIT_CEILING_DIRECTORIES so git discovery cannot walk up into the real checkout.
+2. Product safety (design decision Q10 in design-docs/user-qa/qa-work-handover-and-takeover.md, default applied): adopting a plain session never switches branches, commits or pushes in a checkout the attempt does not own (the user's own checkout, a dirty tree, or a branch that is not the attempt's `riela/task/*` branch or worktree). It records the repository deliverable as `unpublished(lastKnown: HEAD)` with `dirtyPaths` instead. `ensureBranch` in shared mode refuses a dirty root, as design §9.1 already requires. Publication happens only for an attempt-owned `riela/task/*` branch or worktree.
+3. Regression tests: adopting a session in a dirty checkout leaves branch, HEAD, index, working tree and remotes unchanged; and the publisher refuses a checkout it does not own.
+
+Then continue the remaining wh-14 work (unborn-HEAD adoption refusal, end-to-end orphan-worktree takeover, refreshed progress log).

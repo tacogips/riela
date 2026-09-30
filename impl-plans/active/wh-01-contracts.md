@@ -5,7 +5,7 @@
   "planId": "wh-01-contracts",
   "planPath": "impl-plans/active/wh-01-contracts.md",
   "wave": "W1",
-  "dependsOn": ["wh-00-baseline"],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCore/HandoverContracts.swift",
     "Sources/RielaCore/JSONCanonical.swift",

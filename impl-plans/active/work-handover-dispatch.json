@@ -863,5 +863,11 @@
    "evidence": "impl-plans/progress/wh-00-baseline.md",
    "note": "Completed in session opus-luna-design-and-implement-review-loop-session-228. Baseline at 56aed135: 2778 run, 2775 passed, 2 skipped, 1 failed (WorkflowCommandCrossWorkflowDispatchTests.testSubprocessAbruptTerminationCheckpointsReopenCanonicalSQLiteWithoutDuplicatingDurableEffect, 180 s scratch-build subprocess timeout). Logs under tmp/work-handover/wh-00/."
   }
+ ],
+ "acceptedDependencies": [
+  {
+   "planId": "wh-00-baseline",
+   "planPath": "impl-plans/active/wh-00-baseline.md"
+  }
  ]
 }

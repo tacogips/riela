@@ -5,9 +5,7 @@
   "planId": "wh-18-remote-takeover",
   "planPath": "impl-plans/active/wh-18-remote-takeover.md",
   "wave": "W5",
-  "dependsOn": [
-    "wh-17-examples"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/TaskRemoteTakeover.swift",
     "Sources/RielaCLI/TaskServeTakeover.swift",
@@ -28,6 +26,7 @@
     "Sources/RielaCLI/TaskHandoverRuntime.swift",
     "Sources/RielaCLI/TaskHandoverSupport.swift",
     "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaGraphQL/TaskHandoverGraphQL.swift",
     "Sources/RielaWork/DecisionApplier.swift",
     "Sources/RielaWork/HandoverBriefRenderer.swift",
     "Sources/RielaWork/HandoverCoordinator.swift",
@@ -58,6 +57,7 @@
     "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
     "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
     "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
+    "Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift",
     "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
     "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
     "Tests/RielaWorkTests/DecisionApplierTests.swift",
@@ -175,3 +175,7 @@ Record the test names in the progress log.
 ### Serial-wave shared ownership (2026-10-01, after run session-11)
 
 The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store and decision file that no remaining plan owns (listed in this plan's `sharedPaths`). Do not block on those files; fix the defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.
+
+### Answer delivery amendment (2026-10-01, after run session-14)
+
+wh-17 is accepted. A partial wh-18 is committed ('wip: partial wh-18 remote takeover'); complete it. Adversarial review (mid) found that remote takeover never delivers the stored S1 answer: the packet is sealed before the answer exists and neither `takeoverTask` nor `taskHandover` carries it. This plan now has shared ownership of `Sources/RielaGraphQL/TaskHandoverGraphQL.swift`, `Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift`. Add the bound answer (question id, payload, answeredBy, answeredAt) to the `takeoverTask` reservation payload and the provider, deliver it to the successor as the `handover.answer` variable and as a delivered message to the resume step exactly as the local takeover does, and refuse a remote takeover of an unanswered S1 handover. Add a provider-backed answered-S1 remote takeover test. Leave SDL regeneration and surface-catalog rows to wh-20; note any schema change in the progress log so wh-20 regenerates the SDL.

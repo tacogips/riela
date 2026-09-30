@@ -2,6 +2,38 @@ import Foundation
 import RielaCore
 import RielaWork
 
+actor TaskHandoverCheckpointCoordinator {
+  private var nextTimerCheckpoint = 0
+  private var tail: Task<Void, Error>?
+
+  func checkpoint(
+    workspace: any WorkspaceHandoverRuntime,
+    isolation: IsolationRef,
+    attemptId: AttemptID,
+    message: String,
+    trailerSuffix: String,
+    paths: [String]?
+  ) async throws {
+    let suffix: String
+    if trailerSuffix == "timer" {
+      nextTimerCheckpoint += 1
+      suffix = "timer-\(nextTimerCheckpoint)"
+    } else {
+      suffix = trailerSuffix
+    }
+    let prior = tail
+    let current = Task {
+      _ = try? await prior?.value
+      _ = try await workspace.checkpoint(
+        isolation, message: message,
+        trailer: "Riela-Checkpoint: \(attemptId.rawValue)/\(suffix)", paths: paths
+      )
+    }
+    tail = current
+    try await current.value
+  }
+}
+
 struct TaskDeliverablePublisher: DeliverablePublisher {
   var store: WorkStore
   var reservationFence: Int

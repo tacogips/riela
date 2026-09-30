@@ -432,7 +432,7 @@ struct TaskDispatch: Sendable {
       let session = try attempt.id == attemptId
         ? snapshot.session : sessionStore.loadStrictReadOnly(sessionId: attempt.sessionId).session
       guard session.sessionId == attempt.sessionId,
-            session.status == .completed || session.status == .failed else {
+            session.status == .completed || session.status == .failed || session.status == .suspended else {
         throw WorkStoreError("task attempt has no durable terminal session for guard evaluation")
       }
       let durationMs = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))

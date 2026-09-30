@@ -122,6 +122,7 @@ enum TaskRunCancellation {
     let observer = Task {
       var observedInactivity: Set<String> = []
       var lastHeartbeat = Date()
+      var lastCheckpoint = Date()
       while !Task.isCancelled {
         do {
           let now = Date()
@@ -145,6 +146,14 @@ enum TaskRunCancellation {
               )
               execution.cancel()
               return
+            }
+          }
+          if let interval = Self.checkpointIntervalMs(reservation.task.guardPolicy.handover?.checkpoint),
+             let checkpoint = context.checkpoint {
+            let checkpointTime = Date()
+            if checkpointTime.timeIntervalSince(lastCheckpoint) * 1_000 >= Double(interval) {
+              lastCheckpoint = checkpointTime
+              await checkpoint("timer", "riela: checkpoint \(reservation.task.id.rawValue) timer")
             }
           }
           if let request = try store.pendingHandoverRequest(attemptId: reservation.attempt.id), request.immediate {
@@ -203,6 +212,17 @@ enum TaskRunCancellation {
       selectedHostStopProven = true
     }
     try afterCancellationObservation?()
+    if let triggerState = handoverTriggerState,
+       triggerState.take() != nil,
+       let cancellation = try store.attemptCancellation(
+         taskId: reservation.task.id, attemptId: reservation.attempt.id,
+         sessionId: reservation.attempt.sessionId
+       ), !cancellation.acknowledged,
+       let decision = try store.listDecisions(taskId: reservation.task.id)
+         .first(where: { $0.id == cancellation.decisionId }),
+       case .handover = decision.kind {
+      return result
+    }
     let snapshot: WorkflowRuntimePersistenceSnapshot?
     do {
       snapshot = try store.persistJoinedCancellation(
@@ -300,10 +320,19 @@ enum TaskRunCancellation {
       return false
     }
     observedKeys.insert(observationKey)
+    if case let .handover(reason)? = result.resolution?.kind {
+      handoverTriggerState?.record(reason: reason, failureKind: .stalled)
+      return true
+    }
     guard result.application != nil else { return false }
     return try store.attemptCancellation(
       taskId: task.id, attemptId: attempt.id, sessionId: attempt.sessionId
     ) != nil
+  }
+
+  private static func checkpointIntervalMs(_ policy: CheckpointPolicy?) -> Int? {
+    guard case let .everyMs(interval)? = policy else { return nil }
+    return interval
   }
 
   static func proveSelectedHostStop(

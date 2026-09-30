@@ -8,19 +8,25 @@ struct TaskPlacementExecutionContext: Sendable {
   var defaultWorkspace: String?
   var stepBoundaryHook: (@Sendable (WorkflowRunEvent) async -> Void)?
   var boundaryHandover: (@Sendable (String) async -> SuspendRecord?)?
+  var checkpoint: (@Sendable (String, String) async -> Void)?
+  var isolation: IsolationRef?
 
   init(
     bundles: [String: ResolvedWorkflowBundle],
     placement: BackendCapabilityPlacementResult,
     defaultWorkspace: String?,
     stepBoundaryHook: (@Sendable (WorkflowRunEvent) async -> Void)? = nil,
-    boundaryHandover: (@Sendable (String) async -> SuspendRecord?)? = nil
+    boundaryHandover: (@Sendable (String) async -> SuspendRecord?)? = nil,
+    checkpoint: (@Sendable (String, String) async -> Void)? = nil,
+    isolation: IsolationRef? = nil
   ) {
     self.bundles = bundles
     self.placement = placement
     self.defaultWorkspace = defaultWorkspace
     self.stepBoundaryHook = stepBoundaryHook
     self.boundaryHandover = boundaryHandover
+    self.checkpoint = checkpoint
+    self.isolation = isolation
   }
 }
 

@@ -48,6 +48,17 @@ extension TaskDispatch {
       snapshot.session.failureReason = "task handover trigger: \(trigger.reason.kindName)"
       snapshot.session.failedAt = Date()
       snapshot.session.updatedAt = Date()
+      if let cancellation = try located.store.attemptCancellation(
+        taskId: taskId, attemptId: reservation.attempt.id,
+        sessionId: reservation.attempt.sessionId
+      ), !cancellation.acknowledged,
+         let decision = try located.store.listDecisions(taskId: taskId)
+           .first(where: { $0.id == cancellation.decisionId }),
+         case .handover = decision.kind {
+        try located.store.acknowledgeHandoverCancellation(
+          taskId: taskId, attemptId: reservation.attempt.id
+        )
+      }
       try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root).save(snapshot)
       packet = try await runtime.sealTriggered(
         taskId: taskId, attempt: reservation.attempt, snapshot: snapshot,
@@ -142,18 +153,34 @@ extension TaskDispatch {
     let attemptIdentifier = reservation.attempt.id
     if let isolation = reservation.attempt.isolation {
       let workspace = GitBranchWorkspaceRuntime()
+      let checkpointCoordinator = TaskHandoverCheckpointCoordinator()
+      let repositoryWriteScopes: [String]?
+      if case let .repository(repository)? = reservation.task.context,
+         !repository.writeScopes.isEmpty {
+        repositoryWriteScopes = repository.writeScopes
+      } else {
+        repositoryWriteScopes = nil
+      }
+      context.isolation = isolation
+      context.checkpoint = { suffix, message in
+        do {
+          try await checkpointCoordinator.checkpoint(
+            workspace: workspace, isolation: isolation, attemptId: attemptIdentifier,
+            message: message, trailerSuffix: suffix, paths: repositoryWriteScopes
+          )
+        } catch {
+          let message = "task checkpoint failed: \(error)\n"
+          FileHandle.standardError.write(Data(message.utf8))
+        }
+      }
       let checkpointPolicy = reservation.task.guardPolicy.handover?.checkpoint ?? .stepBoundary
+      let checkpoint = context.checkpoint
       context.stepBoundaryHook = { event in
         guard case .stepBoundary = checkpointPolicy,
               event.type == .stepCompleted,
               let stepId = event.stepId,
               let executionId = event.executionId else { return }
-        _ = try? await workspace.checkpoint(
-          isolation,
-          message: "riela: checkpoint \(taskIdentifier.rawValue) \(stepId)",
-          trailer: "Riela-Checkpoint: \(attemptIdentifier.rawValue)/\(executionId)",
-          paths: nil
-        )
+        await checkpoint?(executionId, "riela: checkpoint \(taskIdentifier.rawValue) \(stepId)")
       }
     }
     context.boundaryHandover = { nextStepId in
@@ -177,7 +204,9 @@ extension TaskDispatch {
         packet: takeoverPacket, handoverId: handoverId,
         reservation: reservation, sessionRoot: located.root, store: store
       )
-      let answer = try store.latestAnswer(handoverId: handoverId)
+      let answer = try latestAnswer(
+        handoverId: handoverId, packet: takeoverPacket, taskId: taskId, store: store
+      )
       var handover: JSONObject = [
         "id": .string(handoverId.rawValue),
         "reasonKind": .string(takeoverPacket.reason.kindName),
@@ -282,10 +311,23 @@ extension TaskDispatch {
       requiredTraits = []
     }
     let assignments = Self.placementAssignments(requirements: requirements, maps: maps)
-    let placement = BackendCapabilityPlacementResolver().resolve(
+    var placement = BackendCapabilityPlacementResolver().resolve(
       requirements: requirements, local: topology.local, workers: topology.workers,
       assignments: assignments, requiredTraits: requiredTraits
     )
+    if !requiredTraits.isEmpty, requirements.isEmpty,
+       !([topology.local] + topology.workers).contains(where: {
+         Set($0.traits).isSuperset(of: Set(requiredTraits))
+       }) {
+      let missing = requiredTraits.sorted().map(\.rawValue).joined(separator: ",")
+      let provenance = WorkflowRequirementProvenance(
+        workflowId: bundle.workflow.workflowId, stepId: entryStepId,
+        nodeId: bundle.workflow.steps.first(where: { $0.id == entryStepId })?.nodeId ?? ""
+      )
+      placement.failures.append(BackendPlacementFailure(
+        provenance: provenance, reason: "host-traits-unavailable: \(missing)"
+      ))
+    }
     let preview = try dispatcher.preview(
       taskId: taskId, workflowId: reference.name, entryStepId: entryStepId,
       entry: entry, placement: placement
@@ -333,7 +375,9 @@ extension TaskDispatch {
       handoverId: handoverId.rawValue
     ))
     var messages = try await runtime.listMessages(for: reservation.attempt.sessionId, toStepId: nil)
-    if let answer = try store.latestAnswer(handoverId: handoverId),
+    if let answer = try latestAnswer(
+      handoverId: handoverId, packet: packet, taskId: reservation.task.id, store: store
+    ),
        let sourceExecution = imported.executions.last {
       let answerMessage = WorkflowMessageRecord(
         communicationId: "handover-answer-\(handoverId.rawValue)-\(reservation.attempt.id.rawValue)",
@@ -347,14 +391,28 @@ extension TaskDispatch {
         createdAt: answer.answeredAt
       )
       messages.append(answerMessage)
-      await runtime.seedWorkflowMessages([answerMessage])
     }
-    let finalMessages = try await runtime.listMessages(for: reservation.attempt.sessionId, toStepId: nil)
     let snapshot = WorkflowRuntimePersistenceProjector.snapshot(
-      session: imported, workflowMessages: finalMessages,
+      session: imported, workflowMessages: messages,
       loopEvidence: target.loopEvidence, loopMetadata: target.loopMetadata
     )
     try persistence.save(snapshot)
+  }
+
+  private func latestAnswer(
+    handoverId: HandoverID,
+    packet: HandoverPacket,
+    taskId: TaskID,
+    store: WorkStore
+  ) throws -> HandoverAnswer? {
+    guard case let .userInputRequired(question) = packet.reason else { return nil }
+    let decision = try store.listDecisions(taskId: taskId).last { decision in
+      guard decision.reason.contains(handoverId.rawValue),
+            case let .answer(answer) = decision.kind else { return false }
+      return answer.questionId == question.id
+    }
+    guard case let .answer(answer)? = decision?.kind else { return nil }
+    return answer
   }
 
   static func jsonValue<T: Encodable>(_ value: T) throws -> JSONValue {

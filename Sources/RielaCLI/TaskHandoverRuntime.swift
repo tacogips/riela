@@ -9,7 +9,7 @@ struct TaskHandoverRuntime: Sendable {
   var now: @Sendable () -> Date = { Date() }
 
   func answer(taskId: TaskID, questionId: String, payload: JSONObject, producer: DecisionProducer) throws -> WorkTask {
-    try located.store.recordAnswer(
+    return try located.store.recordAnswer(
       taskId: taskId, questionId: questionId, payload: payload, producer: producer,
       decisionId: .generate(), now: now()
     )

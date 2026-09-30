@@ -20,8 +20,10 @@ extension BuiltinWorkflowAddonResolver {
     guard input.variables["rielaTask"] != nil else {
       throw AdapterExecutionError(.policyBlocked, "riela/handover-request runs only inside a task attempt")
     }
-    let source = input.resolvedInputPayload.merging(input.addon.config ?? [:]) { current, _ in current }
-    guard let resumeStepId = handoverRequestNonEmptyString(source["resumeStepId"]) else {
+    let envelopeKeys: Set<String> = ["reason", "question", "presence", "progressNote", "resumeStepId"]
+    let authoredInput = input.resolvedInputPayload.filter { key, _ in envelopeKeys.contains(key) }
+    let source = authoredInput.merging(input.addon.config ?? [:]) { current, _ in current }
+    guard handoverRequestNonEmptyString(source["resumeStepId"]) != nil else {
       throw policyError("riela/handover-request resumeStepId is required")
     }
     let envelopeValue = JSONValue.object(source)

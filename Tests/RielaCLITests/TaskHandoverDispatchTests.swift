@@ -140,6 +140,7 @@ final class TaskHandoverDispatchTests: XCTestCase {
       .load(sessionId: predecessor.sessionId)
     XCTAssertEqual(snapshot.session.status, .failed)
     XCTAssertEqual(snapshot.session.failureKind, .stalled)
+    XCTAssertEqual(snapshot.session.failureReason, "task handover trigger: stalled")
     let cancellation = try harness.store.attemptCancellation(
       taskId: task.id, attemptId: predecessor.id, sessionId: predecessor.sessionId
     )

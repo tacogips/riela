@@ -183,7 +183,8 @@ public struct WorkflowRunCommand: Sendable {
         effectiveInstance: effectiveInstance,
         eventHandler: runEventHandler,
         sessionExecutionAdmission: taskAdmission ?? processAdmission,
-        boundaryHandover: taskContext?.boundaryHandover
+        boundaryHandover: taskContext?.boundaryHandover,
+        cancellationCause: taskContext?.cancellationCause
       )
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
         kaibaSnapshot,

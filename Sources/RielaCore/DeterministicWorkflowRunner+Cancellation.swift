@@ -27,11 +27,23 @@ extension DeterministicWorkflowRunner {
       }.value
       return
     }
+    let triggerFailureKind = isWorkflowRunCancellation(error) ? request.cancellationCause?() : nil
+    let failureKind: WorkflowSessionFailureKind
+    let failureReason: String
+    if let triggerFailureKind,
+       triggerFailureKind == .stalled || triggerFailureKind == .leaseLost
+         || triggerFailureKind == .cancelled {
+      failureKind = triggerFailureKind
+      failureReason = "task handover trigger: \(triggerFailureKind.rawValue)"
+    } else {
+      failureKind = workflowRunFailureKind(error)
+      failureReason = workflowRunFailureReason(error)
+    }
     guard let failedSession = try? await store.markSessionFailed(
       WorkflowSessionFailureInput(
         sessionId: sessionId,
-        reason: workflowRunFailureReason(error),
-        failureKind: workflowRunFailureKind(error),
+        reason: failureReason,
+        failureKind: failureKind,
         stepBudgetDiagnostic: stepBudgetDiagnostic,
         effectiveStepBudget: effectiveStepBudget
       )

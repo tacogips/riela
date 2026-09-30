@@ -40,14 +40,21 @@ extension TaskDispatch {
     let runtime = TaskHandoverRuntime(located: located, options: options)
     let packet: HandoverPacket
     if let trigger = triggerState.take() {
+      if trigger.failureKind == .leaseLost {
+        return CLICommandResult(exitCode: .failure, stderr: "task attempt lost its lease")
+      }
       let runVariables = try JSONDecoder().decode(
         JSONObject.self, from: Data((runOptions.variables ?? "{}").utf8)
       )
-      snapshot.session.status = .failed
-      snapshot.session.failureKind = trigger.failureKind
-      snapshot.session.failureReason = "task handover trigger: \(trigger.reason.kindName)"
-      snapshot.session.failedAt = Date()
-      snapshot.session.updatedAt = Date()
+      snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
+        .load(sessionId: reservation.attempt.sessionId)
+      guard snapshot.session.status == .failed,
+            snapshot.session.failureKind == trigger.failureKind else {
+        throw WorkStoreError(
+          "handover trigger terminal mismatch: expected \(trigger.failureKind.rawValue), "
+            + "found \(snapshot.session.status.rawValue)/\(snapshot.session.failureKind?.rawValue ?? "nil")"
+        )
+      }
       if let cancellation = try located.store.attemptCancellation(
         taskId: taskId, attemptId: reservation.attempt.id,
         sessionId: reservation.attempt.sessionId
@@ -59,7 +66,6 @@ extension TaskDispatch {
           taskId: taskId, attemptId: reservation.attempt.id
         )
       }
-      try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root).save(snapshot)
       packet = try await runtime.sealTriggered(
         taskId: taskId, attempt: reservation.attempt, snapshot: snapshot,
         bundle: bundle, variables: runVariables, reason: trigger.reason

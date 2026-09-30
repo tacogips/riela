@@ -764,10 +764,24 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     let isTerminal = status == .completed || status == .failed
     if isTerminal, try db.tableExists("work_cancellations") {
       let pending = try db.query(
-        "SELECT attempt_id FROM work_cancellations WHERE attempt_id = ? AND acknowledged_at IS NULL LIMIT 1",
+        "SELECT c.attempt_id FROM work_cancellations c "
+          + "LEFT JOIN work_decisions d ON d.decision_id = c.decision_id "
+          + "WHERE c.attempt_id = ? AND c.acknowledged_at IS NULL "
+          + "AND (d.kind IS NULL OR d.kind != 'handover' OR d.attempt_id != c.attempt_id) LIMIT 1",
         bindings: [.text(attemptId)]
       ).first != nil
-      if pending && !(status == .failed && snapshot.session.failureKind == .cancelled) {
+      let pendingHandover = try db.query(
+        "SELECT c.attempt_id FROM work_cancellations c "
+          + "JOIN work_decisions d ON d.decision_id = c.decision_id "
+          + "WHERE c.attempt_id = ? AND c.acknowledged_at IS NULL "
+          + "AND d.kind = 'handover' AND d.attempt_id = c.attempt_id LIMIT 1",
+        bindings: [.text(attemptId)]
+      ).first != nil
+      let allowedPendingTerminal = status == .failed && (
+        snapshot.session.failureKind == .cancelled
+          || (snapshot.session.failureKind == .stalled && pendingHandover)
+      )
+      if (pending || pendingHandover) && !allowedPendingTerminal {
         throw WorkflowRuntimePersistenceStoreError.cancellationPending(sessionId)
       }
     }

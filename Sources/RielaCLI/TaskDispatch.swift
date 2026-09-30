@@ -245,6 +245,7 @@ struct TaskDispatch: Sendable {
         let taskVariables = preparedExecution.variables
         do {
           let handoverTriggerState = TaskRunHandoverTriggerState()
+          taskContext.cancellationCause = { handoverTriggerState.take()?.failureKind }
           let workflowResult = try await executeReserved(
             reservation, options: runOptions, store: located.store, context: taskContext,
             handoverTriggerState: handoverTriggerState

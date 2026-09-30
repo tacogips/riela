@@ -431,8 +431,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if input.addon.name == "riela/chat-persona-memory-write" {
       return try executeChatPersonaMemoryWrite(input)
     }
-    if input.addon.name == "riela/workflow-create-register-run" {
-      return try await executeWorkflowCreateRegisterRun(input)
+    if let output = try await executeTaskWorkflowAddonIfSupported(input) {
+      return output
     }
     if let gitAddon = BuiltinGitAddon(rawValue: input.addon.name) {
       return try executeGitAddon(input, operation: gitAddon, deadline: context.deadline)

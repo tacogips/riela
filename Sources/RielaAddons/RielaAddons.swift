@@ -79,6 +79,10 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/chat-reply-worker", version: "1")
   ]
 
+  public static let handoverAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/handover-request", version: "1")
+  ]
+
   public static let chatPersonaAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/chat-persona-router", version: "1"),
     .init(name: "riela/chat-persona-memory-read", version: "1"),
@@ -184,6 +188,7 @@ public enum RielaBuiltinAddonCatalog {
     + appleGatewayAdminAddons
     + noteAddons
     + workflowAddons
+    + handoverAddons
     + chatPersonaAddons
     + memoryAddons
     + digestAddons

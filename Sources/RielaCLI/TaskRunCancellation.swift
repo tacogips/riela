@@ -1,4 +1,5 @@
 import Foundation
+import RielaAdapters
 import RielaCore
 import RielaServer
 import RielaWork
@@ -67,6 +68,23 @@ final class TaskRunSignalState: @unchecked Sendable {
   }
 }
 
+final class TaskRunHandoverTriggerState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var stored: (reason: HandoverReason, failureKind: WorkflowSessionFailureKind)?
+
+  func record(reason: HandoverReason, failureKind: WorkflowSessionFailureKind) {
+    lock.lock()
+    if stored == nil { stored = (reason, failureKind) }
+    lock.unlock()
+  }
+
+  func take() -> (reason: HandoverReason, failureKind: WorkflowSessionFailureKind)? {
+    lock.lock()
+    defer { lock.unlock() }
+    return stored
+  }
+}
+
 /// Owns observation and interruption for one reserved task run.
 enum TaskRunCancellation {
   static func run(
@@ -76,6 +94,7 @@ enum TaskRunCancellation {
     store: WorkStore,
     context: TaskPlacementExecutionContext,
     signalState: TaskRunSignalState? = nil,
+    handoverTriggerState: TaskRunHandoverTriggerState? = nil,
     afterObserverJoin: (@Sendable () throws -> Void)? = nil,
     afterInactivityRecheck: (@Sendable () throws -> Void)? = nil,
     afterCancellationObservation: (@Sendable () throws -> Void)? = nil,
@@ -97,11 +116,45 @@ enum TaskRunCancellation {
     let execution = Task {
       await runner.runTaskReservation(options, reservation: reservation, store: store, context: context)
     }
+    let reservedLease = try store.loadLease(attemptId: reservation.attempt.id)
+    let leasePolicy = reservation.task.guardPolicy.lease ?? LeasePolicy()
     if pendingAtStart { execution.cancel() }
     let observer = Task {
       var observedInactivity: Set<String> = []
+      var lastHeartbeat = Date()
       while !Task.isCancelled {
         do {
+          let now = Date()
+          if let reservedLease,
+             now.timeIntervalSince(lastHeartbeat) * 1_000 >= Double(leasePolicy.heartbeatMs) {
+            let alive = try store.heartbeat(
+              attemptId: reservation.attempt.id, fence: reservedLease.fence,
+              now: now, ttlMs: leasePolicy.ttlMs
+            )
+            lastHeartbeat = now
+            if !alive {
+              handoverTriggerState?.record(
+                reason: .ownerLost(OwnerLossEvidence(
+                  attemptId: reservation.attempt.id,
+                  lastHeartbeatAt: reservedLease.heartbeatAt,
+                  expiredAt: now,
+                  fence: max(reservation.task.fence, reservedLease.fence) + 1,
+                  forcedBy: .policy(rule: "task-lease-fence")
+                )),
+                failureKind: .leaseLost
+              )
+              execution.cancel()
+              return
+            }
+          }
+          if let request = try store.pendingHandoverRequest(attemptId: reservation.attempt.id), request.immediate {
+            try store.consumeHandoverRequest(requestId: request.requestId, now: now)
+            handoverTriggerState?.record(
+              reason: .operatorMove(reason: request.reason), failureKind: .cancelled
+            )
+            execution.cancel()
+            return
+          }
           try signalState?.commitIfRequested(
             store: store, taskId: reservation.task.id, attemptId: reservation.attempt.id
           )
@@ -115,7 +168,7 @@ enum TaskRunCancellation {
           }
           if try observeInactivity(
             reservation: reservation, store: store, observedKeys: &observedInactivity,
-            afterRecheck: afterInactivityRecheck
+            afterRecheck: afterInactivityRecheck, handoverTriggerState: handoverTriggerState
           ) {
             execution.cancel()
             return
@@ -181,7 +234,8 @@ enum TaskRunCancellation {
     reservation: AttemptReservation,
     store: WorkStore,
     observedKeys: inout Set<String>,
-    afterRecheck: (@Sendable () throws -> Void)?
+    afterRecheck: (@Sendable () throws -> Void)?,
+    handoverTriggerState: TaskRunHandoverTriggerState?
   ) throws -> Bool {
     let sessionStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
     let snapshot = try sessionStore.loadStrictReadOnly(sessionId: reservation.attempt.sessionId)
@@ -206,6 +260,16 @@ enum TaskRunCancellation {
       if case .inactivity = $0 { return true }
       return false
     }) else { return false }
+    if task.guardPolicy.handover?.onWaitSignal ?? true,
+       let backend = execution.backend,
+       let signal = TableBackendWaitSignalClassifier.default.latestSignal(
+         in: execution.recentBackendEvents ?? [], backend: backend
+       ) {
+      handoverTriggerState?.record(
+        reason: .userPresenceRequired(signal.presence), failureKind: .stalled
+      )
+      return true
+    }
     let rechecked = try sessionStore.loadStrictReadOnly(sessionId: reservation.attempt.sessionId)
     guard rechecked.session.status == .running,
           rechecked.session.executions.last(where: { $0.executionId == execution.executionId })?

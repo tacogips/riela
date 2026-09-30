@@ -6,6 +6,22 @@ struct TaskPlacementExecutionContext: Sendable {
   var bundles: [String: ResolvedWorkflowBundle]
   var placement: BackendCapabilityPlacementResult
   var defaultWorkspace: String?
+  var stepBoundaryHook: (@Sendable (WorkflowRunEvent) async -> Void)?
+  var boundaryHandover: (@Sendable (String) async -> SuspendRecord?)?
+
+  init(
+    bundles: [String: ResolvedWorkflowBundle],
+    placement: BackendCapabilityPlacementResult,
+    defaultWorkspace: String?,
+    stepBoundaryHook: (@Sendable (WorkflowRunEvent) async -> Void)? = nil,
+    boundaryHandover: (@Sendable (String) async -> SuspendRecord?)? = nil
+  ) {
+    self.bundles = bundles
+    self.placement = placement
+    self.defaultWorkspace = defaultWorkspace
+    self.stepBoundaryHook = stepBoundaryHook
+    self.boundaryHandover = boundaryHandover
+  }
 }
 
 extension WorkflowRunCommand {

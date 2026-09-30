@@ -121,6 +121,9 @@ public struct WorkflowRunCommand: Sendable {
       livePersistenceState = persistenceState
       let persistenceBundle = bundle
       let runEventHandler: WorkflowRunEventHandler = { event in
+        if case .stepCompleted = event {
+          await taskContext?.stepBoundaryHook?(event)
+        }
         // The fail-closed runtime store is the canonical effect boundary.
         // This established CLI projection remains an inspectability/event
         // record and never determines whether a node may start.
@@ -179,7 +182,8 @@ public struct WorkflowRunCommand: Sendable {
         agentSilenceMonitorIntervalMs: options.agentSilenceMonitorIntervalMs,
         effectiveInstance: effectiveInstance,
         eventHandler: runEventHandler,
-        sessionExecutionAdmission: taskAdmission ?? processAdmission
+        sessionExecutionAdmission: taskAdmission ?? processAdmission,
+        boundaryHandover: taskContext?.boundaryHandover
       )
       var finalResult = try await KaibaAddonExecutionContext.withSnapshot(
         kaibaSnapshot,

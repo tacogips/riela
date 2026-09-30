@@ -6,6 +6,7 @@ import RielaWork
 enum TaskRunStatus: String, Codable, Sendable {
   case ready
   case waiting
+  case suspended
   case completed
   case failed
   case error
@@ -89,12 +90,33 @@ struct TaskRunCommandResult: Codable, Sendable {
   var attemptId: String?
   var sessionId: String?
   var waitReason: WaitReason?
+  var handoverId: String?
   var placement: BackendCapabilityPlacementResult?
   var error: String?
 
   private enum CodingKeys: String, CodingKey {
-    case taskId, attemptId, sessionId, waitReason, placement, error
+    case taskId, attemptId, sessionId, waitReason, handoverId, placement, error
     case statusKind = "status"
+  }
+
+  init(
+    taskId: String,
+    statusKind: TaskRunStatus,
+    attemptId: String? = nil,
+    sessionId: String? = nil,
+    waitReason: WaitReason? = nil,
+    handoverId: String? = nil,
+    placement: BackendCapabilityPlacementResult? = nil,
+    error: String? = nil
+  ) {
+    self.taskId = taskId
+    self.statusKind = statusKind
+    self.attemptId = attemptId
+    self.sessionId = sessionId
+    self.waitReason = waitReason
+    self.handoverId = handoverId
+    self.placement = placement
+    self.error = error
   }
 }
 
@@ -117,7 +139,9 @@ struct TaskDispatch: Sendable {
     taskId: String,
     options: TaskStoreOptions,
     dryRun: Bool,
-    output: WorkflowOutputFormat
+    output: WorkflowOutputFormat,
+    localTraits: [HostTrait] = [],
+    packetOverride: HandoverPacket? = nil
   ) async -> CLICommandResult {
     do {
       let id = TaskID(taskId)
@@ -134,74 +158,21 @@ struct TaskDispatch: Sendable {
       ) {
         return resumed
       }
-      guard let plan = located.task.plan else { throw WorkStoreError("task '\(taskId)' has no executable plan") }
-      guard case let .workflow(reference) = plan else {
-        throw WorkStoreError("temporary task workflows are not yet executable")
-      }
-      guard let scope = reference.scope.map(WorkflowScope.init(rawValue:)) ?? .auto else {
-        throw WorkStoreError("task '\(taskId)' has an invalid workflow scope")
-      }
-      let resolution = WorkflowResolutionOptions(
-        workflowName: reference.name,
-        scope: scope,
-        workflowDefinitionDir: reference.workflowDefinitionDir,
-        workingDirectory: options.workingDirectory
+      let preparedPlan = try await prepareDispatchPlan(
+        taskId: id, task: located.task, options: options, store: located.store,
+        localTraits: localTraits, packetOverride: packetOverride
       )
-      let bundle = try resolver.resolve(resolution)
-      guard bundle.workflow.workflowId == reference.name else {
-        throw WorkStoreError("task workflow reference and resolved workflow ID differ")
-      }
-      let diagnostics = DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads)
-      if let diagnostic = diagnostics.first(where: { $0.severity == .error }) {
-        throw WorkStoreError("task workflow is invalid: \(diagnostic.path): \(diagnostic.message)")
-      }
-      let dispatcher = TaskDispatcher(store: located.store)
-      let pending = try dispatcher.pendingReservation(taskId: id)
-      let entry = pending?.entry ?? .start
-      let entryStepId = try selectedEntryStep(entry, task: located.task, workflow: bundle.workflow)
-      var maps = try await reachableWorkflowMaps(
-        bundle: bundle,
-        resolution: resolution,
-        resolver: resolver,
-        entryStepId: entryStepId
-      )
-      maps.bundles[bundle.workflow.workflowId]?.workflow.entryStepId = entryStepId
-      let requirements = try WorkflowRequirementResolver().resolve(
-        workflowId: bundle.workflow.workflowId,
-        entryStepId: entryStepId,
-        workflows: maps.workflows,
-        nodePayloads: maps.nodePayloads,
-        nodeHostRequirements: maps.nodeHostRequirements
-      )
-      let topology = try await hostResolver.taskTopology(
-        store: located.store,
-        scope: resolution.scope,
-        workingDirectory: options.workingDirectory,
-        localAddonExecutables: maps.localAddonExecutables
-      )
-      var assignments: [WorkflowRequirementProvenance: DistributedWorkerTarget] = [:]
-      for requirement in requirements {
-        for provenance in requirement.provenance {
-          if let target = maps.workflows[provenance.workflowId]?
-            .steps.first(where: { $0.id == provenance.stepId })?.placement?.target {
-            assignments[provenance] = target
-          }
-        }
-      }
-      let placement = BackendCapabilityPlacementResolver().resolve(
-        requirements: requirements,
-        local: topology.local,
-        workers: topology.workers,
-        assignments: assignments
-      )
-      let preview = try dispatcher.preview(
-        taskId: id,
-        workflowId: reference.name,
-        entryStepId: entryStepId,
-        entry: entry,
-        placement: placement
-      )
-      switch preview {
+      let reference = preparedPlan.reference
+      let resolution = preparedPlan.resolution
+      let bundle = preparedPlan.bundle
+      let dispatcher = preparedPlan.dispatcher
+      let pending = preparedPlan.pending
+      let entry = preparedPlan.entry
+      let takeoverPacket = preparedPlan.takeoverPacket
+      let maps = preparedPlan.maps
+      let topology = preparedPlan.topology
+      let placement = preparedPlan.placement
+      switch preparedPlan.preview {
       case let .wait(reason):
         if !dryRun { try rejectSignalledRun(store: located.store, taskId: id) }
         try previewSnapshot?.verifyUnchanged()
@@ -210,7 +181,7 @@ struct TaskDispatch: Sendable {
           sessionId: nil, waitReason: reason, placement: placement
         ), output: output)
       case let .ready(ready):
-        let taskContext = TaskPlacementExecutionContext(
+        var taskContext = TaskPlacementExecutionContext(
           bundles: maps.bundles,
           placement: ready.placement,
           defaultWorkspace: topology.defaultWorkspace
@@ -252,7 +223,7 @@ struct TaskDispatch: Sendable {
           placementEvidence: placementEvidence,
           pendingRequestId: pending?.id
         )
-        guard case let .reserved(reservation) = reserved else {
+        guard case var .reserved(reservation) = reserved else {
           guard case let .wait(reason) = reserved else {
             throw WorkStoreError("task reservation returned no attempt or wait reason")
           }
@@ -262,23 +233,33 @@ struct TaskDispatch: Sendable {
             sessionId: nil, waitReason: reason, placement: placement
           ), output: output)
         }
-        let sessionRoot = URL(fileURLWithPath: located.root).deletingLastPathComponent().path
-        let runOptions = WorkflowRunOptions(
-          target: reference.name,
-          resolution: resolution,
-          nodePatch: nodePatch,
-          mockScenarioPath: mockScenarioPath,
-          output: output,
-          sessionStore: sessionRoot,
-          workingDirectory: options.workingDirectory,
-          resumeSessionId: reservation.attempt.sessionId
+        let preparedExecution = try await prepareTaskExecution(
+          reservation: reservation, taskContext: taskContext,
+          resolution: resolution, reference: reference,
+          takeoverPacket: takeoverPacket, options: options, output: output,
+          taskId: id, store: located.store, located: located
         )
+        reservation = preparedExecution.reservation
+        taskContext = preparedExecution.context
+        let runOptions = preparedExecution.runOptions
+        let taskVariables = preparedExecution.variables
         do {
+          let handoverTriggerState = TaskRunHandoverTriggerState()
           let workflowResult = try await executeReserved(
-            reservation, options: runOptions, store: located.store, context: taskContext
+            reservation, options: runOptions, store: located.store, context: taskContext,
+            handoverTriggerState: handoverTriggerState
           )
-          let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
+          var snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
             .load(sessionId: reservation.attempt.sessionId)
+          if let handoverResult = try await sealHandoverIfNeeded(
+            snapshot: &snapshot, triggerState: handoverTriggerState,
+            reservation: reservation,
+            bundle: bundle, located: located, options: options,
+            taskId: id, placement: placement, output: output,
+            runOptions: runOptions
+          ) {
+            return handoverResult
+          }
           guard snapshot.session.status == .completed || snapshot.session.status == .failed else {
             throw WorkStoreError("reserved task session did not reach a durable terminal state")
           }
@@ -333,12 +314,14 @@ struct TaskDispatch: Sendable {
     _ reservation: AttemptReservation,
     options: WorkflowRunOptions,
     store: WorkStore,
-    context: TaskPlacementExecutionContext
+    context: TaskPlacementExecutionContext,
+    handoverTriggerState: TaskRunHandoverTriggerState? = nil
   ) async throws -> CLICommandResult {
     try beforeExecution?(reservation)
     return try await TaskRunCancellation.run(
       runner: runner, options: options, reservation: reservation,
       store: store, context: context, signalState: signalState,
+      handoverTriggerState: handoverTriggerState,
       afterObserverJoin: afterObserverJoin,
       afterInactivityRecheck: afterInactivityRecheck,
       afterCancellationObservation: afterCancellationObservation,
@@ -370,7 +353,7 @@ struct TaskDispatch: Sendable {
     )
   }
 
-  private func reconcileTerminal(
+  func reconcileTerminal(
     snapshot: WorkflowRuntimePersistenceSnapshot,
     reservation: AttemptReservation,
     store: WorkStore,
@@ -562,7 +545,7 @@ struct TaskDispatch: Sendable {
     }
   }
 
-  private func selectedEntryStep(
+  func selectedEntryStep(
     _ entry: AttemptEntry,
     task: WorkTask,
     workflow: WorkflowDefinition
@@ -601,6 +584,7 @@ struct TaskDispatch: Sendable {
       var lines = ["taskId: \(result.taskId)", "status: \(result.status)"]
       if let attemptId = result.attemptId { lines.append("attemptId: \(attemptId)") }
       if let sessionId = result.sessionId { lines.append("sessionId: \(sessionId)") }
+      if let handoverId = result.handoverId { lines.append("handoverId: \(handoverId)") }
       if let reason = result.waitReason { lines.append("waitReason: \(reason)") }
       if let placement = result.placement {
         for choice in placement.choices {

@@ -5,7 +5,7 @@
  "baseBranch": "feat/work-handover-and-takeover",
  "remote": "origin",
  "originalHead": "01b38f02fb8c126528d5a46aebe737adb429736f",
- "checkpointParentHead": "c0a138b9",
+ "checkpointParentHead": "d32077b0",
  "designDocPaths": [
   "design-docs/specs/design-work-handover-and-takeover.md",
   "design-docs/user-qa/qa-work-handover-and-takeover.md"
@@ -37,7 +37,7 @@
  ],
  "evidenceRoot": "tmp/work-handover",
  "reviewContext": {
-  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20. Re-accepted at HEAD c0a138b9 (partial wh-10 committed at 08d4fc10; design \u00a721 R23/R24 and the wh-10 resume checklist added) by step5-impl-plan-review in communication comm-000106 of workflow execution opus-luna-design-and-implement-review-loop-session-3 (accepted, findings []).",
+  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20. Re-accepted at HEAD c0a138b9 (partial wh-10 committed at 08d4fc10; design \u00a721 R23/R24 and the wh-10 resume checklist added) by step5-impl-plan-review in communication comm-000106 of workflow execution opus-luna-design-and-implement-review-loop-session-3 (accepted, findings []). Re-accepted at HEAD d32077b0 (wh-10 completed in a45b6eb1 and marked accepted in d32077b0; partial wh-14 committed at 4983c5aa; wh-14 resume checklist added and its director .handover step self-repaired) by step5-impl-plan-review in communication comm-000128 of workflow execution opus-luna-design-and-implement-review-loop-session-4 (accepted, findings []); remaining plans wh-14..wh-20.",
   "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
   "requiredOutcomes": [
    "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",
@@ -111,13 +111,14 @@
    "Shared files (RuntimeStore.swift, DeterministicWorkflowRunner+Events.swift, DecisionApplier.swift, RielaAddons.swift, WorkflowRunCommand.swift, SessionCommands.swift, RielaCommand.swift) are edited in DAG order by several plans; each edit needs a fresh read and wh-20 reruns earlier focused suites (tmp/work-handover/wh-20-reconcile/focused.log).",
    "Plan line-number citations may shift as earlier waves land; the named symbols are authoritative.",
    "Progress-log gap: impl-plans/progress/wh-01-contracts.md does not list the strict 'fence' decoding assertion in Tests/RielaWorkTests/WorkModelsCodableTests.swift; the wh-01 re-verify dispatch records it.",
-   "Placeholder exposure: until wh-14 lands, the TaskDispatch .takeover arm and the completed||failed guard at TaskDispatch.swift:282 remain the pre-handover behaviour; wh-14 replaces them.",
+   "Placeholder exposure: wh-14 is partially committed at 4983c5aa; until its resume checklist is complete the director .handover capture, the everyMs checkpoint timer and the no-backend presence trait check are missing.",
    "Wave-label drift: plan headers say W2 (wh-10) and W3 (wh-14) while manifest plans[].wave is null; dispatch readiness follows dependsOn only (wh-10 -> wh-14 -> {wh-15, wh-16, wh-17} -> {wh-18, wh-19} -> wh-20).",
    "Baseline commit wording: design section 15.1 and wh-20 name 01b38f02 as the swiftlint diff base while the baseline ran at the code-identical 56aed135; the comparison command is unaffected.",
    "Parity gate window: SurfaceParity stays red between wh-15/wh-16 and wh-20 by design; wh-15/16 focused filters exclude SurfaceParity.",
    "Environment boundary: wh-17 validate.log and wh-20 examples.log mock runs use .build/debug/riela with ~/.riela access and must run in Opus verification steps, not the Codex sandbox.",
-   "Evidence staleness: tmp/work-handover/wh-10-host-traits/build.log and focused.log predate the DistributedWorkerStatus.traits change; the wh-10 worker must regenerate both and replace the progress-log 'Blocker and handoff' section (wh-10 resume checklist step 4).",
-   "Resume scope: wh-10 is partially committed at 08d4fc10; the worker completes only the resume checklist in impl-plans/active/wh-10-host-traits.md (DistributedWorkerStatus.traits, workerStatuses wiring, two DistributedWorkerHTTPTests cases) and does not restart the plan.",
+   "Resume scope: wh-14 is partially committed at 4983c5aa; the worker completes only the resume checklist in impl-plans/active/wh-14-task-dispatch-runtime.md (director .handover capture with the guarded .handover cancellation acknowledgement in WorkStore+Isolation.swift, everyMs checkpoint timer, presence traits without backend requirements, deterministic lease tests, TaskHandoverDispatchTests/TaskHandoverLeaseTests/TaskHandoverRepositoryTests, progress log) and does not restart the plan.",
+   "Audit trail: a director-triggered handover records two .handover decisions (the director decision and the HandoverCoordinator seal decision) with different ids; exactly one packet is asserted.",
+   "Test timing: the everyMs(50) timer test asserts at least one timer checkpoint commit, not an exact count.",
    "Citation drift: line numbers cited in wh-14..wh-20 were not re-verified after waves 1-2; the named symbols are authoritative."
   ],
   "sourcePaths": [
@@ -134,7 +135,7 @@
    "examples/task-repair-loop"
   ],
   "codexAgentReferences": [],
-  "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions). Session -231 (comm-002964) re-accepted all 20 plans at 6e18f9f5 with no findings: writePaths/sharedPaths concrete and disjoint, DAG headers agree with the manifest, no source drift since 01b38f02. Session -1 (comm-000006) re-accepted all 20 plans at bb33bbf0 with no findings: the amended wh-01 scope covers all 36 committed wh-01 files, and the new overlaps (WorkStore+Reservation.swift with wh-03, TaskDispatch.swift with wh-14) are serialized by dependsOn. Session -2 (comm-000093) re-accepted the 8 remaining plans (wh-10, wh-14..wh-20) at 7182232d with no findings: paths concrete and existing, overlaps (RielaCommand.swift, TaskCommands.swift, TaskHandoverCommands.swift, CLISurfaceEnumeration.swift, README.md) serialized by dependsOn, source anchors verified, filters name real test classes, baseline gate executable. Session -3 (comm-000106) re-accepted the 8 remaining plans at c0a138b9 with no findings: the wh-10 resume checklist matches source (DistributedWorkerStatus has no traits; workerStatuses builds from the stored registration; no Codable decode site or JSON fixture for DistributedWorkerStatus), R24 is observability-only (HostCapabilityResolver reads the stored HostCapabilitySnapshot), and the DAG and shared-file serialization are unchanged."
+  "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions). Session -231 (comm-002964) re-accepted all 20 plans at 6e18f9f5 with no findings: writePaths/sharedPaths concrete and disjoint, DAG headers agree with the manifest, no source drift since 01b38f02. Session -1 (comm-000006) re-accepted all 20 plans at bb33bbf0 with no findings: the amended wh-01 scope covers all 36 committed wh-01 files, and the new overlaps (WorkStore+Reservation.swift with wh-03, TaskDispatch.swift with wh-14) are serialized by dependsOn. Session -2 (comm-000093) re-accepted the 8 remaining plans (wh-10, wh-14..wh-20) at 7182232d with no findings: paths concrete and existing, overlaps (RielaCommand.swift, TaskCommands.swift, TaskHandoverCommands.swift, CLISurfaceEnumeration.swift, README.md) serialized by dependsOn, source anchors verified, filters name real test classes, baseline gate executable. Session -3 (comm-000106) re-accepted the 8 remaining plans at c0a138b9 with no findings: the wh-10 resume checklist matches source (DistributedWorkerStatus has no traits; workerStatuses builds from the stored registration; no Codable decode site or JSON fixture for DistributedWorkerStatus), R24 is observability-only (HostCapabilityResolver reads the stored HostCapabilitySnapshot), and the DAG and shared-file serialization are unchanged. Session -4 (comm-000128) re-accepted the 7 remaining plans (wh-14..wh-20) at d32077b0 with no findings after one self-repair: the wh-14 resume checklist director .handover path now skips persistJoinedCancellation/saveCancellationSession and acknowledges the pending .handover work_cancellations row through a guarded WorkStore+Isolation.swift method before the failed(.stalled) save (source-verified against WorkStore+Decisions.swift, TaskRunCancellation.swift and SQLiteWorkflowRuntimePersistenceStore.validateTaskTerminalWrite); writePaths, sharedPaths and the DAG are unchanged."
  },
  "plans": [
   {
@@ -180,7 +181,8 @@
     "The pinned TaskHandoverRuntime API and TaskDispatch additions exist; every trigger seals exactly once.",
     "Takeover, answer injection, repository branch, lease/fence, orphan, reconcile and adoption tests pass; acceptance signals 1-5 are mapped to test names in the progress log.",
     "Existing task suites are green or baseline-classified; the progress log is complete.",
-    "Amended 2026-10-01: a presence (userPresenceRequired) takeover enforces required host traits even when the resolved workflow has no backend requirements (wh-10 integration low finding: BackendCapabilityPlacementResolver checks requiredTraits only per backend requirement)."
+    "Amended 2026-10-01: a presence (userPresenceRequired) takeover enforces required host traits even when the resolved workflow has no backend requirements (wh-10 integration low finding: BackendCapabilityPlacementResolver checks requiredTraits only per backend requirement).",
+    "Amended 2026-10-01 (session-4 resume checklist): a director .handover on a running attempt seals exactly one packet with reason inactivity, the session ends failed(.stalled), no unacknowledged work_cancellations row remains for the predecessor attempt, the task is waiting and a follow-up takeover reservation is accepted; checkpoint everyMs produces timer checkpoint commits with a Riela-Checkpoint <attemptId>/timer- trailer."
    ],
    "verification": [
     "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-14-task-dispatch-runtime/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-14-task-dispatch-runtime/build.log'",
@@ -501,6 +503,12 @@
    "status": "completed",
    "evidence": "impl-plans/progress/wh-13-gc-sweep.md",
    "note": "Committed in d043cbad; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-1; recorded in 7182232d."
+  },
+  {
+   "planId": "wh-10-host-traits",
+   "status": "completed",
+   "evidence": "impl-plans/progress/wh-10-host-traits.md",
+   "note": "Partial at 08d4fc10, completed in a45b6eb1; accepted by test-integrity, adversarial and wave integration review in workflow execution opus-luna-design-and-implement-review-loop-session-3; recorded in d32077b0."
   }
  ],
  "acceptedDependencies": [
@@ -573,7 +581,9 @@
   },
   {
    "planId": "wh-10-host-traits",
-   "planPath": "impl-plans/active/wh-10-host-traits.md"
+   "planPath": "impl-plans/active/wh-10-host-traits.md",
+   "commit": "a45b6eb1",
+   "provides": "Host traits: strict sorted [HostTrait], profile hostTraits, worker.json traits, --traits, placement requiredTraits and DistributedWorkerStatus.traits (partial 08d4fc10, completed a45b6eb1)."
   }
  ]
 }

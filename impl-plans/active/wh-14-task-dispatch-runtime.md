@@ -227,3 +227,60 @@ This plan proves acceptance signals 1–5 at runtime level. Record the test name
 ## Resume notes (2026-10-01)
 
 wh-10 is accepted and committed. A partial wh-14 implementation is committed (`wip: partial wh-14 ...`): complete it, do not restart it. Remaining work: TaskHandoverDispatchTests, TaskHandoverLeaseTests and TaskHandoverRepositoryTests, the director `.handover` observer capture, and the `everyMs` checkpoint timer. Also enforce required host traits for a presence takeover when the workflow has no backend requirements, in this plan's dispatch path (wh-10 integration low finding).
+
+### Resume checklist (session-4 design step, source-verified at d32077b0)
+
+Everything below stays inside this plan's writePaths. Do not edit `Sources/RielaWork/BackendCapabilityPlacement.swift` (wh-10), `DeterministicDirector.swift` or `TaskGuardCoordinator.swift`.
+
+1. **Director `.handover` capture** (`TaskRunCancellation.observeInactivity`). After `evaluateAndApply` returns, if
+   `result.resolution?.kind` is `.handover(reason)` (`WorkDecision.swift` `DecisionKind.handover(HandoverReason)`), call
+   `handoverTriggerState?.record(reason: reason, failureKind: .stalled)` (design R20) before returning `true`. Record before the
+   execution is cancelled. `TaskRunHandoverTriggerState.record` keeps the first trigger, so a later fence loss cannot overwrite it.
+   Keep the existing `attemptCancellation != nil` return for non-handover decisions.
+   Pitfall: for a running attempt, `evaluateAndApply` on `.handover` does not apply the decision. `applyDecision` only bumps the
+   task version, inserts the decision and writes a pending `work_cancellations` row (`WorkStore+Decisions.swift:147-190`,
+   `requiresLiveCancellation`). Nothing in the seal path acknowledges that row, and the session save guard
+   (`SQLiteWorkflowRuntimePersistenceStore.swift:753-785`) rejects a `failed(.stalled)` save while it is pending. It also rejects
+   rewriting an already saved `failed(.cancelled)` to `.stalled`. Only the director path has this problem: the wait-signal,
+   immediate-request and fence-loss triggers write no `work_cancellations` row. Decisions:
+   - In `TaskRunCancellation.run`, after the join, when the recorded trigger is present and the pending cancellation's decision
+     is the director `.handover` decision, skip `persistJoinedCancellation` and `saveCancellationSession` and return the run
+     result, so the session is never saved as `failed(.cancelled)`. Remote selected-host stop proof (`proveSelectedHostStop`)
+     still runs as today.
+   - Add one guarded method to `Sources/RielaWork/WorkStore+Isolation.swift` (an `extension WorkStore`). In one transaction it marks
+     the attempt's pending `work_cancellations` row acknowledged (`acknowledged_at`, `terminal_status = failed`), and only when
+     that row's decision kind is `.handover` for that task and attempt. Otherwise it throws. It does not reconcile the attempt or
+     change the task state; `sealHandoverRecords` does that. `sealHandoverIfNeeded` calls it before the `.stalled` snapshot save.
+     Do not use `acknowledgeAttemptCancellation`: it requires a `failed(.cancelled)` snapshot and sets the task `.failed`.
+   - The seal keeps the fresh task version (`expectedTaskVersion ?? currentTask.version`, `TaskHandoverRuntime.swift:264`), because
+     the director decision already bumped it. The director decision and the coordinator's seal decision are both `.handover`
+     decisions with different ids. That is expected. Do not reuse the director decision id (`insertDecision` would conflict).
+2. **`everyMs` checkpoint timer.** Add this to the observer loop in `TaskRunCancellation.run`, beside the heartbeat block. When
+   `reservation.task.guardPolicy.handover?.checkpoint` is `.everyMs(interval)` and the attempt has an isolation, run the
+   same checkpoint call as the `stepBoundaryHook` in `TaskDispatch+Handover.swift` (message `riela: checkpoint <taskId> timer`,
+   trailer `Riela-Checkpoint: <attemptId>/timer-<n>`) once `interval` ms have passed since the last timer checkpoint.
+   Pass the isolation and checkpoint closure in through `TaskPlacementExecutionContext`
+   (`WorkflowRunCommand+TaskReservation.swift`, a writePath), next to `stepBoundaryHook`. Do not
+   recompute them in the observer. Serialize the timer and step-boundary checkpoints per attempt (one actor or lock owned in
+   `TaskHandoverSupport.swift`), so two `git commit`s never run in the same worktree at once. A checkpoint error is a
+   diagnostic and never cancels the run.
+3. **Presence traits without backend requirements** (`TaskDispatch+Handover.swift`, the prepare step where `requiredTraits` is
+   computed). `BackendCapabilityPlacementResolver.resolve` checks traits only inside its per-requirement loop, so it
+   accepts anything when `requirements` is empty. When `requiredTraits` is non-empty and `requirements` is empty, check
+   `topology.local` (after the `localTraits` merge) and the live `topology.workers` for a superset of `requiredTraits`. If none
+   qualifies, the dispatch fails the placement with reason `host-traits-unavailable: <sorted rawValues joined by ",">` (the same
+   string the resolver emits) and leaves the task waiting for the handover, unchanged. Do not reserve an attempt.
+4. **Deterministic lease tests.** Drive expiry through the injected `now:` of `store.fenceOrphan`/`store.heartbeat`/`expiredLeases`
+   and `TaskHandoverRuntime.now`. Use a short `LeasePolicy(ttlMs:heartbeatMs:)` on the fixture task rather than long sleeps.
+   The revived-owner leg is proven by the fence bump: after `fenceOrphan`, the owner's next observer heartbeat returns `false`
+   and the session ends `failed(.leaseLost)`.
+5. **Tests to add:** `TaskHandoverDispatchTests`, `TaskHandoverLeaseTests` and `TaskHandoverRepositoryTests`, with the cases listed
+   under Tests above, plus: a director `.handover` policy with a stalled fake adapter → packet reason `inactivity`, session
+   `failed(.stalled)`, exactly one packet, and after the seal no unacknowledged `work_cancellations` row remains for the predecessor
+   attempt (`store.attemptCancellation(...)` is nil or acknowledged), the task is `waiting`, and a following `task takeover`
+   reservation for that handover is not rejected; `checkpoint: everyMs(50)` with a sleeping node → at least one commit whose trailer
+   starts `Riela-Checkpoint: <attemptId>/timer-`; a presence packet on a workflow with no backend requirements and no traits →
+   `host-traits-unavailable: userReachable` with no new attempt, and with `localTraits: [.userReachable]` → proceeds.
+   Repository fixtures live under the harness temp dir (a temp repo, a bare remote and a second clone). Never use the project repo.
+6. **Progress log.** Update `impl-plans/progress/wh-14-task-dispatch-runtime.md` with the test names per acceptance signal (1–5),
+   the three Verification commands with `exit=` lines and log paths, and tick the Done criteria only with evidence.

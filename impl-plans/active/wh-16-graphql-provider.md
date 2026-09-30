@@ -267,7 +267,7 @@ Tests to add:
 
 Verification: use the session-11 gate commands above (`build-s11.log`, `work-s11.log`, `focused-s11.log`, `git diff --check`, and the `consumed:` grep). Each must end with `exit=0`, and each test log must show a non-zero test count and 0 failures. Then tick this plan's Done criteria and the progress log's completion criteria, citing those logs.
 
-Coverage note (not in scope): the replay regression covers only sequential replay. Two concurrent reports can both pass `verifyLeaseToken` before the lease row is deleted. Superseded 2026-10-01: fix it in this plan (see the concurrent replay amendment below).
+Coverage note: the replay regression originally covered only sequential replay. Two concurrent reports can both pass `verifyLeaseToken` before the lease row is deleted. Superseded 2026-10-01: fix it in this plan (see the concurrent replay amendment below).
 
 ### Concurrent replay amendment (2026-10-01, after run session-12)
 

@@ -22,10 +22,16 @@
     "Tests/RielaCLITests/HandoverRequestAddonTests.swift",
     "Sources/RielaWork/WorkStore+Takeover.swift",
     "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
+    "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+    "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+    "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+    "Sources/RielaCore/DeterministicWorkflowRunner+Suspend.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/WorkflowRunCommand.swift",
+    "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
     "impl-plans/progress/wh-14-task-dispatch-runtime.md"
   ],
   "sharedPaths": [
-    "Sources/RielaCLI/WorkflowRunCommand.swift",
     "Sources/RielaCLI/ProductionNodeAdapter.swift",
     "Sources/RielaAddons/RielaAddons.swift"
   ],
@@ -309,3 +315,11 @@ Root cause (source-verified): `WorkStore` encodes records with `JSONEncoder.date
 
 Added verification (log must end `exit=0` with a non-zero executed count):
 `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreTakeoverTests|WorkStoreHandoverRecordsTests|WorkStoreLeaseTests" > tmp/work-handover/wh-14-task-dispatch-runtime/workstore.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-14-task-dispatch-runtime/workstore.log'`
+
+### Scope amendment (2026-10-01, after run session-5)
+
+This plan now also owns the terminal-persistence and runner-cancellation layer it needs for the remaining triggers, lease fencing, orphan and reconcile paths: `FailClosedSQLiteWorkflowRuntimeStore.swift`, `SQLiteWorkflowRuntimePersistenceStore.swift`, `DeterministicWorkflowRunner+Cancellation.swift`, `DeterministicWorkflowRunner+Suspend.swift`, `WorkflowRunLivePersistence.swift`, `WorkflowRunCommand.swift` (full write, no longer limited to the step-boundary hook), and `WorkflowCommandLivePersistenceTests.swift`.
+
+Director inactivity handover currently fails with `terminalSnapshotConflict`: the runner persists `failed(.cancelled)`, then sealing tries to persist `failed(.stalled)`. Keep the terminal-snapshot conflict guard. Preferred fix: a cancellation requested for a handover carries its cause, so the runner's single terminal write is `failed(.stalled)` (or `failed(.leaseLost)` for a fence loss) and sealing records handover evidence without a second terminal transition. Add a regression for the single terminal write.
+
+Done so far and committed: answer binding fix with three regressions. Still to do: director `.handover` end to end, live owner fence and revived `leaseLost`, force-orphan expiry and takeover, `reconcileExpired`, `adoptAndSeal`, repository branch publication and second-clone materialization with fenced-owner refusal, the real `everyMs` checkpoint timer, and acceptance signal 1-5 evidence. Continue the committed work; do not restart it.

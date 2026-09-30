@@ -84,6 +84,87 @@ final class WorkStoreHandoverRecordsTests: XCTestCase {
     XCTAssertEqual(try store.listEvidence(taskId: task.id).count, 1)
   }
 
+  func testSealRollsBackWhenFailingAfterPacketInsert() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    // The predecessor attempt is intentionally not saved: requiredAttempt throws after the packet/decision/evidence inserts.
+    let packet = try samplePacket().sealed()
+    let decision = Decision(id: DecisionID("decision-1"), taskId: task.id, attemptId: AttemptID("attempt-1"), producer: .human(principal: "operator"),
+                            kind: .handover(.userInputRequired(HandoverQuestion(id: "q", text: "Proceed?"))),
+                            reason: "needs input", createdAt: Date(timeIntervalSince1970: 10))
+    let evidence = Evidence(id: EvidenceID("evidence-1"), taskId: task.id, attemptId: AttemptID("attempt-1"), kind: .handover,
+                           producedBy: .runtime, payloadRef: .inline(["handoverId": .string(packet.id.rawValue)]), createdAt: Date(timeIntervalSince1970: 10))
+    XCTAssertThrowsError(try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10)))
+    XCTAssertNil(try store.loadHandover(id: packet.id))
+    let db = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    XCTAssertEqual(try db.query("SELECT COUNT(*) AS c FROM work_handovers").first?["c"], "0")
+    XCTAssertTrue(try store.listDecisions(taskId: task.id).isEmpty)
+    XCTAssertTrue(try store.listEvidence(taskId: task.id).isEmpty)
+    let reloaded = try XCTUnwrap(store.loadTask(id: task.id))
+    XCTAssertEqual(reloaded.version, 1)
+    XCTAssertEqual(reloaded.state, .running)
+  }
+
+  func testAwaitingHandoverNeedsAnswerTracksMatchingAnswerDecision() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try store.saveTask(sampleTask())
+    try store.saveHandover(try samplePacket().sealed())
+    let presenceTask = WorkTask(id: TaskID("task-2"), intentId: IntentID("intent-1"), title: "Presence", instruction: "Approve",
+                                plan: .workflow(WorkflowReference(name: "flow")), state: .waiting)
+    try store.saveTask(presenceTask)
+    try store.saveHandover(try samplePacket(taskId: presenceTask.id, handoverId: HandoverID("handover-2"),
+      reason: .userPresenceRequired(PresenceRequirement(traits: [.gui], instructions: "Approve on host"))).sealed())
+    func needsAnswer() throws -> Bool? {
+      try store.tasksAwaitingHandover().first(where: { $0.taskId == TaskID("task-1") })?.needsAnswer
+    }
+    func answer(_ id: String, questionId: String) -> Decision {
+      Decision(id: DecisionID(id), taskId: TaskID("task-1"), producer: .human(principal: "operator"),
+               kind: .answer(HandoverAnswer(questionId: questionId, payload: ["value": .string("yes")],
+                                            answeredBy: .human(principal: "operator"), answeredAt: Date(timeIntervalSince1970: 12))),
+               reason: "answered", createdAt: Date(timeIntervalSince1970: 12))
+    }
+    XCTAssertEqual(try needsAnswer(), true)
+    try store.saveDecision(answer("decision-other", questionId: "other"))
+    XCTAssertEqual(try needsAnswer(), true)
+    try store.saveDecision(answer("decision-q", questionId: "q"))
+    XCTAssertEqual(try needsAnswer(), false)
+    XCTAssertTrue(try store.tasksAwaitingHandover(traits: [.gui]).map(\.taskId).contains(presenceTask.id))
+  }
+
+  func testAwaitingHandoverIgnoresAnswersToEarlierHandovers() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try store.saveTask(sampleTask())
+    try store.saveHandover(try samplePacket(createdAt: Date(timeIntervalSince1970: 10)).sealed())
+    func answer(_ id: String, at time: Double) -> Decision {
+      Decision(id: DecisionID(id), taskId: TaskID("task-1"), producer: .human(principal: "operator"),
+               kind: .answer(HandoverAnswer(questionId: "q", payload: ["value": .string("yes")],
+                                            answeredBy: .human(principal: "operator"), answeredAt: Date(timeIntervalSince1970: time))),
+               reason: "answered", createdAt: Date(timeIntervalSince1970: time))
+    }
+    try store.saveDecision(answer("decision-1", at: 12))
+    try store.attachSuccessor(handoverId: HandoverID("handover-1"), attemptId: AttemptID("attempt-2"))
+    try store.saveHandover(try samplePacket(handoverId: HandoverID("handover-2"), createdAt: Date(timeIntervalSince1970: 20)).sealed())
+    let stale = try XCTUnwrap(store.tasksAwaitingHandover().first(where: { $0.taskId == TaskID("task-1") }))
+    XCTAssertEqual(stale.handoverId, HandoverID("handover-2"))
+    XCTAssertTrue(stale.needsAnswer)
+    try store.saveDecision(answer("decision-2", at: 21))
+    XCTAssertEqual(try store.tasksAwaitingHandover().first(where: { $0.taskId == TaskID("task-1") })?.needsAnswer, false)
+  }
+
+  func testAwaitingHandoverExcludesTerminalTasks() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.state = .waiting
+    try store.saveTask(task)
+    try store.saveHandover(try samplePacket().sealed())
+    XCTAssertEqual(try store.tasksAwaitingHandover().map(\.taskId), [task.id])
+    task.state = .cancelled
+    try store.saveTask(task)
+    XCTAssertTrue(try store.tasksAwaitingHandover().isEmpty)
+  }
+
   private func sampleTask() -> WorkTask {
     WorkTask(id: TaskID("task-1"), intentId: IntentID("intent-1"), title: "Task", instruction: "Do work",
              plan: .workflow(WorkflowReference(name: "flow")), state: .running)

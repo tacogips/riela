@@ -106,6 +106,11 @@ public struct TaskDispatcher: Sendable {
       : WorkStore.dispatchEligibleStates.contains(task.state) else {
       throw WorkStoreError("task '\(taskId.rawValue)' is not eligible for dispatch from state '\(task.state.rawValue)'")
     }
+    if entry != .director, case .takeover = entry {
+      // The transaction validates that this exact handover is the latest one.
+    } else if entry != .director, let handoverId = try unclaimedLatestHandoverId(taskId: taskId) {
+      return .wait(.handover(handoverId))
+    }
     for dependencyId in task.dependsOn {
       guard let dependency = try store.loadTask(id: dependencyId) else {
         throw WorkStoreError("task '\(taskId.rawValue)' has missing dependency '\(dependencyId.rawValue)'")
@@ -124,6 +129,23 @@ public struct TaskDispatcher: Sendable {
       entry: entry,
       placement: placement
     ))
+  }
+
+  private func unclaimedLatestHandoverId(taskId: TaskID) throws -> HandoverID? {
+    guard FileManager.default.fileExists(atPath: store.databasePath) else { return nil }
+    let database = try SQLiteDatabase.open(
+      path: store.databasePath,
+      mode: store.immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
+      options: .readOnlyDefault
+    )
+    guard try database.tableExists("work_handovers"),
+          let row = try database.query(
+            "SELECT handover_id, successor_attempt_id FROM work_handovers WHERE task_id = ? ORDER BY created_at DESC, handover_id DESC LIMIT 1",
+            bindings: [.text(taskId.rawValue)]
+          ).first,
+          row["successor_attempt_id"] == nil,
+          let rawValue = row["handover_id"] else { return nil }
+    return HandoverID(rawValue: rawValue)
   }
 
   /// The store transaction rechecks task version, dependencies, budget and

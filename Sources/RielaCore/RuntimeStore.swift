@@ -232,6 +232,18 @@ public struct WorkflowSessionFailureInput: Equatable, Sendable {
   }
 }
 
+public struct WorkflowSessionSuspendInput: Equatable, Sendable {
+  public var sessionId: String
+  public var record: SuspendRecord
+  public var now: Date
+
+  public init(sessionId: String, record: SuspendRecord, now: Date) {
+    self.sessionId = sessionId
+    self.record = record
+    self.now = now
+  }
+}
+
 public struct WorkflowStepBackendEventInput: Equatable, Sendable {
   public var sessionId: String
   public var executionId: String
@@ -341,6 +353,7 @@ public protocol WorkflowRuntimeStore: Sendable {
   func abortWorkflowPublication(_ input: WorkflowPublicationAbortInput) async throws -> WorkflowStepExecution
   func redirectPendingWorkflowStep(_ input: WorkflowPendingStepRedirectInput) async throws -> WorkflowPendingStepRedirectResult
   func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession
+  func suspendSession(_ input: WorkflowSessionSuspendInput) async throws -> WorkflowSession
   func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution
   func recordStepBackendEventReceipt(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowBackendEventReceipt
   func appendWorkflowMessage(_ input: WorkflowMessageAppendInput) async throws -> WorkflowMessageRecord
@@ -365,6 +378,9 @@ public extension WorkflowRuntimeStore {
       sequence: execution.backendEventCount,
       at: execution.lastBackendEventAt
     )
+  }
+  func suspendSession(_ input: WorkflowSessionSuspendInput) async throws -> WorkflowSession {
+    throw WorkflowRuntimeStoreError.messageAppendRejected("store does not support session suspension")
   }
 }
 
@@ -487,6 +503,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       updatedAt: date
     )
     session.status = .running
+    session.suspend = nil
     session.currentStepId = input.stepId
     session.updatedAt = date
     session.failureReason = nil
@@ -546,6 +563,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       session.status = .completed
     case .completed, .running, .skipped:
       session.status = .running
+      session.suspend = nil
     }
     if let currentStepId = input.currentStepId {
       session.currentStepId = currentStepId
@@ -585,6 +603,18 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       failedExecution.updatedAt = date
       return finalizeBackendLiveTail(on: failedExecution)
     }
+    sessions[input.sessionId] = session
+    return projectBackendLiveTails(on: session)
+  }
+
+  public func suspendSession(_ input: WorkflowSessionSuspendInput) async throws -> WorkflowSession {
+    guard var session = sessions[input.sessionId] else {
+      throw WorkflowRuntimeStoreError.sessionNotFound(input.sessionId)
+    }
+    session.status = .suspended
+    session.suspend = input.record
+    session.currentStepId = input.record.stepId
+    session.updatedAt = input.now
     sessions[input.sessionId] = session
     return projectBackendLiveTails(on: session)
   }

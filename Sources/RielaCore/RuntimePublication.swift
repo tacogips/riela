@@ -223,6 +223,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
   public var crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective?
   public var fanoutDispatch: WorkflowFanoutDispatchDirective?
   public var loopGuard: WorkflowLoopGuardPublication?
+  public var handover: HandoverEnvelope?
 
   public init(
     session: WorkflowSession,
@@ -232,7 +233,8 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     rootOutput: JSONObject? = nil,
     crossWorkflowDispatch: WorkflowCrossWorkflowDispatchDirective? = nil,
     fanoutDispatch: WorkflowFanoutDispatchDirective? = nil,
-    loopGuard: WorkflowLoopGuardPublication? = nil
+    loopGuard: WorkflowLoopGuardPublication? = nil,
+    handover: HandoverEnvelope? = nil
   ) {
     self.session = session
     self.stepExecution = stepExecution
@@ -242,6 +244,7 @@ public struct WorkflowPublicationResult: Equatable, Sendable {
     self.crossWorkflowDispatch = crossWorkflowDispatch
     self.fanoutDispatch = fanoutDispatch
     self.loopGuard = loopGuard
+    self.handover = handover
   }
 }
 
@@ -433,6 +436,30 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       )
       throw error
     }
+    if let handover = candidate.handover,
+       handover.resumeStepId == nil || handover.resumeStepId == request.stepId {
+      try await finalizeCandidatePathIfNeeded(for: request)
+      let suspendedExecution = try await store.updateStepExecution(
+        WorkflowStepExecutionUpdateInput(
+          sessionId: request.sessionId,
+          executionId: recordedExecution.executionId,
+          status: .suspended,
+          adapterOutput: adapterOutputMetadata,
+          usage: adapterUsage,
+          currentStepId: handover.resumeStepId ?? request.stepId
+        )
+      )
+      guard let session = try await store.loadSession(id: request.sessionId) else {
+        throw WorkflowRuntimeStoreError.sessionNotFound(request.sessionId)
+      }
+      return WorkflowPublicationResult(
+        session: session,
+        stepExecution: suspendedExecution,
+        publishedMessages: [],
+        nextStepId: nil,
+        handover: handover
+      )
+    }
     do {
       try await finalizeCandidatePathIfNeeded(for: request)
     } catch {
@@ -505,6 +532,27 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       )
       throw WorkflowPublicationError.unsupportedTransition(reason)
     }
+    if let resumeStepId = candidate.handover?.resumeStepId {
+      let selected = publishableTransitions.first
+      let targetsDispatch = selected.map { isLiveFanoutDispatchTransition($0) || isLiveCrossWorkflowDispatchTransition($0) } ?? false
+      let mismatch = resumeStepId != nextStepId(from: publishableTransitions)
+      if targetsDispatch || mismatch {
+        let reason = targetsDispatch
+          ? "handover.resumeStepId cannot target a fanout or cross-workflow dispatch transition"
+          : "handover.resumeStepId must be the selected next step"
+        _ = try await store.updateStepExecution(
+          WorkflowStepExecutionUpdateInput(
+            sessionId: request.sessionId,
+            executionId: recordedExecution.executionId,
+            status: .failed,
+            adapterOutput: adapterOutputMetadata,
+            failureReason: reason,
+            usage: adapterUsage
+          )
+        )
+        throw AdapterExecutionError(.invalidOutput, reason)
+      }
+    }
 
     let ordinaryCompletion = completionDisposition(
       request: request,
@@ -538,7 +586,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           intendedSuccessfulStatus: request.successfulExecutionStatus
         )
       ))
-      return try await finishStagedPublication(request: request, execution: staged.execution)
+      return try await finishStagedPublication(request: request, execution: staged.execution, handover: candidate.handover)
     }
 
     if let hook = request.preCommitPublicationHook,
@@ -564,13 +612,15 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       selectedTransitions: publishableTransitions,
       routedPayload: payload,
       publishesRootOutput: ordinaryCompletion.publishesRootOutput,
-      completesRootWithoutOutput: ordinaryCompletion.completesRootWithoutOutput
+      completesRootWithoutOutput: ordinaryCompletion.completesRootWithoutOutput,
+      handover: candidate.handover
     )
   }
 
   private func finishStagedPublication(
     request: WorkflowPublicationRequest,
-    execution: WorkflowStepExecution
+    execution: WorkflowStepExecution,
+    handover: HandoverEnvelope? = nil
   ) async throws -> WorkflowPublicationResult {
     guard let pending = execution.pendingRoutePublication,
           let acceptedOutput = execution.acceptedOutput,
@@ -656,7 +706,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       selectedTransitions: decision.selectedTransitions,
       payload: decision.routedPayload,
       publishesRootOutput: decision.publishesRootOutput,
-      loopGuard: decision.loopGuard
+      loopGuard: decision.loopGuard,
+      handover: handover
     )
   }
 
@@ -669,7 +720,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     selectedTransitions: [WorkflowStepTransition],
     routedPayload: JSONObject,
     publishesRootOutput: Bool,
-    completesRootWithoutOutput: Bool
+    completesRootWithoutOutput: Bool,
+    handover: HandoverEnvelope? = nil
   ) async throws -> WorkflowPublicationResult {
     let nextStepId = self.nextStepId(from: selectedTransitions)
     let messageInputs = publicationMessageInputs(
@@ -717,7 +769,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
       selectedTransitions: selectedTransitions,
       payload: routedPayload,
       publishesRootOutput: publishesRootOutput,
-      loopGuard: nil
+      loopGuard: nil,
+      handover: handover
     )
   }
 
@@ -729,7 +782,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
     selectedTransitions: [WorkflowStepTransition],
     payload: JSONObject,
     publishesRootOutput: Bool,
-    loopGuard: WorkflowLoopGuardPublication?
+    loopGuard: WorkflowLoopGuardPublication?,
+    handover: HandoverEnvelope? = nil
   ) -> WorkflowPublicationResult {
     WorkflowPublicationResult(
       session: session,
@@ -748,7 +802,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
         sourcePayload: payload,
         sourceStepExecutionId: execution.executionId
       ),
-      loopGuard: loopGuard
+      loopGuard: loopGuard,
+      handover: handover
     )
   }
 

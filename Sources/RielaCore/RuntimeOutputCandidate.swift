@@ -12,19 +12,22 @@ public struct RuntimeOutputCandidate: Equatable, Sendable {
   public var completionPassed: Bool
   public var when: [String: Bool]
   public var routingDiagnostics: [String]
+  public var handover: HandoverEnvelope?
 
   public init(
     source: RuntimeOutputCandidateSource,
     payload: JSONObject,
     completionPassed: Bool = true,
     when: [String: Bool] = ["always": true],
-    routingDiagnostics: [String] = []
+    routingDiagnostics: [String] = [],
+    handover: HandoverEnvelope? = nil
   ) {
     self.source = source
     self.payload = payload
     self.completionPassed = completionPassed
     self.when = when
     self.routingDiagnostics = routingDiagnostics
+    self.handover = handover
   }
 }
 
@@ -85,12 +88,14 @@ public struct DefaultCandidatePathReader: CandidatePathReading {
       source: "candidatePath",
       routingReconciler: routingReconciler
     )
+    let extracted = try extractHandoverEnvelope(normalized.payload, source: "candidatePath")
     return RuntimeOutputCandidate(
       source: .candidatePath(standardizedPath),
-      payload: normalized.payload,
+      payload: extracted.payload,
       completionPassed: normalized.completionPassed,
       when: normalized.when,
-      routingDiagnostics: normalized.routingDiagnostics
+      routingDiagnostics: normalized.routingDiagnostics,
+      handover: extracted.handover
     )
   }
 }
@@ -104,12 +109,14 @@ public func normalizeRuntimeInlineCandidate(
     source: "inlineCandidate",
     routingReconciler: routingReconciler
   )
+  let extracted = try extractHandoverEnvelope(normalized.payload, source: "inlineCandidate")
   return RuntimeOutputCandidate(
     source: .inlineCandidate,
-    payload: normalized.payload,
+    payload: extracted.payload,
     completionPassed: normalized.completionPassed,
     when: normalized.when,
-    routingDiagnostics: normalized.routingDiagnostics
+    routingDiagnostics: normalized.routingDiagnostics,
+    handover: extracted.handover
   )
 }
 
@@ -123,13 +130,26 @@ public func normalizeRuntimeAdapterOutput(
     defaults: (output.completionPassed, output.when),
     routingReconciler: routingReconciler
   )
+  let extracted = try extractHandoverEnvelope(normalized.payload, source: "adapterOutput")
   return RuntimeOutputCandidate(
     source: .adapterOutput,
-    payload: normalized.payload,
+    payload: extracted.payload,
     completionPassed: normalized.completionPassed,
     when: normalized.when,
-    routingDiagnostics: normalized.routingDiagnostics
+    routingDiagnostics: normalized.routingDiagnostics,
+    handover: extracted.handover
   )
+}
+
+public func extractHandoverEnvelope(
+  _ payload: JSONObject,
+  source: String
+) throws -> (payload: JSONObject, handover: HandoverEnvelope?) {
+  var businessPayload = payload
+  guard let value = businessPayload.removeValue(forKey: HandoverEnvelope.reservedKey) else {
+    return (businessPayload, nil)
+  }
+  return (businessPayload, try HandoverEnvelope.parse(value, source: source))
 }
 
 private func isFileURL(_ url: URL, inside directory: URL) -> Bool {

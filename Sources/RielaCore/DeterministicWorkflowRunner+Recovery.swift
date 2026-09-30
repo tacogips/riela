@@ -82,7 +82,7 @@ extension DeterministicWorkflowRunner {
       return .terminal(terminalResult)
     }
     try await validateCrossWorkflowDispatchTargets(in: request.workflow)
-    let currentStepId = existing.currentStepId ?? existing.entryStepId
+    let currentStepId = existing.suspend?.stepId ?? existing.currentStepId ?? existing.entryStepId
     let variableOverrides = try await recoveredLoopGuardPayload(
       sessionId: existing.sessionId,
       stepId: currentStepId

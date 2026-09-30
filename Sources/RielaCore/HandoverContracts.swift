@@ -162,7 +162,7 @@ public struct HandoverSinkRef: Codable, Equatable, Sendable {
     guard let colon = value.firstIndex(of: ":"), let marker = value.range(of: "#sha256:", options: .backwards) else { throw SinkRefError.invalid }
     let kindString = String(value[..<colon]); let locatorStart = value.index(after: colon)
     let digest = String(value[marker.upperBound...])
-    guard let kind = HandoverSinkKind(rawValue: kindString), digest.count == 64,
+    guard marker.lowerBound >= locatorStart, let kind = HandoverSinkKind(rawValue: kindString), digest.count == 64,
           digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw SinkRefError.invalid }
     return ParsedHandoverSinkRef(kind: kind, locator: String(value[locatorStart..<marker.lowerBound]), digest: digest)
   }

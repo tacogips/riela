@@ -966,7 +966,18 @@ extension WorkflowRunCommand {
     await context.telemetry.flush(timeout: Duration.seconds(2))
     return CLICommandResult(
       exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
-      stdout: try await renderRunResult(finalResult, output: context.options.output, jsonlRecorder: context.jsonlRecorder)
+      stdout: try await renderRunResult(finalResult, output: context.options.output, jsonlRecorder: context.jsonlRecorder),
+      stderr: context.options.output.isStructured || finalResult.session.suspend == nil
+        ? ""
+        : workflowSuspendHint(finalResult.session)
     )
+  }
+
+  private func workflowSuspendHint(_ session: WorkflowSession) -> String {
+    let suspend = session.suspend
+    let prompt = suspend?.question?.text ?? suspend?.presence?.instructions ?? "handover requested"
+    return "session \(session.sessionId) suspended at \(suspend?.stepId ?? session.currentStepId ?? "-"): \(prompt)\n" +
+      "hand over: riela session handover \(session.sessionId)\n" +
+      "answer and resume: riela session resume \(session.sessionId) --variables '{\"handover\":{\"answer\":{...}}}'\n"
   }
 }

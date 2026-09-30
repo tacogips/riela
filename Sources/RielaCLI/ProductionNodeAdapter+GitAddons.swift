@@ -5,6 +5,7 @@ import RielaCore
 enum BuiltinGitAddon: String {
   case commit = "riela/git-commit"
   case push = "riela/git-push"
+  case publishBranch = "riela/git-publish-branch"
 }
 
 extension BuiltinWorkflowAddonResolver: WorkflowAddonFinalizationAcknowledging,
@@ -30,6 +31,8 @@ extension BuiltinWorkflowAddonResolver: WorkflowAddonFinalizationAcknowledging,
           return try executeGitCommit(input, identity: executionIdentity)
         case .push:
           return try executeGitPush(input, identity: executionIdentity)
+        case .publishBranch:
+          return try executeGitPublishBranch(input)
         }
       }
     } catch let adapterError as AdapterExecutionError {

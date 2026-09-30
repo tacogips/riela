@@ -2,6 +2,28 @@ import Foundation
 import RielaObservability
 
 extension DeterministicWorkflowRunner {
+  func emitHandoverEvent(
+    workflowId: String,
+    session: WorkflowSession,
+    record: SuspendRecord,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    await emitRunEvent(
+      .init(
+        type: .handover,
+        workflowId: workflowId,
+        sessionId: session.sessionId,
+        status: .suspended,
+        currentStepId: record.stepId,
+        handoverReasonKind: record.reasonKind,
+        handoverResumeStepId: record.stepId,
+        handoverQuestionId: record.question?.id,
+        handoverQuestionText: record.question?.text
+      ),
+      handler: handler
+    )
+  }
+
   func emitSessionStartedEvent(
     workflowId: String,
     session: WorkflowSession,

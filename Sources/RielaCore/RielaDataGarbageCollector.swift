@@ -1,5 +1,10 @@
 import Foundation
 import RielaSQLite
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public struct RielaGarbageCollectionConfiguration: Codable, Equatable, Sendable {
   public struct GarbageCollection: Codable, Equatable, Sendable {
@@ -59,6 +64,23 @@ public enum RielaGarbageCollectionScope: String, Codable, Equatable, Sendable {
   case all
 }
 
+public enum RielaGarbageCollectionDecision: String, Codable, Equatable, Sendable {
+  case removed
+  case wouldRemove
+  case kept
+  case skipped
+}
+
+public struct RielaGarbageCollectionItem: Codable, Equatable, Sendable {
+  public var path: String
+  public var decision: RielaGarbageCollectionDecision
+
+  public init(path: String, decision: RielaGarbageCollectionDecision) {
+    self.path = path
+    self.decision = decision
+  }
+}
+
 public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
   public var enabled: Bool
   public var dryRun: Bool
@@ -69,6 +91,8 @@ public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
   public var removedEntryCount: Int
   public var reclaimedBytes: Int64
   public var diagnostics: [String]
+  public var handoverFiles: [RielaGarbageCollectionItem]
+  public var handoverRefs: [RielaGarbageCollectionItem]
 
   public init(
     enabled: Bool,
@@ -79,7 +103,9 @@ public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
     removedSessionCount: Int = 0,
     removedEntryCount: Int = 0,
     reclaimedBytes: Int64 = 0,
-    diagnostics: [String] = []
+    diagnostics: [String] = [],
+    handoverFiles: [RielaGarbageCollectionItem] = [],
+    handoverRefs: [RielaGarbageCollectionItem] = []
   ) {
     self.enabled = enabled
     self.dryRun = dryRun
@@ -90,6 +116,8 @@ public struct RielaGarbageCollectionReport: Codable, Equatable, Sendable {
     self.removedEntryCount = removedEntryCount
     self.reclaimedBytes = reclaimedBytes
     self.diagnostics = diagnostics
+    self.handoverFiles = handoverFiles
+    self.handoverRefs = handoverRefs
   }
 }
 
@@ -149,8 +177,22 @@ public struct RielaDataGarbageCollector {
       cutoff: cutoff,
       roots: roots.map(\.path)
     )
+    let projectStoreRoot = projectDirectory.appendingPathComponent(".riela", isDirectory: true).standardizedFileURL
     for root in roots {
-      collect(root: root, cutoff: cutoff, dryRun: dryRun, report: &report)
+      collect(
+        root: root,
+        cutoff: cutoff,
+        dryRun: dryRun,
+        report: &report
+      )
+    }
+    if roots.contains(projectStoreRoot), !isSymbolicLink(projectStoreRoot) {
+      collectHandoverRefs(
+        projectDirectory: projectDirectory.standardizedFileURL,
+        taskStoreRoot: projectStoreRoot,
+        dryRun: dryRun,
+        report: &report
+      )
     }
     return report
   }
@@ -220,6 +262,254 @@ public struct RielaDataGarbageCollector {
         report: &report
       )
     }
+    let sessionStore = root.appendingPathComponent("sessions", isDirectory: true)
+    let runtimeRecords = sessionStore.appendingPathComponent("runtime-records", isDirectory: true)
+    // File-sink packets live under `<session-store>/handovers` and under the Work Runtime
+    // store root (`<session-store>/runtime-records/handovers`) that task code passes as storeRoot.
+    for (parents, handovers) in [
+      ([sessionStore], sessionStore.appendingPathComponent("handovers", isDirectory: true)),
+      ([sessionStore, runtimeRecords], runtimeRecords.appendingPathComponent("handovers", isDirectory: true))
+    ] {
+      collectHandoverFiles(
+        root: root,
+        parents: parents,
+        handovers: handovers,
+        dryRun: dryRun,
+        report: &report
+      )
+    }
+  }
+
+  private func collectHandoverFiles(
+    root: URL,
+    parents: [URL],
+    handovers: URL,
+    dryRun: Bool,
+    report: inout RielaGarbageCollectionReport
+  ) {
+    guard fileManager.fileExists(atPath: handovers.path) else { return }
+    if let symlinkParent = parents.first(where: { isSymbolicLink($0) }) {
+      report.diagnostics.append("refusing handover files below symbolic-link directory: \(symlinkParent.path)")
+      report.handoverFiles.append(.init(path: handovers.path, decision: .skipped))
+      return
+    }
+    guard !isSymbolicLink(handovers),
+          let taskDirectories = try? fileManager.contentsOfDirectory(
+            at: handovers,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+          ) else {
+      report.diagnostics.append("unable to safely enumerate handover files: \(handovers.path)")
+      report.handoverFiles.append(.init(path: handovers.path, decision: .skipped))
+      return
+    }
+    guard !taskDirectories.isEmpty else { return }
+
+    let databaseURL = taskDatabaseURL(root: root)
+    let taskStates: [String: String]
+    do {
+      taskStates = try readTaskStates(databaseURL: databaseURL)
+    } catch {
+      report.diagnostics.append("\(databaseURL.path): \(error.localizedDescription); handover files were left untouched")
+      report.handoverFiles.append(contentsOf: taskDirectories.map {
+        .init(path: $0.path, decision: .skipped)
+      })
+      return
+    }
+
+    for taskDirectory in taskDirectories {
+      guard !isSymbolicLink(taskDirectory) else {
+        report.diagnostics.append("refusing symbolic-link handover task directory: \(taskDirectory.path)")
+        report.handoverFiles.append(.init(path: taskDirectory.path, decision: .skipped))
+        continue
+      }
+      guard (try? taskDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+        report.diagnostics.append("refusing non-directory handover task entry: \(taskDirectory.path)")
+        report.handoverFiles.append(.init(path: taskDirectory.path, decision: .skipped))
+        continue
+      }
+      let state = taskStates[taskDirectory.lastPathComponent]
+      if let state, !Self.terminalTaskStates.contains(state) {
+        report.handoverFiles.append(.init(path: taskDirectory.path, decision: .kept))
+        continue
+      }
+      if remove(taskDirectory, dryRun: dryRun, report: &report) {
+        report.handoverFiles.append(.init(
+          path: taskDirectory.path,
+          decision: dryRun ? .wouldRemove : .removed
+        ))
+      } else {
+        report.handoverFiles.append(.init(path: taskDirectory.path, decision: .skipped))
+      }
+    }
+  }
+
+  private func collectHandoverRefs(
+    projectDirectory: URL,
+    taskStoreRoot: URL,
+    dryRun: Bool,
+    report: inout RielaGarbageCollectionReport
+  ) {
+    let repositoryCheck: ProcessResult
+    do {
+      repositoryCheck = try runGit(["rev-parse", "--git-dir"], in: projectDirectory)
+    } catch {
+      return
+    }
+    guard repositoryCheck.exitCode == 0 else { return }
+
+    let listing: ProcessResult
+    do {
+      listing = try runGit(
+        ["for-each-ref", "--format=%(refname)", "refs/riela/handovers/"],
+        in: projectDirectory
+      )
+    } catch {
+      report.diagnostics.append("unable to list local handover refs in \(projectDirectory.path): \(error.localizedDescription)")
+      return
+    }
+    guard listing.exitCode == 0 else {
+      report.diagnostics.append("unable to list local handover refs in \(projectDirectory.path): \(listing.stderr)")
+      return
+    }
+    let refs = listing.stdout
+      .split(whereSeparator: \.isNewline)
+      .map(String.init)
+    guard !refs.isEmpty else { return }
+
+    let databaseURL = taskDatabaseURL(root: taskStoreRoot)
+    let taskStates: [String: String]
+    do {
+      taskStates = try readTaskStates(databaseURL: databaseURL)
+    } catch {
+      report.diagnostics.append("\(databaseURL.path): \(error.localizedDescription); handover refs were left untouched")
+      report.handoverRefs.append(contentsOf: refs.map {
+        .init(path: $0, decision: .skipped)
+      })
+      return
+    }
+
+    for ref in refs {
+      guard let taskId = Self.taskID(fromHandoverRef: ref) else {
+        report.diagnostics.append("refusing malformed local handover ref: \(ref)")
+        report.handoverRefs.append(.init(path: ref, decision: .skipped))
+        continue
+      }
+      let state = taskStates[taskId]
+      if let state, !Self.terminalTaskStates.contains(state) {
+        report.handoverRefs.append(.init(path: ref, decision: .kept))
+        continue
+      }
+      if !dryRun {
+        do {
+          let deletion = try runGit(["update-ref", "-d", ref], in: projectDirectory)
+          guard deletion.exitCode == 0 else {
+            report.diagnostics.append("unable to remove local handover ref \(ref): \(deletion.stderr)")
+            report.handoverRefs.append(.init(path: ref, decision: .skipped))
+            continue
+          }
+        } catch {
+          report.diagnostics.append("unable to remove local handover ref \(ref): \(error.localizedDescription)")
+          report.handoverRefs.append(.init(path: ref, decision: .skipped))
+          continue
+        }
+      }
+      report.handoverRefs.append(.init(path: ref, decision: dryRun ? .wouldRemove : .removed))
+    }
+  }
+
+  private func taskDatabaseURL(root: URL) -> URL {
+    root.appendingPathComponent("sessions/runtime-records/runtime-message-log.sqlite")
+  }
+
+  private func readTaskStates(databaseURL: URL) throws -> [String: String] {
+    guard fileManager.fileExists(atPath: databaseURL.path) else {
+      throw HandoverCollectionError.missingTaskDatabase
+    }
+    let options = SQLiteOpenOptions(
+      enableWAL: false,
+      busyTimeoutMilliseconds: 250,
+      requireJSONB: false,
+      waitForLocks: false
+    )
+    let database = try SQLiteDatabase.open(path: databaseURL.path, mode: .strictReadOnly, options: options)
+    guard try database.tableExists("work_tasks") else {
+      throw HandoverCollectionError.missingTaskTable
+    }
+    let rows = try database.query("SELECT task_id, state FROM work_tasks")
+    return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+      guard let taskId = row["task_id"], let state = row["state"] else { return nil }
+      return (taskId, state)
+    })
+  }
+
+  private static func taskID(fromHandoverRef ref: String) -> String? {
+    let prefix = "refs/riela/handovers/"
+    guard ref.hasPrefix(prefix) else { return nil }
+    let components = ref.dropFirst(prefix.count).split(separator: "/", omittingEmptySubsequences: false)
+    guard components.count == 2, components.allSatisfy({ !$0.isEmpty }) else { return nil }
+    return String(components[0])
+  }
+
+  private static let terminalTaskStates: Set<String> = ["succeeded", "failed", "cancelled", "superseded"]
+
+  private func runGit(_ arguments: [String], in directory: URL) throws -> ProcessResult {
+    let process = Process()
+    let standardOutput = Pipe()
+    let standardError = Pipe()
+    let output = ProcessOutputBuffer()
+    let errorOutput = ProcessOutputBuffer()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["git"] + arguments
+    process.currentDirectoryURL = directory
+    var environment = ProcessInfo.processInfo.environment
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    process.environment = environment
+    process.standardOutput = standardOutput
+    process.standardError = standardError
+    standardOutput.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if data.isEmpty {
+        handle.readabilityHandler = nil
+      } else {
+        output.append(data)
+      }
+    }
+    standardError.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if data.isEmpty {
+        handle.readabilityHandler = nil
+      } else {
+        errorOutput.append(data)
+      }
+    }
+    try process.run()
+    let deadline = Date().addingTimeInterval(10)
+    while process.isRunning && Date() < deadline {
+      Thread.sleep(forTimeInterval: 0.025)
+    }
+    if process.isRunning {
+      process.terminate()
+      let terminationDeadline = Date().addingTimeInterval(1)
+      while process.isRunning && Date() < terminationDeadline {
+        Thread.sleep(forTimeInterval: 0.025)
+      }
+      if process.isRunning {
+        _ = kill(process.processIdentifier, SIGKILL)
+      }
+      process.waitUntilExit()
+      standardOutput.fileHandleForReading.readabilityHandler = nil
+      standardError.fileHandleForReading.readabilityHandler = nil
+      throw HandoverCollectionError.gitTimedOut
+    }
+    process.waitUntilExit()
+    standardOutput.fileHandleForReading.readabilityHandler = nil
+    standardError.fileHandleForReading.readabilityHandler = nil
+    return ProcessResult(
+      stdout: output.string,
+      stderr: errorOutput.string,
+      exitCode: process.terminationStatus
+    )
   }
 
   private func collectDatabase(
@@ -355,12 +645,13 @@ public struct RielaDataGarbageCollector {
     (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
   }
 
+  @discardableResult
   private func remove(
     _ url: URL,
     dryRun: Bool,
     report: inout RielaGarbageCollectionReport,
     countsAsSession: Bool = false
-  ) {
+  ) -> Bool {
     let bytes = allocatedSize(of: url)
     do {
       if !dryRun {
@@ -371,8 +662,10 @@ public struct RielaDataGarbageCollector {
       if countsAsSession {
         report.removedSessionCount += 1
       }
+      return true
     } catch {
       report.diagnostics.append("\(url.path): \(error.localizedDescription)")
+      return false
     }
   }
 
@@ -397,5 +690,45 @@ public struct RielaDataGarbageCollector {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: date)
+  }
+}
+
+private struct ProcessResult {
+  var stdout: String
+  var stderr: String
+  var exitCode: Int32
+}
+
+private final class ProcessOutputBuffer: @unchecked Sendable {
+  private let lock = NSLock()
+  private var data = Data()
+
+  func append(_ value: Data) {
+    lock.lock()
+    data.append(value)
+    lock.unlock()
+  }
+
+  var string: String {
+    lock.lock()
+    defer { lock.unlock() }
+    return String(bytes: data, encoding: .utf8) ?? ""
+  }
+}
+
+private enum HandoverCollectionError: Error, LocalizedError {
+  case missingTaskDatabase
+  case missingTaskTable
+  case gitTimedOut
+
+  var errorDescription: String? {
+    switch self {
+    case .missingTaskDatabase:
+      "task database is missing"
+    case .missingTaskTable:
+      "task table is missing"
+    case .gitTimedOut:
+      "git command exceeded the 10 second timeout"
+    }
   }
 }

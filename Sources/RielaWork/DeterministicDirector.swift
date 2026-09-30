@@ -75,6 +75,15 @@ public enum DeterministicDirector {
       return stop(evidence, rule: "convergence-violated")
     }
     if let evidence = violations.first(where: { $0.violation.isInactivity }) {
+      if case let .inactivity(stepId, idleMs) = evidence.violation,
+         input.task.director.deterministic.handoverOnInactivity, hasAttemptBudget(input) {
+        return DirectorResolution(
+          kind: .handover(.inactivity(stepId: stepId, idleMs: idleMs)),
+          rule: "inactivity-handover",
+          reason: evidence.violation.summary,
+          causedBy: [evidence.evidenceId]
+        )
+      }
       if input.task.director.deterministic.rerunOnInactivity, hasAttemptBudget(input) {
         return DirectorResolution(
           kind: .rerun(fromStepId: evidence.violation.stepId),

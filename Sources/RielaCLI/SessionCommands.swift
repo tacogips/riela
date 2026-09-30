@@ -9,6 +9,9 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
   public var rootSessionId: String
   public var workflowName: String
   public var status: WorkflowSessionStatus
+  public var resumeStep: String?
+  public var reason: SuspendReasonKind?
+  public var question: HandoverQuestion?
   public var currentStepId: String?
   public var currentStage: String?
   public var lastCompletedStepId: String?
@@ -45,6 +48,9 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     rootSessionId: String? = nil,
     workflowName: String,
     status: WorkflowSessionStatus,
+    resumeStep: String? = nil,
+    reason: SuspendReasonKind? = nil,
+    question: HandoverQuestion? = nil,
     currentStepId: String?,
     currentStage: String? = nil,
     lastCompletedStepId: String? = nil,
@@ -80,6 +86,9 @@ public struct SessionInspectionCommandResult: Codable, Equatable, Sendable {
     self.rootSessionId = rootSessionId ?? sessionId
     self.workflowName = workflowName
     self.status = status
+    self.resumeStep = resumeStep
+    self.reason = reason
+    self.question = question
     self.currentStepId = currentStepId
     self.currentStage = currentStage
     self.lastCompletedStepId = lastCompletedStepId
@@ -740,6 +749,13 @@ public struct SessionResumeCommand: Sendable {
         fanoutWorkspaceRoot: URL(fileURLWithPath: kaibaContext.workingDirectory, isDirectory: true)
       )
       let variables = try resumeRuntimeVariables(options: options, persisted: persisted)
+      if let gateResult = try await suspendedQuestionResumeResult(
+        session: persisted.session,
+        variables: variables,
+        store: runtimeStore
+      ) {
+        return gateResult
+      }
       let eventHandler = await makeSessionCommandLivePersistenceHandler(
         configuration: SessionLivePersistenceConfig(
           workflowName: persisted.workflowName,
@@ -935,6 +951,38 @@ public struct SessionResumeCommand: Sendable {
 
   private func blocksResume(_ session: WorkflowSession) -> Bool {
     session.status == .failed && session.failureKind != .maxStepsExceeded
+  }
+
+  private func suspendedQuestionResumeResult(
+    session: WorkflowSession,
+    variables: JSONObject,
+    store: any WorkflowRuntimeStore
+  ) async throws -> CLICommandResult? {
+    guard let suspend = session.suspend, let question = suspend.question else {
+      return nil
+    }
+    let answer: JSONValue?
+    if case let .object(handover)? = variables[HandoverEnvelope.reservedKey] {
+      answer = handover["answer"]
+    } else {
+      answer = nil
+    }
+    guard let answer else {
+      let optionsText = question.options.map { "  \($0.id): \($0.label)" }.joined(separator: "\n")
+      let prompt = [question.text, optionsText,
+                    "answer and resume: riela session resume \(session.sessionId) --variables '{\"handover\":{\"answer\":{...}}}'"]
+        .filter { !$0.isEmpty }.joined(separator: "\n")
+      return CLICommandResult(exitCode: .suspended, stderr: prompt + "\n")
+    }
+    _ = try await store.appendWorkflowMessage(WorkflowMessageAppendInput(
+      workflowExecutionId: session.sessionId,
+      fromStepId: nil,
+      toStepId: suspend.stepId,
+      deliveryKind: .direct,
+      sourceStepExecutionId: suspend.stepExecutionId ?? "handover-answer",
+      payload: [HandoverEnvelope.reservedKey: .object(["answer": answer])]
+    ))
+    return nil
   }
 
   private func nonBudgetFailureResumeMessage(session: WorkflowSession) -> String {

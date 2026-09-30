@@ -75,3 +75,62 @@ SHA-256 for all 35 changed source/test/fixture files (including both authorized 
 ## Handoff state
 
 The wh-01 implementation and required behavioral verification are complete. Keep `impl-plans/active/wh-01-contracts.md` active for downstream workflow review/finalization; no adversarial review, shared documentation/index refresh, staging, commit, or push is claimed here.
+
+## Step 6 implementation handoff — runtime execution `nested-v1-66cfe363e87e0fbdd48ff7f602667a4a92aeb7b602abb26a31eaa81cb9cfd327`
+
+- **Date / mode / fanout:** 2026-09-30; `issue-resolution`; fanout branch `wh-01-contracts`, index `0`, group `shared-branch-implementation`; workflow step `step6-implement`.
+- **Issue reference:** no GitHub issue was supplied. Scope remains `design-docs/specs/design-work-handover-and-takeover.md` and `impl-plans/active/work-handover-and-takeover.md` on `feat/work-handover-and-takeover`.
+- **Codex-agent references:** none supplied in runtime input. An independent read-only contract audit was requested from `/root/wh01_contract_audit`; no implementation edits were delegated.
+- **Review decision:** accepted plan remains the Step 5 decision `accept`, communication `comm-000006`, workflow execution `opus-luna-design-and-implement-review-loop-session-1`, at `bb33bbf0`; the current branch checkpoint is `8f93837107d262e100c2cce9e5531b9c34df3be8`. Step 6 review feedback was empty (`findings: []`). Formal test-integrity/adversarial review remains downstream and is not claimed complete.
+- **Current-source identity:** source inventory captured at `tmp/work-handover/wh-01-contracts/attempt-03/source-sha256.txt`; prior expected hashes were rechecked against the current tree. Worktree source changes were already committed at the supplied checkpoint; this run changed only this progress record.
+
+### Current-source verification
+
+1. `arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-01-contracts/attempt-03/build.log 2>&1; result=$?; echo "exit=$result" >> tmp/work-handover/wh-01-contracts/attempt-03/build.log; exit $result'` — exit 0; full log: `tmp/work-handover/wh-01-contracts/attempt-03/build.log`.
+2. `arch -arm64 /bin/zsh -lc 'swift test --filter "HandoverContractsTests|JSONCanonicalTests|WorkHandoverModelsTests|WorkStoreHandoverRecordsTests|WorkModelsCodableTests|WorkStoreTests|WorkStoreReservationTests|DeterministicDirectorTests|RuntimeStoreTests|WorkflowValidation|DistributedWorkerConfigurationTests|AgentNodeOutputContractValidationTests" > tmp/work-handover/wh-01-contracts/attempt-03/focused.log 2>&1; result=$?; echo "exit=$result" >> tmp/work-handover/wh-01-contracts/attempt-03/focused.log; exit $result'` — exit 0; 136 tests passed, 0 failures; includes both post-integrity-review suites. Full log: `tmp/work-handover/wh-01-contracts/attempt-03/focused.log`.
+3. `arch -arm64 /bin/zsh -lc 'changed_swift_manifest=tmp/work-handover/wh-01-contracts/changed-swift-files.nul; if [ -s "$changed_swift_manifest" ]; then xargs -0 swiftlint lint --strict --quiet --no-cache < "$changed_swift_manifest"; else printf "%s\\n" "No Swift files changed; selected-file SwiftLint not run."; fi > tmp/work-handover/wh-01-contracts/attempt-03/swiftlint.log 2>&1; result=$?; echo "exit=$result" >> tmp/work-handover/wh-01-contracts/attempt-03/swiftlint.log; exit $result'` — exit 0 using the 34-file NUL-delimited manifest `tmp/work-handover/wh-01-contracts/changed-swift-files.nul`; full log: `tmp/work-handover/wh-01-contracts/attempt-03/swiftlint.log`.
+4. `git diff --check` — exit 0.
+
+### Handoff status
+
+Assigned wh-01 implementation criteria and required behavioral gates are complete. Keep `impl-plans/active/wh-01-contracts.md` active for downstream review and workflow finalization; no staging, commit, push, formal review, or review-dependent documentation refresh is claimed in Step 6. Per-edit preimage, prehash, and intent for this progress update are preserved in `tmp/work-handover/wh-01-contracts/attempt-03/edit-progress-*`; the native fanout pre-node snapshot is preserved as `tmp/work-handover/wh-01-contracts/attempt-03/fanout-pre-node-snapshot.json`.
+
+## Independent Step 6 contract audit repairs — runtime execution `nested-v1-66cfe363e87e0fbdd48ff7f602667a4a92aeb7b602abb26a31eaa81cb9cfd327`
+
+A read-only audit identified two wh-01 acceptance gaps, both within assigned writePaths and repaired in this step:
+
+1. `Sources/RielaCore/HandoverContracts.swift`: `HandoverSinkRef.parse` now verifies `#sha256:` begins after the locator separator before constructing the locator range. `Tests/RielaCoreTests/HandoverContractsTests.swift` adds malformed ordering coverage while retaining the valid locator-with-colon/hash round trip.
+2. `Tests/RielaCoreTests/HandoverContractsTests.swift`: added Codable round-trip assertions for `WorkflowStepExecutionStatus.suspended`, `WorkflowSessionFailureKind.stalled`, `.leaseLost`, and `LoopOutcome.handover`.
+
+**Addressed audit findings:** malformed sink-ref marker ordering; missing enum Codable round-trip coverage. Both are resolved; no assigned acceptance criterion remains outstanding. Per-edit preimages, SHA-256 prehashes, and exact intentions are retained under `tmp/work-handover/wh-01-contracts/attempt-03/edit-sinkref-guard/`, `edit-roundtrip-tests/`, and `edit-progress-audit-repair/`. Repaired source hashes are in `tmp/work-handover/wh-01-contracts/attempt-03/repaired-files-sha256.txt`; complete current source inventory is `tmp/work-handover/wh-01-contracts/attempt-03/final-source-sha256.txt`.
+
+### Final-source verification after audit repairs
+
+1. `arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-01-contracts/attempt-03/repair-build.log 2>&1; result=$?; echo "exit=$result" >> tmp/work-handover/wh-01-contracts/attempt-03/repair-build.log; exit $result'` — exit 0; build complete. Full log: `tmp/work-handover/wh-01-contracts/attempt-03/repair-build.log`.
+2. `arch -arm64 /bin/zsh -lc 'swift test --filter "HandoverContractsTests|JSONCanonicalTests|WorkHandoverModelsTests|WorkStoreHandoverRecordsTests|WorkModelsCodableTests|WorkStoreTests|WorkStoreReservationTests|DeterministicDirectorTests|RuntimeStoreTests|WorkflowValidation|DistributedWorkerConfigurationTests|AgentNodeOutputContractValidationTests" > tmp/work-handover/wh-01-contracts/attempt-03/repair-focused.log 2>&1; result=$?; echo "exit=$result" >> tmp/work-handover/wh-01-contracts/attempt-03/repair-focused.log; exit $result'` — exit 0; 136 tests passed, 0 failures. Full log: `tmp/work-handover/wh-01-contracts/attempt-03/repair-focused.log`.
+3. `arch -arm64 /bin/zsh -lc 'changed_swift_manifest=tmp/work-handover/wh-01-contracts/changed-swift-files.nul; if [ -s "$changed_swift_manifest" ]; then xargs -0 swiftlint lint --strict --quiet --no-cache < "$changed_swift_manifest"; else printf "%s\\n" "No Swift files changed; selected-file SwiftLint not run."; fi > tmp/work-handover/wh-01-contracts/attempt-03/repair-swiftlint.log 2>&1; result=$?; echo "exit=$result" >> tmp/work-handover/wh-01-contracts/attempt-03/repair-swiftlint.log; exit $result'` — exit 0; exact changed-Swift manifest `tmp/work-handover/wh-01-contracts/changed-swift-files.nul` (34 paths). Full log: `tmp/work-handover/wh-01-contracts/attempt-03/repair-swiftlint.log`.
+4. `git diff --check` — exit 0.
+
+The earlier `attempt-03/build.log`, `focused.log`, and `swiftlint.log` are retained as pre-repair verification, not used as final-source evidence. Final required gates are the `repair-*` logs above.
+
+## Test-integrity self-repair (step6)
+
+Test-only repair in `Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift`; `Sources/` untouched.
+
+- `testSealRollsBackWhenFailingAfterPacketInsert`: task saved (version 1, `.running`) with the predecessor attempt `attempt-1` deliberately absent, so `sealHandoverRecords` throws in `requiredAttempt` after the `work_handovers` INSERT, decision insert and evidence insert. Asserts the transaction rolled back: `loadHandover` is nil, `SELECT COUNT(*) FROM work_handovers` is `0`, no decisions or evidence, task still version 1 / `.running`. This closes the "sealHandoverRecords is atomic and tested" gap (the existing version-conflict test throws before any write).
+- `testAwaitingHandoverNeedsAnswerTracksMatchingAnswerDecision`: `needsAnswer` starts true; an `.answer` decision for a different question id ("other") keeps it true; an answer for the matching id ("q") flips it to false. Also asserts `tasksAwaitingHandover(traits: [.gui])` includes the presence task (task-2).
+
+Verification (evidence in `tmp/work-handover/wh-01-contracts/step6-repair/`): focused `WorkStoreHandoverRecordsTests|WorkStoreTests` 22 tests, 0 failures, exit 0; SwiftLint strict on the test file exit 0; `git diff --check` exit 0.
+
+## Step 7 adversarial-review self-repair
+
+Repair of two review findings in `WorkStore.tasksAwaitingHandover(traits:)` (`Sources/RielaWork/WorkStore+Handovers.swift`).
+
+1. Stale answers cleared `needsAnswer`: an `.answer` decision now counts only when its `questionId` matches AND `decision.createdAt >= packet.createdAt`, so an answer to an earlier handover with the same question id no longer marks a later handover answered.
+2. Terminal tasks stayed listed forever: the query now `JOIN work_tasks t` and requires `t.state NOT IN ('succeeded', 'failed', 'cancelled', 'superseded')`. The latest-handover `NOT EXISTS` subquery is unchanged and non-terminal states (including an answered, `.scheduled` task) remain listed.
+
+Changed files: `Sources/RielaWork/WorkStore+Handovers.swift`, `Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift`, this progress file.
+
+New tests: `testAwaitingHandoverIgnoresAnswersToEarlierHandovers` (second same-question handover stays `needsAnswer == true` until a newer answer arrives) and `testAwaitingHandoverExcludesTerminalTasks` (waiting task listed, cancelled task not).
+
+Verification (logs in `tmp/work-handover/wh-01-contracts/step7-repair/`): `build.log` exit 0; `focused.log` (WorkStoreHandoverRecordsTests|WorkStoreTests|WorkHandoverModelsTests) exit 0, 27 tests, 0 failures; `swiftlint.log` exit 0; `diff-check.log` exit 0. Per-edit preimages/prehashes/intents are in the same directory.

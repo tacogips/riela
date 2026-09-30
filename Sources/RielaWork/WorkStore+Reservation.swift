@@ -19,6 +19,7 @@ public struct AttemptReservationRequest: Equatable, Sendable {
   public var placementEvidence: Evidence?
   public var pendingRequestId: String?
   public var launchToken: String?
+  public var hostId: String
   public var now: Date
   var failurePoint: AttemptReservationFailurePoint?
 
@@ -38,6 +39,7 @@ public struct AttemptReservationRequest: Equatable, Sendable {
     placementEvidence: Evidence? = nil,
     pendingRequestId: String? = nil,
     launchToken: String? = nil,
+    hostId: String = "local",
     now: Date = Date()
   ) {
     self.taskId = taskId
@@ -55,6 +57,7 @@ public struct AttemptReservationRequest: Equatable, Sendable {
     self.placementEvidence = placementEvidence
     self.pendingRequestId = pendingRequestId
     self.launchToken = launchToken
+    self.hostId = hostId
     self.now = now
     failurePoint = nil
   }
@@ -155,6 +158,8 @@ public extension WorkStore {
       guard task.plan != nil else {
         throw WorkStoreError("task '\(task.id.rawValue)' has no executable plan")
       }
+      let handoverContext = try reservationHandoverContext(for: request, task: task, in: database)
+      if let pendingHandover = handoverContext.pendingHandover { return .wait(.handover(pendingHandover)) }
       if request.entry == .director {
         guard task.director.agentWorkflow?.name == request.workflowId,
               let judgedId = request.judgedAttemptId else {
@@ -189,6 +194,9 @@ public extension WorkStore {
           throw WorkStoreError("pending reservation must be consumed by its matching request")
         }
       }
+      if case .takeover = request.entry, pendingRequest == nil {
+        throw WorkStoreError("takeover reservation requires a matching pending request")
+      }
 
       let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
       try persistence.prepareSchema(in: database)
@@ -216,13 +224,21 @@ public extension WorkStore {
         entry: request.entry,
         state: .prepared,
         launch: launch,
-        judgedAttemptId: request.judgedAttemptId
+        judgedAttemptId: request.judgedAttemptId,
+        takeoverLineage: handoverContext.predecessor.flatMap { predecessor in
+          guard let packet = handoverContext.packet else { return nil }
+          return TakeoverLineage(
+            fromAttemptId: predecessor.id,
+            handoverId: packet.id,
+            hops: (predecessor.takeoverLineage?.hops ?? 0) + 1
+          )
+        }
       )
       let decision: Decision
       if request.pendingRequestId != nil {
         guard let existing = try storedDecision(request.decisionId, in: database),
               existing.taskId == task.id,
-              Self.requestedEntry(for: existing.kind) == request.entry else {
+              reservationDecisionMatches(existing, entry: request.entry) else {
           throw WorkStoreError("pending reservation decision is missing or conflicts")
         }
         decision = existing
@@ -243,9 +259,15 @@ public extension WorkStore {
           throw WorkStoreError("pending reservation predecessor does not match its decision")
         }
       }
+      if case .takeover = request.entry, Self.isTakeoverDecision(decision, matching: request.entry) {
+        // The pending typed decision supplies takeover placement.
+      } else if case .takeover = request.entry {
+        throw WorkStoreError("takeover reservation decision is not a takeover decision")
+      }
       var updatedTask = task
       updatedTask.state = .running
       updatedTask.version += 1
+      updatedTask.fence += 1
 
       try insertAttempt(attempt, in: database, createdAt: request.now)
       try failIfRequested(.attempt, request: request)
@@ -263,10 +285,13 @@ public extension WorkStore {
       }
       try failIfRequested(.decisionOrRequest, request: request)
       try database.execute(
-        "INSERT INTO work_leases (attempt_id, task_id, session_id, token_digest, acquired_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO work_leases (attempt_id, task_id, session_id, token_digest, acquired_at, updated_at, heartbeat_at, expires_at, fence, host_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         bindings: [
           .text(attempt.id.rawValue), .text(task.id.rawValue), .text(attempt.sessionId),
-          .text(digest), .text(Self.timestamp(request.now)), .text(Self.timestamp(request.now))
+          .text(digest), .text(Self.timestamp(request.now)), .text(Self.timestamp(request.now)),
+          .text(Self.timestamp(request.now)),
+          .text(Self.timestamp(request.now.addingTimeInterval(Double((task.guardPolicy.lease ?? LeasePolicy()).ttlMs) / 1_000))),
+          .int(Int64(updatedTask.fence)), .text(request.hostId)
         ]
       )
       try failIfRequested(.lease, request: request)
@@ -292,6 +317,13 @@ public extension WorkStore {
       )
       try persistence.save(WorkflowRuntimePersistenceSnapshot(session: session), in: database)
       try failIfRequested(.session, request: request)
+      if let takeoverPacket = handoverContext.packet {
+        let attached = try database.executeAndReturnChangedRowCount(
+          "UPDATE work_handovers SET successor_attempt_id = ? WHERE handover_id = ? AND task_id = ? AND successor_attempt_id IS NULL",
+          bindings: [.text(attempt.id.rawValue), .text(takeoverPacket.id.rawValue), .text(task.id.rawValue)]
+        )
+        guard attached == 1 else { throw WorkStoreError("handover already has a successor attempt") }
+      }
       return .reserved(AttemptReservation(task: updatedTask, attempt: attempt, decision: decision, launchToken: token))
     }
   }
@@ -552,7 +584,7 @@ public extension WorkStore {
         }
         switch decision.kind {
         case .cancel: task.state = .cancelled
-        case .reject, .stop: task.state = .failed
+        case .reject, .stop, .handover: task.state = .failed
         case .rerun, .recover: task.state = .scheduled
         default: throw WorkStoreError("cancellation decision is not terminal or replacement")
         }
@@ -579,7 +611,7 @@ public extension WorkStore {
 
   static func requiresCancellationAcknowledgment(_ kind: DecisionKind) -> Bool {
     switch kind {
-    case .cancel, .stop, .reject, .rerun, .recover: true
+    case .cancel, .stop, .reject, .rerun, .recover, .handover: true
     default: false
     }
   }
@@ -636,6 +668,9 @@ public extension WorkStore {
     let database = try openWritable()
     return try database.transaction { database in
       var attempt = try requiredAttempt(attemptId, in: database)
+      if attempt.state == .reconciled, attempt.supersededByFence != nil {
+        return attempt
+      }
       let cancellationPending = try database.query(
         "SELECT attempt_id FROM work_cancellations WHERE attempt_id = ? AND acknowledged_at IS NULL",
         bindings: [.text(attemptId.rawValue)]
@@ -681,18 +716,6 @@ extension WorkStore {
 
   static func launchTokenDigest(_ token: String) -> String {
     SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
-  }
-
-  static func decisionKind(for entry: AttemptEntry) -> DecisionKind {
-    switch entry {
-    case .start: return .start
-    case .resume, .director: return .resume
-    case let .rerunFromStep(stepId): return .rerun(fromStepId: stepId)
-    case let .recoverFromGate(gateId): return .recover(fromGateId: gateId)
-    case .takeover:
-      // Takeover reservation records its typed decision in the handover coordinator.
-      return .resume
-    }
   }
 
   func nextGeneration(for taskId: TaskID, in database: SQLiteDatabase) throws -> Int {
@@ -933,7 +956,8 @@ extension WorkStore {
     let decision = try storedDecision(request.decisionId, in: database)
     guard let decision, decision.taskId == request.taskId,
           decision.attemptId == request.predecessorAttemptId,
-          Self.requestedEntry(for: decision.kind) == request.entry else {
+          Self.requestedEntry(for: decision.kind, predecessorAttemptId: decision.attemptId) == request.entry
+            || Self.answerDecision(decision, matches: request.entry) else {
       throw WorkStoreError("pending reservation must reference its matching stored decision")
     }
     try database.execute(

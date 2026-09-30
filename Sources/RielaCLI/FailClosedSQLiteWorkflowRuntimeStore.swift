@@ -106,6 +106,12 @@ public actor FailClosedSQLiteWorkflowRuntimeStore: WorkflowRuntimeStore {
     return result
   }
 
+  public func suspendSession(_ input: WorkflowSessionSuspendInput) async throws -> WorkflowSession {
+    let result = try await backing.suspendSession(input)
+    try await persist(sessionId: input.sessionId)
+    return result
+  }
+
   public func recordStepBackendEvent(_ input: WorkflowStepBackendEventInput) async throws -> WorkflowStepExecution {
     let result = try await backing.recordStepBackendEvent(input)
     try await persist(sessionId: input.sessionId)

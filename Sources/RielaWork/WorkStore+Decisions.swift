@@ -265,7 +265,7 @@ extension WorkStore {
     guard request.taskId == decision.taskId,
           request.decisionId == decision.id,
           request.predecessorAttemptId == decision.attemptId,
-          Self.requestedEntry(for: decision.kind) == request.entry else {
+          Self.requestedEntry(for: decision.kind, predecessorAttemptId: decision.attemptId) == request.entry else {
       throw WorkStoreError("pending reservation does not match its decision")
     }
   }
@@ -297,7 +297,7 @@ extension WorkStore {
 
   static func requiresCausalEvidence(_ kind: DecisionKind) -> Bool {
     switch kind {
-    case .accept, .cancel, .stop, .reject, .rerun, .recover: true
+    case .accept, .cancel, .stop, .reject, .rerun, .recover, .handover: true
     default: false
     }
   }
@@ -383,12 +383,14 @@ extension WorkStore {
     }
   }
 
-  static func requestedEntry(for kind: DecisionKind) -> AttemptEntry? {
+  static func requestedEntry(for kind: DecisionKind, predecessorAttemptId: AttemptID? = nil) -> AttemptEntry? {
     switch kind {
     case .start: return .start
     case .resume: return .resume
     case let .rerun(stepId): return .rerunFromStep(stepId)
     case let .recover(gateId): return .recoverFromGate(gateId)
+    case let .takeover(handoverId, _):
+      return predecessorAttemptId.map { .takeover(fromAttemptId: $0, handoverId: handoverId) }
     default: return nil
     }
   }
@@ -402,7 +404,7 @@ extension WorkStore {
 
   static func requiresLiveCancellation(for kind: DecisionKind) -> Bool {
     switch kind {
-    case .cancel, .stop, .reject, .rerun, .recover: true
+    case .cancel, .stop, .reject, .rerun, .recover, .handover: true
     default: false
     }
   }

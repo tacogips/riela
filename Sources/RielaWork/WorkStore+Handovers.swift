@@ -94,7 +94,9 @@ public extension WorkStore {
       """
       SELECT h.task_id, h.handover_id, json(h.record) AS record, h.digest
       FROM work_handovers h
+      JOIN work_tasks t ON t.task_id = h.task_id
       WHERE h.successor_attempt_id IS NULL
+        AND t.state NOT IN ('succeeded', 'failed', 'cancelled', 'superseded')
         AND NOT EXISTS (
           SELECT 1 FROM work_handovers newer
           WHERE newer.task_id = h.task_id
@@ -123,7 +125,7 @@ public extension WorkStore {
       let answered = try db.query("SELECT json(record) AS record FROM work_decisions WHERE task_id = ?",
                                   bindings: [.text(task)]).contains { row in
         guard let raw = row["record"], let decision = try? decode(Decision.self, json: raw) else { return false }
-        if case let .answer(answer) = decision.kind { return answer.questionId == question?.id }
+        if case let .answer(answer) = decision.kind { return answer.questionId == question?.id && decision.createdAt >= packet.createdAt }
         return false
       }
       result.append(TaskHandoverSummary(taskId: TaskID(task), handoverId: HandoverID(id), reasonKind: reasonKind,

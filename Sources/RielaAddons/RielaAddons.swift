@@ -123,7 +123,8 @@ public enum RielaBuiltinAddonCatalog {
 
   public static let gitAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/git-commit", version: "1"),
-    .init(name: "riela/git-push", version: "1")
+    .init(name: "riela/git-push", version: "1"),
+    .init(name: "riela/git-publish-branch", version: "1")
   ]
 
   public static let routineAddons: [RielaAddonDescriptor] = [

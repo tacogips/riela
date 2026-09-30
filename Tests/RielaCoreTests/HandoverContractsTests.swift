@@ -73,6 +73,7 @@ final class HandoverContractsTests: XCTestCase {
     XCTAssertEqual(parsedRef.digest, ref.digest)
     XCTAssertThrowsError(try HandoverSinkRef.parse("file:path#sha256:BAD"))
     XCTAssertThrowsError(try HandoverSinkRef.parse("file:path"))
+    XCTAssertThrowsError(try HandoverSinkRef.parse("file#sha256:" + String(repeating: "a", count: 64)))
     XCTAssertThrowsError(try HandoverEnvelope.parse(.object(["reason": .string("userInputRequired"), "question": .string("wrong")]), source: "node")) {
       guard let error = $0 as? AdapterExecutionError else { return XCTFail("expected invalid-output adapter error") }
       XCTAssertEqual(error.code, .invalidOutput)
@@ -95,8 +96,12 @@ final class HandoverContractsTests: XCTestCase {
     XCTAssertEqual(try JSONDecoder().decode(WorkflowSessionStatus.self, from: Data("\"suspended\"".utf8)), .suspended)
     XCTAssertThrowsError(try JSONDecoder().decode(WorkflowSessionStatus.self, from: Data("\"paused\"".utf8)))
     XCTAssertEqual(try JSONDecoder().decode(WorkflowStepExecutionStatus.self, from: Data("\"suspended\"".utf8)), .suspended)
+    try assertRoundTrip(WorkflowStepExecutionStatus.suspended)
     XCTAssertEqual(WorkflowSessionFailureKind.stalled.rawValue, "stalled")
     XCTAssertEqual(WorkflowSessionFailureKind.leaseLost.rawValue, "leaseLost")
+    try assertRoundTrip(WorkflowSessionFailureKind.stalled)
+    try assertRoundTrip(WorkflowSessionFailureKind.leaseLost)
+    try assertRoundTrip(LoopOutcome.handover)
   }
 
   func testWorkflowValidationRejectsReservedSchemaKeyAndWarnsForLocalState() {

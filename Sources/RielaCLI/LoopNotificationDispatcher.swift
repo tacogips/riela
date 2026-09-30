@@ -4,6 +4,46 @@ import FoundationNetworking
 #endif
 import RielaCore
 
+struct HandoverNotificationPayload: Codable, Equatable, Sendable {
+  var outcome = "handover"
+  var workflowId: String
+  var sessionId: String
+  var taskId: String
+  var handoverId: String
+  var reasonKind: String
+  var questionText: String?
+  var briefHead: String
+  var locators: [String]
+
+  init(
+    workflowId: String,
+    sessionId: String,
+    taskId: String,
+    handoverId: String,
+    reasonKind: String,
+    questionText: String? = nil,
+    brief: String,
+    locators: [String]
+  ) {
+    self.workflowId = workflowId
+    self.sessionId = sessionId
+    self.taskId = taskId
+    self.handoverId = handoverId
+    self.reasonKind = reasonKind
+    self.questionText = questionText
+    self.briefHead = Self.utf8Head(brief, byteLimit: 2048)
+    self.locators = locators
+  }
+
+  private static func utf8Head(_ value: String, byteLimit: Int) -> String {
+    var bytes = Array(value.utf8.prefix(byteLimit))
+    while String(bytes: bytes, encoding: .utf8) == nil, !bytes.isEmpty {
+      bytes.removeLast()
+    }
+    return String(bytes: bytes, encoding: .utf8) ?? ""
+  }
+}
+
 /// Injectable webhook transport so dispatch behavior (timeout, retry,
 /// failure isolation) is testable without a live server.
 protocol LoopNotificationTransporting: Sendable {
@@ -89,6 +129,37 @@ struct LoopNotificationDispatcher: Sendable {
         channel: channel,
         index: index,
         outcome: outcome,
+        body: body,
+        workflowDirectory: workflowDirectory,
+        workingDirectory: workingDirectory
+      )
+    }
+    return diagnostics
+  }
+
+  func dispatchHandover(
+    workflow: WorkflowDefinition,
+    payload: HandoverNotificationPayload,
+    workflowDirectory: String,
+    workingDirectory: String
+  ) async -> [String] {
+    guard let notifications = workflow.loop?.notifications,
+          !notifications.channels.isEmpty,
+          notifications.on.contains(LoopOutcome.handover.rawValue) else {
+      return []
+    }
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = [.sortedKeys]
+    guard let body = try? encoder.encode(payload) else {
+      return ["loop notification: failed to encode handover payload; nothing dispatched"]
+    }
+    var diagnostics: [String] = []
+    for (index, channel) in notifications.channels.enumerated() {
+      diagnostics += await dispatch(
+        channel: channel,
+        index: index,
+        outcome: .handover,
         body: body,
         workflowDirectory: workflowDirectory,
         workingDirectory: workingDirectory

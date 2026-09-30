@@ -31,6 +31,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
   /// Optional process-level admission boundary invoked after the session
   /// identity is resolved and before any workflow event or node effect.
   public var sessionExecutionAdmission: (@Sendable (String) throws -> Void)?
+  public var boundaryHandover: (@Sendable (_ nextStepId: String) async -> SuspendRecord?)?
   /// Nesting depth of live cross-workflow dispatch. Top-level runs are 0;
   /// each dispatched callee run increments it so runaway workflow-call cycles
   /// fail loudly instead of recursing without bound.
@@ -69,6 +70,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     effectiveInstance: EffectiveWorkflowInstance? = nil,
     eventHandler: WorkflowRunEventHandler? = nil,
     sessionExecutionAdmission: (@Sendable (String) throws -> Void)? = nil,
+    boundaryHandover: (@Sendable (_ nextStepId: String) async -> SuspendRecord?)? = nil,
     crossWorkflowDispatchDepth: Int = 0,
     stopBeforeStepId: String? = nil,
     stopAfterStepId: String? = nil
@@ -96,6 +98,7 @@ public struct DeterministicWorkflowRunRequest: Sendable {
     self.effectiveInstance = effectiveInstance
     self.eventHandler = eventHandler
     self.sessionExecutionAdmission = sessionExecutionAdmission
+    self.boundaryHandover = boundaryHandover
     self.crossWorkflowDispatchDepth = crossWorkflowDispatchDepth
     self.stopBeforeStepId = stopBeforeStepId
     self.stopAfterStepId = stopAfterStepId
@@ -388,6 +391,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         publishedTransitions: publishedTransitions,
         handler: effectiveRequest.eventHandler
       )
+      if let record = await requestedSuspendRecord(
+        publishResult: publishResult,
+        step: step,
+        request: effectiveRequest
+      ) {
+        return try await suspendSession(record, workflowId: effectiveRequest.workflow.workflowId,
+                                        session: session, transitions: publishedTransitions,
+                                        request: effectiveRequest, ownedWorkflowRunId: ownedWorkflowRunId)
+      }
       if let dispatch = publishResult.crossWorkflowDispatch {
         try await dispatchCrossWorkflowCallee(
           directive: dispatch,
@@ -455,6 +467,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     }
   }
 
+}
+
+extension DeterministicWorkflowRunner {
   private func executeNodeAndRecordMemory(
     registryNode: WorkflowNodeRegistryRef,
     request: DeterministicWorkflowRunRequest,

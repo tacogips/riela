@@ -26,6 +26,7 @@
     "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
     "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
     "Sources/RielaCore/DeterministicWorkflowRunner+Suspend.swift",
+    "Sources/RielaCore/DeterministicWorkflowRunner.swift",
     "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
     "Sources/RielaCLI/WorkflowRunCommand.swift",
     "Tests/RielaCLITests/WorkflowCommandLivePersistenceTests.swift",
@@ -240,7 +241,9 @@ wh-10 is accepted and committed. A partial wh-14 implementation is committed (`w
 
 Everything below stays inside this plan's writePaths. Do not edit `Sources/RielaWork/BackendCapabilityPlacement.swift` (wh-10), `DeterministicDirector.swift` or `TaskGuardCoordinator.swift`.
 
-1. **Director `.handover` capture** (`TaskRunCancellation.observeInactivity`). After `evaluateAndApply` returns, if
+1. **Director `.handover` capture** (`TaskRunCancellation.observeInactivity`). The "R26 alignment" section at the end of this plan
+   replaces this item's statement that `sealHandoverIfNeeded` acknowledges the row "before the `.stalled` snapshot save". The seal no
+   longer saves a snapshot. The capture and skip-branch decisions below still apply. After `evaluateAndApply` returns, if
    `result.resolution?.kind` is `.handover(reason)` (`WorkDecision.swift` `DecisionKind.handover(HandoverReason)`), call
    `handoverTriggerState?.record(reason: reason, failureKind: .stalled)` (design R20) before returning `true`. Record before the
    execution is cancelled. `TaskRunHandoverTriggerState.record` keeps the first trigger, so a later fence loss cannot overwrite it.
@@ -323,3 +326,68 @@ This plan now also owns the terminal-persistence and runner-cancellation layer i
 Director inactivity handover currently fails with `terminalSnapshotConflict`: the runner persists `failed(.cancelled)`, then sealing tries to persist `failed(.stalled)`. Keep the terminal-snapshot conflict guard. Preferred fix: a cancellation requested for a handover carries its cause, so the runner's single terminal write is `failed(.stalled)` (or `failed(.leaseLost)` for a fence loss) and sealing records handover evidence without a second terminal transition. Add a regression for the single terminal write.
 
 Done so far and committed: answer binding fix with three regressions. Still to do: director `.handover` end to end, live owner fence and revived `leaseLost`, force-orphan expiry and takeover, `reconcileExpired`, `adoptAndSeal`, repository branch publication and second-clone materialization with fenced-owner refusal, the real `everyMs` checkpoint timer, and acceptance signal 1-5 evidence. Continue the committed work; do not restart it.
+
+### R26 alignment (design §21 R26, 2026-10-01, run session-6)
+
+The design's R26 fixes the terminal-persistence rule. Checked against the source at `76e9ea43`: the runner writes `failed(.cancelled)` for every `CancellationError` (`DeterministicWorkflowRunner+Cancellation.swift:4-6,30-37,54-57`), and then `sealHandoverIfNeeded` (`TaskDispatch+Handover.swift:46-62`) rewrites the session and saves `failed(.stalled)`. The second save raises `terminalSnapshotConflict`. This plan now also owns `Sources/RielaCore/DeterministicWorkflowRunner.swift`, because the run request lives there. Required changes, in dependency order:
+
+1. **Request field.** In `Sources/RielaCore/DeterministicWorkflowRunner.swift`, `DeterministicWorkflowRunRequest` gets
+   `public var cancellationCause: (@Sendable () -> WorkflowSessionFailureKind?)?`. Declare it right after `boundaryHandover`, add an
+   init parameter defaulting to `nil`, and assign it the same way `boundaryHandover` is assigned (`:34,73,101`). Do not change
+   any other field.
+2. **Runner mapping.** In `DeterministicWorkflowRunner+Cancellation.swift`, the terminal failed write (`markSessionFailed` in the
+   interrupted-session finalizer) resolves the failure kind like this: if the error is a `CancellationError` and
+   `request.cancellationCause?()` returns `.stalled`, `.leaseLost` or `.cancelled`, use that value and set the reason to
+   `"task handover trigger: <kind>"`. Any other value, or `nil`, keeps today's `.cancelled` and `"workflow run cancelled"`. Keep
+   `workflowRunFailureKind(_:)` / `workflowRunFailureReason(_:)` unchanged for their other callers
+   (`+CrossWorkflow.swift:215`, `+Fanout.swift:334`): add a request-aware wrapper instead of changing their signatures. Cross-workflow
+   callees and fanout children never see the closure. Pitfall: the finalizer re-enters through an unstructured `Task` when
+   `Task.isCancelled`. The closure must be read from the same `request`, not from task-local state.
+3. **Wiring.** `TaskPlacementExecutionContext` (`WorkflowRunCommand+TaskReservation.swift`) gets `cancellationCause`, next to
+   `boundaryHandover`. `WorkflowRunCommand.swift:186` passes `taskContext?.cancellationCause`. The task dispatch path sets it to
+   `{ handoverTriggerState.take()?.failureKind }`, using the same `TaskRunHandoverTriggerState` instance that
+   `TaskRunCancellation.run` records into (`TaskDispatch.swift:247-255`). Every trigger already calls `record(...)` before
+   `execution.cancel()` (`TaskRunCancellation.swift:137-165,283-291,323-325`). Keep that order. Non-task runs leave the field `nil`.
+4. **Guard case.** In `SQLiteWorkflowRuntimePersistenceStore.validateTaskTerminalWrite` (`:753-787`), keep the
+   `terminalSnapshotConflict` block as it is. In the pending-`work_cancellations` block, also accept
+   `status == .failed && failureKind == .stalled` when the pending row's `decision_id` joins `work_decisions` with
+   `kind = 'handover'` and the same `attempt_id` as the row. Add the join inside the existing pending query; there is no
+   second connection. `failed(.cancelled)` stays accepted for every pending row, and every other terminal write still throws
+   `cancellationPending`. `FailClosedSQLiteWorkflowRuntimeStore.swift` changes only if it copies this predicate. Grep first,
+   and leave it alone if it delegates.
+5. **Seal without a second write.** In `sealHandoverIfNeeded`, the trigger branch must not change `snapshot.session`, must not
+   call `SQLiteWorkflowRuntimePersistenceStore.save`, and must not write any other snapshot. Reload the persisted snapshot
+   instead, and require `status == .failed && failureKind == trigger.failureKind`. On a mismatch, throw
+   `WorkStoreError("handover trigger terminal mismatch: expected <kind>, found <status>/<kind>")`. Never overwrite. Then, if a
+   pending director `.handover` row exists, call the existing `acknowledgeHandoverCancellation(taskId:attemptId:)`
+   (`WorkStore+Isolation.swift:24-48`), then `sealTriggered`. The `TaskRunCancellation.run` skip branch (`:215-225`) stays
+   as it is.
+6. **Fenced owner never seals.** When `trigger.failureKind == .leaseLost`, `sealHandoverIfNeeded` seals no packet and dispatches no
+   notification. It returns a failure `TaskRunCommandResult` whose stderr says the attempt lost its lease, because the fencing
+   side (`TaskHandoverRuntime.forceOrphan` / `reconcileExpired` → `sealOrphan`, `TaskHandoverRuntime.swift:39-71`) already sealed.
+   Its only terminal write is the runner's `failed(.leaseLost)`.
+7. **Crash window.** Add no new code for it. A `failed(.stalled)` session without a packet is recovered by `reconcileExpired`
+   once the lease expires, sealed with reason `ownerLost` (`TaskHandoverRuntime.swift:53-70`), or by `adoptAndSeal`. Do not add
+   a "stalled but unsealed" scanner.
+
+Tests to add. Each goes in the file named:
+- `WorkflowCommandLivePersistenceTests`: a task-attempt session with a pending `work_cancellations` row whose decision is
+  `.handover` → saving `failed(.stalled)` succeeds. The same row with a non-handover decision → `failed(.stalled)` throws
+  `cancellationPending`, and `failed(.cancelled)` succeeds. A session already saved `failed(.cancelled)` → saving
+  `failed(.stalled)` throws `terminalSnapshotConflict` (the guard is kept).
+- `TaskHandoverDispatchTests`, director-inactivity case (commit `80e82d5d`): the session's single terminal snapshot is
+  `failed(.stalled)` with reason `task handover trigger: stalled` (the runner knows only the failure kind; the packet reason stays `inactivity`). No `terminalSnapshotConflict` occurs. There is exactly one
+  packet, the `work_cancellations` row is acknowledged with `terminal_status = failed`, the task is `waiting`, and a following
+  takeover reservation is not rejected with `cancellationPending`.
+- `TaskHandoverLeaseTests`, revived owner: after `fenceOrphan` (injected `now` past expiry), the owner's next heartbeat
+  fails and the session ends `failed(.leaseLost)` from the runner's one write. `store.handovers(taskId:)` count is unchanged
+  from the fencer's single packet. The owner's command result is a failure.
+- A runner-level unit test in the file above (or `TaskHandoverDispatchTests`): a request with `cancellationCause` returning
+  `nil` → `failed(.cancelled)`, `"workflow run cancelled"`. This pins non-task behavior.
+
+Added verification. The log must end `exit=0` with a non-zero executed count:
+`arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowCommandLivePersistenceTests|TaskCancellationIntegrationTests" > tmp/work-handover/wh-14-task-dispatch-runtime/persistence.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-14-task-dispatch-runtime/persistence.log'`
+
+Non-goals: do not change `WorkflowSessionFailureKind`, the session schema generation, `acknowledgeAttemptCancellation`,
+`persistJoinedCancellation` or the `terminalSnapshotConflict` predicate. Do not touch `DeterministicDirector.swift`,
+`TaskGuardCoordinator.swift` or `BackendCapabilityPlacement.swift`.

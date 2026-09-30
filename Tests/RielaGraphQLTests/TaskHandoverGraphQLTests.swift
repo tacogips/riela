@@ -122,6 +122,27 @@ private func errorCode(_ response: GraphQLDocumentExecutionResponse?) -> JSONVal
 }
 
 final class TaskHandoverGraphQLTests: XCTestCase {
+  func testTakeoverAnswerRoundTripsAndIsOptionalInSchema() throws {
+    let answer = GraphQLHandoverAnswer(
+      questionId: "approval",
+      payload: ["approved": .bool(true)],
+      answeredBy: ["kind": .string("human"), "principal": .string("operator")],
+      answeredAt: "2026-10-01T00:00:00.000Z"
+    )
+    let payload = GraphQLTakeoverTaskPayload(attemptId: "attempt", answer: answer)
+    let encoded = try JSONCanonical.encode(payload)
+    let decoded = try JSONCanonical.decoder().decode(GraphQLTakeoverTaskPayload.self, from: encoded)
+    XCTAssertEqual(decoded.answer, answer)
+
+    let withoutAnswer = try JSONCanonical.decoder().decode(
+      GraphQLTakeoverTaskPayload.self,
+      from: Data(#"{"attemptId":"attempt","errors":[]}"#.utf8)
+    )
+    XCTAssertNil(withoutAnswer.answer)
+    XCTAssertTrue(taskHandoverGraphQLSchemaTypes.contains("type HandoverAnswerPayload"))
+    XCTAssertTrue(taskHandoverGraphQLSchemaTypes.contains("answer: HandoverAnswerPayload"))
+  }
+
   func testSevenOperationsRouteDecodedArgumentsToProvider() async throws {
     let provider = StubTaskHandoverProvider()
     let executor = TaskHandoverGraphQLDocumentExecutor(provider: provider)

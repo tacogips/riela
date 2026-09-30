@@ -35,6 +35,93 @@ final class TaskRemoteTakeoverTests: XCTestCase {
     XCTAssertTrue(didReport)
   }
 
+  func testAnsweredQuestionRemoteTakeoverDeliversAnswerVariableAndMessage() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let bundle = try harness.bundle("task-handover-presence")
+    let sourceExecution = WorkflowStepExecution(
+      executionId: "source-answer-execution", stepId: "check-login", nodeId: "check-login", attempt: 1,
+      status: .completed,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(payload: [:], when: [:], acceptedAt: Date()),
+      createdAt: Date(), updatedAt: Date()
+    )
+    let packet = try remotePacket(
+      workflowId: bundle.workflow.workflowId, workflowDirectory: harness.examples.path,
+      reason: .userInputRequired(HandoverQuestion(
+        id: "approval", text: "Approve?", answerSchema: ["type": .string("object")]
+      )),
+      history: HandoverHistoryBundle(executions: [sourceExecution], messages: [], compatibilityDigests: [:], truncated: false),
+      resumeStepId: "publish"
+    )
+    let answeredAt = "2026-10-01T00:00:00.000Z"
+    let answer = GraphQLHandoverAnswer(
+      questionId: "approval", payload: ["approved": .bool(true)],
+      answeredBy: ["kind": .string("human"), "principal": .string("test")], answeredAt: answeredAt
+    )
+    let transport = TaskRemoteTakeoverTestTransport(packet: packet, answer: answer)
+    var runner = WorkflowRunCommand(resolver: TaskExampleBundleResolver(bundle: bundle))
+    runner.taskNodeAdapterOverride = RemoteTakeoverNodeAdapter()
+    let takeover = TaskRemoteTakeover(
+      transport: transport, resolver: TaskExampleBundleResolver(bundle: bundle), runner: runner,
+      hostResolver: TaskHandoverTestHostResolver()
+    )
+    let result = await takeover.run(remoteOptions(harness: harness, packet: packet))
+
+    XCTAssertEqual(result.exitCode, .success, "\(result.stderr)\n\(result.stdout)")
+    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: harness.sessionStore.path)
+    ).load(sessionId: "task-session-remote-successor")
+    let resumeExecution = try XCTUnwrap(snapshot.session.executions.first { $0.stepId == packet.contract.resumeStepId })
+    guard case let .object(arguments)? = resumeExecution.inputSnapshot?["arguments"],
+          case let .object(handover)? = arguments["handover"],
+          case let .object(answerValue)? = handover["answer"] else {
+      return XCTFail("resume input did not contain handover.answer")
+    }
+    XCTAssertEqual(answerValue["approved"], JSONValue.bool(true))
+    guard case let .object(delivered)? = arguments["delivered"],
+          case let .object(deliveredHandover)? = delivered["handover"] else {
+      return XCTFail("resume input did not contain delivered.handover.answer")
+    }
+    XCTAssertEqual(deliveredHandover["answer"], .object(["approved": .bool(true)]))
+    let answerMessage = try XCTUnwrap(snapshot.workflowMessages.first {
+      $0.communicationId == "handover-answer-\(packet.id.rawValue)-attempt-remote-successor"
+    })
+    XCTAssertEqual(answerMessage.toStepId, packet.contract.resumeStepId)
+    let importedSource = try XCTUnwrap(snapshot.session.executions.first {
+      $0.importedFrom?.executionId == "source-answer-execution"
+    })
+    XCTAssertEqual(answerMessage.sourceStepExecutionId, importedSource.executionId)
+    XCTAssertEqual(answerMessage.lifecycleStatus, WorkflowMessageLifecycleStatus.delivered)
+    XCTAssertEqual(answerMessage.createdAt, try XCTUnwrap(ISO8601DateFormatter.remoteTakeoverTestDate(answeredAt)))
+  }
+
+  func testUnansweredQuestionRemoteTakeoverFailsBeforeSavingOrReporting() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let bundle = try harness.bundle("task-handover-answer")
+    let packet = try remotePacket(
+      workflowId: bundle.workflow.workflowId, workflowDirectory: harness.examples.path,
+      reason: .userInputRequired(HandoverQuestion(
+        id: "q-deploy-target", text: "Choose a deployment target", answerSchema: ["type": .string("object")]
+      )), resumeStepId: "apply"
+    )
+    let transport = TaskRemoteTakeoverTestTransport(packet: packet)
+    let sessionStore = harness.sessionStore.appendingPathComponent("missing-answer-sessions", isDirectory: true)
+    let takeover = TaskRemoteTakeover(
+      transport: transport, resolver: TaskExampleBundleResolver(bundle: bundle),
+      hostResolver: TaskHandoverTestHostResolver()
+    )
+    var options = remoteOptions(harness: harness, packet: packet)
+    options.sessionStore = sessionStore.path
+    let result = await takeover.run(options)
+
+    XCTAssertEqual(result.exitCode, .failure)
+    XCTAssertTrue(result.stderr.contains("missing its answer"), result.stderr)
+    let didReport = await transport.didReport
+    XCTAssertFalse(didReport)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: sessionStore.path))
+  }
+
   func testFencedRemoteHeartbeatFailsLocalSessionWithoutReporting() async throws {
     let harness = try TaskExampleHarness()
     defer { harness.remove() }
@@ -259,6 +346,80 @@ final class TaskRemoteTakeoverTests: XCTestCase {
     XCTAssertNotEqual(try controller.store.loadTask(id: sealed.task.id)?.state, .succeeded)
     let heartbeats = await executor.heartbeatBodies
     XCTAssertTrue(heartbeats.isEmpty)
+  }
+
+  func testRemoteTakeoverOverProviderDeliversAnsweredQuestion() async throws {
+    let controller = try TaskExampleHarness()
+    defer { controller.remove() }
+    let task = try controller.seed("task-handover-answer")
+    let name = "task-handover-answer"
+    let bundle = try controller.bundle(name)
+    let resolver = TaskExampleBundleResolver(bundle: bundle)
+    let dispatch = TaskDispatch(
+      resolver: resolver,
+      hostResolver: RemoteTakeoverDispatchHostResolver(),
+      runner: WorkflowRunCommand(resolver: resolver),
+      mockScenarioPath: controller.examples.appendingPathComponent(name)
+        .appendingPathComponent("mock-scenario.json").path
+    )
+    let suspended = await dispatch.run(
+      taskId: task.id.rawValue,
+      options: TaskStoreOptions(scope: .project, workingDirectory: controller.repository.path,
+                                sessionStore: controller.sessionStore.path),
+      dryRun: false, output: .json
+    )
+    XCTAssertEqual(suspended.exitCode, .suspended, "\(suspended.stderr)\n\(suspended.stdout)")
+    let packet = try XCTUnwrap(controller.store.latestHandover(taskId: task.id))
+    guard case .userInputRequired = packet.reason else { return XCTFail("expected an S1 handover") }
+    let provider = TaskHandoverGraphQLProvider(
+      workingDirectory: controller.repository.path, sessionStore: controller.sessionStore.path, scope: .project
+    )
+    _ = try await provider.answerTask(
+      GraphQLAnswerTaskInput(taskId: task.id.rawValue, questionId: "q-deploy-target", answer: ["option": .string("staging")], principal: "qa"),
+      context: GraphQLDocumentRequest(query: "mutation { answerTask }", isLocallyTrusted: true,
+                                      localWorkingDirectory: controller.repository.path)
+    )
+    let executor = TaskRemoteTakeoverControllerExecutor(controller: controller)
+    let successorRoot = try Self.makeSuccessorRoot()
+    defer { try? FileManager.default.removeItem(at: successorRoot) }
+    var successorRunner = WorkflowRunCommand(resolver: resolver)
+    successorRunner.taskNodeAdapterOverride = RemoteTakeoverNodeAdapter()
+    let takeover = TaskRemoteTakeover(
+      transport: InProcessTaskHandoverGraphQLTransport(executor: executor), resolver: resolver,
+      runner: successorRunner, hostResolver: TaskHandoverTestHostResolver()
+    )
+    let sessionStore = successorRoot.appendingPathComponent("sessions", isDirectory: true)
+    let attemptsBefore = try controller.store.listAttempts(taskId: task.id)
+    let result = await takeover.run(TaskRemoteTakeoverOptions(
+      taskId: task.id.rawValue, handoverId: packet.id.rawValue, endpoint: "in-process", auth: TaskRemoteAuth(),
+      traits: [], workingDirectory: successorRoot.path, cloneInto: nil, sessionStore: sessionStore.path,
+      scope: .project, output: .json
+    ))
+
+    if Self.isPendingSchemaRegistration(result.stderr) {
+      XCTExpectFailure(Self.pendingSchemaRegistrationMessage) { XCTFail(result.stderr) }
+      XCTAssertEqual(try controller.store.listAttempts(taskId: task.id), attemptsBefore)
+      return
+    }
+    XCTAssertEqual(result.exitCode, .success, "\(result.stderr)\n\(result.stdout)")
+    XCTAssertEqual(try controller.store.loadTask(id: task.id)?.state, .succeeded)
+    let attempts = try controller.store.listAttempts(taskId: task.id)
+    XCTAssertEqual(attempts.count, 2)
+    let successor = try XCTUnwrap(attempts.last)
+    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
+    ).load(sessionId: successor.sessionId)
+    let resumeExecution = try XCTUnwrap(snapshot.session.executions.first { $0.stepId == packet.contract.resumeStepId })
+    guard case let .object(arguments)? = resumeExecution.inputSnapshot?["arguments"],
+          case let .object(handover)? = arguments["handover"],
+          case let .object(answerValue)? = handover["answer"] else {
+      return XCTFail("resume input did not contain handover.answer")
+    }
+    XCTAssertEqual(answerValue["option"], JSONValue.string("staging"))
+    XCTAssertTrue(snapshot.workflowMessages.contains {
+      $0.communicationId == "handover-answer-\(packet.id.rawValue)-\(successor.id.rawValue)"
+        && $0.toStepId == packet.contract.resumeStepId && $0.lifecycleStatus == .delivered
+    })
   }
 
   // MARK: Repository path through TaskRemoteTakeover (hermetic temp repo + local bare remote)
@@ -507,7 +668,8 @@ final class TaskRemoteTakeoverTests: XCTestCase {
   }
 
   private func remotePacket(
-    workflowId: String, workflowDirectory: String, deliverables: [DeliverableRef] = []
+    workflowId: String, workflowDirectory: String, deliverables: [DeliverableRef] = [],
+    reason: HandoverReason? = nil, history: HandoverHistoryBundle? = nil, resumeStepId: String = "publish"
   ) throws -> HandoverPacket {
     let taskId = TaskID("task-remote-\(UUID().uuidString.lowercased())")
     let completion = CompletionContract()
@@ -516,14 +678,14 @@ final class TaskRemoteTakeoverTests: XCTestCase {
       id: HandoverID("handover-remote-\(UUID().uuidString.lowercased())"), taskId: taskId,
       intentId: IntentID("intent-remote"), fromAttemptId: AttemptID("attempt-remote-predecessor"),
       fromSessionId: "session-remote-predecessor", generation: 1,
-      reason: .userPresenceRequired(PresenceRequirement(traits: [.userReachable], instructions: "Continue")),
+      reason: reason ?? .userPresenceRequired(PresenceRequirement(traits: [.userReachable], instructions: "Continue")),
       workflow: HandoverWorkflowRef(workflowId: workflowId, scope: "project",
-        workflowDefinitionDir: workflowDirectory, entryStepId: "check-login", resumeStepId: "publish"),
+        workflowDefinitionDir: workflowDirectory, entryStepId: "check-login", resumeStepId: resumeStepId),
       progress: HandoverProgress(acceptedSteps: [], remainingSteps: ["publish", "report"], latestGateResults: [],
         openFindings: [], evidenceSummary: [:], remainingBudget: BudgetSnapshot(attemptsUsed: 1, tokensUsed: 0, wallClockMsUsed: 0)),
-      history: HandoverHistoryBundle(executions: [], messages: [], compatibilityDigests: [:], truncated: false),
+      history: history ?? HandoverHistoryBundle(executions: [], messages: [], compatibilityDigests: [:], truncated: false),
       deliverables: deliverables,
-      contract: HandoverContinuationContract(resumeStepId: "publish", completion: completion, verification: [], guardPolicy: policy),
+      contract: HandoverContinuationContract(resumeStepId: resumeStepId, completion: completion, verification: [], guardPolicy: policy),
       brief: "Continue remotely", producedBy: .runtime, producedOn: "controller", createdAt: Date()
     ).sealed()
   }
@@ -532,15 +694,17 @@ final class TaskRemoteTakeoverTests: XCTestCase {
 private actor TaskRemoteTakeoverTestTransport: TaskHandoverGraphQLTransporting {
   let packet: HandoverPacket
   let fenceHeartbeats: Bool
+  let answer: GraphQLHandoverAnswer?
   private(set) var heartbeatCount = 0
   private(set) var didReport = false
   private(set) var reportedSnapshot: WorkflowRuntimePersistenceSnapshot?
   private(set) var reportedDeliverables: [DeliverableRef] = []
   private(set) var takeoverCallCount = 0
 
-  init(packet: HandoverPacket, fenceHeartbeats: Bool = false) {
+  init(packet: HandoverPacket, fenceHeartbeats: Bool = false, answer: GraphQLHandoverAnswer? = nil) {
     self.packet = packet
     self.fenceHeartbeats = fenceHeartbeats
+    self.answer = answer
   }
 
   func execute(endpoint: String, query: String, variables: JSONObject, auth: TaskRemoteAuth) async throws -> JSONObject {
@@ -556,7 +720,8 @@ private actor TaskRemoteTakeoverTestTransport: TaskHandoverGraphQLTransporting {
       takeoverCallCount += 1
       return ["takeoverTask": .object([
         "attemptId": .string("attempt-remote-successor"), "sessionId": .string("task-session-remote-successor"),
-        "fence": .integer(2), "heartbeatToken": .string("lease-secret"), "heartbeatMs": .integer(30), "errors": .array([])
+        "fence": .integer(2), "heartbeatToken": .string("lease-secret"), "heartbeatMs": .integer(30),
+        "answer": try answer.map(Self.jsonValue) ?? .null, "errors": .array([])
       ])]
     }
     if query.contains("heartbeatAttempt(") {
@@ -584,6 +749,18 @@ private actor TaskRemoteTakeoverTestTransport: TaskHandoverGraphQLTransporting {
 
   private static func jsonObject<T: Encodable>(_ value: T) throws -> JSONObject {
     try JSONCanonical.decoder().decode(JSONObject.self, from: JSONCanonical.encode(value))
+  }
+
+  private static func jsonValue<T: Encodable>(_ value: T) throws -> JSONValue {
+    try JSONCanonical.decoder().decode(JSONValue.self, from: JSONCanonical.encode(value))
+  }
+}
+
+private extension ISO8601DateFormatter {
+  static func remoteTakeoverTestDate(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value)
   }
 }
 

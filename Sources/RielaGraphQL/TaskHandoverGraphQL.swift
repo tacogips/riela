@@ -99,6 +99,20 @@ public struct GraphQLTakeoverTaskInput: Codable, Equatable, Sendable {
   }
 }
 
+public struct GraphQLHandoverAnswer: Codable, Equatable, Sendable {
+  public var questionId: String
+  public var payload: JSONObject
+  public var answeredBy: JSONObject
+  public var answeredAt: String
+
+  public init(questionId: String, payload: JSONObject, answeredBy: JSONObject, answeredAt: String) {
+    self.questionId = questionId
+    self.payload = payload
+    self.answeredBy = answeredBy
+    self.answeredAt = answeredAt
+  }
+}
+
 public struct GraphQLTakeoverTaskPayload: Codable, Equatable, Sendable {
   public var attemptId: String?
   public var sessionId: String?
@@ -107,6 +121,7 @@ public struct GraphQLTakeoverTaskPayload: Codable, Equatable, Sendable {
   public var heartbeatToken: String?
   public var heartbeatMs: Int?
   public var packet: GraphQLHandoverPacket?
+  public var answer: GraphQLHandoverAnswer?
   public var errors: [TaskHandoverGraphQLError]
 
   public init(
@@ -117,6 +132,7 @@ public struct GraphQLTakeoverTaskPayload: Codable, Equatable, Sendable {
     heartbeatToken: String? = nil,
     heartbeatMs: Int? = nil,
     packet: GraphQLHandoverPacket? = nil,
+    answer: GraphQLHandoverAnswer? = nil,
     errors: [TaskHandoverGraphQLError] = []
   ) {
     self.attemptId = attemptId
@@ -126,6 +142,7 @@ public struct GraphQLTakeoverTaskPayload: Codable, Equatable, Sendable {
     self.heartbeatToken = heartbeatToken
     self.heartbeatMs = heartbeatMs
     self.packet = packet
+    self.answer = answer
     self.errors = errors
   }
 }
@@ -357,7 +374,13 @@ type TaskHandoverSummary { taskId: String!, handoverId: String!, reasonKind: Str
 type TaskHandoverPayload { handover: HandoverPacket, errors: [TaskHandoverGraphQLError!]! }
 type TasksAwaitingHandoverPayload { tasks: [TaskHandoverSummary!]!, errors: [TaskHandoverGraphQLError!]! }
 type TaskHandoverMutationPayload { taskId: String, taskState: String, decisionKind: String, requestId: String, errors: [TaskHandoverGraphQLError!]! }
-type TakeoverTaskPayload { attemptId: String, sessionId: String, fence: Int, expiresAt: String, heartbeatToken: String, heartbeatMs: Int, packet: HandoverPacket, errors: [TaskHandoverGraphQLError!]! }
+type HandoverAnswerPayload {
+  questionId: String!, payload: JSONObject!, answeredBy: JSONObject!, answeredAt: String!
+}
+type TakeoverTaskPayload {
+  attemptId: String, sessionId: String, fence: Int, expiresAt: String, heartbeatToken: String,
+  heartbeatMs: Int, packet: HandoverPacket, answer: HandoverAnswerPayload, errors: [TaskHandoverGraphQLError!]!
+}
 type LeaseStatePayload { attemptId: String!, fence: Int!, expiresAt: String, fenced: Boolean!, errors: [TaskHandoverGraphQLError!]! }
 type ReportAttemptPayload { attemptId: String, taskState: String, decisionKind: String, handoverId: String, errors: [TaskHandoverGraphQLError!]! }
 input RequestTaskHandoverInput { taskId: String!, reason: String!, immediate: Boolean, target: String, sinks: [String!] }

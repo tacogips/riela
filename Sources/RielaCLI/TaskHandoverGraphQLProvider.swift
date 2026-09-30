@@ -112,6 +112,13 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
     guard let packet = try located.store.loadHandover(id: HandoverID(input.handoverId)), packet.taskId == taskID else {
       throw TaskHandoverGraphQLError(code: "not_found", message: "handover was not found for this task")
     }
+    let latestAnswer = try located.store.latestAnswer(handoverId: packet.id)
+    if case let .userInputRequired(question) = packet.reason, latestAnswer == nil {
+      throw TaskHandoverGraphQLError(
+        code: "conflict",
+        message: "handover \(packet.id.rawValue) needs an answer: riela task answer \(taskID.rawValue) --question \(question.id) …"
+      )
+    }
     let requiredTraits: [HostTrait]
     if case let .userPresenceRequired(presence) = packet.reason {
       requiredTraits = presence.traits
@@ -170,15 +177,18 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
       ]),
       createdAt: Date()
     )
+    let pendingReservation = try dispatcher.pendingReservation(taskId: taskID)
     let result = try dispatcher.reserve(
       ready,
       attemptId: attemptId,
       sessionId: "task-session-\(UUID().uuidString.lowercased())",
-      decisionId: try located.store.listDecisions(taskId: taskID).last(where: { $0.kind.kindName == "takeover" })?.id ?? .generate(),
+      decisionId: pendingReservation?.decisionId
+        ?? located.store.listDecisions(taskId: taskID).last(where: { $0.kind.kindName == "takeover" })?.id
+        ?? .generate(),
       producer: .human(principal: "graphql"),
       reason: "remote GraphQL takeover",
       placementEvidence: placementEvidence,
-      pendingRequestId: try dispatcher.pendingReservation(taskId: taskID)?.id,
+      pendingRequestId: pendingReservation?.id,
       hostId: input.hostId
     )
     guard case let .reserved(reservation) = result else {
@@ -188,6 +198,19 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
     guard let lease = try located.store.loadLease(attemptId: reservation.attempt.id) else {
       throw WorkStoreError("authorized takeover has no lease")
     }
+    let graphQLAnswer: GraphQLHandoverAnswer?
+    if case .userInputRequired = packet.reason, let latestAnswer {
+      let encodedProducer = try JSONEncoder().encode(latestAnswer.answeredBy)
+      let answeredBy = try JSONDecoder().decode(JSONObject.self, from: encodedProducer)
+      graphQLAnswer = GraphQLHandoverAnswer(
+        questionId: latestAnswer.questionId,
+        payload: latestAnswer.payload,
+        answeredBy: answeredBy,
+        answeredAt: Self.timestamp(latestAnswer.answeredAt)
+      )
+    } else {
+      graphQLAnswer = nil
+    }
     return GraphQLTakeoverTaskPayload(
       attemptId: reservation.attempt.id.rawValue,
       sessionId: reservation.attempt.sessionId,
@@ -195,7 +218,8 @@ struct TaskHandoverGraphQLProvider: TaskHandoverGraphQLProviding {
       expiresAt: Self.timestamp(lease.expiresAt),
       heartbeatToken: authorized.leaseCredential,
       heartbeatMs: located.task.guardPolicy.lease?.heartbeatMs ?? LeasePolicy().heartbeatMs,
-      packet: try graphQLPacket(packet)
+      packet: try graphQLPacket(packet),
+      answer: graphQLAnswer
     )
   }
 

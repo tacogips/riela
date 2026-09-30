@@ -2,6 +2,7 @@ import Foundation
 import RielaCore
 import RielaGraphQL
 import RielaServer
+import RielaSQLite
 import RielaWork
 import XCTest
 @testable import RielaCLI
@@ -96,6 +97,7 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
       ),
       context: context
     )
+    XCTAssertNil(reservation.answer)
     let attemptId = try XCTUnwrap(reservation.attemptId)
     let lease = try XCTUnwrap(harness.store.loadLease(attemptId: AttemptID(attemptId)))
     XCTAssertEqual(lease.hostId, "worker-a")
@@ -115,6 +117,113 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
     )
     XCTAssertFalse(heartbeat.fenced)
     XCTAssertGreaterThan(try XCTUnwrap(heartbeat.expiresAt), try XCTUnwrap(reservation.expiresAt))
+  }
+
+  func testAnsweredQuestionTakeoverReturnsBoundAnswer() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let task = try harness.seed("task-repair-loop", state: .waiting)
+    let predecessorId = AttemptID("attempt-answered-question-predecessor")
+    try savePredecessor(task: task, attemptId: predecessorId, store: harness.store)
+    let packet = try saveQuestionPacket(task: task, fromAttemptId: predecessorId, store: harness.store)
+    let provider = provider(harness)
+    let context = context(harness)
+    _ = try await provider.answerTask(
+      GraphQLAnswerTaskInput(taskId: task.id.rawValue, questionId: "approval", answer: ["approved": .bool(true)], principal: "qa"),
+      context: context
+    )
+
+    let reservation = try await provider.takeoverTask(
+      GraphQLTakeoverTaskInput(taskId: task.id.rawValue, handoverId: packet.id.rawValue, hostId: "worker-answer", traits: []),
+      context: context
+    )
+
+    let answer = try XCTUnwrap(reservation.answer)
+    XCTAssertEqual(answer.questionId, "approval")
+    XCTAssertEqual(answer.payload, ["approved": .bool(true)])
+    XCTAssertEqual(answer.answeredBy["kind"], .string("human"))
+    XCTAssertEqual(answer.answeredBy["principal"], .string("qa"))
+    XCTAssertFalse(answer.answeredAt.isEmpty)
+  }
+
+  func testUnansweredQuestionTakeoverConflictsBeforeReservation() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let task = try harness.seed("task-repair-loop", state: .waiting)
+    let predecessorId = AttemptID("attempt-unanswered-question-predecessor")
+    try savePredecessor(task: task, attemptId: predecessorId, store: harness.store)
+    let packet = try saveQuestionPacket(task: task, store: harness.store)
+    let provider = provider(harness)
+    let context = context(harness)
+    let attemptsBefore = try harness.store.listAttempts(taskId: task.id)
+
+    do {
+      _ = try await provider.takeoverTask(
+        GraphQLTakeoverTaskInput(taskId: task.id.rawValue, handoverId: packet.id.rawValue, hostId: "worker-answer", traits: []),
+        context: context
+      )
+      XCTFail("an unanswered S1 handover must conflict before reservation")
+    } catch let error as TaskHandoverGraphQLError {
+      XCTAssertEqual(error.code, "conflict")
+      XCTAssertTrue(error.message.contains("needs an answer"))
+    }
+
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id), attemptsBefore)
+    XCTAssertNil(try harness.store.loadLease(taskId: task.id))
+  }
+
+  func testAnsweredQuestionTakeoverRefusesCheckpointFailedRepositoryBeforeReservation() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let task = try harness.seed("task-repair-loop", state: .waiting)
+    let predecessorId = AttemptID("attempt-checkpoint-failed-predecessor")
+    try savePredecessor(task: task, attemptId: predecessorId, store: harness.store)
+    var packet = try saveQuestionPacket(task: task, fromAttemptId: predecessorId, store: harness.store)
+    packet.deliverables = [.repository(RepositoryDeliverable(
+      root: "/tmp/repository", remote: "origin", branch: "riela/task/checkpoint-failed/g1",
+      baseRevision: "base", state: .checkpointFailed(reason: "remote unreachable")
+    ))]
+    try harness.store.saveHandover(try packet.sealed())
+    let provider = provider(harness)
+    let context = context(harness)
+    _ = try await provider.answerTask(
+      GraphQLAnswerTaskInput(taskId: task.id.rawValue, questionId: "approval", answer: ["approved": .bool(true)]),
+      context: context
+    )
+
+    let attemptsBefore = try harness.store.listAttempts(taskId: task.id)
+    let database = try SQLiteDatabase.open(path: harness.store.databasePath, mode: .readOnly, options: .readOnlyDefault)
+    let leasesBefore = try database.query(
+      "SELECT attempt_id FROM work_leases WHERE task_id = ?", bindings: [.text(task.id.rawValue)]
+    )
+    let successorBefore = try database.query(
+      "SELECT successor_attempt_id FROM work_handovers WHERE handover_id = ?",
+      bindings: [.text(packet.id.rawValue)]
+    ).first?["successor_attempt_id"]
+
+    do {
+      _ = try await provider.takeoverTask(
+        GraphQLTakeoverTaskInput(
+          taskId: task.id.rawValue, handoverId: packet.id.rawValue, hostId: "worker-answer", traits: []
+        ),
+        context: context
+      )
+      XCTFail("a checkpoint-failed repository must be refused before reservation")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("checkpoint failed: remote unreachable"))
+    }
+
+    XCTAssertEqual(try harness.store.listAttempts(taskId: task.id), attemptsBefore)
+    XCTAssertEqual(
+      try database.query("SELECT attempt_id FROM work_leases WHERE task_id = ?", bindings: [.text(task.id.rawValue)]),
+      leasesBefore
+    )
+    let successorAfter = try database.query(
+      "SELECT successor_attempt_id FROM work_handovers WHERE handover_id = ?",
+      bindings: [.text(packet.id.rawValue)]
+    ).first?["successor_attempt_id"]
+    XCTAssertEqual(successorAfter, successorBefore)
+    XCTAssertNil(successorAfter)
   }
 
   func testReportCompletedAttemptAcceptsLeaseCredentialAndReconcilesTask() async throws {
@@ -342,10 +451,12 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
     return packet
   }
 
-  private func saveQuestionPacket(task: WorkTask, store: WorkStore) throws -> HandoverPacket {
+  private func saveQuestionPacket(
+    task: WorkTask, fromAttemptId: AttemptID? = nil, store: WorkStore
+  ) throws -> HandoverPacket {
     let packet = try makePacket(task: task, reason: .userInputRequired(
       HandoverQuestion(id: "approval", text: "Approve the repair?", answerSchema: ["type": .string("object")])
-    ))
+    ), fromAttemptId: fromAttemptId)
     try store.saveHandover(packet)
     return packet
   }

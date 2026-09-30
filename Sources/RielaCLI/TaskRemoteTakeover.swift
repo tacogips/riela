@@ -110,6 +110,23 @@ struct TaskRemoteTakeover {
         }
       }
       let reservation = try await reserve(options, packet: packet)
+      let answerDate: Date?
+      if case .userInputRequired = packet.reason {
+        guard let answer = reservation.answer else {
+          throw WorkStoreError("S1 handover response is missing its answer; refusing to launch the successor")
+        }
+        guard let parsedDate = Self.parseAnsweredAt(answer.answeredAt) else {
+          throw WorkStoreError("S1 handover response has an invalid answeredAt timestamp; refusing to launch the successor")
+        }
+        answerDate = parsedDate
+      } else if let answer = reservation.answer {
+        guard let parsedDate = Self.parseAnsweredAt(answer.answeredAt) else {
+          throw WorkStoreError("handover response has an invalid answeredAt timestamp; refusing to launch the successor")
+        }
+        answerDate = parsedDate
+      } else {
+        answerDate = nil
+      }
       let sessionId = reservation.sessionId
       let attemptId = reservation.attemptId
       if let repository {
@@ -135,11 +152,24 @@ struct TaskRemoteTakeover {
       )
       let memory = InMemoryWorkflowRuntimeStore()
       await memory.seedSession(session)
-      _ = try await memory.importAcceptedHistory(WorkflowHistoryImportInput(
+      let imported = try await memory.importAcceptedHistory(WorkflowHistoryImportInput(
         sessionId: sessionId, sourceSessionId: packet.fromSessionId,
         bundle: packet.history, handoverId: packet.id.rawValue
       ))
-      let messages = try await memory.listMessages(for: sessionId, toStepId: nil)
+      var messages = try await memory.listMessages(for: sessionId, toStepId: nil)
+      if let answer = reservation.answer, let answerDate, let sourceExecution = imported.executions.last {
+        messages.append(WorkflowMessageRecord(
+          communicationId: "handover-answer-\(packet.id.rawValue)-\(attemptId)",
+          workflowExecutionId: sessionId,
+          fromStepId: nil,
+          toStepId: packet.contract.resumeStepId,
+          sourceStepExecutionId: sourceExecution.executionId,
+          payload: ["handover": .object(["answer": .object(answer.payload)])],
+          lifecycleStatus: .delivered,
+          createdOrder: (messages.map(\.createdOrder).max() ?? 0) + 1,
+          createdAt: answerDate
+        ))
+      }
       try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeStoreRoot).save(
         WorkflowRuntimePersistenceSnapshot(session: (try await memory.loadSession(id: sessionId))!, workflowMessages: messages)
       )
@@ -150,10 +180,19 @@ struct TaskRemoteTakeover {
                             intervalMs: reservation.heartbeatMs, leaseState: leaseState, control: control)
       }
       heartbeatTask = heartbeat
-      guard let variables = String(data: try JSONCanonical.encode(JSONValue.object([
-        "handover": .object(try Self.jsonObject(packet)),
+      var handoverObject = try Self.jsonObject(packet)
+      var variablesObject: JSONObject = [
+        "handover": .object(handoverObject),
         "rielaTask": .object(["taskId": .string(options.taskId), "attemptId": .string(attemptId), "fence": .integer(Int64(reservation.fence))])
-      ])), encoding: .utf8) else { throw WorkStoreError("could not encode remote takeover variables") }
+      ]
+      if let answer = reservation.answer {
+        handoverObject["answer"] = .object(answer.payload)
+        variablesObject["handover"] = .object(handoverObject)
+        variablesObject["delivered"] = .object(["handover": .object(["answer": .object(answer.payload)])])
+      }
+      guard let variables = String(data: try JSONCanonical.encode(JSONValue.object(variablesObject)), encoding: .utf8) else {
+        throw WorkStoreError("could not encode remote takeover variables")
+      }
       let runTask = Task { await runner.run(WorkflowRunOptions(
         target: workflowResolution.workflowName, resolution: workflowResolution, variables: variables,
         output: .json, sessionStore: sessionStoreRoot, workingDirectory: workDirectory,
@@ -240,7 +279,15 @@ struct TaskRemoteTakeover {
   }
 
   private func reserve(_ options: TaskRemoteTakeoverOptions, packet: HandoverPacket) async throws -> Reservation {
-    let query = "mutation TakeoverTask($input: TakeoverTaskInput!) { takeoverTask(input: $input) { attemptId sessionId fence heartbeatToken heartbeatMs errors { code message } } }"
+    let query = """
+    mutation TakeoverTask($input: TakeoverTaskInput!) {
+      takeoverTask(input: $input) {
+        attemptId sessionId fence heartbeatToken heartbeatMs
+        answer { questionId payload answeredBy answeredAt }
+        errors { code message }
+      }
+    }
+    """
     let data = try await transport.execute(endpoint: options.endpoint, query: query, variables: ["input": .object([
       "taskId": .string(options.taskId), "handoverId": .string(packet.id.rawValue),
       "hostId": .string(await localHostId(options)),
@@ -252,7 +299,8 @@ struct TaskRemoteTakeover {
           let token = result.heartbeatToken, let heartbeatMs = result.heartbeatMs else {
       throw WorkStoreError("controller returned an incomplete takeover reservation")
     }
-    return Reservation(attemptId: attempt, sessionId: session, fence: fence, heartbeatToken: token, heartbeatMs: heartbeatMs)
+    return Reservation(attemptId: attempt, sessionId: session, fence: fence, heartbeatToken: token, heartbeatMs: heartbeatMs,
+                       answer: result.answer)
   }
 
   private func localHostId(_ options: TaskRemoteTakeoverOptions) async -> String {
@@ -299,6 +347,13 @@ struct TaskRemoteTakeover {
 
   private struct Reservation {
     var attemptId: String; var sessionId: String; var fence: Int; var heartbeatToken: String; var heartbeatMs: Int
+    var answer: GraphQLHandoverAnswer?
+  }
+
+  private static func parseAnsweredAt(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value)
   }
 }
 

@@ -34,13 +34,15 @@ public struct DistributedWorkerRequest: Codable, Sendable {
   public var environment: [String: Bool]?
   public var addonExecutables: [String: Bool]?
   public var capabilitiesObservedAt: Date?
+  public var traits: [HostTrait]?
 
   public init(
     operation: DistributedWorkerOperation, capacity: Int? = nil,
     registration: DistributedWorkerRegistration? = nil, jobId: String? = nil,
     leaseToken: String? = nil, result: DistributedJobResult? = nil, events: [DistributedJobEvent]? = nil,
     capabilities: [BackendCapability]? = nil, environment: [String: Bool]? = nil,
-    addonExecutables: [String: Bool]? = nil, capabilitiesObservedAt: Date? = nil
+    addonExecutables: [String: Bool]? = nil, capabilitiesObservedAt: Date? = nil,
+    traits: [HostTrait]? = nil
   ) {
     self.operation = operation
     self.capacity = capacity
@@ -53,6 +55,7 @@ public struct DistributedWorkerRequest: Codable, Sendable {
     self.environment = environment
     self.addonExecutables = addonExecutables
     self.capabilitiesObservedAt = capabilitiesObservedAt
+    self.traits = traits.map { Array(Set($0)).sorted() }
   }
 }
 

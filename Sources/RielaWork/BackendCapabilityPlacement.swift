@@ -61,6 +61,7 @@ public struct BackendCapabilityPlacementResolver: Sendable {
     local: HostCapabilitySnapshot,
     workers: [HostCapabilitySnapshot],
     assignments: [WorkflowRequirementProvenance: DistributedWorkerTarget] = [:],
+    requiredTraits: [HostTrait] = [],
     now: Date = Date()
   ) -> BackendCapabilityPlacementResult {
     var choices: [BackendPlacementChoice] = []
@@ -80,14 +81,15 @@ public struct BackendCapabilityPlacementResolver: Sendable {
           workers: eligibleWorkers,
           assignment: assignments[provenance],
           remainingCapacity: remainingCapacity,
-          admittedHosts: admittedHosts
+          admittedHosts: admittedHosts,
+          requiredTraits: requiredTraits
         )
         guard let choice = candidates.lazy.compactMap({ host in
           choice(for: requirement, provenance: provenance, host: host, now: now)
         }).first else {
           failures.append(BackendPlacementFailure(
             provenance: provenance,
-            reason: failureReason(for: requirement)
+            reason: failureReason(for: requirement, requiredTraits: requiredTraits, local: local, workers: eligibleWorkers)
           ))
           continue
         }
@@ -105,19 +107,23 @@ public struct BackendCapabilityPlacementResolver: Sendable {
     workers: [HostCapabilitySnapshot],
     assignment: DistributedWorkerTarget?,
     remainingCapacity: [String: Int],
-    admittedHosts: Set<String>
+    admittedHosts: Set<String>,
+    requiredTraits: [HostTrait]
   ) -> [HostCapabilitySnapshot] {
     if let assignment {
       return workers.filter { host in
-        host.live && (admittedHosts.contains(host.hostId) || (remainingCapacity[host.hostId] ?? 0) > 0)
+        host.live && hasRequiredTraits(host, requiredTraits)
+          && (admittedHosts.contains(host.hostId) || (remainingCapacity[host.hostId] ?? 0) > 0)
           && (assignment.workerId == nil || assignment.workerId == host.hostId)
           && (assignment.group == nil || host.groups.contains(assignment.group ?? ""))
       }.sorted { $0.hostId < $1.hostId }
     }
     let localCandidate = local.live
+      && hasRequiredTraits(local, requiredTraits)
       && (admittedHosts.contains(local.hostId) || (remainingCapacity[local.hostId] ?? 1) > 0) ? [local] : []
     return localCandidate + workers.filter {
-      $0.live && (admittedHosts.contains($0.hostId) || (remainingCapacity[$0.hostId] ?? 0) > 0)
+      $0.live && hasRequiredTraits($0, requiredTraits)
+        && (admittedHosts.contains($0.hostId) || (remainingCapacity[$0.hostId] ?? 0) > 0)
     }.sorted { $0.hostId < $1.hostId }
   }
 
@@ -199,7 +205,19 @@ public struct BackendCapabilityPlacementResolver: Sendable {
     backendCandidates(for: requirement).map(\.rawValue)
   }
 
-  private func failureReason(for requirement: WorkflowBackendRequirement) -> String {
+  private func hasRequiredTraits(_ host: HostCapabilitySnapshot, _ requiredTraits: [HostTrait]) -> Bool {
+    Set(host.traits).isSuperset(of: requiredTraits)
+  }
+
+  private func failureReason(
+    for requirement: WorkflowBackendRequirement,
+    requiredTraits: [HostTrait],
+    local: HostCapabilitySnapshot,
+    workers: [HostCapabilitySnapshot]
+  ) -> String {
+    if !requiredTraits.isEmpty, !([local] + workers).contains(where: { $0.live && hasRequiredTraits($0, requiredTraits) }) {
+      return "host-traits-unavailable: \(requiredTraits.sorted().map(\.rawValue).joined(separator: ","))"
+    }
     if backendCandidates(for: requirement).isEmpty, let executable = requirement.addonExecutable {
       return "addon-executable-unavailable: \(executable)"
     }

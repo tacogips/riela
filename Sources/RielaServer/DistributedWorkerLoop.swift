@@ -11,6 +11,7 @@ public struct DistributedWorkerLoop: Sendable {
   private let capabilities: [BackendCapability]
   private let environment: [String: Bool]
   private let addonExecutables: [String: Bool]
+  private let traits: [HostTrait]
   private let executor: ContextualExecutor
 
   public init(
@@ -19,6 +20,7 @@ public struct DistributedWorkerLoop: Sendable {
     capabilities: [BackendCapability] = [],
     environment: [String: Bool] = [:],
     addonExecutables: [String: Bool] = [:],
+    traits: [HostTrait] = [],
     executor: @escaping Executor
   ) throws {
     guard (1...1024).contains(capacity) else { throw DistributedWorkerTransportError.invalidConfiguration }
@@ -27,6 +29,7 @@ public struct DistributedWorkerLoop: Sendable {
     self.capabilities = capabilities
     self.environment = environment
     self.addonExecutables = addonExecutables
+    self.traits = Array(Set(traits)).sorted()
     self.executor = { job, _ in try await executor(job) }
   }
 
@@ -36,6 +39,7 @@ public struct DistributedWorkerLoop: Sendable {
     capabilities: [BackendCapability] = [],
     environment: [String: Bool] = [:],
     addonExecutables: [String: Bool] = [:],
+    traits: [HostTrait] = [],
     contextualExecutor: @escaping ContextualExecutor
   ) throws {
     guard (1...1024).contains(capacity) else { throw DistributedWorkerTransportError.invalidConfiguration }
@@ -44,6 +48,7 @@ public struct DistributedWorkerLoop: Sendable {
     self.capabilities = capabilities
     self.environment = environment
     self.addonExecutables = addonExecutables
+    self.traits = Array(Set(traits)).sorted()
     self.executor = contextualExecutor
   }
 
@@ -56,7 +61,8 @@ public struct DistributedWorkerLoop: Sendable {
         capacity: capacity,
         capabilities: capabilities,
         environment: environment,
-        addonExecutables: addonExecutables
+        addonExecutables: addonExecutables,
+        traits: traits
       ))
     }
     guard let registration = response.registration else { throw DistributedWorkerTransportError.invalidResponse }

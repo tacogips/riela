@@ -19,6 +19,7 @@ struct DistributedWorkerCommand: Sendable {
     var allowInsecureHTTP: Bool?
     var workspaces: [String: Workspace]
     var backends: [String: BackendCapabilityDeclaration]?
+    var traits: [HostTrait]?
 
     func registrationCapabilityMetadata(
       relativeTo configURL: URL,
@@ -196,6 +197,7 @@ struct DistributedWorkerCommand: Sendable {
         capabilities: capabilities,
         environment: capabilityMetadata.environment,
         addonExecutables: capabilityMetadata.addonExecutables,
+        traits: config.traits ?? [],
         contextualExecutor: { job, registration in
           let request = try JSONDecoder().decode(
             DistributedNodeRequest.self,

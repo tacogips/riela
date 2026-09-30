@@ -98,6 +98,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
         capabilities: message.capabilities ?? [],
         environment: message.environment ?? [:],
         addonExecutables: message.addonExecutables ?? [:],
+        traits: message.traits ?? [],
         now: clock.now()
       )
       try await publishCapabilities(registration)
@@ -204,7 +205,8 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
       addonExecutables: observation?.addonExecutables ?? registration.addonExecutables,
       environment: observation?.environment ?? registration.environment,
       capabilitiesObservedAt: observation?.observedAt ?? registration.capabilitiesObservedAt,
-      refreshedAt: now
+      refreshedAt: now,
+      traits: registration.traits
     ))
   }
 

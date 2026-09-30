@@ -25,6 +25,7 @@ public struct DoctorCommandResult: Codable, Equatable, Sendable {
   public var containerRequirements: [DoctorContainerRequirement]
   public var containerRuntimes: [DoctorContainerRuntime]
   public var backendCapabilities: [BackendCapability]
+  public var hostTraits: [HostTrait]
   public var summary: DoctorSummary
 }
 
@@ -186,6 +187,7 @@ public struct DoctorCommand: Sendable {
       readOnly: false
     )
     let backendCapabilities = localSnapshots.first?.backends ?? []
+    let hostTraits = localSnapshots.first?.traits.sorted() ?? []
     let summaryStatus: DoctorCheckStatus =
       missingEnvironment == 0 && missingRuntimeHints == 0 && missingContainerRequirements == 0 ? .ok : .warning
     return DoctorCommandResult(
@@ -197,6 +199,7 @@ public struct DoctorCommand: Sendable {
       containerRequirements: containerRequirements.sorted { $0.package == $1.package ? $0.addon < $1.addon : $0.package < $1.package },
       containerRuntimes: containerRuntimes,
       backendCapabilities: backendCapabilities,
+      hostTraits: hostTraits,
       summary: DoctorSummary(
         status: summaryStatus,
         packagesChecked: packageReports.count,
@@ -275,6 +278,7 @@ public struct DoctorCommand: Sendable {
     lines.append("missing container requirements: \(result.summary.missingContainerRequirements)")
     lines.append("container runtimes: \(result.summary.availableContainerRuntimes) available")
     lines.append("agent backends: \(result.summary.availableBackends) available")
+    lines.append("host traits: \(result.hostTraits.isEmpty ? "none declared" : result.hostTraits.map(\.rawValue).joined(separator: ","))")
     if !result.backendCapabilities.isEmpty {
       lines.append("")
       lines.append("agent backends:")

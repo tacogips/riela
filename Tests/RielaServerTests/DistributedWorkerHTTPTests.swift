@@ -220,6 +220,31 @@ final class DistributedWorkerHTTPTests: XCTestCase {
     XCTAssertFalse(stalePlacement.complete, "Capability equality at maximum age is stale even after a liveness refresh.")
   }
 
+  func testRegistrationPublishesDeclaredTraitsToWorkHostStore() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("tmp/distributed-workers/trait-store/\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkStore(rootDirectory: root.path)
+    let controller = try controller()
+    let router = try DistributedWorkerHTTPRouter(
+      controller: controller,
+      credentials: [.init(workerId: "mac", groups: ["apple"], token: tokenA, maxCapacity: 2)],
+      capabilitySnapshotSink: { snapshot in try store.saveHostSnapshot(snapshot) }
+    )
+    let body = try JSONEncoder().encode(DistributedWorkerRequest(
+      operation: .register, capacity: 1, traits: [.userReachable, .gui]
+    ))
+    let response = await router.response(for: RielaHTTPRequest(
+      method: "POST", path: DistributedWorkerHTTPRouter.path,
+      headers: ["content-type": "application/json", "authorization": "Bearer " + tokenA], body: body
+    ))
+    XCTAssertEqual(response.status, 200)
+    let decoded = try JSONDecoder().decode(DistributedWorkerResponse.self, from: response.body)
+    XCTAssertEqual(decoded.registration?.traits, [.gui, .userReachable])
+    XCTAssertEqual(try store.loadHostSnapshots().first?.traits, [.gui, .userReachable])
+  }
+
   func testAuthenticationContentTypeAndBrowserRequestsFailClosed() async throws {
     let router = try router(controller())
     let body = try JSONEncoder().encode(DistributedWorkerRequest(operation: .register, capacity: 1))

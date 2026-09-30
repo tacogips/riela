@@ -48,6 +48,7 @@ public actor DistributedJobController {
     capabilities: [BackendCapability] = [],
     environment: [String: Bool] = [:],
     addonExecutables: [String: Bool] = [:],
+    traits: [HostTrait] = [],
     now: Date = Date()
   ) throws -> DistributedWorkerRegistration {
     return try withStoreLock {
@@ -61,7 +62,7 @@ public actor DistributedJobController {
         workerId: workerId, incarnation: UUID().uuidString, groups: groups,
         capacity: capacity, capabilities: capabilities,
         environment: environment, addonExecutables: addonExecutables,
-        capabilitiesObservedAt: now
+        capabilitiesObservedAt: now, traits: traits
       )
       var next = state
       // A new incarnation cannot acknowledge or inherit a previous process's work.

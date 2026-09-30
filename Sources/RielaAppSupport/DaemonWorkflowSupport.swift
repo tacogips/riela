@@ -252,6 +252,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   public var workflowRepositories: [RielaAppWorkflowRepositoryReference]
   public var assistant: RielaAppAssistantSettings
   public var backends: [String: BackendCapabilityDeclaration]
+  public var hostTraits: [HostTrait]
 
   private enum CodingKeys: String, CodingKey {
     case version
@@ -261,6 +262,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     case workflowRepositories
     case assistant
     case backends
+    case hostTraits
   }
 
   public init(
@@ -270,7 +272,8 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     projectDirectories: [String] = [],
     workflowRepositories: [RielaAppWorkflowRepositoryReference] = [],
     assistant: RielaAppAssistantSettings = RielaAppAssistantSettings(),
-    backends: [String: BackendCapabilityDeclaration] = [:]
+    backends: [String: BackendCapabilityDeclaration] = [:],
+    hostTraits: [HostTrait] = []
   ) {
     self.version = version
     self.preferences = preferences
@@ -279,6 +282,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     self.workflowRepositories = workflowRepositories
     self.assistant = assistant
     self.backends = backends
+    self.hostTraits = Array(Set(hostTraits)).sorted()
   }
 
   public func preference(for identity: String) -> RielaAppDaemonWorkflowPreference {
@@ -310,6 +314,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
       [String: BackendCapabilityDeclaration].self,
       forKey: .backends
     ) ?? [:]
+    hostTraits = (try container.decodeIfPresent([HostTrait].self, forKey: .hostTraits) ?? []).sorted()
   }
 
   public func containsWorkflowRepository(id: String) -> Bool {

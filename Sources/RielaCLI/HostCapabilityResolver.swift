@@ -71,12 +71,14 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
   var runner: any LocalProcessRunning
   var environment: [String: String]
   var profileSelectionError: String?
+  var localTraitOverride: [HostTrait]
 
   init(
     profileStore: RielaAppDaemonWorkflowStore? = nil,
     activeProfileStore: RielaAppProfileStore = RielaAppProfileStore(),
     runner: any LocalProcessRunning = FoundationLocalProcessRunner(),
-    environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
+    localTraitOverride: [HostTrait] = []
   ) {
     let activeProfile: RielaAppProfileName
     if FileManager.default.fileExists(atPath: activeProfileStore.activeProfileURL.path) {
@@ -100,6 +102,7 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
     )
     self.runner = runner
     self.environment = environment
+    self.localTraitOverride = Array(Set(localTraitOverride)).sorted()
   }
 
   func resolve(
@@ -139,7 +142,8 @@ struct HostCapabilityResolver: HostCapabilityResolving, Sendable {
       backends: BackendCapabilityMerger.merge(observations: observed, declarations: declarations),
       addonExecutables: localAddonExecutables,
       environment: environment.mapValues { !$0.isEmpty },
-      refreshedAt: Date()
+      refreshedAt: Date(),
+      traits: Array(Set(state.hostTraits + localTraitOverride)).sorted()
     )
     if !readOnly {
       try runtimeStore(scope: scope, workingDirectory: workingDirectory).saveHostSnapshot(snapshot)

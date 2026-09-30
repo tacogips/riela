@@ -156,53 +156,9 @@
  },
  "plans": [
   {
-   "planId": "wh-15-task-commands",
-   "planPath": "impl-plans/active/wh-15-task-commands.md",
-   "dependsOn": [],
-   "writePaths": [
-    "Sources/RielaCLI/TaskCommands.swift",
-    "Sources/RielaCLI/TaskCommandModels.swift",
-    "Sources/RielaCLI/TaskHandoverCommands.swift",
-    "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
-    "Sources/RielaCLI/RielaCLIApplication.swift",
-    "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
-    "impl-plans/progress/wh-15-task-commands.md"
-   ],
-   "sharedPaths": [
-    "Sources/RielaCLI/RielaCommand.swift",
-    "Sources/RielaCLI/SessionCommands.swift",
-    "Sources/RielaCLI/CLISurfaceEnumeration.swift"
-   ],
-   "sharedPathNotes": [
-    {
-     "path": "Sources/RielaCLI/RielaCommand.swift",
-     "intendedEdit": "Add TaskCommandKind cases handover, takeover, answer, handovers, reconcile (in this order after decide) and SessionCommand.handover(CLICommandOptions). Keep CLIExitCode as wh-01 left it."
-    },
-    {
-     "path": "Sources/RielaCLI/SessionCommands.swift",
-     "intendedEdit": "Add the session handover handler that calls TaskHandoverRuntime.adoptAndSeal; do not change wh-02's resume logic."
-    },
-    {
-     "path": "Sources/RielaCLI/CLISurfaceEnumeration.swift",
-     "intendedEdit": "Only if session subcommands are a hard-coded list: add handover. Task subcommands come from TaskCommandKind.allRawValues automatically."
-    }
-   ],
-   "acceptanceCriteria": [
-    "task handover|takeover|answer|handovers|reconcile, task show additions and session handover are implemented with strict parsing (including --force-orphan, --traits, --task).",
-    "TaskHandoverCommandTests and existing command suites pass or are baseline-classified; acceptance signals 1, 2, 4 and 5 are mapped to CLI test names in the progress log."
-   ],
-   "verification": [
-    "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-15-task-commands/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-15-task-commands/build.log'",
-    "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskHandoverCommandTests|TaskCommandTests|TaskCommandParsingTests|TaskCommandMutationTests|SessionObservabilityCommandTests\" > tmp/work-handover/wh-15-task-commands/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-15-task-commands/focused.log'",
-    "git diff --check"
-   ]
-  },
-  {
    "planId": "wh-16-graphql-provider",
    "planPath": "impl-plans/active/wh-16-graphql-provider.md",
-   "dependsOn": [
-    "wh-15-task-commands"
-   ],
+   "dependsOn": [],
    "writePaths": [
     "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
     "Sources/RielaCLI/ServeWebHost.swift",
@@ -211,6 +167,10 @@
     "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
     "Sources/RielaWork/TaskDispatcher.swift",
     "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaWork/WorkStore+Leases.swift",
+    "Tests/RielaWorkTests/WorkStoreLeaseTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
     "impl-plans/progress/wh-16-graphql-provider.md"
    ],
    "sharedPaths": [],
@@ -547,6 +507,10 @@
    "planId": "wh-14-task-dispatch-runtime",
    "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md",
    "commit": "2cd392b8"
+  },
+  {
+   "planId": "wh-15-task-commands",
+   "planPath": "impl-plans/active/wh-15-task-commands.md"
   }
  ]
 }

@@ -5,9 +5,7 @@
   "planId": "wh-16-graphql-provider",
   "planPath": "impl-plans/active/wh-16-graphql-provider.md",
   "wave": "W4",
-  "dependsOn": [
-    "wh-15-task-commands"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
     "Sources/RielaCLI/ServeWebHost.swift",
@@ -16,6 +14,10 @@
     "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
     "Sources/RielaWork/TaskDispatcher.swift",
     "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaWork/WorkStore+Leases.swift",
+    "Tests/RielaWorkTests/WorkStoreLeaseTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
     "impl-plans/progress/wh-16-graphql-provider.md"
   ],
   "sharedPaths": [],
@@ -100,3 +102,7 @@ Both must end with exit=0 and a non-zero count; the existing GraphQL and serve s
 ## Scope amendment (2026-10-01, after run session-9)
 
 `Sources/RielaWork/TaskDispatcher.swift` and `Tests/RielaWorkTests/TaskDispatcherTests.swift` are now owned by this plan: `TaskDispatcher.reserve` needs a `hostId` parameter forwarded to `AttemptReservationRequest` so `takeoverTask` reserves the successor on `input.hostId` (default stays "local"). Add a regression for the forwarded host. wh-16 now depends on wh-15 and runs alone.
+
+### Scope amendment (2026-10-01, after run session-10)
+
+wh-15 is accepted and committed. A partial wh-16 is committed ('wip: partial wh-16 ...'); complete it, do not restart it. This plan now also owns `WorkStore+Reservation.swift`, `WorkStore+Leases.swift`, `WorkStoreLeaseTests.swift` and `WorkStoreReservationTests.swift`. `authorizeAttemptLaunch` rotates the lease token digest, so the token `takeoverTask` returns cannot authenticate `heartbeatAttempt` or `reportAttempt` (focused 40/41, see tmp/work-handover/wh-16-graphql-provider/focused-retry3.log). Fix it so the token handed to the successor verifies against the stored lease digest after launch authorization, without weakening the one-use launch-token guarantee for local runs (for example a separate heartbeat token digest, or return the post-authorization token). Add regressions for heartbeat plus completed and suspended reportAttempt.

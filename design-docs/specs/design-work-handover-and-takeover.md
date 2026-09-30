@@ -871,6 +871,7 @@ table; `riela task run --dry-run` shows the trait check.
   produces `{ "option": "<id>" }`; `--text` produces `{ "text": "<s>" }`.
 - Records `Decision.kind = .answer(...)`, `Evidence.kind = .handoverAnswer`,
   and enqueues a `PendingAttemptReservation` with `entry: .takeover`.
+  §21 R25 defines how an answer is bound to its handover.
 - The task moves `waiting(.handover)` → `scheduled`; a local `task run` or
   a remote `task takeover` consumes it. When the packet's reason was S1 and
   no traits are required, the controller host may run it itself
@@ -1231,3 +1232,9 @@ Reconciliation at `c0a138b9` (before finishing wh-10, same date):
 | --- | --- | --- | --- |
 | R23 | `traits: Set<HostTrait>` / `requiredTraits: Set<HostTrait>` (§4, §10.3) | `[HostTrait]` deduplicated and sorted at init, strict decode (unknown value fails); placement compares as sets | accepted wh-01 source: `HandoverContracts.swift:34-42`, `DistributedWorkerModels.swift:28-67`, `WorkHandover.swift:187,248`, `BackendCapabilityPlacement.swift:64,209`; R17 already encodes sets as sorted arrays |
 | R24 | worker traits reach registration and the controller-side `HostCapabilitySnapshot` only | `DistributedWorkerStatus` also gains `traits: [HostTrait]` (strict decode), filled from the stored registration in `DistributedJobController.workerStatuses`, so `workers()`/`inspectWorkers()` expose declared worker traits; `doctor` keeps showing the local host's traits only | `DistributedWorkerModels.swift:72-98` has no `traits`; `DistributedJobController.swift:398-410` builds status from the registration; wh-10 scope amendment |
+
+Reconciliation at `9cb176a4` (wh-14 resume, 2026-10-01):
+
+| # | Was | Now | Source evidence |
+| --- | --- | --- | --- |
+| R25 | §10.4 left open how a stored `Decision.answer` is tied to the handover it answers | An answer belongs to handover H only when all of these hold: the decision is on H's task, `decision.attemptId == H.fromAttemptId`, the reason names `H.id` (the `recordAnswer` convention), `answer.questionId` equals H's question id, and it was recorded no earlier than the seal. "No earlier than the seal" compares the store columns `work_decisions.created_at >= work_handovers.created_at`. Both are written by `WorkStore.timestamp`, which is UTC ISO-8601 with milliseconds, so the strings sort in time order. The comparison never uses dates decoded from records. `WorkStore.latestAnswer(handoverId:)` is the only lookup. `requestTakeover`, takeover dispatch and the answer injection (variable and delivered message) all use it; there is no second filter in `RielaCLI`. | Decision records are encoded with `.iso8601`, which drops fractional seconds (`WorkStore.swift:488-498`). Packets use canonical milliseconds (R17, `JSONCanonical.swift:7-10`). An answer recorded within the same second as the seal decodes to an earlier date, so `decision.createdAt >= packet.createdAt` (`WorkStore+Takeover.swift:215`) rejects it (`tmp/work-handover/wh-14-task-dispatch-runtime/step6-implement-resume-3/dispatch-answer-db-diagnostic.log`). `TaskDispatch+Handover.swift:402-416` has a second lookup that has no attempt or time check. |

@@ -290,3 +290,22 @@ Everything below stays inside this plan's writePaths. Do not edit `Sources/Riela
 ### Scope amendment (2026-10-01, after run session-4)
 
 `Sources/RielaWork/WorkStore+Takeover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` are now owned by this plan. `WorkStore.latestAnswer(handoverId:)` returns nil although a matching `.answer` decision is stored (see `tmp/work-handover/wh-14-task-dispatch-runtime/step6-implement-resume-3/dispatch-answer-db-diagnostic.log`). Its filter `decision.createdAt >= packet.createdAt` compares timestamps that fall in the same second and may be stored with different precision; find the real cause, fix it without weakening the check that the answer belongs to this handover, add a direct `requestTakeover`-after-answer regression test in WorkStoreTakeoverTests, and rerun the wh-14 focused suite. Continue the committed wh-14 work; do not restart it.
+
+### Answer lookup fix (design §21 R25, 2026-10-01)
+
+Root cause (source-verified): `WorkStore` encodes records with `JSONEncoder.dateEncodingStrategy = .iso8601`, which keeps whole seconds only (`WorkStore.swift` private `encoder`/`decoder`). Packets use canonical milliseconds (`JSONCanonical.encode`). An answer recorded in the same second as the seal decodes to an earlier `Date`, so `decision.createdAt >= packet.createdAt` rejects it.
+
+1. `Sources/RielaWork/WorkStore+Takeover.swift`, private `latestAnswer(handoverId:in:)`: select the answer rows with a SQL join, not decoded dates. Match `work_decisions` rows where `kind = 'answer'` and `task_id` = the handover's `task_id`, and require `work_decisions.created_at >= work_handovers.created_at` for that handover id, comparing the two text columns directly. Order by `work_decisions.created_at DESC, decision_id DESC`. Keep the other in-Swift predicates: `answer.questionId` equals the packet question id, `decision.reason.contains(handoverId.rawValue)`, and add `decision.attemptId == packet.fromAttemptId`. Keep the digest verification.
+   - Both columns are written by `WorkStore.timestamp`: UTC ISO-8601 with 3 fractional digits and a `Z` suffix, so they sort lexically.
+   - Do not change `WorkStore.encoder`, the `.iso8601` strategy or `HandoverAnswer`. Either change would alter every stored work record and the accepted wh-01 contract.
+   - Do not drop the time predicate, and do not weaken it to whole seconds.
+2. `latestAnswer(handoverId:)` (`WorkStore+Takeover.swift:123`) is already public because it is declared inside `public extension WorkStore`. Do not add a second public wrapper.
+3. `Sources/RielaCLI/TaskDispatch+Handover.swift`: delete the private `latestAnswer(handoverId:packet:taskId:store:)`. Its two call sites (variables for the takeover run, and `importTakeoverHistory` for the delivered answer message) call `store.latestAnswer(handoverId:)`. Answer injection and `requestTakeover` must never disagree.
+4. `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift`, new tests:
+   - Seal a `userInputRequired` packet whose `createdAt` has a sub-second fraction (for example `.5 s`), then `recordAnswer` with `now` in the same second and later by at least 1 ms → `latestAnswer` returns the payload, and `requestTakeover` succeeds and enqueues one pending `.takeover`. This is the regression.
+   - An answer decision whose `attemptId` differs from `packet.fromAttemptId` (insert it through the store's decision path, or construct the case by sealing a second packet on a later attempt) → it is not returned for the other handover.
+   - An answer recorded before the seal (its `created_at` column is earlier than the handover's) → nil, and `requestTakeover` is refused with the `riela task answer` hint.
+5. Rerun `TaskHandoverDispatchTests.testEnvelopeSealsThenAnswerTakeoverImportsHistoryAndCompletes` through the focused command. It must pass without the diagnostic assertion text that was added in step6-implement-resume-3. Remove leftover diagnostic dumps from the test before finishing.
+
+Added verification (log must end `exit=0` with a non-zero executed count):
+`arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreTakeoverTests|WorkStoreHandoverRecordsTests|WorkStoreLeaseTests" > tmp/work-handover/wh-14-task-dispatch-runtime/workstore.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-14-task-dispatch-runtime/workstore.log'`

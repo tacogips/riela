@@ -165,7 +165,7 @@ final class ProfileSelectWindowController: NSWindowController, NSTableViewDataSo
       ? NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
       : NSImage()
     let checkmark = NSImageView(image: checkmarkImage ?? NSImage())
-    checkmark.contentTintColor = .controlAccentColor
+    checkmark.contentTintColor = .labelColor
     checkmark.imageScaling = .scaleProportionallyDown
     checkmark.widthAnchor.constraint(equalToConstant: 18).isActive = true
     checkmark.heightAnchor.constraint(equalToConstant: 14).isActive = true

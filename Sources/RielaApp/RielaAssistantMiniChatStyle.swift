@@ -153,7 +153,7 @@ enum RielaAssistantMiniChatStyle {
     button.image = NSImage(systemSymbolName: "arrow.up", accessibilityDescription: nil)
     button.bezelStyle = .circular
     button.imagePosition = .imageOnly
-    button.contentTintColor = .controlAccentColor
+    button.contentTintColor = .labelColor
     button.toolTip = "Send"
     button.setAccessibilityLabel("Send Assistant Message")
   }
@@ -179,7 +179,7 @@ enum RielaAssistantMiniChatStyle {
       systemSymbolName: isFolded ? "wrench.and.screwdriver.fill" : "chevron.down",
       accessibilityDescription: nil
     )
-    button.contentTintColor = isFolded ? .controlAccentColor : mutedTextColor
+    button.contentTintColor = isFolded ? .labelColor : mutedTextColor
     button.toolTip = isFolded ? "Help with Riela setup" : "Collapse Riela Setup Assistant"
     button.setAccessibilityLabel(isFolded ? "Help with Riela setup" : "Collapse Riela Setup Assistant")
     button.setAccessibilityHelp(

@@ -1,16 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
   <title id="title">Riela rail icon</title>
-  <desc id="desc">A pair of blue rails converging toward the horizon, joined by four sleepers.</desc>
-  <rect width="1254" height="1254" fill="#ffffff"/>
-  <rect x="104" y="104" width="1046" height="1046" rx="258" fill="#f7faff"/>
+  <desc id="desc">A pair of white rails on black converging toward the horizon, joined by four sleepers.</desc>
+  <rect width="1254" height="1254" fill="#000000"/>
+  <rect x="104" y="104" width="1046" height="1046" rx="258" fill="#000000"/>
 
   <!-- Keep a clear gap at the horizon so the silhouette reads as two rails, not a letter A. -->
-  <g fill="#1d4ed8">
+  <g fill="#ffffff">
     <path d="M534 240h60l-356 760h-60Z"/>
     <path d="M660 240h60l356 760h-60Z"/>
   </g>
   <!-- Draw sleepers over the rails, matching the macOS menu-bar mark. -->
-  <g fill="#1d4ed8">
+  <g fill="#ffffff">
     <rect x="425" y="291" width="404" height="54"/>
     <rect x="353" y="418" width="548" height="54"/>
     <rect x="244" y="594" width="766" height="54"/>

@@ -753,7 +753,7 @@ extension DaemonWorkflowWindowController {
       image: NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) ?? NSImage()
     )
     checkmark.setAccessibilityElement(false)
-    checkmark.contentTintColor = .controlAccentColor
+    checkmark.contentTintColor = .labelColor
     let row = RielaAppSelectableSettingsRow(views: [labelStack, spacer, checkmark])
     row.orientation = .horizontal
     row.spacing = 8

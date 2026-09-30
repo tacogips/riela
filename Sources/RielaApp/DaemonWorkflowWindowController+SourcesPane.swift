@@ -235,7 +235,7 @@ extension DaemonWorkflowWindowController {
     let spacer = NSView()
     spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
     let row = RielaAppSelectableSettingsRow(views: [
-      RielaAppSymbolTileView(symbolName: "rectangle.stack.fill", backgroundColor: .systemBlue),
+      RielaAppSymbolTileView(symbolName: "rectangle.stack.fill", backgroundColor: .secondaryLabelColor),
       labelStack,
       spacer,
       rielaAppDisclosureIndicator()

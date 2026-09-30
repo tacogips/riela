@@ -321,7 +321,7 @@ final class RielaAppTableSelectionCellView: NSTableCellView {
     let selected = explicitSelection ?? tableViewReference?.selectedRowIndexes.contains(rowIndex) ?? false
     effectiveAppearance.performAsCurrentDrawingAppearance {
       layer?.backgroundColor = selected
-        ? NSColor.selectedContentBackgroundColor.withAlphaComponent(GroupedListLayout.selectedAlpha).cgColor
+        ? NSColor.labelColor.withAlphaComponent(GroupedListLayout.selectedAlpha).cgColor
         : NSColor.clear.cgColor
       groupedSeparator.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
     }

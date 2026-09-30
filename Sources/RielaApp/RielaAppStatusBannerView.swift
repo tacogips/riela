@@ -69,7 +69,7 @@ final class RielaAppStatusBannerView: NSView {
     switch message.severity {
     case .info:
       iconView.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-      iconView.contentTintColor = .controlAccentColor
+      iconView.contentTintColor = .labelColor
       messageLabel.textColor = .labelColor
       layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
       layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.7).cgColor

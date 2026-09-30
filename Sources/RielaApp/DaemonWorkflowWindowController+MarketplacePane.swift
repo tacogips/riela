@@ -328,7 +328,7 @@ extension DaemonWorkflowWindowController {
     installButton.setAccessibilityLabel(installed ? "Installed \(listing.workflowId)" : "Install \(listing.workflowId)")
     installButton.setContentCompressionResistancePriority(.required, for: .horizontal)
     let row = RielaAppSelectableSettingsRow(views: [
-      RielaAppSymbolTileView(symbolName: "shippingbox.fill", backgroundColor: .systemTeal),
+      RielaAppSymbolTileView(symbolName: "shippingbox.fill", backgroundColor: .secondaryLabelColor),
       labelStack,
       spacer,
       installButton,

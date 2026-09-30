@@ -629,11 +629,11 @@ final class DaemonWorkflowGraphCanvasView: NSView {
   private func draw(node: DaemonWorkflowGraphModel.Node, in rect: NSRect, selected: Bool) {
     let body = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
     let fillColor = selected
-      ? NSColor.controlAccentColor.withAlphaComponent(0.22)
+      ? NSColor.labelColor.withAlphaComponent(0.22)
       : NSColor.windowBackgroundColor.withAlphaComponent(0.92)
     fillColor.setFill()
     body.fill()
-    (selected ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
+    (selected ? NSColor.labelColor : NSColor.separatorColor).setStroke()
     body.lineWidth = selected ? 2 : 1
     body.stroke()
 

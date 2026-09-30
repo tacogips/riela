@@ -16,15 +16,15 @@ export function RunExecutionGraph(props: { run: RunDetailResponse; selectedId: s
   return <div class="trace-scroll" aria-label="Execution graph">
     <p class="subtle">Persisted step routes. Select an attempt below a node to inspect its recorded values.</p>
     <svg class="run-route-graph" viewBox={`0 0 850 ${Math.max(180, Math.ceil(ids().length / 3) * 150 + 40)}`} role="img" aria-label="Workflow step routing graph">
-      <defs><marker id="run-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#65bcd2" /></marker></defs>
+      <defs><marker id="run-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#a3a3a3" /></marker></defs>
       <For each={routes()}>{(route) => {
         const from = () => point(route.fromStepId!)
         const to = () => point(route.toStepId!)
         return <path d={route.fromStepId === route.toStepId
           ? `M${from().x + 160} ${from().y} c80 -30 -80 -30 -50 0`
-          : `M${from().x + 110} ${from().y + 70} C${from().x + 110} ${from().y + 115},${to().x + 110} ${to().y - 30},${to().x + 110} ${to().y}`} fill="none" stroke="#65bcd2" stroke-width="1.5" marker-end="url(#run-route-arrow)"><title>{route.fromStepId} → {route.toStepId}</title></path>
+          : `M${from().x + 110} ${from().y + 70} C${from().x + 110} ${from().y + 115},${to().x + 110} ${to().y - 30},${to().x + 110} ${to().y}`} fill="none" stroke="#a3a3a3" stroke-width="1.5" marker-end="url(#run-route-arrow)"><title>{route.fromStepId} → {route.toStepId}</title></path>
       }}</For>
-      <For each={ids()}>{(id) => <g transform={`translate(${point(id).x},${point(id).y})`}><rect width="220" height="70" rx="8" fill="#142938" stroke="#45667d" /><text x="12" y="27" fill="#dfebf3">{id.length > 26 ? `${id.slice(0, 25)}…` : id}</text><text x="12" y="50" fill="#9eb3c3" font-size="11">{props.run.steps.filter((step) => step.stepId === id).length} recorded attempts</text><title>{id}</title></g>}</For>
+      <For each={ids()}>{(id) => <g transform={`translate(${point(id).x},${point(id).y})`}><rect width="220" height="70" rx="8" fill="#171717" stroke="#737373" /><text x="12" y="27" fill="#f5f5f5">{id.length > 26 ? `${id.slice(0, 25)}…` : id}</text><text x="12" y="50" fill="#a3a3a3" font-size="11">{props.run.steps.filter((step) => step.stepId === id).length} recorded attempts</text><title>{id}</title></g>}</For>
     </svg>
     <div class="trace-graph"><For each={ids()}>{(id) => <div class="trace-graph-entry"><strong>{id}</strong><For each={props.run.steps.filter((step) => step.stepId === id)}>{(step) => <button class="secondary" aria-label={`Inspect ${step.stepId} attempt ${step.attempt}`} aria-pressed={props.selectedId === step.executionId} onClick={() => props.onSelect(step.executionId)}>Attempt {step.attempt} · {step.status}</button>}</For></div>}</For></div>
   </div>

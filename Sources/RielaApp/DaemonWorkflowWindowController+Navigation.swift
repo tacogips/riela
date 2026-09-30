@@ -153,8 +153,8 @@ extension DaemonWorkflowWindowController {
   private func updateSidebarButton(_ button: NSButton, selected: Bool) {
     button.wantsLayer = true
     button.layer?.cornerRadius = 10
-    button.layer?.backgroundColor = selected ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
-    button.contentTintColor = selected ? .white : .labelColor
+    button.layer?.backgroundColor = selected ? NSColor.labelColor.cgColor : NSColor.clear.cgColor
+    button.contentTintColor = selected ? .windowBackgroundColor : .labelColor
   }
 }
 #endif

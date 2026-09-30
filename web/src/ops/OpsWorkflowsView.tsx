@@ -205,13 +205,13 @@ export function OpsWorkflowsView(props: {
             </div>
             <div class="ops-rail-panel">
               <h2>Legend</h2>
-              <div class="ops-legend-row" style="color:#7de5e5"><span class="ops-swatch">◉</span>agent step</div>
-              <div class="ops-legend-row" style="color:#f08f7a"><span class="ops-swatch">✦</span>add-on step</div>
-              <div class="ops-legend-row" style="color:#c9a7e8"><span class="ops-swatch">⑂</span>judge step</div>
-              <div class="ops-legend-row" style="color:#8fd6a5"><span class="ops-swatch">▷</span>input / output</div>
-              <div class="ops-legend-row" style="color:#e8c46b"><span class="ops-swatch">♜</span>manager</div>
-              <div class="ops-legend-row" style="color:#7d9db5"><span class="ops-swatch-line" />transition</div>
-              <div class="ops-legend-row" style="color:#e8c46b"><span class="ops-swatch-line dashed" />loop-back</div>
+              <div class="ops-legend-row" style="color:#f5f5f5"><span class="ops-swatch">◉</span>agent step</div>
+              <div class="ops-legend-row" style="color:#d4d4d4"><span class="ops-swatch">✦</span>add-on step</div>
+              <div class="ops-legend-row" style="color:#d4d4d4"><span class="ops-swatch">⑂</span>judge step</div>
+              <div class="ops-legend-row" style="color:#e5e5e5"><span class="ops-swatch">▷</span>input / output</div>
+              <div class="ops-legend-row" style="color:#e5e5e5"><span class="ops-swatch">♜</span>manager</div>
+              <div class="ops-legend-row" style="color:#a3a3a3"><span class="ops-swatch-line" />transition</div>
+              <div class="ops-legend-row" style="color:#737373"><span class="ops-swatch-line dashed" />loop-back</div>
               <div class="ops-legend-row" style="color:#f2d268"><span class="ops-swatch">◍</span>live run</div>
             </div>
             <div class="ops-rail-panel">
@@ -318,8 +318,8 @@ function ConstellationScene(props: {
 function CoreCluster(props: { profileName: string; workflowCount: number; totalSteps: number; totalLive: number }) {
   return (
     <g aria-hidden="true">
-      <circle r="178" fill="none" stroke="#1d3444" stroke-width="1" />
-      <circle r="150" fill="rgba(18, 40, 58, .18)" stroke="none" />
+      <circle r="178" fill="none" stroke="#404040" stroke-width="1" />
+      <circle r="150" fill="rgba(255, 255, 255, .04)" stroke="none" />
       <ClusterDots seed={props.profileName || 'riela'} />
       <text class="ops-hub-title" y="-8">{(props.profileName || 'RIELA').toUpperCase()}</text>
       <text class="ops-core-stat" y="14">{props.workflowCount} WORKFLOWS · {props.totalSteps} STEPS</text>
@@ -334,7 +334,7 @@ function ClusterDots(props: { seed: string }) {
   return (
     <g opacity="0.75">
       <For each={clusterPoints(props.seed)}>{(point) => (
-        <circle cx={point.x} cy={point.y} r={point.radius} fill="#e8956f" opacity="0.5" />
+        <circle cx={point.x} cy={point.y} r={point.radius} fill="#a3a3a3" opacity="0.5" />
       )}</For>
     </g>
   )
@@ -353,7 +353,7 @@ function HubSatellites(props: { hub: WorkflowHubVM; x: number; y: number; angle:
         return (
           <g>
             <line class="ops-edge" x1={props.x + Math.cos(angle) * 33} y1={props.y + Math.sin(angle) * 33} x2={satelliteX} y2={satelliteY} stroke={props.color} stroke-width="0.6" opacity="0.5" />
-            <circle cx={satelliteX} cy={satelliteY} r="3.2" fill="#060d15" stroke={props.color} stroke-width="1" />
+            <circle cx={satelliteX} cy={satelliteY} r="3.2" fill="#000000" stroke={props.color} stroke-width="1" />
           </g>
         )
       }}</For>
@@ -394,7 +394,7 @@ function FocusScene(props: {
             <path
               class="ops-edge"
               d={edge.back ? backEdgePath(from.x, from.y, to.x, to.y) : edgePath(from.x, from.y - 26, to.x, to.y + 40)}
-              stroke={edge.back ? '#e8c46b' : '#7d9db5'}
+              stroke={edge.back ? '#737373' : '#a3a3a3'}
               stroke-width={edge.back ? 1 : 1.3}
               stroke-dasharray={edge.back || transition?.fanoutJoinStepId ? '5 5' : undefined}
               opacity={edge.back ? 0.6 : 0.75}
@@ -407,7 +407,7 @@ function FocusScene(props: {
           </g>
         )
       }}</For>
-      <line class="ops-edge" x1="0" y1="-44" x2={nodeById().get(fan().nodes.find((node) => node.tier === 0)?.id ?? '')?.x ?? 0} y2={(nodeById().get(fan().nodes.find((node) => node.tier === 0)?.id ?? '')?.y ?? -100) + 40} stroke="#7de5e5" stroke-width="1.1" opacity="0.6" stroke-dasharray="2 6" />
+      <line class="ops-edge" x1="0" y1="-44" x2={nodeById().get(fan().nodes.find((node) => node.tier === 0)?.id ?? '')?.x ?? 0} y2={(nodeById().get(fan().nodes.find((node) => node.tier === 0)?.id ?? '')?.y ?? -100) + 40} stroke="#d4d4d4" stroke-width="1.1" opacity="0.6" stroke-dasharray="2 6" />
       <For each={fan().nodes}>{(node) => {
         const step = stepById().get(node.id)
         const graphNode = graphNodeById().get(node.id)
@@ -433,7 +433,7 @@ function FocusScene(props: {
         x={0}
         y={0}
         radius={34}
-        color="#7de5e5"
+        color="#f5f5f5"
         glyph="⌘"
         label={truncateMiddle(props.hub.workflow.name, 28)}
         sublabel={props.liveRun ? `live · ${statusStyle(props.liveRun.status).label}` : `${props.hub.runs.length} recent runs`}

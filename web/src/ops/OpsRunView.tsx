@@ -125,10 +125,10 @@ export function OpsRunView(props: {
                 <div class="ops-legend-row" style="color:#f2d268"><span class="ops-swatch">◍</span>running / current</div>
                 <div class="ops-legend-row" style="color:#45d0a3"><span class="ops-swatch">◉</span>completed</div>
                 <div class="ops-legend-row" style="color:#f4737f"><span class="ops-swatch">◉</span>failed</div>
-                <div class="ops-legend-row" style="color:#5c7186"><span class="ops-swatch">◌</span>planned, not run</div>
-                <div class="ops-legend-row" style="color:#7de5e5"><span class="ops-swatch-line" />traveled route</div>
-                <div class="ops-legend-row" style="color:#44607a"><span class="ops-swatch-line dashed" />planned route</div>
-                <div class="ops-legend-row" style="color:#c9a7e8"><span class="ops-swatch">◆</span>gate evidence</div>
+                <div class="ops-legend-row" style="color:#737373"><span class="ops-swatch">◌</span>planned, not run</div>
+                <div class="ops-legend-row" style="color:#f5f5f5"><span class="ops-swatch-line" />traveled route</div>
+                <div class="ops-legend-row" style="color:#737373"><span class="ops-swatch-line dashed" />planned route</div>
+                <div class="ops-legend-row" style="color:#d4d4d4"><span class="ops-swatch">◆</span>gate evidence</div>
               </div>
               <div class="ops-rail-panel">
                 <h2>Steps · {runGraph().steps.length}</h2>
@@ -190,7 +190,7 @@ function RunScene(props: {
           <path
             classList={{ 'ops-edge': true, 'ops-flow': traveled && (stepById().get(edge.toStepId)?.status === 'running' || stepById().get(edge.toStepId)?.isCurrent) }}
             d={edge.back ? backEdgePath(from.x, from.y, to.x, to.y) : edgePath(from.x, from.y - 26, to.x, to.y + 40)}
-            stroke={traveled ? '#7de5e5' : edge.back ? '#8a7440' : '#44607a'}
+            stroke={traveled ? '#f5f5f5' : edge.back ? '#a3a3a3' : '#737373'}
             stroke-width={traveled ? 1.7 : 1}
             stroke-dasharray={traveled ? undefined : '5 5'}
             opacity={traveled ? 0.9 : 0.55}
@@ -215,7 +215,7 @@ function RunScene(props: {
               x={node.x}
               y={node.y}
               radius={26}
-              color={style?.color ?? '#3d566c'}
+              color={style?.color ?? '#737373'}
               glyph={kind.glyph}
               label={truncateMiddle(node.id, 24)}
               sublabel={executed
@@ -230,7 +230,7 @@ function RunScene(props: {
             />
             <Show when={gates.length > 0}>
               <g transform={`translate(${node.x + 36} ${node.y - 30})`} class="ops-node" role="button" aria-label={`Gate evidence for ${node.id}`} onClick={(event) => { event.stopPropagation(); props.onSelectStep(node.id) }}>
-                <path d="M 0 -8 L 8 0 L 0 8 L -8 0 Z" fill="#0a0f18" stroke={blocking > 0 ? '#f4737f' : '#c9a7e8'} stroke-width="1.4" filter="url(#ops-glow)" />
+                <path d="M 0 -8 L 8 0 L 0 8 L -8 0 Z" fill="#0a0a0a" stroke={blocking > 0 ? '#f4737f' : '#d4d4d4'} stroke-width="1.4" filter="url(#ops-glow)" />
                 <text class="ops-node-sublabel" y="20" fill={blocking > 0 ? '#f4a0a8' : undefined}>{gates.length}</text>
               </g>
             </Show>

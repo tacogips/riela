@@ -1,0 +1,235 @@
+/* Riela's user-facing monochrome theme. Loaded last so every product surface
+   uses the same black canvas and white rail-inspired controls. */
+:root {
+  color: #f5f5f5;
+  background: #000000;
+  color-scheme: dark;
+  --ink: #f5f5f5;
+  --muted: #a3a3a3;
+  --line: #303030;
+  --surface: #0a0a0a;
+  --surface-subtle: #141414;
+  --accent: #ffffff;
+  --accent-contrast: #000000;
+  /* Legacy component tokens remain defined so fallbacks cannot reintroduce blue. */
+  --blue-50: #0a0a0a;
+  --blue-100: #1f1f1f;
+  --blue-200: #404040;
+  --blue-300: #737373;
+  --blue-500: #d4d4d4;
+  --blue-600: #ffffff;
+  --blue-700: #e5e5e5;
+}
+
+body { color: var(--ink); background: #000000; }
+::selection { color: #000000; background: #ffffff; }
+:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+.skip-link { color: #000000; background: #ffffff; }
+
+.app-shell { display: block; color: var(--ink); background: #000000; }
+.notes-workspace, .ops-shell { color: var(--ink); background: #000000; }
+.app-header, .sidebar, .topbar, .folder-pane, .filter-bar, .ops-topline {
+  border-color: var(--line);
+  background: rgb(0 0 0 / 96%);
+}
+.app-header { position: sticky; z-index: 20; top: 0; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 clamp(16px, 2.5vw, 34px); }
+.app-header .brand { flex: none; gap: 8px; padding: 0 4px 0 0; }
+.app-header nav { min-width: 0; display: flex; flex: 1; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.app-header nav::-webkit-scrollbar { display: none; }
+.app-header .server-card { flex: none; margin: 0; padding: 10px; }
+.server-card { border-color: var(--line); background: #0a0a0a; }
+.server-card strong { color: #ffffff; }
+.server-card span:last-child { color: var(--muted); }
+.dot { background: #737373; box-shadow: 0 0 0 4px rgb(115 115 115 / 14%); }
+.header-profile { flex: none; margin-left: auto; color: #d4d4d4; }
+
+.brand-mark { border-color: #ffffff; color: #000000; background: #ffffff; box-shadow: none; }
+.brand strong, .topbar strong, .page-header h1, .section-title h2,
+.folder-pane-header h1, .note-detail h2, .ops-topline-title strong,
+.ops-detail-header h2, .ops-hub-title { color: #ffffff; }
+.brand span, .eyebrow, .page-header p, .section-title p { color: var(--muted); }
+
+nav button { color: #a3a3a3; }
+nav button:hover { color: #ffffff; background: #171717; }
+nav button.active { border-color: #737373; color: #ffffff; background: #262626; }
+.nav-glyph { color: #ffffff; }
+
+button:not(nav button):not(.instance-card) {
+  border-color: #ffffff;
+  color: #000000;
+  background: #ffffff;
+  box-shadow: none;
+}
+button:not(nav button):not(.instance-card):hover:not(:disabled) { border-color: #d4d4d4; background: #d4d4d4; }
+button.secondary, .ops-hud-button, .ops-zoom button, .ops-carousel button {
+  border-color: #525252 !important;
+  color: #f5f5f5 !important;
+  background: #171717 !important;
+}
+button.secondary:hover:not(:disabled), .ops-hud-button:hover, .ops-zoom button:hover, .ops-carousel button:hover {
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+  background: #262626 !important;
+}
+
+.api-pill, .status-chip, .progress-pill, .filter-chip, .folder-chip, .ops-chip {
+  border-color: #525252;
+  color: #e5e5e5;
+  background: #171717;
+}
+.registration-url, .folder-tab button, .notes-breadcrumb,
+.notes-breadcrumb button, .folder-chip button, .tag-group-toggle,
+.tree-toggle, .ops-topline-title .eyebrow, .ops-detail-header .eyebrow,
+.ops-rail-panel h2, .ops-detail-body h3, .ops-route-row .ops-route-glyph {
+  color: var(--muted) !important;
+}
+.folder-tab { border-color: var(--line); }
+.folder-tab button.active {
+  border-bottom-color: #ffffff !important;
+  color: #ffffff !important;
+}
+.workflow-configurations-pane .configuration-list .configuration-list-row.selected {
+  color: #ffffff;
+  background: #1f1f1f;
+  box-shadow: inset 3px 0 #ffffff;
+}
+.progress-pill.cat-progress, .progress-pill.cat-review { color: #e5e5e5; }
+.instance-card, .editor-panel, .panel, .requirements, .secret-editor,
+.node-patches, .run-step, .execution-row, .diagnostics, .instance-affordance,
+.surface-notice, .confirmation-box, .registration-card, .workflow-editor,
+.editor-inspector, .editor-node-dialog, .trace-inspector, .ops-rail-panel,
+.ops-detail, .ops-carousel, .ops-status-note {
+  border-color: var(--line);
+  color: var(--ink);
+  background: #0a0a0a;
+  box-shadow: none;
+}
+.instance-card:hover, .instance-card.selected { border-color: #737373; }
+.instance-card.selected { box-shadow: inset 3px 0 0 #ffffff; }
+.card-heading span:not(.status-chip):not(.status-dot), .instance-card p,
+.card-meta, .card-badges, label, label small, .empty-state, .center-state,
+.loading-state, .registration-expiry, .client-empty { color: var(--muted); }
+
+input, textarea, select, .ops-rail-panel input, .ops-rail-panel select,
+.editor-inspector input, .editor-inspector textarea, .editor-inspector select,
+.editor-json textarea, .editor-chat textarea, .editor-node-dialog input,
+.editor-node-dialog textarea {
+  border-color: #404040;
+  color: #f5f5f5;
+  background: #0a0a0a;
+}
+input:focus, textarea:focus, select:focus { border-color: #ffffff; box-shadow: 0 0 0 2px rgb(255 255 255 / 18%); }
+
+.row-icon, .empty-state > span { border-color: #525252; color: #ffffff; background: #171717; }
+.execution-open, .run-step, .run-step dl div, .notebook-row,
+.note-detail dl div, .note-preview article, .trace-inspector pre,
+.ops-detail-meta div, .ops-exec-row { color: var(--ink) !important; background: #0a0a0a !important; }
+.selectable-row:hover, .selectable-row[aria-pressed="true"],
+.notebook-row:hover, .notebook-row.selected, .trace-row:hover, .trace-row.selected,
+.folder-root.selected, .folder-row.selected, .ops-directory-row:hover,
+.ops-directory-row[aria-pressed="true"] { color: #ffffff !important; background: #1f1f1f !important; }
+
+.view-tabs, .notebook-list, .board-column, .board-card, .note-detail,
+.editor-toolbar, .editor-chat, .definition-network-stage, .trace-track {
+  border-color: var(--line);
+  background: #0a0a0a;
+}
+.view-tabs button.active, .editor-select,
+.trace-modes button[aria-pressed=true], .trace-graph button[aria-pressed=true] {
+  border-color: #ffffff !important;
+  color: #000000 !important;
+  background: #ffffff !important;
+}
+.notes-message { border-color: #737373; color: #f5f5f5; background: #171717; }
+
+.editor-node, .definition-network-node rect { fill: #171717; stroke: #737373; }
+.editor-node.selected, .definition-network-node:hover rect,
+.definition-network-node:focus rect, .definition-network-node.selected rect { fill: #262626; stroke: #ffffff; }
+.editor-node-title, .definition-network-node .definition-node-title { fill: #ffffff; }
+.editor-node-caption, .definition-network-node text, .definition-connection text,
+.editor-edge-label, .ops-node-sublabel, .ops-core-stat, .ops-edge-label { fill: #a3a3a3; }
+.definition-network-node .definition-node-eyebrow { fill: #d4d4d4; }
+.editor-port { fill: #ffffff; stroke: #000000; }
+.editor-port.output { fill: #d4d4d4; }
+.editor-edge, .definition-connection path, #definition-arrow path,
+.run-route-graph > path { stroke: #a3a3a3; }
+#definition-arrow path, .run-route-graph marker path { fill: #a3a3a3; }
+.definition-connection text { stroke: #000000; }
+.run-route-graph g rect { fill: #171717; stroke: #737373; }
+.run-route-graph g text { fill: #ffffff; }
+.run-route-graph g text + text { fill: #a3a3a3; }
+.editor-hint, .definition-network-hint, .definition-node-inspector p,
+.definition-node-inspector dt, .definition-empty, .ops-rail-empty,
+.ops-detail-meta dt, .ops-route-row small, .ops-exec-row li .ops-seq {
+  color: var(--muted);
+}
+.registration-code, .ops-detail-meta dd, .ops-route-row strong,
+.ops-exec-row header { color: #e5e5e5; }
+
+.trace-axis, .trace-name small, .trace-events, .trace-inspector p, .trace-route,
+.run-trace button.trace-select { color: #a3a3a3; }
+.trace-row, .trace-events, .trace-inspector { border-color: var(--line); }
+.trace-track { background: repeating-linear-gradient(to right, rgb(255 255 255 / 10%) 0, rgb(255 255 255 / 10%) 1px, transparent 1px, transparent 25%); }
+.trace-bar { background: #d4d4d4; }
+
+.ops-shell { background: #000000; }
+.ops-cursor { background: #ffffff; }
+.ops-grid-line { stroke: rgb(255 255 255 / 7%); }
+.ops-grid-line.major { stroke: rgb(255 255 255 / 14%); }
+.ops-node-label { fill: #f5f5f5; }
+.ops-badge-text { fill: #000000; }
+
+/* Component-specific details need the same neutral foregrounds and borders. */
+.section-title > span, .source-label, .save-row, .list-row span:last-child,
+.secret-editor > p, .requirement-row div span, .requirement-row > span:last-child,
+.refresh-actions > span, .node-patches > p, .event-list > p, .definition-grid p,
+.subtle, .patch-row span, .run-summary, .run-step > header span:not(.status-chip),
+.run-step dt, .event-list > div, .evidence-row span, .definition-row span,
+.definition-meta span, .registry-actions > div span, .folder-root, .folder-row,
+.kanban-set-manager h3, .kanban-set-row, .notebook-row-meta, .board-card-meta,
+.notebook-preview, .note-detail dt, .note-detail h3, .note-preview article > div span,
+.ops-topline-meta, .ops-carousel-label, .ops-legend-row, .ops-directory-row small,
+.ops-detail-body p, .ops-route-row, .ops-rail-panel label { color: var(--muted); }
+.empty-state strong, .instance-affordance strong, .surface-notice strong,
+.confirmation-box strong, .run-step dd, .event-list strong, .note-preview pre {
+  color: #e5e5e5;
+}
+.ops-directory-row { color: #e5e5e5 !important; }
+.ops-directory-row .ops-dot, .status-dot.stopped { background: #737373; }
+.ops-hub-title { fill: #ffffff; }
+.definition-port { fill: #ffffff; stroke: #000000; }
+.loader { border-color: #404040; border-top-color: #ffffff; }
+.tag-group-toggle > span:last-child, .board-column > header span {
+  color: var(--muted);
+  background: #171717;
+}
+.list-row, .requirement-row, .patch-row, .event-list > div,
+.evidence-row, .definition-row, .definition-meta, .registry-editor,
+.tag-group, .folder-create, .kanban-set-manager, .tag-add-flow,
+.run-step dl div, .note-detail dl div, .note-preview article,
+.notebook-row, .ops-detail-header, .ops-detail-meta div,
+.ops-route-row, .ops-exec-row, .ops-exec-row li { border-color: var(--line); }
+.selectable-row { border-top-color: var(--line) !important; }
+.notebook-row { border-bottom-color: var(--line) !important; }
+.timeline pre { border-color: var(--line); color: var(--ink); background: #0a0a0a; }
+.execution-open:hover { border-color: #737373 !important; background: #1f1f1f !important; }
+.view-tabs button, .run-trace button.trace-expand, .run-trace button.trace-select {
+  color: #e5e5e5;
+  background: transparent;
+}
+.run-trace button.trace-expand:hover:not(:disabled),
+.run-trace button.trace-select:hover:not(:disabled) { background: #262626; }
+
+/* Status colors remain semantic and accessible against black. */
+.dot.live, .status-dot.running, .presence-dot.present,
+.ops-directory-row .ops-dot.completed { background: #3ddc97; }
+.status-dot.failed, .ops-directory-row .ops-dot.failed { background: #ff6b6b; }
+.ops-directory-row .ops-dot.live { background: #f2c94c; }
+.error-banner, .error-panel, button.danger { border-color: #7f1d1d !important; color: #fca5a5 !important; background: #1c0808 !important; }
+
+@media (max-width: 800px) {
+  .app-header { gap: 8px; padding-inline: 12px; }
+  .app-header .brand > div:last-child, .app-header .server-card div,
+  .header-profile .eyebrow, .app-header .api-pill { display: none; }
+  .app-header nav button { flex: none; padding-inline: 8px; }
+}

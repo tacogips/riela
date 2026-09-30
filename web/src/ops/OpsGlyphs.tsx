@@ -37,9 +37,9 @@ export function RingNode(props: {
         <circle class="ops-pulse" r={radius() + 11} fill="none" stroke={props.color} stroke-width="1.5" opacity="0.5" />
       </Show>
       <Show when={props.selected}>
-        <circle r={radius() + 7} fill="none" stroke="#dffbfb" stroke-width="1.2" stroke-dasharray="3 4" />
+        <circle r={radius() + 7} fill="none" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3 4" />
       </Show>
-      <circle r={radius()} fill="#060d15" stroke={props.color} stroke-width="1.8" filter="url(#ops-glow)" />
+      <circle r={radius()} fill="#000000" stroke={props.color} stroke-width="1.8" filter="url(#ops-glow)" />
       <circle r={radius() - 5} fill="none" stroke={props.color} stroke-width="0.8" opacity="0.75" />
       <text class="ops-node-glyph" fill={props.color} font-size={`${radius() * 0.62}`}>{props.glyph}</text>
       <text class="ops-node-label" y={radius() + 17}>{props.label}</text>

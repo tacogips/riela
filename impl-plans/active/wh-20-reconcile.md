@@ -5,7 +5,13 @@
   "planId": "wh-20-reconcile",
   "planPath": "impl-plans/active/wh-20-reconcile.md",
   "wave": "W6 (serial)",
-  "dependsOn": ["wh-13-gc-sweep", "wh-15-task-commands", "wh-16-graphql-provider", "wh-17-examples", "wh-18-remote-takeover", "wh-19-docs-skills"],
+  "dependsOn": [
+    "wh-15-task-commands",
+    "wh-16-graphql-provider",
+    "wh-17-examples",
+    "wh-18-remote-takeover",
+    "wh-19-docs-skills"
+  ],
   "writePaths": [
     "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
     "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
@@ -21,10 +27,22 @@
     "impl-plans/completed"
   ],
   "sharedPathNotes": [
-    {"path": "Sources/RielaCore/SurfaceCatalog+Rows.swift", "intendedEdit": "Only if the GraphQL-only operation rows live here rather than in +RowsCLI: add the handover field rows."},
-    {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Only if a parity gate reports a missing session subcommand or option enumeration for the new commands."},
-    {"path": "README.md", "intendedEdit": "One link to docs/work-handover.md in the Work Runtime section."},
-    {"path": "impl-plans/completed", "intendedEdit": "Move the umbrella plan and wh-00…wh-20 here only if every completion criterion has evidence; otherwise leave everything active."}
+    {
+      "path": "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+      "intendedEdit": "Only if the GraphQL-only operation rows live here rather than in +RowsCLI: add the handover field rows."
+    },
+    {
+      "path": "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+      "intendedEdit": "Only if a parity gate reports a missing session subcommand or option enumeration for the new commands."
+    },
+    {
+      "path": "README.md",
+      "intendedEdit": "One link to docs/work-handover.md in the Work Runtime section."
+    },
+    {
+      "path": "impl-plans/completed",
+      "intendedEdit": "Move the umbrella plan and wh-00…wh-20 here only if every completion criterion has evidence; otherwise leave everything active."
+    }
   ],
   "progressLog": "impl-plans/progress/wh-20-reconcile.md"
 }

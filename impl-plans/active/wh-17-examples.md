@@ -5,7 +5,9 @@
   "planId": "wh-17-examples",
   "planPath": "impl-plans/active/wh-17-examples.md",
   "wave": "W4",
-  "dependsOn": ["wh-14-task-dispatch-runtime"],
+  "dependsOn": [
+    "wh-14-task-dispatch-runtime"
+  ],
   "writePaths": [
     "examples/task-handover-answer",
     "examples/task-handover-presence",
@@ -15,9 +17,14 @@
     "Tests/RielaCLITests/TaskHandoverExampleTests.swift",
     "impl-plans/progress/wh-17-examples.md"
   ],
-  "sharedPaths": ["README.md"],
+  "sharedPaths": [
+    "README.md"
+  ],
   "sharedPathNotes": [
-    {"path": "README.md", "intendedEdit": "Next to the `task-repair-loop` example link (~line 846), add one sentence linking the three new examples' READMEs."}
+    {
+      "path": "README.md",
+      "intendedEdit": "Next to the `task-repair-loop` example link (~line 846), add one sentence linking the three new examples' READMEs."
+    }
   ],
   "progressLog": "impl-plans/progress/wh-17-examples.md"
 }

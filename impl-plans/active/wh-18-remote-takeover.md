@@ -5,7 +5,10 @@
   "planId": "wh-18-remote-takeover",
   "planPath": "impl-plans/active/wh-18-remote-takeover.md",
   "wave": "W5",
-  "dependsOn": ["wh-15-task-commands", "wh-16-graphql-provider"],
+  "dependsOn": [
+    "wh-15-task-commands",
+    "wh-16-graphql-provider"
+  ],
   "writePaths": [
     "Sources/RielaCLI/TaskRemoteTakeover.swift",
     "Sources/RielaCLI/TaskServeTakeover.swift",
@@ -18,9 +21,18 @@
     "Sources/RielaCLI/TaskHandoverCommands.swift"
   ],
   "sharedPathNotes": [
-    {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add `case serve` to TaskCommandKind (after `reconcile`)."},
-    {"path": "Sources/RielaCLI/TaskCommands.swift", "intendedEdit": "Route `.serve` to TaskServeTakeover."},
-    {"path": "Sources/RielaCLI/TaskHandoverCommands.swift", "intendedEdit": "In the takeover parser, add `--endpoint <url>`, `--auth-token <t>`, `--auth-token-env <NAME>` and `--manager-session-id <id>`; when `--endpoint` is set, route to TaskRemoteTakeover. `--endpoint` with `--force-orphan` is a usage error (fencing is controller-side)."}
+    {
+      "path": "Sources/RielaCLI/RielaCommand.swift",
+      "intendedEdit": "Add `case serve` to TaskCommandKind (after `reconcile`)."
+    },
+    {
+      "path": "Sources/RielaCLI/TaskCommands.swift",
+      "intendedEdit": "Route `.serve` to TaskServeTakeover."
+    },
+    {
+      "path": "Sources/RielaCLI/TaskHandoverCommands.swift",
+      "intendedEdit": "In the takeover parser, add `--endpoint <url>`, `--auth-token <t>`, `--auth-token-env <NAME>` and `--manager-session-id <id>`; when `--endpoint` is set, route to TaskRemoteTakeover. `--endpoint` with `--force-orphan` is a usage error (fencing is controller-side)."
+    }
   ],
   "progressLog": "impl-plans/progress/wh-18-remote-takeover.md"
 }

@@ -5,7 +5,9 @@
   "planId": "wh-14-task-dispatch-runtime",
   "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md",
   "wave": "W3",
-  "dependsOn": ["wh-02-runner-suspend", "wh-03-work-store", "wh-04-packet-coordinator", "wh-05-history-import", "wh-06-wait-signal", "wh-07-git-branch-runtime", "wh-08-deliverable-collector", "wh-09-handover-sinks", "wh-10-host-traits", "wh-11-director-notify"],
+  "dependsOn": [
+    "wh-10-host-traits"
+  ],
   "writePaths": [
     "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/TaskDispatch+Handover.swift",
@@ -28,9 +30,18 @@
     "Sources/RielaAddons/RielaAddons.swift"
   ],
   "sharedPathNotes": [
-    {"path": "Sources/RielaCLI/WorkflowRunCommand.swift", "intendedEdit": "In the run-event handler (~line 123), await `taskContext?.stepBoundaryHook?(event)` for `.stepCompleted`. When building the DeterministicWorkflowRunRequest for a task run, set `boundaryHandover` from `taskContext?.boundaryHandover`. No other change; wh-02's suspended mapping stays."},
-    {"path": "Sources/RielaCLI/ProductionNodeAdapter.swift", "intendedEdit": "One dispatch branch `if input.addon.name == \"riela/handover-request\" { return try executeHandoverRequest(input) }` beside the other riela/* branches."},
-    {"path": "Sources/RielaAddons/RielaAddons.swift", "intendedEdit": "Add `public static let handoverAddons = [.init(name: \"riela/handover-request\", version: \"1\")]` and include it in `all`."}
+    {
+      "path": "Sources/RielaCLI/WorkflowRunCommand.swift",
+      "intendedEdit": "In the run-event handler (~line 123), await `taskContext?.stepBoundaryHook?(event)` for `.stepCompleted`. When building the DeterministicWorkflowRunRequest for a task run, set `boundaryHandover` from `taskContext?.boundaryHandover`. No other change; wh-02's suspended mapping stays."
+    },
+    {
+      "path": "Sources/RielaCLI/ProductionNodeAdapter.swift",
+      "intendedEdit": "One dispatch branch `if input.addon.name == \"riela/handover-request\" { return try executeHandoverRequest(input) }` beside the other riela/* branches."
+    },
+    {
+      "path": "Sources/RielaAddons/RielaAddons.swift",
+      "intendedEdit": "Add `public static let handoverAddons = [.init(name: \"riela/handover-request\", version: \"1\")]` and include it in `all`."
+    }
   ],
   "progressLog": "impl-plans/progress/wh-14-task-dispatch-runtime.md"
 }

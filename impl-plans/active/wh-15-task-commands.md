@@ -5,7 +5,9 @@
   "planId": "wh-15-task-commands",
   "planPath": "impl-plans/active/wh-15-task-commands.md",
   "wave": "W4",
-  "dependsOn": ["wh-14-task-dispatch-runtime"],
+  "dependsOn": [
+    "wh-14-task-dispatch-runtime"
+  ],
   "writePaths": [
     "Sources/RielaCLI/TaskCommands.swift",
     "Sources/RielaCLI/TaskCommandModels.swift",
@@ -21,9 +23,18 @@
     "Sources/RielaCLI/CLISurfaceEnumeration.swift"
   ],
   "sharedPathNotes": [
-    {"path": "Sources/RielaCLI/RielaCommand.swift", "intendedEdit": "Add TaskCommandKind cases `handover, takeover, answer, handovers, reconcile` (in this order after `decide`) and `SessionCommand.handover(CLICommandOptions)`. Keep CLIExitCode as wh-01 left it."},
-    {"path": "Sources/RielaCLI/SessionCommands.swift", "intendedEdit": "Add the `session handover` handler that calls TaskHandoverRuntime.adoptAndSeal; do not change wh-02's resume logic."},
-    {"path": "Sources/RielaCLI/CLISurfaceEnumeration.swift", "intendedEdit": "Only if session subcommands are a hard-coded list: add `handover`. Task subcommands come from TaskCommandKind.allRawValues automatically."}
+    {
+      "path": "Sources/RielaCLI/RielaCommand.swift",
+      "intendedEdit": "Add TaskCommandKind cases `handover, takeover, answer, handovers, reconcile` (in this order after `decide`) and `SessionCommand.handover(CLICommandOptions)`. Keep CLIExitCode as wh-01 left it."
+    },
+    {
+      "path": "Sources/RielaCLI/SessionCommands.swift",
+      "intendedEdit": "Add the `session handover` handler that calls TaskHandoverRuntime.adoptAndSeal; do not change wh-02's resume logic."
+    },
+    {
+      "path": "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+      "intendedEdit": "Only if session subcommands are a hard-coded list: add `handover`. Task subcommands come from TaskCommandKind.allRawValues automatically."
+    }
   ],
   "progressLog": "impl-plans/progress/wh-15-task-commands.md"
 }

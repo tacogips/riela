@@ -5,7 +5,10 @@
   "planId": "wh-19-docs-skills",
   "planPath": "impl-plans/active/wh-19-docs-skills.md",
   "wave": "W5",
-  "dependsOn": ["wh-15-task-commands", "wh-16-graphql-provider"],
+  "dependsOn": [
+    "wh-15-task-commands",
+    "wh-16-graphql-provider"
+  ],
   "writePaths": [
     "docs/work-handover.md",
     "docs/distributed-workers.md",

@@ -5,7 +5,7 @@
   "planId": "wh-10-host-traits",
   "planPath": "impl-plans/active/wh-10-host-traits.md",
   "wave": "W2",
-  "dependsOn": ["wh-01-contracts"],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaWork/BackendCapabilityPlacement.swift",
     "Sources/RielaCLI/HostCapabilityResolver.swift",
@@ -15,6 +15,10 @@
     "Sources/RielaCLI/DoctorCommand.swift",
     "Tests/RielaWorkTests/BackendCapabilityPlacementTraitsTests.swift",
     "Tests/RielaCLITests/HostTraitsResolverTests.swift",
+    "Sources/RielaServer/DistributedWorkerLoop.swift",
+    "Sources/RielaServer/DistributedWorkerProtocol.swift",
+    "Sources/RielaCore/DistributedJobController.swift",
+    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
     "impl-plans/progress/wh-10-host-traits.md"
   ],
   "sharedPaths": [],
@@ -84,3 +88,15 @@ Both must end with exit=0, the new tests must pass, and the existing placement, 
 
 - [ ] Traits flow from the profile, override and worker.json into snapshots, placement and doctor
 - [ ] The tests pass; the progress log is complete
+
+
+## Scope amendment (2026-09-30)
+
+Run session-1 blocked this plan twice, correctly, because carrying `worker.json` traits into worker registration needs files the original `writePaths` omitted. They are now owned by this plan and no other plan touches them:
+
+- `Sources/RielaServer/DistributedWorkerLoop.swift`: pass configured traits into the registration request.
+- `Sources/RielaServer/DistributedWorkerProtocol.swift`: add `traits` to `DistributedWorkerRequest` registration (strict decode, as `DistributedWorkerRegistration` does since wh-01).
+- `Sources/RielaCore/DistributedJobController.swift`: accept traits in `register` and persist them on the registration and worker status.
+- `Tests/RielaServerTests/DistributedWorkerHTTPTests.swift`: assert that a registered worker's traits reach the controller status.
+
+wh-01 through wh-09 and wh-11 through wh-13 are accepted and committed (`d043cbad`). Build on them; do not re-implement them.

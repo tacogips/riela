@@ -217,3 +217,8 @@ box has evidence (wh-20). Otherwise they stay active with an accurate progress l
 - **Previous**: `impl-plans/active/work-runtime-p1-*.md` (shipped P1 dispatcher, reservation, guard, director)
 - **Next**: Work Runtime P4 (`ChangeRuntime` beyond the branch slice), P5 (full GraphQL task API)
 - **Aligns With**: `impl-plans/active/execution-environment-consolidation.md` (E2 adopts `riela/task/*` and `refs/riela/handovers`)
+
+### Session: 2026-09-30 (run session-1, patched opus-luna bundle)
+**Tasks Completed**: wh-01..wh-09, wh-11..wh-13 accepted by test-integrity, adversarial and wave integration review; committed as `d043cbad`.
+**Blockers**: wh-10 host traits omitted DistributedWorkerLoop/DistributedWorkerProtocol/DistributedJobController from writePaths; the implementer refused out-of-scope edits twice.
+**Notes**: The accepted plans moved to manifest `acceptedDependencies`; wh-10 writePaths amended; the remaining DAG is wh-10 -> wh-14 -> {wh-15, wh-16, wh-17} -> {wh-18, wh-19} -> wh-20.

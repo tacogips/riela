@@ -5,7 +5,9 @@
   "planId": "wh-16-graphql-provider",
   "planPath": "impl-plans/active/wh-16-graphql-provider.md",
   "wave": "W4",
-  "dependsOn": ["wh-12-graphql-contracts", "wh-14-task-dispatch-runtime"],
+  "dependsOn": [
+    "wh-14-task-dispatch-runtime"
+  ],
   "writePaths": [
     "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
     "Sources/RielaCLI/ServeWebHost.swift",

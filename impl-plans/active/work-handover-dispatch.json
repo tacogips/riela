@@ -5,6 +5,7 @@
  "baseBranch": "feat/work-handover-and-takeover",
  "remote": "origin",
  "originalHead": "01b38f02fb8c126528d5a46aebe737adb429736f",
+ "checkpointParentHead": "c10ac49f",
  "designDocPaths": [
   "design-docs/specs/design-work-handover-and-takeover.md",
   "design-docs/user-qa/qa-work-handover-and-takeover.md"
@@ -36,7 +37,7 @@
  ],
  "evidenceRoot": "tmp/work-handover",
  "reviewContext": {
-  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228.",
+  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []).",
   "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
   "requiredOutcomes": [
    "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",

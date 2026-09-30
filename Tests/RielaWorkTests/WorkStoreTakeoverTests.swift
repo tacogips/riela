@@ -143,6 +143,52 @@ final class WorkStoreTakeoverTests: XCTestCase {
     XCTAssertEqual(try store.loadTask(id: TaskID("task-1"))?.state, .waiting)
   }
 
+  func testRequestTakeoverRefusesCheckpointFailedRepositoryWithoutReservation() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.state = .waiting
+    task.context = .repository(RepositoryContext(root: "/tmp/repository"))
+    try store.saveTask(task)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .reconciled))
+    var sealedPacket = packet()
+    sealedPacket.deliverables = [.repository(RepositoryDeliverable(
+      root: "/tmp/repository", remote: "origin", branch: "riela/task/task-1/g1",
+      baseRevision: "base", state: .checkpointFailed(reason: "remote unreachable")
+    ))]
+    try store.saveHandover(try sealedPacket.sealed())
+
+    XCTAssertThrowsError(try store.requestTakeover(
+      taskId: task.id, placement: TakeoverPlacement(hostId: "local"),
+      producer: .human(principal: "operator"), decisionId: DecisionID("takeover-refused"), now: fixedNow
+    )) { error in XCTAssertTrue(String(describing: error).contains("checkpoint failed: remote unreachable")) }
+    XCTAssertEqual(try store.loadTask(id: task.id)?.state, .waiting)
+    XCTAssertFalse(try store.listDecisions(taskId: task.id).contains { if case .takeover = $0.kind { return true }; return false })
+    XCTAssertNil(try TaskDispatcher(store: store).pendingReservation(taskId: task.id))
+  }
+
+  func testRequestTakeoverAcceptsUnpublishedRepositoryDeliverable() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.state = .waiting
+    task.context = .repository(RepositoryContext(root: "/tmp/repository"))
+    try store.saveTask(task)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .reconciled))
+    var sealedPacket = packet()
+    sealedPacket.deliverables = [.repository(RepositoryDeliverable(
+      root: "/tmp/repository", remote: "origin", branch: "riela/task/task-1/g1",
+      baseRevision: "base", state: .unpublished(lastKnown: nil)
+    ))]
+    try store.saveHandover(try sealedPacket.sealed())
+
+    let changed = try store.requestTakeover(
+      taskId: task.id, placement: TakeoverPlacement(hostId: "local"),
+      producer: .human(principal: "operator"), decisionId: DecisionID("takeover-unpublished"), now: fixedNow
+    )
+    XCTAssertEqual(changed.state, .scheduled)
+    XCTAssertEqual(try TaskDispatcher(store: store).pendingReservation(taskId: task.id)?.entry,
+                   .takeover(fromAttemptId: AttemptID("attempt-1"), handoverId: HandoverID("handover-1")))
+  }
+
   func testRequestTakeoverRefusesTerminalTask() throws {
     let store = WorkStore(rootDirectory: root.path)
     try setupHandover(store, reason: .userPresenceRequired(PresenceRequirement(traits: [.userReachable], instructions: "Be present")))

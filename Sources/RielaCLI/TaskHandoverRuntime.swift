@@ -87,10 +87,72 @@ struct TaskHandoverRuntime: Sendable {
       throw WorkStoreError("running sessions cannot be adopted")
     }
     let reference = WorkflowReference(name: snapshot.session.workflowId)
+    let workingURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
+    let topLevelResult = try Self.runAdoptionGit(["rev-parse", "--show-toplevel"], at: workingURL)
+    let repositoryRoot = topLevelResult.exitCode == 0
+      ? topLevelResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+      : nil
+    var adoptionBranch: String?
+    var adoptionBase: String?
+    if let repositoryRoot {
+      let rootURL = URL(fileURLWithPath: repositoryRoot, isDirectory: true)
+      let head = try Self.runAdoptionGit(["rev-parse", "--verify", "HEAD^{commit}"], at: rootURL)
+      guard head.exitCode == 0 else {
+        throw WorkStoreError("session adoption refused: HEAD is not a commit")
+      }
+      adoptionBase = head.output.trimmingCharacters(in: .whitespacesAndNewlines)
+      let taskId = existingTaskId ?? TaskID(
+        "task-adopted-" + snapshot.session.sessionId.replacingOccurrences(
+          of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression
+        )
+      )
+      let existingTask = try existingTaskId.flatMap { try located.store.loadTask(id: $0) }
+      let policy = existingTask?.guardPolicy.handover?.publish ?? PublicationPolicy()
+      let existingGenerations = try existingTaskId.map { id in
+        try located.store.listAttempts(taskId: id).map(\.generation)
+      } ?? []
+      let generation = (existingGenerations.max() ?? 0) + 1
+      let branch = policy.branchTemplate
+        .replacingOccurrences(of: "{taskId}", with: taskId.rawValue)
+        .replacingOccurrences(of: "{generation}", with: String(generation))
+      let valid = try Self.runAdoptionGit(["check-ref-format", "--branch", branch], at: rootURL)
+      guard valid.exitCode == 0 else {
+        throw WorkStoreError("session adoption refused: invalid branch name")
+      }
+      let existing = try Self.runAdoptionGit(
+        ["show-ref", "--verify", "--quiet", "refs/heads/\(branch)"], at: rootURL
+      )
+      guard existing.exitCode != 0 else {
+        throw WorkStoreError("session adoption refused: branch already exists")
+      }
+      adoptionBranch = branch
+    }
     let adoption = try TaskAdoption(store: located.store).adopt(
       session: snapshot.session, workflow: reference, workingDirectory: workingDirectory,
-      repositoryRoot: workingDirectory, principal: principal, existingTaskId: existingTaskId, now: now()
+      repositoryRoot: repositoryRoot, principal: principal, existingTaskId: existingTaskId, now: now()
     )
+    var adoptedAttempt = adoption.attempt
+    if let adoptionBranch, let repositoryRoot, let adoptionBase {
+      let expectedBranch = adoptionBranch
+      let expectedFromResult = (adoption.task.guardPolicy.handover?.publish ?? PublicationPolicy()).branchTemplate
+        .replacingOccurrences(of: "{taskId}", with: adoption.task.id.rawValue)
+        .replacingOccurrences(of: "{generation}", with: String(adoptedAttempt.generation))
+      guard expectedFromResult == expectedBranch else {
+        throw WorkStoreError("session adoption refused: derived task branch changed during adoption")
+      }
+      let rootURL = URL(fileURLWithPath: repositoryRoot, isDirectory: true)
+      let claimed = try Self.runAdoptionGit(["switch", "-c", expectedBranch], at: rootURL)
+      guard claimed.exitCode == 0 else {
+        throw WorkStoreError("session adoption claim failed: \(Self.stderrHead(claimed.output))")
+      }
+      let isolation = IsolationRef(path: repositoryRoot, branch: expectedBranch, baseRevision: adoptionBase)
+      guard try located.store.recordAdoptedAttemptIsolation(
+        attemptId: adoptedAttempt.id, isolation: isolation
+      ) else {
+        throw WorkStoreError("adopted attempt isolation could not be recorded")
+      }
+      adoptedAttempt.isolation = isolation
+    }
     guard case let .workflow(workflowReference)? = adoption.task.plan else {
       throw WorkStoreError("adopted task has no workflow reference")
     }
@@ -117,11 +179,11 @@ struct TaskHandoverRuntime: Sendable {
     } else {
       handoverReason = .operatorMove(reason: reason)
     }
-    let attempt = adoption.attempt
     let packet = try await seal(
-      task: adoption.task, attempt: attempt, snapshot: snapshot, bundle: bundle,
+      task: adoption.task, attempt: adoptedAttempt, snapshot: snapshot, bundle: bundle,
       reason: handoverReason, resumeStepId: resume, progressNote: snapshot.session.suspend?.progressNote,
-      cliSinks: cliSinks, producer: .human(principal: principal)
+      cliSinks: cliSinks, producer: .human(principal: principal), ownerAlive: true,
+      adoptedWithoutLease: true
     )
     return (adoption.task, packet)
   }
@@ -218,7 +280,8 @@ struct TaskHandoverRuntime: Sendable {
     producer: EvidenceProducer,
     variables: JSONObject = [:],
     ownerAlive: Bool = false,
-    expectedTaskVersion: Int? = nil
+    expectedTaskVersion: Int? = nil,
+    adoptedWithoutLease: Bool = false
   ) async throws -> HandoverPacket {
     let reference: WorkflowReference
     guard case let .workflow(value)? = task.plan else { throw WorkStoreError("task has no workflow reference") }
@@ -254,7 +317,7 @@ struct TaskHandoverRuntime: Sendable {
       builderInput: input,
       publisher: task.context == nil ? nil : TaskDeliverablePublisher(
         store: located.store,
-        reservationFence: (try? located.store.loadLease(attemptId: attempt.id)?.fence) ?? -1,
+        reservationFence: adoptedWithoutLease ? nil : (try? located.store.loadLease(attemptId: attempt.id)?.fence) ?? -1,
         workflow: bundle.workflow,
         nodePayloads: bundle.nodePayloads
       ),
@@ -263,6 +326,20 @@ struct TaskHandoverRuntime: Sendable {
       predecessorOutcome: WorkEvidenceProjector.outcome(from: snapshot),
       expectedTaskVersion: expectedTaskVersion ?? currentTask.version
     ))
+  }
+
+  private static func runAdoptionGit(_ arguments: [String], at directory: URL) throws -> GitCommandResult {
+    try FoundationGitCommandRunner().run(GitCommandInvocation(
+      executableURL: URL(fileURLWithPath: "/usr/bin/git"),
+      arguments: arguments,
+      workingDirectory: directory,
+      environment: ProcessInfo.processInfo.environment,
+      standardInput: nil
+    ))
+  }
+
+  private static func stderrHead(_ output: String) -> String {
+    String(output.split(whereSeparator: \.isNewline).first ?? "git switch failed")
   }
 }
 

@@ -40,6 +40,8 @@ final class TaskHandoverDispatchTests: XCTestCase {
     let project = harness.sessionStore.appendingPathComponent("adoption-project", isDirectory: true)
     let workflowDirectory = project.appendingPathComponent(".riela/workflows/\(workflowId)", isDirectory: true)
     try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try "gitdir: \(project.appendingPathComponent("missing-git-dir").path)\n"
+      .write(to: project.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
     let workflow: [String: Any] = [
       "workflowId": workflowId,
       "defaults": ["nodeTimeoutMs": 2_000, "maxLoopIterations": 1],
@@ -96,6 +98,117 @@ final class TaskHandoverDispatchTests: XCTestCase {
     XCTAssertEqual(try harness.store.loadTask(id: adopted.id)?.state, .waiting)
     XCTAssertEqual(try harness.store.loadHandover(id: packet.id)?.digest, packet.digest)
     XCTAssertEqual(try harness.store.listAttempts(taskId: adopted.id).last?.sessionId, sessionId)
+  }
+
+  func testAdoptedRepositorySessionPublishesAndTakesOverFromSecondClone() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let repository = try TaskHandoverRepositoryFixture()
+    defer { repository.remove() }
+    let workflowId = "adopted-repository-handover-fixture"
+    let workflowDirectory = repository.clone.appendingPathComponent(".riela/workflows/\(workflowId)", isDirectory: true)
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    let workflowJSON: [String: Any] = [
+      "workflowId": workflowId,
+      "defaults": ["nodeTimeoutMs": 2_000, "maxLoopIterations": 1],
+      "entryStepId": "start",
+      "nodes": [["id": "node", "nodeFile": "node.json"]],
+      "steps": [
+        ["id": "start", "nodeId": "node", "transitions": [["toStepId": "resume"]]],
+        ["id": "resume", "nodeId": "node"]
+      ]
+    ]
+    let nodeJSON: [String: Any] = [
+      "id": "node", "nodeType": "command", "model": "", "modelFreeze": false,
+      "command": ["executable": "/usr/bin/true", "arguments": []]
+    ]
+    try JSONSerialization.data(withJSONObject: workflowJSON, options: [.sortedKeys])
+      .write(to: workflowDirectory.appendingPathComponent("workflow.json"))
+    try JSONSerialization.data(withJSONObject: nodeJSON, options: [.sortedKeys])
+      .write(to: workflowDirectory.appendingPathComponent("node.json"))
+    try repository.write("dirty adoption change", to: "README.md")
+
+    let sessionId = "adopted-repository-session"
+    let now = Date()
+    let session = WorkflowSession(
+      workflowId: workflowId, sessionId: sessionId, status: .suspended,
+      entryStepId: "start", currentStepId: "resume", createdAt: now, updatedAt: now,
+      suspend: SuspendRecord(
+        reasonKind: .operatorMove, stepId: "resume", progressNote: "Move this repository task",
+        suspendedAt: now, producer: .runtime
+      )
+    )
+    let runtimeRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: harness.sessionStore.path)
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot).save(
+      WorkflowRuntimePersistenceSnapshot(session: session)
+    )
+    let placeholder = WorkTask(
+      id: TaskID("adopted-repository-placeholder"), intentId: IntentID("adopted-repository-placeholder"),
+      title: "Adoption runtime", instruction: "unused", plan: .workflow(WorkflowReference(name: workflowId))
+    )
+    let options = TaskStoreOptions(
+      scope: .project, workingDirectory: repository.clone.path, sessionStore: harness.sessionStore.path
+    )
+    let runtime = TaskHandoverRuntime(
+      located: TaskCommandRunner.LocatedTask(task: placeholder, store: harness.store, root: harness.store.rootDirectory),
+      options: options
+    )
+    let refusedBranch = "riela/task/task-adopted-\(sessionId)/g1"
+    _ = try repository.git(["branch", refusedBranch])
+    do {
+      _ = try await runtime.adoptAndSeal(
+        sessionId: sessionId, workingDirectory: repository.clone.path, reason: "move to second clone",
+        principal: "test", cliSinks: []
+      )
+      XCTFail("expected existing target branch to refuse adoption")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains("session adoption refused"))
+    }
+    XCTAssertNil(try harness.store.loadTask(id: TaskID("task-adopted-\(sessionId)")))
+    _ = try repository.git(["branch", "-D", refusedBranch])
+    let (adopted, packet) = try await runtime.adoptAndSeal(
+      sessionId: sessionId, workingDirectory: repository.clone.path, reason: "move to second clone",
+      principal: "test", cliSinks: []
+    )
+    let repositoryDeliverable = try XCTUnwrap(packet.deliverables.compactMap { value -> RepositoryDeliverable? in
+      if case let .repository(item) = value { return item }
+      return nil
+    }.first)
+    XCTAssertEqual(repositoryDeliverable.state, .published)
+    let branch = "riela/task/\(adopted.id.rawValue)/g\(try XCTUnwrap(harness.store.listAttempts(taskId: adopted.id).last?.generation))"
+    XCTAssertEqual(repositoryDeliverable.branch, branch)
+    let adoptedAttempt = try XCTUnwrap(harness.store.listAttempts(taskId: adopted.id).last)
+    XCTAssertEqual(adoptedAttempt.isolation?.branch, branch)
+    XCTAssertEqual(try repository.git(["show", "\(repositoryDeliverable.headCommit ?? ""):README.md"])
+      .trimmingCharacters(in: .whitespacesAndNewlines), "dirty adoption change")
+
+    _ = try runtime.requestTakeover(taskId: adopted.id, traits: [], producer: .human(principal: "test"))
+    let successorRoot = try repository.secondClone()
+    let workflow = WorkflowDefinition(
+      workflowId: workflowId,
+      defaults: .init(nodeTimeoutMs: 2_000, maxLoopIterations: 1),
+      entryStepId: "start",
+      nodeRegistry: [.init(id: "node", nodeFile: "node.json")],
+      steps: [.init(id: "start", nodeId: "node", transitions: [.init(toStepId: "resume")]), .init(id: "resume", nodeId: "node")],
+      nodes: [.init(id: "node", nodeFile: "node.json")]
+    )
+    let bundle = ResolvedWorkflowBundle(
+      workflow: workflow,
+      nodePayloads: ["node": .init(
+        id: "node", nodeType: .command, model: "", command: .init(executable: "/usr/bin/true", arguments: [])
+      )],
+      sourceScope: .project, workflowDirectory: repository.clone.path
+    )
+    let resolver = TaskExampleBundleResolver(bundle: bundle)
+    let dispatch = TaskDispatch(
+      resolver: resolver, hostResolver: TaskHandoverTestHostResolver(), runner: WorkflowRunCommand(resolver: resolver)
+    )
+    let takeoverOptions = TaskStoreOptions(
+      scope: .project, workingDirectory: successorRoot.path, sessionStore: harness.sessionStore.path
+    )
+    let result = await dispatch.run(taskId: adopted.id.rawValue, options: takeoverOptions, dryRun: false, output: .json)
+    XCTAssertEqual(result.exitCode, .success, "stderr: \(result.stderr); stdout: \(result.stdout)")
+    XCTAssertEqual(try harness.store.loadTask(id: adopted.id)?.state, .succeeded)
   }
 
   func testEnvelopeSealsThenAnswerTakeoverImportsHistoryAndCompletes() async throws {

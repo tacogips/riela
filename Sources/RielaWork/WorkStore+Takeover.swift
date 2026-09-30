@@ -17,6 +17,15 @@ public struct OrphanFenceResult: Equatable, Sendable {
 }
 
 public extension WorkStore {
+  static func takeoverRepositoryRefusal(_ packet: HandoverPacket) -> String? {
+    for deliverable in packet.deliverables {
+      guard case let .repository(repository) = deliverable,
+            case let .checkpointFailed(reason) = repository.state else { continue }
+      return "takeover repository deliverable checkpoint failed: \(reason)"
+    }
+    return nil
+  }
+
   func fenceOrphan(taskId: TaskID, now: Date, producer: DecisionProducer) throws -> OrphanFenceResult {
     let database = try openWritable()
     return try database.transaction { database in
@@ -143,6 +152,7 @@ public extension WorkStore {
          try latestAnswer(handoverId: packet.id, in: database) == nil {
         throw WorkStoreError("handover \(packet.id.rawValue) needs an answer: riela task answer \(taskId.rawValue) --question \(question.id) …")
       }
+      if let refusal = Self.takeoverRepositoryRefusal(packet) { throw WorkStoreError(refusal) }
       if let pending = try database.query(
         "SELECT request_id FROM work_pending_reservations WHERE task_id = ? AND consumed_attempt_id IS NULL AND json_extract(entry_record, '$.kind') = 'takeover' LIMIT 1",
         bindings: [.text(taskId.rawValue)]

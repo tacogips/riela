@@ -126,12 +126,16 @@ extension TaskDispatch {
       let policy = reservation.task.guardPolicy.handover?.publish ?? PublicationPolicy()
       let isolation: IsolationRef
       if case .takeover = reservation.attempt.entry,
-         let deliverable = takeoverPacket?.deliverables.compactMap({ value -> RepositoryDeliverable? in
+         let takeoverPacket,
+         let deliverable = takeoverPacket.deliverables.compactMap({ value -> RepositoryDeliverable? in
            if case let .repository(repositoryValue) = value { return repositoryValue }
            return nil
          }).first {
-        guard case .published = deliverable.state else {
-          throw WorkStoreError("takeover repository deliverable is not published")
+        switch deliverable.state {
+        case .published, .unpublished:
+          break
+        case .checkpointFailed:
+          throw WorkStoreError(WorkStore.takeoverRepositoryRefusal(takeoverPacket) ?? "takeover repository deliverable is unavailable")
         }
         isolation = try await workspace.materialize(
           deliverable, into: options.workingDirectory,
@@ -281,6 +285,9 @@ extension TaskDispatch {
     if case .takeover = entry {
       takeoverPacket = try packetOverride ?? store.latestHandover(taskId: taskId)
       guard takeoverPacket != nil else { throw WorkStoreError("takeover reservation has no sealed handover packet") }
+      if let takeoverPacket, let refusal = WorkStore.takeoverRepositoryRefusal(takeoverPacket) {
+        throw WorkStoreError(refusal)
+      }
     } else {
       takeoverPacket = packetOverride
     }

@@ -36,7 +36,7 @@ actor TaskHandoverCheckpointCoordinator {
 
 struct TaskDeliverablePublisher: DeliverablePublisher {
   var store: WorkStore
-  var reservationFence: Int
+  var reservationFence: Int?
   var workspace: any WorkspaceHandoverRuntime = GitBranchWorkspaceRuntime()
   var workflow: WorkflowDefinition
   var nodePayloads: [String: AgentNodePayload]
@@ -61,7 +61,8 @@ struct TaskDeliverablePublisher: DeliverablePublisher {
       return deliverables
     }
     if ownerAlive {
-      guard (try? store.loadLease(attemptId: attempt.id)?.fence) == reservationFence else {
+      if let reservationFence,
+         (try? store.loadLease(attemptId: attempt.id)?.fence) != reservationFence {
         deliverables.append(.repository(RepositoryDeliverable(
           root: isolation.path, remote: policy.remote, branch: branch,
           baseRevision: baseRevision, state: .checkpointFailed(reason: "fenced")

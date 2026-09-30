@@ -19,6 +19,20 @@ public extension WorkStore {
     return changed == 1
   }
 
+  @discardableResult
+  func recordAdoptedAttemptIsolation(attemptId: AttemptID, isolation: IsolationRef) throws -> Bool {
+    let database = try openWritable()
+    let encoded = try JSONCanonical.encode(isolation)
+    guard let value = String(data: encoded, encoding: .utf8) else {
+      throw WorkStoreError("attempt isolation is not valid UTF-8 JSON")
+    }
+    let changed = try database.executeAndReturnChangedRowCount(
+      "UPDATE work_attempts SET record = jsonb_set(record, '$.isolation', jsonb(?)) WHERE attempt_id = ? AND state = 'terminal' AND json_extract(record, '$.isolation') IS NULL",
+      bindings: [.text(value), .text(attemptId.rawValue)]
+    )
+    return changed == 1
+  }
+
   /// Clears the live-cancellation barrier for a director handover without
   /// reconciling the predecessor. The handover seal owns reconciliation.
   func acknowledgeHandoverCancellation(taskId: TaskID, attemptId: AttemptID) throws {

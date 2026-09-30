@@ -855,7 +855,8 @@ uses `riela/memory-*` or `riela/kv-*` without a kaiba mirror step.
    the ledger delta (bounded like a packet). The controller reconciles the
    attempt and runs verification and director exactly as for a local
    attempt. A successor that itself hands over reports a new packet in the
-   same call.
+   same call. Each lease credential authorizes at most one report, even
+   when two reports race (§14, R32).
 5. A missed heartbeat expires the lease on the controller; the next
    takeover fences the successor as §11 describes.
 
@@ -1057,6 +1058,18 @@ mutations). The catalog parity gates cover every new row.
     derivable from public ids (no `consumed:<attemptId>:<sessionId>`
     digest), the credential is never logged or persisted in clear, and a
     later rotation (the director child relaunch) invalidates it.
+  - **Report claim.** `reportAttempt` first validates its input read-only
+    (snapshot decode, session match), then claims the report with one
+    compare-and-swap write transaction: it rotates `work_leases.token_digest`
+    (and `attempt.launch.tokenDigest` with it) from the presented
+    credential's digest to the digest of a fresh random value that is never
+    returned, and proceeds only when exactly one row changed. The lease row,
+    its fence and its `expires_at` stay, so a reconciliation that fails after
+    the claim leaves the attempt recoverable through `--force-orphan` once
+    the lease expires. Of two concurrent reports with the same credential,
+    exactly one claims and reconciles; the other gets `unauthorized` and
+    changes no task, attempt, decision or evidence row. A replay after
+    reconciliation also gets `unauthorized` (Q11 default (a)).
   `--force-orphan` is a human decision recorded with the CLI principal.
 - **Fencing beats trust.** A successor cannot be blocked by a dead owner,
   and a live owner cannot silently continue after a takeover; the fence is
@@ -1319,3 +1332,4 @@ Reconciliation at `ffec37fc` (wh-15 resume, 2026-10-01):
 | --- | --- | --- | --- |
 | R30 | §12 lists `task handover … [--reason]` as optional | `--reason <text>` is required for `task handover`; `session handover` keeps `[--reason]` | accepted `impl-plans/active/wh-15-task-commands.md:57` and the wh-15 WIP (`TaskHandoverCommands.swift:321`, commit `33d05e75`) require it; an operator handover is recorded as a `Decision`, whose reason is mandatory |
 | R31 | §14 "the successor's lease token is single-use per attempt"; §10.2 returns "a heartbeat token" without saying which | the launch token stays one-use; `authorizeAttemptLaunch` mints a random lease credential, stores only its digest in place of the launch digest, and returns it; `takeoverTask` returns it as `heartbeatToken`, which `heartbeatAttempt` and `reportAttempt` (completed and suspended) verify. No new column and no schema-generation bump | at `09953552`, `authorizeAttemptLaunch` (`WorkStore+Reservation.swift:342-356`) replaces the lease digest with `SHA256("consumed:<attemptId>:<sessionId>")`, so the returned launch token fails `verifyLeaseToken` (`WorkStore+Leases.swift:39-45`; wh-16 focused 40/41). Returning that consumed value instead would make the credential derivable from public ids. A separate heartbeat digest column would need a schema change the single-digest form avoids. `markAttemptNodeStarted` and the director child rotation (`WorkStore+Director.swift:46-58`) already match the lease row on `attempt.launch.tokenDigest`, so they keep working |
+| R32 | §14 said `reportAttempt` verifies the lease credential but not when it is consumed; the wh-16 amendment asked for the check "inside the same write transaction that reconciles the report" | `reportAttempt` claims the report with a compare-and-swap that rotates the lease digest to an unreturned random value before any side effect (§14 "Report claim"); the loser of a race gets `unauthorized` with no row changed. The row is rotated, not deleted, so orphan recovery still finds it. No new column and no schema-generation bump | at `3f9bcea2`, the provider calls the read-only `verifyLeaseToken` (`TaskHandoverGraphQLProvider.swift:242`, `WorkStore+Leases.swift:39-45`) and then `reconcileExternalTerminal` (`TaskDispatch+Handover.swift:419-477`), which saves the snapshot, resolves the bundle and awaits `sealSuspended` or `reconcileTerminal` across several transactions, so no single transaction spans verification and reconciliation. The lease row is deleted only at the end (`WorkStore+Reservation.swift:755`, `WorkStore+Handovers.swift:172`, `WorkStore+Decisions.swift:173`), so two reports can both pass verification. `fenceOrphan` refuses a task with no lease row (`WorkStore+Takeover.swift:33-42`) and `reconcileExpired` finds candidates only through `expiredLeases` (`TaskHandoverRuntime.swift:54`, `WorkStore+Leases.swift:47`), so deleting the row at claim time would strand an attempt whose reconciliation then fails |

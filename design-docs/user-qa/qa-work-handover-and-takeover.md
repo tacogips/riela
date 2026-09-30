@@ -162,3 +162,5 @@ a publish failure (for example, an unreachable remote) needs an operator.
 **Default until answered**: (a). It needs no new state. A successor that loses the first response can read the outcome with `taskHandover` or `riela task show`.
 
 **Impact**: under (a), a successor that retries after a lost response sees an error even though its report was applied.
+
+**Concurrent reports (2026-10-01, design §14 "Report claim", §21 R32)**: the same rule holds when two reports with one credential race. The report claims the credential with a compare-and-swap before any side effect; exactly one report reconciles and the other gets `unauthorized` with no change. This is at-most-once reconciliation, not option (b).

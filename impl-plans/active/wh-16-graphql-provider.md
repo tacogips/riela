@@ -263,7 +263,7 @@ Tests to add:
   - A takeover reserved through a pending request makes `reservationDecision(attemptId: successor)` return the pending takeover decision.
   - A plain reservation makes it return the decision whose `attemptId` is that attempt.
   - An unknown attempt returns `nil`.
-- `TaskHandoverGraphQLProviderTests`: sequential replay (Q11 default (a)). A second `reportAttempt` with the same `heartbeatToken`, sent after a completed report, throws `unauthorized`, and neither the task state nor the decision count changes. The lease row was deleted by `reconcileAttempt` (`WorkStore+Reservation.swift:725`).
+- `TaskHandoverGraphQLProviderTests`: sequential replay (Q11 default (a)). A second `reportAttempt` with the same `heartbeatToken`, sent after a completed report, throws `unauthorized`, and neither the task state nor the decision count changes. The lease row was deleted by `reconcileAttempt` (`WorkStore+Reservation.swift:755`).
 
 Verification: use the session-11 gate commands above (`build-s11.log`, `work-s11.log`, `focused-s11.log`, `git diff --check`, and the `consumed:` grep). Each must end with `exit=0`, and each test log must show a non-zero test count and 0 failures. Then tick this plan's Done criteria and the progress log's completion criteria, citing those logs.
 
@@ -272,3 +272,69 @@ Coverage note: the replay regression originally covered only sequential replay. 
 ### Concurrent replay amendment (2026-10-01, after run session-12)
 
 wh-16 is feature-complete and committed ('wip: wh-16 GraphQL provider feature-complete ...'). The one remaining item is the medium finding it logged: two concurrent `reportAttempt` calls can both pass `verifyLeaseToken` before the first reconciliation deletes the lease row. Fix it in this plan: verify and consume the lease credential atomically inside the same write transaction that reconciles the report (for example a conditional `DELETE ... WHERE attempt_id = ? AND token_digest = ?` whose affected-row count must be 1, or an equivalent compare-and-swap), so exactly one report wins and the loser gets `unauthorized` with no state or decision change. Add a regression that issues two reports concurrently and asserts one success, one `unauthorized`, one decision. Keep sequential replay rejection. Then report no open finding for it.
+
+### Concurrent report claim (2026-10-01, run session-13; design §14 "Report claim", §21 R32)
+
+This section makes the amendment above executable. Where the two differ, this section wins. It adds no writePath and no sharedPath.
+
+Resume from HEAD. The provider, executor chains, serve wiring, R31 lease credential and `reservationDecision(attemptId:)` are done. Do not restart or restructure them.
+
+Why the amendment's literal wording cannot hold: `reconcileExternalTerminal` (`TaskDispatch+Handover.swift:419-477`) saves the snapshot, resolves the bundle and awaits `sealSuspended` or `reconcileTerminal` across several transactions. No single transaction can hold both the credential check and the reconciliation. The report therefore **claims** the credential with a compare-and-swap before any side effect.
+
+File-level changes:
+- `Sources/RielaWork/WorkStore+Leases.swift` (writePath). Add
+  `func claimLeaseForReport(attemptId: AttemptID, token: String, now: Date = Date()) throws -> Bool`.
+  - Use one `openWritable()` + `database.transaction { ... }` (`BEGIN IMMEDIATE` by default, 3 s busy timeout via `.writableDefault`).
+  - Inside it: mint `UUID().uuidString.lowercased()`, compute its `Self.launchTokenDigest`, and run
+    `UPDATE work_leases SET token_digest = ?, updated_at = ? WHERE attempt_id = ? AND token_digest = ?` with the presented token's digest in the last binding (`executeAndReturnChangedRowCount`).
+  - Changed rows `!= 1` → return `false` (no lease row, or the digest was already rotated/deleted). Write nothing else in that case.
+  - Changed rows `== 1` → load the attempt with `requiredAttempt`, set `attempt.launch?.tokenDigest` to the new digest and `attempt.launch?.updatedAt = now`, `replaceAttempt`, return `true`. This keeps the §14 invariant `attempt.launch.tokenDigest == work_leases.token_digest`.
+  - Pattern to imitate: `authorizeAttemptLaunchIssuingLeaseCredential` (`WorkStore+Reservation.swift:382-413`) and the director rotation (`WorkStore+Director.swift:46-58`).
+  - Throw only for storage errors. Do not return or log the minted value; discard it.
+- `Sources/RielaCLI/TaskHandoverGraphQLProvider.swift` (writePath), `reportAttempt`:
+  - New order: `locateAttempt` → decode `snapshot` and `deliverables` → load the attempt and require `snapshot.session.sessionId == attempt.sessionId` (`invalid_input` as today) → `claimLeaseForReport` → `reconcileExternalTerminal` → build the payload as today.
+  - `claimLeaseForReport` returning `false` → throw `TaskHandoverGraphQLError(code: "unauthorized", message: "lease token does not match")`. A thrown storage error propagates unchanged; do not map it to `unauthorized`.
+  - Remove the `verifyLeaseToken` call from `reportAttempt` only. `heartbeatAttempt` keeps `verifyLeaseToken` unchanged.
+
+Invariants and pitfalls:
+- Rotate the row; never `DELETE` it at claim time. `fenceOrphan` (`WorkStore+Takeover.swift:33-42`) and `expiredLeases` (`WorkStore+Leases.swift:47`) need the row, its `fence` and `expires_at` to recover an attempt whose reconciliation throws after the claim. The later unconditional deletes (`WorkStore+Reservation.swift:755`, `WorkStore+Handovers.swift:172`, `WorkStore+Decisions.swift:173`) still remove it on success.
+- Do not change `fence`, `expires_at` or `heartbeat_at` in the claim.
+- Do not add a column, and do not bump `schemaGeneration`. Do not add a "reporting" state or phase.
+- Do not wrap `reconcileExternalTerminal` in a lock, actor or transaction, and do not edit `TaskDispatch+Handover.swift` for this fix.
+- Never write the presented token, the minted value or either digest to a log, evidence, progress log or test failure message.
+- Keep Q11 default (a): no result caching and no idempotent re-return of the first result.
+
+Tests to add:
+- `Tests/RielaWorkTests/WorkStoreLeaseTests.swift`:
+  - A reserved and authorized attempt: `claimLeaseForReport(leaseCredential)` → `true`. Afterwards the lease row still exists with an unchanged `fence` and `expiresAt`, its digest differs from `launchTokenDigest(leaseCredential)`, and it equals `attempt.launch.tokenDigest`.
+  - A second `claimLeaseForReport` with the same credential → `false`, and the lease row and attempt record are byte-for-byte unchanged from after the first claim.
+  - A wrong token → `false`. An attempt with no lease row → `false`.
+  - A concurrent claim: two separate `WorkStore` instances on the same root call `claimLeaseForReport` with the same credential through `DispatchQueue.concurrentPerform(iterations: 2)` → exactly one `true`, one `false`, no thrown error.
+  - After a claim, `expiredLeases(now: expiresAt + 1s)` still lists the attempt.
+- `Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift`: add `testConcurrentReportsWithSameCredentialReconcileExactlyOnce`. Reuse the fixture of `testReportCompletedAttemptAcceptsLeaseCredentialAndReconcilesTask` (the `TaskExampleHarness`, `savePredecessor`, `savePresencePacket`, `takeoverTask`, completed snapshot). Record the decision count before reporting. Issue two `reportAttempt` calls with the same `heartbeatToken` concurrently (`withThrowingTaskGroup` or two `async let`s, each result captured as success or `TaskHandoverGraphQLError`).
+  - Exactly one success, with `taskState == succeeded` and `decisionKind == "accept"`.
+  - Exactly one `TaskHandoverGraphQLError` with `code == "unauthorized"`. Any other error fails the test.
+  - Exactly one decision satisfies `attemptId == <successor attemptId> && kind.kindName == "accept"`. The task version increased exactly once per applied decision, so `loadTask(id:)` equals the state a single report leaves (`succeeded`).
+- Keep the existing sequential replay assertions in `testReportCompletedAttemptAcceptsLeaseCredentialAndReconcilesTask` unchanged, and keep the suspended-report test green.
+
+Progress log (`impl-plans/progress/wh-16-graphql-provider.md`):
+- Mark the medium concurrent-replay finding resolved and cite the two new tests and the session-13 logs. Leave no open finding for it.
+- Add a Done criterion: "Concurrent reportAttempt with one credential reconciles exactly once; the loser gets unauthorized (design §14 Report claim, R32)."
+
+Verification (session-13). Use new log names so earlier `*-s11.log` files cannot be mistaken for fresh evidence. Each command must end with `exit=0`, and each test log must show a non-zero test count and `0 failures`:
+```
+arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-16-graphql-provider/build-s13.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/build-s13.log'
+arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreLeaseTests|WorkStoreReservationTests|TaskDispatcherTests|WorkStoreTakeoverTests|DecisionApplierStoreTests|WorkStoreCancellationTests" > tmp/work-handover/wh-16-graphql-provider/work-s13.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/work-s13.log'
+arch -arm64 /bin/zsh -lc 'swift test --filter "TaskHandoverGraphQLProviderTests|TaskHandoverGraphQLTests|WorkflowExecutionGraphQLTests|ServeWeb" > tmp/work-handover/wh-16-graphql-provider/focused-s13.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/focused-s13.log'
+arch -arm64 /bin/zsh -lc 'swift test --filter "TaskHandoverGraphQLProviderTests/testConcurrentReportsWithSameCredentialReconcileExactlyOnce" > tmp/work-handover/wh-16-graphql-provider/concurrent-s13.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-16-graphql-provider/concurrent-s13.log'
+git diff --check
+grep -rn 'consumed:' Sources/RielaWork
+grep -n 'verifyLeaseToken' Sources/RielaCLI/TaskHandoverGraphQLProvider.swift
+```
+The `consumed:` grep must print nothing. The last grep must print exactly one line, the one inside `heartbeatAttempt`.
+
+Done criteria (session-13):
+- [ ] `claimLeaseForReport` exists in `WorkStore+Leases.swift`, rotates the digest without deleting the row, and keeps `attempt.launch.tokenDigest` equal to the lease digest.
+- [ ] `reportAttempt` validates input, then claims, then reconciles; it no longer calls `verifyLeaseToken`.
+- [ ] The WorkStore claim tests, the provider concurrent test and the sequential replay assertions pass in `work-s13.log`, `focused-s13.log` and `concurrent-s13.log`.
+- [ ] The progress log marks the concurrent-replay finding resolved and lists no open finding.

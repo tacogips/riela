@@ -5,9 +5,7 @@
   "planId": "wh-17-examples",
   "planPath": "impl-plans/active/wh-17-examples.md",
   "wave": "W4",
-  "dependsOn": [
-    "wh-16-graphql-provider"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "examples/task-handover-answer",
     "examples/task-handover-presence",
@@ -18,7 +16,62 @@
     "impl-plans/progress/wh-17-examples.md"
   ],
   "sharedPaths": [
-    "README.md"
+    "README.md",
+    "Sources/RielaCLI/RielaLibrary.swift",
+    "Sources/RielaCLI/ScopedParityCommands+GraphQLDocument.swift",
+    "Sources/RielaCLI/ServeWebHost.swift",
+    "Sources/RielaCLI/TaskDispatch+Director.swift",
+    "Sources/RielaCLI/TaskDispatch+Handover.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaCLI/TaskHandoverGraphQLProvider.swift",
+    "Sources/RielaCLI/TaskHandoverRuntime.swift",
+    "Sources/RielaCLI/TaskHandoverSupport.swift",
+    "Sources/RielaCLI/TaskRunCancellation.swift",
+    "Sources/RielaWork/DecisionApplier.swift",
+    "Sources/RielaWork/HandoverBriefRenderer.swift",
+    "Sources/RielaWork/HandoverCoordinator.swift",
+    "Sources/RielaWork/HandoverPacketBuilder.swift",
+    "Sources/RielaWork/HandoverProtocols.swift",
+    "Sources/RielaWork/HandoverRedaction.swift",
+    "Sources/RielaWork/TaskDispatcher.swift",
+    "Sources/RielaWork/TaskGuardCoordinator.swift",
+    "Sources/RielaWork/WorkHandover.swift",
+    "Sources/RielaWork/WorkStore+Adoption.swift",
+    "Sources/RielaWork/WorkStore+Decisions.swift",
+    "Sources/RielaWork/WorkStore+Director.swift",
+    "Sources/RielaWork/WorkStore+HandoverRequests.swift",
+    "Sources/RielaWork/WorkStore+Handovers.swift",
+    "Sources/RielaWork/WorkStore+Hosts.swift",
+    "Sources/RielaWork/WorkStore+Isolation.swift",
+    "Sources/RielaWork/WorkStore+Leases.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
+    "Sources/RielaWork/WorkStore+Schema.swift",
+    "Sources/RielaWork/WorkStore+Takeover.swift",
+    "Sources/RielaWork/WorkStore.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+Director.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests+SelectedHostFixtures.swift",
+    "Tests/RielaCLITests/TaskDispatcherIntegrationTests.swift",
+    "Tests/RielaCLITests/TaskHandoverCommandTests.swift",
+    "Tests/RielaCLITests/TaskHandoverDispatchTests.swift",
+    "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
+    "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
+    "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
+    "Tests/RielaWorkTests/DecisionApplierTests.swift",
+    "Tests/RielaWorkTests/DeterministicDirectorHandoverTests.swift",
+    "Tests/RielaWorkTests/HandoverCoordinatorTests.swift",
+    "Tests/RielaWorkTests/HandoverPacketBuilderTests.swift",
+    "Tests/RielaWorkTests/TaskDispatcherTests.swift",
+    "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
+    "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
+    "Tests/RielaWorkTests/WorkStoreHandoverRequestTests.swift",
+    "Tests/RielaWorkTests/WorkStoreLeaseTests.swift",
+    "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
+    "Tests/RielaWorkTests/WorkStoreTests.swift"
   ],
   "sharedPathNotes": [
     {
@@ -113,3 +166,9 @@ If the validate flag spelling differs, use the form `riela workflow validate --h
 A partial wh-17 implementation from run session-9 was parked because it broke the shared build: `tmp/work-handover/parked/wh-17-tracked.patch` (README.md, RielaExampleCatalog.swift, RielaExampleParityTests.swift) and `tmp/work-handover/parked/wh-17-untracked.tar` (TaskHandoverExampleTests.swift, the three examples/task-handover-* bundles, the progress log). Restore them first (`git apply tmp/work-handover/parked/wh-17-tracked.patch` and `tar -xf tmp/work-handover/parked/wh-17-untracked.tar`), then fix `TaskHandoverExampleTests.swift`, which passes an unsupported `beforeExecution` argument to `TaskDispatch.run`, against the current API. wh-17 now depends on wh-16 and runs alone.
 
 At HEAD 09953552, `beforeExecution` is a stored property on `TaskDispatch` (`Sources/RielaCLI/TaskDispatch.swift:130`, invoked at `:322`), not a `run(...)` parameter. Set it on the `TaskDispatch` value before calling `run`, and do not add a parameter to `TaskDispatch.run`, which is outside writePaths. Before running any test, confirm that `arch -arm64 /bin/zsh -lc 'swift build'` exits 0 with the restored files.
+
+### Serial-wave shared ownership (2026-10-01, after run session-13)
+
+The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store, decision and GraphQL-provider file that no remaining plan owns (listed in `sharedPaths`). Do not block on those files; fix a defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.
+
+For wh-17: a partial wh-17 is committed ('wip: partial wh-17 task handover examples'); complete it. The orphan example exposed a runtime defect: successor guard evaluation at `Sources/RielaCLI/TaskDispatch.swift:432-439` rejects the takeover with "task attempt has no durable terminal session for guard evaluation" when the fenced dead predecessor never persisted a terminal session (tmp/work-handover/wh-17-examples/orphan-after-review.log). Fix it in the runtime so guard evaluation accepts a fenced, reconciled `failed(.leaseLost)` or never-launched predecessor without violating R26 (single terminal write), add a runtime regression, then make the orphan example pass end to end with a real session (no fake session).

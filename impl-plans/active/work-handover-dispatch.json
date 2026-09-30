@@ -37,7 +37,7 @@
  ],
  "evidenceRoot": "tmp/work-handover",
  "reviewContext": {
-  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20. Re-accepted at HEAD c0a138b9 (partial wh-10 committed at 08d4fc10; design §21 R23/R24 and the wh-10 resume checklist added) by step5-impl-plan-review in communication comm-000106 of workflow execution opus-luna-design-and-implement-review-loop-session-3 (accepted, findings []).",
+  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []). Re-accepted at HEAD 7182232d (wh-00..wh-09 and wh-11..wh-13 committed in d043cbad; wh-10 writePaths widened in 7182232d) by step5-impl-plan-review in communication comm-000093 of workflow execution opus-luna-design-and-implement-review-loop-session-2 (accepted, findings []); remaining plans wh-10, wh-14..wh-20. Re-accepted at HEAD c0a138b9 (partial wh-10 committed at 08d4fc10; design \u00a721 R23/R24 and the wh-10 resume checklist added) by step5-impl-plan-review in communication comm-000106 of workflow execution opus-luna-design-and-implement-review-loop-session-3 (accepted, findings []).",
   "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
   "requiredOutcomes": [
    "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",
@@ -138,44 +138,9 @@
  },
  "plans": [
   {
-   "planId": "wh-10-host-traits",
-   "planPath": "impl-plans/active/wh-10-host-traits.md",
-   "dependsOn": [],
-   "writePaths": [
-    "Sources/RielaWork/BackendCapabilityPlacement.swift",
-    "Sources/RielaCLI/HostCapabilityResolver.swift",
-    "Sources/RielaAppSupport/DaemonWorkflowSupport.swift",
-    "Sources/RielaCLI/DistributedWorkerCommand.swift",
-    "Sources/RielaServer/DistributedWorkerHTTPRouter.swift",
-    "Sources/RielaCLI/DoctorCommand.swift",
-    "Tests/RielaWorkTests/BackendCapabilityPlacementTraitsTests.swift",
-    "Tests/RielaCLITests/HostTraitsResolverTests.swift",
-    "Sources/RielaServer/DistributedWorkerLoop.swift",
-    "Sources/RielaServer/DistributedWorkerProtocol.swift",
-    "Sources/RielaCore/DistributedJobController.swift",
-    "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
-    "Sources/RielaCore/DistributedWorkerModels.swift",
-    "impl-plans/progress/wh-10-host-traits.md"
-   ],
-   "sharedPaths": [],
-   "acceptanceCriteria": [
-    "Traits flow from the app profile hostTraits, the local override and worker.json into host snapshots, trait-aware placement (host-traits-unavailable) and doctor output.",
-    "New trait tests pass; existing placement, doctor and worker suites are green or baseline-classified; the progress log is complete.",
-    "Amended 2026-09-30: worker.json traits flow end to end: DistributedWorkerCommand -> DistributedWorkerLoop -> DistributedWorkerRequest (DistributedWorkerProtocol) -> DistributedWorkerHTTPRouter -> DistributedJobController.register -> worker status/host snapshot, with a DistributedWorkerHTTPTests case asserting registered traits.",
-    "Amended at c0a138b9 (design §21 R24): DistributedWorkerStatus has strict traits: [HostTrait] (sorted, deduplicated, defaulted [] in init) filled from the registration in DistributedJobController.workerStatuses; DistributedWorkerHTTPTests asserts inspectWorkers returns [.gui, .userReachable] for a worker registered with [.userReachable, .gui] and [] for one registered without traits; focused.log ends exit=0 listing both new tests."
-   ],
-   "verification": [
-    "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-10-host-traits/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-10-host-traits/build.log'",
-    "arch -arm64 /bin/zsh -lc 'swift test --filter \"BackendCapabilityPlacementTraitsTests|BackendCapabilityPlacementTests|HostTraitsResolverTests|DoctorCommand|DistributedWorker\" > tmp/work-handover/wh-10-host-traits/focused.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-10-host-traits/focused.log'",
-    "git diff --check"
-   ]
-  },
-  {
    "planId": "wh-14-task-dispatch-runtime",
    "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md",
-   "dependsOn": [
-    "wh-10-host-traits"
-   ],
+   "dependsOn": [],
    "writePaths": [
     "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/TaskDispatch+Handover.swift",
@@ -214,7 +179,8 @@
    "acceptanceCriteria": [
     "The pinned TaskHandoverRuntime API and TaskDispatch additions exist; every trigger seals exactly once.",
     "Takeover, answer injection, repository branch, lease/fence, orphan, reconcile and adoption tests pass; acceptance signals 1-5 are mapped to test names in the progress log.",
-    "Existing task suites are green or baseline-classified; the progress log is complete."
+    "Existing task suites are green or baseline-classified; the progress log is complete.",
+    "Amended 2026-10-01: a presence (userPresenceRequired) takeover enforces required host traits even when the resolved workflow has no backend requirements (wh-10 integration low finding: BackendCapabilityPlacementResolver checks requiredTraits only per backend requirement)."
    ],
    "verification": [
     "arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-14-task-dispatch-runtime/build.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-14-task-dispatch-runtime/build.log'",
@@ -604,6 +570,10 @@
    "planId": "wh-13-gc-sweep",
    "planPath": "impl-plans/active/wh-13-gc-sweep.md",
    "commit": "d043cbad"
+  },
+  {
+   "planId": "wh-10-host-traits",
+   "planPath": "impl-plans/active/wh-10-host-traits.md"
   }
  ]
 }

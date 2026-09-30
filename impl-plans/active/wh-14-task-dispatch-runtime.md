@@ -5,9 +5,7 @@
   "planId": "wh-14-task-dispatch-runtime",
   "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md",
   "wave": "W3",
-  "dependsOn": [
-    "wh-10-host-traits"
-  ],
+  "dependsOn": [],
   "writePaths": [
     "Sources/RielaCLI/TaskDispatch.swift",
     "Sources/RielaCLI/TaskDispatch+Handover.swift",
@@ -224,3 +222,8 @@ This plan proves acceptance signals 1–5 at runtime level. Record the test name
 - [ ] The pinned runtime API and TaskDispatch additions exist; every trigger seals exactly once
 - [ ] The takeover, answer, repository, lease/fence, orphan, reconcile and adoption tests pass
 - [ ] The existing task suites are green or baseline-classified; the progress log is complete
+
+
+## Resume notes (2026-10-01)
+
+wh-10 is accepted and committed. A partial wh-14 implementation is committed (`wip: partial wh-14 ...`): complete it, do not restart it. Remaining work: TaskHandoverDispatchTests, TaskHandoverLeaseTests and TaskHandoverRepositoryTests, the director `.handover` observer capture, and the `everyMs` checkpoint timer. Also enforce required host traits for a presence takeover when the workflow has no backend requirements, in this plan's dispatch path (wh-10 integration low finding).

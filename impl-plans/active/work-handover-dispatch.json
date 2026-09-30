@@ -37,7 +37,7 @@
  ],
  "evidenceRoot": "tmp/work-handover",
  "reviewContext": {
-  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []).",
+  "issueReference": "No GitHub issue was supplied. The work is tracked by design-docs/specs/design-work-handover-and-takeover.md and impl-plans/active/work-handover-and-takeover.md on feat/work-handover-and-takeover (base 01b38f02); accepted by step5-impl-plan-review in communication comm-002928 of workflow execution opus-luna-design-and-implement-review-loop-session-228, and re-accepted unchanged at HEAD c10ac49f by step5-impl-plan-review in communication comm-002951 of workflow execution opus-luna-design-and-implement-review-loop-session-230 (reviewDecision accept, findings []). Re-accepted unchanged at HEAD 6e18f9f5 (after the stale wh-00 dependency was dropped from the wh-01 plan header) by step5-impl-plan-review in communication comm-002964 of workflow execution opus-luna-design-and-implement-review-loop-session-231 (accepted, findings []). Re-accepted at HEAD bb33bbf0 (wh-01 implementation committed; wh-01 scope amended with +3 writePaths/+3 sharedPaths/+3 sharedPathNotes to cover the committed files) by step5-impl-plan-review in communication comm-000006 of workflow execution opus-luna-design-and-implement-review-loop-session-1 (accepted, findings []).",
   "userProblem": "A Work Runtime task attempt that stalls because it needs the user (an answer, or the user's presence on a host) or because its owner died cannot be moved to another worker; the work is stuck on the original process and host.",
   "requiredOutcomes": [
    "A task attempt that emits the handover envelope ends suspended, seals a packet with a stable digest, and task show lists it.",
@@ -107,7 +107,9 @@
    "wh-19 docs are written in the same wave as wh-18; wh-20 re-checks docs against final --help.",
    "ACP pending-status raw value, kaiba note-create input names and the validate flag spelling must be confirmed by workers with recorded evidence.",
    "Shared files (RuntimeStore.swift, DeterministicWorkflowRunner+Events.swift, DecisionApplier.swift, RielaAddons.swift, WorkflowRunCommand.swift, SessionCommands.swift, RielaCommand.swift) are edited in DAG order by several plans; each edit needs a fresh read and wh-20 reruns earlier focused suites (tmp/work-handover/wh-20-reconcile/focused.log).",
-   "Plan line-number citations may shift as earlier waves land; the named symbols are authoritative."
+   "Plan line-number citations may shift as earlier waves land; the named symbols are authoritative.",
+   "Progress-log gap: impl-plans/progress/wh-01-contracts.md does not list the strict 'fence' decoding assertion in Tests/RielaWorkTests/WorkModelsCodableTests.swift; the wh-01 re-verify dispatch records it.",
+   "Placeholder exposure: until wh-03 and wh-14 land, the TaskDispatch .takeover arm throws and decisionKind(for: .takeover) returns .resume; the wh-01 adversarial review confirms no production path reaches them."
   ],
   "sourcePaths": [
    "design-docs/specs/design-work-handover-and-takeover.md",
@@ -123,7 +125,7 @@
    "examples/task-repair-loop"
   ],
   "codexAgentReferences": [],
-  "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions). Session -231 (comm-002964) re-accepted all 20 plans at 6e18f9f5 with no findings: writePaths/sharedPaths concrete and disjoint, DAG headers agree with the manifest, no source drift since 01b38f02."
+  "reviewDecision": "Step 5 impl-plan review accepted all plans (needs_revision=false, needs_design_revision=false, findings=[]); one mid finding in wh-17 was self-repaired (revived-owner fence assertions). Session -231 (comm-002964) re-accepted all 20 plans at 6e18f9f5 with no findings: writePaths/sharedPaths concrete and disjoint, DAG headers agree with the manifest, no source drift since 01b38f02. Session -1 (comm-000006) re-accepted all 20 plans at bb33bbf0 with no findings: the amended wh-01 scope covers all 36 committed wh-01 files, and the new overlaps (WorkStore+Reservation.swift with wh-03, TaskDispatch.swift with wh-14) are serialized by dependsOn."
  },
  "plans": [
   {
@@ -153,6 +155,9 @@
     "Tests/RielaCoreTests/JSONCanonicalTests.swift",
     "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
     "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
+    "Tests/RielaWorkTests/WorkModelsCodableTests.swift",
+    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+    "Tests/RielaCoreTests/AgentNodeOutputContractValidationTests.swift",
     "impl-plans/progress/wh-01-contracts.md"
    ],
    "sharedPaths": [
@@ -163,6 +168,9 @@
     "Sources/RielaCore/RuntimeMessageInputResolver.swift",
     "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift",
     "Sources/RielaCLI/SpecialistCommands.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
     "Sources/RielaWork/DecisionApplier.swift",
     "Tests/RielaWorkTests/Fixtures"
    ],
@@ -194,6 +202,18 @@
     {
      "path": "Sources/RielaCLI/SpecialistCommands.swift",
      "intendedEdit": "Only exhaustive-switch arms for suspended."
+    },
+    {
+     "path": "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+     "intendedEdit": "Committed at bb33bbf0: only the exhaustive-switch arm adding .handover to the persisted run-event list."
+    },
+    {
+     "path": "Sources/RielaCLI/TaskDispatch.swift",
+     "intendedEdit": "Committed at bb33bbf0: only a placeholder `.takeover` entry arm that throws WorkStoreError. wh-14 (writePath owner) replaces it with packet resume-step resolution."
+    },
+    {
+     "path": "Sources/RielaWork/WorkStore+Reservation.swift",
+     "intendedEdit": "Committed at bb33bbf0: only a placeholder `.takeover` arm in decisionKind(for:) returning .resume. wh-03 (writePath owner) replaces it with .takeover(handoverId:, placement:)."
     },
     {
      "path": "Sources/RielaWork/DecisionApplier.swift",

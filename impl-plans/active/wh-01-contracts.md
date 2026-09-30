@@ -29,6 +29,9 @@
     "Tests/RielaCoreTests/JSONCanonicalTests.swift",
     "Tests/RielaWorkTests/WorkHandoverModelsTests.swift",
     "Tests/RielaWorkTests/WorkStoreHandoverRecordsTests.swift",
+    "Tests/RielaWorkTests/WorkModelsCodableTests.swift",
+    "Tests/RielaCLITests/DistributedWorkerConfigurationTests.swift",
+    "Tests/RielaCoreTests/AgentNodeOutputContractValidationTests.swift",
     "impl-plans/progress/wh-01-contracts.md"
   ],
   "sharedPaths": [
@@ -39,6 +42,9 @@
     "Sources/RielaCore/RuntimeMessageInputResolver.swift",
     "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift",
     "Sources/RielaCLI/SpecialistCommands.swift",
+    "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+    "Sources/RielaCLI/TaskDispatch.swift",
+    "Sources/RielaWork/WorkStore+Reservation.swift",
     "Sources/RielaWork/DecisionApplier.swift",
     "Tests/RielaWorkTests/Fixtures"
   ],
@@ -50,6 +56,9 @@
     {"path": "Sources/RielaCore/RuntimeMessageInputResolver.swift", "intendedEdit": "Only exhaustive-switch arms for step status `suspended` (treated like `failed`: not an accepted producer)."},
     {"path": "Sources/RielaCore/DeterministicWorkflowRunner+Events.swift", "intendedEdit": "Only exhaustive-switch arms for the new `.handover` run event. Emission is wh-02."},
     {"path": "Sources/RielaCLI/SpecialistCommands.swift", "intendedEdit": "Only exhaustive-switch arms for `suspended`."},
+    {"path": "Sources/RielaCLI/WorkflowRunLivePersistence.swift", "intendedEdit": "Committed at bb33bbf0: only the exhaustive-switch arm adding `.handover` to the persisted run-event list."},
+    {"path": "Sources/RielaCLI/TaskDispatch.swift", "intendedEdit": "Committed at bb33bbf0: only a placeholder `.takeover` entry arm that throws WorkStoreError. wh-14 (writePath owner) replaces it with packet resume-step resolution."},
+    {"path": "Sources/RielaWork/WorkStore+Reservation.swift", "intendedEdit": "Committed at bb33bbf0: only a placeholder `.takeover` arm in `decisionKind(for:)` returning `.resume`. wh-03 (writePath owner) replaces it with `.takeover(handoverId:, placement:)`."},
     {"path": "Sources/RielaWork/DecisionApplier.swift", "intendedEdit": "Only exhaustive-switch arms for the new DecisionKind cases, each throwing WorkStoreError(\"decision kind '<kind>' is applied by the handover store APIs\"). wh-03 replaces them."},
     {"path": "Tests/RielaWorkTests/Fixtures", "intendedEdit": "Update JSON fixtures that encode DeterministicDirectorRules, WorkTask or lease rows so they carry the new required keys (`handoverOnInactivity`, `fence`)."}
   ],

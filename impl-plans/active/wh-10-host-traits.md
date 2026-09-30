@@ -19,6 +19,7 @@
     "Sources/RielaServer/DistributedWorkerProtocol.swift",
     "Sources/RielaCore/DistributedJobController.swift",
     "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+    "Sources/RielaCore/DistributedWorkerModels.swift",
     "impl-plans/progress/wh-10-host-traits.md"
   ],
   "sharedPaths": [],
@@ -100,3 +101,5 @@ Run session-1 blocked this plan twice, correctly, because carrying `worker.json`
 - `Tests/RielaServerTests/DistributedWorkerHTTPTests.swift`: assert that a registered worker's traits reach the controller status.
 
 wh-01 through wh-09 and wh-11 through wh-13 are accepted and committed (`d043cbad`). Build on them; do not re-implement them.
+
+- `Sources/RielaCore/DistributedWorkerModels.swift` (added after run session-2): add `traits` to `DistributedWorkerStatus` so worker status and doctor show them. The partial wh-10 implementation from session-2 is committed; complete it rather than restart.

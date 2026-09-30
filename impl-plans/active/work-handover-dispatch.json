@@ -68,16 +68,16 @@
    "Scratch only under tmp/ (gitignored); each plan edits only its own impl-plans/progress/<planId>.md; full-suite failures are classified against the wh-00 baseline, never hidden."
   ],
   "designDecisionsAndRationale": [
-   "The task is the unit of handover: a handover is a new Attempt with entry .takeover, reusing the one-live-attempt fence, evidence ledger, placement and guard budget (design §3.1).",
-   "The digest-sealed HandoverPacket is the predecessor/successor contract, built by the runtime from durable records; the agent only adds a bounded progressNote and question (§3.2).",
-   "suspended is a real session status with a SuspendRecord; runner/resume exit code CLIExitCode.suspended = 5 (§3.3, R1-R22).",
-   "Agent-declared, runtime-detected and operator triggers all produce Decision .handover(HandoverReason) and the same packet (§3.4).",
-   "Deliverables are published before sealing: attempt branch riela/task/<taskId>/g<n> via GitBranchWorkspaceRuntime, document ids via DeliverableCollector, local-only state listed (§3.5, §9).",
-   "The work store work_handovers row is canonical; kaiba/gitRef/file/command sinks are digest-verified mirrors (§3.6, §8).",
-   "Answers are DecisionKind.answer validated against answerSchema and delivered as runtime variable plus delivered message (§3.7).",
-   "Hosts declare traits (profile hostTraits, worker.json traits, per-invocation --traits per Q7); placement treats required traits like backends (§3.8, §10.3).",
-   "Leases gain heartbeat_at, expires_at and a monotonic fence; the fence, not expiry, excludes a revived owner which fails with leaseLost (§3.9, §11).",
-   "Cross-host takeover is pull-based over /graphql (takeoverTask, heartbeatAttempt, reportAttempt) under manager-session auth; the controller runs director and verification on reports (§3.10, §10.2)."
+   "The task is the unit of handover: a handover is a new Attempt with entry .takeover, reusing the one-live-attempt fence, evidence ledger, placement and guard budget (design \u00a73.1).",
+   "The digest-sealed HandoverPacket is the predecessor/successor contract, built by the runtime from durable records; the agent only adds a bounded progressNote and question (\u00a73.2).",
+   "suspended is a real session status with a SuspendRecord; runner/resume exit code CLIExitCode.suspended = 5 (\u00a73.3, R1-R22).",
+   "Agent-declared, runtime-detected and operator triggers all produce Decision .handover(HandoverReason) and the same packet (\u00a73.4).",
+   "Deliverables are published before sealing: attempt branch riela/task/<taskId>/g<n> via GitBranchWorkspaceRuntime, document ids via DeliverableCollector, local-only state listed (\u00a73.5, \u00a79).",
+   "The work store work_handovers row is canonical; kaiba/gitRef/file/command sinks are digest-verified mirrors (\u00a73.6, \u00a78).",
+   "Answers are DecisionKind.answer validated against answerSchema and delivered as runtime variable plus delivered message (\u00a73.7).",
+   "Hosts declare traits (profile hostTraits, worker.json traits, per-invocation --traits per Q7); placement treats required traits like backends (\u00a73.8, \u00a710.3).",
+   "Leases gain heartbeat_at, expires_at and a monotonic fence; the fence, not expiry, excludes a revived owner which fails with leaseLost (\u00a73.9, \u00a711).",
+   "Cross-host takeover is pull-based over /graphql (takeoverTask, heartbeatAttempt, reportAttempt) under manager-session auth; the controller runs director and verification on reports (\u00a73.10, \u00a710.2)."
   ],
   "intentionalTradeoffs": [
    "Mid-node interruption (S3, --now) re-runs the step; step-boundary checkpoints bound repository loss to one step.",
@@ -149,6 +149,7 @@
     "Sources/RielaServer/DistributedWorkerProtocol.swift",
     "Sources/RielaCore/DistributedJobController.swift",
     "Tests/RielaServerTests/DistributedWorkerHTTPTests.swift",
+    "Sources/RielaCore/DistributedWorkerModels.swift",
     "impl-plans/progress/wh-10-host-traits.md"
    ],
    "sharedPaths": [],
@@ -446,7 +447,7 @@
     "arch -arm64 /bin/zsh -lc 'swift test > tmp/work-handover/wh-20-reconcile/full-swift-test.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/full-swift-test.log'",
     "arch -arm64 /bin/zsh -lc 'git diff --name-only 01b38f02 -- \"*.swift\" | xargs swiftlint lint --strict > tmp/work-handover/wh-20-reconcile/swiftlint.log 2>&1; echo \"exit=$?\" >> tmp/work-handover/wh-20-reconcile/swiftlint.log'",
     "git diff --check",
-    "/bin/zsh -c 'P=\"Test Case .-\\[[^]]*\\]. failed|✘ Test [^ ]* failed\"; grep -oE \"$P\" tmp/work-handover/wh-00/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/baseline-failing.txt; grep -oE \"$P\" tmp/work-handover/wh-20-reconcile/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/current-failing.txt; comm -13 tmp/work-handover/wh-20-reconcile/baseline-failing.txt tmp/work-handover/wh-20-reconcile/current-failing.txt > tmp/work-handover/wh-20-reconcile/new-failures.txt; grep -q \"^exit=\" tmp/work-handover/wh-20-reconcile/full-swift-test.log && test ! -s tmp/work-handover/wh-20-reconcile/new-failures.txt'"
+    "/bin/zsh -c 'P=\"Test Case .-\\[[^]]*\\]. failed|\u2718 Test [^ ]* failed\"; grep -oE \"$P\" tmp/work-handover/wh-00/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/baseline-failing.txt; grep -oE \"$P\" tmp/work-handover/wh-20-reconcile/full-swift-test.log | sort -u > tmp/work-handover/wh-20-reconcile/current-failing.txt; comm -13 tmp/work-handover/wh-20-reconcile/baseline-failing.txt tmp/work-handover/wh-20-reconcile/current-failing.txt > tmp/work-handover/wh-20-reconcile/new-failures.txt; grep -q \"^exit=\" tmp/work-handover/wh-20-reconcile/full-swift-test.log && test ! -s tmp/work-handover/wh-20-reconcile/new-failures.txt'"
    ]
   }
  ],

@@ -42,6 +42,8 @@ public struct TaskCommandRunner: Sendable {
         )
       case .decide:
         return try runDecide(command)
+      case .handover, .takeover, .answer, .handovers, .reconcile:
+        return await TaskHandoverCommandRunner().run(command, signalState: signalState)
       }
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .usage, stderr: error.message)
@@ -76,6 +78,20 @@ public struct TaskCommandRunner: Sendable {
     let findings = try store.listFindings(taskId: identifier)
     let evidence = try store.listEvidence(taskId: identifier)
     let latest = attempts.last
+    let sessionRoot = parsed.sessionStore ?? URL(fileURLWithPath: located.root).deletingLastPathComponent().path
+    let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionRoot)
+    )
+    let suspendedSession = latest.flatMap { try? runtimeStore.load(sessionId: $0.sessionId).session }
+    let handoverPackets = try store.listHandovers(taskId: identifier)
+    let successors = try store.listAttempts(taskId: identifier)
+      .compactMap { attempt in attempt.takeoverLineage.map { ($0.handoverId, attempt.id.rawValue) } }
+    let handoverRows = handoverPackets.map { packet in
+      TaskHandoverCommandRow(
+        packet: packet,
+        successorAttemptId: successors.first(where: { $0.0 == packet.id })?.1
+      )
+    }
 
     let result = TaskShowCommandResult(
       taskId: taskId,
@@ -95,7 +111,10 @@ public struct TaskCommandRunner: Sendable {
           findings: findings,
           acceptance: acceptance(for: task, attempt: latest, storeRoot: located.root)
         )
-      )
+      ),
+      handovers: handoverRows,
+      lease: try store.loadLease(taskId: identifier).map(TaskLeaseCommandSummary.init(lease:)),
+      suspend: suspendedSession?.suspend
     )
 
     switch command.options.output {
@@ -157,6 +176,13 @@ public struct TaskCommandRunner: Sendable {
       lines.append("latestAttemptState: \(latest.state.rawValue)")
     }
     lines.append(contentsOf: result.evidence.map { "evidence.\($0.kind.rawValue): \($0.count)" })
+    lines.append("handovers: \(result.handovers.count)")
+    if let lease = result.lease {
+      lines.append("lease: fence=\(lease.fence) host=\(lease.hostId) expiresAt=\(lease.expiresAt)")
+    }
+    if let suspend = result.suspend {
+      lines.append("suspend: reason=\(suspend.reasonKind.rawValue) step=\(suspend.stepId)")
+    }
     return lines
   }
 

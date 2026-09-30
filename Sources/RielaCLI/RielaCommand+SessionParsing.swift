@@ -2,6 +2,15 @@ import Foundation
 
 extension RielaArgumentParser {
   func parseSession(_ arguments: [String]) throws -> RielaCommand {
+    if arguments.first == "handover" {
+      let route = try ParsedTargetAndOptions.parseCLI(Array(arguments.dropFirst()))
+      guard let target = route.target, !target.isEmpty else {
+        throw CLIUsageError("session handover requires a session id")
+      }
+      return .session(.handover(try parseGeneric(
+        scope: "session", command: "handover", target: target, arguments: route.options
+      )))
+    }
     let family = try ParsedSessionFamily.parseCLI(arguments)
     switch family.subcommand {
     case .rerun:

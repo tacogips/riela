@@ -59,6 +59,11 @@ public enum TaskCommandKind: String, Codable, CaseIterable, Sendable {
   case list
   case run
   case decide
+  case handover
+  case takeover
+  case answer
+  case handovers
+  case reconcile
 }
 
 public struct TaskCommand: Equatable, Sendable {
@@ -110,6 +115,7 @@ public enum SessionCommand: Equatable, Sendable {
   case stepRuns(CLICommandOptions)
   case export(CLICommandOptions)
   case logs(CLICommandOptions)
+  case handover(CLICommandOptions)
 }
 
 public enum WorkflowCommand: Equatable, Sendable {
@@ -697,13 +703,19 @@ public struct RielaArgumentParser: CLIArgumentParsing {
     )
   }
 
-  /// `riela task <show|run|decide> <task-id>` and `riela task list`. The shared flags are
+  /// `riela task <subcommand> <task-id>` and the task-wide reconcile command. Shared flags are
   /// `LoopCommand`'s, so P2 can reuse this parsing when `riela loop` is
   /// deleted and its inspections become task reads.
   private func parseTask(_ arguments: [String]) throws -> TaskCommand {
     let family = try ParsedTaskFamily.parseCLI(arguments)
     let kind = family.subcommand
     if kind == .list {
+      return TaskCommand(
+        kind: kind,
+        options: try parseGeneric(scope: "task", command: kind.rawValue, arguments: family.remainder)
+      )
+    }
+    if kind == .reconcile {
       return TaskCommand(
         kind: kind,
         options: try parseGeneric(scope: "task", command: kind.rawValue, arguments: family.remainder)

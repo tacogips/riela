@@ -192,6 +192,8 @@ public struct RielaCLIApplication: Sendable {
 
   private func runSession(_ command: SessionCommand) async -> CLICommandResult {
     switch command {
+    case let .handover(options):
+      return await TaskHandoverCommandRunner().runSessionHandover(options)
     case let .rerun(options):
       return await sessionRerunCommand.run(options)
     case let .resume(options):

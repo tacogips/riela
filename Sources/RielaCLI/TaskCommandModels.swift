@@ -82,6 +82,9 @@ public struct TaskShowCommandResult: Codable, Equatable, Sendable {
   public var findings: [Finding]
   public var evidence: [TaskEvidenceCount]
   public var completion: CompletionVerdict
+  public var handovers: [TaskHandoverCommandRow]
+  public var lease: TaskLeaseCommandSummary?
+  public var suspend: SuspendRecord?
 
   public init(
     taskId: String,
@@ -90,7 +93,10 @@ public struct TaskShowCommandResult: Codable, Equatable, Sendable {
     decisions: [Decision],
     findings: [Finding],
     evidence: [TaskEvidenceCount],
-    completion: CompletionVerdict
+    completion: CompletionVerdict,
+    handovers: [TaskHandoverCommandRow] = [],
+    lease: TaskLeaseCommandSummary? = nil,
+    suspend: SuspendRecord? = nil
   ) {
     self.taskId = taskId
     self.task = task
@@ -99,6 +105,39 @@ public struct TaskShowCommandResult: Codable, Equatable, Sendable {
     self.findings = findings
     self.evidence = evidence
     self.completion = completion
+    self.handovers = handovers
+    self.lease = lease
+    self.suspend = suspend
+  }
+}
+
+public struct TaskHandoverCommandRow: Codable, Equatable, Sendable {
+  public var handoverId: String
+  public var createdAt: Date
+  public var reasonKind: String
+  public var digest: String
+  public var successorAttemptId: String?
+  public var sinks: [HandoverSinkRef]
+
+  public init(packet: HandoverPacket, successorAttemptId: String?) {
+    handoverId = packet.id.rawValue
+    createdAt = packet.createdAt
+    reasonKind = packet.reason.kindName
+    digest = packet.digest
+    self.successorAttemptId = successorAttemptId
+    sinks = packet.sinks
+  }
+}
+
+public struct TaskLeaseCommandSummary: Codable, Equatable, Sendable {
+  public var fence: Int
+  public var expiresAt: Date
+  public var hostId: String
+
+  public init(lease: AttemptLease) {
+    fence = lease.fence
+    expiresAt = lease.expiresAt
+    hostId = lease.hostId
   }
 }
 

@@ -545,7 +545,8 @@
   },
   {
    "planId": "wh-14-task-dispatch-runtime",
-   "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md"
+   "planPath": "impl-plans/active/wh-14-task-dispatch-runtime.md",
+   "commit": "2cd392b8"
   }
  ]
 }

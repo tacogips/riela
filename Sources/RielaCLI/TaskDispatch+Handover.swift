@@ -458,7 +458,7 @@ extension TaskDispatch {
       payloadRef: .inline(["deliverables": try Self.jsonValue(deliverables)]),
       createdAt: snapshot.session.updatedAt
     ))
-    guard let decision = try store.listDecisions(taskId: task.id).last(where: { $0.attemptId == attempt.id }) else {
+    guard let decision = try store.reservationDecision(attemptId: attempt.id) else {
       throw WorkStoreError("reported task attempt has no recorded decision")
     }
     let reservation = AttemptReservation(task: task, attempt: attempt, decision: decision, launchToken: "")

@@ -207,6 +207,15 @@ final class WorkStoreReservationTests: XCTestCase {
     XCTAssertNotNil(started.launch?.nodeStartedAt)
   }
 
+  func testReservationDecisionFindsPlainReservationAndReturnsNilForUnknownAttempt() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try store.saveTask(sampleTask())
+    let reservation = try store.reserveAttempt(request())
+
+    XCTAssertEqual(try store.reservationDecision(attemptId: reservation.attempt.id), reservation.decision)
+    XCTAssertNil(try store.reservationDecision(attemptId: AttemptID("unknown-attempt")))
+  }
+
   func testAuthorizationRejectsAReplacedLeaseDigestAndRollsBackAttemptMutation() throws {
     let store = WorkStore(rootDirectory: root.path)
     try store.saveTask(sampleTask())

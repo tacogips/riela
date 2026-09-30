@@ -97,6 +97,25 @@ final class WorkStoreTakeoverTests: XCTestCase {
     XCTAssertEqual(try database.query("SELECT successor_attempt_id FROM work_handovers WHERE handover_id = 'handover-1'").first?["successor_attempt_id"], value.attempt.id.rawValue)
   }
 
+  func testReservationDecisionResolvesPendingTakeoverDecisionForSuccessor() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try setupHandover(store, reason: .userPresenceRequired(PresenceRequirement(traits: [.userReachable], instructions: "Be present")))
+    let placement = TakeoverPlacement(hostId: "reachable-host", requiredTraits: [.userReachable])
+    let task = try store.requestTakeover(
+      taskId: TaskID("task-1"), placement: placement, producer: .human(principal: "operator"),
+      decisionId: DecisionID("takeover-1"), now: fixedNow
+    )
+    let pending = try XCTUnwrap(TaskDispatcher(store: store).pendingReservation(taskId: task.id))
+    var request = reservation(task: task, entry: pending.entry, decisionId: pending.decisionId)
+    request.pendingRequestId = pending.id
+    guard case let .reserved(value) = try store.reserveAttempt(request) else {
+      return XCTFail("expected takeover reservation")
+    }
+
+    XCTAssertNotEqual(value.decision.attemptId, value.attempt.id)
+    XCTAssertEqual(try store.reservationDecision(attemptId: value.attempt.id), value.decision)
+  }
+
   func testSecondTakeoverForSameHandoverIsRefused() throws {
     let store = WorkStore(rootDirectory: root.path)
     try setupHandover(store, reason: .userPresenceRequired(PresenceRequirement(traits: [.userReachable], instructions: "Be present")))

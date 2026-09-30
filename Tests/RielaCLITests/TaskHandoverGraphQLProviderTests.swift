@@ -147,6 +147,25 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
     )
     XCTAssertEqual(report.taskState, TaskState.succeeded.rawValue)
     XCTAssertEqual(report.decisionKind, "accept")
+
+    let taskAfterFirstReport = try XCTUnwrap(harness.store.loadTask(id: task.id))
+    let decisionCountAfterFirstReport = try harness.store.listDecisions(taskId: task.id).count
+    do {
+      _ = try await provider.reportAttempt(
+        GraphQLReportAttemptInput(
+          attemptId: attemptId,
+          token: try XCTUnwrap(reservation.heartbeatToken),
+          snapshot: snapshotObject(WorkflowRuntimePersistenceSnapshot(session: session)),
+          deliverables: []
+        ),
+        context: context
+      )
+      XCTFail("replaying a reconciled report should be unauthorized")
+    } catch let error as TaskHandoverGraphQLError {
+      XCTAssertEqual(error.code, "unauthorized")
+    }
+    XCTAssertEqual(try harness.store.loadTask(id: task.id), taskAfterFirstReport)
+    XCTAssertEqual(try harness.store.listDecisions(taskId: task.id).count, decisionCountAfterFirstReport)
   }
 
   func testReportSuspendedAttemptAcceptsLeaseCredentialAndSealsHandover() async throws {
@@ -262,6 +281,7 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
   }
 
   private func savePredecessor(task: WorkTask, attemptId: AttemptID, store: WorkStore) throws {
+    let now = Date()
     try store.saveAttempt(Attempt(
       id: attemptId,
       taskId: task.id,
@@ -270,6 +290,19 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
       state: .reconciled,
       outcome: AttemptOutcome(sessionStatus: .failed, failureKind: .stalled)
     ))
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory).save(
+      WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
+        workflowId: "task-repair-loop",
+        sessionId: "session-predecessor",
+        status: .failed,
+        entryStepId: "start",
+        currentStepId: "repair",
+        createdAt: now,
+        updatedAt: now,
+        failureKind: WorkflowSessionFailureKind(rawValue: "stalled"),
+        failedAt: now
+      ))
+    )
   }
 
   private func makePacket(

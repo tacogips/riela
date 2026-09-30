@@ -145,6 +145,36 @@ public enum AttemptReservationResult: Equatable, Sendable {
 }
 
 public extension WorkStore {
+  private func reservationReadOnlyIfPresent() throws -> SQLiteDatabase? {
+    guard FileManager.default.fileExists(atPath: databasePath) else { return nil }
+    let database = try SQLiteDatabase.open(
+      path: databasePath,
+      mode: immutableReadOnly ? .strictReadOnlyWithImmutableFallback : .readOnly,
+      options: .readOnlyDefault
+    )
+    guard try database.tableExists("work_pending_reservations"),
+          try database.tableExists("work_decisions") else { return nil }
+    return database
+  }
+
+  /// Returns the decision that reserved an attempt, including decisions attached
+  /// to pending reservations whose predecessor attempt differs from the successor.
+  func reservationDecision(attemptId: AttemptID) throws -> Decision? {
+    guard let database = try reservationReadOnlyIfPresent() else { return nil }
+    if let decisionId = try database.query(
+      "SELECT decision_id FROM work_pending_reservations WHERE consumed_attempt_id = ? LIMIT 1",
+      bindings: [.text(attemptId.rawValue)]
+    ).first?["decision_id"],
+      let decision = try storedDecision(DecisionID(decisionId), in: database) {
+      return decision
+    }
+    guard let decisionId = try database.query(
+      "SELECT decision_id FROM work_decisions WHERE attempt_id = ? ORDER BY created_at DESC, decision_id DESC LIMIT 1",
+      bindings: [.text(attemptId.rawValue)]
+    ).first?["decision_id"] else { return nil }
+    return try storedDecision(DecisionID(decisionId), in: database)
+  }
+
   /// Atomically commits one task attempt, its launch lease and decision, and
   /// the canonical `.created` workflow snapshot on the shared connection.
   func reserveAttempt(_ request: AttemptReservationRequest) throws -> AttemptReservationResult {

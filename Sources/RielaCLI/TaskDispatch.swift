@@ -431,13 +431,24 @@ struct TaskDispatch: Sendable {
     let sessionStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
     var cumulativeWallClockMs = 0
     for attempt in attempts {
-      let session = try attempt.id == attemptId
-        ? snapshot.session : sessionStore.loadStrictReadOnly(sessionId: attempt.sessionId).session
-      guard session.sessionId == attempt.sessionId,
-            session.status == .completed || session.status == .failed || session.status == .suspended else {
-        throw WorkStoreError("task attempt has no durable terminal session for guard evaluation")
+      let durationMs: Int
+      if attempt.id == attemptId {
+        let session = snapshot.session
+        guard session.sessionId == attempt.sessionId,
+              session.status == .completed || session.status == .failed || session.status == .suspended else {
+          throw WorkStoreError("task attempt has no durable terminal session for guard evaluation")
+        }
+        durationMs = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
+      } else {
+        guard let duration = try WorkStore.attemptWallClockMs(
+          attempt,
+          terminalStatuses: [.completed, .failed, .suspended],
+          loadSession: { try sessionStore.loadStrictReadOnly(sessionId: attempt.sessionId).session }
+        ) else {
+          throw WorkStoreError("task attempt has no durable terminal session for guard evaluation")
+        }
+        durationMs = duration
       }
-      let durationMs = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
       let (sum, overflow) = cumulativeWallClockMs.addingReportingOverflow(durationMs)
       cumulativeWallClockMs = overflow ? Int.max : sum
     }

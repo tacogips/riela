@@ -2,19 +2,21 @@
 
 ## Status
 
-The three example bundles, catalog, parity assertions, answer flow, and presence flow are implemented on `feat/work-handover-and-takeover`. The orphan takeover flow exposes a task-dispatch runtime gap outside wh-17 write paths, so the second completion criterion remains incomplete and is blocked on the serial owner of those runtime files. No Git state changes were made.
+The three example bundles, catalog/parity assertions, answer/presence/orphan harness flows, and the R33 fenced-predecessor guard fix are implemented on `feat/work-handover-and-takeover`. All wh-17 implementation criteria pass. Runtime source edits use the serial-wave shared ownership granted to this plan; no Git state changes were made.
 
 ## Plan criteria
 
 - [x] Three examples include `workflow.json`, nodes, prompts, `mock-scenario.json`, `EXPECTED_RESULTS.md`, and `README.md`; catalog names are sorted, mock count is 43, and suspended examples are explicitly asserted by the parity loop.
-- [ ] Answer and presence harness flows pass; the parity selection passes; all three workflows validate. The orphan harness exposes a runtime error during successor dispatch instead of completing takeover.
+- [x] Answer, presence, and orphan harness flows pass; the parity selection passes; all three workflows validate.
+- [x] R33 fenced-predecessor seam and its seven unit cases pass; terminal guard, director budget, and agent budget loops use the seam; both orphan harness cases pass with a real successor session and no predecessor session write.
 
 ## Implementation notes
 
 - `task-handover-answer` requests `q-deploy-target`, validates the `option` answer, resumes at `apply`, verifies the sealed digest after reload, checks imported `plan` history, and asserts the persisted `apply` input contains `arguments.delivered.handover.answer.option == staging`.
 - `task-handover-presence` requests `userReachable`. The harness records a takeover request, verifies placement waits with no local traits, then completes with `.userReachable`.
-- `task-handover-orphan` has no handover envelope in its plain mock flow. The harness simulates a never-launched owner, refuses force-orphan before expiry, seals the `ownerLost` packet, and checks fencing and takeover lineage. Without fabricating a terminal predecessor session, successor dispatch returns `task attempt has no durable terminal session for guard evaluation`; the task remains `verifying`. The accepted plan permits a never-launched owner, but it does not permit seeding a terminal session the dead owner did not write. The running-owner heartbeat failure and persisted `failed(leaseLost)` path are covered by wh-14 `TaskHandoverLeaseTests`.
+- `task-handover-orphan` has no handover envelope in its plain mock flow. The harness simulates a never-launched owner, refuses force-orphan before expiry, seals the `ownerLost` packet, checks fencing and takeover lineage, then completes with a real successor session. A second orphan case sets `maxWallClockMs = 600000` and verifies the successor remains within budget. No predecessor terminal session is fabricated or written. The running-owner heartbeat failure and persisted `failed(leaseLost)` path remain covered by wh-14 `TaskHandoverLeaseTests`.
 - The `handover` envelope remains outside each node's business output schema. The answer mock uses the wire shape `{id,label}` for question options.
+- R33 shared source edits: `Sources/RielaWork/WorkStore+Takeover.swift` defines `Attempt.isLeaseFenced` and `WorkStore.attemptWallClockMs`; `Sources/RielaCLI/TaskDispatch.swift` uses the seam in terminal guard evaluation; `Sources/RielaCLI/TaskDispatch+Director.swift` uses it in the director wall-clock budget; `Sources/RielaWork/WorkStore+Reservation.swift` uses it in the in-transaction agent budget. Seven seam cases are in `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift`; the two end-to-end orphan budget/fence cases are in `Tests/RielaCLITests/TaskHandoverExampleTests.swift`.
 
 ## Verification
 
@@ -32,7 +34,7 @@ The three example bundles, catalog, parity assertions, answer flow, and presence
 - `harness-attempt2.log` and `answer-diagnostic.log` preserve intermediate failures while correcting the input-snapshot assertion. The final harness and focused logs supersede them.
 - Per-edit preimages, hashes, and intentions are under `tmp/work-handover/wh-17-examples/attempt-1/` through `attempt-11/`.
 
-## Blocker
+## Historical blocker (resolved)
 
 ```json
 {
@@ -51,15 +53,19 @@ The three example bundles, catalog, parity assertions, answer flow, and presence
 - Selected-file strict SwiftLint: NUL manifest `tmp/work-handover/wh-17-examples/changed-swift-files.nul`; `xargs -0 swiftlint lint --strict --quiet --no-cache` exit 0; log `tmp/work-handover/wh-17-examples/swiftlint-review-fix.log`.
 - The earlier `focused-final.log` and `harness-final-attempt.log` passed only with the removed synthetic session and are not evidence that orphan takeover completes. The prior parity, answer, and presence results remain historical; the final focused selection must be rerun after the runtime repair.
 
-## Blocking dependency
+## R33 resolution
 
-The wh-17 orphan completion criterion remains unmet because the runtime behavior to repair is outside this plan's `writePaths`:
+The former blocker recorded above was resolved within the serial-wave shared ownership scope by the R33 seam and three budget/guard call sites. `tmp/work-handover/wh-17-examples/orphan-after-review.log` remains preserved as historical evidence of the pre-fix failure; the current-source orphan harnesses pass below.
 
-```json
-{
-  "dependency": "Task-dispatch/handover runtime owner: wh-16/wh-18 serial shared ownership or wh-20-reconcile repair authority",
-  "evidence": "tmp/work-handover/wh-17-examples/orphan-after-review.log; Sources/RielaCLI/TaskDispatch.swift:432-439 rejects the fenced dead predecessor's non-terminal session with 'task attempt has no durable terminal session for guard evaluation'.",
-  "impact": "Force-orphan takeover of a dead owner cannot complete; task state remains verifying.",
-  "resumeCriterion": "The owning serial plan makes successor guard evaluation compatible with a fenced, reconciled failed(leaseLost) predecessor without violating the R26 terminal-write guard. Then rerun the orphan harness and the full wh-17 focused selection."
-}
-```
+## Current verification (2026-10-01, R33 completion)
+
+- `arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-17-examples/build-r33.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-17-examples/build-r33.log'`: exit 0; log `tmp/work-handover/wh-17-examples/build-r33.log`.
+- `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreTakeoverTests|TaskHandoverLeaseTests|TaskHandoverExampleTests|TaskDispatcherIntegrationTests" > tmp/work-handover/wh-17-examples/r33-focused.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-17-examples/r33-focused.log'`: exit 0; 64 tests, 0 failures; log `tmp/work-handover/wh-17-examples/r33-focused.log`.
+- `arch -arm64 /bin/zsh -lc 'swift test --filter "TaskHandoverExampleTests|RielaExampleParityTests|TaskRuntimeExampleTests" > tmp/work-handover/wh-17-examples/focused-r33.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-17-examples/focused-r33.log'`: exit 0; 35 tests, 0 failures (9 parity, 4 handover harness, 22 task runtime); log `tmp/work-handover/wh-17-examples/focused-r33.log`.
+- `arch -arm64 /bin/zsh -lc 'for w in task-handover-answer task-handover-presence task-handover-orphan; do .build/debug/riela workflow validate "$w" --workflow-definition-dir examples; echo "validate $w exit=$?"; done > tmp/work-handover/wh-17-examples/validate-r33.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-17-examples/validate-r33.log'`: exit 0; all three validations exit 0; log `tmp/work-handover/wh-17-examples/validate-r33.log`.
+- Strict selected-file lint used NUL manifest `tmp/work-handover/wh-17-examples/changed-swift-files.nul`; `xargs -0 swiftlint lint --strict --quiet --no-cache`: exit 0; log `tmp/work-handover/wh-17-examples/swiftlint-r33.log`.
+- `git diff --check`: exit 0; log `tmp/work-handover/wh-17-examples/diff-check.log`.
+
+R33 seam occurrence check: `rg -n 'attemptWallClockMs' Sources/RielaWork/WorkStore+Takeover.swift Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskDispatch+Director.swift Sources/RielaWork/WorkStore+Reservation.swift` returns one definition and three call sites.
+
+No implementation blocker remains. Formal implementation review and downstream review-dependent documentation/index updates, staging, commit, and push are owned by later workflow steps.

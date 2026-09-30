@@ -14,6 +14,98 @@ final class WorkStoreTakeoverTests: XCTestCase {
 
   override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
+  func testLeaseFencedAttemptWithMissingSessionUsesZeroWallClock() throws {
+    let attempt = fencedAttempt()
+    XCTAssertTrue(attempt.isLeaseFenced)
+    let duration = try WorkStore.attemptWallClockMs(
+      attempt, terminalStatuses: [.completed, .failed],
+      loadSession: { throw WorkflowRuntimePersistenceStoreError.notFound("session") }
+    )
+    XCTAssertEqual(duration, 0)
+  }
+
+  func testLeaseFencedAttemptUsesRunningSessionDuration() throws {
+    let duration = try WorkStore.attemptWallClockMs(
+      fencedAttempt(), terminalStatuses: [.completed, .failed],
+      loadSession: { self.session(status: .running, durationMs: 1_500) }
+    )
+    XCTAssertEqual(duration, 1_500)
+  }
+
+  func testLeaseFencedAttemptPropagatesNonNotFoundSessionErrors() {
+    XCTAssertThrowsError(try WorkStore.attemptWallClockMs(
+      fencedAttempt(), terminalStatuses: [.completed, .failed],
+      loadSession: { throw WorkflowRuntimePersistenceStoreError.sqliteFailed("read failed") }
+    )) { error in
+      XCTAssertEqual(error as? WorkflowRuntimePersistenceStoreError, .sqliteFailed("read failed"))
+    }
+  }
+
+  func testLeaseLostAttemptWithoutFenceKeepsStrictTerminalRule() throws {
+    var attempt = fencedAttempt()
+    attempt.supersededByFence = nil
+    let duration = try WorkStore.attemptWallClockMs(
+      attempt, terminalStatuses: [.completed, .failed],
+      loadSession: { self.session(status: .running, durationMs: 1_500) }
+    )
+    XCTAssertFalse(attempt.isLeaseFenced)
+    XCTAssertNil(duration)
+  }
+
+  func testFencedAttemptWithOtherFailureKeepsStrictTerminalRule() throws {
+    var attempt = fencedAttempt()
+    attempt.outcome = AttemptOutcome(sessionStatus: .failed, failureKind: .cancelled)
+    let duration = try WorkStore.attemptWallClockMs(
+      attempt, terminalStatuses: [.completed, .failed],
+      loadSession: { self.session(status: .running, durationMs: 1_500) }
+    )
+    XCTAssertFalse(attempt.isLeaseFenced)
+    XCTAssertNil(duration)
+  }
+
+  func testNonFencedAttemptPropagatesMissingSessionError() {
+    let attempt = ordinaryAttempt()
+    XCTAssertThrowsError(try WorkStore.attemptWallClockMs(
+      attempt, terminalStatuses: [.completed, .failed],
+      loadSession: { throw WorkflowRuntimePersistenceStoreError.notFound("session") }
+    )) { error in
+      XCTAssertEqual(error as? WorkflowRuntimePersistenceStoreError, .notFound("session"))
+    }
+  }
+
+  func testNonFencedAttemptUsesTerminalSessionDuration() throws {
+    let attempt = ordinaryAttempt()
+    let duration = try WorkStore.attemptWallClockMs(
+      attempt, terminalStatuses: [.completed, .failed],
+      loadSession: { self.session(status: .completed, durationMs: 1_500, sessionId: attempt.sessionId) }
+    )
+    XCTAssertEqual(duration, 1_500)
+  }
+
+  private func fencedAttempt() -> Attempt {
+    Attempt(
+      id: AttemptID("attempt-fenced"), taskId: TaskID("task-1"), sessionId: "session-fenced",
+      state: .reconciled, outcome: AttemptOutcome(sessionStatus: .failed, failureKind: .leaseLost),
+      supersededByFence: 2
+    )
+  }
+
+  private func ordinaryAttempt() -> Attempt {
+    Attempt(id: AttemptID("attempt-ordinary"), taskId: TaskID("task-1"), sessionId: "session-ordinary")
+  }
+
+  private func session(
+    status: WorkflowSessionStatus,
+    durationMs: Int,
+    sessionId: String = "session-fenced"
+  ) -> WorkflowSession {
+    let start = Date(timeIntervalSince1970: 1_000)
+    return WorkflowSession(
+      workflowId: "flow", sessionId: sessionId, status: status, entryStepId: "start",
+      createdAt: start, updatedAt: start.addingTimeInterval(Double(durationMs) / 1_000)
+    )
+  }
+
   func testUnclaimedHandoverBlocksStartReservationAndPreview() throws {
     let store = WorkStore(rootDirectory: root.path)
     var task = sampleTask()

@@ -2,6 +2,15 @@ import Foundation
 import RielaCore
 import RielaSQLite
 
+public extension Attempt {
+  var isLeaseFenced: Bool {
+    state == .reconciled
+      && supersededByFence != nil
+      && outcome?.sessionStatus == .failed
+      && outcome?.failureKind == .leaseLost
+  }
+}
+
 public struct OrphanFenceResult: Equatable, Sendable {
   public var predecessor: Attempt
   public var evidence: OwnerLossEvidence
@@ -17,6 +26,26 @@ public struct OrphanFenceResult: Equatable, Sendable {
 }
 
 public extension WorkStore {
+  static func attemptWallClockMs(
+    _ attempt: Attempt,
+    terminalStatuses: Set<WorkflowSessionStatus>,
+    loadSession: () throws -> WorkflowSession
+  ) throws -> Int? {
+    let session: WorkflowSession
+    do {
+      session = try loadSession()
+    } catch WorkflowRuntimePersistenceStoreError.notFound where attempt.isLeaseFenced {
+      return 0
+    }
+
+    if attempt.isLeaseFenced {
+      return max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
+    }
+    guard session.sessionId == attempt.sessionId,
+          terminalStatuses.contains(session.status) else { return nil }
+    return max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
+  }
+
   static func takeoverRepositoryRefusal(_ packet: HandoverPacket) -> String? {
     for deliverable in packet.deliverables {
       guard case let .repository(repository) = deliverable,

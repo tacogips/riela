@@ -192,6 +192,44 @@ final class TaskHandoverExampleTests: XCTestCase {
     XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .succeeded)
   }
 
+  func testOrphanExampleTakeoverWithinWallClockBudget() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    var task = try harness.seed("task-handover-orphan")
+    task.guardPolicy.lease = LeasePolicy(ttlMs: 1_000, heartbeatMs: 500)
+    task.guardPolicy.budget = BudgetGuard(maxWallClockMs: 600_000)
+    try harness.store.saveTask(task)
+    let options = taskOptions(harness)
+    let command = try taskDispatch(harness, name: "task-handover-orphan")
+
+    var interruptedCommand = command
+    interruptedCommand.beforeExecution = { _ in
+      throw WorkStoreError("simulated owner stopped before launch")
+    }
+    let interrupted = await interruptedCommand.run(
+      taskId: task.id.rawValue, options: options, dryRun: false, output: .json
+    )
+    XCTAssertEqual(interrupted.exitCode, .failure)
+    let predecessor = try XCTUnwrap(harness.store.listAttempts(taskId: task.id).last)
+    let lease = try XCTUnwrap(harness.store.loadLease(attemptId: predecessor.id))
+
+    task = try XCTUnwrap(harness.store.loadTask(id: task.id))
+    let located = TaskCommandRunner.LocatedTask(task: task, store: harness.store, root: harness.store.rootDirectory)
+    let runtime = TaskHandoverRuntime(located: located, options: options, now: {
+      lease.expiresAt.addingTimeInterval(1)
+    })
+    let packet = try await runtime.forceOrphan(
+      taskId: task.id, producer: .policy(rule: "wh-17-budget-example"), cliSinks: []
+    )
+    guard case .ownerLost = packet.reason else { return XCTFail("expected ownerLost packet: \(packet.reason)") }
+
+    let takeover = await command.run(
+      taskId: task.id.rawValue, options: options, dryRun: false, output: .json
+    )
+    XCTAssertEqual(takeover.exitCode, .success, "\(takeover.stderr)\n\(takeover.stdout)")
+    XCTAssertEqual(try harness.store.loadTask(id: task.id)?.state, .succeeded)
+  }
+
   private func taskOptions(_ harness: TaskExampleHarness) -> TaskStoreOptions {
     TaskStoreOptions(
       scope: .project,

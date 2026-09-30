@@ -538,12 +538,13 @@ extension TaskDispatch {
     let sessions = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
     var used = 0
     for attempt in try store.listAttempts(taskId: task.id) where attempt.state == .reconciled {
-      let session = try sessions.loadStrictReadOnly(sessionId: attempt.sessionId).session
-      guard session.sessionId == attempt.sessionId,
-            session.status == .completed || session.status == .failed else {
+      guard let duration = try WorkStore.attemptWallClockMs(
+        attempt,
+        terminalStatuses: [.completed, .failed],
+        loadSession: { try sessions.loadStrictReadOnly(sessionId: attempt.sessionId).session }
+      ) else {
         throw WorkStoreError("director budget has no durable terminal session for an attempt")
       }
-      let duration = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
       let (sum, overflow) = used.addingReportingOverflow(duration)
       used = overflow ? Int.max : sum
     }

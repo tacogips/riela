@@ -922,12 +922,13 @@ extension WorkStore {
     let sessions = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: rootDirectory)
     var used = 0
     for attempt in attempts where attempt.state == .reconciled {
-      let session = try sessions.load(sessionId: attempt.sessionId, in: database).session
-      guard session.sessionId == attempt.sessionId,
-            session.status == .completed || session.status == .failed else {
+      guard let duration = try WorkStore.attemptWallClockMs(
+        attempt,
+        terminalStatuses: [.completed, .failed],
+        loadSession: { try sessions.load(sessionId: attempt.sessionId, in: database).session }
+      ) else {
         throw WorkStoreError("agent budget has no durable terminal session for an attempt")
       }
-      let duration = max(0, Int(session.updatedAt.timeIntervalSince(session.createdAt) * 1_000))
       let (sum, overflow) = used.addingReportingOverflow(duration)
       used = overflow ? Int.max : sum
     }

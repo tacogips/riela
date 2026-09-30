@@ -10,9 +10,10 @@ final class HandoverSinkTests: XCTestCase {
   private var bytes: Data!
 
   override func setUpWithError() throws {
-    root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      .appendingPathComponent("tmp/work-handover/wh-09-handover-sinks/tests-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let unresolvedRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-wh09-handover-sinks-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: unresolvedRoot, withIntermediateDirectories: true)
+    root = hermeticRealPath(unresolvedRoot)
     packet = try samplePacket().sealed()
     bytes = try JSONCanonical.encode(packet)
   }
@@ -81,6 +82,8 @@ final class HandoverSinkTests: XCTestCase {
     try runGit(["-C", first.path, "config", "user.name", "Test"], cwd: root)
     try runGit(["-C", first.path, "remote", "add", "origin", bare.path], cwd: root)
     try runGit(["clone", bare.path, second.path], cwd: root)
+    try assertTopLevelInsideFixture(first)
+    try assertTopLevelInsideFixture(second)
 
     let ref = try await GitRefHandoverSink(repositoryRoot: first.path, remote: "origin").write(packet, bytes: bytes, brief: "unused")
     let reader = try HandoverSinkFactory.reader(for: ref, context: sinkContext(repositoryRoot: second.path))
@@ -214,17 +217,47 @@ final class HandoverSinkTests: XCTestCase {
     return url
   }
 
-  private func runGit(_ arguments: [String], cwd: URL) throws {
+  @discardableResult
+  private func runGit(_ arguments: [String], cwd: URL) throws -> String {
     let process = Process()
+    let output = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = arguments
     process.currentDirectoryURL = cwd
-    process.standardOutput = Pipe()
+    process.environment = hermeticGitEnvironment()
+    process.standardOutput = output
     process.standardError = Pipe()
     try process.run()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else { throw HandoverSinkError.gitCommandFailed("test git command failed: \(arguments.joined(separator: " "))") }
+    return String(bytes: data, encoding: .utf8) ?? ""
   }
+
+  private func hermeticGitEnvironment() -> [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"] {
+      environment.removeValue(forKey: key)
+    }
+    environment["GIT_CEILING_DIRECTORIES"] = root.deletingLastPathComponent().path
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    return environment
+  }
+
+  private func assertTopLevelInsideFixture(_ repository: URL) throws {
+    let output = try runGit(["rev-parse", "--show-toplevel"], cwd: repository)
+    let topLevel = hermeticRealPath(URL(fileURLWithPath: output.trimmingCharacters(in: .whitespacesAndNewlines))).path
+    let fixturePrefix = hermeticRealPath(root).path + "/"
+    guard topLevel.hasPrefix(fixturePrefix) else {
+      throw HandoverSinkError.gitCommandFailed("fixture repository top level \(topLevel) escaped \(fixturePrefix)")
+    }
+  }
+}
+
+private func hermeticRealPath(_ url: URL) -> URL {
+  var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+  guard realpath(url.path, &buffer) != nil else { return url.standardizedFileURL }
+  return URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
 }
 
 private final class RecordingGitRunner: GitCommandRunning, @unchecked Sendable {

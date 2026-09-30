@@ -7,7 +7,7 @@ import XCTest
 final class GitBranchWorkspaceRuntimeTests: XCTestCase {
   func testEnsureBranchSharedRejectsDirtyRootAndWorktreeCreatesAttemptPath() async throws {
     let repository = try BranchRuntimeRepository()
-    let runtime = GitBranchWorkspaceRuntime()
+    let runtime = BranchRuntimeRepository.makeRuntime()
     let task = TaskID("task-7")
     let attempt = AttemptID("attempt-7")
     let shared = try await runtime.ensureBranch(
@@ -55,7 +55,7 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
 
   func testCheckpointCommitsTrailerAndExcludesRielaAndReturnsNilWhenClean() async throws {
     let repository = try BranchRuntimeRepository()
-    let runtime = GitBranchWorkspaceRuntime()
+    let runtime = BranchRuntimeRepository.makeRuntime()
     try repository.write("checkpoint", to: "checkpoint.txt")
     try repository.write("private", to: ".riela/private.txt")
     let isolation = IsolationRef(path: repository.root.path, branch: "main")
@@ -79,7 +79,7 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
 
   func testCheckpointRefusesWhenHeadLeftIsolationBranch() async throws {
     let repository = try BranchRuntimeRepository()
-    let runtime = GitBranchWorkspaceRuntime()
+    let runtime = BranchRuntimeRepository.makeRuntime()
     let base = try repository.git(["rev-parse", "HEAD"])
     let isolation = try await runtime.ensureBranch(
       root: repository.root.path,
@@ -112,7 +112,7 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
 
   func testPublishCreatesAndFastForwardsOnlyTaskBranchAndRejectsRemoteAhead() async throws {
     let repository = try BranchRuntimeRepository(withRemote: true)
-    let runtime = GitBranchWorkspaceRuntime()
+    let runtime = BranchRuntimeRepository.makeRuntime()
     let isolation = IsolationRef(path: repository.root.path, branch: "riela/task/T1/g1")
     _ = try await runtime.ensureBranch(
       root: repository.root.path,
@@ -167,7 +167,7 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
 
   func testMaterializePublishedBranchChecksRemoteHeadAndUsesSecondClone() async throws {
     let source = try BranchRuntimeRepository(withRemote: true)
-    let runtime = GitBranchWorkspaceRuntime()
+    let runtime = BranchRuntimeRepository.makeRuntime()
     _ = try await runtime.ensureBranch(
       root: source.root.path,
       attempt: AttemptID("attempt-source"),
@@ -203,7 +203,7 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
 
   func testMaterializeRefusesMovedRemoteAndUsesUnpublishedLocalLastKnown() async throws {
     let source = try BranchRuntimeRepository(withRemote: true)
-    let runtime = GitBranchWorkspaceRuntime()
+    let runtime = BranchRuntimeRepository.makeRuntime()
     _ = try await runtime.ensureBranch(
       root: source.root.path,
       attempt: AttemptID("attempt-source"),
@@ -263,7 +263,7 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
     }
     try repository.write("modified", to: "aaa-tracked.txt")
     try repository.write("private", to: ".riela/internal")
-    let paths = try await GitBranchWorkspaceRuntime().dirtyPaths(IsolationRef(path: repository.root.path))
+    let paths = try await BranchRuntimeRepository.makeRuntime().dirtyPaths(IsolationRef(path: repository.root.path))
     XCTAssertEqual(paths.count, 512)
     XCTAssertEqual(paths, paths.sorted())
     XCTAssertFalse(paths.contains { $0 == ".riela" || $0.hasPrefix(".riela/") })
@@ -275,10 +275,16 @@ final class GitBranchWorkspaceRuntimeTests: XCTestCase {
     let repository = try BranchRuntimeRepository()
     _ = try repository.git(["mv", "initial.txt", "renamed.txt"])
 
-    let paths = try await GitBranchWorkspaceRuntime().dirtyPaths(IsolationRef(path: repository.root.path))
+    let paths = try await BranchRuntimeRepository.makeRuntime().dirtyPaths(IsolationRef(path: repository.root.path))
 
     XCTAssertEqual(paths, ["initial.txt", "renamed.txt"])
   }
+}
+
+private func hermeticRealPath(_ url: URL) -> URL {
+  var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+  guard realpath(url.path, &buffer) != nil else { return url.standardizedFileURL }
+  return URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
 }
 
 private final class BranchRuntimeRepository {
@@ -287,12 +293,13 @@ private final class BranchRuntimeRepository {
   private let fixtureRoot: URL
 
   init(withRemote: Bool = false, cloning remote: URL? = nil) throws {
-    fixtureRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      .appendingPathComponent("tmp/work-handover/wh-07-git-branch-runtime/repos/\(UUID().uuidString)", isDirectory: true)
+    let unresolvedFixtureRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-wh07-branch-runtime-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: unresolvedFixtureRoot, withIntermediateDirectories: true)
+    fixtureRoot = hermeticRealPath(unresolvedFixtureRoot)
     root = fixtureRoot.appendingPathComponent("repository", isDirectory: true)
     if let remote {
       remoteRoot = nil
-      try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
       _ = try Self.runGit(["clone", remote.path, root.path], at: fixtureRoot)
     } else {
       remoteRoot = withRemote ? fixtureRoot.appendingPathComponent("remote.git", isDirectory: true) : nil
@@ -313,9 +320,38 @@ private final class BranchRuntimeRepository {
       _ = try Self.runGit(["config", "user.name", "Riela Test"], at: root)
       _ = try Self.runGit(["config", "user.email", "riela-test@example.invalid"], at: root)
     }
+    try Self.assertTopLevel(of: root, isInside: fixtureRoot)
   }
 
   deinit { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+  static let ceilingDirectory = hermeticRealPath(FileManager.default.temporaryDirectory).path
+
+  static var hermeticEnvironment: [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"] {
+      environment.removeValue(forKey: key)
+    }
+    environment["GIT_CEILING_DIRECTORIES"] = ceilingDirectory
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    return environment
+  }
+
+  static func makeRuntime() -> GitBranchWorkspaceRuntime {
+    GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: hermeticEnvironment)
+  }
+
+  static func assertTopLevel(of repository: URL, isInside fixtureRoot: URL) throws {
+    let topLevel = hermeticRealPath(URL(fileURLWithPath: try runGit(["rev-parse", "--show-toplevel"], at: repository))).path
+    let fixturePrefix = hermeticRealPath(fixtureRoot).path + "/"
+    guard topLevel.hasPrefix(fixturePrefix) else {
+      throw NSError(
+        domain: "BranchRuntimeRepository",
+        code: 2,
+        userInfo: [NSLocalizedDescriptionKey: "fixture repository top level \(topLevel) escaped \(fixturePrefix)"]
+      )
+    }
+  }
 
   func write(_ content: String, to path: String) throws {
     let url = root.appendingPathComponent(path)
@@ -343,7 +379,7 @@ private final class BranchRuntimeRepository {
       executableURL: URL(fileURLWithPath: "/usr/bin/git"),
       arguments: arguments,
       workingDirectory: directory,
-      environment: ProcessInfo.processInfo.environment.merging(["GIT_TERMINAL_PROMPT": "0"]) { _, value in value },
+      environment: hermeticEnvironment,
       standardInput: nil
     ))
     guard result.exitCode == 0 else {

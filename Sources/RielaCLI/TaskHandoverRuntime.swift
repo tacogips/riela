@@ -133,19 +133,13 @@ struct TaskHandoverRuntime: Sendable {
     )
     var adoptedAttempt = adoption.attempt
     if let adoptionBranch, let repositoryRoot, let adoptionBase {
-      let expectedBranch = adoptionBranch
       let expectedFromResult = (adoption.task.guardPolicy.handover?.publish ?? PublicationPolicy()).branchTemplate
         .replacingOccurrences(of: "{taskId}", with: adoption.task.id.rawValue)
         .replacingOccurrences(of: "{generation}", with: String(adoptedAttempt.generation))
-      guard expectedFromResult == expectedBranch else {
+      guard expectedFromResult == adoptionBranch else {
         throw WorkStoreError("session adoption refused: derived task branch changed during adoption")
       }
-      let rootURL = URL(fileURLWithPath: repositoryRoot, isDirectory: true)
-      let claimed = try Self.runAdoptionGit(["switch", "-c", expectedBranch], at: rootURL)
-      guard claimed.exitCode == 0 else {
-        throw WorkStoreError("session adoption claim failed: \(Self.stderrHead(claimed.output))")
-      }
-      let isolation = IsolationRef(path: repositoryRoot, branch: expectedBranch, baseRevision: adoptionBase)
+      let isolation = IsolationRef(path: repositoryRoot, branch: adoptionBranch, baseRevision: adoptionBase)
       guard try located.store.recordAdoptedAttemptIsolation(
         attemptId: adoptedAttempt.id, isolation: isolation
       ) else {
@@ -182,7 +176,7 @@ struct TaskHandoverRuntime: Sendable {
     let packet = try await seal(
       task: adoption.task, attempt: adoptedAttempt, snapshot: snapshot, bundle: bundle,
       reason: handoverReason, resumeStepId: resume, progressNote: snapshot.session.suspend?.progressNote,
-      cliSinks: cliSinks, producer: .human(principal: principal), ownerAlive: true,
+      cliSinks: cliSinks, producer: .human(principal: principal), ownerAlive: false,
       adoptedWithoutLease: true
     )
     return (adoption.task, packet)
@@ -318,6 +312,10 @@ struct TaskHandoverRuntime: Sendable {
       publisher: task.context == nil ? nil : TaskDeliverablePublisher(
         store: located.store,
         reservationFence: adoptedWithoutLease ? nil : (try? located.store.loadLease(attemptId: attempt.id)?.fence) ?? -1,
+        adoptedWithoutLease: adoptedWithoutLease,
+        workspace: GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: Self.gitEnvironment(
+          ceilingDirectory: URL(fileURLWithPath: attempt.isolation?.path ?? options.workingDirectory)
+        )),
         workflow: bundle.workflow,
         nodePayloads: bundle.nodePayloads
       ),
@@ -329,18 +327,21 @@ struct TaskHandoverRuntime: Sendable {
   }
 
   private static func runAdoptionGit(_ arguments: [String], at directory: URL) throws -> GitCommandResult {
-    try FoundationGitCommandRunner().run(GitCommandInvocation(
+    return try FoundationGitCommandRunner().run(GitCommandInvocation(
       executableURL: URL(fileURLWithPath: "/usr/bin/git"),
       arguments: arguments,
       workingDirectory: directory,
-      environment: ProcessInfo.processInfo.environment,
+      environment: gitEnvironment(ceilingDirectory: directory),
       standardInput: nil
     ))
   }
 
-  private static func stderrHead(_ output: String) -> String {
-    String(output.split(whereSeparator: \.isNewline).first ?? "git switch failed")
+  static func gitEnvironment(ceilingDirectory: URL) -> [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    environment["GIT_CEILING_DIRECTORIES"] = ceilingDirectory.standardizedFileURL.path
+    return environment
   }
+
 }
 
 struct TaskReconcileEntry: Codable, Equatable, Sendable {

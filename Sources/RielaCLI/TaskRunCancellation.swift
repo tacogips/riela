@@ -71,6 +71,33 @@ final class TaskRunSignalState: @unchecked Sendable {
 final class TaskRunHandoverTriggerState: @unchecked Sendable {
   private let lock = NSLock()
   private var stored: (reason: HandoverReason, failureKind: WorkflowSessionFailureKind)?
+  private var latestBackendEvents: [String: WorkflowBackendEventRecord] = [:]
+
+  func recordBackendEvent(_ event: WorkflowRunEvent) {
+    guard event.type == .backendEvent,
+          let executionId = event.executionId,
+          let eventType = event.backendEventType else { return }
+    let channel = event.backendEventChannel.flatMap(AdapterBackendEventChannel.init(rawValue:))
+    let record = WorkflowBackendEventRecord(
+      sequence: event.backendEventSequence ?? 0,
+      at: Date(),
+      eventType: eventType,
+      channel: channel,
+      content: event.backendEventContent,
+      toolName: event.backendToolName,
+      usage: event.backendEventUsage,
+      metadata: event.backendEventMetadata
+    )
+    lock.lock()
+    latestBackendEvents[executionId] = record
+    lock.unlock()
+  }
+
+  func latestBackendEvent(executionId: String) -> WorkflowBackendEventRecord? {
+    lock.lock()
+    defer { lock.unlock() }
+    return latestBackendEvents[executionId]
+  }
 
   func record(reason: HandoverReason, failureKind: WorkflowSessionFailureKind) {
     lock.lock()
@@ -100,6 +127,8 @@ enum TaskRunCancellation {
     afterCancellationObservation: (@Sendable () throws -> Void)? = nil,
     afterSelectedHostProofRequired: (@Sendable () async -> Void)? = nil
   ) async throws -> CLICommandResult {
+    var observedContext = context
+    observedContext.backendEventObserver = { event in handoverTriggerState?.recordBackendEvent(event) }
     try signalState?.commitIfRequested(
       store: store, taskId: reservation.task.id, attemptId: reservation.attempt.id
     )
@@ -114,7 +143,7 @@ enum TaskRunCancellation {
       sessionId: reservation.attempt.sessionId
     ) != nil
     let execution = Task {
-      await runner.runTaskReservation(options, reservation: reservation, store: store, context: context)
+      await runner.runTaskReservation(options, reservation: reservation, store: store, context: observedContext)
     }
     let reservedLease = try store.loadLease(attemptId: reservation.attempt.id)
     let leasePolicy = reservation.task.guardPolicy.lease ?? LeasePolicy()
@@ -280,14 +309,11 @@ enum TaskRunCancellation {
       if case .inactivity = $0 { return true }
       return false
     }) else { return false }
-    if task.guardPolicy.handover?.onWaitSignal ?? true,
-       let backend = execution.backend,
-       let signal = TableBackendWaitSignalClassifier.default.latestSignal(
-         in: execution.recentBackendEvents ?? [], backend: backend
-       ) {
-      handoverTriggerState?.record(
-        reason: .userPresenceRequired(signal.presence), failureKind: .stalled
-      )
+    let recentEvents = handoverTriggerState?.latestBackendEvent(executionId: execution.executionId)
+      .map { [$0] } ?? execution.recentBackendEvents ?? []
+    if task.guardPolicy.handover?.onWaitSignal ?? true, let backend = execution.backend,
+       let signal = TableBackendWaitSignalClassifier.default.latestSignal(in: recentEvents, backend: backend) {
+      handoverTriggerState?.record(reason: .userPresenceRequired(signal.presence), failureKind: .stalled)
       return true
     }
     let rechecked = try sessionStore.loadStrictReadOnly(sessionId: reservation.attempt.sessionId)

@@ -122,7 +122,9 @@ extension TaskDispatch {
     let sessionRoot = URL(fileURLWithPath: located.root).deletingLastPathComponent().path
     var workingDirectory = options.workingDirectory
     if case let .repository(repository)? = reservation.task.context {
-      let workspace = GitBranchWorkspaceRuntime()
+      let workspace = GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: TaskHandoverRuntime.gitEnvironment(
+        ceilingDirectory: URL(fileURLWithPath: options.workingDirectory)
+      ))
       let policy = reservation.task.guardPolicy.handover?.publish ?? PublicationPolicy()
       let isolation: IsolationRef
       if case .takeover = reservation.attempt.entry,
@@ -162,7 +164,9 @@ extension TaskDispatch {
     let taskIdentifier = reservation.task.id
     let attemptIdentifier = reservation.attempt.id
     if let isolation = reservation.attempt.isolation {
-      let workspace = GitBranchWorkspaceRuntime()
+      let workspace = GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: TaskHandoverRuntime.gitEnvironment(
+        ceilingDirectory: URL(fileURLWithPath: options.workingDirectory)
+      ))
       let checkpointCoordinator = TaskHandoverCheckpointCoordinator()
       let repositoryWriteScopes: [String]?
       if case let .repository(repository)? = reservation.task.context,

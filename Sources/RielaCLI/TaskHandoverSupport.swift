@@ -37,6 +37,7 @@ actor TaskHandoverCheckpointCoordinator {
 struct TaskDeliverablePublisher: DeliverablePublisher {
   var store: WorkStore
   var reservationFence: Int?
+  var adoptedWithoutLease = false
   var workspace: any WorkspaceHandoverRuntime = GitBranchWorkspaceRuntime()
   var workflow: WorkflowDefinition
   var nodePayloads: [String: AgentNodePayload]
@@ -60,7 +61,30 @@ struct TaskDeliverablePublisher: DeliverablePublisher {
       )))
       return deliverables
     }
+    if adoptedWithoutLease {
+      guard let dirty = try? await workspace.dirtyPaths(isolation) else {
+        deliverables.append(.repository(RepositoryDeliverable(
+          root: isolation.path, remote: policy.remote, branch: branch,
+          baseRevision: baseRevision,
+          state: .checkpointFailed(reason: "adopted repository status is unavailable")
+        )))
+        return deliverables
+      }
+      deliverables.append(.repository(RepositoryDeliverable(
+        root: isolation.path, remote: policy.remote, branch: branch,
+        baseRevision: baseRevision, state: .unpublished(lastKnown: baseRevision), dirtyPaths: dirty
+      )))
+      return deliverables
+    }
     if ownerAlive {
+      guard Self.branch(branch, matchesAllowlist: policy.branchAllowlist) else {
+        deliverables.append(.repository(RepositoryDeliverable(
+          root: isolation.path, remote: policy.remote, branch: branch,
+          baseRevision: baseRevision,
+          state: .checkpointFailed(reason: "isolation branch is not attempt-owned")
+        )))
+        return deliverables
+      }
       if let reservationFence,
          (try? store.loadLease(attemptId: attempt.id)?.fence) != reservationFence {
         deliverables.append(.repository(RepositoryDeliverable(
@@ -98,6 +122,13 @@ struct TaskDeliverablePublisher: DeliverablePublisher {
       )))
     }
     return deliverables
+  }
+
+  private static func branch(_ branch: String, matchesAllowlist pattern: String) -> Bool {
+    guard !pattern.isEmpty else { return false }
+    let escaped = NSRegularExpression.escapedPattern(for: pattern)
+    let expression = "^" + escaped.replacingOccurrences(of: "\\*", with: ".*") + "$"
+    return branch.range(of: expression, options: .regularExpression) != nil
   }
 }
 

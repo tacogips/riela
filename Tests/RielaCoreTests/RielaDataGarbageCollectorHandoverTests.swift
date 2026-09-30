@@ -16,6 +16,7 @@ final class RielaDataGarbageCollectorHandoverTests: XCTestCase {
   func testHandoverFilesRemoveTerminalAndAbsentTasksAndDryRunReportsEveryDecision() throws {
     let home = try makeRoot()
     try runGit(["init", "-q"], in: home)
+    try assertTopLevelInsideFixture(home)
     let storeRoot = home.appendingPathComponent(".riela", isDirectory: true)
     try seedTasks([("task-done", "succeeded"), ("task-active", "waiting")], storeRoot: storeRoot)
     let handovers = storeRoot.appendingPathComponent("sessions/handovers", isDirectory: true)
@@ -78,6 +79,7 @@ final class RielaDataGarbageCollectorHandoverTests: XCTestCase {
   func testHandoverRefsDeleteOnlyTerminalTasksWithoutUsingRemote() throws {
     let repository = try makeRoot()
     try runGit(["init", "-q"], in: repository)
+    try assertTopLevelInsideFixture(repository)
     try runGit(["-c", "user.name=GC Tests", "-c", "user.email=gc@example.invalid", "commit", "--allow-empty", "-m", "fixture"], in: repository)
     let storeRoot = repository.appendingPathComponent(".riela", isDirectory: true)
     try seedTasks([("task-done", "succeeded"), ("task-active", "waiting")], storeRoot: storeRoot)
@@ -118,6 +120,7 @@ final class RielaDataGarbageCollectorHandoverTests: XCTestCase {
   func testMissingTaskDatabaseLeavesHandoverFilesUntouchedAndReportsDiagnostic() throws {
     let home = try makeRoot()
     try runGit(["init", "-q"], in: home)
+    try assertTopLevelInsideFixture(home)
     let handoverDirectory = home.appendingPathComponent(".riela/sessions/handovers/task-unknown", isDirectory: true)
     try FileManager.default.createDirectory(at: handoverDirectory, withIntermediateDirectories: true)
     try Data("packet".utf8).write(to: handoverDirectory.appendingPathComponent("handover.json"))
@@ -136,9 +139,10 @@ final class RielaDataGarbageCollectorHandoverTests: XCTestCase {
   }
 
   private func makeRoot() throws -> URL {
-    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-      .appendingPathComponent("tmp/riela-gc-handover-tests-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let unresolvedRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-gc-handover-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: unresolvedRoot, withIntermediateDirectories: true)
+    let root = hermeticRealPath(unresolvedRoot)
     roots.append(root)
     return root
   }
@@ -200,6 +204,7 @@ final class RielaDataGarbageCollectorHandoverTests: XCTestCase {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = ["git"] + arguments
     process.currentDirectoryURL = directory
+    process.environment = hermeticGitEnvironment()
     process.standardOutput = output
     process.standardError = Pipe()
     try process.run()
@@ -211,4 +216,30 @@ final class RielaDataGarbageCollectorHandoverTests: XCTestCase {
     }
     return text
   }
+
+  private func hermeticGitEnvironment() -> [String: String] {
+    var environment = ProcessInfo.processInfo.environment
+    for key in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"] {
+      environment.removeValue(forKey: key)
+    }
+    environment["GIT_CEILING_DIRECTORIES"] = hermeticRealPath(FileManager.default.temporaryDirectory).path
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    return environment
+  }
+
+  private func assertTopLevelInsideFixture(_ repository: URL) throws {
+    let output = try runGit(["rev-parse", "--show-toplevel"], in: repository)
+    let topLevel = hermeticRealPath(URL(fileURLWithPath: output.trimmingCharacters(in: .whitespacesAndNewlines))).path
+    let fixturePrefix = hermeticRealPath(repository).path + "/"
+    XCTAssertTrue(
+      topLevel + "/" == fixturePrefix || topLevel.hasPrefix(fixturePrefix),
+      "fixture repository top level \(topLevel) escaped \(fixturePrefix)"
+    )
+  }
+}
+
+private func hermeticRealPath(_ url: URL) -> URL {
+  var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+  guard realpath(url.path, &buffer) != nil else { return url.standardizedFileURL }
+  return URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
 }

@@ -84,7 +84,7 @@ final class TaskHandoverRepositoryTests: XCTestCase {
   func testRepositoryBranchCheckpointPublishAndSecondCloneMaterialization() async throws {
     let repository = try TaskHandoverRepositoryFixture()
     defer { repository.remove() }
-    let workspace = GitBranchWorkspaceRuntime()
+    let workspace = GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: repository.gitEnvironment)
     let taskId = TaskID("repository-handover-test")
     let attemptId = AttemptID("attempt-repository-handover")
     let isolation = try await workspace.ensureBranch(
@@ -143,7 +143,9 @@ final class TaskHandoverRepositoryTests: XCTestCase {
       entry: .start, decisionId: DecisionID("decision-fenced-publisher"),
       producer: .policy(rule: "test"), reason: "test", now: Date()
     ))
-    let isolation = try await GitBranchWorkspaceRuntime().ensureBranch(
+    let isolation = try await GitBranchWorkspaceRuntime(
+      git: FoundationGitCommandRunner(), environment: repository.gitEnvironment
+    ).ensureBranch(
       root: repository.clone.path, attempt: reserved.attempt.id, task: taskId,
       generation: reserved.attempt.generation, base: repository.baseRevision,
       isolation: .shared, template: "riela/task/{taskId}/g{generation}"
@@ -168,6 +170,124 @@ final class TaskHandoverRepositoryTests: XCTestCase {
     }
     XCTAssertEqual(reason, "fenced")
     XCTAssertTrue(try repository.git(["ls-remote", "--heads", "origin", "riela/task/*"]).isEmpty)
+  }
+
+  func testPublisherRefusesCheckoutItDoesNotOwnBeforeGitWrites() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let repository = try TaskHandoverRepositoryFixture()
+    defer { repository.remove() }
+    let workflow = WorkflowDefinition(
+      workflowId: "unowned-publisher-fixture", defaults: .init(nodeTimeoutMs: 1_000, maxLoopIterations: 1),
+      entryStepId: "work", nodeRegistry: [.init(id: "work", nodeFile: "work.json")],
+      steps: [.init(id: "work", nodeId: "work")], nodes: [.init(id: "work", nodeFile: "work.json")]
+    )
+    let taskId = TaskID("task-unowned-publisher")
+    let task = WorkTask(
+      id: taskId, intentId: IntentID("intent-unowned-publisher"), title: "Unowned publisher",
+      instruction: "Keep the checkout unchanged", plan: .workflow(WorkflowReference(name: workflow.workflowId)),
+      context: .repository(RepositoryContext(root: repository.clone.path, baseRevision: repository.baseRevision)),
+      state: .ready
+    )
+    try harness.store.saveTask(task)
+    let reserved = try harness.store.reserveAttempt(AttemptReservationRequest(
+      taskId: taskId, expectedTaskVersion: task.version, attemptId: AttemptID("attempt-unowned-publisher"),
+      sessionId: "session-unowned-publisher", workflowId: workflow.workflowId, entryStepId: "work",
+      entry: .start, decisionId: DecisionID("decision-unowned-publisher"),
+      producer: .policy(rule: "test"), reason: "test", now: Date()
+    ))
+    var attempt = reserved.attempt
+    attempt.isolation = IsolationRef(
+      path: repository.clone.path, branch: "operator/local", baseRevision: repository.baseRevision
+    )
+    try repository.write("must remain unstaged", to: "unowned.txt")
+    let branchBefore = try repository.git(["branch", "--show-current"])
+    let headBefore = try repository.git(["rev-parse", "HEAD"])
+    let statusBefore = try repository.git(["status", "--porcelain=v1", "--untracked-files=all"])
+    let indexBefore = try Data(contentsOf: repository.clone.appendingPathComponent(".git/index"))
+    let refsBefore = try repository.git(["for-each-ref", "--format=%(refname):%(objectname)"])
+    let remoteRefsBefore = try repository.git(["ls-remote", "--heads", "origin"])
+
+    let deliverables = await TaskDeliverablePublisher(
+      store: harness.store, workflow: workflow, nodePayloads: [:]
+    ).publish(task: reserved.task, attempt: attempt, snapshot: WorkflowRuntimePersistenceSnapshot(
+      session: WorkflowSession(
+        workflowId: workflow.workflowId, sessionId: reserved.attempt.sessionId, status: .running,
+        entryStepId: "work", createdAt: Date(), updatedAt: Date()
+      )
+    ), ownerAlive: true)
+    guard case let .repository(deliverable)? = deliverables.first,
+          case let .checkpointFailed(reason) = deliverable.state else {
+      return XCTFail("expected an attempt-ownership refusal")
+    }
+    XCTAssertEqual(reason, "isolation branch is not attempt-owned")
+    XCTAssertEqual(try repository.git(["branch", "--show-current"]), branchBefore)
+    XCTAssertEqual(try repository.git(["rev-parse", "HEAD"]), headBefore)
+    XCTAssertEqual(try Data(contentsOf: repository.clone.appendingPathComponent(".git/index")), indexBefore)
+    XCTAssertEqual(try repository.git(["status", "--porcelain=v1", "--untracked-files=all"]), statusBefore)
+    XCTAssertEqual(try repository.git(["for-each-ref", "--format=%(refname):%(objectname)"]), refsBefore)
+    XCTAssertEqual(try repository.git(["ls-remote", "--heads", "origin"]), remoteRefsBefore)
+  }
+
+  func testPublisherRefusesAllowlistedBranchThatIsNotCheckedOut() async throws {
+    let harness = try TaskExampleHarness()
+    defer { harness.remove() }
+    let repository = try TaskHandoverRepositoryFixture()
+    defer { repository.remove() }
+    let workflow = WorkflowDefinition(
+      workflowId: "unchecked-publisher-fixture", defaults: .init(nodeTimeoutMs: 1_000, maxLoopIterations: 1),
+      entryStepId: "work", nodeRegistry: [.init(id: "work", nodeFile: "work.json")],
+      steps: [.init(id: "work", nodeId: "work")], nodes: [.init(id: "work", nodeFile: "work.json")]
+    )
+    let taskId = TaskID("task-unchecked-publisher")
+    let task = WorkTask(
+      id: taskId, intentId: IntentID("intent-unchecked-publisher"), title: "Unchecked publisher",
+      instruction: "Keep the checkout unchanged", plan: .workflow(WorkflowReference(name: workflow.workflowId)),
+      context: .repository(RepositoryContext(root: repository.clone.path, baseRevision: repository.baseRevision)),
+      state: .ready
+    )
+    try harness.store.saveTask(task)
+    let reserved = try harness.store.reserveAttempt(AttemptReservationRequest(
+      taskId: taskId, expectedTaskVersion: task.version, attemptId: AttemptID("attempt-unchecked-publisher"),
+      sessionId: "session-unchecked-publisher", workflowId: workflow.workflowId, entryStepId: "work",
+      entry: .start, decisionId: DecisionID("decision-unchecked-publisher"),
+      producer: .policy(rule: "test"), reason: "test", now: Date()
+    ))
+    var attempt = reserved.attempt
+    attempt.isolation = IsolationRef(
+      path: repository.clone.path, branch: "riela/task/\(taskId.rawValue)/g1",
+      baseRevision: repository.baseRevision
+    )
+    try repository.write("must remain unstaged", to: "unowned.txt")
+    let branchBefore = try repository.git(["branch", "--show-current"])
+    let headBefore = try repository.git(["rev-parse", "HEAD"])
+    let statusBefore = try repository.git(["status", "--porcelain=v1", "--untracked-files=all"])
+    let indexBefore = try Data(contentsOf: repository.clone.appendingPathComponent(".git/index"))
+    let refsBefore = try repository.git(["for-each-ref", "--format=%(refname):%(objectname)"])
+    let remoteRefsBefore = try repository.git(["ls-remote", "--heads", "origin"])
+
+    let leaseFence = try XCTUnwrap(harness.store.loadLease(attemptId: reserved.attempt.id)?.fence)
+    let deliverables = await TaskDeliverablePublisher(
+      store: harness.store, reservationFence: leaseFence,
+      workspace: GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: repository.gitEnvironment),
+      workflow: workflow, nodePayloads: [:]
+    ).publish(task: reserved.task, attempt: attempt, snapshot: WorkflowRuntimePersistenceSnapshot(
+      session: WorkflowSession(
+        workflowId: workflow.workflowId, sessionId: reserved.attempt.sessionId, status: .running,
+        entryStepId: "work", createdAt: Date(), updatedAt: Date()
+      )
+    ), ownerAlive: true)
+    guard case let .repository(deliverable)? = deliverables.first,
+          case let .checkpointFailed(reason) = deliverable.state else {
+      return XCTFail("expected an attempt-ownership refusal")
+    }
+    XCTAssertTrue(reason.contains("isolation branch or HEAD changed"), reason)
+    XCTAssertEqual(try repository.git(["branch", "--show-current"]), branchBefore)
+    XCTAssertEqual(try repository.git(["rev-parse", "HEAD"]), headBefore)
+    XCTAssertEqual(try Data(contentsOf: repository.clone.appendingPathComponent(".git/index")), indexBefore)
+    XCTAssertEqual(try repository.git(["status", "--porcelain=v1", "--untracked-files=all"]), statusBefore)
+    XCTAssertEqual(try repository.git(["for-each-ref", "--format=%(refname):%(objectname)"]), refsBefore)
+    XCTAssertEqual(try repository.git(["ls-remote", "--heads", "origin"]), remoteRefsBefore)
   }
 
   func testOrphanedWorktreeIsUnpublishedAndMaterializesFromSecondClone() async throws {
@@ -195,7 +315,7 @@ final class TaskHandoverRepositoryTests: XCTestCase {
       entry: .start, decisionId: DecisionID("decision-orphan-worktree"),
       producer: .policy(rule: "test"), reason: "test", now: Date()
     ))
-    let workspace = GitBranchWorkspaceRuntime()
+    let workspace = GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: repository.gitEnvironment)
     let isolation = try await workspace.ensureBranch(
       root: repository.clone.path, attempt: reservation.attempt.id, task: taskId,
       generation: reservation.attempt.generation, base: repository.baseRevision,

@@ -9,6 +9,7 @@ struct TaskPlacementExecutionContext: Sendable {
   var stepBoundaryHook: (@Sendable (WorkflowRunEvent) async -> Void)?
   var boundaryHandover: (@Sendable (String) async -> SuspendRecord?)?
   var cancellationCause: (@Sendable () -> WorkflowSessionFailureKind?)?
+  var backendEventObserver: (@Sendable (WorkflowRunEvent) -> Void)?
   var checkpoint: (@Sendable (String, String) async -> Void)?
   var isolation: IsolationRef?
 
@@ -19,6 +20,7 @@ struct TaskPlacementExecutionContext: Sendable {
     stepBoundaryHook: (@Sendable (WorkflowRunEvent) async -> Void)? = nil,
     boundaryHandover: (@Sendable (String) async -> SuspendRecord?)? = nil,
     cancellationCause: (@Sendable () -> WorkflowSessionFailureKind?)? = nil,
+    backendEventObserver: (@Sendable (WorkflowRunEvent) -> Void)? = nil,
     checkpoint: (@Sendable (String, String) async -> Void)? = nil,
     isolation: IsolationRef? = nil
   ) {
@@ -28,6 +30,7 @@ struct TaskPlacementExecutionContext: Sendable {
     self.stepBoundaryHook = stepBoundaryHook
     self.boundaryHandover = boundaryHandover
     self.cancellationCause = cancellationCause
+    self.backendEventObserver = backendEventObserver
     self.checkpoint = checkpoint
     self.isolation = isolation
   }

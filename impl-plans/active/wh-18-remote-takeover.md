@@ -179,3 +179,73 @@ The remaining plans run strictly one at a time, so this plan may edit, as shared
 ### Answer delivery amendment (2026-10-01, after run session-14)
 
 wh-17 is accepted. A partial wh-18 is committed ('wip: partial wh-18 remote takeover'); complete it. Adversarial review (mid) found that remote takeover never delivers the stored S1 answer: the packet is sealed before the answer exists and neither `takeoverTask` nor `taskHandover` carries it. This plan now has shared ownership of `Sources/RielaGraphQL/TaskHandoverGraphQL.swift`, `Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift`. Add the bound answer (question id, payload, answeredBy, answeredAt) to the `takeoverTask` reservation payload and the provider, deliver it to the successor as the `handover.answer` variable and as a delivered message to the resume step exactly as the local takeover does, and refuse a remote takeover of an unanswered S1 handover. Add a provider-backed answered-S1 remote takeover test. Leave SDL regeneration and surface-catalog rows to wh-20; note any schema change in the progress log so wh-20 regenerates the SDL.
+
+### R34 answer contract (2026-10-01, run session-15)
+
+Design §10.2 steps 2-3 and §21 R34 (accepted in session-15) pin the answer delivery amendment. Scope is exactly this; nothing else in the plan changes.
+
+Contract (`Sources/RielaGraphQL/TaskHandoverGraphQL.swift`):
+- Add `public struct GraphQLHandoverAnswer: Codable, Equatable, Sendable { questionId: String; payload: JSONObject; answeredBy: JSONObject; answeredAt: String }` and `answer: GraphQLHandoverAnswer?` on `GraphQLTakeoverTaskPayload`. Add the init parameter with a default of `nil`, so `failurePayload` and every existing call site compile unchanged.
+- In `taskHandoverGraphQLSchemaTypes`, add `type HandoverAnswerPayload { questionId: String!, payload: JSONObject!, answeredBy: JSONObject!, answeredAt: String! }` and the field `answer: HandoverAnswerPayload` on `TakeoverTaskPayload`. Do NOT change `TakeoverTaskInput`, `HandoverPacket`, `TaskHandoverPayload` or the `taskHandover` query.
+- Do NOT touch `GraphQLSchemaGenerator.swift`, `GraphQLContractProjector+Schema.swift`, `GraphQLVariableValidation.swift` or any SurfaceCatalog file (wh-20 step 3). Record in the progress log: "schema change for wh-20: new type HandoverAnswerPayload; new field TakeoverTaskPayload.answer".
+
+Controller (`Sources/RielaCLI/TaskHandoverGraphQLProvider.swift` `takeoverTask`):
+- After loading the packet and before the trait check and `requestTakeover`, read `located.store.latestAnswer(handoverId: packet.id)`. This is the ONLY lookup (R25). Do not filter `listDecisions` here.
+- If `packet.reason` is `.userInputRequired(question)` and the answer is nil, throw `TaskHandoverGraphQLError(code: "conflict", message: "handover <handoverId> needs an answer: riela task answer <taskId> --question <question.id> …")`. The refusal happens before any reservation, so no attempt, lease or fence is created.
+- On success, set `answer` only for a `.userInputRequired` packet:
+  - `questionId` and `payload` come from `HandoverAnswer`.
+  - `answeredBy` is the `DecisionProducer` JSON encoding (same `JSONEncoder` → `JSONObject` route the provider already uses).
+  - `answeredAt` is `Self.timestamp(answer.answeredAt)`, the same helper as `expiresAt`.
+  - For every other reason, `answer` stays nil.
+
+Successor (`Sources/RielaCLI/TaskRemoteTakeover.swift`):
+- Decode `answer` from the `takeoverTask` response, and add `answer { questionId payload answeredBy answeredAt }` to the takeover selection set.
+- If the packet is S1 and `answer` is absent, fail with a clear error BEFORE saving the local session or launching the runner. Do not report.
+- If `answer` is present, mirror `TaskDispatch+Handover.swift` (`:221-235` variables, `:393-406` message):
+  - Set `"answer": payload` inside the `handover` variable object, and `"delivered": {"handover": {"answer": payload}}` as a top-level variable.
+  - Before the snapshot is saved, append one `WorkflowMessageRecord` to the imported messages with these fields:
+    - `communicationId` `handover-answer-<handoverId>-<attemptId>`
+    - `workflowExecutionId` = the local session id
+    - `fromStepId` nil and `toStepId` = `packet.contract.resumeStepId`
+    - `sourceStepExecutionId` = the last imported execution's id
+    - payload `{"handover": {"answer": payload}}`
+    - `.delivered`
+    - `createdOrder` = max + 1
+    - `createdAt` = parsed `answeredAt`
+  - If the bundle imported no execution, skip the message without crashing. This is the same guard as the local `if let sourceExecution`.
+
+Pitfalls:
+- Do not put the answer into the packet or recompute the packet digest: the packet is sealed (R17/R19).
+- Do not rely on `requestTakeover`'s `WorkStoreError`. It surfaces as the generic `internal` error (`TaskHandoverGraphQL.swift:274`).
+- Never log or render the answer payload in stderr.
+- Parse `answeredAt` with an `ISO8601DateFormatter` whose `formatOptions` are `[.withInternetDateTime, .withFractionalSeconds]`, the same options as the controller's `timestamp` helper (`TaskHandoverGraphQLProvider.swift:321`). A default formatter returns nil for this form.
+- If parsing fails, treat the response as malformed: fail before launch like a missing answer. Do not fall back to `Date()`.
+- Stub test fixtures must use the fractional form (for example `2026-10-01T00:00:00.000Z`).
+- Keep the existing `isPendingSchemaRegistration` helper. The new provider-backed test uses it until wh-20 step 3, and wh-20 removes it.
+
+Tests (hermetic temp stores, no network, no git on the process-cwd repository):
+- `TaskHandoverGraphQLTests` (RielaGraphQLTests):
+  - A payload with `answer` round-trips encode/decode with all four fields.
+  - A payload without `answer` decodes to nil.
+  - `taskHandoverGraphQLSchemaTypes` contains `HandoverAnswerPayload` and `answer: HandoverAnswerPayload`.
+- `TaskHandoverGraphQLProviderTests`, calling the provider directly with no variable validation (these pass today, with no pending branch):
+  - S1 handover sealed, then `answerTask`, then `takeoverTask` → `answer.questionId` equals the question id, `answer.payload` equals the stored answer, and `answeredAt` is non-empty.
+  - S1 handover sealed with no answer, then `takeoverTask` → `code == "conflict"`, the message contains `needs an answer`, and the controller attempt count and lease rows are unchanged.
+  - Presence handover, then `takeoverTask` → `answer == nil`.
+- `TaskRemoteTakeoverTests`:
+  - Stub transport returns an S1 packet with `answer` → the resume step's first execution `inputSnapshot` contains `handover.answer`, and the local session has a delivered message to `resumeStepId` with id `handover-answer-<handoverId>-<attemptId>`, and that message's `createdAt` equals the stub's `answeredAt`.
+  - Stub S1 without `answer` → exit failure, no `reportAttempt` call, and no local session saved.
+  - Provider-backed answered-S1: controller A is a `TaskExampleHarness` running `task-handover-answer`, which suspends; then `answerTask`; then B runs `TaskRemoteTakeover` over `InProcessTaskHandoverGraphQLTransport`. Assert A's task `succeeded`, a `.takeover` successor attempt exists, and B's resume-step input has the answer. Until wh-20 step 3 it takes the same strict `isPendingSchemaRegistration` branch (strict `XCTExpectFailure`, A's attempt count unchanged, return) as the two existing signal-6 tests.
+
+Verification (the arm64 wrapper, logs under `tmp/work-handover/wh-18-remote-takeover/`):
+- `arch -arm64 /bin/zsh -lc 'swift build > tmp/work-handover/wh-18-remote-takeover/build-r34.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-18-remote-takeover/build-r34.log'` → exit=0.
+- `arch -arm64 /bin/zsh -lc 'swift test --filter "TaskRemoteTakeoverTests|TaskHandoverCommandTests|TaskHandoverGraphQLProviderTests|TaskHandoverGraphQLTests" > tmp/work-handover/wh-18-remote-takeover/focused-r34.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-18-remote-takeover/focused-r34.log'` → exit=0, 0 unexpected failures, and exactly three strict expected failures (the pending branches). Record testsRun and failureCount.
+- `grep -c "isPendingSchemaRegistration(" Tests/RielaCLITests/TaskRemoteTakeoverTests.swift` → 4 (the helper plus three call sites).
+- `arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet --no-cache <each changed Swift file>'` → exit 0.
+- `git diff --check` → exit 0.
+
+Done criteria (R34):
+- [ ] `GraphQLTakeoverTaskPayload.answer` and the `HandoverAnswerPayload` SDL block exist; `TakeoverTaskInput` is unchanged
+- [ ] The provider refuses an unanswered S1 with `conflict` before reserving, and returns the bound answer for an answered S1
+- [ ] The remote successor delivers `handover.answer`, `delivered` and the resume-step message; an S1 response with no answer fails before launch
+- [ ] The tests above pass (focused-r34.log exit=0); the schema change for wh-20 is recorded in the progress log

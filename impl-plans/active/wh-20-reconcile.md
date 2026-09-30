@@ -61,6 +61,7 @@
     "Tests/RielaCLITests/TaskHandoverGraphQLProviderTests.swift",
     "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
     "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
+    "Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
     "Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift",
     "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
     "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
@@ -87,6 +88,10 @@
     {
       "path": "Sources/RielaCLI/CLISurfaceEnumeration.swift",
       "intendedEdit": "Only if a parity gate reports a missing session subcommand or option enumeration for the new commands."
+    },
+    {
+      "path": "Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
+      "intendedEdit": "After step 3 registers the schema, delete the isPendingSchemaRegistration helper and its three strict XCTExpectFailure pending branches so the provider-backed signal-6 and answered-S1 flows run unconditionally."
     },
     {
       "path": "README.md",
@@ -172,3 +177,16 @@ The base commit already fails one test (`WorkflowCommandCrossWorkflowDispatchTes
 ### Serial-wave shared ownership (2026-10-01, after run session-13)
 
 The remaining plans run strictly one at a time, so this plan may edit, as shared paths with minimal, documented changes, every task-dispatch, handover-runtime, work-store, decision and GraphQL-provider file that no remaining plan owns (listed in `sharedPaths`). Do not block on those files; fix a defect where it lives and add a regression. Record each shared edit (file, reason, test) in the progress log.
+
+### Pending-branch removal and R34 schema (2026-10-01, run session-15)
+
+wh-18 adds `type HandoverAnswerPayload` and the field `TakeoverTaskPayload.answer` to `taskHandoverGraphQLSchemaTypes` (design §21 R34). Step 3 registers that constant as a whole, so they need no separate block. After the second SDL pass, confirm that `HandoverAnswerPayload` appears in the generated schema.
+
+After step 3, delete `isPendingSchemaRegistration`, `pendingSchemaRegistrationMessage` and all three pending branches in `Tests/RielaCLITests/TaskRemoteTakeoverTests.swift`, together with their strict `XCTExpectFailure` calls. This applies to the two signal-6 provider tests and the wh-18 answered-S1 provider test. Do not weaken any assertion that follows a branch.
+
+Evidence:
+- `! grep -q -E "isPendingSchemaRegistration|XCTExpectFailure" Tests/RielaCLITests/TaskRemoteTakeoverTests.swift` exits 0.
+- `grep -q "HandoverAnswerPayload" Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift` exits 0.
+- In `focused.log`, `TaskRemoteTakeoverTests` passes with no expected failures.
+
+If a provider-backed test fails once the branch is gone, it is a regression: fix it under the serial repair authority. Never restore the branch.

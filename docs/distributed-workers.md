@@ -88,6 +88,7 @@ On the worker machine, create a configuration pointing to a reachable controller
 {
   "controllerURL": "https://controller.example.com",
   "tokenFile": "worker.token",
+  "traits": ["userReachable"],
   "capacity": 2,
   "workspaces": {
     "project": {
@@ -108,7 +109,10 @@ start using files without exporting credentials in the launching shell.
 Alternatively, replace `tokenFile` with
 `"tokenEnvironment": "RIELA_LINUX_WORKER_TOKEN"` to read an environment variable.
 Specify exactly one of these two fields. The controller assigns the worker ID
-and groups based on the matching token in its configuration.
+and groups based on the matching token in its configuration. The optional
+`traits` array declares host traits such as `userReachable` or `interactive`;
+placement compares these declarations with a task's requirements and does not
+probe the worker.
 
 `path` must be an existing worker directory. Relative paths are resolved beside
 the worker configuration file. Provision the repository, executables and agent
@@ -192,8 +196,11 @@ The queue snapshot retains the bytes and can restore a missing artifact file.
 Result JSON including base64-encoded exports must fit the 1 MiB completion limit.
 
 Agent bindings using `fromEnv` resolve on the worker. Executable add-ons must
-also be in that workspace's explicit `allowedAddons` list. Controller-only
-projection and Git finalization operations cannot be assigned to workers.
+also be in that workspace's explicit `allowedAddons` list. For Work Runtime task
+branch publication, a worker may run `riela/git-publish-branch` when it is
+explicitly allowed. `riela/git-commit` and `riela/git-push` remain denied on
+workers. Controller-only projection and other Git finalization operations
+cannot be assigned to workers.
 
 Leases are renewed while executing and publishing results. A lost lease stops
 the worker invocation and fences stale results. Cancelling one job stops its

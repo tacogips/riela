@@ -138,3 +138,69 @@ riela call-step
 riela workflow-call
 ```
 <!-- surface-catalog:end -->
+
+## Task handover GraphQL fields
+
+The `/graphql` task-handover control surface contains two queries and five
+mutations. Remote requests require `Authorization: Bearer <manager token>`
+matching the server's `RIELA_MANAGER_AUTH_TOKEN`. The client may also send
+`X-Riela-Manager-Session-Id` to carry its manager session context. Local trusted
+execution is available inside the server process.
+
+```graphql
+query Handover($taskId: String!, $handoverId: String) {
+  taskHandover(taskId: $taskId, handoverId: $handoverId) {
+    handover { handoverId taskId digest reasonKind resumeStepId brief packet }
+    errors { code message }
+  }
+}
+
+query Waiting($traits: [String!]) {
+  tasksAwaitingHandover(traits: $traits) {
+    tasks { taskId handoverId reasonKind requiredTraits needsAnswer questionText createdAt }
+    errors { code message }
+  }
+}
+
+mutation Request($input: RequestTaskHandoverInput!) {
+  requestTaskHandover(input: $input) { taskId taskState decisionKind requestId errors { code message } }
+}
+mutation Answer($input: AnswerTaskInput!) {
+  answerTask(input: $input) { taskId taskState decisionKind requestId errors { code message } }
+}
+mutation Takeover($input: TakeoverTaskInput!) {
+  takeoverTask(input: $input) {
+    attemptId sessionId fence expiresAt heartbeatToken heartbeatMs
+    answer { questionId payload answeredBy answeredAt }
+    packet { handoverId taskId digest resumeStepId brief packet }
+    errors { code message }
+  }
+}
+mutation Heartbeat($attemptId: String!, $token: String!) {
+  heartbeatAttempt(attemptId: $attemptId, token: $token) { attemptId fence expiresAt fenced errors { code message } }
+}
+mutation Report($input: ReportAttemptInput!) {
+  reportAttempt(input: $input) { attemptId taskState decisionKind handoverId errors { code message } }
+}
+```
+
+Input shapes:
+
+- `RequestTaskHandoverInput`: required `taskId`, `reason`; optional `immediate`, `target`, and `sinks`.
+- `AnswerTaskInput`: required `taskId`, `questionId`, and JSON object `answer`; optional `principal`.
+- `TakeoverTaskInput`: required `taskId`, `handoverId`, `hostId`, and `traits`; optional `backend` and `model`.
+- `ReportAttemptInput`: required `attemptId`, `token`, JSON object `snapshot`, and JSON object list `deliverables`.
+
+An answer is bound to the specific task handover and question. An answered S1
+handover returns `answer` on `TakeoverTaskPayload`; an unanswered S1 handover
+is rejected before the server reserves an attempt. The successor delivers the
+answer as `handover.answer` and as a message to `resumeStepId`.
+
+For remote takeover, use the `heartbeatToken` returned by `takeoverTask` as the
+lease credential. Call `heartbeatAttempt(attemptId, token)` every returned
+`heartbeatMs` while the successor runs. At terminal, call
+`reportAttempt(input: {attemptId, token, snapshot, deliverables})` once; the
+controller reconciles the report and runs its verification and director. Keep
+the token secret. A fenced heartbeat or rejected report means this owner cannot
+continue. Each lease credential authorizes at most one report, including when
+reports race.

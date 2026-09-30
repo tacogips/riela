@@ -15,3 +15,16 @@ Supported recovery is intentionally bounded to failed sequential agent invocatio
 Invocation snapshots record SHA-256 compatibility digests, not raw node configuration or resolved process environments. Earlier accepted node contracts, workflow-step identity/routing, and variables must match. The failed target's input contract must match, while its prompt/output contract may be repaired. Sources recorded before compatibility evidence existed cannot be safely imported and produce an explicit diagnostic.
 
 This is execution recovery, not side-effect deduplication for the failed target itself. A target may have performed external work before failing; use the destination API's idempotency mechanism when retrying that work.
+
+## Handover history
+
+Task takeover can import accepted history from a same-store source session that
+ended `suspended` or `failed` with `.stalled`, `.cancelled`, or `.leaseLost`.
+A remote successor can instead import the bounded history bundle carried by the
+handover packet. Imported executions record the source session and handover in
+`importedFrom`, including `importedFrom.handoverId`, so the original evidence
+remains traceable without replaying accepted steps.
+
+A truncated packet history bundle is refused; it is never treated as a complete
+history. Read the canonical handover packet from the controller work store and
+retry through the supported takeover path.

@@ -59,6 +59,7 @@ the run continuing; retrying can start another run. Remote runs reject
 
 <!-- surface-catalog:begin session -->
 ```
+riela session handover
 riela session rerun
 riela session resume
 riela session continue

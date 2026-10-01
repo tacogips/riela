@@ -237,6 +237,47 @@ final class TaskHandoverCommandTests: XCTestCase {
     try assertAdoptedIsolation(taskId: payload.taskId, project: project)
   }
 
+  func testSessionHandoverHonorsApplicationGitCeilingForNonRepositoryWorkingDirectory() async throws {
+    let root = testArtifactRoot.appendingPathComponent("ceiling-\(UUID().uuidString)", isDirectory: true)
+    let outer = root.appendingPathComponent("outer", isDirectory: true)
+    let inner = outer.appendingPathComponent("inner", isDirectory: true)
+    try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let remote = try initializeFixtureRepository(at: outer)
+    defer { try? FileManager.default.removeItem(at: remote) }
+
+    let beforeBranch = try runFixtureGit(["-C", outer.path, "branch", "--show-current"], ceiling: root.path)
+    let beforeHead = try runFixtureGit(["-C", outer.path, "rev-parse", "HEAD"], ceiling: root.path)
+    let beforeRefs = try runFixtureGit(
+      ["-C", outer.path, "for-each-ref", "--format=%(refname) %(objectname)"], ceiling: root.path
+    )
+    let workflowId = "ceiling-\(UUID().uuidString)"
+    let sessionId = "session-ceiling-\(UUID().uuidString)"
+    try writePlainWorkflow(project: inner, workflowId: workflowId)
+    try saveSuspendedSession(sessionId: sessionId, workflowId: workflowId)
+    var environment = ProcessInfo.processInfo.environment
+    environment["GIT_CEILING_DIRECTORIES"] = outer.path
+    environment["RIELA_SESSION_STORE"] = sessionStore.path
+    let result = await RielaCLIApplication().run([
+      "session", "handover", sessionId, "--reason", "r", "--scope", "project",
+      "--working-dir", inner.path, "--session-store", sessionStore.path, "--output", "json"
+    ], environment: environment)
+
+    XCTAssertEqual(result.exitCode, .suspended, "stderr: \(result.stderr); stdout: \(result.stdout)")
+    let payload = try JSONDecoder().decode(SessionHandoverCommandResult.self, from: Data(result.stdout.utf8))
+    let task = try XCTUnwrap(store.loadTask(id: TaskID(payload.taskId)))
+    XCTAssertNil(task.context)
+    let packet = try XCTUnwrap(store.latestHandover(taskId: TaskID(payload.taskId)))
+    XCTAssertFalse(packet.deliverables.contains { if case .repository = $0 { return true }; return false })
+    XCTAssertEqual(try runFixtureGit(["-C", outer.path, "branch", "--show-current"], ceiling: root.path), beforeBranch)
+    XCTAssertEqual(try runFixtureGit(["-C", outer.path, "rev-parse", "HEAD"], ceiling: root.path), beforeHead)
+    XCTAssertEqual(
+      try runFixtureGit(["-C", outer.path, "for-each-ref", "--format=%(refname) %(objectname)"], ceiling: root.path),
+      beforeRefs
+    )
+    XCTAssertFalse(beforeRefs.contains("refs/heads/riela/task/"))
+  }
+
   private func run(_ arguments: [String], project: URL? = nil) async -> CLICommandResult {
     var command = arguments
     var environment = ["RIELA_SESSION_STORE": sessionStore.path]

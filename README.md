@@ -760,6 +760,9 @@ and `git diff --check`.
 
 ## Work Runtime (`RielaWork`)
 
+See [Work handover and takeover](docs/work-handover.md) for task handover,
+answers, presence placement, and orphan recovery.
+
 The P1 release remediation for Draft PR #113 registers
 `riela/chat-reply-worker@1` in the built-in catalog, so
 `riela workflow usage matrix-chat-reply --workflow-definition-dir examples --output json`

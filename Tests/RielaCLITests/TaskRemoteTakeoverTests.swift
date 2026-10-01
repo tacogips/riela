@@ -272,13 +272,6 @@ final class TaskRemoteTakeoverTests: XCTestCase {
       sealed, traits: [.userReachable], root: successorRoot, sessionStore: successorStore
     ))
 
-    if Self.isPendingSchemaRegistration(result.stderr) {
-      XCTExpectFailure(Self.pendingSchemaRegistrationMessage) {
-        XCTFail(result.stderr)
-      }
-      XCTAssertEqual(try controller.store.listAttempts(taskId: sealed.task.id), attemptsBefore)
-      return
-    }
     XCTAssertEqual(result.exitCode, .success, "\(result.stderr)\n\(result.stdout)")
     XCTAssertEqual(try controller.store.loadTask(id: sealed.task.id)?.state, .succeeded)
     let attempts = try controller.store.listAttempts(taskId: sealed.task.id)
@@ -332,13 +325,6 @@ final class TaskRemoteTakeoverTests: XCTestCase {
       sessionStore: successorRoot.appendingPathComponent("sessions", isDirectory: true)
     ))
 
-    if Self.isPendingSchemaRegistration(result.stderr) {
-      XCTExpectFailure(Self.pendingSchemaRegistrationMessage) {
-        XCTFail(result.stderr)
-      }
-      XCTAssertEqual(try controller.store.listAttempts(taskId: sealed.task.id), attemptsBefore)
-      return
-    }
     XCTAssertEqual(result.exitCode, .failure, "\(result.stderr)\n\(result.stdout)")
     XCTAssertTrue(result.stderr.contains("host-traits-unavailable"), result.stderr)
     XCTAssertEqual(try controller.store.listAttempts(taskId: sealed.task.id), attemptsBefore)
@@ -396,11 +382,6 @@ final class TaskRemoteTakeoverTests: XCTestCase {
       scope: .project, output: .json
     ))
 
-    if Self.isPendingSchemaRegistration(result.stderr) {
-      XCTExpectFailure(Self.pendingSchemaRegistrationMessage) { XCTFail(result.stderr) }
-      XCTAssertEqual(try controller.store.listAttempts(taskId: task.id), attemptsBefore)
-      return
-    }
     XCTAssertEqual(result.exitCode, .success, "\(result.stderr)\n\(result.stdout)")
     XCTAssertEqual(try controller.store.loadTask(id: task.id)?.state, .succeeded)
     let attempts = try controller.store.listAttempts(taskId: task.id)
@@ -559,17 +540,6 @@ final class TaskRemoteTakeoverTests: XCTestCase {
   }
 
   // MARK: Helpers
-
-  private static let pendingSchemaRegistrationMessage =
-    "Pending wh-20 step 3: taskHandoverGraphQLSchemaTypes is not yet registered in the GraphQL schema, "
-    + "so $input: TakeoverTaskInput! fails variable validation. Remove this branch once wh-20 registers it."
-
-  /// True while the server rejects `$input: TakeoverTaskInput!` (pending wh-20 step 3). The error text reaches the
-  /// caller through `String(describing:)`, which escapes single quotes, so both renderings are accepted.
-  private static func isPendingSchemaRegistration(_ stderr: String) -> Bool {
-    stderr.contains("unknown or non-input type 'TakeoverTaskInput'")
-      || stderr.contains("unknown or non-input type \\'TakeoverTaskInput\\'")
-  }
 
   private struct SealedPresence {
     var task: WorkTask
@@ -775,7 +745,12 @@ private struct RemoteTakeoverNodeAdapter: NodeAdapter {
         to: publishDirectory.appendingPathComponent("successor-output.txt"), atomically: true, encoding: .utf8
       )
     }
-    let payload: JSONObject = input.node.id == "publish" ? ["published": .bool(true)] : ["summary": .string("Published")]
+    let payload: JSONObject
+    switch input.node.id {
+    case "publish": payload = ["published": .bool(true)]
+    case "apply": payload = ["applied": .bool(true)]
+    default: payload = ["summary": .string("Published")]
+    }
     return AdapterExecutionOutput(provider: "test", model: "test", promptText: "", completionPassed: true, payload: payload)
   }
   func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {}

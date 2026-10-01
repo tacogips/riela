@@ -638,6 +638,11 @@ public enum GraphQLSchemaGenerator {
     "Mutation.sendManagerMessage": .init(name: "sendManagerMessage", arguments: "input: SendManagerMessageInput!", type: "SendManagerMessagePayload!"),
     "Mutation.setRoutineStatus": .init(name: "setRoutineStatus", arguments: "input: SetRoutineStatusInput!", type: "RoutineMutationPayload!"),
     "Mutation.stopSession": .init(name: "stopSession", arguments: "input: StopSessionInput!", type: "SessionMutationPayload!"),
+    "Mutation.requestTaskHandover": .init(name: "requestTaskHandover", arguments: "input: RequestTaskHandoverInput!", type: "TaskHandoverMutationPayload!"),
+    "Mutation.answerTask": .init(name: "answerTask", arguments: "input: AnswerTaskInput!", type: "TaskHandoverMutationPayload!"),
+    "Mutation.takeoverTask": .init(name: "takeoverTask", arguments: "input: TakeoverTaskInput!", type: "TakeoverTaskPayload!"),
+    "Mutation.heartbeatAttempt": .init(name: "heartbeatAttempt", arguments: "attemptId: String!, token: String!", type: "LeaseStatePayload!"),
+    "Mutation.reportAttempt": .init(name: "reportAttempt", arguments: "input: ReportAttemptInput!", type: "ReportAttemptPayload!"),
     "Mutation.switchProfileConfiguration": .init(name: "switchProfileConfiguration", arguments: "input: ProfileConfigurationInput!", type: "RielaConfiguration!"),
     "Mutation.updateAppearanceConfiguration": .init(name: "updateAppearanceConfiguration", arguments: "input: UpdateAppearanceConfigurationInput!", type: "RielaConfiguration!"),
     "Mutation.updateAssistantConfiguration": .init(name: "updateAssistantConfiguration", arguments: "input: UpdateAssistantConfigurationInput!", type: "RielaConfiguration!"),
@@ -657,6 +662,8 @@ public enum GraphQLSchemaGenerator {
     "Query.routine": .init(name: "routine", arguments: "routineId: String!, routineStoreRoot: String", type: "RoutineQueryPayload!"),
     "Query.routines": .init(name: "routines", arguments: "filter: RoutineFilter", type: "RoutineListPayload!"),
     "Query.sessionHealth": .init(name: "sessionHealth", arguments: "sessionId: String!", type: "SessionObservabilityPayload!"),
+    "Query.taskHandover": .init(name: "taskHandover", arguments: "taskId: String!, handoverId: String", type: "TaskHandoverPayload!"),
+    "Query.tasksAwaitingHandover": .init(name: "tasksAwaitingHandover", arguments: "traits: [String!]", type: "TasksAwaitingHandoverPayload!"),
     "Query.sessionProgress": .init(name: "sessionProgress", arguments: "sessionId: String!, includeChildren: Boolean = false", type: "SessionObservabilityPayload!"),
     "Query.workflow": .init(name: "workflow", arguments: "target: WorkflowTargetInput!", type: "WorkflowQueryPayload!"),
     "Query.workflowInstance": .init(name: "workflowInstance", arguments: "identity: String!, workflowId: String", type: "WorkflowInstanceQueryPayload!"),
@@ -669,13 +676,14 @@ public enum GraphQLSchemaGenerator {
   /// SDL blocks that stay hand-written (delta D2). They are interpolated by
   /// both the generator and the checked-in literal, so both see one source.
   static var handWrittenSchemaBlocks: [String] {
-    [workflowRegistryGraphQLSchemaTypes, configurationGraphQLSchemaTypes, routineGraphQLSchemaTypes]
+    [workflowRegistryGraphQLSchemaTypes, configurationGraphQLSchemaTypes, routineGraphQLSchemaTypes, taskHandoverGraphQLSchemaTypes]
   }
 
   static let handWrittenSchemaBlockNames: [String] = [
     "workflowRegistryGraphQLSchemaTypes",
     "configurationGraphQLSchemaTypes",
-    "routineGraphQLSchemaTypes"
+    "routineGraphQLSchemaTypes",
+    "taskHandoverGraphQLSchemaTypes"
   ]
 
   /// Catalog-ordered root fields for one root.

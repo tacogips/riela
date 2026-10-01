@@ -210,6 +210,15 @@ extension SurfaceCatalog {
   static let sessionRows: [SurfaceOperation] = [
     surfaceRow(
       sessionDefaults,
+      id: "session.handover",
+      family: "session",
+      kind: .mutation,
+      cli: "session handover",
+      cliOptions: ["--scope", "--working-dir", "--session-store", "--reason", "--task", "--sink", "--principal", "--output"],
+      skills: ["riela-workflow-run"]
+    ),
+    surfaceRow(
+      sessionDefaults,
       id: "session.rerun",
       family: "session",
       kind: .mutation,

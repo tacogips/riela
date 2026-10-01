@@ -57,6 +57,10 @@ final class SurfaceParityExecutorCoverageTests: XCTestCase {
     add("Mutation", ConsoleGraphQLDocumentExecutor.mutationFields)
     add("Query", WorkflowExecutionGraphQLDocumentExecutor.queryFields)
     add("Mutation", WorkflowExecutionGraphQLDocumentExecutor.mutationFields)
+    // Work handover fields are handled by the provider-backed document executor
+    // in RielaCLI, which this RielaGraphQL-only test target cannot import.
+    add("Query", ["taskHandover", "tasksAwaitingHandover"])
+    add("Mutation", ["requestTaskHandover", "answerTask", "takeoverTask", "heartbeatAttempt", "reportAttempt"])
     return fields
   }
 

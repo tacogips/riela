@@ -39,7 +39,7 @@ verification and review. Final commit and push remain workflow steps.
 
 ## Active Plans
 
-Work handover and takeover (2026-09-30): [`work-handover-and-takeover`](active/work-handover-and-takeover.md) plans the builtin path for continuing a stalled task attempt on another worker: session `suspended` status, a digest-sealed `HandoverPacket` with deliverable locators (git branch, kaiba/monja ids), `AttemptEntry.takeover`, answer channel, lease heartbeat/fence, sinks, host traits and GraphQL takeover. Design: `design-docs/specs/design-work-handover-and-takeover.md`; open decisions: `design-docs/user-qa/qa-work-handover-and-takeover.md`. Status: Planning, no code written.
+Work handover and takeover (2026-09-30): [`work-handover-and-takeover`](active/work-handover-and-takeover.md) plans the builtin path for continuing a stalled task attempt on another worker: session `suspended` status, a digest-sealed `HandoverPacket` with deliverable locators (git branch, kaiba/monja ids), `AttemptEntry.takeover`, answer channel, lease heartbeat/fence, sinks, host traits and GraphQL takeover. Design: `design-docs/specs/design-work-handover-and-takeover.md`; open decisions: `design-docs/user-qa/qa-work-handover-and-takeover.md`. Status: implementation blocked on wh-20 catalog and test write-path ownership on `feat/work-handover-and-takeover`; see [`wh-20 progress`](progress/wh-20-reconcile.md) and evidence under `tmp/work-handover/wh-20-reconcile/`.
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):
 [`builtin-addon-116-03-verification`](active/builtin-addon-116-03-verification.md)

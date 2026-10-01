@@ -101,6 +101,103 @@ extension SurfaceCatalog {
         cliOptions: sharedOptions + [
           "--accept", "--reject", "--rerun", "--cancel", "--principal", "--expected-version", "--decision-id"
         ]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.handover",
+        family: "task",
+        kind: .mutation,
+        cli: "task handover",
+        cliOptions: sharedOptions + ["--reason", "--now", "--to", "--sink", "--principal"],
+        graphql: graphQLMutation("requestTaskHandover"),
+        skills: ["riela-workflow-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.takeover",
+        family: "task",
+        kind: .process,
+        cli: "task takeover",
+        cliOptions: sharedOptions + [
+          "--packet", "--force-orphan", "--clone-into", "--traits", "--principal", "--endpoint",
+          "--handover-id", "--auth-token", "--auth-token-env", "--manager-session-id"
+        ],
+        graphql: graphQLMutation("takeoverTask"),
+        skills: ["riela-workflow-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.answer",
+        family: "task",
+        kind: .mutation,
+        cli: "task answer",
+        cliOptions: sharedOptions + [
+          "--question", "--answer-json", "--answer-file", "--text", "--option", "--use-default", "--principal"
+        ],
+        graphql: graphQLMutation("answerTask"),
+        skills: ["riela-workflow-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.handovers",
+        family: "task",
+        kind: .query,
+        cli: "task handovers",
+        cliOptions: sharedOptions,
+        skills: ["riela-workflow-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.reconcile",
+        family: "task",
+        kind: .mutation,
+        cli: "task reconcile",
+        cliOptions: sharedOptions + ["--expired-leases", "--dry-run", "--sink"],
+        skills: ["riela-workflow-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.serve",
+        family: "task",
+        kind: .process,
+        cli: "task serve",
+        cliOptions: [
+          "--takeover", "--endpoint", "--poll-interval-ms", "--once", "--traits", "--scope", "--working-dir",
+          "--session-store", "--auth-token", "--auth-token-env", "--manager-session-id"
+        ],
+        skills: ["riela-workflow-run"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.handover-query",
+        family: "task",
+        kind: .query,
+        graphql: graphQLQuery("taskHandover"),
+        skills: ["riela-workflow-reference"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.awaiting-handover",
+        family: "task",
+        kind: .query,
+        graphql: graphQLQuery("tasksAwaitingHandover"),
+        skills: ["riela-workflow-reference"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.heartbeat",
+        family: "task",
+        kind: .mutation,
+        graphql: graphQLMutation("heartbeatAttempt"),
+        skills: ["riela-workflow-reference"]
+      ),
+      surfaceRow(
+        defaults,
+        id: "task.report",
+        family: "task",
+        kind: .mutation,
+        graphql: graphQLMutation("reportAttempt"),
+        skills: ["riela-workflow-reference"]
       )
     ]
   }

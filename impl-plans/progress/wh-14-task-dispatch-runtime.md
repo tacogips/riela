@@ -317,3 +317,11 @@ All complete logs are under `tmp/work-handover/wh-14-task-dispatch-runtime/step6
 - Final `git diff --check` is recorded after this progress edit in `tmp/work-handover/wh-14-task-dispatch-runtime/step6-implement-r29-continuation-1/diff-check-final.log`.
 
 Implementation-owned trigger coverage and required focused suites are now complete on this source. CLI task-show coverage remains wh-15; remote takeover report/controller verification remains wh-16/wh-18. Keep the plan active for downstream review and workflow stages; no self-review approval, commit, or push is claimed.
+
+## Closure note (wh-20)
+
+The earlier “remaining work” lists in this progress log are superseded by the
+Step 6 implementation continuation 1 evidence above and by wh-14 acceptance at
+`2cd392b8`. The R35 `reservationFence` review confirms no change: it remains
+`Int?`, with `nil` reserved for the lease-less adopted attempt and `-1` for a
+leased attempt whose lease is missing.

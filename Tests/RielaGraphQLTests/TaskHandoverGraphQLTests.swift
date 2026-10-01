@@ -241,7 +241,7 @@ final class TaskHandoverGraphQLTests: XCTestCase {
       "deliverables": .array([])
     ]
     let response = await executor.execute(GraphQLDocumentRequest(
-      query: "mutation($input: JSONObject!) { reportAttempt(input: $input) { errors { code } } }",
+      query: "mutation($input: ReportAttemptInput!) { reportAttempt(input: $input) { errors { code } } }",
       variables: ["input": .object(input)],
       isLocallyTrusted: true
     ))

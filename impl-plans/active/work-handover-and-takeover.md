@@ -181,7 +181,7 @@ make only the edit stated in its `sharedPathNotes`.
 | wh-14-task-dispatch-runtime | NOT_STARTED | — |
 | wh-15 … wh-17 | NOT_STARTED | — |
 | wh-18, wh-19 | NOT_STARTED | — |
-| wh-20-reconcile | NOT_STARTED | — |
+| wh-20-reconcile | BLOCKED — missing accepted catalog/test write paths | `impl-plans/progress/wh-20-reconcile.md`; baseline gate exit 1 |
 
 ## Verification (global; executed by wh-20)
 
@@ -219,6 +219,11 @@ box has evidence (wh-20). Otherwise they stay active with an accurate progress l
 **Tasks Completed**: wh-00 baseline at 56aed135: 2778 run, 2775 passed, 2 skipped, 1 failed (`WorkflowCommandCrossWorkflowDispatchTests.testSubprocessAbruptTerminationCheckpointsReopenCanonicalSQLiteWithoutDuplicatingDurableEffect`, 180 s scratch-build subprocess timeout). Logs under `tmp/work-handover/wh-00/`.
 **Blockers**: The run stopped because the branch progress check treats a failing full-suite command as materially unverified, even for the baseline plan whose job is to record failures.
 **Notes**: wh-00 was removed from the dispatch DAG. The wh-20 full-suite gate is now a baseline-comparison command (exit 0 iff no failure outside the wh-00 baseline); the raw `swift test` exit is reported as `suiteExit`.
+
+### Session: 2026-10-01 (Step 6 wh-20-reconcile)
+**Tasks Completed**: Added the wh-20 GraphQL/catalog surfaces and generated SDL, closed the R34 pending-schema branch, applied the R35 git-environment fix, and recorded implementation evidence in `impl-plans/progress/wh-20-reconcile.md`. Build, parity, focused suites, examples, and strict lint passed.
+**Blockers**: The full-suite baseline gate exits 1 with three new `SurfaceCatalogTests` failures. Repair requires modifying `Sources/RielaCore/SurfaceCatalog+RowsConsole.swift` and `Tests/RielaCoreTests/SurfaceCatalogTests.swift`, neither of which is in wh-20 `writePaths` or `sharedPaths`; no unowned file was edited. Resume after serial integration updates wh-20 write-path ownership for both files, then repair and rerun the baseline gate.
+**Notes**: Raw full-suite `suiteExit=1` (2,967 tests, 4 failures); the original cross-workflow timeout passed in this run. The three additional failures and complete logs are listed in `tmp/work-handover/wh-20-reconcile/`.
 
 ## Related Plans
 

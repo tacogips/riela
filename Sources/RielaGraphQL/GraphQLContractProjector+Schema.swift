@@ -571,6 +571,7 @@ extension GraphQLContractProjector {
   \(workflowRegistryGraphQLSchemaTypes)
   \(configurationGraphQLSchemaTypes)
   \(routineGraphQLSchemaTypes)
+  \(taskHandoverGraphQLSchemaTypes)
   type Query {
     workflow(target: WorkflowTargetInput!): WorkflowQueryPayload!
     workflowExecution(workflowExecutionId: String!): WorkflowExecutionSummary
@@ -588,6 +589,8 @@ extension GraphQLContractProjector {
     routines(filter: RoutineFilter): RoutineListPayload!
     routine(routineId: String!, routineStoreRoot: String): RoutineQueryPayload!
     managerSession(managerSessionId: String): ManagerSessionView
+    taskHandover(taskId: String!, handoverId: String): TaskHandoverPayload!
+    tasksAwaitingHandover(traits: [String!]): TasksAwaitingHandoverPayload!
     consoleInstances: ConsoleInstanceListPayload!
     consoleInstance(identity: String!): ConsoleInstancePayload!
     opsOverview: OpsOverviewPayload!
@@ -615,6 +618,11 @@ extension GraphQLContractProjector {
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!
     retryCommunicationDelivery(input: RetryCommunicationDeliveryInput!): RetryCommunicationDeliveryPayload!
+    requestTaskHandover(input: RequestTaskHandoverInput!): TaskHandoverMutationPayload!
+    takeoverTask(input: TakeoverTaskInput!): TakeoverTaskPayload!
+    answerTask(input: AnswerTaskInput!): TaskHandoverMutationPayload!
+    heartbeatAttempt(attemptId: String!, token: String!): LeaseStatePayload!
+    reportAttempt(input: ReportAttemptInput!): ReportAttemptPayload!
     updateAssistantConfiguration(input: UpdateAssistantConfigurationInput!): RielaConfiguration!
     updateAppearanceConfiguration(input: UpdateAppearanceConfigurationInput!): RielaConfiguration!
     updateHTTPServerConfiguration(input: UpdateHTTPServerConfigurationInput!): RielaConfiguration!

@@ -8,7 +8,7 @@ final class TaskHandoverRepositoryFixture {
   let bareRemote: URL
   let clone: URL
   let baseRevision: String
-  var gitEnvironment: [String: String] { TaskHandoverRuntime.gitEnvironment(ceilingDirectory: root) }
+  var gitEnvironment: [String: String] { TaskHandoverRuntime.gitEnvironment() }
 
   init() throws {
     root = FileManager.default.temporaryDirectory

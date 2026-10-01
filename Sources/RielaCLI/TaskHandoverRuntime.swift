@@ -313,9 +313,7 @@ struct TaskHandoverRuntime: Sendable {
         store: located.store,
         reservationFence: adoptedWithoutLease ? nil : (try? located.store.loadLease(attemptId: attempt.id)?.fence) ?? -1,
         adoptedWithoutLease: adoptedWithoutLease,
-        workspace: GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: Self.gitEnvironment(
-          ceilingDirectory: URL(fileURLWithPath: attempt.isolation?.path ?? options.workingDirectory)
-        )),
+        workspace: GitBranchWorkspaceRuntime(git: FoundationGitCommandRunner(), environment: Self.gitEnvironment()),
         workflow: bundle.workflow,
         nodePayloads: bundle.nodePayloads
       ),
@@ -331,15 +329,13 @@ struct TaskHandoverRuntime: Sendable {
       executableURL: URL(fileURLWithPath: "/usr/bin/git"),
       arguments: arguments,
       workingDirectory: directory,
-      environment: gitEnvironment(ceilingDirectory: directory),
+      environment: gitEnvironment(),
       standardInput: nil
     ))
   }
 
-  static func gitEnvironment(ceilingDirectory: URL) -> [String: String] {
-    var environment = ProcessInfo.processInfo.environment
-    environment["GIT_CEILING_DIRECTORIES"] = ceilingDirectory.standardizedFileURL.path
-    return environment
+  static func gitEnvironment() -> [String: String] {
+    CLIRuntimeEnvironment.mergedProcessEnvironment()
   }
 
 }

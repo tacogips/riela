@@ -73,7 +73,7 @@ public enum CLISurfaceEnumerator {
     case "specialist":
       return nested(SpecialistCommandKind.allRawValues)
     case "session":
-      return nested(SessionClientSubcommand.allRawValues)
+      return nested(SessionClientSubcommand.allRawValues) + [CLICommandDescriptor([route, "handover"])]
     case "loop":
       return nested(LoopCommandKind.allRawValues)
     case "task":
@@ -152,6 +152,14 @@ public enum CLISurfaceEnumerator {
       "--follow",            // riela session logs --follow
       "--scope",
       "--output"
+    ])
+    // Handover commands use the typed family parser's captured remainder;
+    // these options are parsed by the task/session command handlers.
+    names.formUnion([
+      "--reason", "--now", "--to", "--sink", "--principal", "--packet", "--force-orphan",
+      "--clone-into", "--traits", "--endpoint", "--handover-id", "--auth-token", "--auth-token-env",
+      "--manager-session-id", "--question", "--answer-json", "--answer-file", "--text", "--option",
+      "--use-default", "--expired-leases", "--dry-run", "--takeover", "--poll-interval-ms", "--once"
     ])
     return names
   }

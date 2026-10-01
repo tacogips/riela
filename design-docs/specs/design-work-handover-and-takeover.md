@@ -1,11 +1,13 @@
 # Work handover and takeover: moving a stalled attempt to another worker
 
-Status: proposed 2026-09-30, zero-based on the shipped Work Runtime P1
+Status: implemented 2026-10-01 on `feat/work-handover-and-takeover`
+(proposed 2026-09-30), zero-based on the shipped Work Runtime P1
 (`design-work-runtime-consolidation.md` §4–§8, §17) and the shipped
 distributed workers (`design-distributed-workers.md`). No backward
 compatibility: the session schema generation bumps, closed enums gain
-cases, old stores are discarded as today. Plan:
-`impl-plans/active/work-handover-and-takeover.md`. Open user decisions:
+cases, old stores are discarded as today. Plan (implemented and
+archived 2026-10-01): `impl-plans/completed/work-handover-and-takeover.md`;
+user docs: `docs/work-handover.md`. Open user decisions:
 `design-docs/user-qa/qa-work-handover-and-takeover.md`.
 
 Revised 2026-09-30 (implementation intake): seam claims re-checked against

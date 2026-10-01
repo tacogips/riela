@@ -70,4 +70,6 @@ The first count must be ≥ 7 and the second ≥ 7 (each surface mentioned). Rec
 
 ## Done criteria
 
-- [ ] The three docs and two skills are updated; the external-skills follow-up is recorded; the progress log is complete
+- [x] The three docs and two skills are updated; the external-skills follow-up is recorded; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: committed at `691dff87` and folded into wh-20 in `5aec551d`; `SurfaceParitySkillTests` passed inside the wh-20 SurfaceParity gate (`tmp/work-handover/wh-20-reconcile/parity-reconcile.log`, exit=0). Evidence: `impl-plans/progress/wh-19-docs-skills.md`. Archived to `impl-plans/completed/`.

@@ -107,8 +107,10 @@ This plan proves acceptance signals 1, 2, 4 (`--force-orphan` flag) and 5 at CLI
 
 ## Done criteria
 
-- [ ] Every command and flag above is implemented with strict parsing; `task show` additions are present
-- [ ] The tests pass; the progress log is complete
+- [x] Every command and flag above is implemented with strict parsing; `task show` additions are present
+- [x] The tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; completed at `e95096c3`, acceptance recorded in `09953552`. Evidence: `impl-plans/progress/wh-15-task-commands.md`. Archived to `impl-plans/completed/`.
 
 
 ## Resume notes (2026-10-01, after run session-9)

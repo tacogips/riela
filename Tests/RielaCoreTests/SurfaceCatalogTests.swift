@@ -48,48 +48,73 @@ final class SurfaceCatalogTests: XCTestCase {
     )
   }
 
-  /// P0 reads and P1 task run/decide are implemented on the CLI. Every
-  /// remaining face stays blocked on its owning phase, with evidence naming
-  /// it; no row claims a binding that has not shipped.
-  func testWorkRuntimeReadAndP1TaskCommandsAreCataloged() {
+  /// Catalogs the shipped Work Runtime task and intent CLI and GraphQL surfaces.
+  func testWorkRuntimeReadAndP1TaskCommandsAreCataloged() throws {
     let rows = SurfaceCatalog.operations(inFamily: "task") + SurfaceCatalog.operations(inFamily: "intent")
     XCTAssertEqual(
       Set(rows.map(\.id)),
       [
         "task.submit", "task.list", "task.show", "task.run", "task.decide", "task.serve",
+        "task.handover", "task.takeover", "task.answer", "task.handovers", "task.reconcile",
+        "task.handover-query", "task.awaiting-handover", "task.heartbeat", "task.report",
         "intent.create", "intent.list", "intent.show"
       ]
     )
 
     let implementedCommands = [
       "task.show": "task show", "task.list": "task list",
-      "task.run": "task run", "task.decide": "task decide"
+      "task.run": "task run", "task.decide": "task decide",
+      "task.serve": "task serve", "task.handover": "task handover",
+      "task.takeover": "task takeover", "task.answer": "task answer",
+      "task.handovers": "task handovers", "task.reconcile": "task reconcile"
     ]
-    for row in rows {
-      if let command = implementedCommands[row.id] {
-        XCTAssertEqual(row.availability(on: .cli), .implemented, "\(row.id) ships in P0 or P1")
-        XCTAssertEqual(row.cli?.command, command)
-        XCTAssertFalse(row.cli?.options.isEmpty ?? true, "\(row.id) must document its flags")
-      } else {
-        guard case let .blocked(evidence)? = row.availability(on: .cli) else {
-          return XCTFail("\(row.id) must declare the CLI surface blocked")
-        }
-        XCTAssertTrue(
-          evidence.contains("work-runtime P1"),
-          "\(row.id) must cite the phase that builds it, got '\(evidence)'"
-        )
-        XCTAssertNil(row.cli, "\(row.id) must not claim a CLI binding")
-      }
+    for (id, command) in implementedCommands {
+      let row = try XCTUnwrap(SurfaceCatalog.operation(id: id))
+      XCTAssertEqual(row.availability(on: .cli), .implemented, "\(id) ships in P0 or P1")
+      XCTAssertEqual(row.cli?.command, command)
+      XCTAssertFalse(row.cli?.options.isEmpty ?? true, "\(id) must document its flags")
+    }
 
-      // No Work Runtime operation has a GraphQL or library face yet.
-      for surface in [SurfaceName.graphql, .library] {
-        guard case let .blocked(evidence)? = row.availability(on: surface) else {
-          return XCTFail("\(row.id) must declare \(surface.rawValue) blocked")
-        }
-        XCTAssertTrue(evidence.contains("work-runtime P5"), "\(row.id) must cite P5 for \(surface.rawValue)")
+    let serve = try XCTUnwrap(SurfaceCatalog.operation(id: "task.serve"))
+    XCTAssertTrue(serve.cli?.options.contains("--takeover") == true)
+    XCTAssertTrue(serve.cli?.options.contains("--traits") == true)
+
+    for id in ["task.submit", "intent.create", "intent.list", "intent.show"] {
+      let row = try XCTUnwrap(SurfaceCatalog.operation(id: id))
+      guard case let .blocked(evidence)? = row.availability(on: .cli) else {
+        return XCTFail("\(id) must declare the CLI surface blocked")
       }
-      XCTAssertNil(row.graphql, "\(row.id) must not claim a GraphQL binding")
-      XCTAssertNil(row.library, "\(row.id) must not claim a library binding")
+      XCTAssertTrue(evidence.contains("work-runtime P1"), "\(id) must cite P1, got '\(evidence)'")
+      XCTAssertNil(row.cli, "\(id) must not claim a CLI binding")
+    }
+
+    let graphQLFields = [
+      "task.handover-query": (SurfaceGraphQLRoot.query, "taskHandover"),
+      "task.awaiting-handover": (.query, "tasksAwaitingHandover"),
+      "task.heartbeat": (.mutation, "heartbeatAttempt"),
+      "task.report": (.mutation, "reportAttempt"),
+      "task.handover": (.mutation, "requestTaskHandover"),
+      "task.answer": (.mutation, "answerTask"),
+      "task.takeover": (.mutation, "takeoverTask")
+    ]
+    for (id, field) in graphQLFields {
+      let row = try XCTUnwrap(SurfaceCatalog.operation(id: id))
+      XCTAssertEqual(row.graphql, SurfaceGraphQLBinding(root: field.0, field: field.1))
+      XCTAssertEqual(row.availability(on: .graphql), .implemented)
+      XCTAssertNil(row.library)
+    }
+
+    for id in ["task.handover-query", "task.awaiting-handover", "task.heartbeat", "task.report"] {
+      let row = try XCTUnwrap(SurfaceCatalog.operation(id: id))
+      XCTAssertNil(row.cli)
+      XCTAssertNotEqual(row.availability(on: .cli), .implemented)
+    }
+
+    for row in rows {
+      guard case let .blocked(evidence)? = row.availability(on: .library) else {
+        return XCTFail("\(row.id) must keep its library surface blocked")
+      }
+      XCTAssertTrue(evidence.contains("work-runtime P5"), "\(row.id) must cite P5 for the library")
     }
   }
 

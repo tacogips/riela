@@ -37,9 +37,23 @@ evidence is implemented and accepted. Its plan is archived at
 the [progress log](progress/fanout-directory-change-tracking.md) records focused
 verification and review. Final commit and push remain workflow steps.
 
-## Active Plans
+Work handover and takeover (2026-10-01) is implemented and accepted on
+`feat/work-handover-and-takeover`. The umbrella plan is archived at
+[`completed/work-handover-and-takeover.md`](completed/work-handover-and-takeover.md),
+and its child plans `wh-00` … `wh-20` are archived under `completed/wh-*.md`.
+The feature continues a stalled task attempt on another worker. It adds the
+session `suspended` status, a digest-sealed `HandoverPacket` with deliverable
+locators, `AttemptEntry.takeover`, the answer channel, lease heartbeat and
+fence, sinks, host traits and GraphQL remote takeover. User docs are in
+[`docs/work-handover.md`](../docs/work-handover.md). The
+[wh-20 progress log](progress/wh-20-reconcile.md) records the closing
+evidence: 218/218 focused tests, green SurfaceParity and catalog gates, three
+mock examples, and a full suite of 2,967 tests with no failure beyond the
+wh-00 baseline. The dispatch manifest `active/work-handover-dispatch.json`
+stays active until the dispatch run closes. The final commit and push remain
+workflow steps.
 
-Work handover and takeover (2026-09-30): [`work-handover-and-takeover`](active/work-handover-and-takeover.md) plans the builtin path for continuing a stalled task attempt on another worker: session `suspended` status, a digest-sealed `HandoverPacket` with deliverable locators (git branch, kaiba/monja ids), `AttemptEntry.takeover`, answer channel, lease heartbeat/fence, sinks, host traits and GraphQL takeover. Design: `design-docs/specs/design-work-handover-and-takeover.md`; open decisions: `design-docs/user-qa/qa-work-handover-and-takeover.md`. Status: implementation blocked on wh-20 catalog and test write-path ownership on `feat/work-handover-and-takeover`; see [`wh-20 progress`](progress/wh-20-reconcile.md) and evidence under `tmp/work-handover/wh-20-reconcile/`.
+## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):
 [`builtin-addon-116-03-verification`](active/builtin-addon-116-03-verification.md)

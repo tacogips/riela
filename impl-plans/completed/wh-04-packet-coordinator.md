@@ -171,6 +171,8 @@ Both must end with exit=0, and all new tests must pass with a non-zero count.
 
 ## Done criteria
 
-- [ ] The builder, brief, redaction, coordinator and adoption are implemented to the pinned APIs
-- [ ] The determinism, bounds, order and failure tests pass
-- [ ] The progress log is complete
+- [x] The builder, brief, redaction, coordinator and adoption are implemented to the pinned APIs
+- [x] The determinism, bounds, order and failure tests pass
+- [x] The progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-04-packet-coordinator.md`. Archived to `impl-plans/completed/`.

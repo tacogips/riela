@@ -108,6 +108,8 @@ packet with digest verification" is proven here: record the four test names in t
 
 ## Done criteria
 
-- [ ] The five sinks, verification and factory are implemented to the pinned shapes
-- [ ] The round-trip and tamper tests pass
-- [ ] The progress log is complete
+- [x] The five sinks, verification and factory are implemented to the pinned shapes
+- [x] The round-trip and tamper tests pass
+- [x] The progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-09-handover-sinks.md`. Archived to `impl-plans/completed/`.

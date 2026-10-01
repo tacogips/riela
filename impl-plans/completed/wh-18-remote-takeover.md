@@ -169,8 +169,10 @@ Record the test names in the progress log.
 
 ## Done criteria
 
-- [ ] Remote takeover and serve are implemented to the flow above; the auth and fence behaviors are tested
-- [ ] The tests pass; the progress log is complete
+- [x] Remote takeover and serve are implemented to the flow above; the auth and fence behaviors are tested
+- [x] The tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; completed at `b742ce2b` (including the R34 answer delivery below; wh-20 removed the pending-schema branches), acceptance recorded in `5aec551d`. Evidence: `impl-plans/progress/wh-18-remote-takeover.md`. Archived to `impl-plans/completed/`.
 
 ### Serial-wave shared ownership (2026-10-01, after run session-11)
 
@@ -245,7 +247,7 @@ Verification (the arm64 wrapper, logs under `tmp/work-handover/wh-18-remote-take
 - `git diff --check` → exit 0.
 
 Done criteria (R34):
-- [ ] `GraphQLTakeoverTaskPayload.answer` and the `HandoverAnswerPayload` SDL block exist; `TakeoverTaskInput` is unchanged
-- [ ] The provider refuses an unanswered S1 with `conflict` before reserving, and returns the bound answer for an answered S1
-- [ ] The remote successor delivers `handover.answer`, `delivered` and the resume-step message; an S1 response with no answer fails before launch
-- [ ] The tests above pass (focused-r34.log exit=0); the schema change for wh-20 is recorded in the progress log
+- [x] `GraphQLTakeoverTaskPayload.answer` and the `HandoverAnswerPayload` SDL block exist; `TakeoverTaskInput` is unchanged
+- [x] The provider refuses an unanswered S1 with `conflict` before reserving, and returns the bound answer for an answered S1
+- [x] The remote successor delivers `handover.answer`, `delivered` and the resume-step message; an S1 response with no answer fails before launch
+- [x] The tests above pass (focused-r34.log exit=0); the schema change for wh-20 is recorded in the progress log

@@ -157,8 +157,10 @@ If the validate flag spelling differs, use the form `riela workflow validate --h
 
 ## Done criteria
 
-- [ ] The three examples exist with all six artifact kinds; the catalog and count are updated; the suspended set is asserted; the revived-owner fence assertions are in the orphan test
-- [ ] The harness flows pass; the parity loop passes; the progress log is complete
+- [x] The three examples exist with all six artifact kinds; the catalog and count are updated; the suspended set is asserted; the revived-owner fence assertions are in the orphan test
+- [x] The harness flows pass; the parity loop passes; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; completed at `2476bcbe` (including the R33 seam below), acceptance recorded in `3d75d601`. Evidence: `impl-plans/progress/wh-17-examples.md`. Archived to `impl-plans/completed/`.
 
 
 ## Resume notes (2026-10-01, after run session-9)
@@ -217,6 +219,6 @@ arch -arm64 /bin/zsh -lc 'swift test --filter "WorkStoreTakeoverTests|TaskHandov
 `r33-focused.log` must end with `exit=0` and show 0 failures. Report `testsRun` and `failureCount` from its summary lines.
 
 R33 done criteria:
-- [ ] `isLeaseFenced` and `attemptWallClockMs` exist in `WorkStore+Takeover.swift`, and the three wall-clock loops call the seam (`grep -n attemptWallClockMs Sources` shows 1 definition + 3 call sites)
-- [ ] The seven seam unit cases and the two orphan harness tests pass; `TaskHandoverLeaseTests` is green; `r33-focused.log` ends `exit=0`
-- [ ] The progress log records the four shared-file edits (file, reason, test)
+- [x] `isLeaseFenced` and `attemptWallClockMs` exist in `WorkStore+Takeover.swift`, and the three wall-clock loops call the seam (`grep -n attemptWallClockMs Sources` shows 1 definition + 3 call sites)
+- [x] The seven seam unit cases and the two orphan harness tests pass; `TaskHandoverLeaseTests` is green; `r33-focused.log` ends `exit=0`
+- [x] The progress log records the four shared-file edits (file, reason, test)

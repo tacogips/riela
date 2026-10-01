@@ -763,6 +763,27 @@ and `git diff --check`.
 See [Work handover and takeover](docs/work-handover.md) for task handover,
 answers, presence placement, and orphan recovery.
 
+A task attempt can stop because it needs an answer, needs a person at a
+particular host, has gone inactive, or has lost its owner. The runtime then
+seals a digest-verified `HandoverPacket` and publishes repository work on
+`riela/task/<taskId>/g<generation>`. A successor attempt imports the accepted
+history and continues at the packet's resume step. A workflow run or resume
+that suspends exits with code **5**. The handover commands are:
+
+```bash
+riela task handover <task-id> --reason <text> [--now]
+riela task answer <task-id> --question <question-id> --text <answer>
+riela task takeover <task-id> [--force-orphan] [--traits userReachable] [--endpoint <url>/graphql]
+riela task handovers
+riela task reconcile --expired-leases
+riela task serve --takeover --endpoint <url>/graphql --traits userReachable
+riela session handover <session-id> [--reason <text>]
+```
+
+Over GraphQL, the same operations are `requestTaskHandover`, `answerTask`,
+`takeoverTask`, `taskHandover`, `tasksAwaitingHandover`, `heartbeatAttempt`
+and `reportAttempt`.
+
 The P1 release remediation for Draft PR #113 registers
 `riela/chat-reply-worker@1` in the built-in catalog, so
 `riela workflow usage matrix-chat-reply --workflow-definition-dir examples --output json`

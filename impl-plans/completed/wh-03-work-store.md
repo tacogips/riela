@@ -139,6 +139,8 @@ Both must end with exit=0 and the new tests must pass. Existing reservation and 
 
 ## Done criteria
 
-- [ ] Every pinned API exists and is tested; the reservation invariants hold
-- [ ] The existing Work store tests are green or baseline-classified
-- [ ] The progress log is complete
+- [x] Every pinned API exists and is tested; the reservation invariants hold
+- [x] The existing Work store tests are green or baseline-classified
+- [x] The progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-03-work-store.md`. Archived to `impl-plans/completed/`.

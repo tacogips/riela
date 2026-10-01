@@ -81,5 +81,7 @@ Both must end with exit=0 and a non-zero count.
 
 ## Done criteria
 
-- [ ] The collector is implemented to the pinned API and rules
-- [ ] The tests pass; the progress log is complete
+- [x] The collector is implemented to the pinned API and rules
+- [x] The tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-08-deliverable-collector.md`. Archived to `impl-plans/completed/`.

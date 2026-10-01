@@ -87,8 +87,10 @@ Both must end with exit=0, the new tests must pass, and the existing placement, 
 
 ## Done criteria
 
-- [ ] Traits flow from the profile, override and worker.json into snapshots, placement and doctor
-- [ ] The tests pass; the progress log is complete
+- [x] Traits flow from the profile, override and worker.json into snapshots, placement and doctor
+- [x] The tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; completed in `a45b6eb1`, acceptance recorded in `d32077b0`. Evidence: `impl-plans/progress/wh-10-host-traits.md`. Archived to `impl-plans/completed/`.
 
 
 ## Scope amendment (2026-09-30)

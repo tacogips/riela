@@ -119,6 +119,8 @@ The build and tests must end with exit=0 and a non-zero count.
 
 ## Done criteria
 
-- [ ] The runtime and add-on are implemented; the existing git add-on suites stay green
-- [ ] Every listed test passes against temp repositories and a bare remote (no network)
-- [ ] The progress log is complete
+- [x] The runtime and add-on are implemented; the existing git add-on suites stay green
+- [x] Every listed test passes against temp repositories and a bare remote (no network)
+- [x] The progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-07-git-branch-runtime.md`. Archived to `impl-plans/completed/`.

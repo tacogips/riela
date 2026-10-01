@@ -1,7 +1,7 @@
 # Work handover and takeover user-QA
 
 Design: `design-docs/specs/design-work-handover-and-takeover.md` §19.
-Plan: `impl-plans/active/work-handover-and-takeover.md`.
+Plan: `impl-plans/completed/work-handover-and-takeover.md` (implemented on the defaults below, archived 2026-10-01).
 Each question states a default; implementation proceeds on the default
 until the user answers here.
 

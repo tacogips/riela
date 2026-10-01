@@ -1,6 +1,6 @@
 # Work Handover and Takeover Implementation Plan (umbrella)
 
-**Status**: Planned — decomposed into plans `wh-00` … `wh-20` (2026-09-30); no code written
+**Status**: Completed 2026-10-01 — `wh-00` … `wh-20` implemented and accepted on `feat/work-handover-and-takeover`; archived to `impl-plans/completed/`
 **Workflow Mode**: issue-resolution (no GitHub issue; tracked by the design below)
 **Design Reference**: `design-docs/specs/design-work-handover-and-takeover.md` (all sections, including §15.1 and §21 R1–R22)
 **User decisions**: `design-docs/user-qa/qa-work-handover-and-takeover.md` Q1–Q8 (every one proceeds on its stated default)
@@ -195,14 +195,14 @@ make only the edit stated in its `sharedPathNotes`.
 
 ## Completion Criteria
 
-- [ ] A task attempt that emits the `handover` envelope ends `suspended`, seals a packet with a stable digest, and `task show` lists it
-- [ ] `task answer` + `task takeover` (same store) continues at the resume step with the answer in the step input and the history imported
-- [ ] A repository task publishes `riela/task/<id>/g<n>` at handover; a takeover on a second clone materializes it and continues
-- [ ] An attempt whose owner is killed is taken over with `--force-orphan` after expiry; the killed owner, if revived, fails with `leaseLost`
-- [ ] A presence handover is refused on a host without `userReachable` and accepted on one with it
-- [ ] Remote takeover over `/graphql` heartbeats and reports; the controller runs verification and director on the reported outcome
-- [ ] kaiba, gitRef, file and command sinks round-trip the packet with digest verification
-- [ ] Three examples pass in mock mode (§15.1); skills, docs, catalog rows and SDL updated; full `swift test` has no new failures against the wh-00 baseline
+- [x] A task attempt that emits the `handover` envelope ends `suspended`, seals a packet with a stable digest, and `task show` lists it (focused handover suite; `tmp/work-handover/wh-20-reconcile/focused-reconcile.log`)
+- [x] `task answer` + `task takeover` (same store) continues at the resume step with the answer in the step input and the history imported (`TaskHandoverExampleTests`, `TaskRemoteTakeoverTests`; same focused log)
+- [x] A repository task publishes `riela/task/<id>/g<n>` at handover; a takeover on a second clone materializes it and continues (`TaskHandoverRepositoryTests`; same focused log)
+- [x] An attempt whose owner is killed is taken over with `--force-orphan` after expiry; the killed owner, if revived, fails with `leaseLost` (`TaskHandoverLeaseTests`, orphan example; focused log and `examples-reconcile.log`)
+- [x] A presence handover is refused on a host without `userReachable` and accepted on one with it (presence example exit 5; `examples-reconcile.log`; placement tests in focused log)
+- [x] Remote takeover over `/graphql` heartbeats and reports; the controller runs verification and director on the reported outcome (`TaskHandoverGraphQLProviderTests`, `TaskRemoteTakeoverTests`; focused log)
+- [x] kaiba, gitRef, file and command sinks round-trip the packet with digest verification (`HandoverSinkTests`; focused log)
+- [x] Three examples pass in mock mode (§15.1); skills, docs, catalog rows and SDL updated; full `swift test` has no new failures against the wh-00 baseline (`examples-reconcile.log`, `parity-reconcile.log`, SDL repeat logs, `full-suite-baseline-gate-final.log`)
 
 Archive this file and the child plans to `impl-plans/completed/` only when every
 box has evidence (wh-20). Otherwise they stay active with an accurate progress log.
@@ -224,6 +224,16 @@ box has evidence (wh-20). Otherwise they stay active with an accurate progress l
 **Tasks Completed**: Added the wh-20 GraphQL/catalog surfaces and generated SDL, closed the R34 pending-schema branch, applied the R35 git-environment fix, and recorded implementation evidence in `impl-plans/progress/wh-20-reconcile.md`. Build, parity, focused suites, examples, and strict lint passed.
 **Blockers**: The full-suite baseline gate exits 1 with three new `SurfaceCatalogTests` failures. Repair requires modifying `Sources/RielaCore/SurfaceCatalog+RowsConsole.swift` and `Tests/RielaCoreTests/SurfaceCatalogTests.swift`, neither of which is in wh-20 `writePaths` or `sharedPaths`; no unowned file was edited. Resume after serial integration updates wh-20 write-path ownership for both files, then repair and rerun the baseline gate.
 **Notes**: Raw full-suite `suiteExit=1` (2,967 tests, 4 failures); the original cross-workflow timeout passed in this run. The three additional failures and complete logs are listed in `tmp/work-handover/wh-20-reconcile/`.
+
+### Session: 2026-10-01 (Step 6 wh-20 reconciliation continuation)
+**Tasks Completed**: Applied the explicit wh-20 final-scope repair to remove the duplicate `task.serve` placeholder and assert the exact shipped 18-row task/intent catalog. All eight completion outcomes above have implementation evidence. `SurfaceCatalogTests` passed 7/7, `SurfaceParity` passed 46 with one skipped, the focused handover filter passed 218/218, all three example validations and expected run exits matched, SDL regeneration was idempotent, branch SwiftLint reported zero violations in 143 files, and the full suite passed 2,967 tests with two skipped. The baseline comparison exited 0 with an empty `new-failures.txt`; details are in `impl-plans/progress/wh-20-reconcile.md`.
+**Blockers**: None for implementation. The plans remain active pending downstream test-integrity, adversarial, and integration review; no plan was archived in this step.
+**Notes**: Raw full-suite `suiteExit=0`. No commit, push, merge, or other Git state change was made.
+
+### Session: 2026-10-01 (Step 8 documentation and plan closure)
+**Tasks Completed**: Step 7 adversarial review (`comm-000371`) accepted wh-20 with no findings; browser E2E was skipped because no `web/` file changed (`comm-000377`). This umbrella and the child plans `wh-00` … `wh-20` moved to `impl-plans/completed/`. Each child plan's done boxes are checked with a closure note that names its acceptance commit and progress log. `impl-plans/README.md`, the design and the user-QA plan links were updated.
+**Blockers**: None
+**Notes**: `impl-plans/active/work-handover-dispatch.json` stays in `active/` while the running dispatch workflow still references it as its `manifestPath`. Archive it after the run closes.
 
 ## Related Plans
 

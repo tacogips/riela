@@ -84,6 +84,8 @@ Both must end with exit=0 and a non-zero count, with the new tests passing.
 
 ## Done criteria
 
-- [ ] The source enum, bundle init and rules are implemented; the existing API is source-compatible
-- [ ] All listed tests pass; the preserved-history suites are green or baseline-classified
-- [ ] The progress log is complete
+- [x] The source enum, bundle init and rules are implemented; the existing API is source-compatible
+- [x] All listed tests pass; the preserved-history suites are green or baseline-classified
+- [x] The progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-05-history-import.md`. Archived to `impl-plans/completed/`.

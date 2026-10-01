@@ -232,9 +232,11 @@ This plan proves acceptance signals 1–5 at runtime level. Record the test name
 
 ## Done criteria
 
-- [ ] The pinned runtime API and TaskDispatch additions exist; every trigger seals exactly once
-- [ ] The takeover, answer, repository, lease/fence, orphan, reconcile and adoption tests pass
-- [ ] The existing task suites are green or baseline-classified; the progress log is complete
+- [x] The pinned runtime API and TaskDispatch additions exist; every trigger seals exactly once
+- [x] The takeover, answer, repository, lease/fence, orphan, reconcile and adoption tests pass
+- [x] The existing task suites are green or baseline-classified; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted in `ffec37fc`; the three low findings were closed in wh-20 (R35). Evidence: `impl-plans/progress/wh-14-task-dispatch-runtime.md` (closing section supersedes earlier remaining-work lists). Archived to `impl-plans/completed/`.
 
 
 ## Resume notes (2026-10-01)

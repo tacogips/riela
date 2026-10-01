@@ -73,3 +73,29 @@ The first two expose a duplicate `task.serve` operation row between the console 
 Join audit found no unexplained drift. The audit noted missing posthash manifests for wh-10 and wh-14 through wh-19, while those plans have per-edit records in their progress logs. Existing `.riela/` runtime state and `.build/` build state were present; no scratch artifact was created outside repository-root `tmp/`. The second SDL generation was idempotent. The generated schema contains the wh-12 seven root-field signatures and `HandoverAnswerPayload`; `TaskRemoteTakeoverTests.swift` has no `isPendingSchemaRegistration` or `XCTExpectFailure`; `TaskHandoverRuntime.gitEnvironment()` uses `CLIRuntimeEnvironment.mergedProcessEnvironment()` and does not assign `GIT_CEILING_DIRECTORIES`.
 
 **Review decision**: Not yet reviewed by downstream test-integrity/adversarial/integration gates. Incoming review findings: none. **Plan status**: blocked pending ownership amendment; not archived.
+
+## Superseding reconciliation — 2026-10-01 (Step 6 continuation)
+
+The prior scope blocker is resolved by the final scope amendment in `impl-plans/active/wh-20-reconcile.md`: wh-20 now explicitly owns `Sources/RielaCore/SurfaceCatalog+RowsConsole.swift` and `Tests/RielaCoreTests/SurfaceCatalogTests.swift` for this repair. The accepted plan remains serial; no Git state changes were made.
+
+**Repairs**
+
+- Removed only the stale `.stream` placeholder `task.serve` row from `SurfaceCatalog.workRuntimeRows`; the canonical `.process` row in `taskMutationRows` remains, with `--takeover` and `--traits`.
+- Rewrote `testWorkRuntimeReadAndP1TaskCommandsAreCataloged` to pin exactly 18 task/intent ids, all 10 implemented CLI commands, four P1-blocked CLI rows, the seven shipped GraphQL bindings, and the four GraphQL-only rows.
+- Per-edit snapshots and intent records: `tmp/work-handover/wh-20-reconcile/attempt-12/` through `attempt-16/`. `RowsConsole.swift` prehash `1dff7c3fdcc1ed0dc3cf70aba55286bde8236a156195712e520e0ad62e83af58`, final `66974f9b9eeadc40a93eab5871367e1c38812df7e973d4a040ba71986264a9bb`; test prehashes are recorded in each attempt directory, final `9f9b201b816bf445e56065f9ed8deb29bff1596205440ae760a68cdf69eb7ce8`.
+- Test-authoring retries exposed mismatched assumptions about two valid P5 library-evidence phrasings; the final assertion checks the blocked state and P5 evidence. `catalog-final.log` is the complete final-source pass (7 tests, 0 failures). Retry invocations reused this log path, so intermediate catalog failure output is not retained as a separate file.
+
+**Final-source verification** (all complete logs under `tmp/work-handover/wh-20-reconcile/`)
+
+- `arch -arm64 /bin/zsh -lc 'swift build'` · `build-final-reconcile.log` · exit 0.
+- `arch -arm64 /bin/zsh -lc 'swift test --filter SurfaceCatalogTests'` · `catalog-final.log` · exit 0, 7 tests, 0 failures.
+- `arch -arm64 /bin/zsh -lc 'swift test --filter "SurfaceParity"'` · `parity-reconcile.log` · exit 0, 46 tests, 0 failures, 1 skipped (includes `SurfaceParitySkillTests`).
+- Accepted focused handover filter plus `SurfaceCatalogTests` · `focused-reconcile.log` · exit 0, 218 tests, 0 failures.
+- Three example validations and mock runs · `examples-reconcile.log` · validate exit 0 ×3; answer run exit 5; presence run exit 5; orphan run exit 0.
+- Changed Swift set manifest `changed-swift-final.nul`; `swiftlint-changed-final.log` · exit 0. Repository-wide branch inventory `swiftlint-reconcile.log` · exit 0, 0 violations in 143 files.
+- Raw `arch -arm64 /bin/zsh -lc 'swift test'` · `full-swift-test-final.log` · exit 0, 2,967 tests, 2 skipped, 0 failures.
+- Baseline comparison against `tmp/work-handover/wh-00/full-swift-test.log` · `full-suite-baseline-gate-final.log` · exit 0; `new-failures.txt` is empty. The original baseline timeout passes in this run.
+- SDL regeneration and repeat · `sdl-1-reconcile-retry.log`, `sdl-2-reconcile-retry.log` · both exit 0; `sdl-second-diff-retry.txt` is empty. The initial wrapper attempt used zsh's reserved `status` variable after generator completion and has no terminal exit line; it is not counted as passing evidence.
+- `git diff --check` · `diff-check-reconcile.log` · exit 0.
+
+**Plan state**: Implementation and behavioral verification are complete with no unresolved implementation blocker. The plan remains active for downstream test-integrity/adversarial/integration review and review-owned shared index/closure work; no plans were archived in this implementation step.

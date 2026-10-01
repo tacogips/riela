@@ -152,6 +152,8 @@ Both must end with exit=0, the new tests must pass, and the executed count must 
 
 ## Done criteria
 
-- [ ] Extraction, publication, runner, store, resume and CLI deliverables are implemented
-- [ ] Every test above passes; the focused regressions are green or baseline-classified
-- [ ] The progress log has hashes, commands and log paths
+- [x] Extraction, publication, runner, store, resume and CLI deliverables are implemented
+- [x] Every test above passes; the focused regressions are green or baseline-classified
+- [x] The progress log has hashes, commands and log paths
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-02-runner-suspend.md`. Archived to `impl-plans/completed/`.

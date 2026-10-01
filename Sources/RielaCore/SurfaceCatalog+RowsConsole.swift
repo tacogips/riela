@@ -362,7 +362,6 @@ extension SurfaceCatalog {
         cli: "task show",
         cliOptions: sharedReadOptions
       ),
-      surfaceRow(notYetBuilt, id: "task.serve", family: "task", kind: .stream),
       surfaceRow(notYetBuilt, id: "intent.create", family: "intent", kind: .mutation),
       surfaceRow(notYetBuilt, id: "intent.list", family: "intent", kind: .query),
       surfaceRow(notYetBuilt, id: "intent.show", family: "intent", kind: .query)

@@ -72,4 +72,6 @@ Both must end with exit=0 and a non-zero count.
 
 ## Done criteria
 
-- [ ] The rule and the dispatcher entry point are implemented; the tests pass; the progress log is complete
+- [x] The rule and the dispatcher entry point are implemented; the tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-11-director-notify.md`. Archived to `impl-plans/completed/`.

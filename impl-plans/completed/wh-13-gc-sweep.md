@@ -65,4 +65,6 @@ Both must end with exit=0 and a non-zero count; the existing gc tests must stay 
 
 ## Done criteria
 
-- [ ] File and ref sweeps are implemented fail-closed with dry-run; the tests pass; the progress log is complete
+- [x] File and ref sweeps are implemented fail-closed with dry-run; the tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-13-gc-sweep.md`. Archived to `impl-plans/completed/`.

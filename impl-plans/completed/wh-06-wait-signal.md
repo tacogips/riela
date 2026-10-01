@@ -85,5 +85,7 @@ Both must end with exit=0, and the executed count must be > 0.
 
 ## Done criteria
 
-- [ ] The classifier matches the pinned API, and the default table is derived from the real ACP enum (evidence in the progress log)
-- [ ] The tests pass
+- [x] The classifier matches the pinned API, and the default table is derived from the real ACP enum (evidence in the progress log)
+- [x] The tests pass
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-06-wait-signal.md`. Archived to `impl-plans/completed/`.

@@ -194,10 +194,12 @@ Use the flag spellings each command's `--help` shows, and record any adjustment.
 
 ## Done criteria
 
-- [ ] The join audit is clean; the catalog rows and SDL are in place; the parity gates are green
-- [ ] All focused suites and example checks pass; the full suite has no new failures against wh-00
-- [ ] The umbrella Completion Criteria are checked with evidence; archive or keep active accordingly; the README and index are updated
-- [ ] R35 amendment: SDL uses the design §12 / wh-12 signatures; gitEnvironment uses mergedProcessEnvironment with no ceiling; the ceiling regression test passes (r35-ceiling.log exit=0) and failed before the fix (r35-ceiling-prefix.log); wh-14 closure note appended
+- [x] The join audit is clean; the catalog rows and SDL are in place; the parity gates are green
+- [x] All focused suites and example checks pass; the full suite has no new failures against wh-00
+- [x] The umbrella Completion Criteria are checked with evidence; archive or keep active accordingly; the README and index are updated
+- [x] R35 amendment: SDL uses the design §12 / wh-12 signatures; gitEnvironment uses mergedProcessEnvironment with no ceiling; the ceiling regression test passes (r35-ceiling.log exit=0) and failed before the fix (r35-ceiling-prefix.log); wh-14 closure note appended
+
+**Closure (2026-10-01, Step 8)**: Step 7 adversarial review `comm-000371` accepted it with no findings. Evidence is under `tmp/work-handover/wh-20-reconcile/`: `catalog-final.log` (7/7), `parity-reconcile.log` (46, 1 skipped, exit=0), `focused-reconcile.log` (218/218), `examples-reconcile.log`, `r35-ceiling.log` exit=0 after `r35-ceiling-prefix.log` exit=1, `sdl-2-diff.txt` 0 bytes, and `full-suite-baseline-gate-final.log` exit=0 with an empty `new-failures.txt`. Progress: `impl-plans/progress/wh-20-reconcile.md`. Archived to `impl-plans/completed/` with the README and index updated in Step 8.
 
 
 ## Full-suite gate (amended 2026-09-30)

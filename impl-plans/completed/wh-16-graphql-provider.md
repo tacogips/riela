@@ -141,8 +141,10 @@ Both must end with exit=0 and a non-zero count; the existing GraphQL and serve s
 
 ## Done criteria
 
-- [ ] All seven fields are executable over serve, the parity document command and the library; auth is enforced in serve
-- [ ] The tests pass; the progress log is complete
+- [x] All seven fields are executable over serve, the parity document command and the library; auth is enforced in serve
+- [x] The tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; completed at `dadfa601` (including the session-13 report claim below), acceptance recorded in `17424551`. Evidence: `impl-plans/progress/wh-16-graphql-provider.md`. Archived to `impl-plans/completed/`.
 
 
 ## Scope amendment (2026-10-01, after run session-9)
@@ -334,7 +336,7 @@ grep -n 'verifyLeaseToken' Sources/RielaCLI/TaskHandoverGraphQLProvider.swift
 The `consumed:` grep must print nothing. The last grep must print exactly one line, the one inside `heartbeatAttempt`.
 
 Done criteria (session-13):
-- [ ] `claimLeaseForReport` exists in `WorkStore+Leases.swift`, rotates the digest without deleting the row, and keeps `attempt.launch.tokenDigest` equal to the lease digest.
-- [ ] `reportAttempt` validates input, then claims, then reconciles; it no longer calls `verifyLeaseToken`.
-- [ ] The WorkStore claim tests, the provider concurrent test and the sequential replay assertions pass in `work-s13.log`, `focused-s13.log` and `concurrent-s13.log`.
-- [ ] The progress log marks the concurrent-replay finding resolved and lists no open finding.
+- [x] `claimLeaseForReport` exists in `WorkStore+Leases.swift`, rotates the digest without deleting the row, and keeps `attempt.launch.tokenDigest` equal to the lease digest.
+- [x] `reportAttempt` validates input, then claims, then reconciles; it no longer calls `verifyLeaseToken`.
+- [x] The WorkStore claim tests, the provider concurrent test and the sequential replay assertions pass in `work-s13.log`, `focused-s13.log` and `concurrent-s13.log`.
+- [x] The progress log marks the concurrent-replay finding resolved and lists no open finding.

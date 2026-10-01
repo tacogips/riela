@@ -103,4 +103,6 @@ Both must end with exit=0 and a non-zero count.
 
 ## Done criteria
 
-- [ ] The DTOs, protocol, executor and SDL block match the pinned names; the tests pass; the progress log is complete
+- [x] The DTOs, protocol, executor and SDL block match the pinned names; the tests pass; the progress log is complete
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`; SDL registration finished in wh-20. Evidence: `impl-plans/progress/wh-12-graphql-contracts.md`. Archived to `impl-plans/completed/`.

@@ -294,8 +294,10 @@ regression to fix.
 
 ## Done criteria
 
-- [ ] Every type and case above exists, with its Codable round-trip covered by a test
-- [ ] Generation 9, the new tables and the lease columns are in place; `tableNames` is updated
-- [ ] `sealHandoverRecords` is atomic and tested
-- [ ] The build is green; the focused suite is green; the exhaustive-switch edits are listed in the progress log
-- [ ] The progress log is complete, with hashes and log paths
+- [x] Every type and case above exists, with its Codable round-trip covered by a test
+- [x] Generation 9, the new tables and the lease columns are in place; `tableNames` is updated
+- [x] `sealHandoverRecords` is atomic and tested
+- [x] The build is green; the focused suite is green; the exhaustive-switch edits are listed in the progress log
+- [x] The progress log is complete, with hashes and log paths
+
+**Closure (2026-10-01, Step 8)**: accepted; implemented in `d043cbad` (waves 1-2), acceptance recorded in `7182232d`. Evidence: `impl-plans/progress/wh-01-contracts.md`. Archived to `impl-plans/completed/`.

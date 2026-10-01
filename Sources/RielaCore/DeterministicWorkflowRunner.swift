@@ -264,7 +264,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       }
       let transitions = step.transitions ?? []
       if let changes = effectiveRequest.fanoutChangeContext {
-        let path = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, stepId: "before:\(stepId)")
+        let path = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, artifactRoots: changes.artifactRoots, stepId: "before:\(stepId)")
         effectiveRequest.variables["fanoutChangeEvidencePath"] = .string(path)
       }
       let pendingExecution = session.executions.last {
@@ -365,7 +365,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       }
       session = publishResult.session
       if let changes = effectiveRequest.fanoutChangeContext {
-        _ = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, stepId: "after:\(stepId)")
+        _ = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, artifactRoots: changes.artifactRoots, stepId: "after:\(stepId)")
       }
       await acknowledgeAcceptedFinalization(in: publishResult.stepExecution)
       try await enforceLoopConvergenceIfNeeded(

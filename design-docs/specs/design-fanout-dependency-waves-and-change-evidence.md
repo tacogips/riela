@@ -223,3 +223,93 @@ title/body were unavailable at intake, so this section uses the supplied brief.
 No codex-agent references or Cursor CLI behavior were supplied; no adapter
 mapping or intentional reference divergence applies. No Step 3 or Step 5 review
 feedback was supplied to this execution.
+
+## Issue #130: write ownership, source snapshots and generated artifact evidence
+
+Source of truth: <https://github.com/tacogips/riela/issues/130>. A plan-local
+tool directory passed dispatch preflight while empty, grew during an
+authorized installation inside one node, and exceeded the 512-entry source
+limit at the next node boundary; the parent reduction then failed again over
+the same tree and discarded sibling results. The limits behaved as
+implemented; the contract equated every permitted write path with a full
+content snapshot root.
+
+### Three responsibilities
+
+- **Write ownership** stays in the dispatching contract (`writeOwnership`,
+  package `writePaths`/`sharedPaths`). Conflict detection is unchanged.
+- **Source snapshot paths** (`changeTracking.pathsFrom`) are exact
+  source/config/test/plan files or directories, including expected new or
+  deleted paths. Every existing rule applies unchanged: 1...512 declared
+  paths, 512 expanded entries, 8,000,000 bytes per file, 64,000,000 bytes
+  total, traversal/`.git`/symlink/special/unreadable rejection, retryable
+  mutation detection. At least one source path is always required, so an
+  artifact declaration can never remove source tracking.
+- **Generated artifact roots** (`changeTracking.artifactRootsFrom`, optional,
+  item-relative JSON Pointer to an array of repository-relative paths) are
+  tool installs, download/build caches and large binaries. They are
+  identified, never copied. A regular-file root records kind, mode, size and a
+  streaming SHA256. A directory root records kind, mode, bounded entry counts
+  by kind (files/directories/symlinks/other), regular-file byte total, a
+  `membershipSha256` over sorted relative names, kinds and sizes, and
+  `scanTruncated` once 200,000 entries were counted. Symlinks inside an
+  artifact root are counted without being followed; the root itself still
+  obeys path, symlink-ancestry, special-entry and readability policy. At most
+  64 artifact roots per branch. No artifact byte ever enters evidence as
+  content.
+
+Overlap rules are evaluated per capture: an artifact root that equals a
+source path or lies inside a source root is rejected (`fanout artifact root
+duplicates a source snapshot path`, `... is inside a source snapshot root`),
+and nested artifact roots are rejected (`fanout artifact roots overlap`). A
+narrow source path inside an artifact root is permitted and remains a full
+source snapshot; this is the shape of the verified workaround
+(`native-tools/toolchain.json` as source, `native-tools` as artifact). The
+absence of `artifactRootsFrom`, or an item without that field, keeps the
+restrictive source-only behaviour for older contracts.
+
+### Diagnostics
+
+Every snapshot rejection is a structured diagnostic carrying `branchId`,
+`stepId`, `phase` (`fanout-dispatch`, `before-node`, `after-node`, `reduce`),
+`node`, `selection` (`source`/`artifact`), `root`, `path`, `observed`,
+`limit`, `code` and `retryable`. The `AdapterExecutionError` message appends
+the same fields, for example
+`fanout snapshot exceeds 512 entries [branch=CE-PACKAGE node=step6-implement phase=after-node selection=source root=tools path=tools/cache/f510 observed=513 limit=512]`,
+so a branch `failureReason` identifies what was rejected without exposing
+content. Each private record also carries a `summary` with current source
+entry/byte counts, artifact-root count and the active limits, and the join's
+`changeEvidence.limits` repeats them.
+
+### Reduce as evidence
+
+`reduce()` no longer aborts the join. A record whose roots can no longer be
+snapshotted within policy is appended to `changeEvidence.reduceFailures`
+(phase `reduce`), `changeEvidence.complete` becomes `false`, and every other
+branch's observations are preserved. Child boundary failures recorded by the
+same actor are exposed under `changeEvidence.captureFailures`. Observations
+gain `selection`; artifact observations use `entry-added`, `entry-removed`,
+`entry-kind-drift`, `artifact-membership-drift` (directory count or
+membership digest changed) and `artifact-content-drift` (file digest, size or
+mode changed). Under `fail-fast` and `collect-all` an incomplete reduction
+still fails the fanout (`fanout change evidence reduction failed: ...`);
+`collect-partial` delivers the join so the reducer can route to a bounded
+amendment instead of auto-accepting. A policy rejection is never converted
+into acceptance.
+
+### Verification
+
+`WorkflowFanoutMapReduceTests` cover artifact directory growth past 512 entries
+with a nested source audit file, an artifact file above 8 MB recorded as digest
+while the same path as source is still rejected, every overlap and policy
+rejection for artifact roots, the exact structured entry-limit message, and
+reduce failures reported for entry, per-file and aggregate limits and unsafe
+growth. `DeterministicWorkflowRunnerFanoutArtifactEvidenceTests` run a real
+two-node fanout branch (`install` then `review`) through
+`DeterministicWorkflowRunner` with a bound `fanoutWorkspaceRoot`: an
+empty-at-dispatch tool directory that gains 600 cache entries, a 9 MB binary
+and a symlink completes under the artifact contract with the audit file
+tracked as source; the same growth under a source-only contract fails the
+branch at `after-node install` with the structured reason, keeps the sibling's
+evidence, and reports the parent reduction failures; and `fail-fast` turns an
+incomplete reduction into a fanout failure.

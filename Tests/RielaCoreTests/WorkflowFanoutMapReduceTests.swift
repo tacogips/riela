@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 import XCTest
 @testable import RielaCore
@@ -222,12 +223,9 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     assertObservation(try await evidence.reduce(), branch: "mode", path: "tree/file", reason: "content-or-mode-drift")
     try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("unsafe"),
                                                withDestinationURL: root.appendingPathComponent("absent"))
-    do {
-      _ = try await evidence.reduce()
-      XCTFail("accepted unsafe reduce growth")
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .policyBlocked)
-    }
+    let unsafe = try await evidence.reduce()
+    XCTAssertEqual(unsafe["complete"], .bool(false))
+    assertReduceFailure(unsafe, branch: "mode", root: "tree", path: "tree/unsafe", code: "policy_blocked")
   }
 
   func testUnreadableFileAndDirectoryAreRejected() async throws {
@@ -255,12 +253,10 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     _ = try await evidence.capture(branchId: "bytes", paths: ["bytes"], stepId: "before")
     try Data([1]).write(to: folder.appendingPathComponent("overflow"))
     await assertCaptureRejected(evidence, paths: ["bytes"], expectedCode: .policyBlocked)
-    do {
-      _ = try await evidence.reduce()
-      XCTFail("accepted 64,000,001 bytes at reduce")
-    } catch let error as AdapterExecutionError {
-      XCTAssertEqual(error.code, .policyBlocked)
-    }
+    let reduced = try await evidence.reduce()
+    XCTAssertEqual(reduced["complete"], .bool(false))
+    assertReduceFailure(reduced, branch: "bytes", root: "bytes", path: "bytes/overflow", code: "policy_blocked",
+                        observed: 64_000_001, limit: 64_000_000)
   }
 
   func testDeclaredExpandedAndByteLimitsAtCaptureAndReduce() async throws {
@@ -274,10 +270,9 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     for index in 0..<511 { try Data().write(to: folder.appendingPathComponent("f\(index)")) }
     _ = try await evidence.capture(branchId: "limits", paths: ["many"], stepId: "before")
     try Data().write(to: folder.appendingPathComponent("overflow"))
-    do {
-      _ = try await evidence.reduce()
-      XCTFail("accepted over-limit reduce growth")
-    } catch { }
+    let overLimit = try await evidence.reduce()
+    XCTAssertEqual(overLimit["complete"], .bool(false))
+    assertReduceFailure(overLimit, branch: "limits", root: "many", path: nil, code: "policy_blocked", observed: 513, limit: 512)
     await assertCaptureRejected(evidence, paths: ["many"])
     try FileManager.default.removeItem(at: folder.appendingPathComponent("overflow"))
     let large = root.appendingPathComponent("large")
@@ -285,12 +280,170 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     _ = try await evidence.capture(branchId: "limits", paths: ["large"], stepId: "before")
     try Data(count: 8_000_001).write(to: large)
     await assertCaptureRejected(evidence, paths: ["large"])
+    let perFile = try await evidence.reduce()
+    XCTAssertEqual(perFile["complete"], .bool(false))
+    assertReduceFailure(perFile, branch: "limits", root: "large", path: "large", code: "policy_blocked",
+                        observed: 8_000_001, limit: 8_000_000)
+  }
+
+  // MARK: - Issue #130: artifact roots, overlap rules and structured diagnostics
+
+  func testArtifactDirectoryRootGrowsPastSourceLimitsWhileAuditFileStaysSource() async throws {
+    let root = try scratch()
+    try Data("fn main() {}".utf8).write(to: root.appendingPathComponent("src.rs"))
+    let evidence = try WorkflowFanoutChangeEvidence(root: root)
+    let dispatch = try await evidence.capture(branchId: "pkg", paths: ["src.rs", "tools/toolchain.json"],
+                                              artifactRoots: ["tools"], stepId: "fanout-dispatch")
+    let dispatched = try readRecord(dispatch)
+    XCTAssertEqual(dispatched["artifactRoots"], .array([.string("tools")]))
+    XCTAssertEqual(fanoutJSONPointer(.object(dispatched), "/artifacts/tools/kind"), .string("missing"))
+    XCTAssertEqual(fanoutJSONPointer(.object(dispatched), "/files/tools~1toolchain.json/kind"), .string("missing"))
+
+    let tools = root.appendingPathComponent("tools")
+    let cache = tools.appendingPathComponent("registry/cache")
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    for index in 0..<600 { try Data("crate".utf8).write(to: cache.appendingPathComponent("crate\(index).crate")) }
+    try Data(count: 9_000_000).write(to: tools.appendingPathComponent("bin-tool"))
+    try FileManager.default.createDirectory(at: tools.appendingPathComponent("bin"), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: tools.appendingPathComponent("bin/tool"),
+                                               withDestinationURL: tools.appendingPathComponent("bin-tool"))
+    try Data(#"{"tool":"1.2.3"}"#.utf8).write(to: tools.appendingPathComponent("toolchain.json"))
+
+    let after = try await evidence.capture(branchId: "pkg", paths: ["src.rs", "tools/toolchain.json"],
+                                           artifactRoots: ["tools"], stepId: "after:install")
+    let stored = try readRecord(after)
+    let encoded = String(data: try JSONEncoder().encode(stored), encoding: .utf8) ?? ""
+    XCTAssertEqual(encoded.components(separatedBy: "contentBase64").count - 1, 2, "only the two source files carry content")
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/files/tools~1toolchain.json/contentBase64"),
+                   .string(Data(#"{"tool":"1.2.3"}"#.utf8).base64EncodedString()))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/kind"), .string("directory"))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/entryCount"), .integer(606))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/files"), .integer(602))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/directories"), .integer(3))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/symlinks"), .integer(1))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/scanTruncated"), .bool(false))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/regularFileBytes"), .integer(9_000_000 + 600 * 5 + 16))
+    XCTAssertNotNil(fanoutJSONPointer(.object(stored), "/artifacts/tools/membershipSha256"))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/summary/sourceEntries"), .integer(2))
+    guard case let .object(files)? = stored["files"] else { return XCTFail("missing files") }
+    XCTAssertEqual(Set(files.keys), ["src.rs", "tools/toolchain.json"], "artifact children never enter the source map")
+
+    let reduced = try await evidence.reduce()
+    XCTAssertEqual(reduced["complete"], .bool(true))
+    XCTAssertEqual(reduced["reduceFailures"], .array([]))
+    assertObservation(reduced, branch: "pkg", path: "tools", reason: "entry-added")
+    assertObservation(reduced, branch: "pkg", path: "tools/toolchain.json", reason: "entry-added")
+    try Data("extra".utf8).write(to: cache.appendingPathComponent("extra.crate"))
+    assertObservation(try await evidence.reduce(), branch: "pkg", path: "tools", reason: "artifact-membership-drift")
+    let drifted = try await evidence.reduce()
+    XCTAssertFalse((String(data: try JSONEncoder().encode(drifted), encoding: .utf8) ?? "").contains("contentBase64"))
+  }
+
+  func testArtifactFileRootIsDigestEvidenceWhileSourceLimitStillApplies() async throws {
+    let root = try scratch()
+    let binary = root.appendingPathComponent("tool-binary")
+    var payload = Data(count: 8_000_001)
+    payload[0] = 0x7f
+    try payload.write(to: binary)
+    try Data("manifest".utf8).write(to: root.appendingPathComponent("manifest.json"))
+    let evidence = try WorkflowFanoutChangeEvidence(root: root)
+    let saved = try await evidence.capture(branchId: "bin", paths: ["manifest.json"], artifactRoots: ["tool-binary"], stepId: "before:verify")
+    let stored = try readRecord(saved)
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tool-binary/kind"), .string("file"))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tool-binary/size"), .integer(8_000_001))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tool-binary/sha256"),
+                   .string(SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()))
+    XCTAssertNil(fanoutJSONPointer(.object(stored), "/artifacts/tool-binary/contentBase64"))
     do {
-      _ = try await evidence.reduce()
-      XCTFail("accepted per-file limit growth at reduce")
+      _ = try await evidence.capture(branchId: "bin", paths: ["tool-binary"], stepId: "after:verify")
+      XCTFail("source classification must keep the 8 MB limit")
     } catch let error as AdapterExecutionError {
       XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertTrue(error.message.contains("[branch=bin node=verify phase=after-node selection=source root=tool-binary path=tool-binary observed=8000001 limit=8000000]"), error.message)
     }
+    payload[1] = 0x45
+    try payload.write(to: binary)
+    assertObservation(try await evidence.reduce(), branch: "bin", path: "tool-binary", reason: "artifact-content-drift")
+    let reduced = try await evidence.reduce()
+    guard case let .array(captureFailures)? = reduced["captureFailures"], case let .object(failure)? = captureFailures.first else {
+      return XCTFail("capture failure must be recorded as evidence")
+    }
+    XCTAssertEqual(failure["branchId"], .string("bin"))
+    XCTAssertEqual(failure["node"], .string("verify"))
+    XCTAssertEqual(failure["phase"], .string("after-node"))
+    XCTAssertEqual(failure["selection"], .string("source"))
+    XCTAssertEqual(failure["root"], .string("tool-binary"))
+    XCTAssertEqual(failure["observed"], .integer(8_000_001))
+    XCTAssertEqual(failure["limit"], .integer(8_000_000))
+  }
+
+  func testArtifactClassificationCannotHideSourceSelectionsOrEscapePolicy() async throws {
+    let root = try scratch()
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("src/gen"), withIntermediateDirectories: true)
+    try Data("code".utf8).write(to: root.appendingPathComponent("src/main.rs"))
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("tools/cache"), withIntermediateDirectories: true)
+    let evidence = try WorkflowFanoutChangeEvidence(root: root)
+    // Source tracking is required: artifact roots alone are rejected.
+    await assertCaptureRejected(evidence, paths: [], artifactRoots: ["tools"], expectedCode: .policyBlocked)
+    // Identical and nested source/artifact selections are ambiguous.
+    await assertCaptureRejected(evidence, paths: ["src"], artifactRoots: ["src"], expectedCode: .policyBlocked,
+                                messageContains: "fanout artifact root duplicates a source snapshot path [branch=rejected phase=before selection=artifact root=src path=src]")
+    await assertCaptureRejected(evidence, paths: ["src"], artifactRoots: ["src/gen"], expectedCode: .policyBlocked,
+                                messageContains: "fanout artifact root is inside a source snapshot root [branch=rejected phase=before selection=artifact root=src path=src/gen]")
+    await assertCaptureRejected(evidence, paths: ["src/main.rs"], artifactRoots: ["tools", "tools/cache"], expectedCode: .policyBlocked,
+                                messageContains: "fanout artifact roots overlap")
+    await assertCaptureRejected(evidence, paths: ["src/main.rs"], artifactRoots: (0..<65).map { "tools/root\($0)" },
+                                expectedCode: .policyBlocked, messageContains: "observed=65 limit=64")
+    // Path policy applies to artifact roots too: traversal, .git, evidence directory, symlinked root, special root.
+    for unsafe in ["../outside", "tools/.git", "tmp", "/abs"] {
+      await assertCaptureRejected(evidence, paths: ["src/main.rs"], artifactRoots: [unsafe], expectedCode: .policyBlocked)
+    }
+    try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked-tools"),
+                                               withDestinationURL: root.appendingPathComponent("tools"))
+    await assertCaptureRejected(evidence, paths: ["src/main.rs"], artifactRoots: ["linked-tools"], expectedCode: .policyBlocked,
+                                messageContains: "symlink ancestry")
+    XCTAssertEqual(mkfifo(root.appendingPathComponent("tools/pipe").path, 0o600), 0)
+    await assertCaptureRejected(evidence, paths: ["src/main.rs"], artifactRoots: ["tools/pipe"], expectedCode: .policyBlocked,
+                                messageContains: "refuses special entries")
+    // A source file nested inside an artifact root stays a full source snapshot;
+    // a source root remains fully snapshotted no matter what artifact roots exist.
+    try Data("audit".utf8).write(to: root.appendingPathComponent("tools/audit.json"))
+    let saved = try await evidence.capture(branchId: "ok", paths: ["src", "tools/audit.json"], artifactRoots: ["tools"], stepId: "before:x")
+    let stored = try readRecord(saved)
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/files/tools~1audit.json/contentBase64"), .string(Data("audit".utf8).base64EncodedString()))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/files/src~1main.rs/contentBase64"), .string(Data("code".utf8).base64EncodedString()))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/kind"), .string("directory"))
+    XCTAssertEqual(fanoutJSONPointer(.object(stored), "/artifacts/tools/other"), .integer(1), "the fifo is counted, never opened")
+  }
+
+  func testStructuredEntryLimitDiagnosticNamesBranchNodePhaseRootPathAndCounts() async throws {
+    let root = try scratch()
+    let folder = root.appendingPathComponent("tools/cache")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    for index in 0..<520 { try Data().write(to: folder.appendingPathComponent(String(format: "f%03d", index))) }
+    let evidence = try WorkflowFanoutChangeEvidence(root: root)
+    do {
+      _ = try await evidence.capture(branchId: "CE-PACKAGE", paths: ["tools"], stepId: "after:step6-implement")
+      XCTFail("520 entries must exceed the source entry limit")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .policyBlocked)
+      XCTAssertEqual(error.message, "fanout snapshot exceeds 512 entries [branch=CE-PACKAGE node=step6-implement phase=after-node selection=source root=tools path=tools/cache/f510 observed=513 limit=512]")
+    }
+    let evidenceDirectory = await evidence.directory
+    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory.path).isEmpty, "no partial record is published")
+  }
+
+  private func assertReduceFailure(_ reduced: JSONObject, branch: String, root: String, path: String?, code: String,
+                                   observed: Int? = nil, limit: Int? = nil,
+                                   file: StaticString = #filePath, line: UInt = #line) {
+    guard case let .array(failures)? = reduced["reduceFailures"] else { return XCTFail("missing reduceFailures", file: file, line: line) }
+    XCTAssertTrue(failures.contains { value in
+      guard case let .object(item) = value else { return false }
+      return item["branchId"] == .string(branch) && item["root"] == .string(root) && item["phase"] == .string("reduce")
+        && item["code"] == .string(code) && (path == nil || item["path"] == .string(path!))
+        && (observed == nil || item["observed"] == .integer(Int64(observed!)))
+        && (limit == nil || item["limit"] == .integer(Int64(limit!)))
+    }, "missing reduce failure \(branch):\(root):\(path ?? "*") in \(failures)", file: file, line: line)
   }
 
   func testSixtyPathFourHundredSevenFileScaleFixture() async throws {
@@ -330,18 +483,23 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     }, "missing \(branch):\(path):\(reason)", file: file, line: line)
   }
 
-  private func assertCaptureRejected(_ evidence: WorkflowFanoutChangeEvidence, paths: [String],
+  private func assertCaptureRejected(_ evidence: WorkflowFanoutChangeEvidence, paths: [String], artifactRoots: [String] = [],
                                      expectedCode: AdapterExecutionErrorCode? = nil, retryable: Bool? = nil,
+                                     messageContains: String? = nil,
                                      file: StaticString = #filePath, line: UInt = #line) async {
     do {
-      _ = try await evidence.capture(branchId: "rejected", paths: paths, stepId: "before")
-      XCTFail("accepted \(paths)", file: file, line: line)
+      _ = try await evidence.capture(branchId: "rejected", paths: paths, artifactRoots: artifactRoots, stepId: "before")
+      XCTFail("accepted \(paths) artifacts \(artifactRoots)", file: file, line: line)
     } catch {
       if let expectedCode {
         XCTAssertEqual((error as? AdapterExecutionError)?.code, expectedCode, file: file, line: line)
       }
       if let retryable {
         XCTAssertEqual((error as? AdapterExecutionError)?.isRetryable, retryable, file: file, line: line)
+      }
+      if let messageContains {
+        let message = (error as? AdapterExecutionError)?.message ?? String(describing: error)
+        XCTAssertTrue(message.contains(messageContains), message, file: file, line: line)
       }
     }
   }

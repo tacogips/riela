@@ -14,9 +14,22 @@ public struct WorkflowFanoutDependencies: Codable, Equatable, Sendable {
   }
 }
 
+/// `pathsFrom` selects source snapshot roots: exact source/config/test/plan
+/// files or directories whose full content is preserved under the source
+/// limits. `artifactRootsFrom` optionally selects generated artifact roots
+/// (tool installs, download/build caches, large binaries) that are recorded as
+/// bounded manifests (kind, size, digest, entry counts) instead of recursive
+/// content snapshots. Both pointers are relative to each fanout item. An
+/// artifact root may never equal or sit inside a source root; a narrow source
+/// path inside an artifact root stays a full source snapshot.
 public struct WorkflowFanoutChangeTracking: Codable, Equatable, Sendable {
   public var pathsFrom: String
-  public init(pathsFrom: String) { self.pathsFrom = pathsFrom }
+  public var artifactRootsFrom: String?
+
+  public init(pathsFrom: String, artifactRootsFrom: String? = nil) {
+    self.pathsFrom = pathsFrom
+    self.artifactRootsFrom = artifactRootsFrom
+  }
 }
 
 struct WorkflowFanoutWave: Sendable {

@@ -40,15 +40,14 @@ extension DeterministicWorkflowRunner {
     }
 
     if let changeEvidence, let tracking = directive.changeTracking {
+      // Preflight every selected branch before any writer starts so a
+      // selection that already violates policy fails here, naming the branch.
       for index in wave.selectedIndices {
-        guard case let .array(values)? = fanoutJSONPointer(items[index], tracking.pathsFrom) else {
-          throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.pathsFrom must resolve to an array")
-        }
-        let paths = try values.map { value -> String in
-          guard case let .string(path) = value else { throw AdapterExecutionError(.invalidOutput, "invalid tracked path") }
-          return path
-        }
-        _ = try await changeEvidence.capture(branchId: wave.branchIds[index], paths: paths, stepId: "fanout-dispatch")
+        let selection = try fanoutTrackedSelection(item: items[index], tracking: tracking)
+        _ = try await changeEvidence.capture(
+          branchId: wave.branchIds[index], paths: selection.paths,
+          artifactRoots: selection.artifactRoots, stepId: "fanout-dispatch"
+        )
       }
     }
     let bound = fanoutConcurrencyBound(itemCount: wave.selectedIndices.count, directive: directive, request: request)
@@ -75,8 +74,16 @@ extension DeterministicWorkflowRunner {
     join["completedBranchIds"] = .array(wave.completedBranchIds.map(JSONValue.string))
     join["dispatchedBranchIds"] = .array(wave.selectedIndices.map { .string(wave.branchIds[$0]) })
     join["allBranchesCompleted"] = .bool(!outcomes.contains { $0.isFailure })
+    var reduceFailureReason: String?
     if let changeEvidence {
-      join["changeEvidence"] = .object(try await changeEvidence.reduce())
+      // Reduce never discards sibling results: a root that can no longer be
+      // snapshotted within policy is reported under changeEvidence.reduceFailures
+      // with branch/node/phase/root/path/observed/limit, and `complete` is false.
+      let changeEvidenceJoin = try await changeEvidence.reduce()
+      join["changeEvidence"] = .object(changeEvidenceJoin)
+      if case let .array(failures)? = changeEvidenceJoin["reduceFailures"], let first = failures.first {
+        reduceFailureReason = fanoutReduceFailureDescription(first, count: failures.count)
+      }
     }
     if directive.failurePolicy == .failFast, let failed = outcomes.first(where: { $0.isFailure }) {
       throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
@@ -88,6 +95,12 @@ extension DeterministicWorkflowRunner {
       throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
         groupId: directive.groupId,
         reason: "collect-all fanout recorded \(outcomes.filter(\.isFailure).count) failed branch(es); first failure at branch \(failed.index): \(failed.failureReason ?? "unknown failure")"
+      )
+    }
+    if directive.failurePolicy != .collectPartial, let reduceFailureReason {
+      throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
+        groupId: directive.groupId,
+        reason: "fanout change evidence reduction failed: \(reduceFailureReason)"
       )
     }
     try await appendFanoutJoinMessage(
@@ -264,16 +277,10 @@ extension DeterministicWorkflowRunner {
       )
       reservedChildSessionId = branchRequest.resumeSessionId
       if let changeEvidence, let tracking = directive.changeTracking {
-        guard case let .array(values)? = fanoutJSONPointer(item, tracking.pathsFrom) else {
-          throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.pathsFrom must resolve to an array")
-        }
-        let paths = try values.map { value -> String in
-          guard case let .string(path) = value else {
-            throw AdapterExecutionError(.invalidOutput, "fanout changeTracking paths must be strings")
-          }
-          return path
-        }
-        branchRequest.fanoutChangeContext = WorkflowFanoutChangeContext(evidence: changeEvidence, branchId: branchId, paths: paths)
+        let selection = try fanoutTrackedSelection(item: item, tracking: tracking)
+        branchRequest.fanoutChangeContext = WorkflowFanoutChangeContext(
+          evidence: changeEvidence, branchId: branchId, paths: selection.paths, artifactRoots: selection.artifactRoots
+        )
       }
       // Keep fanout children on the same recoverable lifecycle boundaries as
       // direct cross-workflow children. These checkpoints deliberately wrap
@@ -334,6 +341,54 @@ extension DeterministicWorkflowRunner {
         reason: workflowRunFailureReason(error)
       )
     }
+  }
+
+  /// Resolves one item's tracking selection. `pathsFrom` must resolve to an
+  /// array of source paths. `artifactRootsFrom` is optional per item: an
+  /// absent pointer means no artifact classification (the restrictive default),
+  /// while a present value must be an array of strings.
+  private func fanoutTrackedSelection(
+    item: JSONValue, tracking: WorkflowFanoutChangeTracking
+  ) throws -> (paths: [String], artifactRoots: [String]) {
+    guard case let .array(values)? = fanoutJSONPointer(item, tracking.pathsFrom) else {
+      throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.pathsFrom must resolve to an array")
+    }
+    let paths = try values.map { value -> String in
+      guard case let .string(path) = value else {
+        throw AdapterExecutionError(.invalidOutput, "fanout changeTracking paths must be strings")
+      }
+      return path
+    }
+    var artifactRoots: [String] = []
+    if let pointer = tracking.artifactRootsFrom, let resolved = fanoutJSONPointer(item, pointer), resolved != .null {
+      guard case let .array(artifactValues) = resolved else {
+        throw AdapterExecutionError(.invalidOutput, "fanout changeTracking.artifactRootsFrom must resolve to an array")
+      }
+      artifactRoots = try artifactValues.map { value -> String in
+        guard case let .string(path) = value else {
+          throw AdapterExecutionError(.invalidOutput, "fanout changeTracking artifact roots must be strings")
+        }
+        return path
+      }
+    }
+    return (paths, artifactRoots)
+  }
+
+  private func fanoutReduceFailureDescription(_ failure: JSONValue, count: Int) -> String {
+    guard case let .object(diagnostic) = failure else { return "\(count) reduce failure(s)" }
+    var parts: [String] = []
+    if case let .string(reason)? = diagnostic["reason"] { parts.append(reason) }
+    var fields: [String] = []
+    for key in ["branchId", "node", "phase", "selection", "root", "path", "observed", "limit"] {
+      switch diagnostic[key] {
+      case let .string(value)?: fields.append("\(key == "branchId" ? "branch" : key)=\(value)")
+      case let .integer(value)?: fields.append("\(key)=\(value)")
+      default: continue
+      }
+    }
+    if !fields.isEmpty { parts.append("[\(fields.joined(separator: " "))]") }
+    if count > 1 { parts.append("(+\(count - 1) more)") }
+    return parts.joined(separator: " ")
   }
 
   private func branchIdForOutcome(

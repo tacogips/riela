@@ -336,7 +336,7 @@ private func validateFanout(_ raw: Any, path: String, diagnostics: inout [Workfl
   validateNonEmptyString(fanout["joinStepId"], path: "\(path).joinStepId", diagnostics: &diagnostics)
   for (key, requiredFields, optionalFields) in [
     ("dependencies", ["branchIdFrom", "dependsOnFrom"], ["completedBranchIdsFrom"]),
-    ("changeTracking", ["pathsFrom"], [])
+    ("changeTracking", ["pathsFrom"], ["artifactRootsFrom"])
   ] {
     if let raw = fanout[key] {
       guard let object = raw as? [String: Any] else {

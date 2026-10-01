@@ -280,3 +280,35 @@ Order: do C before step 4, so the focused and full runs include it. A and B belo
 ### Final scope amendment (2026-10-01, after run session-16)
 
 wh-20's work so far is committed ('wip: wh-20 reconcile ...'); complete it, do not restart it. The full suite now has exactly 3 new failures beyond the wh-00 baseline, all in `SurfaceCatalogTests` (tmp/work-handover/wh-20-reconcile/new-failures.txt): `testIdsCLICommandsGraphQLFieldsAndRoutesAreUnique` (duplicate operation id `task.serve`), `testCatalogInvariantsHold`, and `testWorkRuntimeReadAndP1TaskCommandsAreCataloged` (expectations still describe the pre-handover surface, e.g. 'task.handover must declare the CLI surface blocked'). This plan now has shared ownership of `SurfaceCatalog+RowsConsole.swift`, `SurfaceCatalog.swift`, `SurfaceCatalog+RowSupport.swift` and `SurfaceCatalogTests.swift`. Remove the duplicate `task.serve` row (keep the one that reflects `task serve --takeover` as built), update the test expectations to the shipped handover surfaces, rerun SurfaceCatalogTests and SurfaceParity, then rerun the full suite and the baseline-comparison gate; it must report no failure outside the wh-00 baseline.
+
+### Remaining-work checklist at 78b955d0 (2026-10-01, run session-17)
+
+Every other wh-20 gate is already green at e8bbf3f7 with complete logs in `tmp/work-handover/wh-20-reconcile/`. These include build-final, sdl-repeat-final (diffExit=0), parity-final, focused-final (211 tests), r35-ceiling (exit 0) and r35-ceiling-prefix (exit 1), examples (validate 0×3; runs 5/5/0), swiftlint-changed/swiftlint and diff-check-final. Do not redo the earlier steps. Before each edit, read the file fresh and record its `shasum -a 256` before and after in the progress log.
+
+1. **Delete the placeholder row.** Remove only `surfaceRow(notYetBuilt, id: "task.serve", family: "task", kind: .stream)` from `SurfaceCatalog.workRuntimeRows` in `Sources/RielaCore/SurfaceCatalog+RowsConsole.swift`. Keep the `.process` `task.serve` row in `taskMutationRows` (`SurfaceCatalog+RowsCLI.swift`). Its options must equal what `Sources/RielaCLI/TaskServeTakeover.swift` declares. Do not change `notYetBuilt`, its evidence strings, or any other row.
+2. **Pin the catalog test to the shipped surface.** In `Tests/RielaCoreTests/SurfaceCatalogTests.swift`, rewrite only `testWorkRuntimeReadAndP1TaskCommandsAreCataloged` and its doc comment. The other two failing tests pass once the duplicate is gone, so leave them unchanged. Assert exact values; never replace them with "non-empty" or "any availability" checks.
+   - Id set (exactly 18): task.submit, task.list, task.show, task.run, task.decide, task.serve, task.handover, task.takeover, task.answer, task.handovers, task.reconcile, task.handover-query, task.awaiting-handover, task.heartbeat, task.report, intent.create, intent.list, intent.show.
+   - CLI `.implemented`, with `cli.command` equal to the command and non-empty options: task.show "task show", task.list "task list", task.run "task run", task.decide "task decide", task.serve "task serve", task.handover "task handover", task.takeover "task takeover", task.answer "task answer", task.handovers "task handovers", task.reconcile "task reconcile". The task.serve options must contain `--takeover` and `--traits`.
+   - CLI `.blocked` with evidence containing "work-runtime P1" and `cli == nil`: task.submit, intent.create, intent.list, intent.show.
+   - GraphQL-only rows, with `cli == nil` and CLI availability not `.implemented`: task.handover-query, task.awaiting-handover, task.heartbeat, task.report.
+   - GraphQL `.implemented`, with `graphql.qualifiedField` equal to: task.handover→`Mutation.requestTaskHandover`, task.takeover→`Mutation.takeoverTask`, task.answer→`Mutation.answerTask`, task.handover-query→`Query.taskHandover`, task.awaiting-handover→`Query.tasksAwaitingHandover`, task.heartbeat→`Mutation.heartbeatAttempt`, task.report→`Mutation.reportAttempt`. These are the seven design §12 fields. Every other row stays GraphQL `.blocked`, with evidence containing "work-runtime P5" and `graphql == nil`.
+   - Library: every row is `.blocked`, with evidence containing "work-runtime P5" and `library == nil`.
+   - The test applies only to the `task` and `intent` families. The `session.handover` row lives in `sessionRows` and is checked by the parity gates.
+3. **Correct the evidence check for R34.** The SDL file does not contain `HandoverAnswerPayload` literally. `GraphQLContractProjector+Schema.swift` interpolates `\(taskHandoverGraphQLSchemaTypes)`, so the literal grep from the "Pending-branch removal" section exits 1 even when the SDL is correct. Replace it with all three of these checks:
+   - `grep -qF '\(taskHandoverGraphQLSchemaTypes)' Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift` exits 0.
+   - `grep -q 'type HandoverAnswerPayload' Sources/RielaGraphQL/TaskHandoverGraphQL.swift` exits 0.
+   - `TaskHandoverGraphQLTests` passes. It asserts the type and the `answer` field at lines 142-143.
+4. **Verify, serially, with logs under `tmp/work-handover/wh-20-reconcile/`.** Each log must end in `exit=`.
+   - `swift test --filter SurfaceCatalogTests` → `catalog.log`.
+   - `swift test --filter SurfaceParity` → `parity.log`.
+   - `swift build` → `build.log`.
+   - The manifest's focused filter → `focused.log`.
+   - The full suite → `full-swift-test.log`.
+   - The manifest's baseline-comparison command → `full-suite-baseline-gate.log`, which must show exit 0 with an empty `new-failures.txt`.
+   - `swiftlint lint --strict` on the two edited Swift files → `swiftlint-final.log`.
+   - `git diff --check`.
+
+   The examples step runs again outside the Codex sandbox (the Opus verification step), using the same command as before.
+5. **Closure.** This is task 7 above. Check each umbrella Completion Criteria box with the test name and log path. Archive with `git mv` to `impl-plans/completed/` only if every box has evidence and the gate exit is 0. Archive the umbrella and wh-00..wh-20 together; `work-handover-dispatch.json` stays in active. Otherwise keep everything active and list each missing box in the progress log.
+
+Do not touch any other `SurfaceCatalog*` file, `GraphQLSchemaGenerator.swift`, or the generated SDL (it is already idempotent). Do not loosen `invariantViolations()`.

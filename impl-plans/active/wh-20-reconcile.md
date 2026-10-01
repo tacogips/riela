@@ -37,7 +37,10 @@
     "Sources/RielaCLI/TaskRemoteTakeover.swift",
     "Sources/RielaCLI/TaskRunCancellation.swift",
     "Sources/RielaCLI/TaskServeTakeover.swift",
+    "Sources/RielaCore/SurfaceCatalog+RowSupport.swift",
     "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+    "Sources/RielaCore/SurfaceCatalog+RowsConsole.swift",
+    "Sources/RielaCore/SurfaceCatalog.swift",
     "Sources/RielaGraphQL/TaskHandoverGraphQL.swift",
     "Sources/RielaWork/DecisionApplier.swift",
     "Sources/RielaWork/HandoverBriefRenderer.swift",
@@ -70,6 +73,7 @@
     "Tests/RielaCLITests/TaskHandoverLeaseTests.swift",
     "Tests/RielaCLITests/TaskHandoverRepositoryTests.swift",
     "Tests/RielaCLITests/TaskRemoteTakeoverTests.swift",
+    "Tests/RielaCoreTests/SurfaceCatalogTests.swift",
     "Tests/RielaGraphQLTests/TaskHandoverGraphQLTests.swift",
     "Tests/RielaWorkTests/DecisionApplierCausalityStoreTests.swift",
     "Tests/RielaWorkTests/DecisionApplierStoreTests.swift",
@@ -86,8 +90,8 @@
     "Tests/RielaWorkTests/WorkStoreReservationTests.swift",
     "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
     "Tests/RielaWorkTests/WorkStoreTests.swift",
-    "impl-plans/progress/wh-14-task-dispatch-runtime.md",
-    "impl-plans/completed"
+    "impl-plans/completed",
+    "impl-plans/progress/wh-14-task-dispatch-runtime.md"
   ],
   "sharedPathNotes": [
     {
@@ -272,3 +276,7 @@ Evidence (append to the verification list; each command's log ends with `exit=`)
 - `arch -arm64 /bin/zsh -lc 'swift test --filter "TaskHandoverCommandTests|TaskHandoverDispatchTests|TaskHandoverRepositoryTests" > tmp/work-handover/wh-20-reconcile/r35-ceiling.log 2>&1; echo "exit=$?" >> tmp/work-handover/wh-20-reconcile/r35-ceiling.log'` ends `exit=0` with 0 failures and includes the new test.
 
 Order: do C before step 4, so the focused and full runs include it. A and B belong to steps 2–3.
+
+### Final scope amendment (2026-10-01, after run session-16)
+
+wh-20's work so far is committed ('wip: wh-20 reconcile ...'); complete it, do not restart it. The full suite now has exactly 3 new failures beyond the wh-00 baseline, all in `SurfaceCatalogTests` (tmp/work-handover/wh-20-reconcile/new-failures.txt): `testIdsCLICommandsGraphQLFieldsAndRoutesAreUnique` (duplicate operation id `task.serve`), `testCatalogInvariantsHold`, and `testWorkRuntimeReadAndP1TaskCommandsAreCataloged` (expectations still describe the pre-handover surface, e.g. 'task.handover must declare the CLI surface blocked'). This plan now has shared ownership of `SurfaceCatalog+RowsConsole.swift`, `SurfaceCatalog.swift`, `SurfaceCatalog+RowSupport.swift` and `SurfaceCatalogTests.swift`. Remove the duplicate `task.serve` row (keep the one that reflects `task serve --takeover` as built), update the test expectations to the shipped handover surfaces, rerun SurfaceCatalogTests and SurfaceParity, then rerun the full suite and the baseline-comparison gate; it must report no failure outside the wh-00 baseline.

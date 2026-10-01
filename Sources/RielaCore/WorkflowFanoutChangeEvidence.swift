@@ -116,6 +116,14 @@ actor WorkflowFanoutChangeEvidence {
           try reduceRecord(record, branchId: branchId, observations: &observations)
         } catch let failure as FanoutSnapshotFailure {
           reduceFailures.append(.object(failure.diagnostic(branchId: branchId, stepId: stepId, phase: "reduce")))
+        } catch let error as AdapterExecutionError {
+          let failure = FanoutSnapshotFailure(error.code, error.message, isRetryable: error.isRetryable)
+          reduceFailures.append(.object(failure.diagnostic(branchId: branchId, stepId: stepId, phase: "reduce")))
+        } catch {
+          // Filesystem errors (for example ENOTDIR after an ancestor became a
+          // file) are evidence too; they must not discard sibling results.
+          let failure = FanoutSnapshotFailure(.providerError, "fanout reduce could not re-observe the tree: \(error)")
+          reduceFailures.append(.object(failure.diagnostic(branchId: branchId, stepId: stepId, phase: "reduce")))
         }
       }
     }
@@ -342,7 +350,7 @@ actor WorkflowFanoutChangeEvidence {
         throw FanoutSnapshotFailure(.policyBlocked, "fanout artifact root refuses unreadable entries", path: path)
       }
       try observationHook?("artifact-directory:\(path)")
-      let manifest = try artifactDirectoryManifest(path, mode: initial.st_mode)
+      let manifest = try artifactDirectoryManifest(path, initial: initial)
       try rejectFanoutSymlinkComponents(root: root, path: path)
       guard fanoutSameEntry(initial, try fanoutStatus(url, missingAllowed: false, path: path)) else {
         throw fanoutSnapshotMutation(path)
@@ -365,33 +373,28 @@ actor WorkflowFanoutChangeEvidence {
     throw FanoutSnapshotFailure(.policyBlocked, "fanout artifact root refuses special entries", path: path)
   }
 
-  private func artifactDirectoryManifest(_ path: String, mode: mode_t) throws -> JSONValue {
+  private func artifactDirectoryManifest(_ path: String, initial: stat) throws -> JSONValue {
     var hasher = SHA256()
     var files = 0, directories = 0, symlinks = 0, other = 0, entryCount = 0
     var regularFileBytes: Int64 = 0
     var truncated = false
-    var pending = [path]
-    scan: while let current = pending.popLast() {
-      let children: [String]
-      do {
-        children = try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent(current).path).sorted()
-      } catch {
-        throw FanoutSnapshotFailure(.policyBlocked, "fanout artifact root contains unreadable entries", path: current)
-      }
-      var subdirectories: [String] = []
+    var pending: [(path: String, status: stat)] = [(path, initial)]
+    scan: while let (current, expected) = pending.popLast() {
+      let children = try artifactDirectoryChildren(current, expected: expected)
+      var subdirectories: [(path: String, status: stat)] = []
       for child in children {
         guard entryCount < Self.artifactEntryScanLimit else { truncated = true; break scan }
         let childPath = current + "/" + child
         var status = stat()
         guard lstat(root.appendingPathComponent(childPath).path, &status) == 0 else {
-          if errno == ENOENT { throw fanoutSnapshotMutation(childPath) }
+          if errno == ENOENT || errno == ENOTDIR { throw fanoutSnapshotMutation(childPath) }
           throw FanoutSnapshotFailure(.policyBlocked, "fanout artifact root contains unreadable entries", path: childPath)
         }
         entryCount += 1
         let marker: String
         switch status.st_mode & mode_t(S_IFMT) {
         case mode_t(S_IFDIR):
-          directories += 1; marker = "d"; subdirectories.append(childPath)
+          directories += 1; marker = "d"; subdirectories.append((childPath, status))
         case mode_t(S_IFREG):
           files += 1; regularFileBytes += Int64(status.st_size); marker = "f"
         case mode_t(S_IFLNK):
@@ -399,13 +402,15 @@ actor WorkflowFanoutChangeEvidence {
         default:
           other += 1; marker = "s"
         }
+        // Length-prefix the name: entry names may contain newlines, and an
+        // unframed encoding would let two different memberships collide.
         let relative = childPath.dropFirst(path.count + 1)
-        hasher.update(data: Data("\(marker) \(Int64(status.st_size)) \(relative)\n".utf8))
+        hasher.update(data: Data("\(marker) \(Int64(status.st_size)) \(relative.utf8.count):\(relative)\n".utf8))
       }
       pending.append(contentsOf: subdirectories.reversed())
     }
     return .object([
-      "kind": .string("directory"), "mode": .integer(Int64(mode & 0o7777)),
+      "kind": .string("directory"), "mode": .integer(Int64(initial.st_mode & 0o7777)),
       "entryCount": .integer(Int64(entryCount)), "regularFileBytes": .integer(regularFileBytes),
       "files": .integer(Int64(files)), "directories": .integer(Int64(directories)),
       "symlinks": .integer(Int64(symlinks)), "other": .integer(Int64(other)),
@@ -413,6 +418,37 @@ actor WorkflowFanoutChangeEvidence {
       "scanTruncated": .bool(truncated), "scanLimit": .integer(Int64(Self.artifactEntryScanLimit))
     ])
   }
+
+  /// Lists one directory inside an artifact root. The directory must still be
+  /// the same non-symlink directory observed by `lstat` both before and after
+  /// listing, so a concurrent swap to a symlink is not followed silently and a
+  /// vanished or replaced directory is a retryable mutation, not a policy block.
+  private func artifactDirectoryChildren(_ current: String, expected: stat) throws -> [String] {
+    let url = root.appendingPathComponent(current)
+    guard fanoutSameDirectory(expected, try fanoutStatus(url, missingAllowed: true, path: current)) else {
+      throw fanoutSnapshotMutation(current)
+    }
+    try observationHook?("artifact-scan:\(current)")
+    let children: [String]
+    do {
+      children = try FileManager.default.contentsOfDirectory(atPath: url.path).sorted()
+    } catch {
+      guard fanoutSameDirectory(expected, try fanoutStatus(url, missingAllowed: true, path: current)) else {
+        throw fanoutSnapshotMutation(current)
+      }
+      throw FanoutSnapshotFailure(.policyBlocked, "fanout artifact root contains unreadable entries", path: current)
+    }
+    guard fanoutSameDirectory(expected, try fanoutStatus(url, missingAllowed: true, path: current)) else {
+      throw fanoutSnapshotMutation(current)
+    }
+    return children
+  }
+}
+
+private func fanoutSameDirectory(_ before: stat, _ after: stat?) -> Bool {
+  guard let after else { return false }
+  return after.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) &&
+    before.st_ino == after.st_ino && before.st_dev == after.st_dev
 }
 
 struct WorkflowFanoutChangeContext: Sendable {

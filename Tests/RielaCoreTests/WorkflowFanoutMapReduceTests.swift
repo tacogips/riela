@@ -433,6 +433,67 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory.path).isEmpty, "no partial record is published")
   }
 
+  func testArtifactMembershipDigestFramesEntryNamesContainingNewlines() async throws {
+    let root = try scratch()
+    let tools = root.appendingPathComponent("tools")
+    try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+    try Data("src".utf8).write(to: root.appendingPathComponent("src.rs"))
+    // Unframed "<kind> <size> <name>\n" lines for {"a\nf 0 b", "c"} and
+    // {"a", "b\nf 0 c"} are byte-identical with equal counts and sizes.
+    try Data().write(to: tools.appendingPathComponent("a\nf 0 b"))
+    try Data().write(to: tools.appendingPathComponent("c"))
+    let evidence = try WorkflowFanoutChangeEvidence(root: root)
+    _ = try await evidence.capture(branchId: "pkg", paths: ["src.rs"], artifactRoots: ["tools"], stepId: "before:install")
+    try FileManager.default.removeItem(at: tools.appendingPathComponent("a\nf 0 b"))
+    try FileManager.default.removeItem(at: tools.appendingPathComponent("c"))
+    try Data().write(to: tools.appendingPathComponent("a"))
+    try Data().write(to: tools.appendingPathComponent("b\nf 0 c"))
+    assertObservation(try await evidence.reduce(), branch: "pkg", path: "tools", reason: "artifact-membership-drift")
+  }
+
+  func testArtifactScanRaceIsRetryableMutationAndNeverFollowsASwappedSymlink() async throws {
+    for swapToSymlink in [false, true] {
+      let root = try scratch()
+      let sub = root.appendingPathComponent("tools/sub")
+      try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+      try Data().write(to: sub.appendingPathComponent("entry"))
+      let outside = root.appendingPathComponent("outside")
+      try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+      try Data("src".utf8).write(to: root.appendingPathComponent("src.rs"))
+      let evidence = try WorkflowFanoutChangeEvidence(root: root)
+      await evidence.setObservationHook { marker in
+        guard marker == "artifact-scan:tools/sub" else { return }
+        try FileManager.default.removeItem(at: sub)
+        if swapToSymlink { try FileManager.default.createSymbolicLink(at: sub, withDestinationURL: outside) }
+      }
+      await assertCaptureRejected(evidence, paths: ["src.rs"], artifactRoots: ["tools"], expectedCode: .providerError,
+                                  retryable: true, messageContains: "entry changed during fanout snapshot; retry")
+      let evidenceDirectory = await evidence.directory
+      XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory.path).isEmpty)
+    }
+  }
+
+  func testReduceRecordsFilesystemErrorsWithoutDiscardingSiblingEvidence() async throws {
+    let root = try scratch()
+    try Data("one".utf8).write(to: root.appendingPathComponent("sibling.txt"))
+    let evidence = try WorkflowFanoutChangeEvidence(root: root)
+    _ = try await evidence.capture(branchId: "pkg", paths: ["tools/toolchain.json"], stepId: "after:install")
+    _ = try await evidence.capture(branchId: "sibling", paths: ["sibling.txt"], stepId: "after:edit")
+    // An ancestor of a declared path becomes a regular file: lstat reports ENOTDIR.
+    try Data("not a directory".utf8).write(to: root.appendingPathComponent("tools"))
+    try Data("two".utf8).write(to: root.appendingPathComponent("sibling.txt"))
+    let reduced = try await evidence.reduce()
+    XCTAssertEqual(reduced["complete"], .bool(false))
+    assertObservation(reduced, branch: "sibling", path: "sibling.txt", reason: "content-or-mode-drift")
+    guard case let .array(failures)? = reduced["reduceFailures"], case let .object(failure)? = failures.first else {
+      return XCTFail("filesystem error must be recorded as a reduce failure")
+    }
+    XCTAssertEqual(failure["branchId"], .string("pkg"))
+    XCTAssertEqual(failure["node"], .string("install"))
+    XCTAssertEqual(failure["phase"], .string("reduce"))
+    XCTAssertEqual(failure["code"], .string("provider_error"))
+  }
+
   private func assertReduceFailure(_ reduced: JSONObject, branch: String, root: String, path: String?, code: String,
                                    observed: Int? = nil, limit: Int? = nil,
                                    file: StaticString = #filePath, line: UInt = #line) {

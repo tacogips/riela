@@ -1,5 +1,5 @@
 import Foundation
-import CryptoKit
+import Crypto
 
 private struct HistoryInvocationContract: Codable {
   var workflowDigest: String

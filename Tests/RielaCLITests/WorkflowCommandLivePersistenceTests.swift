@@ -123,7 +123,10 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     let workflowDirectory = workflowRoot.appendingPathComponent("two-step-command", isDirectory: true)
     let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
     let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let releaseFile = tempDir.appendingPathComponent("release-second-step")
+    defer {
+      try? Data().write(to: releaseFile)
+    }
 
     try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
     let firstScript = try createExecutable(
@@ -135,7 +138,9 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       directory: tempDir,
       name: "second-step.sh",
       body: """
-      sleep 1
+      while [ ! -f '\(releaseFile.path)' ]; do
+        sleep 0.05
+      done
       printf '%s\\n' '{"status":"second"}'
       """
     )
@@ -170,7 +175,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     }
 
     var progress: SessionInspectionCommandResult?
-    let deadline = Date().addingTimeInterval(3)
+    let deadline = Date().addingTimeInterval(15)
     while Date() < deadline {
       if let persisted = try? CLIWorkflowSessionStore(rootDirectory: sessionStore.path).loadAll().first {
         let result = await RielaCLIApplication().run([
@@ -188,6 +193,12 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
       try await Task.sleep(nanoseconds: 50_000_000)
     }
 
+    // Release and join even when observation failed, so no command task leaks.
+    try Data().write(to: releaseFile)
+    let result = await task.value
+    try FileManager.default.removeItem(at: tempDir)
+    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
+
     let liveProgress = try XCTUnwrap(progress)
     XCTAssertEqual(liveProgress.activeStepId, "second-step")
     XCTAssertNil(liveProgress.activeBackend)
@@ -195,8 +206,6 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     XCTAssertEqual(liveProgress.executions.map(\.stepId), ["second-step"])
     XCTAssertEqual(liveProgress.executions.first?.status, .running)
 
-    let result = await task.value
-    XCTAssertEqual(result.exitCode, .success, result.stderr + result.stdout)
   }
 
   func testWorkflowRunPersistsLoopEvidenceDuringLiveProgress() async throws {

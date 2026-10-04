@@ -578,10 +578,17 @@ private func fanoutStatus(_ url: URL, missingAllowed: Bool, path: String) throws
 
 private func fanoutSameEntry(_ before: stat, _ after: stat?) -> Bool {
   guard let after else { return false }
+  #if os(Linux)
+  let beforeModified = before.st_mtim
+  let afterModified = after.st_mtim
+  #else
+  let beforeModified = before.st_mtimespec
+  let afterModified = after.st_mtimespec
+  #endif
   return before.st_ino == after.st_ino && before.st_dev == after.st_dev &&
     before.st_mode == after.st_mode && before.st_size == after.st_size &&
-    before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec &&
-    before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec
+    beforeModified.tv_sec == afterModified.tv_sec &&
+    beforeModified.tv_nsec == afterModified.tv_nsec
 }
 
 private func fanoutOpenRegularFile(_ url: URL, expected: stat, path: String) throws -> (Int32, FileHandle) {

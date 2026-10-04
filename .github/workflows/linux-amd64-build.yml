@@ -1,6 +1,8 @@
 name: Linux amd64 build
 
 on:
+  pull_request:
+  workflow_dispatch:
   push:
     branches:
       - main

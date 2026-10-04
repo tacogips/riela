@@ -1,5 +1,9 @@
 import Crypto
+#if os(Linux)
+import Glibc
+#else
 import Darwin
+#endif
 import Foundation
 
 /// Cooperative observation at node boundaries, not a write lock. Evidence

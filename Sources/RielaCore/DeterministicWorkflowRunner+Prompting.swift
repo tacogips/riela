@@ -10,13 +10,15 @@ extension DeterministicWorkflowRunner {
   func recordAdapterValidationRejection(
     _ execution: WorkflowStepExecution,
     sessionId: String,
-    reason: String
+    reason: String,
+    failsSession: Bool = true
   ) async throws {
     _ = try await store.updateStepExecution(WorkflowStepExecutionUpdateInput(
       sessionId: sessionId,
       executionId: execution.executionId,
       status: .failed,
-      failureReason: reason
+      failureReason: reason,
+      failsSession: failsSession
     ))
   }
 

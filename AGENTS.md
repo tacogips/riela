@@ -1,6 +1,19 @@
-# Source Security Check Loop Package
+# Riela
 
-This package contains the `codex-source-security-check-loop` workflow and a Codex skill for running it. Keep scanner behavior deterministic, portable, and evidence-driven. Refresh `riela-package.json` digests after workflow, prompt, script, or skill edits.
+Riela is the Swift-native workflow runtime behind the `riela` CLI. The runtime
+core lives in `Sources/RielaCore`, the command surface in `Sources/RielaCLI`,
+the Work Runtime in `Sources/RielaWork`, the mutable workflow registry in
+`Sources/RielaWorkflowRegistry`, and the control plane in `Sources/RielaServer`
+and `Sources/RielaGraphQL`. Design documents are under `design-docs/specs/`,
+implementation plans under `impl-plans/`, and example workflow bundles under
+`examples/`.
+
+Keep runtime behavior deterministic, portable, and evidence-driven: runtime
+records (session ids, step execution ids, publication, resume and rerun
+lineage) are owned by the runtime store, never by workers or adapters. Prefer
+mock-scenario workflow runs and focused `swift test --filter` suites to
+verify changes; the full suite is large. On Apple Silicon run `swift build`,
+`swift test`, and `swiftlint` from an arm64 shell.
 
 ## Temporary and scratch files
 

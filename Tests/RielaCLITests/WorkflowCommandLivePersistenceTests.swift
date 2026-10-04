@@ -737,7 +737,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     XCTAssertEqual(failure.persistedSession, true)
   }
 
-  private func writeSingleCommandWorkflow(
+  func writeSingleCommandWorkflow(
     workflowDirectory: URL,
     workflowId: String = "slow-command",
     workflowLoopJSON: String? = nil,
@@ -801,7 +801,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     try secondNodeJSON.write(to: nodesDirectory.appendingPathComponent("node-second-command.json"), atomically: true, encoding: .utf8)
   }
 
-  private func createExecutable(directory: URL, name: String, body: String) throws -> URL {
+  func createExecutable(directory: URL, name: String, body: String) throws -> URL {
     let url = directory.appendingPathComponent(name)
     try """
     #!/bin/sh
@@ -811,7 +811,7 @@ final class WorkflowCommandLivePersistenceTests: XCTestCase {
     return url
   }
 
-  private func decodeJSON<T: Decodable>(_ type: T.Type, from stdout: String) throws -> T {
+  func decodeJSON<T: Decodable>(_ type: T.Type, from stdout: String) throws -> T {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     return try decoder.decode(type, from: Data(stdout.utf8))

@@ -348,6 +348,71 @@ struct DefaultEventLiveServer: EventLiveServing {
     }
   }
 
+  /// A failed workflow run for one event must not kill the listener: the
+  /// failure is recorded on the serve record (and telemetry) and the source
+  /// keeps polling, mirroring how file-change dispatch already behaves.
+  func recordWorkflowDispatchFailure(
+    eventRoot: URL,
+    sourceKind: String,
+    sourceId: String,
+    workflowName: String,
+    error: any Error
+  ) async {
+    let message = String(describing: error)
+    try? writeServeRecord(
+      eventRoot: eventRoot,
+      status: "ready",
+      detail: message,
+      pollingTarget: sourceId,
+      lastIgnoredReason: "\(sourceKind)-workflow-failed",
+      lastWorkflowName: workflowName,
+      lastEnvelopeSourceId: sourceId
+    )
+    await telemetry.recordLog(RielaTelemetryLog(
+      name: "riela.events.workflow.dispatch.failed",
+      attributes: [
+        "runtime.surface": "events-serve",
+        "event.source.id": sourceId,
+        "event.source.kind": sourceKind,
+        "workflow.name": workflowName,
+        "error": message
+      ]
+    ))
+  }
+
+  /// Runs the workflow for one telegram update. A failed run is recorded on
+  /// the serve record and the message is marked seen so the listener keeps
+  /// polling instead of exiting; `nil` tells the caller to skip the update.
+  private func runTelegramWorkflowOrRecordFailure(
+    workflowName: String,
+    runtimeVariables: JSONObject,
+    parsed: ParsedParityOptions,
+    eventRoot: URL,
+    source: TelegramGatewaySource,
+    update: TelegramUpdate,
+    dedupeStore: TelegramMessageDedupeStore
+  ) async throws -> WorkflowRunResult? {
+    do {
+      return try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+        workflowName: workflowName,
+        runtimeVariables: runtimeVariables,
+        parsed: parsed
+      ))
+    } catch {
+      await recordWorkflowDispatchFailure(
+        eventRoot: eventRoot,
+        sourceKind: "telegram",
+        sourceId: source.id,
+        workflowName: workflowName,
+        error: error
+      )
+      if let message = update.message {
+        try dedupeStore.markSeen(message: message)
+      }
+      return nil
+    }
+  }
+
   private func pollTelegramSource(
     _ source: TelegramGatewaySource,
     config: EventLiveConfig,
@@ -449,11 +514,17 @@ struct DefaultEventLiveServer: EventLiveServing {
             lastTriggerCount: triggerResult.triggers.count,
             lastWorkflowName: workflowName
           )
-          let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+          guard let result = try await runTelegramWorkflowOrRecordFailure(
             workflowName: workflowName,
             runtimeVariables: trigger.runtimeVariables,
-            parsed: parsed
-          ))
+            parsed: parsed,
+            eventRoot: eventRoot,
+            source: source,
+            update: update,
+            dedupeStore: dedupeStore
+          ) else {
+            continue
+          }
           let replies = try await dispatchTelegramReplies(
             result: result,
             source: source,

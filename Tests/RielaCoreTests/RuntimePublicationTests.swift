@@ -491,7 +491,9 @@ final class RuntimePublicationTests: XCTestCase {
     )
 
     XCTAssertEqual(result.publishedMessages, [])
-    XCTAssertEqual(result.nextStepId, "fanout-start")
+    XCTAssertEqual(result.nextStepId, "join", "the parent cursor is pinned to the join, never the branch step")
+    let committed = try await store.loadSession(id: session.sessionId)
+    XCTAssertEqual(committed?.currentStepId, "join")
     XCTAssertEqual(result.fanoutDispatch?.groupId, "group")
     XCTAssertEqual(result.fanoutDispatch?.sourceStepId, "start")
     XCTAssertEqual(result.fanoutDispatch?.targetStepId, "fanout-start")

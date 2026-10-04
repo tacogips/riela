@@ -170,6 +170,32 @@ final class WorkflowMutableRegistryTests: XCTestCase {
     ))
   }
 
+  func testConcurrentReadersBootstrapFreshRegistryWithoutFailure() async throws {
+    // Concurrent `workflow run` processes on a fresh home all bootstrap the
+    // registry layout; a reader that saw a half-built layout, or lost the
+    // create-open race on catalog.lock, used to fail with a usage error.
+    for _ in 0..<5 {
+      let layout = try makeLayout()
+      defer { try? FileManager.default.removeItem(at: layout.root) }
+      try await CLIRuntimeEnvironment.$overrides.withValue(layout.environment) {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          for _ in 0..<8 {
+            group.addTask {
+              // The coordinator read lock is the path that bootstraps a
+              // fresh registry on a writable home.
+              try WorkflowMutableRegistry().withCoordinatorCatalogReadLock {}
+              _ = try WorkflowMutableRegistry().snapshotCandidates()
+              _ = try WorkflowMutableRegistry().catalogOriginIdentities()
+            }
+          }
+          try await group.waitForAll()
+        }
+      }
+      let state = layout.home.appendingPathComponent(".riela/temporary-workflows/.registry-state/catalog.lock")
+      XCTAssertTrue(FileManager.default.fileExists(atPath: state.path))
+    }
+  }
+
   func testMutableDeletionRecoversAtEveryDurablePhase() async throws {
     for phase in [
       WorkflowMutableRegistryPhase.prepared,

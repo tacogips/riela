@@ -445,8 +445,11 @@ public struct WorkflowPackageCommandRunner: Sendable {
       ),
       resolvedSourceScope: .direct
     )
-    let runtimeStore = InMemoryWorkflowRuntimeStore()
-    try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
+    let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
+    let runtimeStore = try await makeSeededProductionRuntimeStore(
+      sessionStoreRoot: storeRoot,
+      executionLocks: executionLocks
+    )
     let result = try await DeterministicWorkflowRunner(
       store: runtimeStore,
       adapter: adapter,
@@ -456,7 +459,7 @@ public struct WorkflowPackageCommandRunner: Sendable {
       workflow: bundle.workflow,
       nodePayloads: bundle.nodePayloads,
       variables: variables,
-      sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+      sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks)
     ))
     let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
     try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(

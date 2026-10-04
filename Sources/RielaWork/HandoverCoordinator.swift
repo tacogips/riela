@@ -40,7 +40,8 @@ public struct HandoverCoordinator: Sendable {
       payloadRef: .inline(["handoverId": .string(input.handoverId.rawValue), "digest": .string(packet.digest),
                            "reasonKind": .string(input.reason.kindName)]), createdAt: input.now)
     _ = try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
-      predecessorOutcome: request.predecessorOutcome, expectedTaskVersion: request.expectedTaskVersion, now: input.now)
+      predecessorOutcome: request.predecessorOutcome, snapshot: input.snapshot,
+      expectedTaskVersion: request.expectedTaskVersion, now: input.now)
     let storeRef = HandoverSinkRef(kind: .store, locator: "\(input.hostId)/\(input.task.id.rawValue)/\(packet.id.rawValue)",
                                    digest: packet.digest, writtenAt: input.now)
     var refs = [storeRef]

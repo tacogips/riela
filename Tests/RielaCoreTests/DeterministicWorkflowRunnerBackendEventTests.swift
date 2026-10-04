@@ -283,6 +283,21 @@ final class DeterministicWorkflowRunnerBackendEventTests: XCTestCase {
       expectedInherited
     )
 
+    let workspaceRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-backend-workspace-\(UUID().uuidString)", isDirectory: true)
+    let workspaceResult = try await DeterministicWorkflowRunner(
+      adapter: StepCountingAdapter(outputsByStep: ["node": output]),
+      fanoutWorkspaceRoot: workspaceRoot
+    ).run(DeterministicWorkflowRunRequest(
+      workflow: backendEventWorkflow(),
+      nodePayloads: ["node": backendEventPayload()]
+    ))
+    XCTAssertEqual(
+      workspaceResult.session.executions.first?.backendWorkingDirectory,
+      workspaceRoot.standardizedFileURL.path,
+      "a node without its own workingDirectory records the run workspace root, not the process cwd"
+    )
+
     let relativePath = "tmp/session-observability-relative/\(UUID().uuidString)"
     let relativeResult = try await DeterministicWorkflowRunner(
       adapter: StepCountingAdapter(outputsByStep: ["node": output])

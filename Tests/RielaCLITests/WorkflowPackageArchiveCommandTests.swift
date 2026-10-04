@@ -610,11 +610,45 @@ extension WorkflowCommandTests {
     ])
 
     XCTAssertNotEqual(pack.exitCode, .success)
+    // The symlink is rejected by the checksum walker before archive creation
+    // runs its own tree validation, so match the shared "unsafe entry" phrase.
     XCTAssertTrue(
-      (pack.stdout + pack.stderr).contains("Package archive contains an unsafe entry"),
+      (pack.stdout + pack.stderr).contains("unsafe entry"),
       pack.stdout + pack.stderr
     )
     XCTAssertFalse(FileManager.default.fileExists(atPath: archiveURL.path))
+  }
+
+  func testPackageInstallRejectsDirectorySourceWithSymlinkedFile() async throws {
+    let root = repositoryRoot()
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-cli-install-symlink-package-\(UUID().uuidString)", isDirectory: true)
+    let packageSource = tempDir.appendingPathComponent("package-source", isDirectory: true)
+    let installRoot = tempDir.appendingPathComponent("install-root", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try makeArchivePackageSource(root: root, packageSource: packageSource, packageName: "symlink-install-demo")
+    // The link is added after the manifest checksum was computed: a symlink
+    // is excluded from the digest, so checksum validation alone cannot catch it.
+    let secret = tempDir.appendingPathComponent("secret.txt")
+    try "private key material".write(to: secret, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: packageSource.appendingPathComponent("prompts/leak.md"),
+      withDestinationURL: secret
+    )
+    let installedDirectory = installRoot.appendingPathComponent(".riela/packages/symlink-install-demo", isDirectory: true)
+
+    let app = RielaCLIApplication()
+    for arguments in [
+      ["package", "install", packageSource.path],
+      ["package", "install", "symlink-install-demo", "--source", packageSource.path]
+    ] {
+      let install = await app.run(arguments + ["--working-dir", installRoot.path, "--output", "json"])
+      XCTAssertNotEqual(install.exitCode, .success, arguments.joined(separator: " "))
+      let output = install.stdout + install.stderr
+      XCTAssertTrue(output.contains("unsafe"), output)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: installedDirectory.path), arguments.joined(separator: " "))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: installRoot.appendingPathComponent("riela-lock.json").path))
+    }
   }
 
   func testPackageValidateRejectsArchiveTraversalBeforeExtraction() async throws {

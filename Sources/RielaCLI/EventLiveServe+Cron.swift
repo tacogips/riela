@@ -58,11 +58,23 @@ extension DefaultEventLiveServer {
         }
         routineGate = gate
       }
-      _ = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
-        workflowName: workflowName,
-        runtimeVariables: trigger.runtimeVariables,
-        parsed: parsed
-      ))
+      do {
+        _ = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+          workflowName: workflowName,
+          runtimeVariables: trigger.runtimeVariables,
+          parsed: parsed
+        ))
+      } catch {
+        dispatchedRun = true
+        await recordWorkflowDispatchFailure(
+          eventRoot: eventRoot,
+          sourceKind: "cron",
+          sourceId: source.id,
+          workflowName: workflowName,
+          error: error
+        )
+        continue
+      }
       dispatchedRun = true
       if let routineGate {
         _ = try? routineGate.store.recordRunCompletion(routineId: routineGate.routineId, at: firedAt)

@@ -56,11 +56,23 @@ extension DefaultEventLiveServer {
           guard let workflowName = trigger.workflowName else {
             continue
           }
-          let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
-            workflowName: workflowName,
-            runtimeVariables: trigger.runtimeVariables,
-            parsed: parsed
-          ))
+          let result: WorkflowRunResult
+          do {
+            result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+              workflowName: workflowName,
+              runtimeVariables: trigger.runtimeVariables,
+              parsed: parsed
+            ))
+          } catch {
+            await recordWorkflowDispatchFailure(
+              eventRoot: eventRoot,
+              sourceKind: "slack",
+              sourceId: source.id,
+              workflowName: workflowName,
+              error: error
+            )
+            continue
+          }
           let replies = try await dispatchSlackReplies(result: result, source: source, envelope: envelope, sourceToken: token)
           try SlackConversationHistoryStore(eventRoot: eventRoot, source: source).appendExchange(
             message: message,

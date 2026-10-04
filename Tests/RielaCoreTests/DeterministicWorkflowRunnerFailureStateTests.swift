@@ -1,8 +1,44 @@
 import XCTest
 import RielaMemory
+import RielaObservability
 @testable import RielaCore
 
 extension DeterministicWorkflowRunnerTests {
+  func testInterruptedRunFinalizerReportsTerminalWriteFailureAndStillEmitsTerminalEvent() async throws {
+    let store = InMemoryWorkflowRuntimeStore(markSessionFailedFailurePredicate: { _ in "terminal write rejected" })
+    let telemetry = InMemoryRielaTelemetry()
+    let recorder = WorkflowRunEventRecorder()
+    let runner = DeterministicWorkflowRunner(store: store, adapter: CancellingAdapter(), telemetry: telemetry)
+
+    do {
+      _ = try await runner.run(request(eventHandler: { event in
+        await recorder.append(event)
+      }))
+      XCTFail("expected cancellation")
+    } catch is CancellationError {} catch {
+      XCTFail("expected cancellation, got \(error)")
+    }
+
+    // The terminal write did not land, so the durable session still reads running.
+    let maybeSession = await store.loadSessionForTest(id: "runner-session-1")
+    let session = try XCTUnwrap(maybeSession)
+    XCTAssertEqual(session.status, .running)
+    XCTAssertNil(session.failureKind)
+
+    // ...but the failure is reported instead of swallowed...
+    let logs = await telemetry.logs()
+    let log = try XCTUnwrap(logs.first { $0.name == "riela.workflow.finalize.failure" })
+    XCTAssertEqual(log.severity, "ERROR")
+    XCTAssertEqual(log.attributes["workflow.id"], "runner")
+    XCTAssertEqual(log.attributes["failure.kind"], "cancelled")
+    XCTAssertEqual(log.attributes["error_class"], "WorkflowRuntimeStoreError")
+
+    // ...and the terminal event still reaches the projection with failed status.
+    let events = await recorder.events()
+    XCTAssertEqual(events.last?.type, .sessionCompleted)
+    XCTAssertEqual(events.last?.status, .failed)
+  }
+
   func testAdapterFailureRecordsFailedExecutionWithoutMessages() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let recorder = WorkflowRunEventRecorder()

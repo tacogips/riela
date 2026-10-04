@@ -309,6 +309,34 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     XCTAssertEqual(cancelled.childTerminalSnapshot?.session.status, .failed)
     XCTAssertEqual(cancelled.childTerminalSnapshot?.session.failureKind, .cancelled)
     XCTAssertEqual(cancelled.phase, .delivered, "A partial join cannot outrun a cancelled child terminal snapshot")
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    XCTAssertEqual(branchStatuses(join), ["completed", "cancelled", "completed"],
+                   "a real cancellation is still rendered as cancelled in the join")
+  }
+
+  func testPolicyFailureNamingCancelIsReportedAsFailedNotCancelled() async throws {
+    let tracker = FanoutBranchTracker(delaysByIndex: [:], policyBlockedIndexes: [1])
+    let runner = DeterministicWorkflowRunner(
+      store: InMemoryWorkflowRuntimeStore(), adapter: FanoutTestAdapter(tracker: tracker)
+    )
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: fanoutWorkflow(concurrency: 2, failurePolicy: .collectPartial),
+      nodePayloads: fanoutPayloads()
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    let capturedJoin = await tracker.joinRuntimeFanout()
+    let join = try XCTUnwrap(capturedJoin)
+    XCTAssertEqual(join["allBranchesCompleted"], .bool(false))
+    XCTAssertEqual(branchStatuses(join), ["completed", "failed", "completed"],
+                   "a policy failure whose text mentions a cancel-named path is a failure, not a cancellation")
+    guard case let .array(branches)? = join["branches"], case let .object(blocked) = branches[1],
+          case let .string(reason)? = blocked["failureReason"] else {
+      return XCTFail("the policy-blocked branch should carry a failureReason")
+    }
+    XCTAssertTrue(reason.contains("src/CancelButton.tsx"), reason)
   }
 
   func testFanoutCheckpointsInterruptAndResumeTheProductionParentRunner() async throws {
@@ -379,6 +407,96 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     }
   }
 
+  /// A local fanout (no `toWorkflowId`) carries no `resumeStepId`, so the
+  /// parent cursor used to land on the branch step after the publication
+  /// commit. A crash mid-fanout then found no reservation matching the cursor
+  /// and executed the branch step inside the parent with an empty inbox.
+  func testLocalFanoutCheckpointsInterruptAndResumeAtTheJoinWithReservedChildren() async throws {
+    for checkpoint in [
+      NestedRecoveryCheckpoint.prepared,
+      .beforeChildNodeEffect,
+      .afterChildNodeResult,
+      .childTerminalPersisted,
+      .beforeParentPublication,
+      .parentPublicationPersisted
+    ] {
+      let repository = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      let root = repository.appendingPathComponent("tmp/specialist-supervisor/local-fanout-checkpoints/\(UUID().uuidString)")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+
+      let tracker = FanoutBranchTracker(delaysByIndex: [:])
+      let adapter = FanoutTestAdapter(tracker: tracker)
+      let store = InMemoryWorkflowRuntimeStore()
+      let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      // Local fanout children share the parent's workflowId, so the parent is
+      // identified by the first session the interrupted run started rather
+      // than by `latestSession(workflowId:)`.
+      let recorder = WorkflowRunEventRecorder()
+      let request = DeterministicWorkflowRunRequest(
+        workflow: fanoutWorkflow(concurrency: 1),
+        nodePayloads: fanoutPayloads(),
+        maxConcurrency: 1,
+        eventHandler: { event in await recorder.append(event) }
+      )
+      let interrupted = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        nestedInvocationPersistenceStore: persistence,
+        nestedInvocationRecoveryCheckpointer: FanoutThrowingCheckpoint(target: checkpoint)
+      )
+      do {
+        _ = try await interrupted.run(request)
+        XCTFail("Expected checkpoint interruption at \(checkpoint.rawValue)")
+      } catch {
+        // Recreate the runner to model process restart.
+      }
+      let events = await recorder.events()
+      let parentSessionId = try XCTUnwrap(events.first { $0.type == .sessionStarted }?.sessionId)
+      let loadedParent = try await store.loadSession(id: parentSessionId)
+      let parent = try XCTUnwrap(loadedParent)
+      XCTAssertNil(parent.parentSessionId)
+      XCTAssertEqual(parent.status, .running)
+      XCTAssertEqual(
+        parent.currentStepId, "join",
+        "\(checkpoint.rawValue): the committed parent cursor must be the join so resume can match the reservations"
+      )
+
+      let reopened = DeterministicWorkflowRunner(
+        store: store,
+        adapter: adapter,
+        nestedInvocationPersistenceStore: SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+      )
+      let resumed = try await reopened.run(DeterministicWorkflowRunRequest(
+        workflow: request.workflow,
+        nodePayloads: request.nodePayloads,
+        maxConcurrency: request.maxConcurrency,
+        resumeSessionId: parent.sessionId
+      ))
+      XCTAssertEqual(resumed.status, .completed, checkpoint.rawValue)
+      XCTAssertFalse(
+        resumed.session.executions.contains { $0.stepId == "branch" },
+        "\(checkpoint.rawValue): the branch step must never execute inside the parent session"
+      )
+      let identities = await tracker.branchIdentities()
+      XCTAssertEqual(identities.count, 3, "\(checkpoint.rawValue) duplicated or dropped a fanout child effect")
+      XCTAssertFalse(
+        identities.contains { $0.workflowSessionId == parent.sessionId },
+        "\(checkpoint.rawValue): every branch effect must run in a reserved child, not the parent"
+      )
+      XCTAssertEqual(Set(identities.map(\.workflowSessionId)).count, 3, checkpoint.rawValue)
+      XCTAssertEqual(Set(identities.map(\.stepId)), ["branch"], checkpoint.rawValue)
+      let records = try persistence.nestedInvocationRecords(parentSessionId: parent.sessionId)
+      XCTAssertEqual(Set(records.map(\.reservation.branchId)), ["fanout-0", "fanout-1", "fanout-2"], checkpoint.rawValue)
+      XCTAssertEqual(Set(records.map(\.reservation.resumeStepId)), ["join"], checkpoint.rawValue)
+      let arrivals = try SQLiteWorkflowMessageLog(
+        databasePath: SQLiteWorkflowRuntimePersistenceStore.defaultDatabasePath(rootDirectory: root.path)
+      ).listMessages(workflowExecutionId: parent.sessionId, toStepId: "join")
+      XCTAssertEqual(arrivals.count, 1, "\(checkpoint.rawValue) must publish one aggregate join")
+    }
+  }
+
   func testFanoutBranchesInheritDefaultGuardOptOut() async throws {
     let adapter = FanoutLoopOptOutAdapter()
     let runner = DeterministicWorkflowRunner(
@@ -406,6 +524,14 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
       return nil
     }
     return Int(index)
+  }
+
+  private func branchStatuses(_ join: JSONObject) -> [String?] {
+    guard case let .array(branches)? = join["branches"] else { return [] }
+    return branches.map { branch -> String? in
+      guard case let .object(record) = branch, case let .string(status)? = record["status"] else { return nil }
+      return status
+    }
   }
 
   private func branchOutputIndex(_ value: JSONValue) -> Int? {
@@ -496,6 +622,7 @@ private actor FanoutBranchTracker {
   private let delaysByIndex: [Int: UInt64]
   private let failingIndexes: Set<Int>
   private let cancellingIndexes: Set<Int>
+  private let policyBlockedIndexes: Set<Int>
   private var activeCount = 0
   private var maxActive = 0
   private var started: [Int] = []
@@ -504,11 +631,13 @@ private actor FanoutBranchTracker {
   private var identities: [AdapterExecutionIdentity] = []
 
   init(
-    delaysByIndex: [Int: UInt64], failingIndexes: Set<Int> = [], cancellingIndexes: Set<Int> = []
+    delaysByIndex: [Int: UInt64], failingIndexes: Set<Int> = [], cancellingIndexes: Set<Int> = [],
+    policyBlockedIndexes: Set<Int> = []
   ) {
     self.delaysByIndex = delaysByIndex
     self.failingIndexes = failingIndexes
     self.cancellingIndexes = cancellingIndexes
+    self.policyBlockedIndexes = policyBlockedIndexes
   }
 
   func begin(index: Int) -> UInt64 {
@@ -528,6 +657,10 @@ private actor FanoutBranchTracker {
 
   func shouldCancel(index: Int) -> Bool {
     cancellingIndexes.contains(index)
+  }
+
+  func shouldPolicyBlock(index: Int) -> Bool {
+    policyBlockedIndexes.contains(index)
   }
 
   func recordCancellation() {
@@ -599,6 +732,11 @@ private struct FanoutTestAdapter: NodeAdapter {
         }
         if await tracker.shouldCancel(index: index) {
           throw CancellationError()
+        }
+        if await tracker.shouldPolicyBlock(index: index) {
+          // The path name contains "cancel" on purpose: the join status must
+          // come from the real cancellation signal, not from the failure text.
+          throw AdapterExecutionError(.policyBlocked, "write to src/CancelButton.tsx is outside the branch's owned paths")
         }
         await tracker.finish()
         return AdapterExecutionOutput(

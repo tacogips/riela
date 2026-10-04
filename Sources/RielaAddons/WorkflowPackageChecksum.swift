@@ -1,6 +1,17 @@
 import Crypto
 import Foundation
 
+public enum WorkflowPackageChecksumError: Error, LocalizedError, Equatable, Sendable {
+  case symbolicLinkEntry(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case let .symbolicLinkEntry(path):
+      "Package contains an unsafe entry (symbolic link): \(path)"
+    }
+  }
+}
+
 public enum WorkflowPackageChecksum {
   public static let supportedAlgorithm = "md5"
 
@@ -43,6 +54,12 @@ public enum WorkflowPackageChecksum {
         message: "checksum does not match package contents: expected \(expected), actual \(actual). "
           + "Regenerate riela-package.json with `riela package init <package-dir> --overwrite`, then rebuild the archive if needed."
       )
+    } catch let error as WorkflowPackageChecksumError {
+      return WorkflowPackageValidationIssue(
+        code: "UNSAFE_ENTRY",
+        path: "checksum",
+        message: error.localizedDescription
+      )
     } catch {
       return WorkflowPackageValidationIssue(
         code: "CHECKSUM_UNAVAILABLE",
@@ -55,19 +72,24 @@ public enum WorkflowPackageChecksum {
   private static func checksumFiles(packageRoot: URL) throws -> [URL] {
     guard let enumerator = FileManager.default.enumerator(
       at: packageRoot,
-      includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+      includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey],
       options: []
     ) else {
       return []
     }
     var files: [URL] = []
     for case let fileURL as URL in enumerator {
-      let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+      let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
       if ignoredEntryNames.contains(fileURL.lastPathComponent) {
         if values.isDirectory == true {
           enumerator.skipDescendants()
         }
         continue
+      }
+      // A symlink is neither hashed nor silently skipped: it would otherwise
+      // be excluded from the digest yet copied verbatim on install.
+      if values.isSymbolicLink == true {
+        throw WorkflowPackageChecksumError.symbolicLinkEntry(fileURL.path)
       }
       if values.isRegularFile == true {
         files.append(fileURL.standardizedFileURL)

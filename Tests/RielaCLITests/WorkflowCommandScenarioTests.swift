@@ -6,6 +6,93 @@ import XCTest
 @testable import RielaCLI
 
 extension WorkflowCommandTests {
+  func testSessionResumeUsesMockScenarioForCommandNodes() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("riela-resume-mock-command-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    let workflowRoot = tempDir.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("worker-then-command", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let sessionStore = tempDir.appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+
+    // The real command leaves a marker; a scenario-backed resume must never run it.
+    let marker = tempDir.appendingPathComponent("real-command-ran")
+    let script = tempDir.appendingPathComponent("real-command.sh")
+    try """
+    #!/bin/sh
+    touch '\(marker.path)'
+    printf '%s\\n' '{"status":"real"}'
+    """.write(to: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    try """
+    {
+      "workflowId": "worker-then-command",
+      "defaults": { "maxLoopIterations": 3, "nodeTimeoutMs": 10000 },
+      "entryStepId": "worker",
+      "nodes": [
+        { "id": "worker", "nodeFile": "nodes/worker.json" },
+        { "id": "run-command", "nodeFile": "nodes/run-command.json" }
+      ],
+      "steps": [
+        { "id": "worker", "nodeId": "worker", "role": "worker", "transitions": [{ "toStepId": "run-command" }] },
+        { "id": "run-command", "nodeId": "run-command", "role": "worker" }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    {"id":"worker","executionBackend":"codex-agent","agentSandbox":"read-only","model":"gpt-5.5","modelFreeze":false,"variables":{}}
+    """.write(to: nodesDirectory.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
+    try """
+    {"id":"run-command","nodeType":"command","modelFreeze":false,"command":{"executable":"\(script.path)"}}
+    """.write(to: nodesDirectory.appendingPathComponent("run-command.json"), atomically: true, encoding: .utf8)
+    let scenario = tempDir.appendingPathComponent("mock-scenario.json")
+    try """
+    {
+      "worker": { "provider": "scenario-mock", "model": "gpt-5.5", "payload": { "status": "worker done" } },
+      "run-command": { "payload": { "status": "mocked" } }
+    }
+    """.write(to: scenario, atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let firstRun = await app.run([
+      "workflow", "run", "worker-then-command",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--mock-scenario", scenario.path,
+      "--working-dir", tempDir.path,
+      "--session-store", sessionStore.path,
+      "--max-steps", "1",
+      "--output", "json"
+    ])
+    XCTAssertEqual(firstRun.exitCode, .failure, firstRun.stderr + firstRun.stdout)
+    let failure = try decodeJSON(WorkflowRunFailureResult.self, from: firstRun.stdout)
+    XCTAssertEqual(failure.failureKind, .maxStepsExceeded)
+    let sessionId = try XCTUnwrap(failure.sessionId)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+
+    let resume = await app.run([
+      "session", "resume", sessionId,
+      "--workflow-definition-dir", workflowRoot.path,
+      "--mock-scenario", scenario.path,
+      "--working-dir", tempDir.path,
+      "--session-store", sessionStore.path,
+      "--max-steps", "4",
+      "--output", "json"
+    ])
+    XCTAssertEqual(resume.exitCode, .success, resume.stderr + resume.stdout)
+    let resumed = try decodeJSON(SessionResumeCommandResult.self, from: resume.stdout)
+    XCTAssertEqual(resumed.status, .completed)
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: marker.path),
+      "session resume must route command nodes through the mock scenario instead of executing them"
+    )
+    let snapshot = try SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStore.path)
+    ).load(sessionId: sessionId)
+    let commandExecution = try XCTUnwrap(snapshot.session.executions.last { $0.stepId == "run-command" })
+    XCTAssertEqual(commandExecution.acceptedOutput?.payload["status"], .string("mocked"))
+  }
+
   func testScopedPackageIdsInstallListRunPublishUpdateAndRemove() async throws {
     let root = repositoryRoot()
     let tempDir = FileManager.default.temporaryDirectory

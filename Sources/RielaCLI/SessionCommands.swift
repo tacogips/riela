@@ -467,15 +467,19 @@ public struct SessionRerunCommand: Sendable {
           leaseHolder: pendingLease
         )
       }
-      let runtimeStore = InMemoryWorkflowRuntimeStore()
-      try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
+      let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
+      let runtimeStore = try await makeSeededProductionRuntimeStore(
+        sessionStoreRoot: storeRoot,
+        executionLocks: executionLocks
+      )
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
-          defaultWorkingDirectory: kaibaContext.workingDirectory
+        stdioNodeExecutor: try makeScenarioBackedStdioNodeExecutor(
+          scenarioPath: effectiveMockScenarioPath,
+          workingDirectory: kaibaContext.workingDirectory
         ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
@@ -513,7 +517,7 @@ public struct SessionRerunCommand: Sendable {
             ),
             effectiveInstance: instanceResolution.effectiveInstance,
             eventHandler: eventHandler,
-            sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+            sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks)
           )
         )
       }
@@ -734,15 +738,19 @@ public struct SessionResumeCommand: Sendable {
           leaseHolder: pendingLease
         )
       }
-      let runtimeStore = InMemoryWorkflowRuntimeStore()
-      try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: storeRoot)
+      let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
+      let runtimeStore = try await makeSeededProductionRuntimeStore(
+        sessionStoreRoot: storeRoot,
+        executionLocks: executionLocks
+      )
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
-        stdioNodeExecutor: LocalWorkflowStdioNodeExecutor(
-          defaultWorkingDirectory: kaibaContext.workingDirectory
+        stdioNodeExecutor: try makeScenarioBackedStdioNodeExecutor(
+          scenarioPath: effectiveMockScenarioPath,
+          workingDirectory: kaibaContext.workingDirectory
         ),
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
         calleeResolver: calleeResolver,
@@ -787,7 +795,7 @@ public struct SessionResumeCommand: Sendable {
               ),
               effectiveInstance: instanceResolution.effectiveInstance,
               eventHandler: eventHandler,
-              sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+              sessionExecutionAdmission: makeSessionExecutionAdmission(registry: executionLocks)
             )
           )
         }

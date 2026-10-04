@@ -70,14 +70,18 @@ final class WorkStoreHandoverRecordsTests: XCTestCase {
     let evidence = Evidence(id: EvidenceID("evidence-1"), taskId: task.id, attemptId: attempt.id, kind: .handover,
                            producedBy: .runtime, payloadRef: .inline(["handoverId": .string(packet.id.rawValue)]), createdAt: Date(timeIntervalSince1970: 10))
     XCTAssertThrowsError(try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
-      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), expectedTaskVersion: 99, now: Date(timeIntervalSince1970: 10)))
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(),
+      expectedTaskVersion: 99, now: Date(timeIntervalSince1970: 10)))
     XCTAssertNil(try store.loadHandover(id: packet.id))
     XCTAssertTrue(try store.listDecisions(taskId: task.id).isEmpty)
     XCTAssertTrue(try store.listEvidence(taskId: task.id).isEmpty)
     let updated = try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
-      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))
     XCTAssertEqual(updated.state, TaskState.waiting)
     XCTAssertEqual(updated.version, 2)
+    XCTAssertEqual(updated.fence, 2, "lease fence defaults to 1; the seal must move past it")
+    XCTAssertEqual(try store.loadTask(id: task.id)?.fence, 2)
     XCTAssertEqual(try store.loadAttempt(id: attempt.id)?.state, .reconciled)
     XCTAssertTrue(try db.query("SELECT attempt_id FROM work_leases").isEmpty)
     XCTAssertEqual(try store.listDecisions(taskId: task.id).count, 1)
@@ -88,7 +92,7 @@ final class WorkStoreHandoverRecordsTests: XCTestCase {
     let store = WorkStore(rootDirectory: root.path)
     let task = sampleTask()
     try store.saveTask(task)
-    // The predecessor attempt is intentionally not saved: requiredAttempt throws after the packet/decision/evidence inserts.
+    // The predecessor attempt is intentionally not saved: the seal must refuse without persisting anything.
     let packet = try samplePacket().sealed()
     let decision = Decision(id: DecisionID("decision-1"), taskId: task.id, attemptId: AttemptID("attempt-1"), producer: .human(principal: "operator"),
                             kind: .handover(.userInputRequired(HandoverQuestion(id: "q", text: "Proceed?"))),
@@ -96,7 +100,8 @@ final class WorkStoreHandoverRecordsTests: XCTestCase {
     let evidence = Evidence(id: EvidenceID("evidence-1"), taskId: task.id, attemptId: AttemptID("attempt-1"), kind: .handover,
                            producedBy: .runtime, payloadRef: .inline(["handoverId": .string(packet.id.rawValue)]), createdAt: Date(timeIntervalSince1970: 10))
     XCTAssertThrowsError(try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
-      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10)))
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10)))
     XCTAssertNil(try store.loadHandover(id: packet.id))
     let db = try SQLiteDatabase.open(path: store.databasePath, mode: .readOnly, options: .readOnlyDefault)
     XCTAssertEqual(try db.query("SELECT COUNT(*) AS c FROM work_handovers").first?["c"], "0")
@@ -163,6 +168,146 @@ final class WorkStoreHandoverRecordsTests: XCTestCase {
     task.state = .cancelled
     try store.saveTask(task)
     XCTAssertTrue(try store.tasksAwaitingHandover().isEmpty)
+  }
+
+  func testSealRejectsTerminalTaskWithoutWriting() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    for state in TaskState.allCases where state.isTerminal {
+      var task = sampleTask()
+      task.id = TaskID("task-\(state.rawValue)")
+      task.state = state
+      try store.saveTask(task)
+      try store.saveAttempt(Attempt(id: AttemptID("attempt-\(state.rawValue)"), taskId: task.id, sessionId: "session-\(state.rawValue)", state: .running))
+      var packet = samplePacket(taskId: task.id, handoverId: HandoverID("handover-\(state.rawValue)"))
+      packet.fromAttemptId = AttemptID("attempt-\(state.rawValue)")
+      packet.fromSessionId = "session-\(state.rawValue)"
+      let sealed = try packet.sealed()
+      let (decision, evidence) = sealInputs(task: task, attemptId: packet.fromAttemptId, packet: sealed)
+      XCTAssertThrowsError(try store.sealHandoverRecords(packet: sealed, decision: decision, evidence: [evidence],
+        predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(sessionId: packet.fromSessionId),
+        expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))) { error in
+        XCTAssertTrue(String(describing: error).contains("is \(state.rawValue) and cannot hand over"), String(describing: error))
+      }
+      XCTAssertNil(try store.loadHandover(id: sealed.id))
+      XCTAssertTrue(try store.listDecisions(taskId: task.id).isEmpty)
+      XCTAssertEqual(try store.loadTask(id: task.id)?.state, state)
+      XCTAssertEqual(try store.loadAttempt(id: packet.fromAttemptId)?.state, .running)
+    }
+  }
+
+  func testSealRejectsPredecessorFromAnotherTask() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let otherTask = WorkTask(id: TaskID("task-other"), intentId: IntentID("intent-1"), title: "Other", instruction: "Do",
+                             plan: .workflow(WorkflowReference(name: "flow")), state: .running)
+    try store.saveTask(otherTask)
+    // The packet names attempt-1 as its predecessor, but attempt-1 belongs to task-other.
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: otherTask.id, sessionId: "session-1", state: .running))
+    let packet = try samplePacket().sealed()
+    let (decision, evidence) = sealInputs(task: task, attemptId: packet.fromAttemptId, packet: packet)
+    XCTAssertThrowsError(try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))) { error in
+      XCTAssertTrue(String(describing: error).contains("belongs to task 'task-other'"), String(describing: error))
+    }
+    XCTAssertNil(try store.loadHandover(id: packet.id))
+    XCTAssertEqual(try store.loadTask(id: task.id)?.state, .running)
+    XCTAssertEqual(try store.loadAttempt(id: packet.fromAttemptId)?.state, .running)
+  }
+
+  func testSealRejectsOutcomeThatDisagreesWithSnapshotUnlessAlreadyReconciled() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .running))
+    let packet = try samplePacket().sealed()
+    let (decision, evidence) = sealInputs(task: task, attemptId: packet.fromAttemptId, packet: packet)
+    XCTAssertThrowsError(try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
+      predecessorOutcome: AttemptOutcome(sessionStatus: .failed), snapshot: sampleSnapshot(status: .suspended),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))) { error in
+      XCTAssertTrue(String(describing: error).contains("outcome does not match its workflow snapshot"), String(describing: error))
+    }
+    XCTAssertNil(try store.loadHandover(id: packet.id))
+    XCTAssertEqual(try store.loadTask(id: task.id)?.version, 1)
+    XCTAssertEqual(try store.loadAttempt(id: packet.fromAttemptId)?.state, .running)
+    // A snapshot for a different session is refused as well.
+    XCTAssertThrowsError(try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(sessionId: "session-elsewhere"),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10)))
+    // An already reconciled predecessor keeps its recorded outcome; the supplied one is not cross-checked.
+    let recorded = AttemptOutcome(sessionStatus: .completed)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .reconciled, outcome: recorded))
+    let updated = try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
+      predecessorOutcome: AttemptOutcome(sessionStatus: .failed), snapshot: sampleSnapshot(status: .suspended),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))
+    XCTAssertEqual(updated.state, .waiting)
+    XCTAssertEqual(try store.loadAttempt(id: packet.fromAttemptId)?.outcome, recorded)
+  }
+
+  func testSealBumpsTaskFencePastTheReleasedLease() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    var task = sampleTask()
+    task.fence = 3
+    try store.saveTask(task)
+    try store.saveAttempt(Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1", state: .running))
+    let db = try SQLiteDatabase.open(path: store.databasePath, mode: .readWriteCreate, options: .writableDefault)
+    try db.execute("INSERT INTO work_leases (attempt_id, task_id, session_id, token_digest, acquired_at, updated_at, fence) VALUES ('attempt-1', 'task-1', 'session-1', 'x', 'now', 'now', 7)")
+    let packet = try samplePacket().sealed()
+    let (decision, evidence) = sealInputs(task: task, attemptId: packet.fromAttemptId, packet: packet)
+    let updated = try store.sealHandoverRecords(packet: packet, decision: decision, evidence: [evidence],
+      predecessorOutcome: AttemptOutcome(sessionStatus: .suspended), snapshot: sampleSnapshot(),
+      expectedTaskVersion: 1, now: Date(timeIntervalSince1970: 10))
+    XCTAssertEqual(updated.fence, 8, "fence must exceed both the task fence and the released lease fence")
+    XCTAssertEqual(try store.loadTask(id: task.id)?.fence, 8)
+    XCTAssertNil(try store.loadLease(attemptId: packet.fromAttemptId))
+    XCTAssertFalse(try store.heartbeat(attemptId: packet.fromAttemptId, fence: 7, now: Date(timeIntervalSince1970: 11), ttlMs: 1_000))
+  }
+
+  func testSaveHandoverRefusesToReplaceConsumedOrForeignPacket() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try store.saveTask(sampleTask())
+    let original = try samplePacket().sealed()
+    try store.saveHandover(original)
+    var revised = original
+    revised.brief = "Revised before any successor."
+    revised = try revised.sealed()
+    try store.saveHandover(revised)
+    XCTAssertEqual(try store.loadHandover(id: original.id)?.brief, revised.brief)
+    try store.attachSuccessor(handoverId: original.id, attemptId: AttemptID("attempt-2"))
+    var afterSuccessor = revised
+    afterSuccessor.brief = "Rewritten after the successor consumed it."
+    afterSuccessor = try afterSuccessor.sealed()
+    XCTAssertThrowsError(try store.saveHandover(afterSuccessor)) { error in
+      XCTAssertTrue(String(describing: error).contains("already consumed by attempt 'attempt-2'"), String(describing: error))
+    }
+    XCTAssertNoThrow(try store.saveHandover(revised), "re-saving the identical record stays idempotent")
+    XCTAssertEqual(try store.loadHandover(id: original.id)?.brief, revised.brief)
+    var foreign = samplePacket(taskId: TaskID("task-2"), handoverId: HandoverID("handover-foreign"))
+    foreign.brief = "Foreign"
+    let foreignSealed = try foreign.sealed()
+    try store.saveHandover(foreignSealed)
+    var hijack = foreignSealed
+    hijack.taskId = TaskID("task-3")
+    hijack = try hijack.sealed()
+    XCTAssertThrowsError(try store.saveHandover(hijack)) { error in
+      XCTAssertTrue(String(describing: error).contains("already belongs to task 'task-2'"), String(describing: error))
+    }
+    XCTAssertEqual(try store.loadHandover(id: foreignSealed.id)?.taskId, TaskID("task-2"))
+  }
+
+  private func sealInputs(task: WorkTask, attemptId: AttemptID, packet: HandoverPacket) -> (Decision, Evidence) {
+    let decision = Decision(id: DecisionID("decision-\(packet.id.rawValue)"), taskId: task.id, attemptId: attemptId, producer: .human(principal: "operator"),
+                            kind: .handover(packet.reason), reason: "handover", createdAt: Date(timeIntervalSince1970: 10))
+    let evidence = Evidence(id: EvidenceID("evidence-\(packet.id.rawValue)"), taskId: task.id, attemptId: attemptId, kind: .handover,
+                            producedBy: .runtime, payloadRef: .inline(["handoverId": .string(packet.id.rawValue)]), createdAt: Date(timeIntervalSince1970: 10))
+    return (decision, evidence)
+  }
+
+  private func sampleSnapshot(sessionId: String = "session-1", status: WorkflowSessionStatus = .suspended) -> WorkflowRuntimePersistenceSnapshot {
+    let now = Date(timeIntervalSince1970: 10)
+    return WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(workflowId: "flow", sessionId: sessionId, status: status,
+                                                                       entryStepId: "start", createdAt: now, updatedAt: now))
   }
 
   private func sampleTask() -> WorkTask {

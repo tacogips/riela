@@ -169,9 +169,22 @@ package final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
     permissions: mode_t = S_IRUSR | S_IWUSR
   ) throws -> Int32 {
     try withParent(of: child) { parent, leaf in
-      let file = openat(parent, leaf, flags | O_NOFOLLOW, permissions)
+      var file = openat(parent, leaf, flags | O_NOFOLLOW, permissions)
+      // Two processes bootstrapping the registry at once can both create the
+      // same lock file. On macOS the loser's O_CREAT open (without O_EXCL)
+      // can spuriously fail with ENOENT although the parent is live and the
+      // file now exists, so a create-open is retried briefly.
+      var retries = 0
+      while file < 0, errno == ENOENT, flags & O_CREAT != 0, flags & O_EXCL == 0, retries < 20 {
+        retries += 1
+        usleep(2_000)
+        file = openat(parent, leaf, flags | O_NOFOLLOW, permissions)
+      }
       guard file >= 0 else {
-        throw CLIUsageError("mutable registry file is linked, missing, or inaccessible")
+        let failure = errno
+        throw CLIUsageError(
+          "mutable registry file '\(leaf)' is linked, missing, or inaccessible (\(String(cString: strerror(failure))))"
+        )
       }
       var status = stat()
       guard fstat(file, &status) == 0, status.st_mode & S_IFMT == S_IFREG else {
@@ -183,9 +196,30 @@ package final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
   }
 
   func readRegularIfPresent(_ child: URL) throws -> Data? {
-    do {
-      let file = try openRegularFile(child, flags: O_RDONLY)
+    // Another process may publish this file (rename into place) between a
+    // failed open and the existence probe. Treating "absent at open, present
+    // at probe" as an error made concurrent registry readers fail by timing,
+    // so a file that appears is simply opened again.
+    for _ in 0..<8 {
+      let opened: (file: Int32, failure: Int32) = try withParent(of: child) { parent, leaf in
+        let file = openat(parent, leaf, O_RDONLY | O_NOFOLLOW)
+        return (file, file >= 0 ? 0 : errno)
+      }
+      guard opened.file >= 0 else {
+        // `entryType` reports a linked entry with its own error.
+        if try entryType(child) == nil { return nil }
+        if opened.failure == ENOENT { continue }
+        throw CLIUsageError(
+          "mutable registry file '\(child.lastPathComponent)' is linked, missing, or inaccessible "
+            + "(\(String(cString: strerror(opened.failure))))"
+        )
+      }
+      let file = opened.file
       defer { _ = close(file) }
+      var status = stat()
+      guard fstat(file, &status) == 0, status.st_mode & S_IFMT == S_IFREG else {
+        throw CLIUsageError("mutable registry file has unexpected type")
+      }
       var data = Data()
       var buffer = [UInt8](repeating: 0, count: 4_096)
       while true {
@@ -196,10 +230,8 @@ package final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
         if count == 0 { return data }
         data.append(contentsOf: buffer.prefix(Int(count)))
       }
-    } catch {
-      if try entryType(child) == nil { return nil }
-      throw error
     }
+    throw CLIUsageError("mutable registry file '\(child.lastPathComponent)' appeared but could not be opened")
   }
 
   func writeNewRegularFile(_ data: Data, to child: URL, permissions: mode_t = S_IRUSR | S_IWUSR) throws {

@@ -45,8 +45,11 @@ public struct HandoverPacketBuilder: Sendable {
       if encoded.count > HandoverBounds.acceptedOutput {
         bounded = ["truncated": .bool(true), "bytes": .integer(Int64(encoded.count))]
       } else if case let .object(value) = outputValue { bounded = value } else { bounded = [:] }
+      // Redact before taking the suffix so a secret straddling the excerpt
+      // boundary cannot leak its tail.
+      let responseExcerpt = Self.suffix(input.redaction.redactText(execution.streamedResponseText ?? ""), maxBytes: HandoverBounds.responseExcerpt)
       return HandoverStepSummary(stepId: execution.stepId, stepExecutionId: execution.executionId, status: execution.status,
-                                 acceptedOutput: bounded, responseExcerpt: Self.suffix(execution.streamedResponseText ?? "", maxBytes: HandoverBounds.responseExcerpt),
+                                 acceptedOutput: bounded, responseExcerpt: responseExcerpt,
                                  backend: execution.backend?.rawValue)
     }
     let messages = input.snapshot.workflowMessages.filter { acceptedIds.contains($0.sourceStepExecutionId) }.map { message -> WorkflowMessageRecord in
@@ -100,10 +103,11 @@ public struct HandoverPacketBuilder: Sendable {
                                    evidenceSummary: evidenceCounts, remainingBudget: BudgetSnapshot(attemptsUsed: try store.listAttempts(taskId: input.task.id).count,
                                      maxAttempts: budget?.maxAttempts, tokensUsed: tokens, maxTotalTokens: budget?.maxTotalTokens,
                                      wallClockMsUsed: wall, maxWallClockMs: budget?.maxWallClockMs))
-    let note = input.progressNote.map { Self.suffix($0, maxBytes: HandoverBounds.progressNote) }
-      .map { HandoverRedactionRules.apply(.string($0), rules: input.redaction) }
+    let note = input.progressNote.map { HandoverRedactionRules.apply(.string($0), rules: input.redaction) }
     let progressNote: String?
-    if case let .string(redactedNote)? = note { progressNote = redactedNote } else { progressNote = nil }
+    if case let .string(redactedNote)? = note {
+      progressNote = Self.suffix(redactedNote, maxBytes: HandoverBounds.progressNote)
+    } else { progressNote = nil }
     var packet = HandoverPacket(id: input.handoverId, taskId: input.task.id, intentId: input.task.intentId,
       fromAttemptId: input.attempt.id, fromSessionId: input.attempt.sessionId, generation: input.attempt.generation,
       reason: input.reason, workflow: input.workflowRef, progress: progress, history: history, variables: variables,

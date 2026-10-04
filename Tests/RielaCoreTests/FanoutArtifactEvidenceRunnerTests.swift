@@ -125,6 +125,56 @@ final class FanoutArtifactEvidenceRunnerTests: XCTestCase {
     }
   }
 
+  func testDispatchPreflightFailureSurfacesAsGroupScopedFanoutError() async throws {
+    let root = try scratch()
+    try Data("# docs".utf8).write(to: root.appendingPathComponent("README.md"))
+    var items = artifactItems(classified: true)
+    // pathsFrom must resolve to an array; a scalar is rejected before any branch runs.
+    items[0] = .object([
+      "planId": .string("pkg"), "dependsOn": .array([]),
+      "trackedPaths": .string("src/pkg.rs"), "artifactRoots": .array([])
+    ])
+    let adapter = ArtifactFanoutAdapter(root: root, items: items)
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter, fanoutWorkspaceRoot: root)
+
+    do {
+      _ = try await runner.run(DeterministicWorkflowRunRequest(
+        workflow: artifactFanoutWorkflow(failurePolicy: .collectPartial, classifyArtifacts: true),
+        nodePayloads: artifactPayloads()
+      ))
+      XCTFail("a preflight selection failure must fail the dispatch")
+    } catch DeterministicWorkflowRunnerError.fanoutDispatchFailed(let groupId, let reason) {
+      XCTAssertEqual(groupId, "tool-install")
+      XCTAssertTrue(
+        reason.hasPrefix("fanout dispatch preflight failed: invalid_output: fanout changeTracking.pathsFrom must resolve to an array"),
+        reason
+      )
+    }
+    let reviewed = await adapter.reviewedBranches()
+    XCTAssertEqual(reviewed, [], "no branch runs after a failed preflight")
+  }
+
+  func testNoOpDispatchCreatesNoEvidenceDirectory() async throws {
+    let root = try scratch()
+    let adapter = ArtifactFanoutAdapter(root: root, items: [])
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter, fanoutWorkspaceRoot: root)
+
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: artifactFanoutWorkflow(failurePolicy: .collectPartial, classifyArtifacts: true),
+      nodePayloads: artifactPayloads()
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    let capturedJoin = await adapter.capturedJoin()
+    let join = try XCTUnwrap(capturedJoin)
+    XCTAssertEqual(join["allBranchesCompleted"], .bool(true))
+    XCTAssertEqual(join["dispatchedBranchIds"], .array([]))
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: root.appendingPathComponent("tmp/riela-fanout").path),
+      "a no-op dispatch must not create an empty evidence directory"
+    )
+  }
+
   // MARK: - Helpers
 
   /// Classified: the authored audit file stays a source snapshot and the tool

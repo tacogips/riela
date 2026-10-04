@@ -91,6 +91,28 @@ final class EventLiveServeCronTests: XCTestCase {
     XCTAssertEqual(input["timezone"], .string("UTC"))
   }
 
+  func testCronServeSurvivesWorkflowRunFailure() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeCronEventConfig(eventRoot: eventRoot)
+    let workflowRunner = FakeEventWorkflowRunner(failureMessage: "cron run failed")
+    let server = DefaultEventLiveServer(workflowRunner: workflowRunner)
+
+    let result = try await server.serve(
+      eventRoot: eventRoot,
+      target: nil,
+      parsed: try ParsedParityOptions(["--limit", "1"]),
+      output: .json
+    )
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let requests = await workflowRunner.requests
+    XCTAssertEqual(requests.map(\.workflowName), ["cron-flow"])
+    let record = try String(contentsOf: eventRoot.appendingPathComponent("serve-record.json"), encoding: .utf8)
+    XCTAssertTrue(record.contains("cron-workflow-failed"), record)
+    XCTAssertTrue(record.contains("cron run failed"), record)
+  }
+
   func testRoutineGateSkipsDisabledRoutineAndCountsActiveRun() async throws {
     let root = try temporaryDirectory()
     let store = RoutineStore(rootDirectory: root.appendingPathComponent("routines").path)

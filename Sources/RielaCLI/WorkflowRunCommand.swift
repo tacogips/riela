@@ -21,6 +21,9 @@ public struct WorkflowRunCommand: Sendable {
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
   var taskNodeAdapterOverride: (any NodeAdapter)?
+  /// Projects loop evidence for required-gate enforcement; injectable so a
+  /// projector failure can be exercised without a broken evidence fixture.
+  var loopEvidenceProjector: any LoopEvidenceProjecting = DefaultLoopEvidenceProjector()
 
   public init(
     resolver: any WorkflowBundleResolving = FileSystemWorkflowBundleResolver(),
@@ -93,9 +96,11 @@ public struct WorkflowRunCommand: Sendable {
           )
         }
       }
+      let executionLocks = SessionExecutionLockRegistry(sessionStoreRoot: storeRoot)
       let durableRuntime = try await makeProductionDurableRuntime(
         storeRoot: storeRoot,
-        options: options
+        options: options,
+        executionLocks: executionLocks
       )
       let runtimeStore = durableRuntime.backingStore
       let telemetry = makeTelemetry(environment: runEnvironment)
@@ -168,7 +173,7 @@ public struct WorkflowRunCommand: Sendable {
           }
         }
       }
-      let processAdmission = makeSessionExecutionAdmission(sessionStoreRoot: storeRoot)
+      let processAdmission = makeSessionExecutionAdmission(registry: executionLocks)
       let taskAdmission = makeTaskAdmission(taskReservation, processAdmission: processAdmission)
       let initialRequest = DeterministicWorkflowRunRequest(
         workflow: bundle.workflow,
@@ -237,12 +242,19 @@ public struct WorkflowRunCommand: Sendable {
   private func applyRequiredLoopGateFailureIfNeeded(
     _ result: inout WorkflowRunResult,
     loopEvidence: LoopEvidenceManifest?,
+    projectionFailure: (any Error)?,
     workflow: WorkflowDefinition
   ) {
-    guard workflow.loop?.required == true,
-          let loopEvidence,
-          loopEvidence.gates.contains(where: { !$0.blockingFindings.isEmpty || failsRequiredGate($0, in: workflow) }) else {
+    guard workflow.loop?.required == true else {
       return
+    }
+    // A projector failure leaves the required gates unverifiable; treat it
+    // as a gate failure instead of silently passing the run.
+    if projectionFailure == nil {
+      guard let loopEvidence,
+            loopEvidence.gates.contains(where: { !$0.blockingFindings.isEmpty || failsRequiredGate($0, in: workflow) }) else {
+        return
+      }
     }
     result.exitCode = 1
     result.status = .failed
@@ -344,10 +356,13 @@ public struct WorkflowRunCommand: Sendable {
   /// transaction through the same database root.
   private func makeProductionDurableRuntime(
     storeRoot: String,
-    options: WorkflowRunOptions
+    options: WorkflowRunOptions,
+    executionLocks: SessionExecutionLockRegistry
   ) async throws -> WorkflowRunProductionDurableRuntime {
-    let backingStore = InMemoryWorkflowRuntimeStore()
-    try await seedRuntimeStoreFromPersistedCLIState(backingStore, sessionStoreRoot: storeRoot)
+    let backingStore = try await makeSeededProductionRuntimeStore(
+      sessionStoreRoot: storeRoot,
+      executionLocks: executionLocks
+    )
     let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
     let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
       backing: backingStore, rootDirectory: canonicalRoot,
@@ -557,16 +572,34 @@ public struct WorkflowRunCommand: Sendable {
     variables: JSONObject,
     recovery: LoopRecoveryLineage? = nil
   ) -> LoopEvidenceManifest? {
-    try? DefaultLoopEvidenceProjector().project(
-      LoopEvidenceProjectionInput(
-        workflow: bundle.workflow,
-        session: session,
-        workflowMessages: workflowMessages,
-        workflowSource: loopWorkflowSource(from: bundle),
-        variables: variables,
-        recovery: recovery
+    try? projectLoopEvidenceResult(
+      session: session,
+      workflowMessages: workflowMessages,
+      bundle: bundle,
+      variables: variables,
+      recovery: recovery
+    ).get()
+  }
+
+  private func projectLoopEvidenceResult(
+    session: WorkflowSession,
+    workflowMessages: [WorkflowMessageRecord],
+    bundle: ResolvedWorkflowBundle,
+    variables: JSONObject,
+    recovery: LoopRecoveryLineage? = nil
+  ) -> Result<LoopEvidenceManifest?, any Error> {
+    Result {
+      try loopEvidenceProjector.project(
+        LoopEvidenceProjectionInput(
+          workflow: bundle.workflow,
+          session: session,
+          workflowMessages: workflowMessages,
+          workflowSource: loopWorkflowSource(from: bundle),
+          variables: variables,
+          recovery: recovery
+        )
       )
-    )
+    }
   }
 
   private func loopWorkflowSource(from bundle: ResolvedWorkflowBundle) -> LoopWorkflowSource {
@@ -930,17 +963,31 @@ extension WorkflowRunCommand {
       for: finalResult.session.sessionId,
       toStepId: nil
     )
-    let loopEvidence = projectLoopEvidence(
+    let loopEvidenceProjection = projectLoopEvidenceResult(
       session: finalResult.session,
       workflowMessages: workflowMessages,
       bundle: context.bundle,
       variables: context.effectiveVariables,
       recovery: finalResult.recovery
     )
+    let loopEvidence = try? loopEvidenceProjection.get()
+    var loopEvidenceProjectionFailure: (any Error)?
+    if case let .failure(error) = loopEvidenceProjection {
+      loopEvidenceProjectionFailure = error
+    }
     finalResult.loopEvidence = loopEvidence.map(LoopEvidenceSummary.init)
     if !context.hasTaskReservation {
-      applyRequiredLoopGateFailureIfNeeded(&finalResult, loopEvidence: loopEvidence, workflow: context.bundle.workflow)
+      applyRequiredLoopGateFailureIfNeeded(
+        &finalResult,
+        loopEvidence: loopEvidence,
+        projectionFailure: loopEvidenceProjectionFailure,
+        workflow: context.bundle.workflow
+      )
     }
+    let loopEvidenceDiagnostic = loopEvidenceProjectionFailure.map {
+      "loop evidence projection failed: \($0)"
+        + (context.bundle.workflow.loop?.required == true ? "; required loop gates could not be verified\n" : "\n")
+    } ?? ""
     let terminalResult = finalResult
     let persist: @Sendable () throws -> Void = {
       try persistSessionRecord(
@@ -975,9 +1022,11 @@ extension WorkflowRunCommand {
     return CLICommandResult(
       exitCode: CLIExitCode(rawValue: finalResult.exitCode) ?? .failure,
       stdout: try await renderRunResult(finalResult, output: context.options.output, jsonlRecorder: context.jsonlRecorder),
-      stderr: context.options.output.isStructured || finalResult.session.suspend == nil
-        ? ""
-        : workflowSuspendHint(finalResult.session)
+      stderr: loopEvidenceDiagnostic + (
+        context.options.output.isStructured || finalResult.session.suspend == nil
+          ? ""
+          : workflowSuspendHint(finalResult.session)
+      )
     )
   }
 

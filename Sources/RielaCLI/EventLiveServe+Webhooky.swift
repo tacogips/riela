@@ -115,11 +115,22 @@ extension DefaultEventLiveServer {
       guard let workflowName = trigger.workflowName else {
         continue
       }
-      _ = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
-        workflowName: workflowName,
-        runtimeVariables: trigger.runtimeVariables,
-        parsed: parsed
-      ))
+      do {
+        _ = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+          workflowName: workflowName,
+          runtimeVariables: trigger.runtimeVariables,
+          parsed: parsed
+        ))
+      } catch {
+        await recordWorkflowDispatchFailure(
+          eventRoot: eventRoot,
+          sourceKind: "webhooky",
+          sourceId: source.id,
+          workflowName: workflowName,
+          error: error
+        )
+        continue
+      }
       try? writeServeRecord(
         eventRoot: eventRoot,
         status: "ready",

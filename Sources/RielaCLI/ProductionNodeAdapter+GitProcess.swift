@@ -492,7 +492,7 @@ extension BuiltinWorkflowAddonResolver {
     } catch let adapterError as AdapterExecutionError {
       throw adapterError
     } catch {
-      throw AdapterExecutionError(.providerError, "unable to execute git", isRetryable: true)
+      throw AdapterExecutionError(.providerError, "unable to execute git: \(error)", isRetryable: true)
     }
   }
 

@@ -176,9 +176,17 @@ func discoverWorkflowTransaction(
   return selected
 }
 
+/// How long a caller waits for another process to release the per-target
+/// lock before failing. Every `workflow run` resolution performs transaction
+/// recovery under this lock for a few milliseconds, so an immediate
+/// non-blocking failure made concurrent runs of one workflow fail with
+/// "locked by another directory transaction" purely by timing.
+let workflowTargetLockDefaultWaitSeconds: TimeInterval = 5
+
 func acquireWorkflowTargetLock(
   target: WorkflowBundleIdentity,
   owner: String,
+  waitSeconds: TimeInterval = workflowTargetLockDefaultWaitSeconds,
   beforeOpen: () throws -> Void = {}
 ) throws -> Int32 {
   let live = URL(fileURLWithPath: target.ownershipRoot, isDirectory: true).standardizedFileURL
@@ -201,10 +209,19 @@ func acquireWorkflowTargetLock(
     throw CLIUsageError("workflow target lock must be a regular non-symbolic-link file")
   }
   var status = stat()
-  guard fstat(descriptor, &status) == 0, status.st_mode & S_IFMT == S_IFREG,
-        flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+  guard fstat(descriptor, &status) == 0, status.st_mode & S_IFMT == S_IFREG else {
     _ = close(descriptor)
-    throw CLIUsageError("workflow target is locked by another directory transaction")
+    throw CLIUsageError("workflow target lock must be a regular non-symbolic-link file")
+  }
+  let deadline = Date().addingTimeInterval(max(0, waitSeconds))
+  while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+    let lockError = errno
+    if lockError == EINTR { continue }
+    guard lockError == EWOULDBLOCK || lockError == EAGAIN, Date() < deadline else {
+      _ = close(descriptor)
+      throw CLIUsageError("workflow target is locked by another directory transaction")
+    }
+    usleep(20_000)
   }
   guard ftruncate(descriptor, 0) == 0 else {
     releaseWorkflowTargetLock(descriptor)

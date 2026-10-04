@@ -249,6 +249,24 @@ public struct CLIWorkflowSessionStore: Sendable {
     return decodeRecords(rows)
   }
 
+  /// Cheap existence probe used while reserving a fresh session id. It never
+  /// decodes the record and treats an unreadable store as "unknown" (false)
+  /// so reservation can still proceed on a brand-new session store.
+  func sessionRecordExists(sessionId: String) -> Bool {
+    guard isSafeSessionId(sessionId), FileManager.default.fileExists(atPath: databasePath) else {
+      return false
+    }
+    guard let db = try? openDatabase(readOnly: true),
+          (try? tableExists(db, name: "cli_workflow_sessions")) == true else {
+      return false
+    }
+    let rows = try? db.query(
+      "SELECT 1 FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
+      bindings: [.text(sessionId)]
+    )
+    return !(rows ?? []).isEmpty
+  }
+
   func loadRawSessionIdentities() throws -> [(sessionId: String, workflowId: String)] {
     guard FileManager.default.fileExists(atPath: databasePath) else {
       return []
@@ -459,6 +477,29 @@ func canonicalRuntimeStoreRoot(sessionStoreRoot: String) -> String {
   URL(fileURLWithPath: sessionStoreRoot, isDirectory: true)
     .appendingPathComponent("runtime-records", isDirectory: true)
     .path
+}
+
+/// Builds the in-memory runtime store a production command seeds from the
+/// persisted CLI state. Fresh session ids are reserved through
+/// `executionLocks` so concurrent processes sharing one session store never
+/// create the same session (GitHub #122). Pass the same registry to
+/// `makeSessionExecutionAdmission(registry:)` so the runner's admission check
+/// recognises the reservation instead of re-acquiring it.
+func makeSeededProductionRuntimeStore(
+  sessionStoreRoot: String,
+  executionLocks: SessionExecutionLockRegistry
+) async throws -> InMemoryWorkflowRuntimeStore {
+  let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
+  let persistenceStore = SQLiteWorkflowRuntimePersistenceStore(
+    rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
+  )
+  let generator = LockReservingWorkflowRuntimeIDGenerator(registry: executionLocks) { sessionId in
+    sessionStore.sessionRecordExists(sessionId: sessionId)
+      || ((try? persistenceStore.sessionExists(sessionId: sessionId)) ?? false)
+  }
+  let runtimeStore = InMemoryWorkflowRuntimeStore(idGenerator: generator)
+  try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: sessionStoreRoot)
+  return runtimeStore
 }
 
 func seedRuntimeStoreFromPersistedCLIState(

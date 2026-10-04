@@ -84,6 +84,9 @@ public struct WorkflowPublicationRequest: Sendable {
   public var prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider?
   public var preCommitPublicationHook: WorkflowPreCommitPublicationHook?
   public var carriedPayloadFields: JSONObject
+  /// True when the runner will retry this step after an output-validation
+  /// rejection, so the rejected execution must not fail the session.
+  public var retriesValidationRejection: Bool
 
   public init(
     sessionId: String,
@@ -104,7 +107,8 @@ public struct WorkflowPublicationRequest: Sendable {
     noSelectionDisposition: WorkflowPublicationNoSelectionDisposition = .publishPayloadAsRoot,
     prePersistenceRoutingDecider: WorkflowPrePersistenceRoutingDecider? = nil,
     preCommitPublicationHook: WorkflowPreCommitPublicationHook? = nil,
-    carriedPayloadFields: JSONObject = [:]
+    carriedPayloadFields: JSONObject = [:],
+    retriesValidationRejection: Bool = false
   ) {
     self.sessionId = sessionId
     self.stepId = stepId
@@ -125,6 +129,7 @@ public struct WorkflowPublicationRequest: Sendable {
     self.prePersistenceRoutingDecider = prePersistenceRoutingDecider
     self.preCommitPublicationHook = preCommitPublicationHook
     self.carriedPayloadFields = carriedPayloadFields
+    self.retriesValidationRejection = retriesValidationRejection
   }
 }
 
@@ -341,7 +346,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           adapterOutput: adapterOutputMetadata,
           failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)",
           failureKind: .adapterFailure,
-          usage: adapterUsage
+          usage: adapterUsage,
+          failsSession: !request.routesAdapterFailureAsAdvisory
         )
       )
       try? await finalizeCandidatePathIfNeeded(for: request)
@@ -361,7 +367,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
             failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)",
             failureKind: .adapterFailure,
             usage: adapterUsage,
-            currentStepId: nextStepId(from: advisoryTransitions)
+            currentStepId: nextStepId(from: advisoryTransitions),
+            failsSession: false
           )
         )
         guard let session = try await store.loadSession(id: request.sessionId) else {
@@ -486,7 +493,8 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           status: .failed,
           adapterOutput: adapterOutputMetadata,
           failureReason: reason,
-          usage: adapterUsage
+          usage: adapterUsage,
+          failsSession: !request.retriesValidationRejection
         )
       )
       let session = try await store.loadSession(id: request.sessionId)
@@ -953,7 +961,14 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
   }
 
   private func nextStepId(from publishableTransitions: [WorkflowStepTransition]) -> String? {
-    publishableTransitions.first.map { $0.resumeStepId ?? $0.toStepId }
+    // A fanout transition never executes its target step inside the parent:
+    // the branches run as reserved child sessions and the parent continues
+    // at the join. Pin the committed cursor there so a crash mid-fanout
+    // resumes by matching the children's reservations
+    // (reservation.resumeStepId == joinStepId) instead of executing the
+    // branch step in the parent with an empty inbox. A local fanout carries
+    // no resumeStepId, so the join must come from the fanout itself.
+    publishableTransitions.first.map { $0.fanout?.joinStepId ?? $0.resumeStepId ?? $0.toStepId }
   }
 
   private func isLiveCrossWorkflowDispatchTransition(_ transition: WorkflowStepTransition) -> Bool {

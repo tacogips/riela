@@ -371,13 +371,35 @@ fileprivate extension ScopedParityCommandRunner {
         workflowDefinitionDir: parsed.workflowDefinitionDir ?? persisted.record.resolution.workflowDefinitionDir,
         workingDirectory: workingDirectory
       )
-      let bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
+      var bundle = try FileSystemWorkflowBundleResolver().resolve(resolution)
       guard bundle.workflow.workflowId == workflowId else {
         throw CLIUsageError("workflow '\(persisted.record.workflowName)' resolved to workflowId '\(bundle.workflow.workflowId)', not '\(workflowId)'")
       }
       guard bundle.workflow.steps.contains(where: { $0.id == stepId }) else {
         throw CLIUsageError("call-step target step not found: \(stepId)")
       }
+      // Reapply the session's persisted instance configuration (node patches,
+      // working directory, environment) so a direct step call runs the same
+      // backends and add-on wiring as the original run/resume/rerun.
+      let instanceResolution = try resolvePersistedSessionInstance(
+        persisted: persisted.record,
+        workflowId: bundle.workflow.workflowId,
+        workingDirectory: workingDirectory,
+        nodePayloads: bundle.nodePayloads,
+        commandName: "call-step"
+      )
+      bundle.nodePayloads = instanceResolution.nodePayloads
+      let effectiveMockScenarioPath = parsed.mockScenarioPath ?? persisted.record.mockScenarioPath
+      let calleeResolver = FileSystemWorkflowCalleeResolver(baseResolution: resolution)
+      let kaibaContext = try await prepareSessionKaibaPreflight(
+        bundle: &bundle,
+        instance: instanceResolution.effectiveInstance,
+        workingDirectory: workingDirectory,
+        mockScenarioPath: effectiveMockScenarioPath,
+        calleeResolver: calleeResolver
+      )
+      // An explicit --working-dir wins over the instance's working directory.
+      let executionWorkingDirectory = parsed.workingDirectory ?? kaibaContext.workingDirectory
       var workflow = bundle.workflow
       if let promptVariant = parsed.promptVariant,
         let stepIndex = workflow.steps.firstIndex(where: { $0.id == stepId }) {
@@ -387,20 +409,26 @@ fileprivate extension ScopedParityCommandRunner {
         resolution: resolution,
         resolvedSourceScope: bundle.sourceScope
       )
-      var variables = try parsed.variables.map { try JSONReferenceLoader().object(from: $0, workingDirectory: resolution.workingDirectory) } ?? [:]
+      var variables = try parsed.variables.map { try JSONReferenceLoader().object(from: $0, workingDirectory: resolution.workingDirectory) }
+        ?? instanceResolution.effectiveInstance?.configuration.defaultVariables
+        ?? [:]
       if let resumeStepExecutionId = parsed.resumeStepExecutionId {
         variables["resumeStepExecId"] = .string(resumeStepExecutionId)
         variables["resumedFromNodeExecId"] = .string(resumeStepExecutionId)
       }
-      let effectiveMockScenarioPath = parsed.mockScenarioPath ?? persisted.record.mockScenarioPath
       let adapter = try makeSessionNodeAdapter(
         mockScenarioPath: effectiveMockScenarioPath,
-        workingDirectory: resolution.workingDirectory,
+        workingDirectory: executionWorkingDirectory,
         codexSupervisorModeEnabled: parsed.supervisorMode
       )
       let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
         scenarioPath: effectiveMockScenarioPath,
-        workingDirectory: resolution.workingDirectory
+        workingDirectory: executionWorkingDirectory
+      )
+      let addonResolver = try await makeScenarioBackedAddonResolver(
+        scenarioPath: effectiveMockScenarioPath,
+        workingDirectory: executionWorkingDirectory,
+        environment: kaibaContext.environment
       )
       let storeRoot = CLIWorkflowSessionStore.resolveRootDirectory(
         sessionStore: parsed.sessionStore,
@@ -443,21 +471,27 @@ fileprivate extension ScopedParityCommandRunner {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
+        distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
+        addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,
         simulatesCrossWorkflowDispatch: effectiveMockScenarioPath != nil,
-        fanoutWorkspaceRoot: URL(fileURLWithPath: resolution.workingDirectory, isDirectory: true)
+        calleeResolver: calleeResolver,
+        fanoutWorkspaceRoot: URL(fileURLWithPath: executionWorkingDirectory, isDirectory: true)
       )
-      let result = try await runner.run(
-        DeterministicWorkflowRunRequest(
-          workflow: workflow,
-          nodePayloads: bundle.nodePayloads,
-          variables: variables,
-          timeoutMs: parsed.timeoutMs,
-          resumeSessionId: seededSession.sessionId,
-          sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot),
-          stopAfterStepId: stepId
+      let result = try await withSessionKaibaSnapshot(kaibaContext, mockScenarioPath: effectiveMockScenarioPath) {
+        try await runner.run(
+          DeterministicWorkflowRunRequest(
+            workflow: workflow,
+            nodePayloads: bundle.nodePayloads,
+            variables: variables,
+            timeoutMs: parsed.timeoutMs,
+            resumeSessionId: seededSession.sessionId,
+            effectiveInstance: instanceResolution.effectiveInstance,
+            sessionExecutionAdmission: makeSessionExecutionAdmission(sessionStoreRoot: storeRoot),
+            stopAfterStepId: stepId
+          )
         )
-      )
+      }
       let workflowMessages = try await runtimeStore.listMessages(for: result.session.sessionId, toStepId: nil)
       try CLIWorkflowSessionStore(rootDirectory: storeRoot).save(
         PersistedCLIWorkflowSession(
@@ -471,9 +505,17 @@ fileprivate extension ScopedParityCommandRunner {
       )
       let rendered = try jsonString(result)
       if options.output.isStructured {
-        return CLICommandResult(exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure, stdout: rendered)
+        return CLICommandResult(
+          exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure,
+          stdout: rendered,
+          stderr: instanceResolution.warning.map { "\($0)\n" } ?? ""
+        )
       }
-      return CLICommandResult(exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure, stdout: "called step \(stepId)\nstatus: \(result.status.rawValue)\n")
+      return CLICommandResult(
+        exitCode: CLIExitCode(rawValue: result.exitCode) ?? .failure,
+        stdout: "called step \(stepId)\nstatus: \(result.status.rawValue)\n",
+        stderr: instanceResolution.warning.map { "warning: \($0)\n" } ?? ""
+      )
     } catch let error as CLIUsageError {
       return failure(error.message, output: options.output, options: options)
     } catch {

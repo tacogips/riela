@@ -132,6 +132,26 @@ public struct WorkflowMutableRegistry: Sendable {
   }
 
   func validateExistingLayout(pinned: WorkflowMutableRegistryPinnedRoot) throws {
+    do {
+      try requireCompleteLayout(pinned: pinned)
+    } catch let incomplete as CLIUsageError {
+      // A root without any published workflow whose layout is partial is a
+      // bootstrap in progress in another process, or one that crashed
+      // mid-way; completing it through the same idempotent, pinned,
+      // no-follow primitives is safe. A root that already holds workflows
+      // but lost its state stays fail-closed: resolution must not proceed
+      // without transaction and recovery records.
+      guard try rootHoldsNoWorkflowEntries(pinned: pinned),
+            (try? ensureLayout(pinned: pinned)) != nil else { throw incomplete }
+      try requireCompleteLayout(pinned: pinned)
+    }
+  }
+
+  private func rootHoldsNoWorkflowEntries(pinned: WorkflowMutableRegistryPinnedRoot) throws -> Bool {
+    try pinned.names(in: root).allSatisfy { $0 == Self.reservedStateName }
+  }
+
+  private func requireCompleteLayout(pinned: WorkflowMutableRegistryPinnedRoot) throws {
     guard try pinned.entryType(stateRoot) == S_IFDIR else {
       throw CLIUsageError("mutable workflow registry state layout is incomplete: \(stateRoot.path)")
     }

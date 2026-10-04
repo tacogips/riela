@@ -1,4 +1,5 @@
 import Foundation
+import RielaObservability
 
 extension DeterministicWorkflowRunner {
   func isWorkflowRunCancellation(_ error: Error) -> Bool {
@@ -39,15 +40,48 @@ extension DeterministicWorkflowRunner {
       failureKind = workflowRunFailureKind(error)
       failureReason = workflowRunFailureReason(error)
     }
-    guard let failedSession = try? await store.markSessionFailed(
-      WorkflowSessionFailureInput(
-        sessionId: sessionId,
-        reason: failureReason,
-        failureKind: failureKind,
-        stepBudgetDiagnostic: stepBudgetDiagnostic,
-        effectiveStepBudget: effectiveStepBudget
+    let failedSession: WorkflowSession
+    do {
+      failedSession = try await store.markSessionFailed(
+        WorkflowSessionFailureInput(
+          sessionId: sessionId,
+          reason: failureReason,
+          failureKind: failureKind,
+          stepBudgetDiagnostic: stepBudgetDiagnostic,
+          effectiveStepBudget: effectiveStepBudget
+        )
       )
-    ) else {
+    } catch let persistenceError {
+      // The terminal write did not land: the durable session may still read
+      // "running". Surface that loudly and still emit the terminal event so the
+      // CLI projection records the failed outcome instead of silently stalling.
+      await telemetry.recordLog(RielaTelemetryLog(
+        name: "riela.workflow.finalize.failure",
+        severity: "ERROR",
+        attributes: [
+          "session.id": sessionId,
+          "workflow.id": request.workflow.workflowId,
+          "failure.kind": failureKind.rawValue,
+          "error_class": String(describing: type(of: persistenceError))
+        ]
+      ))
+      guard var unpersistedSession = try? await store.loadSession(id: sessionId) else {
+        return
+      }
+      unpersistedSession.status = .failed
+      unpersistedSession.failureReason = failureReason
+      unpersistedSession.failureKind = failureKind
+      unpersistedSession.failedAt = unpersistedSession.failedAt ?? Date()
+      await emitSessionCompletedEvent(
+        result: WorkflowRunResult(
+          workflowId: request.workflow.workflowId,
+          session: unpersistedSession,
+          rootOutput: terminalRootOutput(from: unpersistedSession),
+          exitCode: 1,
+          transitions: 0
+        ),
+        handler: request.eventHandler
+      )
       return
     }
 

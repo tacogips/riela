@@ -693,7 +693,8 @@ extension DeterministicWorkflowRunner {
       backend: payload.executionBackend,
       backendWorkingDirectory: resolvedBackendWorkingDirectory(
         backend: payload.executionBackend,
-        configuredWorkingDirectory: payload.workingDirectory
+        configuredWorkingDirectory: payload.workingDirectory,
+        workspaceRoot: fanoutWorkspaceRoot
       ),
       inputSnapshot: ["resolvedInputPayload": .object(resolvedInputPayload)],
       effectiveStepBudget: request.effectiveStepBudget,
@@ -766,7 +767,8 @@ extension DeterministicWorkflowRunner {
         backend: payload.executionBackend,
         backendWorkingDirectory: resolvedBackendWorkingDirectory(
           backend: payload.executionBackend,
-          configuredWorkingDirectory: payload.workingDirectory
+          configuredWorkingDirectory: payload.workingDirectory,
+          workspaceRoot: fanoutWorkspaceRoot
         ),
         inputSnapshot: ["variables": .object(request.variables), "resolvedInputPayload": .object(resolvedInputPayload)],
         effectiveStepBudget: request.effectiveStepBudget,
@@ -879,7 +881,8 @@ extension DeterministicWorkflowRunner {
         backend: basePayload.executionBackend,
         backendWorkingDirectory: resolvedBackendWorkingDirectory(
           backend: basePayload.executionBackend,
-          configuredWorkingDirectory: basePayload.workingDirectory
+          configuredWorkingDirectory: basePayload.workingDirectory,
+          workspaceRoot: fanoutWorkspaceRoot
         ),
         inputSnapshot: try historyInvocationSnapshot(adapterInput, request: request, step: step, payload: basePayload),
         effectiveStepBudget: request.effectiveStepBudget,
@@ -914,7 +917,12 @@ extension DeterministicWorkflowRunner {
         adapterOutput = try await executePlacedAdapter(attemptInput, step: step, executionId: "\(sessionId)/\(execution.executionId)", context: context)
       } catch let validationError as WorkflowPublicationError {
         guard case let .validationRejected(reason) = validationError else { throw validationError }
-        try await recordAdapterValidationRejection(execution, sessionId: sessionId, reason: reason)
+        try await recordAdapterValidationRejection(
+          execution,
+          sessionId: sessionId,
+          reason: reason,
+          failsSession: attempt >= maxAttempts
+        )
         guard attempt < maxAttempts else { throw validationError }
         lastValidationError = validationError
         continue
@@ -971,7 +979,8 @@ extension DeterministicWorkflowRunner {
               step: step,
               request: request
             ),
-            carriedPayloadFields: carriedLoopGuardPayload(from: request)
+            carriedPayloadFields: carriedLoopGuardPayload(from: request),
+            retriesValidationRejection: attempt < maxAttempts
           )
         )
       } catch let error as WorkflowPublicationError {

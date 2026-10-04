@@ -322,6 +322,45 @@ final class WorkflowStdioNodeExecutorTests: XCTestCase {
     XCTAssertTrue(configuration.arguments.contains("./run.sh"))
   }
 
+  func testContainerRelativeRunnerPathResolvesAgainstExecutorDefaultWorkingDirectory() async throws {
+    let defaultWorkingDirectory = "/tmp/riela-target-worktree"
+    let runner = RecordingStdioNodeProcessRunner { _, _ in
+      #"{"container":true}"# + "\n"
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(
+      runner: runner,
+      hostPlatform: .darwin,
+      hostEnvironment: [:],
+      defaultWorkingDirectory: defaultWorkingDirectory
+    )
+
+    _ = try await executor.execute(
+      input(
+        kind: .container,
+        node: AgentNodePayload(
+          id: "node",
+          nodeType: .container,
+          model: "",
+          container: WorkflowContainerExecution(
+            image: "ghcr.io/example/worker:latest",
+            runnerPath: "./tools/container",
+            command: ["./run.sh"]
+          )
+        )
+      ),
+      context: AdapterExecutionContext()
+    )
+
+    let configurations = await runner.configurations()
+    let configuration = try XCTUnwrap(configurations.first)
+    XCTAssertEqual(
+      configuration.executableURL.path,
+      "\(defaultWorkingDirectory)/tools/container",
+      "a relative container runnerPath must resolve against the executor default working directory, not the process cwd"
+    )
+    XCTAssertEqual(configuration.workingDirectoryURL?.path, defaultWorkingDirectory)
+  }
+
   func testAppleContainerNodeFailsBeforeLaunchOutsideDarwin() async throws {
     let runner = RecordingStdioNodeProcessRunner { _, _ in
       XCTFail("Apple Container must not launch outside Darwin")

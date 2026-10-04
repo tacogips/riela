@@ -93,7 +93,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
       let runnerPath = try containerRunnerExecutable(
         for: container,
         variables: templateVariables,
-        workingDirectory: container.workingDirectory ?? input.node.workingDirectory
+        workingDirectory: container.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
       )
       let invocation = processInvocation(
         executable: runnerPath,

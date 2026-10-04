@@ -211,6 +211,28 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     try load(sessionId: sessionId, strictReadOnly: false)
   }
 
+  /// Reports whether a runtime snapshot row exists for `sessionId` without
+  /// decoding it. A missing database or table reports `false`.
+  public func sessionExists(sessionId: String) throws -> Bool {
+    guard isSafeId(sessionId) else {
+      throw WorkflowRuntimePersistenceStoreError.invalidSessionId(sessionId)
+    }
+    guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else {
+      return false
+    }
+    let db = try openDatabase(readOnly: true)
+    guard try runtimeSnapshotTableExists(db) else {
+      return false
+    }
+    let rows = try mapRuntimeSQLiteError {
+      try db.query(
+        "SELECT 1 FROM workflow_runtime_snapshots WHERE workflow_execution_id = ? LIMIT 1",
+        bindings: [.text(sessionId)]
+      )
+    }
+    return !rows.isEmpty
+  }
+
   public func loadStrictReadOnly(sessionId: String) throws -> WorkflowRuntimePersistenceSnapshot {
     try load(sessionId: sessionId, strictReadOnly: true)
   }

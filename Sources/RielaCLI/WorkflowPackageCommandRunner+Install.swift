@@ -185,6 +185,15 @@ extension WorkflowPackageCommandRunner {
     let manifest = try await loader.loadManifest(
       from: sourceURL.appendingPathComponent(WorkflowPackageArchiveManager.manifestFileName)
     )
+    // Every source kind (directory, --source, GitHub checkout, archive) gets
+    // the same package-tree safety check archives receive at extraction, so a
+    // symlinked entry is rejected before anything is copied into the install
+    // root instead of being copied verbatim and read on the next run.
+    do {
+      try WorkflowPackageArchiveManager().validateExtractedPackageTree(sourceURL)
+    } catch let error as WorkflowPackageArchiveError {
+      throw CLIUsageError("package source validation failed: \(error.localizedDescription)")
+    }
     let issues = await loader.validate(manifest, packageRoot: sourceURL, verifiesChecksum: true)
     guard issues.isEmpty else {
       let issueSummary = issues.map { "\($0.path): \($0.message)" }.joined(separator: "; ")
@@ -463,16 +472,21 @@ extension WorkflowPackageCommandRunner {
     workingDirectory: URL
   ) async throws -> ResolvedPackageSource {
     let temporaryRoot = temporaryPackageExtractionRoot(workingDirectory: workingDirectory)
+    // A downloaded archive lives under archive/ while extraction targets
+    // extract/: extractArchive recreates its extraction root, so sharing one
+    // directory would delete the download before it is unpacked.
+    let downloadRoot = temporaryRoot.appendingPathComponent("archive", isDirectory: true)
+    let extractionRoot = temporaryRoot.appendingPathComponent("extract", isDirectory: true)
     do {
-      try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
-      let archiveURL = try await lockedArchiveURL(reference: reference, into: temporaryRoot, workingDirectory: workingDirectory)
+      try FileManager.default.createDirectory(at: downloadRoot, withIntermediateDirectories: true)
+      let archiveURL = try await lockedArchiveURL(reference: reference, into: downloadRoot, workingDirectory: workingDirectory)
       if let expectedDigest, !expectedDigest.isEmpty {
         let actualDigest = try sha256Digest(for: archiveURL)
         guard actualDigest == expectedDigest else {
           throw CLIUsageError("package ci archiveSHA256 mismatch for \(reference): expected \(expectedDigest), got \(actualDigest)")
         }
       }
-      let packageRoot = try WorkflowPackageArchiveManager().extractArchive(archiveURL, to: temporaryRoot)
+      let packageRoot = try WorkflowPackageArchiveManager().extractArchive(archiveURL, to: extractionRoot)
       return ResolvedPackageSource(
         directory: packageRoot,
         temporaryRoot: temporaryRoot,

@@ -374,6 +374,59 @@ final class WorkflowInstanceCommandTests: XCTestCase {
     )
   }
 
+  func testCallStepPreservesRunNodePatchBackend() async throws {
+    let root = repositoryRootURL()
+    let tempRoot = root.appendingPathComponent("tmp/workflow-node-patch-call-step-\(UUID().uuidString)", isDirectory: true)
+    let sessionStore = tempRoot.appendingPathComponent("sessions", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempRoot) }
+    let app = RielaCLIApplication()
+    let examples = root.appendingPathComponent("examples", isDirectory: true).path
+    let scenario = root.appendingPathComponent("examples/worker-only-single-step/mock-scenario.json").path
+
+    let firstRun = await app.run([
+      "workflow", "run", "worker-only-single-step",
+      "--workflow-definition-dir", examples,
+      "--mock-scenario", scenario,
+      "--working-dir", tempRoot.path,
+      "--session-store", sessionStore.path,
+      "--node-patch", #"{"main-worker":{"executionBackend":"claude-code-agent"}}"#,
+      "--output", "json"
+    ])
+    XCTAssertEqual(firstRun.exitCode, CLIExitCode.success, firstRun.stderr + firstRun.stdout)
+    let first = try decode(WorkflowRunResult.self, from: firstRun.stdout)
+    XCTAssertEqual(first.session.instanceKind, "ephemeral")
+    XCTAssertEqual(first.session.executions.map(\.backend), [.claudeCodeAgent])
+
+    let called = await app.run([
+      "call-step", "worker-only-single-step", first.session.sessionId, "main-worker",
+      "--continue-session",
+      "--workflow-definition-dir", examples,
+      "--mock-scenario", scenario,
+      "--working-dir", tempRoot.path,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(called.exitCode, CLIExitCode.success, called.stderr + called.stdout)
+    let call = try decode(WorkflowRunResult.self, from: called.stdout)
+    let mainWorkerBackends = call.session.executions.filter { $0.stepId == "main-worker" }.map(\.backend)
+    XCTAssertEqual(mainWorkerBackends.count, 2, "call-step must append a new main-worker execution")
+    XCTAssertEqual(
+      Set(mainWorkerBackends),
+      [.claudeCodeAgent],
+      "call-step must reuse the source session's --node-patch backend instead of the bundle default"
+    )
+
+    let status = await app.run([
+      "session", "status", first.session.sessionId,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(status.exitCode, CLIExitCode.success, status.stderr + status.stdout)
+    let inspection = try decode(SessionInspectionCommandResult.self, from: status.stdout)
+    XCTAssertEqual(inspection.instanceKind, "ephemeral")
+    XCTAssertEqual(Set(inspection.executions.map(\.backend)), [.claudeCodeAgent])
+  }
+
   func testSessionResumePreservesRunNodePatchBackend() async throws {
     let root = repositoryRootURL()
     let tempRoot = root.appendingPathComponent("tmp/workflow-node-patch-resume-\(UUID().uuidString)", isDirectory: true)

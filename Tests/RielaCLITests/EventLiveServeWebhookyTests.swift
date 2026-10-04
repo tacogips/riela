@@ -54,6 +54,45 @@ final class EventLiveServeWebhookyTests: XCTestCase {
     XCTAssertEqual(payload["source"], .string("wrike"))
   }
 
+  func testWebhookyServeSurvivesWorkflowRunFailure() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeWebhookyEventConfig(eventRoot: eventRoot)
+    let record = WebhookRecord(
+      t: 1_754_438_400,
+      fetched: false,
+      payload: .object([
+        "source": .string("wrike"),
+        "events": .array([.object(["eventType": .string("TaskCreated"), "taskId": .string("TASK-92")])])
+      ])
+    )
+    let workflowRunner = FakeEventWorkflowRunner(failureMessage: "webhook run failed")
+    let server = DefaultEventLiveServer(
+      webhookyStreamer: FakeWebhookyStreamer(records: [record]),
+      workflowRunner: workflowRunner
+    )
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_WEBHOOKY_URL": "https://hooks.example.test",
+      "TEST_WEBHOOKY_CREDENTIAL": "key-1:secret-1",
+      "TEST_WEBHOOKY_FETCH_UUID": "fetch-uuid-1"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions(["--limit", "1"]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let requests = await workflowRunner.requests
+    XCTAssertEqual(requests.map(\.workflowName), ["webhooky-flow"])
+    let serveRecord = try String(contentsOf: eventRoot.appendingPathComponent("serve-record.json"), encoding: .utf8)
+    XCTAssertTrue(serveRecord.contains("webhooky-workflow-failed"), serveRecord)
+    XCTAssertTrue(serveRecord.contains("webhook run failed"), serveRecord)
+  }
+
   func testWebhookyServeSkipsAlreadyFetchedRecordsByDefault() async throws {
     let eventRoot = try temporaryDirectory()
     try writeWebhookyEventConfig(eventRoot: eventRoot)

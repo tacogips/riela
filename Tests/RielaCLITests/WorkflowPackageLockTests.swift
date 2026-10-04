@@ -1,5 +1,6 @@
 import Foundation
 import RielaAddons
+@testable import RielaServer
 import XCTest
 @testable import RielaCLI
 
@@ -209,6 +210,58 @@ extension WorkflowCommandTests {
     XCTAssertEqual(ci.exitCode, .failure)
     XCTAssertTrue(ci.stdout.contains("archiveSHA256 mismatch"), ci.stdout)
     XCTAssertFalse(FileManager.default.fileExists(atPath: installRoot.appendingPathComponent(".riela/packages/ci-archive-addon").path))
+  }
+
+  func testPackageCIReplaysLockedHTTPArchiveSource() async throws {
+    let tempDir = try makeRielaCLITestTemporaryDirectory("riela-package-ci-http-archive")
+    let packageSource = tempDir.appendingPathComponent("demo-addon-source", isDirectory: true)
+    let installRoot = tempDir.appendingPathComponent("install-root", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+    try installLockfileNodeAddonFixture(at: packageSource, packageName: "ci-http-addon")
+    let archiveURL = tempDir.appendingPathComponent("ci-http-addon.rielapkg")
+    try WorkflowPackageArchiveManager().createArchive(from: packageSource, to: archiveURL)
+    let archiveData = try Data(contentsOf: archiveURL)
+    let server = RielaLocalHTTPServer(routeHandler: AnyRielaHTTPRouteHandler { request in
+      guard request.method == "GET", request.path == "/ci-http-addon.rielapkg" else {
+        return RielaHTTPResponse(status: 404)
+      }
+      return RielaHTTPResponse(status: 200, headers: ["Content-Type": "application/zip"], body: archiveData)
+    })
+    let port = try await server.startForTesting()
+
+    let app = RielaCLIApplication()
+    let install = await app.run([
+      "package", "install", archiveURL.path,
+      "--working-dir", installRoot.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(install.exitCode, .success, install.stderr + install.stdout)
+    let lockURL = installRoot.appendingPathComponent("riela-lock.json")
+    var lock = try decodeJSON(WorkflowPackageLockFile.self, from: String(contentsOf: lockURL))
+    var entry = try XCTUnwrap(lock.packages["ci-http-addon"])
+    XCTAssertEqual(entry.source.kind, "archive")
+    entry.source.reference = "http://127.0.0.1:\(port)/ci-http-addon.rielapkg"
+    lock.packages["ci-http-addon"] = entry
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(lock).write(to: lockURL)
+    let installedPackage = installRoot.appendingPathComponent(".riela/packages/ci-http-addon", isDirectory: true)
+    try FileManager.default.removeItem(at: installedPackage)
+
+    let ci = await app.run([
+      "package", "ci",
+      "--working-dir", installRoot.path,
+      "--output", "json"
+    ])
+    await server.stop()
+
+    XCTAssertEqual(ci.exitCode, .success, ci.stderr + ci.stdout)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: installedPackage.appendingPathComponent("riela-package.json").path))
+    let result = try decodeJSON(WorkflowPackageCommandResult.self, from: ci.stdout)
+    XCTAssertEqual(result.command, "ci")
+    XCTAssertEqual(result.packages.map(\.name), ["ci-http-addon"])
+    let replayed = try decodeJSON(WorkflowPackageLockFile.self, from: String(contentsOf: lockURL))
+    XCTAssertEqual(replayed.packages["ci-http-addon"]?.source.reference, "http://127.0.0.1:\(port)/ci-http-addon.rielapkg")
   }
 
   func testPackageInstallFromIndexOnlyArchiveVerifiesDigestAndPinsReleaseURL() async throws {

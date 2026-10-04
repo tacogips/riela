@@ -1,4 +1,5 @@
 import Foundation
+import RielaCore
 #if os(Linux)
 import Glibc
 #else
@@ -48,14 +49,105 @@ final class SessionExecutionLockRegistry: @unchecked Sendable {
       sessionId: sessionId
     )
   }
+
+  /// Releases a lock this registry holds. Used when a reserved session id
+  /// turns out to be persisted already, so a stale reservation never blocks
+  /// another process from resuming that session.
+  func release(sessionId: String) {
+    mutex.lock()
+    defer { mutex.unlock() }
+    heldLocks[sessionId] = nil
+  }
+
+  func holds(sessionId: String) -> Bool {
+    mutex.lock()
+    defer { mutex.unlock() }
+    return heldLocks[sessionId] != nil
+  }
 }
 
 func makeSessionExecutionAdmission(
   sessionStoreRoot: String
 ) -> @Sendable (String) throws -> Void {
-  let registry = SessionExecutionLockRegistry(sessionStoreRoot: sessionStoreRoot)
-  return { sessionId in
+  makeSessionExecutionAdmission(registry: SessionExecutionLockRegistry(sessionStoreRoot: sessionStoreRoot))
+}
+
+func makeSessionExecutionAdmission(
+  registry: SessionExecutionLockRegistry
+) -> @Sendable (String) throws -> Void {
+  { sessionId in
     try registry.acquire(sessionId: sessionId)
+  }
+}
+
+/// Generates session ids that are reserved across processes before they are
+/// handed to the runtime store. The monotonic counter alone is seeded from a
+/// store scan, so two processes starting at the same time compute the same
+/// next id; the loser then fails admission after it has already written a
+/// durable session record under the winner's id (GitHub #122). Reserving the
+/// execution lock for a candidate id at generation time, and skipping
+/// candidates that are locked or already persisted, makes concurrent fresh
+/// runs of one workflow receive distinct ids.
+final class LockReservingWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerating, @unchecked Sendable {
+  static let maximumReservationAttempts = 10_000
+
+  private let base: MonotonicWorkflowRuntimeIDGenerator
+  private let registry: SessionExecutionLockRegistry
+  private let persistedSessionExists: @Sendable (String) -> Bool
+
+  init(
+    registry: SessionExecutionLockRegistry,
+    base: MonotonicWorkflowRuntimeIDGenerator = MonotonicWorkflowRuntimeIDGenerator(),
+    persistedSessionExists: @escaping @Sendable (String) -> Bool
+  ) {
+    self.base = base
+    self.registry = registry
+    self.persistedSessionExists = persistedSessionExists
+  }
+
+  func nextSessionId(workflowId: String) throws -> String {
+    var lastContended: String?
+    for _ in 0..<Self.maximumReservationAttempts {
+      let candidate = try base.nextSessionId(workflowId: workflowId)
+      do {
+        try registry.acquire(sessionId: candidate)
+      } catch SessionExecutionLockError.alreadyRunning {
+        lastContended = candidate
+        continue
+      }
+      // A finished run can persist this id between our store scan and the
+      // lock acquisition; its lock is gone but the record exists.
+      if persistedSessionExists(candidate) {
+        registry.release(sessionId: candidate)
+        lastContended = candidate
+        continue
+      }
+      return candidate
+    }
+    throw SessionExecutionLockError.unavailable(
+      "could not reserve a unique session id for workflow '\(workflowId)'"
+        + (lastContended.map { " (last contended: \($0))" } ?? "")
+    )
+  }
+
+  func nextStepExecutionId(stepId: String, attempt: Int) throws -> String {
+    try base.nextStepExecutionId(stepId: stepId, attempt: attempt)
+  }
+
+  func nextCommunicationId() throws -> String {
+    try base.nextCommunicationId()
+  }
+
+  func noteExistingSessionId(_ sessionId: String, workflowId: String) {
+    base.noteExistingSessionId(sessionId, workflowId: workflowId)
+  }
+
+  func noteExistingStepExecutionId(_ executionId: String) {
+    base.noteExistingStepExecutionId(executionId)
+  }
+
+  func noteExistingCommunicationId(_ communicationId: String) {
+    base.noteExistingCommunicationId(communicationId)
   }
 }
 

@@ -10,6 +10,59 @@ final class HandoverPacketBuilderTests: XCTestCase {
     XCTAssertEqual(result, .object(["token": .string("<redacted:token>"), "nested": .array([.string("<redacted:API_KEY>"), .object(["ok": .bool(true)])])]))
   }
 
+  func testRedactTextReplacesLongestValuesFirstAndSkipsShortValuesExceptOnExactMatch() throws {
+    let rules = HandoverRedactionRules(boundValues: ["abc": "SHORT", "longsecret": "LONG", "longsecret-extended": "LONGER", "": "EMPTY"])
+    XCTAssertEqual(rules.redactText("x longsecret-extended y longsecret z abc"), "x <redacted:LONGER> y <redacted:LONG> z abc")
+    XCTAssertEqual(rules.redactText(""), "")
+    XCTAssertEqual(HandoverRedactionRules.apply(.string("abc"), rules: rules), .string("<redacted:SHORT>"))
+    XCTAssertEqual(HandoverRedactionRules.apply(.string("Authorization: Bearer longsecret"), rules: rules),
+                   .string("Authorization: Bearer <redacted:LONG>"))
+    XCTAssertEqual(HandoverRedactionRules.apply(.object(["note": .string("see longsecret")]), rules: rules),
+                   .object(["note": .string("see <redacted:LONG>")]))
+  }
+
+  func testFreeTextSecretsAreRedactedFromExcerptNoteAndBrief() throws {
+    let root = try temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = WorkStore(rootDirectory: root.path)
+    let task = sampleTask()
+    try store.saveTask(task)
+    let now = Date(timeIntervalSince1970: 10)
+    let boundValue = "handover-fixture-bound-value"
+    let execution = WorkflowStepExecution(executionId: "exec-1", stepId: "done", nodeId: "agent", attempt: 1,
+      backend: .codexAgent, status: .completed,
+      acceptedOutput: WorkflowAcceptedOutputMetadata(payload: ["ok": .bool(true)], when: [:], acceptedAt: now),
+      streamedResponseText: "Calling API with Authorization: Bearer \(boundValue) and retrying.", createdAt: now, updatedAt: now)
+    let session = WorkflowSession(workflowId: "flow", sessionId: "session-1", status: .suspended, entryStepId: "start",
+                                  createdAt: now, updatedAt: now, executions: [execution])
+    let workflow = WorkflowDefinition(workflowId: "flow", defaults: WorkflowDefaults(nodeTimeoutMs: 1, maxLoopIterations: 1),
+      entryStepId: "start", nodeRegistry: [], steps: [], nodes: [])
+    let input = HandoverPacketBuilderInput(handoverId: HandoverID("handover-1"), task: task,
+      attempt: Attempt(id: AttemptID("attempt-1"), taskId: task.id, sessionId: "session-1"),
+      reason: .operatorMove(reason: "capacity"), resumeStepId: "start",
+      snapshot: WorkflowRuntimePersistenceSnapshot(session: session), workflow: workflow,
+      workflowRef: HandoverWorkflowRef(workflowId: "flow", entryStepId: "start", resumeStepId: "start"),
+      progressNote: "Resume with token \(boundValue); it is already exported.", hostId: "host", producer: .runtime,
+      redaction: HandoverRedactionRules(boundValues: [boundValue: "API_KEY"]), now: now)
+    let packet = try HandoverPacketBuilder(store: store).build(input)
+    XCTAssertEqual(packet.progress.acceptedSteps[0].responseExcerpt, "Calling API with Authorization: Bearer <redacted:API_KEY> and retrying.")
+    XCTAssertTrue(packet.brief.contains("## Agent note\nResume with token <redacted:API_KEY>; it is already exported."), packet.brief)
+    XCTAssertFalse(packet.brief.contains(boundValue))
+    let encoded = try XCTUnwrap(String(data: try JSONCanonical.encode(packet), encoding: .utf8))
+    XCTAssertFalse(encoded.contains(boundValue))
+    XCTAssertFalse(HandoverBriefRenderer().render(packet, progressNote: input.redaction.redactText(input.progressNote ?? "")).contains(boundValue))
+    let longResponse = String(repeating: "x", count: HandoverBounds.responseExcerpt - 8) + boundValue + "tail"
+    var straddling = execution
+    straddling.streamedResponseText = longResponse
+    var straddlingInput = input
+    straddlingInput.snapshot = WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(workflowId: "flow", sessionId: "session-1",
+      status: .suspended, entryStepId: "start", createdAt: now, updatedAt: now, executions: [straddling]))
+    let straddled = try HandoverPacketBuilder(store: store).build(straddlingInput)
+    let excerpt = try XCTUnwrap(straddled.progress.acceptedSteps[0].responseExcerpt)
+    XCTAssertTrue(excerpt.hasSuffix("<redacted:API_KEY>tail"), "a secret cut by the excerpt boundary must not leak its tail")
+    XCTAssertFalse(excerpt.contains(String(boundValue.suffix(8))))
+  }
+
   func testBriefMatchesGoldenFixture() throws {
     let packet = HandoverPacket(id: HandoverID("handover-1"), taskId: TaskID("task-1"), intentId: IntentID("intent-1"),
       fromAttemptId: AttemptID("attempt-1"), fromSessionId: "session-1", generation: 1,

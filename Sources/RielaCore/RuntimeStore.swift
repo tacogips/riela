@@ -179,6 +179,11 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
   public var completesRootWithoutOutput: Bool
   public var currentStepId: String?
   public var pendingRoutePublication: WorkflowPendingRoutePublication?
+  /// When `status == .failed`, whether the session itself becomes terminal
+  /// failed. Advisory step failures and output-validation rejections that
+  /// still have a retry remaining record a failed execution while the run
+  /// legitimately continues, so they pass `false` to keep the session running.
+  public var failsSession: Bool
 
   public init(
     sessionId: String,
@@ -191,7 +196,8 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     usage: AdapterUsage? = nil,
     completesRootWithoutOutput: Bool = false,
     currentStepId: String? = nil,
-    pendingRoutePublication: WorkflowPendingRoutePublication? = nil
+    pendingRoutePublication: WorkflowPendingRoutePublication? = nil,
+    failsSession: Bool = true
   ) {
     self.sessionId = sessionId
     self.executionId = executionId
@@ -204,6 +210,7 @@ public struct WorkflowStepExecutionUpdateInput: Equatable, Sendable {
     self.completesRootWithoutOutput = completesRootWithoutOutput
     self.currentStepId = currentStepId
     self.pendingRoutePublication = pendingRoutePublication
+    self.failsSession = failsSession
   }
 }
 
@@ -386,10 +393,14 @@ public extension WorkflowRuntimeStore {
 
 public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   public typealias AppendFailurePredicate = @Sendable (WorkflowMessageAppendInput) -> String?
+  /// Test seam: returning a non-nil reason makes `markSessionFailed` throw
+  /// before mutating the session, simulating a terminal-write persistence failure.
+  public typealias MarkSessionFailedFailurePredicate = @Sendable (WorkflowSessionFailureInput) -> String?
 
   let clock: any WorkflowRuntimeClock
   let idGenerator: any WorkflowRuntimeIDGenerating
   let appendFailurePredicate: AppendFailurePredicate?
+  let markSessionFailedFailurePredicate: MarkSessionFailedFailurePredicate?
   var sessions: [String: WorkflowSession] = [:]
   private var executionLiveTails: [String: WorkflowExecutionLiveTail] = [:]
   var messagesBySession: [String: [WorkflowMessageRecord]] = [:]
@@ -398,11 +409,13 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   public init(
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
     idGenerator: any WorkflowRuntimeIDGenerating = MonotonicWorkflowRuntimeIDGenerator(),
-    appendFailurePredicate: AppendFailurePredicate? = nil
+    appendFailurePredicate: AppendFailurePredicate? = nil,
+    markSessionFailedFailurePredicate: MarkSessionFailedFailurePredicate? = nil
   ) {
     self.clock = clock
     self.idGenerator = idGenerator
     self.appendFailurePredicate = appendFailurePredicate
+    self.markSessionFailedFailurePredicate = markSessionFailedFailurePredicate
   }
 
   public func seedSession(_ session: WorkflowSession) {
@@ -548,6 +561,11 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     session.executions[index] = execution
     session.updatedAt = date
     switch input.status {
+    case .failed where !input.failsSession:
+      // Non-terminal step failure (advisory policy or a validation rejection
+      // with a retry remaining): the execution is failed, the session keeps
+      // running so the persisted snapshot never becomes terminal mid-run.
+      break
     case .failed:
       if session.status != .failed, let failureKind = input.failureKind {
         session.failureReason = input.failureReason
@@ -583,6 +601,9 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
   public func markSessionFailed(_ input: WorkflowSessionFailureInput) async throws -> WorkflowSession {
     guard var session = sessions[input.sessionId] else {
       throw WorkflowRuntimeStoreError.sessionNotFound(input.sessionId)
+    }
+    if let reason = markSessionFailedFailurePredicate?(input) {
+      throw WorkflowRuntimeStoreError.messageAppendRejected(reason)
     }
 
     let date = clock.now()

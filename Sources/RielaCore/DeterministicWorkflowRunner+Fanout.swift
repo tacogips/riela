@@ -10,15 +10,6 @@ extension DeterministicWorkflowRunner {
     try validateFanoutWriteOwnership(directive)
     let items = try fanoutItems(from: directive)
     let wave = try WorkflowFanoutWave.select(items: items, policy: directive.dependencies, source: directive.sourcePayload)
-    let changeEvidence: WorkflowFanoutChangeEvidence?
-    if directive.changeTracking != nil {
-      guard let fanoutWorkspaceRoot else {
-        throw AdapterExecutionError(.policyBlocked, "fanout changeTracking requires a host-bound fanoutWorkspaceRoot")
-      }
-      changeEvidence = try WorkflowFanoutChangeEvidence(root: fanoutWorkspaceRoot)
-    } else {
-      changeEvidence = nil
-    }
     let fanoutGroupRunId = "\(directive.groupId):\(directive.sourceStepExecutionId)"
     if wave.selectedIndices.isEmpty {
       var join = fanoutJoinPayload(
@@ -39,16 +30,39 @@ extension DeterministicWorkflowRunner {
       return join
     }
 
-    if let changeEvidence, let tracking = directive.changeTracking {
+    // The evidence directory is created only once a branch will actually run,
+    // so a no-op dispatch (nothing selectable in this wave) leaves no empty
+    // evidence tree behind in the workspace.
+    let changeEvidence: WorkflowFanoutChangeEvidence?
+    if let tracking = directive.changeTracking {
+      guard let fanoutWorkspaceRoot else {
+        throw AdapterExecutionError(.policyBlocked, "fanout changeTracking requires a host-bound fanoutWorkspaceRoot")
+      }
       // Preflight every selected branch before any writer starts so a
       // selection that already violates policy fails here, naming the branch.
-      for index in wave.selectedIndices {
-        let selection = try fanoutTrackedSelection(item: items[index], tracking: tracking)
-        _ = try await changeEvidence.capture(
-          branchId: wave.branchIds[index], paths: selection.paths,
-          artifactRoots: selection.artifactRoots, stepId: "fanout-dispatch"
+      // Every dispatch-time failure surfaces as the group-scoped error like
+      // the other dispatch failures, never as a raw adapter error.
+      do {
+        let evidence = try WorkflowFanoutChangeEvidence(root: fanoutWorkspaceRoot)
+        for index in wave.selectedIndices {
+          let selection = try fanoutTrackedSelection(item: items[index], tracking: tracking)
+          _ = try await evidence.capture(
+            branchId: wave.branchIds[index], paths: selection.paths,
+            artifactRoots: selection.artifactRoots, stepId: "fanout-dispatch"
+          )
+        }
+        changeEvidence = evidence
+      } catch {
+        if isWorkflowRunCancellation(error) {
+          throw error
+        }
+        throw DeterministicWorkflowRunnerError.fanoutDispatchFailed(
+          groupId: directive.groupId,
+          reason: "fanout dispatch preflight failed: \(workflowRunFailureReason(error))"
         )
       }
+    } else {
+      changeEvidence = nil
     }
     let bound = fanoutConcurrencyBound(itemCount: wave.selectedIndices.count, directive: directive, request: request)
     let outcomes = try await runFanoutBranches(
@@ -198,7 +212,8 @@ extension DeterministicWorkflowRunner {
             index: index,
             item: item,
             sessionId: nil,
-            reason: "no callee workflow resolver is wired for cross-workflow fanout dispatch '\(workflowId)'"
+            reason: "no callee workflow resolver is wired for cross-workflow fanout dispatch '\(workflowId)'",
+            cancelled: false
           )
         }
         guard request.crossWorkflowDispatchDepth < Self.maxCrossWorkflowDispatchDepth else {
@@ -206,7 +221,8 @@ extension DeterministicWorkflowRunner {
             index: index,
             item: item,
             sessionId: nil,
-            reason: "cross-workflow dispatch depth exceeded \(Self.maxCrossWorkflowDispatchDepth); check workflows for a call cycle"
+            reason: "cross-workflow dispatch depth exceeded \(Self.maxCrossWorkflowDispatchDepth); check workflows for a call cycle",
+            cancelled: false
           )
         }
         let callee = try await calleeResolver.resolveCallee(workflowId: workflowId)
@@ -215,7 +231,8 @@ extension DeterministicWorkflowRunner {
             index: index,
             item: item,
             sessionId: nil,
-            reason: "resolved workflow has workflowId '\(callee.workflow.workflowId)', expected '\(workflowId)'"
+            reason: "resolved workflow has workflowId '\(callee.workflow.workflowId)', expected '\(workflowId)'",
+            cancelled: false
           )
         }
         branchWorkflow = callee.workflow
@@ -301,7 +318,8 @@ extension DeterministicWorkflowRunner {
           index: index,
           item: item,
           sessionId: result.session.sessionId,
-          reason: "branch session ended with status '\(result.status.rawValue)'"
+          reason: "branch session ended with status '\(result.status.rawValue)'",
+          cancelled: result.session.failureKind == .cancelled
         )
       }
       return .success(
@@ -318,9 +336,11 @@ extension DeterministicWorkflowRunner {
       // reserved child has a canonical terminal snapshot. `run` can throw
       // after it marks a child failed, so persist that actual terminal record
       // before returning a branch failure rather than losing it in the catch.
+      var terminalFailureKind: WorkflowSessionFailureKind?
       if let reservedChildSessionId,
          let terminal = try await store.loadSession(id: reservedChildSessionId),
          terminal.status == .completed || terminal.status == .failed {
+        terminalFailureKind = terminal.failureKind
         // Workflow cancellation is represented by a failed terminal session
         // with failureKind=.cancelled. Keep that distinction in the persisted
         // snapshot: the parent join may render a cancelled branch, but must
@@ -334,11 +354,15 @@ extension DeterministicWorkflowRunner {
           try await nestedInvocationRecoveryCheckpointer?.reached(.childTerminalPersisted)
         }
       }
+      // Cancellation is decided by the real signal (the thrown cancellation
+      // or the child's durable failureKind), never by scanning the failure
+      // text: a policy failure naming src/CancelButton.tsx is a failure.
       return .failure(
         index: index,
         item: item,
         sessionId: reservedChildSessionId,
-        reason: workflowRunFailureReason(error)
+        reason: workflowRunFailureReason(error),
+        cancelled: isWorkflowRunCancellation(error) || terminalFailureKind == .cancelled
       )
     }
   }
@@ -554,11 +578,15 @@ private struct FanoutBranchOutcome: Sendable {
     ])
   }
 
-  static func failure(index: Int, item: JSONValue, sessionId: String?, reason: String) -> FanoutBranchOutcome {
+  /// `cancelled` is the real cancellation signal observed by the caller; the
+  /// failure text is never inspected to infer it.
+  static func failure(
+    index: Int, item: JSONValue, sessionId: String?, reason: String, cancelled: Bool
+  ) -> FanoutBranchOutcome {
     var record: JSONObject = [
       "index": .integer(Int64(index)),
       "item": item,
-      "status": .string(isWorkflowRunCancellationReason(reason) ? "cancelled" : "failed"),
+      "status": .string(cancelled ? "cancelled" : "failed"),
       "failureReason": .string(reason)
     ]
     if let sessionId {
@@ -611,8 +639,4 @@ private func jsonTypeName(_ value: JSONValue) -> String {
   case .object:
     return "object"
   }
-}
-
-private func isWorkflowRunCancellationReason(_ reason: String) -> Bool {
-  reason.contains("CancellationError") || reason.lowercased().contains("cancel")
 }

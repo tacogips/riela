@@ -21,15 +21,34 @@ public extension WorkStore {
     let bytes = try JSONCanonical.encode(packet)
     guard let json = String(bytes: bytes, encoding: .utf8) else { throw WorkStoreError("canonical handover JSON is not UTF-8") }
     let db = try openWritable()
-    try db.execute(
-      """
-      INSERT INTO work_handovers (handover_id, task_id, from_attempt_id, successor_attempt_id, digest, record, created_at)
-      VALUES (?, ?, ?, NULL, ?, jsonb(?), ?)
-      ON CONFLICT(handover_id) DO UPDATE SET record = excluded.record, digest = excluded.digest
-      """,
-      bindings: [.text(packet.id.rawValue), .text(packet.taskId.rawValue), .text(packet.fromAttemptId.rawValue),
-                 .text(packet.digest), .text(json), .text(Self.timestamp(packet.createdAt))]
-    )
+    try db.transaction { db in
+      // A packet may be re-saved only while no successor has consumed it and
+      // only by the same task and predecessor attempt; the conflict clause
+      // leaves a consumed or foreign row untouched so it can be reported.
+      let changed = try db.executeAndReturnChangedRowCount(
+        """
+        INSERT INTO work_handovers (handover_id, task_id, from_attempt_id, successor_attempt_id, digest, record, created_at)
+        VALUES (?, ?, ?, NULL, ?, jsonb(?), ?)
+        ON CONFLICT(handover_id) DO UPDATE SET record = excluded.record, digest = excluded.digest
+          WHERE successor_attempt_id IS NULL
+            AND task_id = excluded.task_id
+            AND from_attempt_id = excluded.from_attempt_id
+        """,
+        bindings: [.text(packet.id.rawValue), .text(packet.taskId.rawValue), .text(packet.fromAttemptId.rawValue),
+                   .text(packet.digest), .text(json), .text(Self.timestamp(packet.createdAt))]
+      )
+      guard changed == 0 else { return }
+      let existing = try db.query(
+        "SELECT task_id, from_attempt_id, successor_attempt_id, digest FROM work_handovers WHERE handover_id = ?",
+        bindings: [.text(packet.id.rawValue)]
+      ).first
+      guard let existing else { throw WorkStoreError("handover '\(packet.id.rawValue)' could not be saved") }
+      if existing["digest"] == packet.digest { return }
+      if let successor = existing["successor_attempt_id"] {
+        throw WorkStoreError("handover '\(packet.id.rawValue)' was already consumed by attempt '\(successor)' and cannot be replaced")
+      }
+      throw WorkStoreError("handover '\(packet.id.rawValue)' already belongs to task '\(existing["task_id"] ?? "?")' attempt '\(existing["from_attempt_id"] ?? "?")' and cannot be replaced")
+    }
   }
 
   func loadHandover(id: HandoverID) throws -> HandoverPacket? {
@@ -140,6 +159,7 @@ public extension WorkStore {
     decision: Decision,
     evidence: [Evidence],
     predecessorOutcome: AttemptOutcome,
+    snapshot: WorkflowRuntimePersistenceSnapshot,
     expectedTaskVersion: Int,
     now: Date
   ) throws -> WorkTask {
@@ -147,8 +167,32 @@ public extension WorkStore {
     return try db.transaction { db in
       let task = try requiredTask(packet.taskId, in: db)
       guard task.version == expectedTaskVersion else { throw WorkStoreError.versionConflict(taskId: task.id, expected: expectedTaskVersion) }
+      guard !task.state.isTerminal else {
+        throw WorkStoreError("task '\(task.id.rawValue)' is \(task.state.rawValue) and cannot hand over")
+      }
       guard decision.taskId == packet.taskId, decision.attemptId == packet.fromAttemptId,
             case .handover = decision.kind else { throw WorkStoreError("handover decision does not match packet") }
+      let existingPredecessor = try requiredAttempt(packet.fromAttemptId, in: db)
+      guard existingPredecessor.taskId == packet.taskId else {
+        throw WorkStoreError("attempt '\(existingPredecessor.id.rawValue)' belongs to task '\(existingPredecessor.taskId.rawValue)', not '\(packet.taskId.rawValue)'")
+      }
+      guard existingPredecessor.sessionId == packet.fromSessionId, snapshot.session.sessionId == existingPredecessor.sessionId else {
+        throw WorkStoreError("handover '\(packet.id.rawValue)' snapshot does not belong to attempt '\(existingPredecessor.id.rawValue)'")
+      }
+      // Every attempt state may hand over: a prepared attempt whose owner was
+      // lost, a running or terminal one, or one already reconciled by a crash
+      // sweep. The exhaustive switch forces a decision when a state is added.
+      switch existingPredecessor.state {
+      case .prepared, .running, .terminal, .reconciled: break
+      }
+      let canonicalOutcome = WorkEvidenceProjector.outcome(from: snapshot)
+      if existingPredecessor.state != .reconciled {
+        guard canonicalOutcome == predecessorOutcome else {
+          throw WorkStoreError("attempt '\(existingPredecessor.id.rawValue)' outcome does not match its workflow snapshot")
+        }
+      }
+      let leaseFence = try db.query("SELECT fence FROM work_leases WHERE attempt_id = ?", bindings: [.text(packet.fromAttemptId.rawValue)])
+        .first?["fence"].flatMap(Int.init)
       var storedPacket = packet
       if storedPacket.digest.isEmpty { storedPacket = try storedPacket.sealed() }
       guard storedPacket.digest == (try storedPacket.canonicalDigest()) else {
@@ -163,16 +207,18 @@ public extension WorkStore {
       )
       try insertDecision(decision, in: db)
       for item in evidence { try insertEvidence(item, in: db) }
-      var predecessor = try requiredAttempt(packet.fromAttemptId, in: db)
+      var predecessor = existingPredecessor
       if predecessor.state != .reconciled {
         predecessor.state = .reconciled
-        predecessor.outcome = predecessorOutcome
+        predecessor.outcome = canonicalOutcome
         try replaceAttempt(predecessor, in: db)
       }
       try db.execute("DELETE FROM work_leases WHERE attempt_id = ?", bindings: [.text(packet.fromAttemptId.rawValue)])
       var updated = task
       updated.state = .waiting
       updated.version = expectedTaskVersion + 1
+      // Releasing the lease must invalidate any fenced writer still holding it.
+      updated.fence = max(task.fence, leaseFence ?? task.fence) + 1
       try updateTask(updated, expectedVersion: expectedTaskVersion, in: db)
       return updated
     }

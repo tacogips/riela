@@ -116,7 +116,7 @@ To receive the handover event in a workflow loop, configure:
 
 ## Security notes
 
-Packet variables are redacted before storage and bounded. Sink writes publish data outside the canonical work store, so configure only sinks whose access and retention are appropriate. The digest detects changed packet bytes but does not provide confidentiality. Manager bearer tokens and lease heartbeat credentials are secrets: do not paste them into logs, workflow output, or shared shell history. Remote GraphQL task fields require a manager-authorized `/graphql` request; report and heartbeat calls require the lease credential returned when the attempt is reserved.
+Packet variables, accepted outputs, history, response excerpts, and the agent progress note are redacted before storage and bounded: a bound secret value is replaced by `<redacted:ENV_NAME>` both when a value equals it exactly and wherever it appears inside free text (values shorter than 4 bytes are only matched exactly, so they cannot shred ordinary words). Sink writes publish data outside the canonical work store, so configure only sinks whose access and retention are appropriate. The digest detects changed packet bytes but does not provide confidentiality. Manager bearer tokens and lease heartbeat credentials are secrets: do not paste them into logs, workflow output, or shared shell history. Remote GraphQL task fields require a manager-authorized `/graphql` request; report and heartbeat calls require the lease credential returned when the attempt is reserved.
 
 ## Command options
 

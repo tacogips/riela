@@ -12,14 +12,19 @@ struct WorkflowBackendEventEmissionContext: Sendable {
   var nodeExecutions: Int
 }
 
+/// The directory an execution record reports for a backend. A node without
+/// its own `workingDirectory` inherits the run's resolved workspace root (the
+/// CLI `--working-dir`), which is also what the production adapters default
+/// to; the process cwd is only the fallback when no workspace root is known.
 func resolvedBackendWorkingDirectory(
   backend: NodeExecutionBackend?,
-  configuredWorkingDirectory: String?
+  configuredWorkingDirectory: String?,
+  workspaceRoot: URL? = nil
 ) -> String? {
   guard backend != nil else {
     return nil
   }
-  let path = configuredWorkingDirectory ?? FileManager.default.currentDirectoryPath
+  let path = configuredWorkingDirectory ?? workspaceRoot?.path ?? FileManager.default.currentDirectoryPath
   return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
 }
 

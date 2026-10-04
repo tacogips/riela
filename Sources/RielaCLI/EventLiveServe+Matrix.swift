@@ -70,11 +70,23 @@ extension DefaultEventLiveServer {
           guard let workflowName = trigger.workflowName else {
             continue
           }
-          let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
-            workflowName: workflowName,
-            runtimeVariables: trigger.runtimeVariables,
-            parsed: parsed
-          ))
+          let result: WorkflowRunResult
+          do {
+            result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+              workflowName: workflowName,
+              runtimeVariables: trigger.runtimeVariables,
+              parsed: parsed
+            ))
+          } catch {
+            await recordWorkflowDispatchFailure(
+              eventRoot: eventRoot,
+              sourceKind: "matrix",
+              sourceId: source.id,
+              workflowName: workflowName,
+              error: error
+            )
+            continue
+          }
           let replies = try await dispatchMatrixReplies(
             result: result,
             source: source,

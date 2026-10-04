@@ -70,11 +70,23 @@ extension DefaultEventLiveServer {
           guard let workflowName = trigger.workflowName else {
             continue
           }
-          let result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
-            workflowName: workflowName,
-            runtimeVariables: trigger.runtimeVariables,
-            parsed: parsed
-          ))
+          let result: WorkflowRunResult
+          do {
+            result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+              workflowName: workflowName,
+              runtimeVariables: trigger.runtimeVariables,
+              parsed: parsed
+            ))
+          } catch {
+            await recordWorkflowDispatchFailure(
+              eventRoot: eventRoot,
+              sourceKind: "discord",
+              sourceId: source.id,
+              workflowName: workflowName,
+              error: error
+            )
+            continue
+          }
           let replies = try await dispatchDiscordReplies(result: result, source: source, envelope: envelope, sourceToken: token)
           try DiscordConversationHistoryStore(eventRoot: eventRoot, source: source).appendExchange(message: message, replies: replies)
           if !replies.isEmpty {

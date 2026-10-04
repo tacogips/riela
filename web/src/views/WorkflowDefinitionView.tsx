@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
 import type { WorkflowDefinitionResponse } from '../contracts'
@@ -39,9 +40,9 @@ export function WorkflowDefinitionView(props: { profileKey: string; sourceId: st
   return <section classList={{ page: !props.embedded, 'workflow-definition-page': true, 'workflow-definition-embedded': props.embedded }}>
     <Show when={!props.embedded}><PageHeader eyebrow="WORKFLOW DEFINITION" title={current()?.name ?? 'Workflow definition'}
       description={current()?.definition.description ?? 'Inspect the workflow’s nodes and connections.'}
-      actions={<><button class="secondary" onClick={props.onBack}>Back to workflows</button>
-        <button class="secondary" onClick={() => void refetch()}>Refresh definition</button></>} /></Show>
-    <Show when={props.embedded}><div class="graph-toolbar"><span>ワークフローグラフ</span><button class="secondary" onClick={() => void refetch()}>Refresh definition</button></div></Show>
+      actions={<><ActionButton class="secondary" onClick={props.onBack}>Back to workflows</ActionButton>
+        <ActionButton class="secondary" onClick={() => void refetch()}>Refresh definition</ActionButton></>} /></Show>
+    <Show when={props.embedded}><div class="graph-toolbar"><span>ワークフローグラフ</span><ActionButton class="secondary" onClick={() => void refetch()}>Refresh definition</ActionButton></div></Show>
     <Show when={resource.loading}><LoadingState label="Loading workflow graph…" /></Show>
     <Show when={resource.error}><ErrorBanner message={String(resource.error)} /></Show>
     <Show when={current()} keyed>{(workflow) => {
@@ -81,6 +82,7 @@ export function WorkflowDefinitionView(props: { profileKey: string; sourceId: st
                 aria-label={`Inspect node ${node.title}`} aria-pressed={selectedId() === node.id}
                 onPointerDown={event => {
                   if (event.button !== 0) return
+                  event.preventDefault()
                   event.stopPropagation()
                   event.currentTarget.setPointerCapture(event.pointerId)
                   drag = { id: node.id, pointer: event.pointerId, x: event.clientX, y: event.clientY }
@@ -94,6 +96,7 @@ export function WorkflowDefinitionView(props: { profileKey: string; sourceId: st
                   drag.x = event.clientX; drag.y = event.clientY
                 }}
                 onPointerUp={() => { drag = undefined }} onPointerCancel={() => { drag = undefined }}
+                onLostPointerCapture={() => { drag = undefined }}
                 onClick={() => setSelectedId(node.id)}
                 onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(node.id) } }}>
                 <title>{node.title} · {node.nodeId} · {node.caption}</title>
@@ -110,14 +113,14 @@ export function WorkflowDefinitionView(props: { profileKey: string; sourceId: st
             <div class="definition-network-hint">Drag nodes to arrange · drag the background to pan · scroll to zoom</div>
           </div>
           <Show when={!props.embedded || selected()}><aside class="panel definition-node-inspector" aria-label="Node details">
-            <Show when={props.embedded}><button class="secondary" onClick={() => setSelectedId('')}>閉じる</button></Show>
+            <Show when={props.embedded}><ActionButton class="secondary" onClick={() => setSelectedId('')}>閉じる</ActionButton></Show>
             <Show when={selected()} fallback={<><h2>Node details</h2><p>Select a node in the graph to inspect its connections.</p></>}>{node => <>
               <h2>{node().title}</h2><p>{node().caption}</p>
               <dl><dt>Node</dt><dd>{node().nodeId}</dd><dt>Entry step</dt><dd>{node().entry ? 'Yes' : 'No'}</dd></dl>
               <h3>Outgoing connections</h3>
               <Show when={!graph.edges.some(edge => edge.from === node().id)}><p>No outgoing connections.</p></Show>
               <For each={graph.edges.filter(edge => edge.from === node().id)}>{edge =>
-                <button class="secondary" onClick={() => setSelectedId(edge.to)}>{nodeById.get(edge.to)?.title}{edge.label ? ` · ${edge.label}` : ''}</button>
+                <ActionButton class="secondary" onClick={() => setSelectedId(edge.to)}>{nodeById.get(edge.to)?.title}{edge.label ? ` · ${edge.label}` : ''}</ActionButton>
               }</For>
             </>}</Show>
           </aside></Show>

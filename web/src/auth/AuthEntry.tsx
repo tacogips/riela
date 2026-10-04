@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { Show, createSignal, onCleanup, onMount } from 'solid-js'
 import { App } from '../App'
 import { isDesktop, setBrowserAccessToken } from '../transport'
@@ -64,9 +65,9 @@ function AuthLanding(props: { route: AuthRoute; onConnected: (token: string) => 
         <strong>{code()}</strong>
       </>}><p>Create a Passkey for this server. Your device keeps the private key; no password is needed.</p></Show>
       <Show when={error()}><p role="alert">{error()}</p></Show>
-      <button disabled={busy() || (props.route.kind === 'device' && !code())} onClick={() => void submit()}>
+      <ActionButton disabled={busy() || (props.route.kind === 'device' && !code())} onClick={() => void submit()}>
         {busy() ? 'Waiting for your Passkey…' : props.route.kind === 'register' ? 'Create Passkey' : 'Code matches — sign in with Passkey'}
-      </button>
+      </ActionButton>
     </Show>
   </main>
 }

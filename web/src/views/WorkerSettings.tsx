@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { Index, Show, createEffect, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
 import { isDesktop, rielaFetch } from '../transport'
@@ -55,7 +56,7 @@ export function WorkerSettings(props: { profileKey: string }) {
     } catch (error) { setFailed(true); setMessage(error instanceof Error ? error.message : String(error)) }
   }
   return <section class="panel settings-panel">
-    <div class="section-title"><div><h2>Worker Controller</h2><p>Authorize remote workers and configure their connection to this profile.</p></div><button class="secondary" disabled={saving()} onClick={() => void refetch()}>Refresh workers</button></div>
+    <div class="section-title"><div><h2>Worker Controller</h2><p>Authorize remote workers and configure their connection to this profile.</p></div><ActionButton class="secondary" disabled={saving()} onClick={() => void refetch()}>Refresh workers</ActionButton></div>
     <Show when={snapshot.error}><ErrorBanner message={String(snapshot.error)} /></Show>
     <Show when={draft()}>{(value) => <form onSubmit={(event) => { event.preventDefault(); void save() }}>
       <p role="status">{snapshot()?.status}</p>
@@ -71,15 +72,15 @@ export function WorkerSettings(props: { profileKey: string }) {
           <label><span>Groups (comma-separated)</span><input value={worker().groups.join(', ')} onChange={(event) => updateWorker(index, { groups: [...new Set(event.currentTarget.value.split(',').map((group) => group.trim()).filter(Boolean))] })} /></label>
           <label><span>Token environment variable</span><input required pattern="[A-Za-z_][A-Za-z0-9_]*" value={worker().tokenEnvironment} onInput={(event) => updateWorker(index, { tokenEnvironment: event.currentTarget.value })} /></label>
           <label><span>Capacity</span><input required type="number" min="1" max="1024" value={worker().maxCapacity} onInput={(event) => updateWorker(index, { maxCapacity: Number(event.currentTarget.value) })} /></label>
-          <button type="button" class="secondary" onClick={() => setDraft({ ...value(), workers: value().workers.filter((_, position) => position !== index) })}>Remove worker</button>
+          <ActionButton type="button" class="secondary" onClick={() => setDraft({ ...value(), workers: value().workers.filter((_, position) => position !== index) })}>Remove worker</ActionButton>
         </div>}</Index>
-        <div class="save-row"><button type="button" class="secondary" onClick={() => {
+        <div class="save-row"><ActionButton type="button" class="secondary" onClick={() => {
           let suffix = value().workers.length + 1
           while (value().workers.some((worker) => worker.id === `worker-${suffix}`)) suffix++
           setDraft({ ...value(), workers: [...value().workers, { id: `worker-${suffix}`, groups: [], tokenEnvironment: `RIELA_WORKER_${suffix}_TOKEN`, maxCapacity: 1 }] })
-        }}>Add worker</button></div>
+        }}>Add worker</ActionButton></div>
         <p>Set each token variable in <code>{snapshot()?.credentialsPath}</code> and on its worker. Use a unique secret of at least 32 characters per worker.</p>
-        <div class="save-row"><Show when={isDesktop()}><button type="button" class="secondary" onClick={() => void openCredentials()}>Edit credentials…</button></Show><button type="submit">{saving() ? 'Saving…' : 'Save and restart controller'}</button></div>
+        <div class="save-row"><Show when={isDesktop()}><ActionButton type="button" class="secondary" onClick={() => void openCredentials()}>Edit credentials…</ActionButton></Show><ActionButton type="submit">{saving() ? 'Saving…' : 'Save and restart controller'}</ActionButton></div>
       </fieldset>
     </form>}</Show>
     <Show when={message()}><p role="status" classList={{ 'error-banner': failed() }}>{message()}</p></Show>

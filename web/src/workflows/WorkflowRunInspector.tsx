@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { rielaFetch } from '../transport'
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { api } from '../api'
@@ -43,14 +44,14 @@ export function WorkflowRunInspector(props: {
     <p>Recorded values can contain sensitive workflow inputs and outputs. They are shown as stored.</p>
     <form onSubmit={(event) => { event.preventDefault(); setAttemptId(''); setSessionId(input().trim()) }}>
       <label>Run session ID<input value={input()} onInput={(event) => setInput(event.currentTarget.value)} /></label>
-      <button disabled={!input().trim()}>Open run</button>
+      <ActionButton disabled={!input().trim()}>Open run</ActionButton>
     </form>
     <Show when={run.error()}><p role="alert">{String(run.error())}</p></Show>
     <Show when={run.data()}>{(record) => <>
       <p role="status">{record().workflowId} · {record().status} · Current step: {record().currentStepId ?? 'none'}</p>
       <Show when={!matchesGraph()}><p role="status">This run belongs to another workflow. Graph highlighting and step filtering are disabled.</p></Show>
       <p>{record().steps.length} of {record().stepsTotalCount} recorded attempts.<Show when={matchesGraph()}> Select a graph step to filter.</Show></p>
-      <div class="editor-attempts"><For each={record().steps}>{(step) => <button class="secondary" onClick={() => { if (matchesGraph()) props.onSelectStep(step.stepId); setAttemptId(step.executionId) }}>{step.stepId} · attempt {step.attempt} · {step.status}</button>}</For></div>
+      <div class="editor-attempts"><For each={record().steps}>{(step) => <ActionButton class="secondary" onClick={() => { if (matchesGraph()) props.onSelectStep(step.stepId); setAttemptId(step.executionId) }}>{step.stepId} · attempt {step.attempt} · {step.status}</ActionButton>}</For></div>
       <Show when={selected()}>{(step) => <div>
         <h4>{step().stepId} · {step().executionId}</h4>
         <Show when={values.error()}><p role="alert">{String(values.error())}</p></Show>

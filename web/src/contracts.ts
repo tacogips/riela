@@ -71,7 +71,7 @@ export interface WorkflowSources {
   directories: string[]
   projectDirectories: string[]
   repositories: Array<{ id: string; source: string }>
-  discovered: Array<{ id: string; name: string; workflowId: string; scope: string; sourceKind: 'directory' | 'package' }>
+  discovered: Array<{ id: string; name: string; description?: string; workflowId: string; scope: string; sourceKind: 'directory' | 'package' }>
 }
 
 export interface NoteAPIClientInfo {

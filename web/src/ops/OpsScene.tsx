@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { createEffect, createSignal, onCleanup, onMount, type JSX } from 'solid-js'
 import './ops.css'
 import type { OpsBounds, OpsCamera } from './scene'
@@ -71,7 +72,8 @@ export function OpsScene(props: {
     }
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
-      if ((event.target as Element).closest('[data-canvas-interactive]')) return
+      if ((event.target as Element).closest('[data-canvas-interactive], button, input, select, textarea, a')) return
+      event.preventDefault()
       pan = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY, travel: 0 }
     }
     const onPointerMove = (event: PointerEvent) => {
@@ -94,6 +96,7 @@ export function OpsScene(props: {
       suppressClick = pan.travel > 6
       pan = undefined
       setDragging(false)
+      if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId)
     }
     const onClickCapture = (event: MouseEvent) => {
       if (suppressClick) {
@@ -106,6 +109,7 @@ export function OpsScene(props: {
     host.addEventListener('pointermove', onPointerMove)
     host.addEventListener('pointerup', onPointerEnd)
     host.addEventListener('pointercancel', onPointerEnd)
+    host.addEventListener('lostpointercapture', onPointerEnd)
     host.addEventListener('click', onClickCapture, true)
     onCleanup(() => {
       observer.disconnect()
@@ -114,6 +118,7 @@ export function OpsScene(props: {
       host.removeEventListener('pointermove', onPointerMove)
       host.removeEventListener('pointerup', onPointerEnd)
       host.removeEventListener('pointercancel', onPointerEnd)
+      host.removeEventListener('lostpointercapture', onPointerEnd)
       host.removeEventListener('click', onClickCapture, true)
     })
   })
@@ -149,9 +154,9 @@ export function OpsScene(props: {
         </g>
       </svg>
       <div class="ops-zoom" role="group" aria-label="Zoom controls">
-        <button type="button" aria-label="Zoom in" onClick={() => zoomAtCenter(1.35)}>+</button>
-        <button type="button" aria-label="Zoom out" onClick={() => zoomAtCenter(1 / 1.35)}>−</button>
-        <button type="button" aria-label="Fit view" onClick={fit}>⤢</button>
+        <ActionButton type="button" aria-label="Zoom in" onClick={() => zoomAtCenter(1.35)}>+</ActionButton>
+        <ActionButton type="button" aria-label="Zoom out" onClick={() => zoomAtCenter(1 / 1.35)}>−</ActionButton>
+        <ActionButton type="button" aria-label="Fit view" onClick={fit}>⤢</ActionButton>
       </div>
     </div>
   )

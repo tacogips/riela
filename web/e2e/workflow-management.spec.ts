@@ -46,7 +46,7 @@ const mutableWorkflow = {
   activationState: 'ACTIVE',
   valid: true,
   definitionRevision: 'rev-1',
-  definition: { workflowId: 'mutable-review', defaults: {}, nodes: [], steps: [] },
+  definition: { workflowId: 'mutable-review', defaults: { nodeTimeoutMs: 120000, maxLoopIterations: 3 }, nodes: [], steps: [] },
   diagnostics: [],
 }
 
@@ -56,7 +56,7 @@ const secondMutableWorkflow = {
   workflowId: 'mutable-second',
   name: 'Mutable second',
   definitionRevision: 'rev-2',
-  definition: { workflowId: 'mutable-second', defaults: {}, nodes: [], steps: [] },
+  definition: { workflowId: 'mutable-second', defaults: { nodeTimeoutMs: 120000, maxLoopIterations: 3 }, nodes: [], steps: [] },
 }
 
 async function installWorkflowAPI(page: Page, options: {
@@ -208,6 +208,12 @@ async function installWorkflowAPI(page: Page, options: {
         recovery: null,
         truncated: false,
       })
+    }
+    if (path === '/api/v1/workflow-editor/definition') {
+      const body = request.postDataJSON()
+      const workflow = body.originId === secondMutableWorkflow.originId ? secondMutableWorkflow : mutableWorkflow
+      if (options.staleMutableSelection) await new Promise(resolve => setTimeout(resolve, 300))
+      return json(workflow)
     }
     if (path === '/api/v1/workflows/sources') {
       return json({
@@ -365,39 +371,25 @@ test('discards an old instance response after selection changes', async ({ page 
   await expect(page.getByRole('button', { name: `Open run ${sessionId}`, exact: true })).toHaveCount(0)
 })
 
-test('inspects discovered definitions and edits a mutable workflow', async ({ page }) => {
+test('inspects discovered definitions and edits a mutable workflow on its graph', async ({ page }) => {
   await installWorkflowAPI(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
   await openConfiguration(page)
-  await expect(page.getByRole('group', { name: 'Workflow graph Review loop', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'ワークフロー定義', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Discovered workflows', exact: true })).toHaveCount(0)
-  await expect(page).toHaveURL(/#\/workflows\/source-review\/configurations\/project%3Aworkflow\/definition$/)
   await expect(page.getByRole('button', { name: 'Inspect node review', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Validation diagnostics', exact: true })).toBeVisible()
   await expect(page.getByText('workflow validation failed (truncated)', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ワークフロー定義', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'ワークフロー一覧へ', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await page.getByRole('button', { name: 'Select mutable workflow Mutable review', exact: true }).click()
-  await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
-  await page.getByLabel('Mutable workflow definition', { exact: true }).fill('{"workflowId":"mutable-review","defaults":{},"nodes":[],"steps":[]}')
+  await page.getByRole('button', { name: 'グラフを編集 Mutable review', exact: true }).click()
+  await page.getByRole('button', { name: 'Add agent step', exact: true }).click()
   await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
-  await expect(page.getByText('Mutable workflow updated.', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('Mutable workflow definition', { exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
-  await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
-  await expect(page.getByLabel('Mutable workflow definition', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Workflow saved.', { exact: true })).toBeVisible()
 })
 
 test('hides retained discovered-definition state while a new source loads', async ({ page }) => {
   await installWorkflowAPI(page, { staleSourceSelection: true })
   await page.goto('/')
   await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
   await openConfiguration(page)
-  await page.getByRole('button', { name: 'ワークフロー定義', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Inspect node review', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'ワークフロー一覧へ', exact: true }).click()
   await page.getByRole('button', { name: 'ワークフローを開く Second loop', exact: true }).click()
@@ -406,72 +398,54 @@ test('hides retained discovered-definition state while a new source loads', asyn
   await expect(page.getByRole('button', { name: 'Inspect node second', exact: true })).toBeVisible()
 })
 
-test('disables stale mutable actions while a different origin is loading', async ({ page }) => {
+test('keeps mutable actions disabled while its editor is loading', async ({ page }) => {
   await installWorkflowAPI(page, { staleMutableSelection: true })
   await page.goto('/')
-  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await page.getByRole('button', { name: 'Select mutable workflow Mutable review', exact: true }).click()
-  await expect(page.getByText(mutableWorkflow.originId, { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Select mutable workflow Mutable second', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Edit JSON', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0)
-  await expect(page.getByText(secondMutableWorkflow.originId, { exact: true })).toBeVisible()
-  await expect(page.getByText(mutableWorkflow.originId, { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'グラフを編集 Mutable second', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'グラフを編集 Mutable review', exact: true })).toBeDisabled()
+  await expect(page.getByLabel('Workflow ID', { exact: true })).toHaveValue('mutable-second')
 })
 
-test('surfaces registry conflicts with refresh recovery', async ({ page }) => {
+test('retains a graph draft on conflict and reloads the saved workflow', async ({ page }) => {
   await installWorkflowAPI(page, { registryConflictOnce: true })
   await page.goto('/')
-  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await page.getByRole('button', { name: 'Select mutable workflow Mutable review', exact: true }).click()
-  await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
+  await page.getByRole('button', { name: 'グラフを編集 Mutable review', exact: true }).click()
+  await page.getByRole('button', { name: 'Add agent step', exact: true }).click()
   await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
-  await expect(page.getByText('Changed elsewhere — refresh the registry before trying again.', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Refresh', exact: true }).last().click()
-  await expect(page.getByLabel('Mutable workflow definition', { exact: true })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Changed elsewhere')
+  await expect(page.getByRole('button', { name: 'Edit step-1', exact: true })).toBeVisible()
+  page.once('dialog', dialog => void dialog.accept())
+  await page.getByRole('button', { name: 'Reload saved workflow', exact: true }).click()
+  await page.getByRole('button', { name: 'Add agent step', exact: true }).click()
   await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
-  await expect(page.getByText('Mutable workflow updated.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Workflow saved.', { exact: true })).toBeVisible()
 })
 
-test('clears the pasted registration editor after success', async ({ page }) => {
+test('creates a workflow from the plus action with a graph', async ({ page }) => {
   await installWorkflowAPI(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await page.getByRole('button', { name: 'Register pasted JSON', exact: true }).click()
-  await page.getByLabel('New workflow definition', { exact: true }).fill(
-    '{"workflowId":"new-workflow","defaults":{},"nodes":[],"steps":[]}',
-  )
-  await page.getByRole('button', { name: 'Register workflow', exact: true }).click()
-  await expect(page.getByText('Mutable workflow registered.', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('New workflow definition', { exact: true })).toHaveCount(0)
-  await expect(page.getByLabel('Mutable workflow definition', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '新規ワークフローを作成', exact: true }).click()
+  await page.getByRole('button', { name: 'Add agent step', exact: true }).click()
+  await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
+  await expect(page.getByText('Workflow saved.', { exact: true })).toBeVisible()
 })
 
-test('preserves server validation feedback without conflict recovery', async ({ page }) => {
+test('preserves validation feedback in the graph editor', async ({ page }) => {
   await installWorkflowAPI(page, { registryValidationFailure: true })
   await page.goto('/')
-  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await page.getByRole('button', { name: 'Select mutable workflow Mutable review', exact: true }).click()
-  await page.getByRole('button', { name: 'Edit JSON', exact: true }).click()
+  await page.getByRole('button', { name: 'グラフを編集 Mutable review', exact: true }).click()
+  await page.getByRole('button', { name: 'Add agent step', exact: true }).click()
   await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
-  await expect(page.getByText('Referenced node file is missing.', { exact: true })).toBeVisible()
-  await expect(page.getByText('Changed elsewhere — refresh the registry before trying again.', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('alert')).toContainText('Referenced node file is missing.')
+  await expect(page.getByRole('button', { name: 'Reload saved workflow' })).toHaveCount(0)
 })
 
 test('deactivates and confirmed-deletes a mutable workflow', async ({ page }) => {
   await installWorkflowAPI(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'ワークフロー', exact: true }).click()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await page.getByRole('button', { name: 'Select mutable workflow Mutable review', exact: true }).click()
   await page.getByRole('button', { name: 'Deactivate', exact: true }).click()
   await expect(page.getByText('Workflow deactivated.', { exact: true })).toBeVisible()
-  page.once('dialog', (dialog) => void dialog.accept())
+  page.once('dialog', dialog => void dialog.accept())
   await page.getByRole('button', { name: 'Delete', exact: true }).click()
   await expect(page.getByText('Workflow deleted.', { exact: true })).toBeVisible()
 })

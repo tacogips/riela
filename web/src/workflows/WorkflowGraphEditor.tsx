@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show, createEffect, createMemo, createSignal } from 'solid-js'
 import { OpsScene } from '../ops/OpsScene'
 import { addStep, connectSteps, graphDocument, graphProblems, isLocalTransition, removeStep, type GraphDocument } from './graph'
@@ -100,12 +101,12 @@ export function WorkflowGraphEditor(props: {
     <fieldset disabled={locked()} class="editor-controls">
     <header class="editor-toolbar">
       <strong>Workflow studio</strong>
-      <button class="secondary" onClick={() => { if (undo().length === 0 || window.confirm('Discard unsaved workflow changes?')) props.onClose() }}>Back to graph</button>
-      <button disabled={props.saving} onClick={() => { const next = addStep(doc()); change(next); setSelected(next.steps.at(-1)!.id) }}>Add agent step</button>
-      <button class="secondary" disabled={!undo().length || props.saving} onClick={() => history(true)}>Undo</button>
-      <button class="secondary" disabled={!redo().length || props.saving} onClick={() => history(false)}>Redo</button>
-      <button class="secondary" onClick={() => { setJSON(JSON.stringify(doc(), null, 2)); setAdvanced(!advanced()) }}>Workflow JSON</button>
-      <button disabled={props.saving || problems().length > 0} onClick={() => props.onSave(doc())}>{props.saving ? 'Saving…' : 'Save workflow'}</button>
+      <ActionButton class="secondary" onClick={() => { if (undo().length === 0 || window.confirm('Discard unsaved workflow changes?')) props.onClose() }}>Back to graph</ActionButton>
+      <ActionButton disabled={props.saving} onClick={() => { const next = addStep(doc()); change(next); setSelected(next.steps.at(-1)!.id) }}>Add agent step</ActionButton>
+      <ActionButton class="secondary" disabled={!undo().length || props.saving} onClick={() => history(true)}>Undo</ActionButton>
+      <ActionButton class="secondary" disabled={!redo().length || props.saving} onClick={() => history(false)}>Redo</ActionButton>
+      <ActionButton class="secondary" onClick={() => { setJSON(JSON.stringify(doc(), null, 2)); setAdvanced(!advanced()) }}>Workflow JSON</ActionButton>
+      <ActionButton disabled={props.saving || problems().length > 0} onClick={() => props.onSave(doc())}>{props.saving ? 'Saving…' : 'Save workflow'}</ActionButton>
     </header>
     <Show when={error()}><p class="field-error" role="alert">{error()}</p></Show>
     <Show when={layoutError()}><p role="status">Browser storage is unavailable. Layout changes will last only for this session.</p></Show>
@@ -121,7 +122,8 @@ export function WorkflowGraphEditor(props: {
           }}</For>}</For>
           <For each={doc().steps}>{(item) => <g data-canvas-interactive="true" transform={`translate(${point(item.id).x},${point(item.id).y})`}
             onPointerDown={(event) => {
-              if (event.button !== 0 || (event.target as Element).closest('[data-port]')) return
+              if (event.button !== 0 || (event.target as Element).closest('[data-port], button')) return
+              event.preventDefault()
               setSelected(item.id)
               drag = { id: item.id, start: point(item.id), pointer: svgPoint(event) }
               event.currentTarget.setPointerCapture(event.pointerId)
@@ -131,12 +133,13 @@ export function WorkflowGraphEditor(props: {
               const p = svgPoint(event)
               setPositions({ ...positions(), [item.id]: { x: drag.start.x + p.x - drag.pointer.x, y: drag.start.y + p.y - drag.pointer.y } })
             }}
-            onPointerUp={() => { drag = undefined; persistLayout({ positions: positions() }) }} onPointerCancel={() => { drag = undefined; persistLayout({ positions: positions() }) }}>
+            onPointerUp={() => { drag = undefined; persistLayout({ positions: positions() }) }} onPointerCancel={() => { drag = undefined; persistLayout({ positions: positions() }) }}
+            onLostPointerCapture={() => { drag = undefined }}>
             <rect classList={{ 'editor-node': true, selected: selected() === item.id }} width="240" height="130" rx="12" />
             <text x="18" y="30" class="editor-node-title">{item.id}</text>
             <text x="18" y="57" class="editor-node-caption">{item.nodeId}</text>
             <text x="18" y="83" class="editor-node-caption">{String(item.role ?? 'worker')}{doc().entryStepId === item.id ? ' · entry' : ''}{stepStatuses()[item.id] ? ` · ${stepStatuses()[item.id]}` : ''}</text>
-            <foreignObject x="12" y="94" width="214" height="32"><button class="editor-select" onClick={() => setSelected(item.id)}>Edit {item.id}</button></foreignObject>
+            <foreignObject x="12" y="94" width="214" height="32"><ActionButton class="editor-select" onClick={() => setSelected(item.id)}>Edit {item.id}</ActionButton></foreignObject>
             <g data-port="true" role="button" tabindex="0" aria-label={`Connect to ${item.id}`} onClick={() => {
               if (connecting()) attempt(() => { change(connectSteps(doc(), connecting(), item.id)); setConnecting('') })
             }} onKeyDown={(event) => { if (event.key === 'Enter' && connecting()) attempt(() => { change(connectSteps(doc(), connecting(), item.id)); setConnecting('') }) }}>
@@ -149,7 +152,7 @@ export function WorkflowGraphEditor(props: {
           </g>}</For>
         </OpsScene>
         <div class="editor-hint" role="status">{connecting() ? `Connecting from ${connecting()} — choose an input port` : 'Drag nodes to arrange · drag background to pan · scroll to zoom'}</div>
-        <Show when={connecting()}><button class="editor-cancel-link secondary" onClick={() => setConnecting('')}>Cancel connection</button></Show>
+        <Show when={connecting()}><ActionButton class="editor-cancel-link secondary" onClick={() => setConnecting('')}>Cancel connection</ActionButton></Show>
       </div>
       <aside class="editor-inspector">
         <label>Workflow ID<input value={doc().workflowId} disabled={props.saving || Boolean(props.target)} onChange={(event) => change({ ...doc(), workflowId: event.currentTarget.value })} /></label>
@@ -182,13 +185,13 @@ export function WorkflowGraphEditor(props: {
             change(graphDocument({ ...doc(), nodes: doc().nodes.map((current) => current.id === item().nodeId ? replacement : current) }))
           })} /></label>
           <h4>Connections</h4>
-          <For each={item().transitions}>{(edge, index) => <div class="editor-connection"><span>→ {edge.toStepId}</span><button class="secondary" aria-label={`Disconnect ${item().id} to ${edge.toStepId}`} onClick={() => change({ ...doc(), steps: doc().steps.map((current) => current.id === item().id ? { ...current, transitions: current.transitions?.filter((_, n) => n !== index()) } : current) })}>Remove</button></div>}</For>
-          <button class="danger" disabled={props.saving} onClick={() => attempt(() => { change(removeStep(doc(), item().id)); setSelected('') })}>Delete step</button>
+          <For each={item().transitions}>{(edge, index) => <div class="editor-connection"><span>→ {edge.toStepId}</span><ActionButton class="secondary" aria-label={`Disconnect ${item().id} to ${edge.toStepId}`} onClick={() => change({ ...doc(), steps: doc().steps.map((current) => current.id === item().id ? { ...current, transitions: current.transitions?.filter((_, n) => n !== index()) } : current) })}>Remove</ActionButton></div>}</For>
+          <ActionButton class="danger" disabled={props.saving} onClick={() => attempt(() => { change(removeStep(doc(), item().id)); setSelected('') })}>Delete step</ActionButton>
         </>}</Show>
         <For each={problems()}>{(problem) => <p class="field-error">{problem}</p>}</For>
       </aside>
     </div>
-    <Show when={advanced()}><div class="editor-json"><label>Complete workflow definition<textarea rows="16" value={json()} onInput={(event) => setJSON(event.currentTarget.value)} /></label><button onClick={() => attempt(() => { change(graphDocument(JSON.parse(json()))); setAdvanced(false) })}>Apply JSON to graph</button></div></Show>
+    <Show when={advanced()}><div class="editor-json"><label>Complete workflow definition<textarea rows="16" value={json()} onInput={(event) => setJSON(event.currentTarget.value)} /></label><ActionButton onClick={() => attempt(() => { change(graphDocument(JSON.parse(json()))); setAdvanced(false) })}>Apply JSON to graph</ActionButton></div></Show>
     </fieldset>
     <WorkflowAgentChat definition={doc()} disabled={props.saving || Boolean(props.blocked)} onActive={setGenerating}
       onStart={() => { setUndo((items) => [...items.slice(-99), doc()]); setRedo([]) }}

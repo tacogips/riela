@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
 import { getOpsOverview } from '../console/client'
@@ -74,8 +75,8 @@ export function OpsRunView(props: {
               {sessionStatus()}
             </span>
           </Show>
-          <button class="secondary" onClick={props.onBack}>← Command deck</button>
-          <button class="secondary" onClick={() => void detail.refresh()}>Refresh</button>
+          <ActionButton class="secondary" onClick={props.onBack}>← Command deck</ActionButton>
+          <ActionButton class="secondary" onClick={() => void detail.refresh()}>Refresh</ActionButton>
         </div>
       </header>
       <div class="ops-main">
@@ -269,7 +270,7 @@ function RunStepDetailPanel(props: {
           <span class="eyebrow">{'// STEP TELEMETRY'}</span>
           <h2>{props.step.stepId}</h2>
         </div>
-        <button class="ops-detail-close ops-hud-button" aria-label="Close detail" onClick={props.onClose}>×</button>
+        <ActionButton class="ops-detail-close ops-hud-button" aria-label="Close detail" onClick={props.onClose}>×</ActionButton>
       </div>
       <div class="ops-detail-body">
         <div class="ops-chip-row">

@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show } from 'solid-js'
 import { api } from '../api'
 import { listConsoleInstances } from '../console/client'
@@ -28,7 +29,7 @@ export function LogsView(props: {
     ),
   )
 
-  return <section class="page"><PageHeader eyebrow="OBSERVABILITY" title="Run logs" description="Execution timelines and diagnostics resolved from Riela's session store." actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(executions.status())}</span><button class="secondary" disabled={!props.selectedInstanceId} onClick={() => void executions.refresh()}>Refresh</button></div>} />
+  return <section class="page"><PageHeader embedded={props.scoped} eyebrow="OBSERVABILITY" title="Run logs" description="Execution timelines and diagnostics resolved from Riela's session store." actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(executions.status())}</span><ActionButton class="secondary" disabled={!props.selectedInstanceId} onClick={() => void executions.refresh()}>Refresh</ActionButton></div>} />
     <Show when={instances.loading() && !instances.data()}><LoadingState label="実行設定を読み込み中…" /></Show>
     <Show when={instances.error()}><ErrorBanner message={errorMessage(instances.error())} /></Show>
     <Show when={!instances.loading() && !instances.error() && instances.data()?.items.length === 0}><EmptyState title="実行設定がありません" detail="ワークフローを追加すると、標準設定で実行できます。" /></Show>

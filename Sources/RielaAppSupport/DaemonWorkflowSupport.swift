@@ -37,6 +37,7 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
   public var managementId: String?
   public var workflowId: String
   public var displayName: String
+  public var description: String
   public var sourceDescription: String
   public var sourceScope: RielaAppDaemonWorkflowSourceScope
   public var workflowDirectory: String
@@ -59,13 +60,15 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
     workingDirectory: String,
     eventRoot: String?,
     eventSources: [RielaAppDaemonEventSourceSummary],
-    requiredEnvironment: [RielaAppEnvRequirement] = []
+    requiredEnvironment: [RielaAppEnvRequirement] = [],
+    description: String = ""
   ) {
     self.id = id
     self.sourceIdentity = sourceIdentity ?? id
     self.managementId = managementId
     self.workflowId = workflowId
     self.displayName = displayName
+    self.description = description
     self.sourceDescription = sourceDescription
     self.sourceScope = sourceScope
     self.workflowDirectory = workflowDirectory
@@ -115,7 +118,8 @@ public struct RielaAppDaemonWorkflowCandidate: Identifiable, Equatable, Sendable
       workingDirectory: workingDirectory,
       eventRoot: eventRoot,
       eventSources: eventSources,
-      requiredEnvironment: requiredEnvironment
+      requiredEnvironment: requiredEnvironment,
+      description: description
     )
   }
 }
@@ -392,6 +396,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
 public struct RielaAppDaemonWorkflowDiscovery: Sendable {
   private struct MinimalWorkflow: Decodable {
     var workflowId: String
+    var description: String?
   }
 
   private struct EventBinding: Decodable {
@@ -644,7 +649,8 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       requiredEnvironment: RielaAppWorkflowEnvironmentRequirements.requiredEnvironment(
         workflowDirectory: workflowDirectory,
         packageRequirements: requiredEnvironment
-      )
+      ),
+      description: workflow.description ?? ""
     )
   }
 

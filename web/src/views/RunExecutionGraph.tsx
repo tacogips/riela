@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, createMemo } from 'solid-js'
 import type { RunDetailResponse } from '../contracts'
 
@@ -26,6 +27,6 @@ export function RunExecutionGraph(props: { run: RunDetailResponse; selectedId: s
       }}</For>
       <For each={ids()}>{(id) => <g transform={`translate(${point(id).x},${point(id).y})`}><rect width="220" height="70" rx="8" fill="#171717" stroke="#737373" /><text x="12" y="27" fill="#f5f5f5">{id.length > 26 ? `${id.slice(0, 25)}…` : id}</text><text x="12" y="50" fill="#a3a3a3" font-size="11">{props.run.steps.filter((step) => step.stepId === id).length} recorded attempts</text><title>{id}</title></g>}</For>
     </svg>
-    <div class="trace-graph"><For each={ids()}>{(id) => <div class="trace-graph-entry"><strong>{id}</strong><For each={props.run.steps.filter((step) => step.stepId === id)}>{(step) => <button class="secondary" aria-label={`Inspect ${step.stepId} attempt ${step.attempt}`} aria-pressed={props.selectedId === step.executionId} onClick={() => props.onSelect(step.executionId)}>Attempt {step.attempt} · {step.status}</button>}</For></div>}</For></div>
+    <div class="trace-graph"><For each={ids()}>{(id) => <div class="trace-graph-entry"><strong>{id}</strong><For each={props.run.steps.filter((step) => step.stepId === id)}>{(step) => <ActionButton class="secondary" aria-label={`Inspect ${step.stepId} attempt ${step.attempt}`} aria-pressed={props.selectedId === step.executionId} onClick={() => props.onSelect(step.executionId)}>Attempt {step.attempt} · {step.status}</ActionButton>}</For></div>}</For></div>
   </div>
 }

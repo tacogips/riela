@@ -33,7 +33,7 @@ async function fixture(page: Page, withRun = false) {
     const json = (value: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) })
     if (path === '/api/v1/bootstrap') return json({ apiVersion: 'v1', profile: 'test', csrfToken: 'test', revision, capabilities: [], server: { state: 'running' } })
     if (path === '/api/v1/workflows/sources') return json({ profile: 'test', revision, directories: [], projectDirectories: [], repositories: [], discovered: [
-      { id: sourceId, name: 'Repository A', workflowId: 'review', scope: 'project', sourceKind: 'directory' },
+      { id: sourceId, name: 'Repository A', description: 'Reviews pull requests and publishes results', workflowId: 'review', scope: 'project', sourceKind: 'directory' },
       { id: otherSource, name: 'Repository B', workflowId: 'review', scope: 'project', sourceKind: 'directory' },
     ] })
     if (path.endsWith('/definition')) return json({ revision, sourceId, workflowId: 'review', name: 'Repository A', scope: 'project', sourceKind: 'directory', definitionRevision: '1',
@@ -129,6 +129,7 @@ test('central graph stays visible beside configuration history and nodes can be 
   await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2)
   await page.mouse.down()
   await page.mouse.move(before!.x + before!.width / 2 + 60, before!.y + before!.height / 2 + 30, { steps: 5 })
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('')
   await page.mouse.up()
   const after = await node.boundingBox()
   expect(after!.x).toBeGreaterThan(before!.x + 40)
@@ -173,7 +174,7 @@ test('invalid graph shows a recoverable error without breaking configuration sel
   await expect(page.getByRole('button', { name: 'ワークフローを開く Repository A' })).toBeVisible()
 })
 
-test('graph does not wait for slow metadata or load the closed management registry', async ({ page }) => {
+test('graph does not wait for slow metadata or reload the registry', async ({ page }) => {
   await fixture(page)
   const items = [configuration(sourceId)]
   let metadataReads = 0
@@ -200,6 +201,56 @@ test('graph does not wait for slow metadata or load the closed management regist
   try {
     await expect(page.getByRole('group', { name: 'Workflow graph Repository A' })).toBeVisible({ timeout: 1500 })
     await expect(page.getByText('ソースが見つからないためグラフを表示できません。')).toHaveCount(0)
-    expect(registryReads).toBe(0)
+    expect(registryReads).toBe(1)
   } finally { releaseMetadata() }
+})
+
+for (const width of [320, 640, 1440]) {
+  test(`workflow list is compact, searchable and opens graph creation at ${width}px`, async ({ page }) => {
+    await fixture(page)
+    await page.setViewportSize({ width, height: 700 })
+    await page.goto('/')
+    const pane = page.getByRole('region', { name: 'ワークフロー一覧' })
+    await expect(pane).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'ワークフロー', exact: true })).toHaveCount(0)
+    const search = page.getByRole('searchbox', { name: 'ワークフローを正規表現で検索' })
+    await search.fill('pull.*requests')
+    await expect(pane.getByRole('button', { name: 'ワークフローを開く Repository A' })).toBeVisible()
+    await expect(pane.getByRole('button', { name: 'ワークフローを開く Repository B' })).toHaveCount(0)
+    await search.fill('[')
+    await expect(search).toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByRole('alert')).toBeVisible()
+    await search.fill('')
+    await expect(pane.getByRole('button', { name: 'ワークフローを開く Repository B' })).toBeVisible()
+    const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
+    await expect(refresh).toHaveAttribute('title', 'Refresh')
+    expect(await refresh.evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(40)
+    const size = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth }))
+    expect(size.width).toBeLessThanOrEqual(size.viewport)
+    await page.getByRole('button', { name: '新規ワークフローを作成' }).click()
+    await expect(page.getByRole('region', { name: 'Workflow graph editor' })).toBeVisible()
+    await page.getByRole('button', { name: 'Add agent step' }).click()
+    await expect(page.getByRole('button', { name: 'Edit step-1' })).toBeVisible()
+    await page.screenshot({ path: `../tmp/ui-audit/create-graph-${width}.png`, fullPage: true })
+  })
+}
+
+test('long workflow lists scroll without moving the search toolbar', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/v1/workflows/sources', route => route.fulfill({ json: {
+    profile: 'test', revision: 1, directories: [], projectDirectories: [], repositories: [],
+    discovered: Array.from({ length: 80 }, (_, i) => ({ id: `source-${i}`, name: `Workflow ${i}`, workflowId: `workflow-${i}`, scope: 'project', sourceKind: 'directory' })),
+  } }))
+  await page.setViewportSize({ width: 640, height: 500 })
+  await page.goto('/')
+  const pane = page.getByRole('region', { name: 'ワークフロー一覧' })
+  await expect(pane.getByRole('button')).toHaveCount(80)
+  const search = page.getByRole('searchbox')
+  const before = await search.boundingBox()
+  await pane.hover()
+  await page.mouse.wheel(0, 700)
+  await expect.poll(() => pane.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  expect((await search.boundingBox())?.y).toBe(before?.y)
+  expect(await page.locator('main').evaluate(element => element.scrollTop)).toBe(0)
+  await page.screenshot({ path: '../tmp/ui-audit/scrolled-workflows.png' })
 })

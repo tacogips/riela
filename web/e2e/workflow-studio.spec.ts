@@ -40,6 +40,7 @@ async function installStudio(page: Page, existing?: Record<string, unknown>) {
     if (path === '/api/v1/bootstrap') return route.fulfill({ json: { apiVersion: 'v1', profile: 'studio', csrfToken: 'csrf', revision: 1,
       capabilities: [], server: { revision: 1, isEnabled: true, configuredPort: 19091, state: 'running' } } })
     if (path === '/api/v1/workflow-editor/definition') return route.fulfill({ json: workflow() })
+    if (path === '/api/v1/workflows/sources') return route.fulfill({ json: { profile: 'studio', revision: 1, directories: [], projectDirectories: [], repositories: [], discovered: [] } })
     if (path === '/api/v1/workflow-editor/generations') {
       generationRequests.push(route.request().postDataJSON())
       expect(route.request().headers()['x-riela-profile']).toBe('studio')

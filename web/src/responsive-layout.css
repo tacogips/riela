@@ -1,0 +1,93 @@
+/* Shared content must fit the same widths as the desktop window. */
+.page-header { flex-wrap: wrap; align-items: center; }
+.page-header > div:first-child { min-width: 0; flex: 1 1 240px; }
+.page-header h1, .page-header h2 { overflow-wrap: anywhere; }
+.page-header h2 { margin: 5px 0 7px; font-size: 20px; }
+.header-actions, .refresh-actions, .save-row, .button-row,
+.registry-actions, .section-title, .add-source, .filter-row { flex-wrap: wrap; }
+.header-actions { display: flex; gap: 8px; max-width: 100%; }
+.panel, .editor-panel, .form-grid > *, .requirements, .secret-editor { min-width: 0; }
+.panel p, .panel code, .surface-notice, .error-banner, .mutation-message,
+.requirement-row, .registry-actions, .evidence-row { overflow-wrap: anywhere; }
+.mutation-message { flex-wrap: wrap; }
+.filter-row label { max-width: 100%; }
+.add-source .grow { min-width: min(200px, 100%); }
+.row-icon { flex-shrink: 0; }
+.list-row strong { overflow-wrap: anywhere; }
+.app-header .header-profile { min-width: 0; }
+.header-profile strong { display: inline-block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; white-space: nowrap; }
+.app-header nav button { flex-shrink: 0; white-space: nowrap; }
+.desktop-connection form { max-width: calc(100vw - 24px); }
+
+button.action-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 8px !important;
+}
+button.editor-select.action-icon-button { width: 28px; height: 28px; min-width: 28px; padding: 5px !important; }
+.action-icon-button > svg { flex-shrink: 0; }
+.action-button-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.app-header nav button.action-icon-button { padding: 8px; }
+.workflow-search { margin-bottom: 16px; }
+.workflow-search input { max-width: 620px; }
+
+.app-shell { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+.app-header { flex: none; }
+main { flex: 1; min-height: 0; overflow: auto; }
+.workflow-list-page { display: flex; flex-direction: column; gap: 12px; height: 100%; max-width: none; padding: 20px 24px; }
+.workflow-list-toolbar { display: flex; align-items: center; gap: 8px; flex: none; }
+.workflow-list-toolbar .grow { min-width: 0; }
+.workflow-list-pane { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 0 16px; scrollbar-gutter: stable; }
+.workflow-list-pane .list-row:first-child { border-top: 0; }
+.workflow-list-page .field-error { margin: 0; }
+.workflow-source-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+.workflow-source-row .list-row { flex: 1; min-width: 0; border-top: 0; }
+.workflow-source-row:last-child { border-bottom: 0; }
+.ops-shell { height: 100%; }
+@media (max-width: 760px) {
+  .workflow-list-page { padding: 12px; }
+  .ops-topline, .ops-topline-meta, .ops-detail-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 1100px) {
+  .app-header .server-card { display: none; }
+  .app-header .brand > div:last-child, .app-header .api-pill { display: none; }
+}
+
+@media (max-width: 760px) {
+  .app-header .header-profile { margin-left: auto; }
+  .app-header .desktop-connection { margin-left: 0; }
+  .header-profile strong { max-width: 100px; }
+  .page { padding-inline: 16px; }
+  .section-title { align-items: flex-start; }
+  .save-row { gap: 10px; }
+  .requirement-row { grid-template-columns: auto minmax(0, 1fr); }
+  .requirement-row > span:last-child { grid-column: 2; }
+}
+
+@media (max-width: 480px) {
+  .app-header { height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 8px; }
+  .app-header nav { order: 1; flex-basis: 100%; overflow: visible; flex-wrap: wrap; }
+  .workflow-list-toolbar { flex-wrap: wrap; }
+  .workflow-list-toolbar .grow { flex-basis: 100%; }
+  .instance-grid { grid-template-columns: minmax(0, 1fr); }
+  .panel, .editor-panel { padding: 16px; }
+  .execution-row { grid-template-columns: auto minmax(0, 1fr); }
+  .execution-row > .status-chip { grid-column: 2; justify-self: start; }
+  .button-row > button { flex-shrink: 1; }
+}

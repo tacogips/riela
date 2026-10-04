@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js'
 import { api } from '../api'
 import { rielaFetch } from '../transport'
@@ -39,8 +40,8 @@ export function RunTrace(props: { run: RunDetailResponse; profileKey: string }) 
   })
   return <section class="panel run-trace" aria-label="Run visualization">
     <div class="section-title"><h2>Execution trace</h2><div class="trace-modes" aria-label="Run display">
-      <button class="secondary" aria-pressed={mode() === 'trace'} onClick={() => setMode('trace')}>Trace timeline</button>
-      <button class="secondary" aria-pressed={mode() === 'graph'} onClick={() => setMode('graph')}>Graph</button>
+      <ActionButton class="secondary" aria-pressed={mode() === 'trace'} onClick={() => setMode('trace')}>Trace timeline</ActionButton>
+      <ActionButton class="secondary" aria-pressed={mode() === 'graph'} onClick={() => setMode('graph')}>Graph</ActionButton>
     </div></div>
     <p class="subtle">{props.run.steps.length} of {props.run.stepsTotalCount} attempts · {durationLabel(trace().duration)} elapsed · Select a row to inspect input and output.</p>
     <Show when={props.run.stepsTruncated || props.run.logsTruncated}><p class="truncation-notice">Partial trace: some executions or routing records are not included.</p></Show>
@@ -49,7 +50,7 @@ export function RunTrace(props: { run: RunDetailResponse; profileKey: string }) 
         <Show when={mode() === 'trace'} fallback={<RunExecutionGraph run={props.run} selectedId={selectedId()} onSelect={setSelectedId} />}>
           <div class="trace-scroll"><div class="trace-table">
             <div class="trace-axis"><strong>Step / Node</strong><div><For each={[0, 0.25, 0.5, 0.75, 1]}>{(fraction) => <span>{durationLabel(trace().duration * fraction)}</span>}</For></div></div>
-            <button class="trace-root secondary" aria-expanded={open()} onClick={() => setOpen(!open())}>{open() ? '▾' : '▸'} {props.run.session.workflowId} · {durationLabel(trace().duration)}</button>
+            <ActionButton class="trace-root secondary" aria-expanded={open()} onClick={() => setOpen(!open())}>{open() ? '▾' : '▸'} {props.run.session.workflowId} · {durationLabel(trace().duration)}</ActionButton>
             <Show when={open()}><For each={trace().rows}>{(row) => <>
               <div class="trace-row" classList={{ selected: selectedId() === row.step.executionId }}>
                 <button class="trace-expand secondary" aria-label={`Events for ${row.step.stepId} attempt ${row.step.attempt}`} aria-expanded={expanded().has(row.step.executionId)} onClick={() => toggle(row.step.executionId)}>{expanded().has(row.step.executionId) ? '▾' : '▸'}</button>
@@ -64,12 +65,12 @@ export function RunTrace(props: { run: RunDetailResponse; profileKey: string }) 
         </Show>
       </div>
       <Show when={selected()}>{(step) => <aside class="trace-inspector" aria-label="Execution input and output">
-        <button class="secondary" onClick={() => setSelectedId('')}>Close details</button>
+        <ActionButton class="secondary" onClick={() => setSelectedId('')}>Close details</ActionButton>
         <h3>{step().stepId} · attempt {step().attempt}</h3><p>{step().executionId}</p><p>{step().status} · {step().backend ?? 'default'}</p>
         <p>Started {new Date(step().startedAt).toLocaleString()}</p>
         <Show when={step().failureReason}><p role="alert">{step().failureReason}</p></Show>
         <Show when={values.loading() && !values.data()}><p role="status">Loading recorded values…</p></Show>
-        <Show when={values.error()}><p role="alert">{String(values.error())}</p><button class="secondary" onClick={() => void values.refresh()}>Retry values</button></Show>
+        <Show when={values.error()}><p role="alert">{String(values.error())}</p><ActionButton class="secondary" onClick={() => void values.refresh()}>Retry values</ActionButton></Show>
         <Show when={values.data()}>{(data) => <><h4>Input</h4><pre>{data().inputRecorded ? JSON.stringify(data().input, null, 2) : 'Input was not recorded for this attempt.'}</pre><h4>Output</h4><pre>{data().outputRecorded ? JSON.stringify(data().output, null, 2) : 'No accepted output recorded yet.'}</pre><Show when={data().responseText}><h4>Agent response log</h4><pre>{data().responseText}</pre></Show></>}</Show>
       </aside>}</Show>
     </div>

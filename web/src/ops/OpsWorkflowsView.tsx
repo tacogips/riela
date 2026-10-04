@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from 'solid-js'
 import { requireExpectedProfile } from '../api'
 import { getOpsOverview } from '../console/client'
@@ -113,10 +114,10 @@ export function OpsWorkflowsView(props: {
           <strong>Command deck<span class="ops-cursor" aria-hidden="true" /></strong>
         </div>
         <div class="ops-topline-meta">
-          <button onClick={() => setStudio(true)}>Create / edit workflow</button>
+          <ActionButton onClick={() => setStudio(true)}>Create / edit workflow</ActionButton>
           <span role="status">{pollingStatusLabel(overview.status())}</span>
           <span class="status-chip">{props.profileName || 'riela'}</span>
-          <button class="secondary" onClick={() => void overview.refresh()}>Refresh</button>
+          <ActionButton class="secondary" onClick={() => void overview.refresh()}>Refresh</ActionButton>
         </div>
       </header>
       <div class="ops-main">
@@ -152,7 +153,7 @@ export function OpsWorkflowsView(props: {
 
           <Show when={focusedHub()}>
             <div class="ops-back">
-              <button class="ops-hud-button" onClick={exitFocus}>← Deck</button>
+              <ActionButton class="ops-hud-button" onClick={exitFocus}>← Deck</ActionButton>
             </div>
           </Show>
           <Show when={overview.data()?.workflowsTruncated || overview.data()?.runsTruncated}>
@@ -160,11 +161,11 @@ export function OpsWorkflowsView(props: {
           </Show>
 
           <div class="ops-carousel" role="group" aria-label="Workflow carousel">
-            <button aria-label="Previous workflow" onClick={() => cycleFocus(-1)}>‹</button>
+            <ActionButton aria-label="Previous workflow" onClick={() => cycleFocus(-1)}>‹</ActionButton>
             <span class="ops-carousel-label">{focusedHub()?.workflow.name ?? `All systems · ${visibleHubs().length}`}</span>
-            <button aria-label="Next workflow" onClick={() => cycleFocus(1)}>›</button>
+            <ActionButton aria-label="Next workflow" onClick={() => cycleFocus(1)}>›</ActionButton>
             <Show when={focusedHub()}>
-              <button aria-label="Exit workflow focus" onClick={exitFocus}>×</button>
+              <ActionButton aria-label="Exit workflow focus" onClick={exitFocus}>×</ActionButton>
             </Show>
           </div>
 
@@ -464,7 +465,7 @@ function DeckDetailPanel(props: {
           <span class="eyebrow">{props.selection.kind === 'step' ? '// STEP' : '// WORKFLOW'}</span>
           <h2>{props.selection.kind === 'step' ? props.step?.id ?? '' : props.hub?.workflow.name ?? ''}</h2>
         </div>
-        <button class="ops-detail-close ops-hud-button" aria-label="Close detail" onClick={props.onClose}>×</button>
+        <ActionButton class="ops-detail-close ops-hud-button" aria-label="Close detail" onClick={props.onClose}>×</ActionButton>
       </div>
       <div class="ops-detail-body">
         <Show when={props.selection.kind === 'workflow' && props.hub}>{(hub) => <>
@@ -494,11 +495,11 @@ function DeckDetailPanel(props: {
               <span class="ops-route-glyph" style={{ color: statusStyle(run.status).color }}>◍</span>
               <strong>{truncateMiddle(run.sessionId, 22)}</strong>
               <small>{run.status}</small>
-              <button class="ops-route-open ops-hud-button" onClick={() => props.onOpenRun(run)}>open</button>
+              <ActionButton class="ops-route-open ops-hud-button" onClick={() => props.onOpenRun(run)}>open</ActionButton>
             </div>
           )}</For>
           <div class="ops-detail-actions">
-            <button class="secondary" onClick={props.onFocus}>Focus map</button>
+            <ActionButton class="secondary" onClick={props.onFocus}>Focus map</ActionButton>
           </div>
         </>}</Show>
 
@@ -524,7 +525,7 @@ function DeckDetailPanel(props: {
               <span class="ops-route-glyph">→</span>
               <strong>{transition.toStepId}</strong>
               <small>{transition.fanoutJoinStepId ? `fanout · join ${transition.fanoutJoinStepId}` : transition.label ?? ''}</small>
-              <button class="ops-route-open ops-hud-button" onClick={() => props.onSelectStep(transition.toStepId)}>view</button>
+              <ActionButton class="ops-route-open ops-hud-button" onClick={() => props.onSelectStep(transition.toStepId)}>view</ActionButton>
             </div>
           )}</For>
           <h3>Fed by</h3>
@@ -533,7 +534,7 @@ function DeckDetailPanel(props: {
             <div class="ops-route-row">
               <span class="ops-route-glyph">←</span>
               <strong>{feeder.id}</strong>
-              <button class="ops-route-open ops-hud-button" onClick={() => props.onSelectStep(feeder.id)}>view</button>
+              <ActionButton class="ops-route-open ops-hud-button" onClick={() => props.onSelectStep(feeder.id)}>view</ActionButton>
             </div>
           )}</For>
         </>}</Show>

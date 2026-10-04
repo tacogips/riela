@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createSignal, onCleanup } from 'solid-js'
 import { api, requireExpectedProfile } from '../api'
 import { listConsoleInstances } from '../console/client'
@@ -60,7 +61,7 @@ export function WorkflowRunConfigurationsView(props: {
   return <section class="page workflow-workspace-page">
     <PageHeader eyebrow="WORKFLOW" title={source()?.name ?? configurations()[0]?.workflowId ?? 'ワークフロー'}
       description="実行設定を選んで、設定・実行・履歴を確認できます。"
-      actions={<><button class="secondary" onClick={props.onBack}>ワークフロー一覧へ</button><button class="secondary" onClick={() => { void instances.refresh(); void sources.refresh() }}>Refresh configurations</button></>} />
+      actions={<><ActionButton class="secondary" onClick={props.onBack}>ワークフロー一覧へ</ActionButton><ActionButton class="secondary" onClick={() => { void instances.refresh(); void sources.refresh() }}>Refresh configurations</ActionButton></>} />
     <Show when={instances.loading() && !instances.data()}><LoadingState label="実行設定を読み込み中…" /></Show>
     <Show when={instances.error() || sources.error()}><ErrorBanner message={String(instances.error() ?? sources.error())} /></Show>
     <div class="workflow-workspace">
@@ -69,7 +70,7 @@ export function WorkflowRunConfigurationsView(props: {
       </div>
       <aside class="workflow-configurations-pane" aria-label="実行設定">
     <div class="configuration-list-section">
-      <div class="section-title"><h2>実行設定</h2><button disabled={!source() || saving()} onClick={() => setAdding(true)}>実行設定を追加</button></div>
+      <div class="section-title"><h2>実行設定</h2><ActionButton disabled={!source() || saving()} onClick={() => setAdding(true)}>実行設定を追加</ActionButton></div>
       <ul class="configuration-list" aria-label="実行設定の一覧"><For each={configurations()}>{item =>
         <li><button classList={{ 'configuration-list-row': true, selected: selected()?.id === item.id }}
           aria-pressed={selected()?.id === item.id} onClick={() => props.onSelect(item.id, 'settings')}>
@@ -81,16 +82,15 @@ export function WorkflowRunConfigurationsView(props: {
       }</For></ul>
       <Show when={adding()}><form class="add-source" onSubmit={event => { event.preventDefault(); void add() }}>
         <label class="grow"><span>実行設定の名前</span><input value={name()} onInput={event => setName(event.currentTarget.value)} autofocus /></label>
-        <button type="button" class="secondary" disabled={saving()} onClick={() => setAdding(false)}>キャンセル</button>
-        <button type="submit" disabled={!name().trim() || saving()}>{saving() ? '追加中…' : '追加'}</button>
+        <ActionButton type="button" class="secondary" disabled={saving()} onClick={() => setAdding(false)}>キャンセル</ActionButton>
+        <ActionButton type="submit" disabled={!name().trim() || saving()}>{saving() ? '追加中…' : '追加'}</ActionButton>
       </form></Show>
-      <Show when={error()}><ErrorBanner message={error()} /><button class="secondary" onClick={() => void instances.refresh()}>最新の設定を読み込む</button></Show>
+      <Show when={error()}><ErrorBanner message={error()} /><ActionButton class="secondary" onClick={() => void instances.refresh()}>最新の設定を読み込む</ActionButton></Show>
     </div>
     <Show when={selected()} fallback={<p class="surface-notice">実行設定を選択してください。</p>}>{item => <>
       <nav class="filter-row" aria-label="実行設定の表示">
-        <button class="secondary" aria-pressed={props.tab === 'settings'} onClick={() => props.onSelect(item().id, 'settings')}>設定・実行</button>
-        <button class="secondary" aria-pressed={props.tab === 'history'} onClick={() => props.onSelect(item().id, 'history')}>履歴</button>
-        <button class="secondary" disabled={!source()} aria-pressed={props.tab === 'definition'} onClick={() => props.onSelect(item().id, 'definition')}>ワークフロー定義</button>
+        <ActionButton class="secondary" aria-pressed={props.tab !== 'history'} onClick={() => props.onSelect(item().id, 'settings')}>設定・実行</ActionButton>
+        <ActionButton class="secondary" aria-pressed={props.tab === 'history'} onClick={() => props.onSelect(item().id, 'history')}>履歴</ActionButton>
       </nav>
       <Show when={props.tab !== 'history'}><Show when={item().status !== 'needsSource'} fallback={<MissingSourceDetail instance={item()} />}>
         <Show when={`${props.profileKey}:${item().id}`} keyed>{(_identity) => <InstanceEditor instance={item}

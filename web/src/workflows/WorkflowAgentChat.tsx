@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { rielaFetch } from '../transport'
 import { For, Show, createSignal, onCleanup } from 'solid-js'
 import { api } from '../api'
@@ -116,12 +117,12 @@ export function WorkflowAgentChat(props: {
       <For each={replies()}>{(text) => <p><strong>Agent</strong> {text}</p>}</For>
     </div>
     <Show when={error()}><p role="alert" class="field-error">{error()}</p>
-      <Show when={active()}><button class="secondary" onClick={() => { setError(''); void poll(epoch) }}>Retry connection</button></Show>
+      <Show when={active()}><ActionButton class="secondary" onClick={() => { setError(''); void poll(epoch) }}>Retry connection</ActionButton></Show>
     </Show>
     <form onSubmit={(event) => { event.preventDefault(); void send() }}>
       <label>Ask the agent<textarea rows="3" value={message()} placeholder="Create a research → draft → review workflow…" onInput={(event) => setMessage(event.currentTarget.value)} /></label>
-      <button type="submit" disabled={active() || props.disabled || !message().trim()}>Send to agent</button>
-      <Show when={active()}><button type="button" class="secondary" onClick={stop}>Stop generation</button></Show>
+      <ActionButton type="submit" disabled={active() || props.disabled || !message().trim()}>Send to agent</ActionButton>
+      <Show when={active()}><ActionButton type="button" class="secondary" onClick={stop}>Stop generation</ActionButton></Show>
     </form>
   </section>
 }

@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { Show, createSignal, onCleanup } from 'solid-js'
 import { desktopServerOrigin } from '../transport'
 import { authError, authRequest, openDesktopLogin, signInWithPasskey, type AuthResult, type DesktopLogin } from '../auth/passkeys'
@@ -60,13 +61,13 @@ export function ServerLoginView(props: { connecting: boolean; onConnect: (token:
     <p>Sign in with a Passkey registered on this server.</p>
     <Show when={desktopServerOrigin()}><p>{desktopServerOrigin()}</p></Show>
     <Show when={error()}><p role="alert">{error()}</p></Show>
-    <Show when={desktop()} fallback={<button onClick={() => void connect()} disabled={busy() || props.connecting}>
+    <Show when={desktop()} fallback={<ActionButton onClick={() => void connect()} disabled={busy() || props.connecting}>
       {busy() ? 'Signing in…' : desktopServerOrigin() ? 'Sign in using browser' : 'Sign in with Passkey'}
-    </button>}>{login => <>
+    </ActionButton>}>{login => <>
       <p>Confirm this code in your browser:</p><strong>{login().code}</strong>
       <p>Waiting for Passkey sign-in…</p>
-      <button onClick={() => void openDesktopLogin(login()).catch(error => setError(authError(error)))}>Open browser again</button>
-      <button onClick={cancel}>Cancel</button>
+      <ActionButton onClick={() => void openDesktopLogin(login()).catch(error => setError(authError(error)))}>Open browser again</ActionButton>
+      <ActionButton onClick={cancel}>Cancel</ActionButton>
     </>}</Show>
     <p>First time here? Ask the server administrator for a registration link.</p>
   </section>

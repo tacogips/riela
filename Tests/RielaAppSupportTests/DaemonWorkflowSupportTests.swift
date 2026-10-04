@@ -26,7 +26,7 @@ final class DaemonWorkflowSupportTests: XCTestCase {
   func testDiscoversUserWorkflowWithDaemonEventSource() throws {
     let root = try temporaryHome()
     let workflowDirectory = root.appendingPathComponent(".riela/workflows/chat-workflow", isDirectory: true)
-    try writeWorkflow(id: "chat-workflow", to: workflowDirectory)
+    try writeWorkflow(id: "chat-workflow", to: workflowDirectory, description: "Replies to team messages")
     try writeEventSource(
       id: "telegram-source",
       kind: "telegram-gateway",
@@ -43,6 +43,8 @@ final class DaemonWorkflowSupportTests: XCTestCase {
 
     XCTAssertEqual(candidates.map(\.workflowId), ["chat-workflow"])
     XCTAssertEqual(candidates.first?.sourceDescription, "user workflow")
+    XCTAssertEqual(candidates.first?.description, "Replies to team messages")
+    XCTAssertEqual(candidates.first?.managedInstance(identity: "copy").description, "Replies to team messages")
     XCTAssertEqual(candidates.first?.sourceScope, .external)
     XCTAssertEqual(candidates.first?.eventSourceSummary, "telegram-source:telegram-gateway")
   }
@@ -817,10 +819,10 @@ final class DaemonWorkflowSupportTests: XCTestCase {
     return root
   }
 
-  private func writeWorkflow(id: String, to directory: URL) throws {
+  private func writeWorkflow(id: String, to directory: URL, description: String = "") throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try """
-    {"workflowId":"\(id)","steps":[],"nodes":[]}
+    {"workflowId":"\(id)","description":"\(description)","steps":[],"nodes":[]}
     """.write(to: directory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
   }
 

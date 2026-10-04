@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { For, Show } from 'solid-js'
 import { api } from '../api'
 import type { RunDetailLog, RunDetailResponse, RunDetailStep } from '../contracts'
@@ -31,7 +32,7 @@ export function RunDetailView(props: {
     detail.data()?.steps ?? [],
   )
 
-  return <section class="page"><PageHeader eyebrow="RUN DETAIL" title={props.sessionId} description={`${props.workflowId} · persisted execution evidence`} actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(detail.status())}</span><button class="secondary" onClick={props.onBack}>Back to Run logs</button><button class="secondary" onClick={() => void detail.refresh()}>Refresh</button></div>} />
+  return <section class="page"><PageHeader eyebrow="RUN DETAIL" title={props.sessionId} description={`${props.workflowId} · persisted execution evidence`} actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(detail.status())}</span><ActionButton class="secondary" onClick={props.onBack}>Back to Run logs</ActionButton><ActionButton class="secondary" onClick={() => void detail.refresh()}>Refresh</ActionButton></div>} />
     <Show when={detail.loading() && !detail.data()}><LoadingState label="Loading run detail…" /></Show>
     <Show when={detail.error()}><ErrorBanner message={errorMessage(detail.error())} /></Show>
     <Show when={detail.data()}>{(run) => <>

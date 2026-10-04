@@ -1,3 +1,4 @@
+import { ActionButton } from './components/ActionButton'
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { desktopServerOrigin, hasBrowserAccessToken, isDesktop, setBrowserAccessToken } from './transport'
 import { DesktopConnection } from './views/DesktopConnection'
@@ -147,28 +148,23 @@ export function App() {
         </div>
         <nav aria-label="Primary navigation">
           <For each={visibleNavigation()}>{(item) => (
-            <button classList={{ active: view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
-              <span class="nav-glyph" aria-hidden="true">{item.glyph}</span>{item.label}
-            </button>
+            <ActionButton classList={{ active: view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
+              {item.label}
+            </ActionButton>
           )}</For>
         </nav>
         <Show when={host.data() && !authenticationRequired()}>
           <div class="header-profile">
-            <span class="eyebrow">{host.data()?.mode === 'cli-serve' ? 'HOST' : 'PROFILE'}</span>
             <strong>{host.data()?.bootstrap?.profile ?? 'riela serve'}</strong>
           </div>
-          <span class="api-pill">{host.data()?.mode === 'cli-serve' ? 'NOTE API' : `API ${host.data()?.bootstrap?.apiVersion}`}</span>
         </Show>
-        <div class="server-card" role="status" aria-live="polite">
-          <span classList={{ dot: true, live: !!host.data() && !host.error() }} />
-          <div><strong>{host.error() ? 'Disconnected' : !host.data() ? 'Connecting' : remoteOrigin ? 'Web mode connected' : isDesktop() ? 'Desktop connected' : 'Server connected'}</strong><span>{remoteOrigin || (isDesktop() ? 'RielaApp · Local' : location.host)}</span></div>
-        </div>
+        <Show when={!isDesktop()}><span class="source-label" role="status">{host.error() ? 'Disconnected' : !host.data() ? 'Connecting…' : 'Connected'}</span></Show>
         <Show when={isDesktop()}><DesktopConnection /></Show>
         <Show when={host.data() && !authenticationRequired() && hasBrowserAccessToken()}>
-          <button onClick={() => void authRequest('logout').catch(() => {}).finally(() => {
+          <ActionButton onClick={() => void authRequest('logout').catch(() => {}).finally(() => {
             setBrowserAccessToken('')
             window.location.reload()
-          })}>Sign out</button>
+          })}>Sign out</ActionButton>
         </Show>
       </header>
       <main id="main-content" tabindex="-1">
@@ -177,7 +173,7 @@ export function App() {
           setBrowserAccessToken(token)
           setConnectionRevision(value => value + 1)
         }} /></Show>
-        <Show when={host.error() && !authenticationRequired()}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(host.error())}</span><button onClick={() => void host.refresh()}>Try again</button></div></Show>
+        <Show when={host.error() && !authenticationRequired()}><div class="center-state error-panel"><strong>Could not connect</strong><span>{String(host.error())}</span><ActionButton onClick={() => void host.refresh()}>Try again</ActionButton></div></Show>
         <Show when={host.data() && !authenticationRequired()}>
           <Switch>
             <Match when={view() === 'logs'}><LogsView profileKey={profileKey()} selectedInstanceId={selectedInstanceId()} onSelectInstance={setSelectedInstanceId} onOpenRun={(execution) => { setSelectedRun({ sessionId: execution.sessionId, workflowId: execution.workflowId }); setView('run-detail') }} /></Match>

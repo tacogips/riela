@@ -68,6 +68,7 @@ public struct RielaWebAPIProjection {
           .object([
             "id": .string(source.id),
             "name": .string(source.displayName),
+            "description": .string(WorkflowWebProjectionPolicy().displayText(source.description).value),
             "workflowId": .string(source.workflowId),
             "scope": .string(source.sourceScope.rawValue),
             "sourceKind": .string(source.packageDirectory == nil ? "directory" : "package")

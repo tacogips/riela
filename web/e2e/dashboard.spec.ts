@@ -415,14 +415,13 @@ test('suppresses empty ids, resolves encoded ids, and saves instance configurati
 test('shows loading, empty, error, and mutation recovery states', async ({ page }) => {
   const fixture = await installAPI(page, { instancesDelay: 250, workflowMode: 'empty', mutationMode: 'conflict' })
   await page.goto('/')
-  await expect(page.getByText('ワークフローを読み込み中…')).toBeVisible()
-  await page.getByText('ワークフローの追加・管理', { exact: true }).click()
-  await expect(page.getByText('No sources configured')).toBeVisible()
-  await expect(page.getByText('Nothing discovered')).toBeVisible()
-  await page.getByLabel('Additional workflow directory').fill('/tmp/workflows')
+  await expect(page.getByText('Loading workflows…')).toBeVisible()
+  await page.getByRole('button', { name: 'Import directory', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'ワークフローを開く Removed workflow', exact: true })).toBeVisible()
+  await page.getByLabel('Workflow directory').fill('/tmp/workflows')
   await page.getByRole('button', { name: 'Add directory' }).click()
   await expect(page.getByText(/Changed elsewhere — refresh/)).toBeVisible()
-  await expect(page.getByLabel('Additional workflow directory')).toHaveValue('/tmp/workflows')
+  await expect(page.getByLabel('Workflow directory')).toHaveValue('/tmp/workflows')
   const sourceReadsBeforeRefresh = fixture.requests.filter((request) =>
     request === 'GET /api/v1/workflows/sources').length
   await page.getByRole('button', { name: 'Refresh', exact: true }).last().click()

@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { rielaFetch } from '../transport'
 import { Show, createEffect, createSignal } from 'solid-js'
 import { api } from '../api'
@@ -54,13 +55,13 @@ export function WorkflowRunControls(props: {
   return <section class="editor-chat" aria-label="Run workflow">
     <h3>Run saved workflow</h3>
     <Show when={!props.target || props.disabled}><p>Save the current graph before running.</p></Show>
-    <Show when={props.target?.activationState === 'DEACTIVATED'}><p>This workflow is deactivated.</p><button onClick={props.onActivate} disabled={props.disabled}>Activate workflow</button></Show>
+    <Show when={props.target?.activationState === 'DEACTIVATED'}><p>This workflow is deactivated.</p><ActionButton onClick={props.onActivate} disabled={props.disabled}>Activate workflow</ActionButton></Show>
     <form onSubmit={(event) => { event.preventDefault(); void start() }}>
       <label>Execution working directory<input placeholder="/absolute/path/to/project" value={directory()} onInput={(event) => setDirectory(event.currentTarget.value)} /></label>
       <label>Execution input JSON<textarea rows="4" value={variables()} onInput={(event) => setVariables(event.currentTarget.value)} /></label>
       <Show when={validateJSONObject(variables()).error}><p role="alert">{validateJSONObject(variables()).error}</p></Show>
-      <button disabled={props.disabled || !props.target || props.target.activationState !== 'ACTIVE' || !directory().startsWith('/')
-        || Boolean(validateJSONObject(variables()).error) || submitting() || Boolean(jobId() && !terminal())}>Run workflow</button>
+      <ActionButton disabled={props.disabled || !props.target || props.target.activationState !== 'ACTIVE' || !directory().startsWith('/')
+        || Boolean(validateJSONObject(variables()).error) || submitting() || Boolean(jobId() && !terminal())}>Run workflow</ActionButton>
     </form>
     <Show when={lastStatus()}><p role="status">Execution: {lastStatus()}</p></Show>
     <Show when={error() || job.error()}><p role="alert">{error() || String(job.error())}</p></Show>

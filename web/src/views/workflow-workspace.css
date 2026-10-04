@@ -61,6 +61,20 @@
 .configuration-list-row strong { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 12px; }
 .configuration-list-row .status-dot { flex-shrink: 0; }
 .configuration-state { flex-shrink: 0; color: var(--muted, #8b9eac); font-size: 11px; }
-.configuration-list-row .warning-badge { font-size: 10px; }
+.workflow-configurations-pane .configuration-list .configuration-list-row { flex-wrap: wrap; }
+.configuration-list-row .warning-badge { flex-basis: 100%; padding-left: 17px; font-size: 10px; }
 .workflow-configurations-pane .editor-panel { border: 0; border-top: 1px solid var(--line, #29434e); border-radius: 0; background: transparent; padding: 16px 0; box-shadow: none; }
 @media (max-width: 560px) { .workflow-configurations-pane { border-left: 0; padding-left: 0; } }
+
+@media (min-width: 561px) and (max-width: 760px) {
+  .workflow-workspace { grid-template-columns: minmax(0, 1fr); }
+  .workflow-graph-pane { position: static; }
+  .workflow-definition-embedded .definition-network-stage { min-height: 280px; height: 45vh; }
+  .workflow-configurations-pane { max-height: none; overflow: visible; border-left: 0; padding-left: 0; }
+}
+
+.workflow-configurations-pane .filter-row button[aria-pressed="true"] {
+  border-color: var(--accent, #ffffff) !important;
+  color: var(--accent-contrast, #000000) !important;
+  background: var(--accent, #ffffff) !important;
+}

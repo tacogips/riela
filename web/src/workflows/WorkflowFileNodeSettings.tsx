@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { rielaFetch } from '../transport'
 import { Show, createSignal, onCleanup } from 'solid-js'
 import { api } from '../api'
@@ -59,7 +60,7 @@ export function WorkflowFileNodeSettings(props: {
     finally { if (alive) setBusy(false) }
   }
   return <>
-    <button disabled={props.disabled || !props.target} onClick={() => void open()}>Edit file-backed node settings</button>
+    <ActionButton disabled={props.disabled || !props.target} onClick={() => void open()}>Edit file-backed node settings</ActionButton>
     <Show when={props.disabled || !props.target}><p>Save the graph before editing the node file.</p></Show>
     <dialog ref={dialog} class="editor-node-dialog" aria-label="File-backed node settings" onCancel={(event) => { event.preventDefault(); close() }}>
       <h3>File-backed node settings · {props.nodeId}</h3>
@@ -70,9 +71,9 @@ export function WorkflowFileNodeSettings(props: {
         <Show when={data().promptHidden || data().modelHidden}><p>Protected values are hidden and retained unless you type a replacement.</p></Show>
         <label>Node file prompt<textarea rows="10" disabled={busy()} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} /></label>
         <label>Node file model<input disabled={busy()} value={model()} onInput={(event) => setModel(event.currentTarget.value)} /></label>
-        <button disabled={busy() || !dirty()} onClick={() => void save()}>Save node settings</button>
+        <ActionButton disabled={busy() || !dirty()} onClick={() => void save()}>Save node settings</ActionButton>
       </>}</Show>
-      <button class="secondary" disabled={busy()} onClick={close}>Cancel node settings</button>
+      <ActionButton class="secondary" disabled={busy()} onClick={close}>Cancel node settings</ActionButton>
     </dialog>
   </>
 }

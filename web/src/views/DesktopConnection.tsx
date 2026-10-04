@@ -1,3 +1,4 @@
+import { ActionButton } from '../components/ActionButton'
 import { Show, createSignal } from 'solid-js'
 import { desktopServerOrigin, switchDesktopConnection } from '../transport'
 
@@ -6,7 +7,7 @@ export function DesktopConnection() {
   const [endpoint, setEndpoint] = createSignal(desktopServerOrigin())
   const [error, setError] = createSignal('')
   return <details class="desktop-connection">
-    <summary>Connection: {desktopServerOrigin() ? 'Web mode' : 'Local'}</summary>
+    <summary title={desktopServerOrigin() || 'Local'}>{desktopServerOrigin() ? 'Remote' : 'Local'}</summary>
     <form onSubmit={event => {
       event.preventDefault()
       try { switchDesktopConnection(mode() === 'web' ? endpoint() : '') }
@@ -19,7 +20,7 @@ export function DesktopConnection() {
         placeholder="https://riela.example" value={endpoint()} onInput={event => setEndpoint(event.currentTarget.value)} /></label></Show>
       <p>Changing connection reloads the console. Save edits first.</p>
       <Show when={error()}><p role="alert">{error()}</p></Show>
-      <button type="submit">Connect</button>
+      <ActionButton type="submit">Connect</ActionButton>
     </form>
   </details>
 }

@@ -127,7 +127,7 @@ operator identity where available.
 
 - `task handover`: required `--reason`; optional `--now`, `--to`, and `--sink`.
 - `task answer`: required `--question` and exactly one of `--answer-json`, `--answer-file`, `--text`, `--option`, or `--use-default`.
-- `task takeover`: optional `--packet`, `--handover-id`, `--force-orphan`, `--clone-into`, `--traits`, and `--sink`. Remote takeover adds `--endpoint`, `--auth-token` or `--auth-token-env` (default environment name `RIELA_MANAGER_AUTH_TOKEN`), and `--manager-session-id` (default environment name `RIELA_MANAGER_SESSION_ID`). `--endpoint` and `--force-orphan` cannot be combined.
+- `task takeover`: optional `--packet`, `--handover-id`, `--force-orphan`, `--clone-into`, `--traits`, and `--sink`. Remote takeover adds `--endpoint`, `--auth-token` or `--auth-token-env` (default environment name `RIELA_API_KEY`), and `--manager-session-id` (default environment name `RIELA_MANAGER_SESSION_ID`). `--endpoint` and `--force-orphan` cannot be combined.
 - `task handovers`: optional `--output json`.
 - `task reconcile`: requires `--expired-leases`; optional `--dry-run` and `--sink`.
 - `task serve`: requires `--takeover`; optional `--endpoint`, `--traits`, `--once`, and `--poll-interval-ms` (default 5000), plus `--auth-token`, `--auth-token-env`, and `--manager-session-id` for remote polling.

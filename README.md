@@ -236,17 +236,23 @@ For OpenRouter, use `https://openrouter.ai/api/v1` with Codex Agent and
 it in command arguments or workflow artifacts. Claude Code routing also clears
 `ANTHROPIC_API_KEY` so it cannot override `ANTHROPIC_AUTH_TOKEN`.
 
-Riela-owned environment names use the `RIELA_` prefix. Remote GraphQL workflow
-runs read `RIELA_MANAGER_AUTH_TOKEN` and optionally
-`RIELA_MANAGER_SESSION_ID`; the latter does not authorize execution.
-`workflow run --endpoint ...` accepts opaque `runtimeVariables`. The receiver
-rejects retired top-level `autoImprove` and `nestedSuperviser` fields by
-presence, including `false` and `null`, before starting provider work.
+Riela-owned environment names use the `RIELA_` prefix. In the Mac app's
+**Settings → API Keys**, issue a **Client API** key, optionally set an expiration,
+and copy the key when it is shown. Store that value securely on the client and
+set `RIELA_API_KEY` (or select an environment variable with `--auth-token-env`).
+The server no longer uses `RIELA_MANAGER_AUTH_TOKEN`.
 
-To run against a `riela serve` host, configure a nonempty
-`RIELA_MANAGER_AUTH_TOKEN` in the server's startup environment and provide the
-same bearer to the client. For example, with the token already set in the
-client environment:
+**Require an API key for client requests** defaults on. Turning it off admits
+clients without a key; invalid, expired or revoked supplied keys still fail.
+Worker keys always require authentication and bind to a configured worker ID.
+Key hashes and policy persist under `~/.riela/rielaapp/api-auth`; app restarts do
+not invalidate keys. The Mac app's custom app root uses its own `api-auth` directory.
+Key management is available only through the local desktop window. API keys do
+not grant access to key administration. See [API key management](docs/api-keys.md).
+
+Both the Mac app's optional loopback server and `riela serve` accept client keys.
+CLI hosting uses the same default store on the same OS account. With the issued
+key already set in the client environment:
 
 ```bash
 riela workflow run my-workflow --endpoint https://riela.example/graphql --output json

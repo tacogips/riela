@@ -50,6 +50,15 @@ final class RielaAppWebRouter: RielaHTTPRouteHandling, @unchecked Sendable {
       return response
     }
     if request.path == "/graphql" {
+      if request.headers["origin"] == nil, request.headers["x-riela-csrf"] == nil {
+        guard let app else { return .text(status: 503, "RielaApp is unavailable") }
+        let expectedHost = lock.withLock { "127.0.0.1:\(configuredPort)" }
+        guard request.headers["host"] == expectedHost else { return .text(status: 403, "Invalid host") }
+        if let rejection = RielaAPIKeyHTTPAuthorization.rejection(for: request, store: await app.apiKeyStore) {
+          return rejection
+        }
+        return await app.webGraphQLResponse(for: request, machineClient: true)
+      }
       if let rejection = securityRejection(for: request) {
         return rejection
       }

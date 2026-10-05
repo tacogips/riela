@@ -45,10 +45,29 @@ final class DistributedWorkerConfigurationTests: XCTestCase {
     let config = try decode(#"{"tokenFile":"worker.token"}"#)
     for ending in ["", "\n", "\r\n"] {
       try Data((token + ending).utf8).write(to: root.appendingPathComponent("worker.token"))
+      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: root.appendingPathComponent("worker.token").path)
       XCTAssertEqual(try config.resolveToken(relativeTo: root.appendingPathComponent("worker.json"), environment: [:]), token)
     }
     try Data(repeating: 97, count: 300).write(to: root.appendingPathComponent("worker.token"))
     XCTAssertThrowsError(try config.resolveToken(relativeTo: root.appendingPathComponent("worker.json"), environment: [:]))
+  }
+
+  func testWorkerKeyFileRejectsPublicPermissionsAndSymlink() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+      .deletingLastPathComponent().appendingPathComponent("tmp/api-key-worker/file-security/\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let keyURL = root.appendingPathComponent("worker.key")
+    try Data(String(repeating: "a", count: 40).utf8).write(to: keyURL)
+    let config = try decode(#"{"tokenFile":"worker.key"}"#)
+    let configURL = root.appendingPathComponent("worker.json")
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: keyURL.path)
+    XCTAssertThrowsError(try config.resolveToken(relativeTo: configURL, environment: [:]))
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
+    let linkURL = root.appendingPathComponent("linked.key")
+    try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: keyURL)
+    let linkConfig = try decode(#"{"tokenFile":"linked.key"}"#)
+    XCTAssertThrowsError(try linkConfig.resolveToken(relativeTo: configURL, environment: [:]))
   }
 
   func testEnvironmentCompatibilityAndAmbiguousCredentialsRejected() throws {

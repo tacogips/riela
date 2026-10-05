@@ -1,8 +1,8 @@
 import { ActionButton } from './ActionButton'
-import type { JSX } from 'solid-js'
+import { Show, type JSX } from 'solid-js'
 
-export function PageHeader(props: { eyebrow: string; title: string; description: string; actions?: JSX.Element; embedded?: boolean }) {
-  return <div class="page-header"><div><span class="eyebrow">{props.eyebrow}</span>{props.embedded ? <h2>{props.title}</h2> : <h1>{props.title}</h1>}<p>{props.description}</p></div><div class="header-actions">{props.actions}</div></div>
+export function PageHeader(props: { eyebrow: string; title: string; description?: string; actions?: JSX.Element; embedded?: boolean }) {
+  return <div class="page-header"><div><span class="eyebrow">{props.eyebrow}</span>{props.embedded ? <h2>{props.title}</h2> : <h1>{props.title}</h1>}<Show when={props.description}><p>{props.description}</p></Show></div><div class="header-actions">{props.actions}</div></div>
 }
 
 export function EmptyState(props: { title: string; detail: string }) {

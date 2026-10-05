@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 import RielaAdapters
 import RielaAddons
 import RielaCore
@@ -74,13 +79,27 @@ struct DistributedWorkerCommand: Sendable {
         guard !path.isEmpty else { throw DistributedWorkerTransportError.invalidConfiguration }
         let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
           : configURL.deletingLastPathComponent().appendingPathComponent(path)
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        let bytes = try handle.read(upToCount: 259) ?? Data()
-        guard bytes.count <= 258, var token = String(data: bytes, encoding: .utf8) else {
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard descriptor >= 0 else { throw DistributedWorkerTransportError.invalidConfiguration }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+          (metadata.st_mode & S_IFMT) == S_IFREG,
+          metadata.st_uid == getuid(), (metadata.st_mode & 0o077) == 0 else {
+          close(descriptor)
           throw DistributedWorkerTransportError.invalidConfiguration
         }
-        if token.hasSuffix("\r\n") || token.hasSuffix("\n") { token.removeLast() }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var bytes = try handle.read(upToCount: 259) ?? Data()
+        guard bytes.count <= 258 else { throw DistributedWorkerTransportError.invalidConfiguration }
+        if bytes.suffix(2) == Data([13, 10]) {
+          bytes.removeLast(2)
+        } else if bytes.last == 10 {
+          bytes.removeLast()
+        }
+        guard let token = String(data: bytes, encoding: .utf8) else {
+          throw DistributedWorkerTransportError.invalidConfiguration
+        }
         return token
       default:
         throw DistributedWorkerTransportError.invalidConfiguration
@@ -111,7 +130,8 @@ struct DistributedWorkerCommand: Sendable {
       Usage: riela worker --config <worker.json>
              riela worker status --config <controller.json>
       Connect outbound to a RielaApp or serve controller, or inspect controller-local status.
-      worker.json specifies controllerURL, capacity, workspaces and either tokenFile or tokenEnvironment.
+      worker.json specifies controllerURL, capacity, workspaces and tokenFile containing a Mac-issued worker API key.
+      The key file must be owned by the current user with permissions 0600. tokenEnvironment is also supported.
 
       """)
     }

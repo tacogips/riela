@@ -44,7 +44,7 @@ public struct WorkflowExecutionProvider: WorkflowExecutionGraphQLProviding {
       workingDirectory: workingDirectory
     )
     var nodeEnvironment = environment
-    nodeEnvironment["RIELA_MANAGER_AUTH_TOKEN"] = ""
+    nodeEnvironment["RIELA_API_KEY"] = ""
     let commandResult = await CLIRuntimeEnvironment.$overrides.withValue(nodeEnvironment) {
       await command.run(options)
     }

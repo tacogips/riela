@@ -24,15 +24,19 @@ button.action-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  gap: 7px;
+  flex: 0 1 auto;
+  width: auto;
+  min-height: 36px;
   min-width: 36px;
-  padding: 8px !important;
+  max-width: 100%;
+  padding: 8px 12px;
 }
-button.editor-select.action-icon-button { width: 28px; height: 28px; min-width: 28px; padding: 5px !important; }
-.action-icon-button > svg { flex-shrink: 0; }
-.action-button-caption {
+.action-icon-button > svg { flex-shrink: 0; width: 18px; height: 18px; }
+.action-button-caption { min-width: 0; overflow-wrap: anywhere; }
+button.action-icon-only { width: 36px; height: 36px; padding: 8px; flex-shrink: 0; }
+button.editor-select.action-icon-only { width: 28px; height: 28px; min-width: 28px; padding: 5px; }
+.action-icon-only .action-button-caption {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -42,7 +46,10 @@ button.editor-select.action-icon-button { width: 28px; height: 28px; min-width: 
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-.app-header nav button.action-icon-button { padding: 8px; }
+.app-header nav button.action-icon-button { padding: 8px 10px; }
+button.action-icon-button.danger { border-color: #7f1d1d !important; color: #fca5a5 !important; background: #1c0808 !important; }
+button.action-icon-button.danger:hover:not(:disabled) { border-color: #ef4444 !important; color: #fecaca !important; background: #450a0a !important; }
+button.action-icon-button.danger:disabled { border-color: #5b3232 !important; color: #966869 !important; background: #1a1212 !important; opacity: 1; }
 .workflow-search { margin-bottom: 16px; }
 .workflow-search input { max-width: 620px; }
 

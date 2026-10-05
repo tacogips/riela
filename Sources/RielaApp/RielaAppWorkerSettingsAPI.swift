@@ -20,7 +20,7 @@ extension RielaApp {
         if request.method == "GET" {
           let configuration = saved ?? .init(
             host: "127.0.0.1", port: 8788, storePath: "distributed/jobs.json",
-            workers: [.init(id: "worker-1", groups: [], tokenEnvironment: "RIELA_WORKER_1_TOKEN", maxCapacity: 1)]
+            workers: [.init(id: "worker-1", groups: [], maxCapacity: 1)]
           )
           let encoder = JSONEncoder()
           let encoded = try JSONDecoder().decode(JSONValue.self, from: encoder.encode(configuration))
@@ -28,8 +28,7 @@ extension RielaApp {
           return .json(status: 200, .object([
             "profile": .string(daemonProfileName.rawValue), "configuration": encoded,
             "savedConfiguration": original ?? .null,
-            "status": .string(distributedControllerStatus),
-            "credentialsPath": .string(url.deletingLastPathComponent().appendingPathComponent("controller.env").path)
+            "status": .string(distributedControllerStatus)
           ]))
         }
         guard request.method == "PUT" else { return .text(status: 405, "Method not allowed") }
@@ -44,7 +43,7 @@ extension RielaApp {
         return .json(status: message.hasPrefix("Settings saved.") ? 200 : 409, .object(["message": .string(message)]))
       } catch {
         return .json(status: 400, .object([
-          "message": .string("Cannot read or save controller settings. Check the address, port, storage path, unique worker IDs and token variable names.")
+          "message": .string("Cannot read or save controller settings. Check the address, port, storage path, unique worker IDs.")
         ]))
       }
     }

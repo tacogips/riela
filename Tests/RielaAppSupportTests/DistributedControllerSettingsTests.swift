@@ -43,14 +43,14 @@ final class DistributedControllerSettingsTests: XCTestCase {
     let firstURL = app.distributedControllerConfigurationURL
     guard firstURL.path.hasPrefix(root.path) else { throw XCTSkip("Controller environment override is active") }
     let config = try await availableConfiguration()
-    try writeProfile(config: config, url: firstURL, token: String(repeating: "a", count: 40))
+    let firstKey = try writeProfile(config: config, url: firstURL, app: app)
     let secondURL = firstURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("second/controller.json")
-    try writeProfile(config: try await availableConfiguration(), url: secondURL, token: String(repeating: "b", count: 40))
+    let secondKey = try writeProfile(config: try await availableConfiguration(), url: secondURL, app: app)
     await app.startDistributedController()
     let oldHost = try XCTUnwrap(app.distributedController)
     let oldPort = try XCTUnwrap(Int(app.distributedControllerStatus.split(separator: ":").last.map(String.init) ?? ""))
     let oldClient = try DistributedWorkerHTTPClient(
-      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(oldPort)")), token: String(repeating: "a", count: 40)
+      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(oldPort)")), token: firstKey
     )
     _ = try await oldClient.send(.init(operation: .register, capacity: 1))
     await app.switchDaemonProfileAndWait(to: "second")
@@ -66,7 +66,7 @@ final class DistributedControllerSettingsTests: XCTestCase {
     XCTAssertTrue(newWorkers.isEmpty, "Profiles must not share registrations")
     let newPort = try XCTUnwrap(Int(app.distributedControllerStatus.split(separator: ":").last.map(String.init) ?? ""))
     let newClient = try DistributedWorkerHTTPClient(
-      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(newPort)")), token: String(repeating: "b", count: 40)
+      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(newPort)")), token: secondKey
     )
     _ = try await newClient.send(.init(operation: .register, capacity: 1))
     let staleSave = await app.saveDistributedControllerConfiguration(configuration(), at: firstURL)
@@ -83,7 +83,7 @@ final class DistributedControllerSettingsTests: XCTestCase {
     let url = app.distributedControllerConfigurationURL
     guard url.path.hasPrefix(root.path) else { throw XCTSkip("Controller environment override is active") }
     let config = try await availableConfiguration()
-    try writeProfile(config: config, url: url, token: String(repeating: "c", count: 40))
+    _ = try writeProfile(config: config, url: url, app: app)
     await app.startDistributedController()
     let host = try XCTUnwrap(app.distributedController)
     _ = try await host.controller.enqueue(id: "queued", target: .init(), payload: [:])
@@ -127,10 +127,10 @@ final class DistributedControllerSettingsTests: XCTestCase {
     let firstURL = app.distributedControllerConfigurationURL
     guard firstURL.path.hasPrefix(root.path) else { throw XCTSkip("Controller environment override is active") }
     let config = try await availableConfiguration()
-    try writeProfile(config: config, url: firstURL, token: String(repeating: "a", count: 40))
+    _ = try writeProfile(config: config, url: firstURL, app: app)
     let secondURL = firstURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("second/controller.json")
     let second = try await availableConfiguration()
-    try writeProfile(config: second, url: secondURL, token: String(repeating: "b", count: 40))
+    let secondKey = try writeProfile(config: second, url: secondURL, app: app)
     await app.startDistributedController()
     let suspended = expectation(description: "controller transition suspended after stop")
     let gate = ControllerTransitionTestGate()
@@ -156,7 +156,7 @@ final class DistributedControllerSettingsTests: XCTestCase {
     XCTAssertEqual(app.daemonProfileName.rawValue, "second")
     XCTAssertEqual(app.distributedController?.configuration.port, second.port)
     let client = try DistributedWorkerHTTPClient(
-      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(second.port)")), token: String(repeating: "b", count: 40)
+      controllerURL: XCTUnwrap(URL(string: "http://127.0.0.1:\(second.port)")), token: secondKey
     )
     _ = try await client.send(.init(operation: .register, capacity: 1))
     let stale = await app.saveDistributedControllerConfiguration(config, at: firstURL)
@@ -166,7 +166,7 @@ final class DistributedControllerSettingsTests: XCTestCase {
 
   private func configuration() -> DistributedControllerConfiguration {
     .init(host: "127.0.0.1", port: 8788, storePath: "jobs.json", workers: [
-      .init(id: "worker", groups: ["linux"], tokenEnvironment: "RIELA_TEST_WORKER_TOKEN", maxCapacity: 1)
+      .init(id: "worker", groups: ["linux"], maxCapacity: 1)
     ])
   }
 
@@ -179,10 +179,10 @@ final class DistributedControllerSettingsTests: XCTestCase {
     return config
   }
 
-  private func writeProfile(config: DistributedControllerConfiguration, url: URL, token: String) throws {
+  private func writeProfile(config: DistributedControllerConfiguration, url: URL, app: RielaApp) throws -> String {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try JSONEncoder().encode(config).write(to: url)
-    try Data("RIELA_TEST_WORKER_TOKEN=\(token)\n".utf8).write(to: url.deletingLastPathComponent().appendingPathComponent("controller.env"))
+    return try app.apiKeyStore.issue(name: "Test worker", purpose: .worker, workerID: "worker").token
   }
 
   private func scratch() throws -> URL {

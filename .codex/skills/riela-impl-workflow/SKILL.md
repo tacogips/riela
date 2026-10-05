@@ -410,3 +410,21 @@ Keep these accepted residual risks explicit in later handoffs:
   flake;
 - SwiftLint retains three unchanged repository-baseline warnings; and
 - no browser E2E coverage was authored because no browser-facing file changed.
+
+## App-managed API authentication
+
+API keys are issued/revoked from the Mac local desktop Settings → API Keys screen,
+with optional server-enforced expiration and a persisted client-auth requirement
+switch. The app-global `api-auth` store saves SHA256 hashes only; native client
+GraphQL admission occurs before internal local trust. Key administration stays
+on inherited desktop IPC and is never granted by a client key. Browser console
+Host/Origin/CSRF and Passkey authority remain separate.
+
+`RIELA_API_KEY` selects the client credential; `RIELA_MANAGER_AUTH_TOKEN` is no
+longer a server authentication source. Worker keys are purpose/ID-bound and
+always required independently of client policy. Controller worker configuration
+contains IDs/groups/capacity, without plaintext credential references. Worker
+key files remain private owner-only regular files. Verify expiry and revocation
+on every operation, plus real register/claim/renew/events/complete communication,
+when changing this contract. Read `docs/api-keys.md` and the associated design
+and implementation plan for persistence, migration and acceptance evidence.

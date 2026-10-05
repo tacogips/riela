@@ -26,8 +26,8 @@ private struct RielaAppGraphQLExecutor: GraphQLDocumentExecuting {
 }
 
 extension RielaApp {
-  func webGraphQLResponse(for request: RielaHTTPRequest) async -> RielaHTTPResponse {
-    guard request.headers["x-riela-profile"] == daemonProfileName.rawValue else {
+  func webGraphQLResponse(for request: RielaHTTPRequest, machineClient: Bool = false) async -> RielaHTTPResponse {
+    guard machineClient || request.headers["x-riela-profile"] == daemonProfileName.rawValue else {
       return webGraphQLProfileConflictResponse()
     }
     var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()

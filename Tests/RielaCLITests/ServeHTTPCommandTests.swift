@@ -89,7 +89,7 @@ final class ServeHTTPCommandTests: XCTestCase {
       "id": "work", "nodeType": "command", "modelFreeze": false,
       "command": [
         "executable": "/bin/sh",
-        "arguments": ["-c", "test -z \"$RIELA_MANAGER_AUTH_TOKEN\" || exit 9; printf effect >> \"$1\"; printf '{\"ok\":true}\\n'", "work", effect.path]
+        "arguments": ["-c", "test -z \"$RIELA_API_KEY\" || exit 9; printf effect >> \"$1\"; printf '{\"ok\":true}\\n'", "work", effect.path]
       ]
     ]
     try JSONSerialization.data(withJSONObject: node).write(to: workflow.appendingPathComponent("nodes/work.json"))
@@ -99,9 +99,10 @@ final class ServeHTTPCommandTests: XCTestCase {
     ]
     try JSONSerialization.data(withJSONObject: finish).write(to: workflow.appendingPathComponent("nodes/finish.json"))
     let parsed = try ParsedParityOptions(["--working-dir", root.path, "--session-store", store.path])
+    let token = try serverAPIKeyStore(homeDirectory: root).issue(name: "test").token
     let adapter = serveMachineGraphQLAdapter(
       parsed: parsed,
-      environment: ["RIELA_MANAGER_AUTH_TOKEN": "test-operator", "HOME": root.path],
+      environment: ["RIELA_API_KEY": token, "HOME": root.path],
       workingDirectory: root.path
     )
     let server = RielaLocalHTTPServer(routeHandler: adapter)
@@ -122,18 +123,18 @@ final class ServeHTTPCommandTests: XCTestCase {
       XCTAssertEqual(errorCode(spoofed), "UNAUTHENTICATED")
       let unknown = try await postGraphQL(
         endpoint, query: mutation,
-        input: ["workflowName": "remote-fixture", "unknownOption": false], bearer: "test-operator"
+        input: ["workflowName": "remote-fixture", "unknownOption": false], bearer: token
       )
       XCTAssertEqual(errorCode(unknown), "INVALID_EXECUTION_INPUT")
       let malformed = try await postGraphQLDocument(
-        endpoint, query: mutation, variables: ["input": false], bearer: "test-operator"
+        endpoint, query: mutation, variables: ["input": false], bearer: token
       )
       XCTAssertEqual(errorCode(malformed), "INVALID_EXECUTION_INPUT")
       for key in ["autoImprove", "nestedSuperviser"] {
         for value: Any in [false, NSNull(), true, ["enabled": false]] {
           let rejected = try await postGraphQL(
             endpoint, query: mutation,
-            input: ["workflowName": "remote-fixture", key: value], bearer: "test-operator"
+            input: ["workflowName": "remote-fixture", key: value], bearer: token
           )
           XCTAssertEqual(errorCode(rejected), "INVALID_EXECUTION_INPUT", "\(key)=\(value)")
         }
@@ -152,12 +153,12 @@ final class ServeHTTPCommandTests: XCTestCase {
       XCTAssertFalse(FileManager.default.fileExists(atPath: store.path))
 
       let unconfigured = RielaLocalHTTPServer(routeHandler: serveMachineGraphQLAdapter(
-        parsed: parsed, environment: ["HOME": root.path], workingDirectory: root.path
+        parsed: parsed, environment: ["HOME": root.appendingPathComponent("unconfigured-home").path], workingDirectory: root.path
       ))
       let unconfiguredPort = try await unconfigured.startForTesting()
       let unconfiguredResponse = try await postGraphQL(
         "http://127.0.0.1:\(unconfiguredPort)/graphql", query: mutation,
-        input: ["workflowName": "remote-fixture"], bearer: "test-operator"
+        input: ["workflowName": "remote-fixture"], bearer: token
       )
       await unconfigured.stop()
       XCTAssertEqual(errorCode(unconfiguredResponse), "UNAUTHENTICATED")
@@ -176,7 +177,7 @@ final class ServeHTTPCommandTests: XCTestCase {
           maxLoopIterations: 2,
           disableDefaultLoopGuard: true,
           defaultTimeoutMs: 10_000,
-          authToken: "test-operator"
+          authToken: token
         )
       )
       XCTAssertEqual(remote.status, "completed")
@@ -200,7 +201,7 @@ final class ServeHTTPCommandTests: XCTestCase {
       let budgetFailure = try await URLSessionWorkflowGraphQLRunTransport().executeWorkflow(
         endpoint: endpoint,
         request: WorkflowRemoteRunRequest(
-          workflowName: "remote-fixture", maxSteps: 1, authToken: "test-operator"
+          workflowName: "remote-fixture", maxSteps: 1, authToken: token
         )
       )
       XCTAssertEqual(budgetFailure.status, "failed")
@@ -239,11 +240,11 @@ final class ServeHTTPCommandTests: XCTestCase {
         ]
       )
       let corrupt = try await postGraphQLDocument(
-        endpoint, query: summaryQuery, variables: ["id": "shape-session"], bearer: "test-operator"
+        endpoint, query: summaryQuery, variables: ["id": "shape-session"], bearer: token
       )
       XCTAssertEqual(errorCode(corrupt), "WORKFLOW_EXECUTION_FAILED")
       let absent = try await postGraphQLDocument(
-        endpoint, query: summaryQuery, variables: ["id": "absent-session"], bearer: "test-operator"
+        endpoint, query: summaryQuery, variables: ["id": "absent-session"], bearer: token
       )
       XCTAssertNil(errorCode(absent))
       XCTAssertTrue(((absent["data"] as? [String: Any])?["workflowExecution"]) is NSNull)
@@ -273,9 +274,10 @@ final class ServeHTTPCommandTests: XCTestCase {
        "command":{"executable":"/bin/sleep","arguments":["60"]}}
       """#.utf8).write(to: workflow.appendingPathComponent("nodes/work.json"))
     let parsed = try ParsedParityOptions(["--working-dir", root.path, "--session-store", store.path])
+    let token = try serverAPIKeyStore(homeDirectory: root).issue(name: "test").token
     let server = RielaLocalHTTPServer(routeHandler: serveMachineGraphQLAdapter(
       parsed: parsed,
-      environment: ["RIELA_MANAGER_AUTH_TOKEN": "test-operator", "HOME": root.path],
+      environment: ["RIELA_API_KEY": token, "HOME": root.path],
       workingDirectory: root.path
     ))
     let port = try await server.startForTesting()
@@ -283,7 +285,7 @@ final class ServeHTTPCommandTests: XCTestCase {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("Bearer test-operator", forHTTPHeaderField: "Authorization")
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.httpBody = try JSONSerialization.data(withJSONObject: [
       "query": "mutation { executeWorkflow(input: {workflowName: \"cancel-fixture\"}) { sessionId status } }"
     ])

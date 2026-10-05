@@ -65,14 +65,14 @@ public struct DistributedWorkerResponse: Codable, Sendable {
   public let leaseDurationSeconds: Double
 }
 
-/// Kept in controller configuration, never sent to workers or status endpoints.
-public struct DistributedWorkerCredential: Sendable {
-  public let workerId: String
-  public let groups: Set<String>
-  public let token: String
-  public let maxCapacity: Int
+/// Internal transport fixture credentials; production authentication uses RielaAPIKeyStore.
+struct DistributedWorkerCredential: Sendable {
+  let workerId: String
+  let groups: Set<String>
+  let token: String
+  let maxCapacity: Int
 
-  public init(workerId: String, groups: Set<String>, token: String, maxCapacity: Int = 4) {
+  init(workerId: String, groups: Set<String>, token: String, maxCapacity: Int = 4) {
     self.workerId = workerId
     self.groups = groups
     self.token = token

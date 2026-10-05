@@ -27,17 +27,19 @@ Create `controller.json` on the controller machine:
     {
       "id": "linux-1",
       "groups": ["linux", "build"],
-      "tokenEnvironment": "RIELA_LINUX_WORKER_TOKEN",
       "maxCapacity": 2
     }
   ]
 }
 ```
 
-Set `RIELA_LINUX_WORKER_TOKEN` to a unique secret of at least 32 printable ASCII
-characters, using the same value on that worker. Each worker has its own token,
-ID and controller-authorized groups. `storePath` is relative to the configuration
-file unless absolute. Keep it on the controller's local filesystem.
+In the Mac app, save the configured worker ID, groups and capacity first. In
+**Settings → API Keys**, issue a **Worker → controller** key for that ID,
+optionally set an expiration, and copy it to the worker. Each key binds to one
+worker ID. The controller stores only its hash, checks expiration and revocation
+on every message, and assigns configured groups/capacity. Disabling client API
+key requirements never disables worker authentication. `storePath` is relative
+to the configuration file unless absolute; keep it on the controller filesystem.
 
 For CLI hosting:
 
@@ -51,11 +53,10 @@ Local `riela workflow run`, `session resume` and `session rerun` processes use
 the same `RIELA_CONTROLLER_CONFIG` to access the process-locked queue.
 
 For RielaApp, place `controller.json` in the active profile directory, normally
-`~/.riela/rielaapp/profiles/default/`. Put the token assignment in the adjacent
-`controller.env` file when launching the app through Finder. The menu's
-**Worker Controller Settings...** opens Tauri Settings to edit the listen address,
-port, queue storage, worker IDs, groups, token variable names and capacities.
-Use **Edit credentials…** to open the private `controller.env` file.
+`~/.riela/rielaapp/profiles/default/`. The menu's
+**Worker Controller Settings...** opens local desktop Settings to edit the listen
+address, port, queue storage, worker IDs, groups and capacities. Keys are issued
+and revoked separately in **API Keys**; `controller.env` is no longer used.
 **Save and restart controller** persists the settings and restarts the listener after
 queued/running jobs have finished or been cancelled. This check also applies while the controller
 is stopped. Saving is atomic with respect to local queue submissions. Processes
@@ -65,8 +66,9 @@ configured controller automatically; **Start Worker Controller** and **Stop
 Worker Controller** control it independently of the web server. No separate
 `riela serve` process or web assets are required for the worker listener.
 `RIELA_CONTROLLER_CONFIG` overrides the profile configuration location.
-Profile switches stop the previous listener and use the new profile's credentials
-and queue. Settings reload on a profile switch; stale profile or configuration
+Profile switches stop the previous listener and use the new profile's worker
+configuration and queue. API keys belong to the app; worker IDs share a global
+identity namespace across profiles. Settings reload on a profile switch; stale profile or configuration
 drafts are rejected when saving. For direct access from other machines, change
 the default loopback listen address to an appropriate reachable interface (for
 example, `0.0.0.0` to listen on all IPv4 interfaces). The debug executable's
@@ -101,15 +103,16 @@ On the worker machine, create a configuration pointing to a reachable controller
 }
 ```
 
-Save the worker's controller-authorized token as plain text in `worker.token`
+Save the worker's app-issued API key as plain text in `worker.token`
 beside `worker.json` (an optional trailing LF or CRLF is accepted). Restrict the
 token file to its owner, for example with `chmod 600 worker.token`. `tokenFile`
 accepts an absolute path or a path relative to `worker.json`. This lets the worker
 start using files without exporting credentials in the launching shell.
 Alternatively, replace `tokenFile` with
 `"tokenEnvironment": "RIELA_LINUX_WORKER_TOKEN"` to read an environment variable.
-Specify exactly one of these two fields. The controller assigns the worker ID
-and groups based on the matching token in its configuration. The optional
+Specify exactly one of these two fields. The key identifies the worker; the controller assigns groups and capacity from
+its worker configuration. The key file must be owned by the worker OS user and
+have no group/other permissions; symlinks and nonregular files are rejected. The optional
 `traits` array declares host traits such as `userReachable` or `interactive`;
 placement compares these declarations with a task's requirements and does not
 probe the worker.

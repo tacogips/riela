@@ -388,8 +388,10 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
     XCTAssertNotEqual(report.handoverId, packet.id.rawValue)
   }
 
-  func testServeRequiresManagerBearerForTaskHandoverFields() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("wh16-serve-\(UUID().uuidString)")
+  func testServeTrustedBrowserCanReadTaskHandoverWithoutClientAPIKey() async throws {
+    let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repository.appendingPathComponent("tmp/wh16-serve-\(UUID().uuidString)")
     let home = root.appendingPathComponent("home")
     let project = root.appendingPathComponent("project")
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -402,18 +404,14 @@ final class TaskHandoverGraphQLProviderTests: XCTestCase {
       host: "127.0.0.1",
       port: 8787,
       fallback: DeterministicServerHTTPAdapter(),
-      environment: ["HOME": home.path, "RIELA_MANAGER_AUTH_TOKEN": "manager-secret"]
+      environment: ["HOME": home.path]
     )
     let bootstrapResponse = await host.response(for: request("/api/v1/bootstrap"))
     let bootstrap = try XCTUnwrap(try JSONSerialization.jsonObject(with: bootstrapResponse.body) as? [String: Any])
     let csrf = try XCTUnwrap(bootstrap["csrfToken"] as? String)
     let query = #"{"query":"query { taskHandover(taskId: \"missing\") { handover { taskId } errors { code } } }"}"#
-    var unauthorized = graphqlRequest(body: Data(query.utf8), csrf: csrf)
-    let rejected = await host.response(for: unauthorized)
-    XCTAssertTrue((String(data: rejected.body, encoding: .utf8) ?? "").contains("UNAUTHENTICATED"))
-
-    unauthorized.headers["authorization"] = "Bearer manager-secret"
-    let authorized = await host.response(for: unauthorized)
+    let browserRequest = graphqlRequest(body: Data(query.utf8), csrf: csrf)
+    let authorized = await host.response(for: browserRequest)
     let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: authorized.body) as? [String: Any])
     XCTAssertFalse((String(data: authorized.body, encoding: .utf8) ?? "").contains("UNAUTHENTICATED"))
     XCTAssertNotNil((json["data"] as? [String: Any])?["taskHandover"])

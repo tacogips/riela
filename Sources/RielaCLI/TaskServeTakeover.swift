@@ -102,7 +102,7 @@ struct TaskServeTakeover {
       return trait
     }
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-    let authTokenEnv = parsed.authTokenEnv ?? "RIELA_MANAGER_AUTH_TOKEN"
+    let authTokenEnv = parsed.authTokenEnv ?? "RIELA_API_KEY"
     return TaskServeTakeoverOptions(
       takeover: parsed.takeover, endpoint: parsed.endpoint, pollIntervalMs: parsed.pollIntervalMs,
       once: parsed.once, traits: Array(Set(traits)).sorted(),

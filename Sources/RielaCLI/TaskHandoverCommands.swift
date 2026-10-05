@@ -360,7 +360,7 @@ private struct ParsedTaskTakeoverOptions: RielaClientFamilyArguments {
   static func resolve(_ args: [String]) throws -> TaskTakeoverOptions {
     let value = try parseCLI(args)
     let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-    let tokenName = value.authTokenEnv ?? "RIELA_MANAGER_AUTH_TOKEN"
+    let tokenName = value.authTokenEnv ?? "RIELA_API_KEY"
     return TaskTakeoverOptions(
       shared: try shared(value.scope, value.workingDirectory, value.sessionStore), packet: value.packet,
       forceOrphan: value.forceOrphan, cloneInto: value.cloneInto, traits: try parsedTraits(value.traits),

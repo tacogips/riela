@@ -9,12 +9,38 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
   public static let leaseDurationSeconds: Double = 30
 
   private let controller: DistributedJobController
-  private let credentials: [DistributedWorkerCredential]
+  private let authorize: @Sendable (String, Date) throws -> DistributedControllerConfiguration.Worker?
   private let clock: any WorkflowRuntimeClock
   private let leaseDuration: Double
   private let capabilitySnapshotSink: @Sendable (HostCapabilitySnapshot) async throws -> Void
 
   public init(
+    controller: DistributedJobController,
+    workers: [DistributedControllerConfiguration.Worker],
+    apiKeyStore: RielaAPIKeyStore,
+    clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
+    leaseDurationSeconds: Double = Self.leaseDurationSeconds,
+    capabilitySnapshotSink: @escaping @Sendable (HostCapabilitySnapshot) async throws -> Void = { _ in }
+  ) throws {
+    guard leaseDurationSeconds.isFinite, (3...3600).contains(leaseDurationSeconds),
+      !workers.isEmpty, Set(workers.map(\.id)).count == workers.count,
+      workers.allSatisfy({ !$0.id.isEmpty && (1...1024).contains($0.maxCapacity) }) else {
+      throw DistributedWorkerTransportError.invalidConfiguration
+    }
+    self.controller = controller
+    self.authorize = { authorization, now in
+      guard authorization.hasPrefix("Bearer "), authorization.utf8.count <= 263,
+        let record = try apiKeyStore.authenticate(String(authorization.dropFirst(7)), purpose: .worker, now: now),
+        let workerID = record.workerID else { return nil }
+      return workers.first { $0.id == workerID }
+    }
+    self.clock = clock
+    self.leaseDuration = leaseDurationSeconds
+    self.capabilitySnapshotSink = capabilitySnapshotSink
+  }
+
+  // Internal injection seam retained for transport fixtures; production uses the persisted key store.
+  init(
     controller: DistributedJobController, credentials: [DistributedWorkerCredential],
     clock: any WorkflowRuntimeClock = SystemWorkflowRuntimeClock(),
     leaseDurationSeconds: Double = Self.leaseDurationSeconds,
@@ -30,7 +56,11 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
           && (1...1024).contains(credential.maxCapacity)
       }) else { throw DistributedWorkerTransportError.invalidConfiguration }
     self.controller = controller
-    self.credentials = credentials
+    self.authorize = { authorization, _ in
+      credentials.first(where: { Self.constantTimeEqual(authorization, "Bearer " + $0.token) }).map {
+        .init(id: $0.workerId, groups: $0.groups, maxCapacity: $0.maxCapacity)
+      }
+    }
     self.clock = clock
     self.leaseDuration = leaseDurationSeconds
     self.capabilitySnapshotSink = capabilitySnapshotSink
@@ -44,7 +74,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
     // Native worker credentials have no browser authority or CORS bootstrap.
     guard request.headers["origin"] == nil,
       let authorization = request.headers["authorization"],
-      let credential = credentials.first(where: { constantTimeEqual(authorization, "Bearer " + $0.token) }) else {
+      let credential = try? authorize(authorization, clock.now()) else {
       return failure(403, "unauthorized_worker")
     }
     guard request.body.count <= Self.maximumBodyBytes else { return failure(413, "message_too_large") }
@@ -83,7 +113,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
   }
 
   private func dispatch(
-    _ message: DistributedWorkerRequest, credential: DistributedWorkerCredential
+    _ message: DistributedWorkerRequest, credential: DistributedControllerConfiguration.Worker
   ) async throws -> DistributedWorkerResponse {
     if message.operation == .register {
       guard let capacity = message.capacity, (1...credential.maxCapacity).contains(capacity),
@@ -92,7 +122,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
         throw DistributedWorkerTransportError.invalidConfiguration
       }
       let registration = try await controller.register(
-        workerId: credential.workerId,
+        workerId: credential.id,
         groups: credential.groups,
         capacity: capacity,
         capabilities: message.capabilities ?? [],
@@ -105,7 +135,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
       return reply(registration: registration)
     }
     guard message.capacity == nil, let registration = message.registration,
-      registration.workerId == credential.workerId, registration.groups == credential.groups,
+      registration.workerId == credential.id, registration.groups == credential.groups,
       registration.capacity <= credential.maxCapacity else { throw DistributedWorkerTransportError.invalidConfiguration }
     switch message.operation {
     case .claim:
@@ -236,7 +266,7 @@ public struct DistributedWorkerHTTPRouter: RielaHTTPRouteHandling {
     return response
   }
 
-  private func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
+  private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
     let left = Array(lhs.utf8)
     let right = Array(rhs.utf8)
     guard left.count == right.count else { return false }

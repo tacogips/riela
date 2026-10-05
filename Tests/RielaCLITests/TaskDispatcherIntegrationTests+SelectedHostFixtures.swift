@@ -154,9 +154,9 @@ extension TaskDispatcherIntegrationTests {
     let configURL = root.appendingPathComponent("controller.json")
     let config = DistributedControllerConfiguration(
       host: "127.0.0.1", port: 8788, storePath: "jobs.json",
-      workers: [.init(id: "remote", groups: groups, tokenEnvironment: "TEST_TOKEN", maxCapacity: 1)]
+      workers: [.init(id: "remote", groups: groups, maxCapacity: 1)]
         + (hasSecondWorker ? [.init(
-          id: "remote-b", groups: groups, tokenEnvironment: "TEST_TOKEN_B", maxCapacity: 1
+          id: "remote-b", groups: groups, maxCapacity: 1
         )] : []),
       defaultWorkspace: "project"
     )

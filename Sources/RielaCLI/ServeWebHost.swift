@@ -115,7 +115,9 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     }
     if request.path == "/graphql", request.headers["origin"] == nil,
        request.headers["x-riela-csrf"] == nil, request.headers["x-riela-profile"] == nil {
-      // CLI/manager clients retain their existing authenticated GraphQL route.
+      if let rejection = RielaAPIKeyHTTPAuthorization.rejection(for: request, store: serverAPIKeyStore(homeDirectory: homeDirectory)) {
+        return rejection
+      }
       return await fallback.response(for: request)
     }
     let authority = host.contains(":") ? "[\(host)]:\(port)" : "\(host):\(port)"
@@ -187,23 +189,6 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
   let consoleProvider: any GraphQLConsoleProviding
 
   func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    let taskFields = [
-      "taskHandover", "tasksAwaitingHandover", "requestTaskHandover", "answerTask",
-      "takeoverTask", "heartbeatAttempt", "reportAttempt"
-    ]
-    let hasTaskHandoverRoots = taskFields.contains { request.query.contains($0) }
-    if hasTaskHandoverRoots, !request.isLocallyTrusted {
-      let authorized = await Self.authorized(request, expectedBearer: environment["RIELA_MANAGER_AUTH_TOKEN"])
-      guard authorized else {
-        return GraphQLDocumentExecutionResponse(handled: true, body: [
-          "data": .null,
-          "errors": .array([.object([
-            "message": .string("task handover authentication failed"),
-            "extensions": .object(["code": .string("UNAUTHENTICATED")])
-          ])])
-        ])
-      }
-    }
     var trusted = request
     trusted.isLocallyTrusted = true
     trusted.localWorkingDirectory = workingDirectory
@@ -241,26 +226,6 @@ private struct ServeWebRegistryExecutor: GraphQLDocumentExecuting {
     return await WorkflowExecutionAuthorizationWrapper(expectedBearer: nil, next: composite).execute(trusted)
   }
 
-  private static func authorized(_ request: GraphQLDocumentRequest, expectedBearer: String?) async -> Bool {
-    let probeRequest = GraphQLDocumentRequest(
-      query: "{ workflowExecution(workflowExecutionId: \"authorization-probe\") { session { sessionId } } }",
-      environment: request.environment,
-      transportCredential: request.transportCredential
-    )
-    let authorization = WorkflowExecutionAuthorizationWrapper(
-      expectedBearer: expectedBearer,
-      next: ServeGraphQLAuthorizationProbe()
-    )
-    // Reuse the same bearer comparison and local-trust decision as executeWorkflow.
-    let response = await authorization.execute(probeRequest)
-    return response.body["errors"] == nil
-  }
-}
-
-private struct ServeGraphQLAuthorizationProbe: GraphQLDocumentExecuting {
-  func execute(_ request: GraphQLDocumentRequest) async -> GraphQLDocumentExecutionResponse {
-    GraphQLDocumentExecutionResponse(handled: true)
-  }
 }
 
 private struct ServeWebManagedReferenceResolver: WorkflowRegistryManagedReferenceResolver {

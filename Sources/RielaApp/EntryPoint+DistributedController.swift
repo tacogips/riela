@@ -40,16 +40,15 @@ extension RielaApp {
     distributedControllerGeneration += 1
     let generation = distributedControllerGeneration
     do {
-      let environment = RielaAppEnvironmentFileStore(
-        environmentFileURL: configURL.deletingLastPathComponent().appendingPathComponent("controller.env")
-      ).mergedEnvironment()
+      let environment = ProcessInfo.processInfo.environment
       let host = try DistributedControllerHost(
         configurationURL: configURL,
         environment: environment,
         capabilityStoreRoot: URL(
           fileURLWithPath: daemonSessionStoreRoot(profileName: daemonProfileName),
           isDirectory: true
-        ).appendingPathComponent("runtime-records", isDirectory: true).path
+        ).appendingPathComponent("runtime-records", isDirectory: true).path,
+        apiKeyStore: apiKeyStore
       )
       distributedController = host
       distributedControllerStatus = "Worker controller: starting"
@@ -117,7 +116,7 @@ extension RielaApp {
       }
       await performDistributedControllerStart()
       return distributedController == nil
-        ? "Settings saved. Controller could not start. Set each token in Edit Credentials and check the listen address and port, then Save and Restart."
+        ? "Settings saved. Controller could not start. Check the listen address and port, then Save and Restart."
         : "Settings saved. \(distributedControllerStatus)"
     } catch DistributedWorkerError.controllerBusy {
       return "Finish or cancel queued and running remote jobs before restarting the controller."
@@ -125,27 +124,6 @@ extension RielaApp {
       return "Controller configuration changed. Reopen controller settings."
     } catch {
       return "Unable to save controller settings. Check the configuration and destination permissions."
-    }
-  }
-
-  func openDistributedCredentials(beside configURL: URL) {
-    guard configURL == distributedControllerConfigurationURL else { return }
-    let url = configURL.deletingLastPathComponent().appendingPathComponent("controller.env")
-    do {
-      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      if !FileManager.default.fileExists(atPath: url.path) {
-        guard FileManager.default.createFile(
-          atPath: url.path, contents: Data("# Set worker token variables here. Use a unique secret of at least 32 characters for each worker.\n".utf8),
-          attributes: [.posixPermissions: 0o600]
-        ) else { throw CocoaError(.fileWriteUnknown) }
-      }
-      NSWorkspace.shared.open(
-        [url], withApplicationAt: URL(fileURLWithPath: "/System/Applications/TextEdit.app"),
-        configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil
-      )
-    } catch {
-      distributedControllerStatus = "Cannot open controller.env; check profile directory permissions"
-      rebuildMenu()
     }
   }
 

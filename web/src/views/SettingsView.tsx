@@ -5,6 +5,8 @@ import { configurationClient } from '../config/client'
 import { ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 import '../settings-extra.css'
 import { WorkerSettings } from './WorkerSettings'
+import { APIKeySettings } from './APIKeySettings'
+import { isDesktop, desktopServerOrigin } from '../transport'
 
 type SettingsSection = 'profiles' | 'assistant' | 'appearance' | 'server'
 
@@ -122,8 +124,9 @@ export function SettingsView(props: { profileKey: string; profileName: string; s
   }
   const SectionMessage = (section: SettingsSection) => <Show when={messages()[section]}>{(message) => <MutationMessage message={message()} isError={errors()[section]} onRefresh={conflicts()[section] ? () => refresh(section) : undefined} />}</Show>
 
-  return <section class="page"><PageHeader eyebrow="PREFERENCES" title="Settings" description="Manage your Riela profiles and application preferences." />
+  return <section class="page"><PageHeader eyebrow="PREFERENCES" title="Settings" />
     <div class="settings-stack">
+      <Show when={isDesktop() && !desktopServerOrigin()}><APIKeySettings profileKey={props.profileKey} /></Show>
       <Show when={!props.serverHosted}><WorkerSettings profileKey={props.profileKey} /></Show>
       <Show when={configuration.loading}><LoadingState label="Loading configuration…" /></Show><Show when={configuration.error}><ErrorBanner message={errorMessage(configuration.error)} /></Show>
       <Show when={configuration()}>{(value) => <div class="panel settings-panel"><div class="section-title"><div><h2>Profiles</h2><p>Create, select, and remove persisted RielaApp profiles.</p></div></div><div class="requirements"><For each={value().profiles}>{(name) => <div class="requirement-row"><div><strong>{name}</strong><span>{name === value().profile ? 'Active profile' : 'Inactive profile'}</span></div><div class="refresh-actions"><Show when={name !== value().profile}><ActionButton class="secondary" disabled={saving() === 'profiles'} onClick={() => void switchProfile(name)}>Switch</ActionButton></Show><ActionButton class="secondary" disabled={saving() === 'profiles' || name === 'default' || name === value().profile} onClick={() => void removeProfile(name)}>Remove</ActionButton></div></div>}</For></div><div class="form-grid"><label><span>New profile</span><input value={profileName()} onInput={(event) => setProfileName(event.currentTarget.value)} /></label></div><div class="save-row">{SectionMessage('profiles')}<ActionButton disabled={saving() === 'profiles' || !profileName().trim()} onClick={() => void createProfile()}>Create profile</ActionButton></div></div>}</Show>

@@ -369,6 +369,11 @@ public struct GraphQLTransportCredential: Equatable, Sendable {
   public init(_ value: String) {
     self.value = value
   }
+
+  /// Validates credentials without adding them to public request diagnostics.
+  public func validate(using validator: (String) throws -> Bool) rethrows -> Bool {
+    try validator(value)
+  }
 }
 
 public struct WorkflowRegistryGraphQLDocumentExecutor: GraphQLDocumentExecuting {

@@ -73,7 +73,7 @@ extension TaskCancellationIntegrationTests {
     let configURL = root.appendingPathComponent("controller.json")
     let config = DistributedControllerConfiguration(
       host: "127.0.0.1", port: 8788, storePath: "jobs.json",
-      workers: [.init(id: "remote", groups: [], tokenEnvironment: "TEST_TOKEN", maxCapacity: 1)],
+      workers: [.init(id: "remote", groups: [], maxCapacity: 1)],
       defaultWorkspace: "project"
     )
     try JSONEncoder().encode(config).write(to: configURL)

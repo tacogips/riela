@@ -55,10 +55,10 @@ final class ServeWebHostTests: XCTestCase {
         }
       }
       """])
-    var request = RielaHTTPRequest(method: "POST", path: "/graphql", headers: ["host": "127.0.0.1:8787"], body: body)
+    var request = RielaHTTPRequest(method: "POST", path: "/graphql", headers: ["host": "127.0.0.1:8787", "content-type": "application/json"], body: body)
     let nonBrowser = await host.response(for: request)
-    XCTAssertNotEqual(nonBrowser.status, 403)
-    XCTAssertTrue((String(data: nonBrowser.body, encoding: .utf8) ?? "").contains("UNAUTHENTICATED"))
+    XCTAssertEqual(nonBrowser.status, 401)
+    XCTAssertEqual(try object(nonBrowser)["error"] as? String, "invalid_api_key")
     request.headers["x-riela-csrf"] = "invalid"
     let rejected = await host.response(for: request)
     XCTAssertEqual(rejected.status, 403)
@@ -196,10 +196,11 @@ final class ServeWebHostTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let host = makeHost(root: root, bindHost: "0.0.0.0")
     let response = await host.response(for: RielaHTTPRequest(
-      method: "POST", path: "/graphql", headers: ["host": "0.0.0.0:8787"],
+      method: "POST", path: "/graphql", headers: ["host": "0.0.0.0:8787", "content-type": "application/json"],
       body: Data(#"{"query":"query { workflows { workflows { workflowId } errors { code message } } }"}"#.utf8)
     ))
-    XCTAssertTrue((String(data: response.body, encoding: .utf8) ?? "").contains("UNAUTHENTICATED"))
+    XCTAssertEqual(response.status, 401)
+    XCTAssertEqual(try object(response)["error"] as? String, "invalid_api_key")
   }
 
   func testPublicBrowserRequiresPasskeyAndRejectsLegacyOperatorToken() async throws {

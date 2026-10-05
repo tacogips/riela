@@ -6,13 +6,11 @@ public struct DistributedControllerConfiguration: Codable, Equatable, Sendable {
   public struct Worker: Codable, Equatable, Sendable {
     public var id: String
     public var groups: Set<String>
-    public var tokenEnvironment: String
     public var maxCapacity: Int
 
-    public init(id: String, groups: Set<String>, tokenEnvironment: String, maxCapacity: Int) {
+    public init(id: String, groups: Set<String>, maxCapacity: Int) {
       self.id = id
       self.groups = groups
-      self.tokenEnvironment = tokenEnvironment
       self.maxCapacity = maxCapacity
     }
   }
@@ -43,7 +41,6 @@ public struct DistributedControllerConfiguration: Codable, Equatable, Sendable {
       Set(workers.map(\.id)).count == workers.count,
       workers.allSatisfy({ worker in
         name(worker.id) && worker.groups.allSatisfy(name) && (1...1024).contains(worker.maxCapacity)
-          && worker.tokenEnvironment.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil
       }) else { throw DistributedWorkerTransportError.invalidConfiguration }
   }
 
@@ -81,13 +78,6 @@ public struct DistributedControllerConfiguration: Codable, Equatable, Sendable {
     storePath.hasPrefix("/") ? URL(fileURLWithPath: storePath)
       : configURL.deletingLastPathComponent().appendingPathComponent(storePath)
   }
-
-  func credentials(environment: [String: String]) throws -> [DistributedWorkerCredential] {
-    try workers.map { worker in
-      guard let token = environment[worker.tokenEnvironment] else { throw DistributedWorkerTransportError.invalidConfiguration }
-      return .init(workerId: worker.id, groups: worker.groups, token: token, maxCapacity: worker.maxCapacity)
-    }
-  }
 }
 
 /// Independent of web assets and AppKit. Both the menu app and CLI own this
@@ -101,7 +91,8 @@ public final class DistributedControllerHost: Sendable {
   public init(
     configurationURL: URL,
     environment: [String: String],
-    capabilityStoreRoot: String? = nil
+    capabilityStoreRoot: String? = nil,
+    apiKeyStore: RielaAPIKeyStore? = nil
   ) throws {
     let configuration = try DistributedControllerConfiguration.load(from: configurationURL)
     let controller = try configuration.controller(relativeTo: configurationURL)
@@ -111,7 +102,11 @@ public final class DistributedControllerHost: Sendable {
     let capabilityStore = capabilityStoreRoot.map(WorkStore.init(rootDirectory:))
     server = RielaLocalHTTPServer(routeHandler: try DistributedWorkerHTTPRouter(
       controller: controller,
-      credentials: configuration.credentials(environment: environment),
+      workers: configuration.workers,
+      apiKeyStore: apiKeyStore ?? RielaAPIKeyStore(root: RielaAPIKeyStore.defaultRoot(homeDirectory: URL(
+        fileURLWithPath: environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
+        isDirectory: true
+      ))),
       capabilitySnapshotSink: { snapshot in try capabilityStore?.saveHostSnapshot(snapshot) }
     ))
   }

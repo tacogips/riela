@@ -724,14 +724,14 @@ extension WorkflowCommandTests {
   }
 
   func testWorkflowRunEndpointUsesRielaAuthEnvironment() async throws {
-    let previousRielaToken = environmentValue("RIELA_MANAGER_AUTH_TOKEN")
+    let previousRielaToken = environmentValue("RIELA_API_KEY")
     let previousRielaSession = environmentValue("RIELA_MANAGER_SESSION_ID")
     defer {
-      setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", previousRielaToken)
+      setEnvironmentValue("RIELA_API_KEY", previousRielaToken)
       setEnvironmentValue("RIELA_MANAGER_SESSION_ID", previousRielaSession)
     }
 
-    setEnvironmentValue("RIELA_MANAGER_AUTH_TOKEN", "riela-token")
+    setEnvironmentValue("RIELA_API_KEY", "riela-token")
     setEnvironmentValue("RIELA_MANAGER_SESSION_ID", "riela-session")
 
     let primaryTransport = RecordingWorkflowGraphQLRunTransport()
@@ -746,7 +746,7 @@ extension WorkflowCommandTests {
     let recordedPrimaryRequest = await primaryTransport.recordedRequest()
     let primaryRequest = try XCTUnwrap(recordedPrimaryRequest)
     XCTAssertEqual(primaryRequest.authToken, "riela-token")
-    XCTAssertEqual(primaryRequest.authTokenEnv, "RIELA_MANAGER_AUTH_TOKEN")
+    XCTAssertEqual(primaryRequest.authTokenEnv, "RIELA_API_KEY")
     XCTAssertEqual(primaryRequest.managerSessionId, "riela-session")
   }
 

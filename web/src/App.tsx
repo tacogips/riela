@@ -1,4 +1,6 @@
 import { ActionButton } from './components/ActionButton'
+import { RailIcon } from './components/RailIcon'
+import type { ActionIconName } from './components/ActionIcons'
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { desktopServerOrigin, hasBrowserAccessToken, isDesktop, setBrowserAccessToken } from './transport'
 import { DesktopConnection } from './views/DesktopConnection'
@@ -39,10 +41,10 @@ export function profileViewTransition(
   }
 }
 
-const navigation: Array<{ id: NavigationView; label: string; glyph: string }> = [
-  { id: 'workflows', label: 'ワークフロー', glyph: '⌘' },
-  { id: 'ops', label: 'Command deck', glyph: '✦' },
-  { id: 'settings', label: 'Settings', glyph: '◉' },
+const navigation: Array<{ id: NavigationView; label: string; icon: ActionIconName }> = [
+  { id: 'workflows', label: 'ワークフロー', icon: 'workflow' },
+  { id: 'ops', label: 'Command deck', icon: 'dashboard' },
+  { id: 'settings', label: 'Settings', icon: 'settings' },
 ]
 
 // The command deck relies on riela-app-only aggregate APIs, so it is hidden
@@ -143,12 +145,12 @@ export function App() {
       <a class="skip-link" href="#main-content">Skip to content</a>
       <header class="app-header">
         <div class="brand">
-          <div class="brand-mark">R</div>
+          <div class="brand-mark" role="img" aria-label="Riela"><RailIcon /></div>
           <div><strong>Riela</strong><span>{remoteOrigin ? 'Remote control plane' : 'Local control plane'}</span></div>
         </div>
         <nav aria-label="Primary navigation">
           <For each={visibleNavigation()}>{(item) => (
-            <ActionButton classList={{ active: view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
+            <ActionButton icon={item.icon} classList={{ active: view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') }} aria-current={view() === item.id || (item.id === 'workflows' && view() === 'workflow-detail') || (item.id === 'logs' && view() === 'run-detail') || (item.id === 'ops' && view() === 'ops-run') ? 'page' : undefined} onClick={() => setView(item.id)}>
               {item.label}
             </ActionButton>
           )}</For>

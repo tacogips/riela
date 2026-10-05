@@ -62,7 +62,7 @@ final class DistributedConfigurationTransactionTests: XCTestCase {
     addTeardownBlock { try FileManager.default.removeItem(at: root) }
     let url = root.appendingPathComponent("controller.json")
     let configuration = DistributedControllerConfiguration(host: "127.0.0.1", port: 8788, storePath: "jobs.json", workers: [
-      .init(id: "one", groups: [], tokenEnvironment: "WORKER_TOKEN", maxCapacity: 1)
+      .init(id: "one", groups: [], maxCapacity: 1)
     ])
     try JSONEncoder().encode(configuration).write(to: url)
     return url

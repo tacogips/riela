@@ -157,11 +157,25 @@ func serveMachineGraphQLAdapter(
     sessionStoreRoot: storeRoot,
     environment: environment
   )
-  let graphQLExecutor = WorkflowExecutionAuthorizationWrapper(
-    expectedBearer: environment["RIELA_MANAGER_AUTH_TOKEN"],
+  let graphQLExecutor = APIKeyGraphQLAuthorization(
+    store: serverAPIKeyStore(homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment), isDirectory: true)),
     next: CompositeGraphQLDocumentExecutor(
       workflowRegistry: WorkflowRegistryGraphQLDocumentExecutor(),
-      fallback: WorkflowExecutionGraphQLDocumentExecutor(provider: provider)
+      fallback: WorkflowExecutionGraphQLDocumentExecutor(
+        provider: provider,
+        next: TaskHandoverGraphQLDocumentExecutor(
+          provider: TaskHandoverGraphQLProvider(
+            workingDirectory: workingDirectory,
+            sessionStore: storeRoot
+          ),
+          next: SessionControlGraphQLDocumentExecutor(
+            provider: RielaSessionControlProvider(
+              workingDirectory: workingDirectory,
+              sessionStore: storeRoot
+            )
+          )
+        )
+      )
     )
   )
   return DeterministicServerHTTPAdapter(

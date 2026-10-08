@@ -32,10 +32,11 @@ riela_stage_web_assets() {
 }
 
 riela_stage_desktop_bundle() {
-  local binary="$1" bundle_root="$2" version="$3"
+  local binary="$1" bundle_root="$2" version="$3" icon_source="$4"
   local short_version="${version%%[-+]*}" contents="$bundle_root/Contents"
   test -x "$binary"
-  mkdir -p "$contents/MacOS"
+  mkdir -p "$contents/MacOS" "$contents/Resources"
+  write_app_icon "$icon_source" "$contents/Resources" "RielaAppIcon"
   cp "$binary" "$contents/MacOS/riela-desktop"
   chmod 0755 "$contents/MacOS/riela-desktop"
   cat > "$contents/Info.plist" <<PLIST
@@ -47,6 +48,7 @@ riela_stage_desktop_bundle() {
 <key>CFBundleName</key><string>Riela</string>
 <key>CFBundleDisplayName</key><string>Riela</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>RielaAppIcon</string>
 <key>CFBundleShortVersionString</key><string>${short_version}</string>
 <key>CFBundleVersion</key><string>${short_version}</string>
 <key>NSHighResolutionCapable</key><true/>

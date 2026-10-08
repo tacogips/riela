@@ -294,6 +294,7 @@ let package = Package(
         "RielaObservability",
         "RielaWorkflowRegistry"
       ],
+      resources: [.process("Resources")],
       linkerSettings: rielaInfoPlistLinkerSettings
     ),
     .testTarget(

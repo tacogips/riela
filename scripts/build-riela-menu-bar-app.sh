@@ -102,7 +102,7 @@ rm -rf "${bundle_root}"
 mkdir -p "${macos_dir}" "${resources_dir}"
 cp ".build/${configuration}/RielaApp" "${macos_dir}/RielaApp"
 riela_stage_desktop_bundle "web/src-tauri/target/${configuration}/riela-desktop" \
-  "${contents_dir}/Helpers/RielaDesktop.app" "$version"
+  "${contents_dir}/Helpers/RielaDesktop.app" "$version" "$app_icon_source"
 write_app_icon "${app_icon_source}" "${resources_dir}" "${app_icon_name}"
 riela_stage_web_assets "$repo_root" "${resources_dir}/Web"
 riela_stage_swift_resources "${repo_root}/.build/${configuration}" "$resources_dir"

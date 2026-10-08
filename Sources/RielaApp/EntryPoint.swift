@@ -79,6 +79,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   static func main() {
     let app = NSApplication.shared
     let delegate = RielaApp()
+    app.applicationIconImage = RielaAppIcon.appIcon()
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     app.run()

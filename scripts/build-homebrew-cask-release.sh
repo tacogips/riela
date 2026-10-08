@@ -419,7 +419,7 @@ build_target() {
   esac
   riela_build_desktop "$repo_root" release "$rust_target"
   desktop_app="$staged_app/Contents/Helpers/RielaDesktop.app"
-  riela_stage_desktop_bundle "$repo_root/web/src-tauri/target/$rust_target/release/riela-desktop" "$desktop_app" "$version"
+  riela_stage_desktop_bundle "$repo_root/web/src-tauri/target/$rust_target/release/riela-desktop" "$desktop_app" "$version" "$repo_root/img/riela_icon.png"
   riela_stage_web_assets "$repo_root" "$work_dir/Web"
   riela_stage_swift_resources "$riela_bin_path" "$work_dir"
   riela_stage_swift_resources "$app_bin_path" "$staged_app/Contents/Resources"

@@ -43,7 +43,7 @@ body { color: var(--ink); background: #000000; }
 .dot { background: #737373; box-shadow: 0 0 0 4px rgb(115 115 115 / 14%); }
 .header-profile { flex: none; margin-left: auto; color: #d4d4d4; }
 
-.brand-mark { border-color: #ffffff; color: #000000; background: #ffffff; box-shadow: none; }
+.brand-mark { border-color: #303030; color: #ffffff; background: #000000; box-shadow: none; }
 .brand strong, .topbar strong, .page-header h1, .section-title h2,
 .folder-pane-header h1, .note-detail h2, .ops-topline-title strong,
 .ops-detail-header h2, .ops-hub-title { color: #ffffff; }

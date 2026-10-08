@@ -331,8 +331,17 @@ extension DaemonWorkflowWindowController {
     let appTitle = NSTextField(labelWithString: "Riela")
     appTitle.font = .systemFont(ofSize: 20, weight: .bold)
     appTitle.alignment = .left
+    let brandImage = NSImageView(image: RielaAppIcon.railTemplateImage(size: NSSize(width: 36, height: 23)))
+    brandImage.contentTintColor = .labelColor
+    brandImage.setAccessibilityElement(false)
+    let brandHeader = NSStackView(views: [brandImage, appTitle])
+    brandHeader.orientation = .horizontal
+    brandHeader.alignment = .centerY
+    brandHeader.spacing = 10
+    brandImage.widthAnchor.constraint(equalToConstant: 36).isActive = true
+    brandImage.heightAnchor.constraint(equalToConstant: 23).isActive = true
     let menuStack = NSStackView(views: [
-      appTitle,
+      brandHeader,
       sidebarInstancesButton,
       sidebarMarketplaceButton,
       sidebarAssistantButton,
@@ -350,7 +359,7 @@ extension DaemonWorkflowWindowController {
       menuStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 56),
       menuStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 28),
       menuStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -24),
-      appTitle.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
+      brandHeader.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarInstancesButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarMarketplaceButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),
       sidebarAssistantButton.widthAnchor.constraint(equalTo: menuStack.widthAnchor),

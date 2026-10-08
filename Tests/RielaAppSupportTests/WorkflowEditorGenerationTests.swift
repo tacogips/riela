@@ -124,6 +124,40 @@ final class WorkflowEditorGenerationTests: XCTestCase {
     XCTAssertNotNil(snapshot.error)
   }
 
+  func testSnapshotReplacementsCannotGrowReplayHistoryWithoutBound() async throws {
+    let store = WorkflowEditorGenerationStore()
+    let started = try await store.start(profile: "alpha", definition: definition) { handler in
+      for index in 0..<20 {
+        let line = "{\"type\":\"message\",\"text\":\"\(index)" + String(repeating: "x", count: 100_000) + "\"}\n"
+        await handler(AdapterBackendEvent(provider: "test", eventType: "text", channel: .assistant, contentSnapshot: line))
+      }
+      return ""
+    }
+    let result = try await waitFor(store, id: started.id) { $0.status == .failed }
+    XCTAssertEqual(result.error, "Agent output exceeded the editor limit.")
+    XCTAssertLessThan(result.revision, 20)
+  }
+
+  func testInFlightRunnerDoesNotRetainGenerationStore() async throws {
+    var store: WorkflowEditorGenerationStore? = WorkflowEditorGenerationStore()
+    let weakStore = WeakGenerationStore(store)
+    let started = GenerationGate()
+    let release = GenerationGate()
+    let cancelled = expectation(description: "Store deinit cancels its runner")
+    _ = try await store?.start(profile: "alpha", definition: definition) { handler in
+      await started.release()
+      await release.wait()
+      if Task.isCancelled { cancelled.fulfill() }
+      await handler(AdapterBackendEvent(provider: "test", eventType: "text", channel: .assistant, contentSnapshot: "late"))
+      return ""
+    }
+    await started.wait()
+    store = nil
+    XCTAssertNil(weakStore.value, "An awaiting runner and its event callback must not retain the store")
+    await release.release()
+    await fulfillment(of: [cancelled], timeout: 2)
+  }
+
   private func waitFor(
     _ store: WorkflowEditorGenerationStore,
     id: String,
@@ -151,4 +185,9 @@ private actor GenerationGate {
     continuation?.resume()
     continuation = nil
   }
+}
+
+private final class WeakGenerationStore {
+  weak var value: WorkflowEditorGenerationStore?
+  init(_ value: WorkflowEditorGenerationStore?) { self.value = value }
 }

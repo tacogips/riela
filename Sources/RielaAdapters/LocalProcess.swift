@@ -125,19 +125,25 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
       }
       let chunk = Data(buffer.prefix(byteCount))
       output.append(chunk)
-      pendingLine.append(chunk)
-      emitCompleteLines(from: &pendingLine)
+      if outputEventHandler != nil {
+        emitCompleteLines(in: chunk, pendingLine: &pendingLine)
+      }
     }
     emitPendingLine(pendingLine)
     return output
   }
 
-  private func emitCompleteLines(from pendingLine: inout Data) {
-    while let newlineIndex = pendingLine.firstIndex(of: 10) {
-      let lineData = pendingLine[..<newlineIndex]
-      pendingLine.removeSubrange(...newlineIndex)
-      emitLine(Data(lineData))
+  private func emitCompleteLines(in chunk: Data, pendingLine: inout Data) {
+    // Scan each incoming byte once. Rescanning the accumulated partial line
+    // makes a long newline-free response quadratic in its size.
+    var start = chunk.startIndex
+    for index in chunk.indices where chunk[index] == 10 {
+      pendingLine.append(contentsOf: chunk[start..<index])
+      emitLine(pendingLine)
+      pendingLine.removeAll()
+      start = chunk.index(after: index)
     }
+    pendingLine.append(contentsOf: chunk[start...])
   }
 
   private func emitPendingLine(_ pendingLine: Data) {

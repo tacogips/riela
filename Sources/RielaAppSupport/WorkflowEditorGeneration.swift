@@ -26,11 +26,17 @@ public actor WorkflowEditorGenerationStore {
     var text = ""
     var parsedLines: [String] = []
     var streamedLines: [String] = []
+    var streamedByteCount = 0
     var changed = false
     var createdAt = Date()
   }
+  private static let maximumOutputBytes = 1_048_576
   private var sessions: [String: Session] = [:]
   public init() {}
+
+  deinit {
+    for session in sessions.values { session.task?.cancel() }
+  }
 
   public func start(profile: String, definition: JSONObject, runner: @escaping Runner) throws -> WorkflowEditorGenerationSnapshot {
     sessions = sessions.filter { _, session in
@@ -44,10 +50,10 @@ public actor WorkflowEditorGenerationStore {
       id: id, profile: profile, revision: 0, status: .running, definition: definition, messages: []
     )
     sessions[id] = Session(snapshot: snapshot)
-    sessions[id]?.task = Task {
+    sessions[id]?.task = Task { [weak self] in
       do {
-        let output = try await runner { event in await self.receive(id: id, event: event) }
-        self.finish(id: id, output: output)
+        let output = try await runner { [weak self] event in await self?.receive(id: id, event: event) }
+        await self?.finish(id: id, output: output)
       } catch let error as WorkflowEditorAuthoringRounds.AuthoringError {
         let message: String
         switch error {
@@ -55,9 +61,9 @@ public actor WorkflowEditorGenerationStore {
         case .outputLimit: message = "Agent generation exceeded the output limit. Continue with a smaller request."
         case .roundLimit: message = "The agent reached the 12-round limit. Review the draft and continue with another request."
         }
-        self.fail(id: id, message: message)
+        await self?.fail(id: id, message: message)
       } catch {
-        self.fail(id: id, message: "Agent generation failed. Check the assistant provider settings and retry.")
+        await self?.fail(id: id, message: "Agent generation failed. Check the assistant provider settings and retry.")
       }
     }
     return snapshot
@@ -71,7 +77,7 @@ public actor WorkflowEditorGenerationStore {
   public func cancel(id: String, profile: String) -> WorkflowEditorGenerationSnapshot? {
     guard sessions[id]?.snapshot.profile == profile else { return nil }
     sessions[id]?.task?.cancel()
-    sessions[id]?.task = nil
+    clearTransientState(id: id)
     sessions[id]?.snapshot.status = .cancelled
     return sessions[id]?.snapshot
   }
@@ -85,23 +91,32 @@ public actor WorkflowEditorGenerationStore {
 
   private func receive(id: String, event: AdapterBackendEvent) {
     guard event.channel == .assistant, sessions[id]?.snapshot.status == .running else { return }
-    if let delta = event.contentDelta, event.isDelta {
-      sessions[id]?.text += delta
-    } else if let snapshot = event.contentSnapshot {
-      sessions[id]?.text = snapshot
-    } else if let delta = event.contentDelta {
-      sessions[id]?.text += delta
-    }
-    guard let text = sessions[id]?.text else { return }
-    if text.utf8.count > 1_048_576 {
+    let appending = event.contentDelta != nil && (event.isDelta || event.contentSnapshot == nil)
+    guard let incoming = appending ? event.contentDelta : event.contentSnapshot else { return }
+    let retainedBytes = appending ? sessions[id]?.text.utf8.count ?? 0 : 0
+    guard incoming.utf8.count <= Self.maximumOutputBytes - retainedBytes else {
       sessions[id]?.task?.cancel()
       fail(id: id, message: "Agent output exceeded the editor limit.")
       return
     }
+    if appending {
+      sessions[id]?.text += incoming
+    } else {
+      sessions[id]?.text = incoming
+    }
+    guard let text = sessions[id]?.text else { return }
     let lines = text.split(separator: "\n", omittingEmptySubsequences: false).dropLast().map(String.init)
     let previous = sessions[id]?.parsedLines ?? []
     let prefix = zip(previous, lines).prefix { $0 == $1 }.count
     for line in lines.dropFirst(prefix) {
+      // Snapshot replacements can keep text small while growing replay history.
+      let byteCount = line.utf8.count + 1
+      guard byteCount <= Self.maximumOutputBytes - (sessions[id]?.streamedByteCount ?? 0) else {
+        sessions[id]?.task?.cancel()
+        fail(id: id, message: "Agent output exceeded the editor limit.")
+        return
+      }
+      sessions[id]?.streamedByteCount += byteCount
       consume(id: id, line: line)
       sessions[id]?.streamedLines.append(line)
     }
@@ -111,7 +126,7 @@ public actor WorkflowEditorGenerationStore {
   private func finish(id: String, output: String) {
     guard sessions[id]?.snapshot.status == .running else { return }
     let text = output.isEmpty ? sessions[id]?.text ?? "" : output
-    guard text.utf8.count <= 1_048_576 else { fail(id: id, message: "Agent output exceeded the editor limit."); return }
+    guard text.utf8.count <= Self.maximumOutputBytes else { fail(id: id, message: "Agent output exceeded the editor limit."); return }
     let lines = text.split(separator: "\n").map(String.init)
     let streamed = (sessions[id]?.streamedLines ?? []).filter { !$0.isEmpty }
     // Providers may return the complete transcript or only the final message.
@@ -125,7 +140,7 @@ public actor WorkflowEditorGenerationStore {
       fail(id: id, message: "The agent did not return editor operations. Try a more specific request.")
     } else {
       sessions[id]?.snapshot.status = .completed
-      sessions[id]?.task = nil
+      clearTransientState(id: id)
     }
   }
 
@@ -153,6 +168,14 @@ public actor WorkflowEditorGenerationStore {
     guard sessions[id]?.snapshot.status == .running else { return }
     sessions[id]?.snapshot.status = .failed
     sessions[id]?.snapshot.error = message
+    clearTransientState(id: id)
+  }
+
+  private func clearTransientState(id: String) {
     sessions[id]?.task = nil
+    sessions[id]?.text = ""
+    sessions[id]?.parsedLines = []
+    sessions[id]?.streamedLines = []
+    sessions[id]?.streamedByteCount = 0
   }
 }

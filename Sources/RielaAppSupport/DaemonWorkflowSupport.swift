@@ -934,8 +934,9 @@ public final class RielaAppDaemonWorkflowRuntime {
     let interval = monitorIntervalNanoseconds
     let task = Task { [weak self] in
       while !Task.isCancelled {
-        try? await Task.sleep(nanoseconds: interval)
-        await self?.refresh(identity: identity)
+        do { try await Task.sleep(nanoseconds: interval) } catch { return }
+        guard !Task.isCancelled, let self else { return }
+        await self.refresh(identity: identity)
       }
     }
     runningWorkflows[identity]?.monitorTask = task

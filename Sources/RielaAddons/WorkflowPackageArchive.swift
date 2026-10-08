@@ -221,14 +221,9 @@ public struct WorkflowPackageArchiveManager: Sendable {
     process.executableURL = try executableURL(named: name, preferredPaths: preferredPaths)
     process.arguments = arguments
     process.currentDirectoryURL = currentDirectory
-    let output = Pipe()
-    let error = Pipe()
-    process.standardOutput = output
-    process.standardError = error
-    try process.run()
-    process.waitUntilExit()
-    let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let output = try PackageToolOutput.collect(from: process)
+    let stdout = String(data: output.stdout, encoding: .utf8) ?? ""
+    let stderr = String(data: output.stderr, encoding: .utf8) ?? ""
     guard process.terminationStatus == 0 else {
       let detail = [stderr, stdout].filter { !$0.isEmpty }.joined(separator: "\n")
       throw WorkflowPackageArchiveError.archiveToolFailed(

@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddons
 
 /// Result of running a single git subprocess-style command.
 struct WorkflowPackageGitCommandResult: Sendable {
@@ -27,18 +28,11 @@ struct ProcessWorkflowPackageCommandExecutor: WorkflowPackageCommandExecutor {
     if let workingDirectory {
       process.currentDirectoryURL = workingDirectory
     }
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    try process.run()
-    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let output = try PackageToolOutput.collect(from: process)
     return WorkflowPackageGitCommandResult(
       exitCode: process.terminationStatus,
-      standardOutput: String(data: outputData, encoding: .utf8) ?? "",
-      standardError: String(data: errorData, encoding: .utf8) ?? ""
+      standardOutput: String(data: output.stdout, encoding: .utf8) ?? "",
+      standardError: String(data: output.stderr, encoding: .utf8) ?? ""
     )
   }
 }

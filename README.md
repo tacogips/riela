@@ -1,7 +1,8 @@
 # Riela
 
 <p align="center">
-  <img src="img/riela.png" alt="Riela" width="720">
+  <img src="img/riela_icon.png" alt="Riela rail icon" width="120">
+  <img src="img/riela.png" alt="Riela" width="480">
 </p>
 
 Riela is the Swift-native command line runtime.

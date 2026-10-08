@@ -41,7 +41,7 @@ export function WorkflowRunInspector(props: {
     (signal) => evidence<AttemptValues>(`/api/v1/workflow-editor/runs/${encodeURIComponent(sessionId())}/steps/${encodeURIComponent(selected()!.executionId)}`, signal))
   return <section class="editor-chat" aria-label="Workflow run inspector">
     <h3>Run logs and values</h3>
-    <p>Recorded values can contain sensitive workflow inputs and outputs. They are shown as stored.</p>
+    <p class="subtle">May contain sensitive values.</p>
     <form onSubmit={(event) => { event.preventDefault(); setAttemptId(''); setSessionId(input().trim()) }}>
       <label>Run session ID<input value={input()} onInput={(event) => setInput(event.currentTarget.value)} /></label>
       <ActionButton disabled={!input().trim()}>Open run</ActionButton>

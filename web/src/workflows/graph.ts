@@ -40,13 +40,16 @@ export function newGraph(): GraphDocument {
   return { workflowId: 'new-workflow', description: '', defaults: { nodeTimeoutMs: 120000, maxLoopIterations: 3 }, entryStepId: '', nodes: [], steps: [] }
 }
 
+/** riela/codex-sdk-worker refuses to run without config.model; new steps start runnable. */
+export const DEFAULT_SDK_WORKER_MODEL = 'gpt-5.5'
+
 export function addStep(doc: GraphDocument): GraphDocument {
   let number = 1
   while (doc.steps.some((step) => step.id === `step-${number}`) || doc.nodes.some((node) => node.id === `step-${number}`)) number++
   const id = `step-${number}`
   return {
     ...doc, entryStepId: doc.entryStepId || id,
-    nodes: [...doc.nodes, { id, addon: { name: 'riela/codex-sdk-worker', version: '1', config: { promptTemplate: 'Describe the task for this step.' } } }],
+    nodes: [...doc.nodes, { id, addon: { name: 'riela/codex-sdk-worker', version: '1', config: { model: DEFAULT_SDK_WORKER_MODEL, promptTemplate: 'Describe the task for this step.' } } }],
     steps: [...doc.steps, { id, nodeId: id, role: 'worker', transitions: [] }],
   }
 }
@@ -82,6 +85,12 @@ export function graphProblems(doc: GraphDocument): string[] {
   for (const step of doc.steps) {
     problems.push(...placementProblems(step.placement).map(problem => `${step.id}: ${problem}`))
     if (!doc.nodes.some((node) => node.id === step.nodeId)) problems.push(`${step.id}: missing node ${step.nodeId}.`)
+    const addon = doc.nodes.find((node) => node.id === step.nodeId)?.addon as { name?: unknown; config?: Record<string, unknown> } | undefined
+    // SDK workers reject a run without config.model; a hidden protected model is a non-string placeholder and is retained.
+    const model = addon?.config?.model
+    if (typeof addon?.name === 'string' && /^riela\/[a-z-]+-sdk-worker$/.test(addon.name) && (model === undefined || (typeof model === 'string' && !model.trim()))) {
+      problems.push(`${step.id}: set a model for ${addon.name}.`)
+    }
     for (const edge of step.transitions ?? []) {
       if (isLocalTransition(doc, edge) && !doc.steps.some((target) => target.id === edge.toStepId)) problems.push(`${step.id}: missing target ${edge.toStepId}.`)
     }

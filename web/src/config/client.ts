@@ -9,6 +9,7 @@ interface GraphQLResponse<T> {
 
 const configurationFields = `
   profile revision profiles workflowDirectories
+  workflowStorage { directory defaultDirectory isDefault cliWorkflowHome }
   assistant { assistance vendor model modelCatalogs { vendor models } }
   appearance { colorScheme options }
   server { isEnabled configuredPort boundPort restartRequired state }
@@ -68,6 +69,17 @@ export class RielaConfigurationClient {
       { input: { expectedRevision: current.revision, configuredPort } },
       'WebUpdateHTTPServerConfiguration',
       'updateHTTPServerConfiguration',
+    )
+  }
+
+  async updateWorkflowStorage(current: RielaConfiguration, directory: string): Promise<RielaConfiguration> {
+    return this.mutate(
+      `mutation WebUpdateWorkflowStorageConfiguration($input: UpdateWorkflowStorageConfigurationInput!) {
+        updateWorkflowStorageConfiguration(input: $input) { ${configurationFields} }
+      }`,
+      { input: { expectedRevision: current.revision, expectedProfile: current.profile, directory } },
+      'WebUpdateWorkflowStorageConfiguration',
+      'updateWorkflowStorageConfiguration',
     )
   }
 

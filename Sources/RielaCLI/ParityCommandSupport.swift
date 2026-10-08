@@ -117,7 +117,7 @@ extension WorkflowPackageContainerRuntimeRequest: ExpressibleByArgument {}
 func scopedWorkflowRoot(scope: WorkflowScope, workingDirectory: URL) -> URL {
   switch scope {
   case .user:
-    return URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/workflows", isDirectory: true)
+    return CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("workflows", isDirectory: true)
   case .auto, .project, .direct:
     return workingDirectory.appendingPathComponent(".riela/workflows", isDirectory: true)
   }

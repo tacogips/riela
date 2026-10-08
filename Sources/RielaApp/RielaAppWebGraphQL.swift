@@ -32,6 +32,8 @@ extension RielaApp {
     }
     var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     environment["HOME"] = appHomeDirectory.path
+    environment[CLIRuntimeEnvironment.workflowHomeEnvironmentName] =
+      daemonAppWorkflowStorageRoot(profileName: daemonProfileName).path
     let sessionStoreRoot = daemonSessionStoreRoot(profileName: daemonProfileName)
     let executor = RielaAppGraphQLExecutor(
       executor: CompositeGraphQLDocumentExecutor(

@@ -101,7 +101,7 @@ export function WorkflowGraphEditor(props: {
     <fieldset disabled={locked()} class="editor-controls">
     <header class="editor-toolbar">
       <strong>Workflow studio</strong>
-      <ActionButton class="secondary" onClick={() => { if (undo().length === 0 || window.confirm('Discard unsaved workflow changes?')) props.onClose() }}>Back to graph</ActionButton>
+      <ActionButton class="secondary" onClick={() => { if (undo().length === 0 || window.confirm('Discard unsaved workflow changes?')) props.onClose() }}>Close editor</ActionButton>
       <ActionButton disabled={props.saving} onClick={() => { const next = addStep(doc()); change(next); setSelected(next.steps.at(-1)!.id) }}>Add agent step</ActionButton>
       <ActionButton class="secondary" disabled={!undo().length || props.saving} onClick={() => history(true)}>Undo</ActionButton>
       <ActionButton class="secondary" disabled={!redo().length || props.saving} onClick={() => history(false)}>Redo</ActionButton>
@@ -171,13 +171,13 @@ export function WorkflowGraphEditor(props: {
           </select></label>
           <WorkflowPlacementSettings step={item()} onChange={updated => change({ ...doc(), steps: doc().steps.map(current => current.id === updated.id ? updated : current) })} />
           <Show when={typeof (node()?.addon as Record<string, unknown> | undefined)?.name === 'string'}>
-            <p>Prompt/model edits replace only those fields. Other protected settings are retained. Saving starts a new Undo history.</p>
+            
             <Show when={['promptTemplate', 'model'].some((field) => {
               const value = (node()?.addon as { config?: Record<string, unknown> })?.config?.[field]
               return value !== undefined && typeof value !== 'string'
-            })}><p role="status">A protected prompt or model is hidden. Leave its field untouched to retain it, or type a replacement.</p></Show>
+            })}><p role="status">Protected value hidden; leave it untouched to keep it.</p></Show>
             <label>Prompt<textarea rows="6" value={configText('promptTemplate')} onChange={(event) => updateNodeConfig('promptTemplate', event.currentTarget.value)} /></label>
-            <label>Model<input value={configText('model')} onChange={(event) => updateNodeConfig('model', event.currentTarget.value)} /></label>
+            <label>Model<input value={configText('model')} placeholder="Required, e.g. gpt-5.5" onChange={(event) => updateNodeConfig('model', event.currentTarget.value)} /></label>
           </Show>
           <label>Node definition<textarea rows="7" value={JSON.stringify(node(), null, 2)} onChange={(event) => attempt(() => {
             const replacement = JSON.parse(event.currentTarget.value) as Record<string, unknown>

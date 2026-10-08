@@ -43,6 +43,17 @@ describe('graph authoring', () => {
     expect(connected.steps[0]?.stepFile).toBe('steps/work.json')
     expect(removeStep(connected, 'step-2').steps[0]?.stepFile).toBe('steps/work.json')
   })
+  test('requires a model on SDK worker steps but retains hidden protected models', () => {
+    const doc = addStep(newGraph())
+    expect(graphProblems(doc)).toEqual([])
+    const node = doc.nodes[0]!.addon as { config: Record<string, unknown> }
+    node.config.model = ' '
+    expect(graphProblems(doc)).toContain('step-1: set a model for riela/codex-sdk-worker.')
+    delete node.config.model
+    expect(graphProblems(doc)).toContain('step-1: set a model for riela/codex-sdk-worker.')
+    node.config.model = { redacted: true }
+    expect(graphProblems(doc)).toEqual([])
+  })
   test('rejects malformed graph input without changing the original', () => {
     expect(graphProblems({ ...addStep(newGraph()), defaults: {} })).toContain('Set defaults.nodeTimeoutMs to a positive integer.')
     expect(() => graphDocument({ workflowId: 'a', nodes: [], steps: [null] })).toThrow()

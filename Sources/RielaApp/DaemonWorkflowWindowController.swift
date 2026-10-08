@@ -32,8 +32,8 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let addListButton = NSButton(title: "", target: nil, action: nil)
   let refreshButton = NSButton(title: "", target: nil, action: nil)
   let navigationBackButton = NSButton(title: "", target: nil, action: nil)
-  let navigationTitleLabel = NSTextField(labelWithString: "ワークフロー")
-  let sidebarInstancesButton = NSButton(title: "ワークフロー", target: nil, action: nil)
+  let navigationTitleLabel = NSTextField(labelWithString: "Workflows")
+  let sidebarInstancesButton = NSButton(title: "Workflows", target: nil, action: nil)
   let sidebarSourcesButton = NSButton(title: "Workflow Sources", target: nil, action: nil)
   let sidebarMarketplaceButton = NSButton(title: "Install Workflow", target: nil, action: nil)
   let sidebarAssistantButton = NSButton(title: "Assistant", target: nil, action: nil)
@@ -54,7 +54,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
   let assistantSendButton = NSButton(title: "", target: nil, action: nil)
   let profilesSummaryLabel = NSTextField(labelWithString: "")
   let emptyInstancesLabel = NSTextField(
-    labelWithString: "ワークフローを選択して実行設定を表示します。"
+    labelWithString: "Select a workflow to show its run configurations."
   )
   let emptyInstancesGuideView = DaemonWorkflowEmptyStateView()
   let statusBannerView = RielaAppStatusBannerView()
@@ -279,7 +279,7 @@ final class DaemonWorkflowWindowController: NSWindowController,
       backing: .buffered,
       defer: false
     )
-    window.title = "Riela ワークフロー"
+    window.title = "Riela Workflows"
     window.minSize = DaemonWorkflowWindowLayout.minimumWindowSize
     super.init(window: window)
     window.delegate = self
@@ -417,7 +417,7 @@ extension DaemonWorkflowWindowController {
     emptyInstancesGuideView.isHidden = rawInstanceRowsCount != 0
     emptyInstancesLabel.stringValue = rawInstanceRowsCount == 0
       ? ""
-      : "検索条件に一致する実行設定はありません。"
+      : "No run configurations match the search."
     emptyInstancesLabel.isHidden = rawInstanceRowsCount == 0 || !instanceRows.isEmpty
   }
 
@@ -600,7 +600,7 @@ extension DaemonWorkflowWindowController {
     isShowingMarketplaceWorkflowDetail = false
     instanceDetailPane = .overview
     showContentPane(instancesListView)
-    navigationTitleLabel.stringValue = "実行設定"
+    navigationTitleLabel.stringValue = "Run configurations"
     updateNavigationState()
     updateSidebarSelection()
   }

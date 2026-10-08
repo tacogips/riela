@@ -67,9 +67,9 @@ extension DaemonWorkflowWindowController {
     var importDetail: String {
       switch self {
       case .addInstance:
-        "ワークフローまたはパッケージを追加して、実行設定に戻ります。"
+        "Add a workflow or package, then return to the run configuration."
       case .relink:
-        "ワークフローまたはパッケージを追加して、この実行設定に関連付けます。"
+        "Add a workflow or package and link it to this run configuration."
       }
     }
   }

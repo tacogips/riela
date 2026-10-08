@@ -454,7 +454,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Instances:") } == true)
 
     let summaryItem = try XCTUnwrap(menu?.items.first { item in
-      item.title.contains("実行設定 ") && item.title.contains("Profile work")
+      item.title.contains("Run configurations ") && item.title.contains("Profile work")
     })
     XCTAssertEqual(summaryItem.isEnabled, false)
     XCTAssertEqual(summaryItem.toolTip, summaryItem.title)
@@ -484,7 +484,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add run configuration", in: root))
     addButton.performClick(nil)
     controller.window?.layoutIfNeeded()
 
@@ -497,7 +497,7 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
 
     controller.goBack()
     controller.window?.layoutIfNeeded()
-    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "ワークフロー")
+    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "Workflows")
     XCTAssertEqual(controller.sourcesOverviewView?.isHidden, false)
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, true)
   }

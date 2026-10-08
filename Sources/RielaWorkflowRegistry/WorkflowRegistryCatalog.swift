@@ -350,7 +350,7 @@ struct WorkflowRegistryCatalog {
     scopedRoots(
       scope: scope,
       project: URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/workflows"),
-      user: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/workflows")
+      user: CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("workflows")
     )
   }
 
@@ -361,7 +361,7 @@ struct WorkflowRegistryCatalog {
     scopedRoots(
       scope: scope,
       project: URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/packages"),
-      user: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/packages")
+      user: CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("packages")
     )
   }
 

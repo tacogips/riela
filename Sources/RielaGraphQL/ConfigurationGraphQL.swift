@@ -62,6 +62,22 @@ public struct GraphQLHTTPServerConfiguration: Codable, Equatable, Sendable {
   }
 }
 
+/// Where a RielaApp profile keeps its workflows, packages and mutable
+/// registry; deliberately separate from the CLI's `~/.riela`.
+public struct GraphQLWorkflowStorageConfiguration: Codable, Equatable, Sendable {
+  public var directory: String
+  public var defaultDirectory: String
+  public var isDefault: Bool
+  public var cliWorkflowHome: String
+
+  public init(directory: String, defaultDirectory: String, isDefault: Bool, cliWorkflowHome: String) {
+    self.directory = directory
+    self.defaultDirectory = defaultDirectory
+    self.isDefault = isDefault
+    self.cliWorkflowHome = cliWorkflowHome
+  }
+}
+
 public struct GraphQLRielaConfiguration: Codable, Equatable, Sendable {
   public var profile: String
   public var revision: Int
@@ -70,6 +86,7 @@ public struct GraphQLRielaConfiguration: Codable, Equatable, Sendable {
   public var server: GraphQLHTTPServerConfiguration
   public var profiles: [String]
   public var workflowDirectories: [String]
+  public var workflowStorage: GraphQLWorkflowStorageConfiguration?
 
   public init(
     profile: String,
@@ -78,7 +95,8 @@ public struct GraphQLRielaConfiguration: Codable, Equatable, Sendable {
     appearance: GraphQLAppearanceConfiguration,
     server: GraphQLHTTPServerConfiguration,
     profiles: [String] = [],
-    workflowDirectories: [String] = []
+    workflowDirectories: [String] = [],
+    workflowStorage: GraphQLWorkflowStorageConfiguration? = nil
   ) {
     self.profile = profile
     self.revision = revision
@@ -87,6 +105,7 @@ public struct GraphQLRielaConfiguration: Codable, Equatable, Sendable {
     self.server = server
     self.profiles = profiles
     self.workflowDirectories = workflowDirectories
+    self.workflowStorage = workflowStorage
   }
 }
 
@@ -110,6 +129,19 @@ public struct GraphQLWorkflowDirConfigInput: Codable, Equatable, Sendable {
   public var expectedRevision: Int
   public var expectedProfile: String
   public var path: String
+}
+
+/// `directory` nil or blank restores the profile's default storage.
+public struct GraphQLUpdateWorkflowStorageConfigInput: Codable, Equatable, Sendable {
+  public var expectedRevision: Int
+  public var expectedProfile: String
+  public var directory: String?
+
+  public init(expectedRevision: Int, expectedProfile: String, directory: String? = nil) {
+    self.expectedRevision = expectedRevision
+    self.expectedProfile = expectedProfile
+    self.directory = directory
+  }
 }
 
 public struct GraphQLWorkflowInstanceConfigInput: Codable, Equatable, Sendable {
@@ -194,6 +226,9 @@ public protocol RielaConfigurationGraphQLProviding: Sendable {
   func addWorkflowDirectory(
     input: GraphQLWorkflowDirConfigInput
   ) async throws -> GraphQLConfigurationRevision
+  func updateWorkflowStorage(
+    input: GraphQLUpdateWorkflowStorageConfigInput
+  ) async throws -> GraphQLRielaConfiguration
   func updateWorkflowInstance(
     input: GraphQLWorkflowInstanceConfigInput
   ) async throws -> GraphQLConfigurationRevision
@@ -219,6 +254,12 @@ public extension RielaConfigurationGraphQLProviding {
     input: GraphQLWorkflowDirConfigInput
   ) async throws -> GraphQLConfigurationRevision {
     throw unsupportedConfigurationMutation("addWorkflowDirectoryConfiguration")
+  }
+
+  func updateWorkflowStorage(
+    input: GraphQLUpdateWorkflowStorageConfigInput
+  ) async throws -> GraphQLRielaConfiguration {
+    throw unsupportedConfigurationMutation("updateWorkflowStorageConfiguration")
   }
 
   func updateWorkflowInstance(
@@ -261,6 +302,7 @@ public struct RielaConfigGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     "removeProfileConfiguration",
     "switchProfileConfiguration",
     "addWorkflowDirectoryConfiguration",
+    "updateWorkflowStorageConfiguration",
     "updateWorkflowInstanceConfiguration",
     "registerEventSourceConfiguration"
   ]
@@ -367,6 +409,12 @@ public struct RielaConfigGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case "addWorkflowDirectoryConfiguration":
       let input: GraphQLWorkflowDirConfigInput = try requiredRegistryInput("input", arguments: root.arguments)
       return try configurationJSONValue(await provider.addWorkflowDirectory(input: input))
+    case "updateWorkflowStorageConfiguration":
+      let input: GraphQLUpdateWorkflowStorageConfigInput = try requiredRegistryInput(
+        "input",
+        arguments: root.arguments
+      )
+      return try configurationJSONValue(await provider.updateWorkflowStorage(input: input))
     case "updateWorkflowInstanceConfiguration":
       let input: GraphQLWorkflowInstanceConfigInput = try requiredRegistryInput("input", arguments: root.arguments)
       return try configurationJSONValue(await provider.updateWorkflowInstance(input: input))

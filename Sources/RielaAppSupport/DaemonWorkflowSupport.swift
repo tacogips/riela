@@ -221,15 +221,38 @@ public struct RielaAppProfileStore: Sendable {
     appRootURL.appendingPathComponent("profiles", isDirectory: true)
   }
 
-  public static func workflowRootURL(appRootURL: URL, profileName: RielaAppProfileName) -> URL {
-    profilesRootURL(appRootURL: appRootURL)
+  /// The profile's workflow storage: imported workflows (`workflows`),
+  /// packages (`packages`) and the app-owned mutable registry
+  /// (`temporary-workflows`, `workflow-state`). `storageDirectory` is the
+  /// profile's configured override; the default lives inside the profile.
+  public static func workflowStorageRootURL(
+    appRootURL: URL,
+    profileName: RielaAppProfileName,
+    storageDirectory: String? = nil
+  ) -> URL {
+    if let storageDirectory = storageDirectory?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !storageDirectory.isEmpty {
+      return URL(fileURLWithPath: storageDirectory, isDirectory: true).standardizedFileURL
+    }
+    return profilesRootURL(appRootURL: appRootURL)
       .appendingPathComponent(profileName.rawValue, isDirectory: true)
+  }
+
+  public static func workflowRootURL(
+    appRootURL: URL,
+    profileName: RielaAppProfileName,
+    storageDirectory: String? = nil
+  ) -> URL {
+    workflowStorageRootURL(appRootURL: appRootURL, profileName: profileName, storageDirectory: storageDirectory)
       .appendingPathComponent("workflows", isDirectory: true)
   }
 
-  public static func packageRootURL(appRootURL: URL, profileName: RielaAppProfileName) -> URL {
-    profilesRootURL(appRootURL: appRootURL)
-      .appendingPathComponent(profileName.rawValue, isDirectory: true)
+  public static func packageRootURL(
+    appRootURL: URL,
+    profileName: RielaAppProfileName,
+    storageDirectory: String? = nil
+  ) -> URL {
+    workflowStorageRootURL(appRootURL: appRootURL, profileName: profileName, storageDirectory: storageDirectory)
       .appendingPathComponent("packages", isDirectory: true)
   }
 
@@ -257,6 +280,9 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
   public var assistant: RielaAppAssistantSettings
   public var backends: [String: BackendCapabilityDeclaration]
   public var hostTraits: [HostTrait]
+  /// Overrides the profile's workflow storage root; nil keeps the default
+  /// inside the profile directory (see `RielaAppProfileStore.workflowStorageRootURL`).
+  public var workflowStorageDirectory: String?
 
   private enum CodingKeys: String, CodingKey {
     case version
@@ -267,6 +293,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     case assistant
     case backends
     case hostTraits
+    case workflowStorageDirectory
   }
 
   public init(
@@ -277,7 +304,8 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     workflowRepositories: [RielaAppWorkflowRepositoryReference] = [],
     assistant: RielaAppAssistantSettings = RielaAppAssistantSettings(),
     backends: [String: BackendCapabilityDeclaration] = [:],
-    hostTraits: [HostTrait] = []
+    hostTraits: [HostTrait] = [],
+    workflowStorageDirectory: String? = nil
   ) {
     self.version = version
     self.preferences = preferences
@@ -287,6 +315,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
     self.assistant = assistant
     self.backends = backends
     self.hostTraits = Array(Set(hostTraits)).sorted()
+    self.workflowStorageDirectory = workflowStorageDirectory
   }
 
   public func preference(for identity: String) -> RielaAppDaemonWorkflowPreference {
@@ -319,6 +348,7 @@ public struct RielaAppDaemonWorkflowState: Codable, Equatable, Sendable {
       forKey: .backends
     ) ?? [:]
     hostTraits = (try container.decodeIfPresent([HostTrait].self, forKey: .hostTraits) ?? []).sorted()
+    workflowStorageDirectory = try container.decodeIfPresent(String.self, forKey: .workflowStorageDirectory)
   }
 
   public func containsWorkflowRepository(id: String) -> Bool {
@@ -410,15 +440,15 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     var kind: String
   }
 
-  public var homeDirectory: URL
   public var projectRoots: [URL]
 
+  /// RielaApp discovers only its own profile storage plus explicitly added
+  /// projects and directories; the CLI's `~/.riela/{workflows,packages}` stay
+  /// out of the app so the two never share definitions implicitly.
   public init(
-    homeDirectory: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
     projectRoot: URL? = nil,
     projectRoots: [URL] = []
   ) {
-    self.homeDirectory = homeDirectory
     self.projectRoots = Self.uniqueProjectRoots(([projectRoot].compactMap { $0 } + projectRoots))
   }
 
@@ -442,8 +472,6 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
       candidates.append(contentsOf: discoverProjectWorkflowDirectories(projectRoot: projectRoot))
       candidates.append(contentsOf: discoverProjectPackageWorkflows(projectRoot: projectRoot))
     }
-    candidates.append(contentsOf: discoverUserWorkflowDirectories())
-    candidates.append(contentsOf: discoverUserPackageWorkflows())
     candidates.append(contentsOf: discoverSelectedWorkflowDirectories(additionalWorkflowDirectories))
     return Dictionary(grouping: candidates, by: \.id)
       .compactMap { _, values in values.first }
@@ -488,15 +516,6 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
     paths.compactMap(discoverSelectedWorkflowDirectory)
   }
 
-  private func discoverUserWorkflowDirectories() -> [RielaAppDaemonWorkflowCandidate] {
-    let root = homeDirectory.appendingPathComponent(".riela/workflows", isDirectory: true)
-    return discoverWorkflowDirectories(
-      root: root,
-      sourceDescription: "user workflow",
-      identityPrefix: "user-workflow"
-    )
-  }
-
   private func discoverAppWorkflowDirectories(root: URL) -> [RielaAppDaemonWorkflowCandidate] {
     discoverWorkflowDirectories(
       root: root,
@@ -531,15 +550,6 @@ public struct RielaAppDaemonWorkflowDiscovery: Sendable {
         requiresLiveEventSource: false
       )
     }
-  }
-
-  private func discoverUserPackageWorkflows() -> [RielaAppDaemonWorkflowCandidate] {
-    let root = homeDirectory.appendingPathComponent(".riela/packages", isDirectory: true)
-    return discoverPackageWorkflows(
-      root: root,
-      sourceDescription: "user package",
-      identityPrefix: "user-package"
-    )
   }
 
   private func discoverAppPackageWorkflows(root: URL) -> [RielaAppDaemonWorkflowCandidate] {

@@ -56,9 +56,8 @@ async function installStudio(page: Page, existing?: Record<string, unknown>) {
     return route.fulfill({ status: 404, json: { error: { message: path } } })
   })
   await page.goto('/')
-  await page.getByRole('button', { name: 'Command deck', exact: true }).click()
-  await page.getByRole('button', { name: 'Create / edit workflow', exact: true }).click()
-  if (existing) await page.getByRole('button', { name: /Studio workflow/ }).click()
+  // Editing happens directly on the graph: the Workflows list opens the editor.
+  if (existing) await page.getByRole('button', { name: 'Edit graph Studio workflow', exact: true }).click()
   else await page.getByRole('button', { name: 'New workflow', exact: true }).click()
   return { savedDefinitions, generationPolls: () => generationPolls, generationRequests, workflow }
 }
@@ -114,8 +113,8 @@ test('creates and connects steps, saves, and reopens separate layout', async ({ 
   await page.getByRole('button', { name: 'Save workflow', exact: true }).click()
   await expect.poll(() => state.savedDefinitions.length).toBe(2)
   page.on('dialog', (dialog) => void dialog.accept())
-  await page.getByRole('button', { name: 'Back to graph', exact: true }).click()
-  await page.getByRole('button', { name: /Studio workflow/ }).click()
+  await page.getByRole('button', { name: 'Close editor', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit graph Studio workflow', exact: true }).click()
   await expect(page.locator('[data-canvas-interactive]').first()).toHaveAttribute('transform', transform!)
 })
 
@@ -292,4 +291,14 @@ test('edits a saved file-backed prompt in the graph and adopts its new revision'
   await expect(page.getByLabel('Node file prompt', { exact: true })).toHaveValue('Updated file prompt')
   await page.getByRole('button', { name: 'Cancel node settings', exact: true }).click()
   await expect(page.getByLabel('Node definition', { exact: true })).toHaveValue(/editor-node-content-address.json/)
+})
+
+test('command deck opens a new workflow directly in the graph editor', async ({ page }) => {
+  await installStudio(page)
+  await page.getByRole('button', { name: 'Close editor', exact: true }).click()
+  await page.getByRole('button', { name: 'Command deck', exact: true }).click()
+  await page.getByRole('button', { name: 'New workflow', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Workflow graph editor' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close editor', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Workflow command deck' })).toBeVisible()
 })

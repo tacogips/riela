@@ -9,15 +9,15 @@ extension RielaApp {
     button.image = RielaAppIcon.railTemplateImage()
     button.imagePosition = .imageOnly
     button.imageScaling = .scaleProportionallyDown
-    button.toolTip = "Riela ワークフロー"
-    button.setAccessibilityLabel("Riela ワークフロー")
+    button.toolTip = "Riela Workflows"
+    button.setAccessibilityLabel("Riela Workflows")
   }
 
   func rebuildMenu() {
     let menu = NSMenu()
     menu.addItem(menuItem("Open Riela...", action: #selector(openDesktopFromMenu)))
     menu.addItem(menuItem("Settings...", action: #selector(openSettingsFromMenu)))
-    menu.addItem(menuItem("ワークフロー...", action: #selector(openDaemonInstances)))
+    menu.addItem(menuItem("Workflows...", action: #selector(openDaemonInstances)))
     let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
     launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
     menu.addItem(launchAtLoginItem)
@@ -57,7 +57,7 @@ extension RielaApp {
     }
     menu.addItem(.separator())
     menu.addItem(supplementaryMenuItem(
-      rielaAppMetadataText(["実行設定 \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
+      rielaAppMetadataText(["Run configurations \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
     ))
     for line in failedDaemonInstanceMenuLines() {
       menu.addItem(supplementaryMenuItem(line))

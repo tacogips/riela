@@ -4,6 +4,7 @@ import RielaAppSupport
 import RielaCore
 import RielaCLI
 import RielaServer
+import RielaWorkflowRegistry
 
 extension RielaApp {
   func webAPIResponse(for request: RielaHTTPRequest, csrfToken: String) async -> RielaHTTPResponse {
@@ -43,6 +44,8 @@ extension RielaApp {
   var webWorkflowHandler: RielaWebWorkflowRequestHandler {
     var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     environment["HOME"] = appHomeDirectory.path
+    environment[CLIRuntimeEnvironment.workflowHomeEnvironmentName] =
+      daemonAppWorkflowStorageRoot(profileName: daemonProfileName).path
     environment = distributedWorkflowEnvironment(environment)
     return webWorkflowRuntime.handler(context: RielaWebWorkflowContext(
       profile: daemonProfileName, assistant: daemonState.assistant, sources: daemonWorkflowSources,

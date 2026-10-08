@@ -229,11 +229,7 @@ package struct WorkflowRegistryCoordinator: Sendable {
     if let pinned = WorkflowActivationStore.coordinatorPinnedRoot {
       return pinned
     }
-    return try WorkflowMutableRegistryPinnedRoot(
-      homeDirectory: URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true),
-      rootComponents: [".riela", "workflow-state"],
-      create: create
-    )
+    return try WorkflowMutableRegistryPinnedRoot.workflowHome("workflow-state", create: create)
   }
 
   private func copyDirectoryContents(

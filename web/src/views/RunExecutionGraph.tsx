@@ -15,7 +15,7 @@ export function RunExecutionGraph(props: { run: RunDetailResponse; selectedId: s
     return { x: 30 + (index % 3) * 270, y: 30 + Math.floor(index / 3) * 150 }
   }
   return <div class="trace-scroll" aria-label="Execution graph">
-    <p class="subtle">Persisted step routes. Select an attempt below a node to inspect its recorded values.</p>
+    
     <svg class="run-route-graph" viewBox={`0 0 850 ${Math.max(180, Math.ceil(ids().length / 3) * 150 + 40)}`} role="img" aria-label="Workflow step routing graph">
       <defs><marker id="run-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#a3a3a3" /></marker></defs>
       <For each={routes()}>{(route) => {

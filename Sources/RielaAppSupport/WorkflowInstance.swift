@@ -52,7 +52,7 @@ public struct WorkflowInstance: Identifiable, Equatable, Sendable {
 
   public var displayName: String {
     if let name = preference.displayName, !name.isEmpty { return name }
-    return isDefault ? "標準設定" : source.displayName
+    return isDefault ? "Default" : source.displayName
   }
 
   public var candidate: RielaAppDaemonWorkflowCandidate {

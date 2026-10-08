@@ -105,6 +105,13 @@ type RielaConfiguration {
   server: HTTPServerConfiguration!
   profiles: [String!]!
   workflowDirectories: [String!]!
+  workflowStorage: WorkflowStorageConfiguration
+}
+type WorkflowStorageConfiguration {
+  directory: String!
+  defaultDirectory: String!
+  isDefault: Boolean!
+  cliWorkflowHome: String!
 }
 type ConfigurationRevision { profile: String!, revision: Int! }
 input UpdateAssistantConfigurationInput {
@@ -126,6 +133,7 @@ input UpdateHTTPServerConfigurationInput {
 }
 input ProfileConfigurationInput { expectedRevision: Int!, expectedProfile: String!, name: String! }
 input WorkflowDirectoryConfigurationInput { expectedRevision: Int!, expectedProfile: String!, path: String! }
+input UpdateWorkflowStorageConfigurationInput { expectedRevision: Int!, expectedProfile: String!, directory: String }
 input WorkflowInstanceConfigurationInput {
   expectedRevision: Int!
   expectedProfile: String!

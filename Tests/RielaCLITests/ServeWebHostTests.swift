@@ -314,6 +314,62 @@ final class ServeWebHostTests: XCTestCase {
     XCTAssertEqual(host.runtime.snapshot(for: identity).status, .stopped)
   }
 
+  func testWorkflowStorageSettingKeepsAppWorkflowsApartFromCLI() async throws {
+    let root = try fixtureRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appendingPathComponent("home", isDirectory: true)
+    let workflowJSON = { (id: String) in
+      Data(#"{"workflowId":"\#(id)","entryStepId":"start","nodes":[{"id":"start","nodeFile":"node.json"}],"steps":[{"id":"start","nodeId":"start"}]}"#.utf8)
+    }
+    let cliWorkflow = home.appendingPathComponent(".riela/workflows/cli-only", isDirectory: true)
+    try FileManager.default.createDirectory(at: cliWorkflow, withIntermediateDirectories: true)
+    try workflowJSON("cli-only").write(to: cliWorkflow.appendingPathComponent("workflow.json"))
+    let host = makeHost(root: root)
+    let initial = try await host.configuration()
+    let defaultStorage = home.appendingPathComponent(".riela/rielaapp/profiles/default", isDirectory: true)
+    XCTAssertEqual(initial.workflowStorage, GraphQLWorkflowStorageConfiguration(
+      directory: defaultStorage.path, defaultDirectory: defaultStorage.path, isDefault: true,
+      cliWorkflowHome: home.appendingPathComponent(".riela", isDirectory: true).path
+    ))
+    XCTAssertEqual(host.workflowEnvironment["RIELA_WORKFLOW_HOME"], defaultStorage.path)
+    XCTAssertFalse(host.sources.contains { $0.workflowId == "cli-only" })
+
+    let custom = root.appendingPathComponent("app-storage", isDirectory: true)
+    let updated = try await host.updateWorkflowStorage(input: GraphQLUpdateWorkflowStorageConfigInput(
+      expectedRevision: initial.revision, expectedProfile: initial.profile, directory: custom.path
+    ))
+    XCTAssertEqual(updated.workflowStorage?.directory, custom.path)
+    XCTAssertEqual(updated.workflowStorage?.isDefault, false)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: custom.appendingPathComponent("packages").path))
+    let appWorkflow = custom.appendingPathComponent("workflows/app-only", isDirectory: true)
+    try FileManager.default.createDirectory(at: appWorkflow, withIntermediateDirectories: true)
+    try workflowJSON("app-only").write(to: appWorkflow.appendingPathComponent("workflow.json"))
+    let refreshed = try await makeHost(root: root).configuration()
+    XCTAssertEqual(refreshed.workflowStorage?.directory, custom.path)
+    let sources = try object(await host.response(for: get("/api/v1/workflows/sources")))
+    let discovered = try XCTUnwrap(sources["discovered"] as? [[String: Any]])
+    XCTAssertEqual(discovered.compactMap { $0["workflowId"] as? String }, ["app-only"])
+    XCTAssertEqual(host.workflowEnvironment["RIELA_WORKFLOW_HOME"], custom.path)
+
+    for rejected in [home.appendingPathComponent(".riela").path, "relative/storage"] {
+      let current = try await host.configuration()
+      do {
+        _ = try await host.updateWorkflowStorage(input: GraphQLUpdateWorkflowStorageConfigInput(
+          expectedRevision: current.revision, expectedProfile: current.profile, directory: rejected
+        ))
+        XCTFail("\(rejected) must be rejected as app workflow storage")
+      } catch let error as RielaConfigurationGraphQLError {
+        XCTAssertEqual(error.code, "INVALID_CONFIGURATION")
+      }
+    }
+    let current = try await host.configuration()
+    let reset = try await host.updateWorkflowStorage(input: GraphQLUpdateWorkflowStorageConfigInput(
+      expectedRevision: current.revision, expectedProfile: current.profile, directory: ""
+    ))
+    XCTAssertEqual(reset.workflowStorage?.directory, defaultStorage.path)
+    XCTAssertEqual(reset.workflowStorage?.isDefault, true)
+  }
+
   func testConfigurationWritesPersistAndRejectStaleViews() async throws {
     let root = try fixtureRoot()
     defer { try? FileManager.default.removeItem(at: root) }

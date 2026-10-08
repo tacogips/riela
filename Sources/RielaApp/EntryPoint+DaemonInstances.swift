@@ -41,7 +41,7 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    status = "実行設定を作成しました: \(identity)"
+    status = "Created run configuration: \(identity)"
     refreshDaemonWorkflowWindow()
     let runtimeIdentity = profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity)
     daemonWindowController?.selectCandidate(identity: runtimeIdentity)
@@ -87,7 +87,7 @@ extension RielaApp {
 
   func stopDaemonWorkflowInstance(identity: String) {
     guard let resolved = resolveDaemonWorkflowInstance(identity: identity) else {
-      status = "実行設定にワークフローを関連付けてください"
+      status = "Link a workflow to the run configuration"
       refreshDaemonWorkflowWindow()
       return
     }
@@ -155,7 +155,7 @@ extension RielaApp {
     }
     Task { @MainActor in
       await daemonRuntime.stop(identity: identity)
-      status = "実行設定を削除しました: \(resolvedIdentity.localIdentity)（\(resolvedIdentity.profileName.rawValue)）"
+      status = "Removed run configuration: \(resolvedIdentity.localIdentity) (\(resolvedIdentity.profileName.rawValue))"
       refreshDaemonWorkflowWindow()
     }
   }
@@ -213,8 +213,8 @@ extension RielaApp {
     let candidate = resolved.candidate
     let defaultId = uniqueDaemonInstanceId(for: candidate)
     guard let result = promptForDaemonInstance(
-      title: "実行設定を追加",
-      message: "\(candidate.displayName) の実行設定を追加します。",
+      title: "Add run configuration",
+      message: "\(candidate.displayName) : add a run configuration.",
       idValue: defaultId,
       displayNameValue: "\(candidate.displayName) copy"
     ) else {
@@ -244,7 +244,7 @@ extension RielaApp {
       refreshDaemonWorkflowWindow()
       return
     }
-    status = "実行設定を作成しました: \(result.identity)"
+    status = "Created run configuration: \(result.identity)"
     refreshDaemonWorkflowWindow()
     daemonWindowController?.selectCandidate(identity: profileRuntimeIdentity(
       profileName: resolved.profileName,
@@ -260,8 +260,8 @@ extension RielaApp {
     }
     let candidate = resolved.candidate
     guard let result = promptForDaemonInstance(
-      title: "実行設定の名前",
-      message: "\(candidate.displayName) の実行設定の名前を変更します。",
+      title: "Run configuration name",
+      message: "\(candidate.displayName) : rename its run configuration.",
       idValue: resolved.localIdentity,
       displayNameValue: resolved.instance.instance.displayName
     ) else {
@@ -297,7 +297,7 @@ extension RielaApp {
       if result.identity != resolved.localIdentity {
         await daemonRuntime.stop(identity: identity)
       }
-      status = "実行設定の名前を変更しました: \(result.identity)"
+      status = "Renamed run configuration: \(result.identity)"
       refreshDaemonWorkflowWindow()
       let renamedIdentity = RielaAppProfileInstanceIdentity(
         profileName: resolved.profileName,
@@ -397,7 +397,7 @@ extension RielaApp {
     }
     let identity = idValue
     guard !identity.isEmpty else {
-      status = "実行設定 ID が必要です"
+      status = "A run configuration ID is required"
       refreshDaemonWorkflowWindow()
       return nil
     }
@@ -486,7 +486,7 @@ struct DaemonInstancePromptViewFactory {
   func nameEditorStack(idField: NSTextField, nameField: NSTextField) -> NSStackView {
     accessoryStack(
       views: [
-        sectionTitle("実行設定"),
+        sectionTitle("Run configuration"),
         fieldRow(title: "Display Name", control: nameField)
       ],
       size: Self.nameEditorSize

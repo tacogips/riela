@@ -91,7 +91,7 @@ final class RielaAppSettingsEditorNavigationTests: XCTestCase {
     for label in [".env File", "Environment Variables", "Working Directory", "Workflow Variables", "Event Sources"] {
       XCTAssertNil(selectableRow(accessibilityLabel: label, in: root), "\(label) must not open a native editor")
     }
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "設定", in: root))
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Settings", in: root))
       .accessibilityPerformPress())
     XCTAssertEqual(openedContext, "#/workflows/user-workflow%3Achat/configurations/chat-instance/settings")
   }

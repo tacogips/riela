@@ -33,8 +33,8 @@ extension DaemonWorkflowWindowController {
   func workflowConfigurationActionsSection() -> RielaAppSettingsSectionView {
     rielaAppSettingsSection(rows: [
       actionRow(
-        title: "実行設定を追加",
-        detail: "別の作業フォルダや入力で使う設定に名前を付けて保存します。",
+        title: "Add run configuration",
+        detail: "Name and save a configuration for a different working folder or input.",
         action: #selector(addWorkflowConfiguration)
       )
     ])

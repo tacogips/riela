@@ -407,10 +407,7 @@ extension WorkflowCommandTests {
     XCTAssertTrue(userInstall.stdout.contains("package install completed"))
     XCTAssertTrue(userInstall.stdout.contains("Next: riela workflow run text-demo --scope user"))
     XCTAssertTrue(userInstall.stdout.contains(
-      "RielaApp: Workflows... > Refresh to show the user package in every profile"
-    ))
-    XCTAssertTrue(userInstall.stdout.contains(
-      "or Add Workflow/Package... and choose \(userInstalledPackage.path)"
+      "RielaApp: Add Workflow/Package... in RielaApp and choose \(userInstalledPackage.path)"
     ))
   }
 

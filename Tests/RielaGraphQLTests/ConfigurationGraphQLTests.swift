@@ -9,7 +9,9 @@ final class ConfigurationGraphQLTests: XCTestCase {
       "configuration: RielaConfiguration!",
       "updateAssistantConfiguration(input: UpdateAssistantConfigurationInput!)",
       "updateAppearanceConfiguration(input: UpdateAppearanceConfigurationInput!)",
-      "updateHTTPServerConfiguration(input: UpdateHTTPServerConfigurationInput!)"
+      "updateHTTPServerConfiguration(input: UpdateHTTPServerConfigurationInput!)",
+      "updateWorkflowStorageConfiguration(input: UpdateWorkflowStorageConfigurationInput!)",
+      "workflowStorage: WorkflowStorageConfiguration"
     ] {
       XCTAssertTrue(schema.contains(token), token)
     }

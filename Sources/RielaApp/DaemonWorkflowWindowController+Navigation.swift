@@ -69,7 +69,7 @@ extension DaemonWorkflowWindowController {
     isShowingWorkflowSourceDetail = false
     isShowingMarketplaceWorkflowDetail = false
     showContentPane(sourcesOverviewView)
-    navigationTitleLabel.stringValue = "ワークフロー"
+    navigationTitleLabel.stringValue = "Workflows"
     updateNavigationState()
     updateSidebarSelection()
   }

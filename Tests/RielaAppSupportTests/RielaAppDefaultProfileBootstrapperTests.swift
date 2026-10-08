@@ -34,7 +34,7 @@ final class RielaAppDefaultProfileBootstrapperTests: XCTestCase {
       "app-package:telegram-yuki-chat-bot:telegram-yuki-chat-bot"
     ])
 
-    let discoveredCandidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows(
+    let discoveredCandidates = RielaAppDaemonWorkflowDiscovery().discoverUserDaemonWorkflows(
       appPackageRoot: RielaAppProfileStore.packageRootURL(appRootURL: appRoot, profileName: .default)
     )
     let candidates = state.managedCandidates(from: discoveredCandidates)

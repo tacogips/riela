@@ -40,6 +40,21 @@ describe('RielaConfigurationClient', () => {
       },
     })
   })
+
+  test('sends the profile workflow storage directory', async () => {
+    let body: { operationName: string; variables: Record<string, unknown> } | undefined
+    const client = new RielaConfigurationClient(async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as typeof body
+      return Response.json({ data: { updateWorkflowStorageConfiguration: fixtureConfiguration() } })
+    })
+
+    await client.updateWorkflowStorage(fixtureConfiguration(), '/srv/riela-app')
+
+    expect(body?.operationName).toBe('WebUpdateWorkflowStorageConfiguration')
+    expect(body?.variables).toEqual({
+      input: { expectedRevision: 7, expectedProfile: 'default', directory: '/srv/riela-app' },
+    })
+  })
 })
 
 function fixtureConfiguration() {

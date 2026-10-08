@@ -286,7 +286,7 @@ extension DaemonWorkflowWindowController {
     let response = withExtendedLifetime(sourceSelection.target) {
       runAddInstancePromptWindow(
         title: "Relink Source",
-        message: "この実行設定で使うワークフローを選択します。",
+        message: "Choose the workflow this run configuration uses.",
         content: stack,
         contentSize: AddInstancePromptLayout.relinkSize,
         primaryTitle: nil
@@ -302,8 +302,8 @@ extension DaemonWorkflowWindowController {
     let generatedId = defaultInstanceId(option.sourceIdentity)
     let idField = NSTextField(string: generatedId)
     idField.placeholderString = "instance-id"
-    let nameField = NSTextField(string: "追加設定")
-    nameField.placeholderString = "実行設定の名前"
+    let nameField = NSTextField(string: "Additional configuration")
+    nameField.placeholderString = "Run configuration name"
     let envField = NSTextField(string: "")
     envField.placeholderString = "Optional /path/to/.env"
     let directoryField = NSTextField(string: option.candidate.workingDirectory)
@@ -315,9 +315,9 @@ extension DaemonWorkflowWindowController {
     let startCheckbox = NSButton(checkboxWithTitle: "Start immediately after creating", target: nil, action: nil)
     startCheckbox.state = .off
     startCheckbox.setAccessibilityLabel("Start immediately")
-    startCheckbox.setAccessibilityHelp("保存後、この実行設定で直ちに開始します。")
+    startCheckbox.setAccessibilityHelp("Start immediately with this run configuration after saving.")
     startCheckbox.setContentHuggingPriority(.required, for: .horizontal)
-    let parameterTitle = NSTextField(labelWithString: "実行設定を追加")
+    let parameterTitle = NSTextField(labelWithString: "Add run configuration")
     parameterTitle.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
     parameterTitle.alignment = .left
     let workflowValue = NSTextField(labelWithString: option.title)
@@ -337,7 +337,7 @@ extension DaemonWorkflowWindowController {
       rows.append(addInstanceValueRow(title: "Required Environment", valueLabel: requiredLabel))
     }
     rows.append(contentsOf: [
-      addInstanceFieldRow(title: "名前", control: nameField),
+      addInstanceFieldRow(title: "Name", control: nameField),
       addInstanceFieldRow(title: ".env File", control: envStack),
       addInstanceFieldRow(title: "Working Directory", control: directoryStack),
       addInstanceToggleRow(title: "Start", checkbox: startCheckbox)
@@ -348,8 +348,8 @@ extension DaemonWorkflowWindowController {
     )
 
     let response = runAddInstancePromptWindow(
-      title: "実行設定を追加",
-      message: "実行設定に名前を付けて保存します。",
+      title: "Add run configuration",
+      message: "Name and save the run configuration.",
       content: stack,
       contentSize: AddInstancePromptLayout.parameterSize,
       primaryTitle: "Create",
@@ -407,9 +407,9 @@ extension DaemonWorkflowWindowController {
   private func relinkRetryMessage(for action: AddInstanceSheetAction) -> String {
     switch action {
     case .importWorkflowOrPackageFromFile:
-      return "追加したワークフローを選択して実行設定に関連付けます。"
+      return "Select the added workflow to link it to the run configuration."
     case .importWorkflowOrPackageFromURL:
-      return "追加したワークフローが表示されたら選択してください。"
+      return "Select the added workflow when it appears."
     }
   }
 

@@ -271,7 +271,7 @@ private func isSafeSkillProjectionName(_ name: String) -> Bool {
 func packageRoot(scope: WorkflowScope, workingDirectory: URL) -> URL {
   switch scope {
   case .user:
-    return URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/packages", isDirectory: true)
+    return CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("packages", isDirectory: true)
   case .auto, .project, .direct:
     return workingDirectory.appendingPathComponent(".riela/packages", isDirectory: true)
   }
@@ -624,14 +624,14 @@ private func workflowRunNextStep(packageName: String, installedPackageDirectory:
   let destination = URL(fileURLWithPath: installedPackageDirectory, isDirectory: true).standardizedFileURL
   let packageRoot = destination.deletingLastPathComponent()
   let rielaRoot = packageRoot.deletingLastPathComponent()
-  guard packageRoot.lastPathComponent == "packages", rielaRoot.lastPathComponent == ".riela" else {
-    return "riela workflow run \(packageName) --scope project"
-  }
-  let userPackageRoot = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-    .appendingPathComponent(".riela/packages", isDirectory: true)
+  let userPackageRoot = CLIRuntimeEnvironment.workflowHomeDirectory()
+    .appendingPathComponent("packages", isDirectory: true)
     .standardizedFileURL
   if packageRoot.path == userPackageRoot.path {
     return "riela workflow run \(packageName) --scope user"
+  }
+  guard packageRoot.lastPathComponent == "packages", rielaRoot.lastPathComponent == ".riela" else {
+    return "riela workflow run \(packageName) --scope project"
   }
   let projectRoot = rielaRoot.deletingLastPathComponent()
   return "riela workflow run \(packageName) --scope project --working-dir \(shellArgument(projectRoot.path))"
@@ -653,14 +653,14 @@ private func packageRielaAppStep(_ result: WorkflowPackageCommandResult) -> Stri
   let destinationURL = URL(fileURLWithPath: destination, isDirectory: true).standardizedFileURL
   let packageRoot = destinationURL.deletingLastPathComponent()
   let rielaRoot = packageRoot.deletingLastPathComponent()
-  guard packageRoot.lastPathComponent == "packages", rielaRoot.lastPathComponent == ".riela" else {
-    return nil
-  }
-  let userPackageRoot = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-    .appendingPathComponent(".riela/packages", isDirectory: true)
+  let userPackageRoot = CLIRuntimeEnvironment.workflowHomeDirectory()
+    .appendingPathComponent("packages", isDirectory: true)
     .standardizedFileURL
   if packageRoot.path == userPackageRoot.path {
-    return "Workflows... > Refresh to show the user package in every profile, or Add Workflow/Package... and choose \(destination)"
+    return "Add Workflow/Package... in RielaApp and choose \(destination); RielaApp keeps its own workflow storage"
+  }
+  guard packageRoot.lastPathComponent == "packages", rielaRoot.lastPathComponent == ".riela" else {
+    return nil
   }
   return "Add Project... and choose \(rielaRoot.deletingLastPathComponent().path)"
 }

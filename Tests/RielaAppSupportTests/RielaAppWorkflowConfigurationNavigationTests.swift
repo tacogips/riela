@@ -11,18 +11,18 @@ final class RielaAppWorkflowNavigationTests: XCTestCase {
     let source = candidate("daily")
     update(controller, sources: [source])
 
-    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "ワークフロー")
+    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "Workflows")
     XCTAssertFalse(controller.isBackNavigationAvailable)
     XCTAssertNil(controller.sidebarSourcesButton.superview)
     XCTAssertTrue(controller.state.preferences.isEmpty)
-    XCTAssertEqual(controller.workflowConfigurationRows(for: source).map(\.instanceName), ["標準設定"])
+    XCTAssertEqual(controller.workflowConfigurationRows(for: source).map(\.instanceName), ["Default"])
     XCTAssertEqual(controller.workflowConfigurationRows(for: source).map(\.state), [.stopped])
 
     controller.selectedWorkflowSourceId = source.id
     controller.showWorkflowSourceDetail()
     let pane = try XCTUnwrap(controller.workflowSourceDetailView)
-    XCTAssertNotNil(findRow("標準設定", in: pane))
-    XCTAssertNotNil(findRow("実行設定を追加", in: pane))
+    XCTAssertNotNil(findRow("Default", in: pane))
+    XCTAssertNotNil(findRow("Add run configuration", in: pane))
     XCTAssertTrue(controller.state.preferences.isEmpty)
   }
 
@@ -36,8 +36,8 @@ final class RielaAppWorkflowNavigationTests: XCTestCase {
       identity: "named/日本語", sourceIdentity: daily.id, displayName: "Production", available: true, active: false
     )
     update(controller, sources: [daily, other], state: state)
-    XCTAssertEqual(controller.workflowConfigurationRows(for: daily).map(\.instanceName), ["標準設定", "Production"])
-    XCTAssertEqual(controller.workflowConfigurationRows(for: other).map(\.instanceName), ["標準設定"])
+    XCTAssertEqual(controller.workflowConfigurationRows(for: daily).map(\.instanceName), ["Default", "Production"])
+    XCTAssertEqual(controller.workflowConfigurationRows(for: other).map(\.instanceName), ["Default"])
 
     controller.selectedWorkflowSourceId = daily.id
     controller.showWorkflowSourceDetail()

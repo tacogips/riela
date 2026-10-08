@@ -187,27 +187,27 @@ extension DaemonWorkflowWindowController {
     refreshButton.action = #selector(refresh)
     refreshButton.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
     refreshButton.bezelStyle = .toolbar
-    refreshButton.toolTip = "実行設定を更新"
-    refreshButton.setAccessibilityLabel("実行設定を更新")
-    instanceSearchField.placeholderString = "実行設定を検索"
+    refreshButton.toolTip = "Refresh run configurations"
+    refreshButton.setAccessibilityLabel("Refresh run configurations")
+    instanceSearchField.placeholderString = "Search run configurations"
     instanceSearchField.target = self
     instanceSearchField.sendsSearchStringImmediately = true
     instanceSearchField.controlSize = .large
-    instanceSearchField.setAccessibilityLabel("実行設定を検索")
+    instanceSearchField.setAccessibilityLabel("Search run configurations")
     instanceSearchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     instanceSearchField.action = #selector(instanceSearchChanged)
     addListButton.target = self
     addListButton.action = #selector(addListButtonPressed)
     addListButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
     addListButton.bezelStyle = .toolbar
-    addListButton.toolTip = "実行設定を追加"
-    addListButton.setAccessibilityLabel("実行設定を追加")
+    addListButton.toolTip = "Add run configuration"
+    addListButton.setAccessibilityLabel("Add run configuration")
     emptyInstancesLabel.textColor = .secondaryLabelColor
     emptyInstancesLabel.alignment = .center
     emptyInstancesLabel.lineBreakMode = .byWordWrapping
     emptyInstancesLabel.maximumNumberOfLines = 2
     emptyInstancesLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    emptyInstancesLabel.setAccessibilityLabel("ワークフローを選択して実行設定を表示します。")
+    emptyInstancesLabel.setAccessibilityLabel("Select a workflow to show its run configurations.")
     emptyInstancesGuideView.onViewWorkflowSources = { [weak self] in
       self?.showSourcesPane()
     }
@@ -218,7 +218,7 @@ extension DaemonWorkflowWindowController {
     emptyInstancesGuideView.autoresizingMask = []
     profilePopup.toolTip = "Switch profiles or manage profiles."
     configureAssistantControls()
-    configureInstanceStateProgressIndicator(detailStatusProgressIndicator, accessibilityLabel: "実行設定の状態")
+    configureInstanceStateProgressIndicator(detailStatusProgressIndicator, accessibilityLabel: "Run configuration status")
     detailSummaryLabel.textColor = .secondaryLabelColor
     detailSummaryLabel.lineBreakMode = .byTruncatingTail
     for label in [
@@ -235,7 +235,7 @@ extension DaemonWorkflowWindowController {
       label.lineBreakMode = .byTruncatingMiddle
       label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
-    let instancesList = workflowList(title: "実行設定", table: instanceTable)
+    let instancesList = workflowList(title: "Run configurations", table: instanceTable)
     instancesList.translatesAutoresizingMaskIntoConstraints = true
     instancesList.setContentHuggingPriority(.defaultLow, for: .vertical)
     instancesListView = instancesList

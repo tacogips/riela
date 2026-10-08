@@ -2,6 +2,7 @@
 import Foundation
 import RielaAppSupport
 import RielaServer
+import RielaWorkflowRegistry
 
 extension RielaApp {
   func setDaemonWorkflowWorkingDirectory(identity: String) {
@@ -44,6 +45,9 @@ extension RielaApp {
     preference: RielaAppDaemonWorkflowPreference
   ) -> [String: String] {
     var environment = daemonEnvironmentStore(preference: preference).mergedEnvironment()
+    let profileName = resolveDaemonWorkflowInstance(identity: candidate.id)?.profileName ?? daemonProfileName
+    environment[CLIRuntimeEnvironment.workflowHomeEnvironmentName] =
+      daemonAppWorkflowStorageRoot(profileName: profileName).path
     for (name, value) in preference.environmentVariables {
       environment[name] = value
     }

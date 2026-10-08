@@ -230,7 +230,7 @@ public struct RielaConsoleGraphQLProvider {
     preference: RielaAppDaemonWorkflowPreference
   ) -> GraphQLConsoleInstanceDTO {
     let sourceIdentity = preference.sourceIdentity ?? identity
-    let fallbackName = identity == sourceIdentity ? "標準設定" : identity
+    let fallbackName = identity == sourceIdentity ? "Default" : identity
     let name = preference.displayName?.isEmpty == false ? preference.displayName ?? fallbackName : fallbackName
     return GraphQLConsoleInstanceDTO(
       id: identity,

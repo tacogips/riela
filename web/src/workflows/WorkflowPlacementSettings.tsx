@@ -25,10 +25,10 @@ export function WorkflowPlacementSettings(props: { step: Step; onChange: (step: 
         onChange={event => setTarget('workerId', event.currentTarget.value)} /></label>
       <label>Worker group (optional)<input value={text(placementRecord(placement().target).group)} placeholder="build"
         onChange={event => setTarget('group', event.currentTarget.value)} /></label>
-      <p>Both ID and group must match when supplied. Leave both empty for any remote worker. An unavailable worker never falls back to this controller.</p>
+      <p class="subtle">Empty = any worker.</p>
       <label>Export files (one per line)<textarea rows="3" value={Array.isArray(placement().exports) ? (placement().exports as unknown[]).map(text).join('\n') : ''}
         placeholder="build/report.json" onChange={event => update({ exports: event.currentTarget.value.split('\n').filter(path => path !== '') })} /></label>
-      <p>Paths are relative to the worker workspace. Up to 16 regular files, 512 KiB total.</p>
+      <p class="subtle">Up to 16 files, 512 KiB.</p>
     </Show>
   </>
 }

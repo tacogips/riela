@@ -80,9 +80,7 @@ public struct WorkflowPackageLockSource: Codable, Equatable, Sendable {
 func workflowPackageLockURL(parsed: ParsedParityOptions, workingDirectory: URL) -> URL {
   switch parsed.scope {
   case .user:
-    return URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("riela-lock.json")
+    return CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("riela-lock.json")
   case .auto, .project, .direct:
     return workingDirectory.appendingPathComponent("riela-lock.json")
   }

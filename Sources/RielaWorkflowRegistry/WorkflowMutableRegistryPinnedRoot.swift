@@ -27,10 +27,16 @@ package final class WorkflowMutableRegistryPinnedRoot: @unchecked Sendable {
   private let device: dev_t
   private let inode: ino_t
 
-  package convenience init(homeDirectory: URL, create: Bool) throws {
-    try self.init(
-      homeDirectory: homeDirectory,
-      rootComponents: [".riela", "temporary-workflows"],
+  /// Pins `leaf` below the current workflow home (see
+  /// `CLIRuntimeEnvironment.workflowHomeAnchor`).
+  package static func workflowHome(_ leaf: String, create: Bool) throws -> WorkflowMutableRegistryPinnedRoot {
+    let anchor = CLIRuntimeEnvironment.workflowHomeAnchor()
+    if create, anchor.components.isEmpty {
+      try FileManager.default.createDirectory(at: anchor.base, withIntermediateDirectories: true)
+    }
+    return try WorkflowMutableRegistryPinnedRoot(
+      homeDirectory: anchor.base,
+      rootComponents: anchor.components + [leaf],
       create: create
     )
   }

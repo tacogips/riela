@@ -36,7 +36,7 @@ export function OpsWorkflowsView(props: {
   profileName: string
   onOpenRun: (run: OpsRunSummary) => void
 }) {
-  const [studio, setStudio] = createSignal(false)
+  const [studio, setStudio] = createSignal<{ copySource?: { id: string; name: string } }>()
   const overview = createPollingResource(
     () => props.profileKey,
     async (signal) => requireExpectedProfile(await getOpsOverview(signal), props.profileName),
@@ -47,7 +47,7 @@ export function OpsWorkflowsView(props: {
   const [selection, setSelection] = createSignal<DeckSelection>()
 
   createEffect(on(() => props.profileKey, () => {
-    setStudio(false)
+    setStudio(undefined)
     setLens(DEFAULT_LENS)
     setQuery('')
     setFocusedSourceId('')
@@ -106,15 +106,16 @@ export function OpsWorkflowsView(props: {
 
   return (
     <Show when={!studio()} fallback={<WorkflowStudio profileKey={props.profileKey}
-      source={focusedHub() ? { id: focusedHub()!.workflow.sourceId, name: focusedHub()!.workflow.name } : undefined}
-      onClose={() => setStudio(false)} />}><section class="ops-shell" aria-label="Workflow command deck">
+      copySource={studio()?.copySource} onClose={() => setStudio(undefined)} />}><section class="ops-shell" aria-label="Workflow command deck">
       <header class="ops-topline">
         <div class="ops-topline-title">
           <span class="eyebrow">{'// CONTROL PLANE'}</span>
           <strong>Command deck<span class="ops-cursor" aria-hidden="true" /></strong>
         </div>
         <div class="ops-topline-meta">
-          <ActionButton onClick={() => setStudio(true)}>Create / edit workflow</ActionButton>
+          <ActionButton onClick={() => setStudio({})}>New workflow</ActionButton>
+          <Show when={focusedHub()}>{(hub) => <ActionButton class="secondary" aria-label={`Edit a copy of ${hub().workflow.name}`}
+            onClick={() => setStudio({ copySource: { id: hub().workflow.sourceId, name: hub().workflow.name } })}>Edit a copy</ActionButton>}</Show>
           <span role="status">{pollingStatusLabel(overview.status())}</span>
           <span class="status-chip">{props.profileName || 'riela'}</span>
           <ActionButton class="secondary" onClick={() => void overview.refresh()}>Refresh</ActionButton>
@@ -479,8 +480,8 @@ function DeckDetailPanel(props: {
             <div><dt>manager</dt><dd>{hub().workflow.managerStepId ?? '—'}</dd></div>
             <div><dt>steps</dt><dd>{hub().workflow.steps.length}{hub().workflow.stepsTruncated ? '+' : ''}</dd></div>
           </dl>
-          <h3>実行設定</h3>
-          <Show when={hub().instances.length === 0}><p>実行設定がありません。</p></Show>
+          <h3>Run configurations</h3>
+          <Show when={hub().instances.length === 0}><p>No run configurations.</p></Show>
           <For each={hub().instances}>{(instance) => (
             <div class="ops-route-row">
               <span class="ops-route-glyph" style={{ color: statusStyle(instance.status === 'running' ? 'running' : undefined).color }}>●</span>

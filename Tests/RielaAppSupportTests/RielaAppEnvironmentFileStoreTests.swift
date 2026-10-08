@@ -7,7 +7,8 @@ import XCTest
 final class RielaAppEnvironmentFileStoreTests: XCTestCase {
   func testPackageDiscoveryReportsRequiredEnvironmentVariables() throws {
     let root = try temporaryHome()
-    let packageDirectory = root.appendingPathComponent(".riela/packages/env-package", isDirectory: true)
+    let appPackageRoot = RielaAppProfileStore.defaultPackageRootURL(homeDirectory: root)
+    let packageDirectory = appPackageRoot.appendingPathComponent("env-package", isDirectory: true)
     try FileManager.default.createDirectory(at: packageDirectory, withIntermediateDirectories: true)
     try """
     {"workflowId":"env-workflow","steps":[],"nodes":[]}
@@ -31,7 +32,9 @@ final class RielaAppEnvironmentFileStoreTests: XCTestCase {
     }
     """.write(to: packageDirectory.appendingPathComponent("riela-package.json"), atomically: true, encoding: .utf8)
 
-    let candidate = try XCTUnwrap(RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows().first)
+    let candidate = try XCTUnwrap(
+      RielaAppDaemonWorkflowDiscovery().discoverUserDaemonWorkflows(appPackageRoot: appPackageRoot).first
+    )
 
     XCTAssertEqual(candidate.requiredEnvironment.map(\.name), ["RIELA_REQUIRED_TOKEN"])
     XCTAssertEqual(candidate.requiredEnvironment.first?.description, "Required token")
@@ -64,7 +67,8 @@ final class RielaAppEnvironmentFileStoreTests: XCTestCase {
 
   func testWorkflowDiscoveryReportsWorkflowRequiredEnvironmentVariables() throws {
     let root = try temporaryHome()
-    let workflowDirectory = root.appendingPathComponent(".riela/workflows/env-workflow", isDirectory: true)
+    let appWorkflowRoot = RielaAppProfileStore.defaultWorkflowRootURL(homeDirectory: root)
+    let workflowDirectory = appWorkflowRoot.appendingPathComponent("env-workflow", isDirectory: true)
     try FileManager.default.createDirectory(
       at: workflowDirectory.appendingPathComponent("nodes", isDirectory: true),
       withIntermediateDirectories: true
@@ -99,7 +103,9 @@ final class RielaAppEnvironmentFileStoreTests: XCTestCase {
     }
     """.write(to: workflowDirectory.appendingPathComponent("nodes/agent.json"), atomically: true, encoding: .utf8)
 
-    let candidate = try XCTUnwrap(RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows().first)
+    let candidate = try XCTUnwrap(
+      RielaAppDaemonWorkflowDiscovery().discoverUserDaemonWorkflows(appWorkflowRoot: appWorkflowRoot).first
+    )
 
     XCTAssertEqual(candidate.requiredEnvironment.map(\.name), ["RIELA_ADDON_TOKEN", "RIELA_AGENT_TOKEN"])
   }

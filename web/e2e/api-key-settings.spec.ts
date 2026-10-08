@@ -48,7 +48,7 @@ test('native settings issue expiring client/worker keys, toggle auth and revoke 
   await page.getByLabel('Expires at').fill('2030-12-31T12:30')
   await expect(page.getByRole('button', { name: 'Settings', exact: true }).locator('.action-button-caption')).toBeVisible()
   await page.getByRole('button', { name: 'Issue API key', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Issue API key?' })).toContainText('survives app restarts')
+  await expect(page.getByRole('dialog', { name: 'Issue API key?' })).toContainText('cannot be recovered later')
   const dialogBox = await page.getByRole('dialog').boundingBox()
   const viewport = page.viewportSize()!
   expect(Math.abs(dialogBox!.x + dialogBox!.width / 2 - viewport.width / 2)).toBeLessThan(2)

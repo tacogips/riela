@@ -47,7 +47,7 @@ export function instanceEditorIdentity(profileKey: string, instanceId: string): 
 
 export function MissingSourceDetail(props: { instance: Instance }) {
   return <div class="editor-panel" role="status"><div class="section-title"><div><span class="eyebrow">SOURCE REQUIRED</span><h2>{props.instance.name}</h2></div><span class="status-chip needsSource">Needs source</span></div>
-    <div class="instance-affordance"><strong>This run configuration cannot find its workflow source.</strong><span>{props.instance.source}</span><span>Relink or remove it in the native ワークフロー画面. Configuration and run history are unavailable until then.</span></div>
+    <div class="instance-affordance"><strong>This run configuration cannot find its workflow source.</strong><span>{props.instance.source}</span><span>Relink or remove it in the native Workflows window. Configuration and run history are unavailable until then.</span></div>
   </div>
 }
 
@@ -178,7 +178,7 @@ export function InstanceEditor(props: {
         { action, expectedProfile: props.profileName }, expectedRevision(),
       )
       setExpectedRevision(response.revision)
-      setMessage('実行設定を更新しました。')
+      setMessage('Run configuration updated.')
     } catch (error) {
       setSaveError(true); setMessage(errorMessage(error))
       setConflict(error instanceof APIError && error.status === 409)
@@ -191,15 +191,15 @@ export function InstanceEditor(props: {
   return <div class="editor-panel"><div class="section-title"><div><span class="eyebrow">CONFIGURATION</span><h2>{props.instance().name}</h2></div><span class="source-label">{props.instance().source} · {props.instance().sourceKind}</span></div>
     <div class="instance-affordance"><strong>{props.instance().active ? 'Active now' : 'Inactive now'} · {props.instance().enabledAtLaunch ? 'enabled at launch' : 'disabled at launch'}</strong>
         <div class="save-row instance-controls">
-          <ActionButton disabled={saving() || props.instance().status === 'running'} onClick={() => void controlInstance('start')}>実行</ActionButton>
-          <ActionButton class="secondary" disabled={saving() || props.instance().status === 'stopped'} onClick={() => void controlInstance('stop')}>停止</ActionButton>
-          <ActionButton class="secondary" disabled={saving()} onClick={() => void controlInstance('restart')}>再実行</ActionButton>
+          <ActionButton disabled={saving() || props.instance().status === 'running'} onClick={() => void controlInstance('start')}>Run</ActionButton>
+          <ActionButton class="secondary" disabled={saving() || props.instance().status === 'stopped'} onClick={() => void controlInstance('stop')}>Stop</ActionButton>
+          <ActionButton class="secondary" disabled={saving()} onClick={() => void controlInstance('restart')}>Restart</ActionButton>
           <ActionButton class="secondary" disabled={saving()} onClick={() => void controlInstance(props.instance().enabledAtLaunch ? 'disableAtLaunch' : 'enableAtLaunch')}>{props.instance().enabledAtLaunch ? 'Disable at launch' : 'Enable at launch'}</ActionButton>
         </div>
     </div>
     <Show when={props.instance().requiredEnvironment.length > 0}><div class="requirements" aria-label="Required environment"><h3>Required environment</h3><For each={props.instance().requiredEnvironment}>{(requirement) => <div class="requirement-row"><span classList={{ 'presence-dot': true, present: requirement.present }} aria-hidden="true" /><div><strong>{requirement.name}</strong><span>{requirement.description ?? 'No description'} · {requirement.source}</span></div><span>{requirement.present ? 'Present' : 'Missing'}</span></div>}</For></div></Show>
     <div class="form-grid"><label><span>Working directory</span><input value={workingDirectory()} onInput={(event) => setWorkingDirectory(event.currentTarget.value)} /></label><label><span>Environment file</span><input value={environmentFilePath()} onInput={(event) => setEnvironmentFilePath(event.currentTarget.value)} /></label></div>
-    <div class="secret-editor"><h3>Inline environment variables</h3><p>Stored values are never returned. Leave a replacement blank to keep it, or explicitly clear it.</p>
+    <div class="secret-editor"><h3>Inline environment variables</h3><p class="subtle">Stored values stay hidden; leave blank to keep.</p>
       <For each={props.instance().environmentVariables}>{(variable) => <div class="secret-row"><label><span>{variable.name} · {variable.masked}</span><input type="password" autocomplete="new-password" placeholder="Leave blank to keep current value" value={environmentUpdates()[variable.name] ?? ''} onInput={(event) => setEnvironmentUpdates((current) => ({ ...current, [variable.name]: event.currentTarget.value }))} /></label><label class="check-row clear-secret"><input type="checkbox" checked={environmentToClear().includes(variable.name)} onChange={(event) => toggleClear(variable.name, event.currentTarget.checked)} /><span>Clear</span></label></div>}</For>
       <div class="secret-row"><label><span>New variable name</span><input autocomplete="off" value={newEnvironmentName()} onInput={(event) => setNewEnvironmentName(event.currentTarget.value)} /></label><label><span>New write-only value</span><input type="password" autocomplete="new-password" value={newEnvironmentValue()} onInput={(event) => setNewEnvironmentValue(event.currentTarget.value)} /></label></div>
     </div>
@@ -208,6 +208,6 @@ export function InstanceEditor(props: {
     <Show when={variablesValidation().error}><p id="workflow-variables-error" class="field-error" role="alert">{variablesValidation().error}</p></Show>
     <div class="node-patches"><h3>Node patches</h3><Show when={Object.keys(props.instance().nodePatches).length === 0}><p>No node patches.</p></Show><For each={Object.entries(props.instance().nodePatches).sort(([left], [right]) => left.localeCompare(right))}>{([nodeId, patch]) => <div class="patch-row"><strong>{nodeId}</strong><span>Backend: {patch.executionBackend ?? 'default'}</span><span>Model: {patch.model ?? 'default'}</span><span>Effort: {patch.effort ?? 'default'}</span></div>}</For></div>
     <div class="save-row"><Show when={message()}><MutationMessage message={message()} isError={saveError()} onRefresh={conflict() ? () => void refreshAndRebase() : undefined} /></Show><ActionButton disabled={saving() || Boolean(variablesValidation().error)} onClick={() => void save()}>{saving() ? 'Saving…' : 'Save changes'}</ActionButton></div>
-    <div class="secret-editor"><h3>Register event source</h3><p>Source and binding JSON are validated and written under this workflow's .riela-events directory.</p><label><span>Source JSON</span><textarea rows="8" value={eventSource()} onInput={(event) => setEventSource(event.currentTarget.value)} /></label><label><span>Binding JSON</span><textarea rows="8" value={eventBinding()} onInput={(event) => setEventBinding(event.currentTarget.value)} /></label><div class="save-row"><ActionButton disabled={saving()} onClick={() => void registerEventSource()}>Register event source</ActionButton></div></div>
+    <div class="secret-editor"><h3>Register event source</h3><label><span>Source JSON</span><textarea rows="8" value={eventSource()} onInput={(event) => setEventSource(event.currentTarget.value)} /></label><label><span>Binding JSON</span><textarea rows="8" value={eventBinding()} onInput={(event) => setEventBinding(event.currentTarget.value)} /></label><div class="save-row"><ActionButton disabled={saving()} onClick={() => void registerEventSource()}>Register event source</ActionButton></div></div>
   </div>
 }

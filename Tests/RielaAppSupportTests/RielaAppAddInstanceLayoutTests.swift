@@ -26,7 +26,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertTrue(hasWidthConstraint(profilePopup, relation: .lessThanOrEqual, constant: 220))
     XCTAssertFalse(hasWidthConstraint(profilePopup, relation: .equal, constant: 160))
 
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add run configuration", in: root))
     XCTAssertEqual(addButton.title, "")
     XCTAssertNotNil(addButton.image)
     let listView = try XCTUnwrap(firstSubview(of: DaemonWorkflowInstanceListView.self, in: root))
@@ -34,15 +34,15 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     XCTAssertTrue(addButton.isDescendant(of: listView.footer))
     XCTAssertFalse(addButton.isDescendant(of: listView.header))
 
-    let refreshButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を更新", in: root))
+    let refreshButton = try XCTUnwrap(button(accessibilityLabel: "Refresh run configurations", in: root))
     XCTAssertEqual(refreshButton.title, "")
     XCTAssertNotNil(refreshButton.image)
 
     let emptyState = try XCTUnwrap(visibleTextFields(in: root).first {
-      $0.stringValue == "ワークフローを選択して実行設定を表示します。"
+      $0.stringValue == "Select a workflow to show its run configurations."
     })
     XCTAssertEqual(emptyState.textColor, .secondaryLabelColor)
-    XCTAssertEqual(emptyState.accessibilityLabel(), "ワークフローを選択して実行設定を表示します。")
+    XCTAssertEqual(emptyState.accessibilityLabel(), "Select a workflow to show its run configurations.")
   }
 
   func testAddInstanceButtonShowsInlineWorkflowSelectionPaneAtRuntime() throws {
@@ -72,7 +72,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    let addButton = try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root))
+    let addButton = try XCTUnwrap(button(accessibilityLabel: "Add run configuration", in: root))
     addButton.performClick(nil)
     controller.window?.layoutIfNeeded()
 
@@ -88,7 +88,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
 
     controller.goBack()
     controller.window?.layoutIfNeeded()
-    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "ワークフロー")
+    XCTAssertEqual(controller.navigationTitleLabel.stringValue, "Workflows")
     XCTAssertEqual(controller.sourcesOverviewView?.isHidden, false)
     XCTAssertEqual(controller.addInstanceSelectionView?.isHidden, true)
   }
@@ -127,7 +127,7 @@ final class RielaAppAddInstanceLayoutTests: XCTestCase {
     )
 
     let root = try XCTUnwrap(controller.window?.contentView)
-    try XCTUnwrap(button(accessibilityLabel: "実行設定を追加", in: root)).performClick(nil)
+    try XCTUnwrap(button(accessibilityLabel: "Add run configuration", in: root)).performClick(nil)
     controller.window?.layoutIfNeeded()
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Daily Summary" })
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Slack Chat" })

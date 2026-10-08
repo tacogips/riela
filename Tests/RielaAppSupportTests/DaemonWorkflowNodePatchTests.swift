@@ -216,7 +216,7 @@ final class DaemonWorkflowNodePatchTests: XCTestCase {
 
     XCTAssertEqual(instance?.id, source.id)
     XCTAssertEqual(instance?.source.id, source.id)
-    XCTAssertEqual(instance?.displayName, "標準設定")
+    XCTAssertEqual(instance?.displayName, "Default")
     XCTAssertEqual(instance?.preference.available, false)
     XCTAssertEqual(instance?.isConfigured, false)
     XCTAssertEqual(instance?.candidate, source)

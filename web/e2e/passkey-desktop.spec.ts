@@ -8,7 +8,7 @@ test('desktop protocol hands a real browser Passkey login back only to the initi
     await addVirtualPasskey(browser)
     await browser.goto(await server.cli('invite', 'desktop-operator'))
     await browser.getByRole('button', { name: 'Create Passkey', exact: true }).click()
-    await expect(browser.getByRole('heading', { name: 'ワークフロー', exact: true, level: 1 })).toBeVisible()
+    await expect(browser.getByRole('heading', { name: 'Workflows', exact: true, level: 1 })).toBeVisible()
     let verificationURL = ''
     let cancelStatus = 0
     await page.exposeBinding('nativeInvoke', async (_, command: string, args: {
@@ -43,7 +43,7 @@ test('desktop protocol hands a real browser Passkey login back only to the initi
     expect(verificationURL).not.toContain('deviceSecret')
     await browser.getByRole('button', { name: 'Code matches — sign in with Passkey', exact: true }).click()
     await expect(browser.getByText('Desktop sign-in approved. Return to Riela. You can close this tab.')).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'ワークフロー', exact: true, level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Workflows', exact: true, level: 1 })).toBeVisible()
     await expect(page.getByText('Web mode connected', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Sign out', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Sign in using browser', exact: true })).toBeVisible()

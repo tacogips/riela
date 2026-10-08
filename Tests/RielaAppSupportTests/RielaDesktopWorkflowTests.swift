@@ -60,7 +60,7 @@ final class RielaDesktopWorkflowTests: XCTestCase {
         return XCTFail("Save failed: \(updated)")
       }
       XCTAssertEqual(update["accepted"], .bool(true), "\(updated)")
-      let data = try Data(contentsOf: root.appendingPathComponent(".riela/temporary-workflows/desktop-contract/workflow.json"))
+      let data = try Data(contentsOf: root.appendingPathComponent(".riela/rielaapp/profiles/default/temporary-workflows/desktop-contract/workflow.json"))
       XCTAssertEqual(try JSONDecoder().decode(JSONObject.self, from: data)["description"], .string("After"))
       let stale = try await execute(app, query: query, input: updateInput)
       guard case let .object(conflict)? = stale["updateMutableWorkflow"] else {

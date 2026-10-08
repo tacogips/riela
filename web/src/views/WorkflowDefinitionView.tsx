@@ -39,10 +39,10 @@ export function WorkflowDefinitionView(props: { profileKey: string; sourceId: st
   const [selectedId, setSelectedId] = createSignal('')
   return <section classList={{ page: !props.embedded, 'workflow-definition-page': true, 'workflow-definition-embedded': props.embedded }}>
     <Show when={!props.embedded}><PageHeader eyebrow="WORKFLOW DEFINITION" title={current()?.name ?? 'Workflow definition'}
-      description={current()?.definition.description ?? 'Inspect the workflow’s nodes and connections.'}
+      description={current()?.definition.description ?? undefined}
       actions={<><ActionButton class="secondary" onClick={props.onBack}>Back to workflows</ActionButton>
         <ActionButton class="secondary" onClick={() => void refetch()}>Refresh definition</ActionButton></>} /></Show>
-    <Show when={props.embedded}><div class="graph-toolbar"><span>ワークフローグラフ</span><ActionButton class="secondary" onClick={() => void refetch()}>Refresh definition</ActionButton></div></Show>
+    <Show when={props.embedded}><div class="graph-toolbar"><span>Workflow graph</span><ActionButton class="secondary" onClick={() => void refetch()}>Refresh definition</ActionButton></div></Show>
     <Show when={resource.loading}><LoadingState label="Loading workflow graph…" /></Show>
     <Show when={resource.error}><ErrorBanner message={String(resource.error)} /></Show>
     <Show when={current()} keyed>{(workflow) => {
@@ -113,8 +113,8 @@ export function WorkflowDefinitionView(props: { profileKey: string; sourceId: st
             <div class="definition-network-hint">Drag nodes to arrange · drag the background to pan · scroll to zoom</div>
           </div>
           <Show when={!props.embedded || selected()}><aside class="panel definition-node-inspector" aria-label="Node details">
-            <Show when={props.embedded}><ActionButton class="secondary" onClick={() => setSelectedId('')}>閉じる</ActionButton></Show>
-            <Show when={selected()} fallback={<><h2>Node details</h2><p>Select a node in the graph to inspect its connections.</p></>}>{node => <>
+            <Show when={props.embedded}><ActionButton class="secondary" onClick={() => setSelectedId('')}>Close</ActionButton></Show>
+            <Show when={selected()} fallback={<><h2>Node details</h2><p class="subtle">Select a node.</p></>}>{node => <>
               <h2>{node().title}</h2><p>{node().caption}</p>
               <dl><dt>Node</dt><dd>{node().nodeId}</dd><dt>Entry step</dt><dd>{node().entry ? 'Yes' : 'No'}</dd></dl>
               <h3>Outgoing connections</h3>

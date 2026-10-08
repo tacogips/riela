@@ -210,6 +210,14 @@ extension SurfaceCatalog {
     ),
     surfaceRow(
       configurationDefaults,
+      id: "configuration.update-workflow-storage",
+      family: "configuration",
+      kind: .mutation,
+      graphql: graphQLMutation("updateWorkflowStorageConfiguration"),
+      desktop: .implemented
+    ),
+    surfaceRow(
+      configurationDefaults,
       id: "configuration.update-workflow-instance",
       family: "configuration",
       kind: .mutation,

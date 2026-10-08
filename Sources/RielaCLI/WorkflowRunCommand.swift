@@ -822,7 +822,7 @@ private func isTemporaryWorkflowRunTarget(_ target: String, workingDirectory: St
 private func workflowRunPackageRoot(scope: WorkflowScope, workingDirectory: URL) -> URL {
   switch scope {
   case .user:
-    return URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/packages", isDirectory: true)
+    return CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("packages", isDirectory: true)
   case .auto, .project, .direct:
     return workingDirectory.appendingPathComponent(".riela/packages", isDirectory: true)
   }

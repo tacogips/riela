@@ -32,7 +32,7 @@ export function RunDetailView(props: {
     detail.data()?.steps ?? [],
   )
 
-  return <section class="page"><PageHeader eyebrow="RUN DETAIL" title={props.sessionId} description={`${props.workflowId} · persisted execution evidence`} actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(detail.status())}</span><ActionButton class="secondary" onClick={props.onBack}>Back to Run logs</ActionButton><ActionButton class="secondary" onClick={() => void detail.refresh()}>Refresh</ActionButton></div>} />
+  return <section class="page"><PageHeader eyebrow="RUN DETAIL" title={props.sessionId} description={props.workflowId} actions={<div class="refresh-actions"><span role="status">{pollingStatusLabel(detail.status())}</span><ActionButton class="secondary" onClick={props.onBack}>Back to Run logs</ActionButton><ActionButton class="secondary" onClick={() => void detail.refresh()}>Refresh</ActionButton></div>} />
     <Show when={detail.loading() && !detail.data()}><LoadingState label="Loading run detail…" /></Show>
     <Show when={detail.error()}><ErrorBanner message={errorMessage(detail.error())} /></Show>
     <Show when={detail.data()}>{(run) => <>
@@ -40,7 +40,7 @@ export function RunDetailView(props: {
       <Show when={run().truncated}><p class="truncation-notice" role="status">Some persisted evidence was truncated for safe display.</p></Show>
       <Show when={run().steps.length > 0}><RunTrace run={run()} profileKey={props.profileKey} /></Show>
       <div class="panel"><div class="section-title"><h2>Step executions</h2><span>{run().steps.length} of {run().stepsTotalCount}</span></div>
-        <Show when={run().steps.length === 0}><EmptyState title="No step executions" detail="This run has no persisted step records." /></Show>
+        <Show when={run().steps.length === 0}><EmptyState title="No step executions" /></Show>
         <For each={run().steps}>{(step) => {
           const logs = () => logsForStepExecution(run().logs, step)
           return <article class="run-step">
@@ -52,7 +52,7 @@ export function RunDetailView(props: {
           </article>
         }}</For>
       </div>
-      <Show when={additionalRoutingLogs().length > 0}><div class="panel"><div class="section-title"><h2>Additional routing records</h2><span>{additionalRoutingLogs().length}</span></div><p class="subtle">These records do not identify a visible source execution.</p><div class="event-list"><For each={additionalRoutingLogs()}>{(log) => <div><span>{log.createdOrder ?? '—'}</span><strong>{log.status}</strong><span>{log.fromStepId ?? 'session'} → {log.toStepId ?? 'session'} · {log.deliveryKind ?? log.direction}</span><time>{log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : ''}</time></div>}</For></div></div></Show>
+      <Show when={additionalRoutingLogs().length > 0}><div class="panel"><div class="section-title"><h2>Additional routing records</h2><span>{additionalRoutingLogs().length}</span></div><div class="event-list"><For each={additionalRoutingLogs()}>{(log) => <div><span>{log.createdOrder ?? '—'}</span><strong>{log.status}</strong><span>{log.fromStepId ?? 'session'} → {log.toStepId ?? 'session'} · {log.deliveryKind ?? log.direction}</span><time>{log.createdAt ? new Date(log.createdAt).toLocaleTimeString() : ''}</time></div>}</For></div></div></Show>
       <Show when={run().logsTruncated}><p class="truncation-notice">Showing {run().logs.length} of {run().logsTotalCount} routing records.</p></Show>
       <div class="two-column run-evidence"><div class="panel"><div class="section-title"><h2>Gate and loop evidence</h2><span>{run().gates.length} of {run().gatesTotalCount}</span></div><Show when={run().gates.length === 0}><p class="subtle">No gate evidence recorded.</p></Show><For each={run().gates}>{(gate) => <div class="evidence-row"><strong>{gate.gateId}</strong><span>{gate.stepId} · {gate.decision}</span><span>{gate.blockingFindingCount} blocking findings</span><For each={gate.findings}>{(finding) => <span>{finding.severity}: {finding.summary}</span>}</For><Show when={gate.findingsTruncated}><span>Showing {gate.findings.length} of {gate.findingsTotalCount} findings.</span></Show></div>}</For></div>
         <div class="panel"><div class="section-title"><h2>Recovery lineage</h2></div><Show when={run().recovery} fallback={<p class="subtle">No recovery lineage recorded.</p>}>{(recovery) => <div class="evidence-row"><strong>{recovery().entryMode}</strong><span>Parent: {recovery().parentSessionId ?? 'none'}</span><span>Children: {recovery().childSessionIds.map((child) => child.value).join(', ') || 'none'}</span><Show when={recovery().childSessionIdsTruncated}><span>Showing {recovery().childSessionIds.length} of {recovery().childSessionIdsTotalCount} children.</span></Show><Show when={recovery().reason}><span>{recovery().reason}</span></Show></div>}</Show></div></div>

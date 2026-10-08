@@ -102,7 +102,7 @@ extension WorkflowCommandTests {
       importSummary.statusMessage,
       "Imported scenario-chatgpt-package into profile scenario-profile with auto-start off"
     )
-    let discovery = RielaAppDaemonWorkflowDiscovery(homeDirectory: homeRoot)
+    let discovery = RielaAppDaemonWorkflowDiscovery()
     let candidate = try XCTUnwrap(discovery.discoverUserDaemonWorkflows(appPackageRoot: appPackageRoot).first)
     XCTAssertEqual(candidate.workflowId, "scenario-chatgpt-workflow")
     XCTAssertEqual(candidate.sourceScope, .profile)

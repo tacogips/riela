@@ -345,11 +345,11 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
   }
 
   private func installedUserWorkflowName(workflowId: String, workingDirectory: String) throws -> String {
-    let direct = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-      .appendingPathComponent(".riela/workflows/\(workflowId)/workflow.json")
+    let direct = CLIRuntimeEnvironment.workflowHomeDirectory()
+      .appendingPathComponent("workflows/\(workflowId)/workflow.json")
     if authoredWorkflowId(at: direct) == workflowId { return workflowId }
-    let packageRoot = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-      .appendingPathComponent(".riela/packages", isDirectory: true)
+    let packageRoot = CLIRuntimeEnvironment.workflowHomeDirectory()
+      .appendingPathComponent("packages", isDirectory: true)
     let names = (try? FileManager.default.contentsOfDirectory(atPath: packageRoot.path)) ?? []
     for name in names.sorted() {
       let manifestURL = packageRoot.appendingPathComponent(name).appendingPathComponent("riela-package.json")
@@ -375,8 +375,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
   }
 
   private func userInheritanceRoots() -> [String] {
-    let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-    return [home.appendingPathComponent(".riela/workflows").path, home.appendingPathComponent(".riela/packages").path]
+    let workflowHome = CLIRuntimeEnvironment.workflowHomeDirectory()
+    return [workflowHome.appendingPathComponent("workflows").path, workflowHome.appendingPathComponent("packages").path]
   }
 
   private func refuseStableNonterminalTransactions(candidates: [CandidateDirectory]) throws {
@@ -522,8 +522,7 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
       .appendingPathComponent(".riela")
       .appendingPathComponent("workflows")
       .standardizedFileURL
-    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory())
-      .appendingPathComponent(".riela")
+    let user = CLIRuntimeEnvironment.workflowHomeDirectory()
       .appendingPathComponent("workflows")
       .standardizedFileURL
     let workflowCandidates: [CandidateDirectory]
@@ -685,8 +684,8 @@ public struct FileSystemWorkflowBundleResolver: WorkflowBundleResolving {
 
   private func packageRoots(scope: WorkflowScope, workingDirectory: URL) -> [(WorkflowScope, URL)] {
     let project = workingDirectory.appendingPathComponent(".riela/packages", isDirectory: true).standardizedFileURL
-    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory())
-      .appendingPathComponent(".riela/packages", isDirectory: true)
+    let user = CLIRuntimeEnvironment.workflowHomeDirectory()
+      .appendingPathComponent("packages", isDirectory: true)
       .standardizedFileURL
     switch scope {
     case .project:

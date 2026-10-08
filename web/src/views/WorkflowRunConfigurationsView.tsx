@@ -10,7 +10,7 @@ import { LogsView } from './LogsView'
 import { WorkflowDefinitionView } from './WorkflowDefinitionView'
 import './workflow-workspace.css'
 
-const configurationStatus = (status: string): string => ({ running: '実行中', starting: '開始中', reloading: '再読込中', stopping: '停止中', stopped: '停止', failed: '失敗', needsSource: 'ソース不明' })[status] ?? status
+const configurationStatus = (status: string): string => ({ running: 'Running', starting: 'Starting', reloading: 'Reloading', stopping: 'Stopping', stopped: 'Stopped', failed: 'Failed', needsSource: 'Source missing' })[status] ?? status
 
 export type ConfigurationTab = 'settings' | 'history' | 'definition'
 
@@ -59,38 +59,37 @@ export function WorkflowRunConfigurationsView(props: {
   }
 
   return <section class="page workflow-workspace-page">
-    <PageHeader eyebrow="WORKFLOW" title={source()?.name ?? configurations()[0]?.workflowId ?? 'ワークフロー'}
-      description="実行設定を選んで、設定・実行・履歴を確認できます。"
-      actions={<><ActionButton class="secondary" onClick={props.onBack}>ワークフロー一覧へ</ActionButton><ActionButton class="secondary" onClick={() => { void instances.refresh(); void sources.refresh() }}>Refresh configurations</ActionButton></>} />
-    <Show when={instances.loading() && !instances.data()}><LoadingState label="実行設定を読み込み中…" /></Show>
+    <PageHeader eyebrow="WORKFLOW" title={source()?.name ?? configurations()[0]?.workflowId ?? 'Workflow'}
+      actions={<><ActionButton class="secondary" onClick={props.onBack}>Back to workflows</ActionButton><ActionButton class="secondary" onClick={() => { void instances.refresh(); void sources.refresh() }}>Refresh configurations</ActionButton></>} />
+    <Show when={instances.loading() && !instances.data()}><LoadingState label="Loading run configurations…" /></Show>
     <Show when={instances.error() || sources.error()}><ErrorBanner message={String(instances.error() ?? sources.error())} /></Show>
     <div class="workflow-workspace">
-      <div class="workflow-graph-pane" aria-label="ワークフローグラフ">
+      <div class="workflow-graph-pane" aria-label="Workflow graph">
         <WorkflowDefinitionView embedded profileKey={props.profileKey} sourceId={props.sourceId} onBack={props.onBack} />
       </div>
-      <aside class="workflow-configurations-pane" aria-label="実行設定">
+      <aside class="workflow-configurations-pane" aria-label="Run configurations">
     <div class="configuration-list-section">
-      <div class="section-title"><h2>実行設定</h2><ActionButton disabled={!source() || saving()} onClick={() => setAdding(true)}>実行設定を追加</ActionButton></div>
-      <ul class="configuration-list" aria-label="実行設定の一覧"><For each={configurations()}>{item =>
+      <div class="section-title"><h2>Run configurations</h2><ActionButton disabled={!source() || saving()} onClick={() => setAdding(true)}>Add run configuration</ActionButton></div>
+      <ul class="configuration-list" aria-label="Run configuration list"><For each={configurations()}>{item =>
         <li><button classList={{ 'configuration-list-row': true, selected: selected()?.id === item.id }}
           aria-pressed={selected()?.id === item.id} onClick={() => props.onSelect(item.id, 'settings')}>
           <span class={`status-dot ${item.status}`} aria-hidden="true" />
-          <strong>{item.isDefault ? '標準設定' : item.name}</strong>
+          <strong>{item.isDefault ? 'Default' : item.name}</strong>
           <span class="configuration-state">{configurationStatus(item.status)}</span>
-          <Show when={item.requiredEnvironment.some(requirement => !requirement.present)}><span class="warning-badge">必要な環境変数を設定してください</span></Show>
+          <Show when={item.requiredEnvironment.some(requirement => !requirement.present)}><span class="warning-badge">Set the required environment variables</span></Show>
         </button></li>
       }</For></ul>
       <Show when={adding()}><form class="add-source" onSubmit={event => { event.preventDefault(); void add() }}>
-        <label class="grow"><span>実行設定の名前</span><input value={name()} onInput={event => setName(event.currentTarget.value)} autofocus /></label>
-        <ActionButton type="button" class="secondary" disabled={saving()} onClick={() => setAdding(false)}>キャンセル</ActionButton>
-        <ActionButton type="submit" disabled={!name().trim() || saving()}>{saving() ? '追加中…' : '追加'}</ActionButton>
+        <label class="grow"><span>Run configuration name</span><input value={name()} onInput={event => setName(event.currentTarget.value)} autofocus /></label>
+        <ActionButton type="button" class="secondary" disabled={saving()} onClick={() => setAdding(false)}>Cancel</ActionButton>
+        <ActionButton type="submit" disabled={!name().trim() || saving()}>{saving() ? 'Adding…' : 'Add'}</ActionButton>
       </form></Show>
-      <Show when={error()}><ErrorBanner message={error()} /><ActionButton class="secondary" onClick={() => void instances.refresh()}>最新の設定を読み込む</ActionButton></Show>
+      <Show when={error()}><ErrorBanner message={error()} /><ActionButton class="secondary" onClick={() => void instances.refresh()}>Reload latest configuration</ActionButton></Show>
     </div>
-    <Show when={selected()} fallback={<p class="surface-notice">実行設定を選択してください。</p>}>{item => <>
-      <nav class="filter-row" aria-label="実行設定の表示">
-        <ActionButton class="secondary" aria-pressed={props.tab !== 'history'} onClick={() => props.onSelect(item().id, 'settings')}>設定・実行</ActionButton>
-        <ActionButton class="secondary" aria-pressed={props.tab === 'history'} onClick={() => props.onSelect(item().id, 'history')}>履歴</ActionButton>
+    <Show when={selected()} fallback={<p class="surface-notice">Select a run configuration.</p>}>{item => <>
+      <nav class="filter-row" aria-label="Run configuration view">
+        <ActionButton class="secondary" aria-pressed={props.tab !== 'history'} onClick={() => props.onSelect(item().id, 'settings')}>Settings & run</ActionButton>
+        <ActionButton class="secondary" aria-pressed={props.tab === 'history'} onClick={() => props.onSelect(item().id, 'history')}>History</ActionButton>
       </nav>
       <Show when={props.tab !== 'history'}><Show when={item().status !== 'needsSource'} fallback={<MissingSourceDetail instance={item()} />}>
         <Show when={`${props.profileKey}:${item().id}`} keyed>{(_identity) => <InstanceEditor instance={item}

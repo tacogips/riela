@@ -42,7 +42,7 @@ extension DaemonWorkflowWindowController {
         )
         let instanceName = preference.displayName?.isEmpty == false
           ? preference.displayName ?? storedIdentity
-          : storedIdentity == sourceIdentity ? "標準設定" : candidate?.displayName ?? storedIdentity
+          : storedIdentity == sourceIdentity ? "Default" : candidate?.displayName ?? storedIdentity
         let state = instanceState(identity: storedIdentity, hasSource: candidate != nil)
         return ConfiguredWorkflowInstanceRow(
           id: storedIdentity,

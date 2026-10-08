@@ -149,7 +149,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     XCTAssertTrue(controller.emptyInstancesGuideView.isHidden)
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "検索条件に一致する実行設定はありません。" })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "No run configurations match the search." })
   }
 
   func testInstanceDetailShowsSnapshotDetailAndCanOpenWebUI() throws {
@@ -187,7 +187,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
 
     XCTAssertEqual(controller.instanceRows.first?.stateDetail, "event source failed")
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Failed - event source failed" })
-    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "設定", in: root)).accessibilityPerformPress())
+    XCTAssertTrue(try XCTUnwrap(selectableRow(accessibilityLabel: "Settings", in: root)).accessibilityPerformPress())
     XCTAssertEqual(openedContext, "#/workflows/user-workflow%3Achat/configurations/chat-instance/settings")
   }
 
@@ -219,7 +219,7 @@ final class RielaAppUXOnboardingControllerTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue == "Confirm Removal" })
-    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("ワークフローは保持されます。") })
+    XCTAssertTrue(visibleTextFields(in: root).contains { $0.stringValue.contains("The workflow is kept.") })
     XCTAssertNil(removedIdentity)
 
     controller.confirmRemoveSelectedInstance()

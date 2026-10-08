@@ -135,6 +135,24 @@ final class RielaAppConfigurationGraphQLProvider: RielaConfigurationGraphQLProvi
     }
   }
 
+  func updateWorkflowStorage(
+    input: GraphQLUpdateWorkflowStorageConfigInput
+  ) async throws -> GraphQLRielaConfiguration {
+    try await withApp { app in
+      try app.validateGraphQLConfigurationRevision(input.expectedRevision, expectedProfile: input.expectedProfile)
+      let state = try RielaWebConfigurationSupport.applyingWorkflowStorage(
+        input, to: app.daemonState, appRootURL: app.profileStore.appRootURL,
+        profileName: app.daemonProfileName, homeDirectory: app.appHomeDirectory
+      )
+      guard app.saveDaemonState(state, profileName: app.daemonProfileName) else {
+        throw RielaConfigurationGraphQLError(code: "CONFIGURATION_IO_FAILURE", message: app.status)
+      }
+      app.webRevision += 1
+      app.refreshDaemonWorkflowWindow()
+      return try await app.graphQLConfiguration()
+    }
+  }
+
   func updateWorkflowInstance(
     input: GraphQLWorkflowInstanceConfigInput
   ) async throws -> GraphQLConfigurationRevision {
@@ -220,7 +238,11 @@ extension RielaApp {
         state: webServerController?.state.label ?? "stopped"
       ),
       profiles: availableDaemonProfileNames().map(\.rawValue),
-      workflowDirectories: daemonState.workflowDirectories
+      workflowDirectories: daemonState.workflowDirectories,
+      workflowStorage: RielaWebConfigurationSupport.workflowStorageConfiguration(
+        appRootURL: profileStore.appRootURL, profileName: daemonProfileName,
+        state: daemonState, homeDirectory: appHomeDirectory
+      )
     )
   }
 

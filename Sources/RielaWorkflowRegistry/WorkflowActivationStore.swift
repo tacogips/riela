@@ -102,8 +102,7 @@ package struct WorkflowActivationStore: Sendable {
     do {
       pinned = try statePinnedRoot(create: true)
     } catch {
-      let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-      if stateRootParentIsExplicitlyReadOnly(home: home) { return try body() }
+      if stateRootParentIsExplicitlyReadOnly(CLIRuntimeEnvironment.workflowHomeDirectory()) { return try body() }
       // A read against an absent state root (including an absent home) has
       // nothing to lock or read; degrade instead of failing the command.
       do {
@@ -176,21 +175,13 @@ package struct WorkflowActivationStore: Sendable {
   }
 
   private func statePinnedRoot(create: Bool) throws -> WorkflowMutableRegistryPinnedRoot {
-    try WorkflowMutableRegistryPinnedRoot(
-      homeDirectory: URL(
-        fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(),
-        isDirectory: true
-      ),
-      rootComponents: [".riela", "workflow-state"],
-      create: create
-    )
+    try WorkflowMutableRegistryPinnedRoot.workflowHome("workflow-state", create: create)
   }
 
-  private func stateRootParentIsExplicitlyReadOnly(home: URL) -> Bool {
-    let stateParent = home.appendingPathComponent(".riela", isDirectory: true)
+  private func stateRootParentIsExplicitlyReadOnly(_ stateParent: URL) -> Bool {
     var status = stat()
     if lstat(stateParent.path, &status) != 0,
-       lstat(home.path, &status) != 0 { return false }
+       lstat(stateParent.deletingLastPathComponent().path, &status) != 0 { return false }
     return status.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH) == 0
   }
 

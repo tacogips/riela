@@ -22,8 +22,7 @@ public struct WorkflowMutableRegistry: Sendable {
   }
 
   package var root: URL {
-    URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
-      .appendingPathComponent(".riela", isDirectory: true)
+    CLIRuntimeEnvironment.workflowHomeDirectory()
       .appendingPathComponent("temporary-workflows", isDirectory: true)
       .standardizedFileURL
   }
@@ -796,13 +795,7 @@ public struct WorkflowMutableRegistry: Sendable {
   }
 
   func pinnedRoot(create: Bool) throws -> WorkflowMutableRegistryPinnedRoot {
-    try WorkflowMutableRegistryPinnedRoot(
-      homeDirectory: URL(
-        fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(),
-        isDirectory: true
-      ),
-      create: create
-    )
+    try WorkflowMutableRegistryPinnedRoot.workflowHome("temporary-workflows", create: create)
   }
 
 }

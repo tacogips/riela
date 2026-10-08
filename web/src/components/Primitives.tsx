@@ -5,8 +5,8 @@ export function PageHeader(props: { eyebrow: string; title: string; description?
   return <div class="page-header"><div><span class="eyebrow">{props.eyebrow}</span>{props.embedded ? <h2>{props.title}</h2> : <h1>{props.title}</h1>}<Show when={props.description}><p>{props.description}</p></Show></div><div class="header-actions">{props.actions}</div></div>
 }
 
-export function EmptyState(props: { title: string; detail: string }) {
-  return <div class="empty-state"><span>◇</span><strong>{props.title}</strong><p>{props.detail}</p></div>
+export function EmptyState(props: { title: string; detail?: string }) {
+  return <div class="empty-state"><span>◇</span><strong>{props.title}</strong><Show when={props.detail}><p>{props.detail}</p></Show></div>
 }
 
 export function ErrorBanner(props: { message: string }) {

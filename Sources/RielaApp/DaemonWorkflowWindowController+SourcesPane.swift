@@ -65,7 +65,7 @@ extension DaemonWorkflowWindowController {
     )
     let refreshWorkflowsButton = workflowSourceImportButton(
       title: "", symbolName: "arrow.clockwise",
-      accessibilityLabel: "ワークフローを更新", action: #selector(refresh)
+      accessibilityLabel: "Refresh workflows", action: #selector(refresh)
     )
     let topRow = NSStackView(views: [
       sourcesSummaryLabel,
@@ -90,13 +90,13 @@ extension DaemonWorkflowWindowController {
   }
 
   private func configureWorkflowSourceSearchField() {
-    workflowSourceSearchField.placeholderString = "ワークフローを検索"
+    workflowSourceSearchField.placeholderString = "Search workflows"
     workflowSourceSearchField.target = self
     workflowSourceSearchField.action = #selector(workflowSourceSearchChanged)
     workflowSourceSearchField.sendsSearchStringImmediately = true
     workflowSourceSearchField.controlSize = .large
     workflowSourceSearchField.stringValue = workflowSourceFilterText
-    workflowSourceSearchField.setAccessibilityLabel("ワークフローを検索")
+    workflowSourceSearchField.setAccessibilityLabel("Search workflows")
     workflowSourceSearchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     workflowSourceSearchField.frame.size.width = 220
   }
@@ -175,7 +175,7 @@ extension DaemonWorkflowWindowController {
     let missingRows = missingWorkflowConfigurationRows.map { configuration in
       let row = actionRow(
         title: configuration.instanceName,
-        detail: "ワークフローが見つかりません。関連付けを修復してください。",
+        detail: "Workflow not found. Repair the link.",
         action: #selector(openWorkflowConfiguration(_:))
       )
       row.identifier = NSUserInterfaceItemIdentifier(configuration.id)
@@ -183,7 +183,7 @@ extension DaemonWorkflowWindowController {
     }
     var sections: [NSView] = rows.isEmpty ? [] : [rielaAppSettingsSection(rows: rows)]
     if !missingRows.isEmpty {
-      sections.append(settingsSectionCaption("要修復の実行設定"))
+      sections.append(settingsSectionCaption("Run configurations needing repair"))
       sections.append(rielaAppSettingsSection(rows: missingRows))
     }
     let stack = settingsDocumentStack(views: sections)
@@ -205,8 +205,8 @@ extension DaemonWorkflowWindowController {
     let selectedSourceId = filteredSources.contains { $0.id == selectedWorkflowSourceId } ? selectedWorkflowSourceId : nil
     let scrollView = workflowSourceListScrollView(sources: filteredSources, selectedSourceId: selectedSourceId)
     let emptyText = workflowSources.isEmpty
-      ? "ワークフローを追加すると標準設定ですぐに利用できます。上のボタンからフォルダ、パッケージ、URLを追加してください。"
-      : "検索条件に一致するワークフローはありません。"
+      ? "Added workflows are ready to use with their default configuration. Add a folder, package, or URL with the buttons above."
+      : "No workflows match the search."
     let emptyLabel = NSTextField(labelWithString: emptyText)
     emptyLabel.textColor = .secondaryLabelColor
     emptyLabel.alignment = .center
@@ -250,7 +250,7 @@ extension DaemonWorkflowWindowController {
       target: self,
       action: #selector(openWorkflowSourceDetailFromRow(_:)),
       accessibilityLabel: source.displayName,
-      accessibilityHelp: "実行設定を表示"
+      accessibilityHelp: "Show run configurations"
     )
     styled.setSettingsRowSelected(selected)
     return styled
@@ -278,13 +278,13 @@ extension DaemonWorkflowWindowController {
       title: source.displayName,
       summaryLabel: summaryLabel,
       documentStack: settingsDocumentStack(views: [
-        settingsSectionCaption("実行設定"),
+        settingsSectionCaption("Run configurations"),
         workflowConfigurationsSection(source),
         workflowConfigurationActionsSection(),
         graphPane,
-        settingsSectionCaption("ワークフロー情報"),
+        settingsSectionCaption("Workflow details"),
         workflowSourceSummarySection(source),
-        settingsSectionCaption("ワークフロー管理"),
+        settingsSectionCaption("Manage workflow"),
         workflowSourceActionsSection()
       ])
     )

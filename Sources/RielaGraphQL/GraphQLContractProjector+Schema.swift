@@ -630,6 +630,7 @@ extension GraphQLContractProjector {
     removeProfileConfiguration(input: ProfileConfigurationInput!): RielaConfiguration!
     switchProfileConfiguration(input: ProfileConfigurationInput!): RielaConfiguration!
     addWorkflowDirectoryConfiguration(input: WorkflowDirectoryConfigurationInput!): ConfigurationRevision!
+    updateWorkflowStorageConfiguration(input: UpdateWorkflowStorageConfigurationInput!): RielaConfiguration!
     updateWorkflowInstanceConfiguration(input: WorkflowInstanceConfigurationInput!): ConfigurationRevision!
     registerEventSourceConfiguration(input: EventSourceConfigurationInput!): ConfigurationRevision!
   }

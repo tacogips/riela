@@ -15,7 +15,19 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   private var daemonDiscovery = RielaAppDaemonWorkflowDiscovery()
   let daemonRuntime = RielaAppDaemonWorkflowRuntime()
   private let telemetry = RielaTelemetryFactory.make(configuration: .fromEnvironment(surface: .app))
-  var profileStore = RielaAppProfileStore()
+  private var configuredProfileStore: RielaAppProfileStore?
+  /// An explicitly assigned store (launch applies `--app-root`) wins; otherwise
+  /// profile storage, and with it the app-owned workflow registry, follows
+  /// `appHomeDirectory`, so a relocated home never touches the real
+  /// `~/.riela/rielaapp`.
+  var profileStore: RielaAppProfileStore {
+    get {
+      configuredProfileStore ?? RielaAppProfileStore(
+        appRootURL: RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
+      )
+    }
+    set { configuredProfileStore = newValue }
+  }
   private var daemonStore = RielaAppDaemonWorkflowStore(profileName: .default)
   let launchAtLogin = RielaLaunchAtLoginController()
   private let daemonStatusRefreshInterval: TimeInterval = 2
@@ -85,7 +97,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     } catch {
       status = "Failed to prepare profile: \(error.localizedDescription)"
     }
-    daemonDiscovery = RielaAppDaemonWorkflowDiscovery(homeDirectory: appHomeDirectory, projectRoot: launchOptions.projectRoot)
+    daemonDiscovery = RielaAppDaemonWorkflowDiscovery(projectRoot: launchOptions.projectRoot)
     daemonStore = makeDaemonStore(profileName: daemonProfileName)
     daemonState = loadDaemonStateReportingCorruption(profileName: daemonProfileName)
     refreshDaemonInstanceCache()
@@ -148,7 +160,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   }
 
   @objc func openDaemonInstances() {
-    openWebUI(context: "ワークフロー", route: .workflows)
+    openWebUI(context: "Workflows", route: .workflows)
   }
 
   private func importDaemonSourcesIfRequested() {
@@ -615,19 +627,38 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     state: RielaAppDaemonWorkflowState
   ) -> [RielaAppDaemonWorkflowCandidate] {
     daemonDiscovery.discoverUserDaemonWorkflows(
-      appWorkflowRoot: daemonAppWorkflowRoot(profileName: profileName),
-      appPackageRoot: daemonAppPackageRoot(profileName: profileName),
+      appWorkflowRoot: RielaAppProfileStore.workflowRootURL(
+        appRootURL: profileStore.appRootURL,
+        profileName: profileName,
+        storageDirectory: state.workflowStorageDirectory
+      ),
+      appPackageRoot: RielaAppProfileStore.packageRootURL(
+        appRootURL: profileStore.appRootURL,
+        profileName: profileName,
+        storageDirectory: state.workflowStorageDirectory
+      ),
       projectDirectories: state.projectDirectories,
       additionalWorkflowDirectories: state.workflowDirectories
     )
   }
 
+  /// The profile's workflow storage, exported to workflow runs and the
+  /// registry as `RIELA_WORKFLOW_HOME` so the app never reads the CLI's
+  /// `~/.riela` workflows implicitly.
+  func daemonAppWorkflowStorageRoot(profileName: RielaAppProfileName) -> URL {
+    RielaAppProfileStore.workflowStorageRootURL(
+      appRootURL: profileStore.appRootURL,
+      profileName: profileName,
+      storageDirectory: daemonState(profileName: profileName).workflowStorageDirectory
+    )
+  }
+
   private func daemonAppWorkflowRoot(profileName: RielaAppProfileName) -> URL {
-    RielaAppProfileStore.workflowRootURL(appRootURL: profileStore.appRootURL, profileName: profileName)
+    daemonAppWorkflowStorageRoot(profileName: profileName).appendingPathComponent("workflows", isDirectory: true)
   }
 
   private func daemonAppPackageRoot(profileName: RielaAppProfileName) -> URL {
-    RielaAppProfileStore.packageRootURL(appRootURL: profileStore.appRootURL, profileName: profileName)
+    daemonAppWorkflowStorageRoot(profileName: profileName).appendingPathComponent("packages", isDirectory: true)
   }
 }
 

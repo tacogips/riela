@@ -18,7 +18,7 @@ export function DesktopConnection() {
       </select></label>
       <Show when={mode() === 'web'}><label>Riela server URL<input type="url" required
         placeholder="https://riela.example" value={endpoint()} onInput={event => setEndpoint(event.currentTarget.value)} /></label></Show>
-      <p>Changing connection reloads the console. Save edits first.</p>
+      <p class="subtle">Changing the connection reloads the console.</p>
       <Show when={error()}><p role="alert">{error()}</p></Show>
       <ActionButton type="submit">Connect</ActionButton>
     </form>

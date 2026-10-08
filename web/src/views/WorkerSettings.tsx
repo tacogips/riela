@@ -46,7 +46,7 @@ export function WorkerSettings(props: { profileKey: string }) {
     finally { setSaving(false) }
   }
   return <section class="panel settings-panel">
-    <div class="section-title"><div><h2>Worker Controller</h2><p>Authorize remote workers and configure their connection to this profile.</p></div><ActionButton class="secondary" disabled={saving()} onClick={() => void refetch()}>Refresh workers</ActionButton></div>
+    <div class="section-title"><div><h2>Worker Controller</h2></div><ActionButton class="secondary" disabled={saving()} onClick={() => void refetch()}>Refresh workers</ActionButton></div>
     <Show when={snapshot.error}><ErrorBanner message={String(snapshot.error)} /></Show>
     <Show when={draft()}>{(value) => <form onSubmit={(event) => { event.preventDefault(); void save() }}>
       <p role="status">{snapshot()?.status}</p>
@@ -68,7 +68,7 @@ export function WorkerSettings(props: { profileKey: string }) {
           while (value().workers.some((worker) => worker.id === `worker-${suffix}`)) suffix++
           setDraft({ ...value(), workers: [...value().workers, { id: `worker-${suffix}`, groups: [], maxCapacity: 1 }] })
         }}>Add worker</ActionButton></div>
-        <p>Save your workers here, then issue a worker key in API Keys. Store the issued key on its worker in a private file.</p>
+        <p class="subtle">Issue each worker a key in API Keys.</p>
         <div class="save-row"><ActionButton type="submit">{saving() ? 'Saving…' : 'Save and restart controller'}</ActionButton></div>
       </fieldset>
     </form>}</Show>

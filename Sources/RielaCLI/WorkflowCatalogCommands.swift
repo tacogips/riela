@@ -462,7 +462,7 @@ public struct WorkflowCatalogCommand: Sendable {
 
   private func workflowRoots(scope: WorkflowScope, workingDirectory: String) -> [(WorkflowScope, URL)] {
     let project = URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/workflows", isDirectory: true)
-    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/workflows", isDirectory: true)
+    let user = CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("workflows", isDirectory: true)
     switch scope {
     case .project:
       return [(.project, project)]
@@ -488,7 +488,7 @@ public struct WorkflowCatalogCommand: Sendable {
 
   private func packageRoots(scope: WorkflowScope, workingDirectory: String) -> [(WorkflowScope, URL)] {
     let project = URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/packages", isDirectory: true)
-    let user = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory()).appendingPathComponent(".riela/packages", isDirectory: true)
+    let user = CLIRuntimeEnvironment.workflowHomeDirectory().appendingPathComponent("packages", isDirectory: true)
     switch scope {
     case .project:
       return [(.project, project)]

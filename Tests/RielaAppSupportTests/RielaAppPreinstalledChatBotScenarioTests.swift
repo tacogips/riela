@@ -32,7 +32,7 @@ final class RielaAppPreinstalledChatBotScenarioTests: XCTestCase {
 
     var state = daemonStore.load()
     let packageRoot = RielaAppProfileStore.packageRootURL(appRootURL: appRoot, profileName: profileName)
-    let sourceCandidates = RielaAppDaemonWorkflowDiscovery(homeDirectory: root).discoverUserDaemonWorkflows(
+    let sourceCandidates = RielaAppDaemonWorkflowDiscovery().discoverUserDaemonWorkflows(
       appPackageRoot: packageRoot
     )
     let instances = state.workflowInstances(from: sourceCandidates)

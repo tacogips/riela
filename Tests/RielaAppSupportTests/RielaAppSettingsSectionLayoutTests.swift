@@ -326,7 +326,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     let searchField = try XCTUnwrap(visibleSubviews(of: NSSearchField.self, in: root).first)
-    XCTAssertEqual(searchField.accessibilityLabel(), "ワークフローを検索")
+    XCTAssertEqual(searchField.accessibilityLabel(), "Search workflows")
     let window = try XCTUnwrap(controller.window)
     XCTAssertTrue(window.makeFirstResponder(searchField))
     XCTAssertTrue(window.firstResponder === searchField.currentEditor())
@@ -345,7 +345,7 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
     XCTAssertNil(selectableRow(accessibilityLabel: "Daily Summary", in: root))
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains {
-      $0.stringValue == "検索条件に一致するワークフローはありません。"
+      $0.stringValue == "No workflows match the search."
     })
     XCTAssertTrue(window.firstResponder === searchField.currentEditor())
 
@@ -390,8 +390,8 @@ final class RielaAppSettingsSectionLayoutTests: XCTestCase {
     XCTAssertTrue(graphPane.canvasView.model?.edges.contains {
       $0.from == "start" && $0.to == "review" && $0.label == "accepted"
     } ?? false)
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "ワークフロー情報" })
-    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "ワークフロー管理" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Workflow details" })
+    XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == "Manage workflow" })
     XCTAssertTrue(visibleSubviews(of: NSTextField.self, in: root).contains { $0.stringValue == workflowDirectory.path })
 
     controller.goBack()

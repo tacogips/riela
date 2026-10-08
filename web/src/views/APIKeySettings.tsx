@@ -128,10 +128,10 @@ export function APIKeySettings(props: { profileKey: string }) {
 function APIKeyConfirmationContent(props: { action: PendingAction }) {
   const action = props.action
   if (action.kind === 'issue') {
-    return <><p>Create <strong>{action.name}</strong> for {action.purpose === 'worker' ? `worker ${action.workerID}` : 'client API access'}?</p><p>Expires: {action.expiresAt ? new Date(action.expiresAt).toLocaleString() : 'Never'}.</p><p>The key works immediately and survives app restarts. Copy and save it when shown; its secret cannot be recovered later.</p></>
+    return <><p>Create <strong>{action.name}</strong> for {action.purpose === 'worker' ? `worker ${action.workerID}` : 'client API access'}?</p><p>Expires: {action.expiresAt ? new Date(action.expiresAt).toLocaleString() : 'Never'}.</p><p>Copy the key when shown; it cannot be recovered later.</p></>
   }
   if (action.kind === 'policy') {
-    return <><p>{action.required ? 'Clients will need a valid API key for every request.' : 'Clients will be allowed to connect without an API key.'}</p><p>Workers still need a valid worker key. This setting applies immediately and survives app restarts.</p></>
+    return <><p>{action.required ? 'Clients will need a valid API key for every request.' : 'Clients will be allowed to connect without an API key.'}</p></>
   }
   return <><p>Revoke <strong>{action.key.name}</strong>?</p><p>Clients or workers using this key will lose access immediately. This cannot be undone.</p></>
 }

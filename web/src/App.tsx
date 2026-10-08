@@ -42,7 +42,7 @@ export function profileViewTransition(
 }
 
 const navigation: Array<{ id: NavigationView; label: string; icon: ActionIconName }> = [
-  { id: 'workflows', label: 'ワークフロー', icon: 'workflow' },
+  { id: 'workflows', label: 'Workflows', icon: 'workflow' },
   { id: 'ops', label: 'Command deck', icon: 'dashboard' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ]

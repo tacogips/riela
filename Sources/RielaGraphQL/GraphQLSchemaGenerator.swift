@@ -649,6 +649,7 @@ public enum GraphQLSchemaGenerator {
     "Mutation.updateHTTPServerConfiguration": .init(name: "updateHTTPServerConfiguration", arguments: "input: UpdateHTTPServerConfigurationInput!", type: "RielaConfiguration!"),
     "Mutation.updateMutableWorkflow": .init(name: "updateMutableWorkflow", arguments: "input: UpdateMutableWorkflowInput!", type: "WorkflowMutationPayload!"),
     "Mutation.updateWorkflowInstance": .init(name: "updateWorkflowInstance", arguments: "input: WorkflowInstanceInput!", type: "WorkflowInstanceMutationPayload!"),
+    "Mutation.updateWorkflowStorageConfiguration": .init(name: "updateWorkflowStorageConfiguration", arguments: "input: UpdateWorkflowStorageConfigurationInput!", type: "RielaConfiguration!"),
     "Mutation.updateWorkflowInstanceConfiguration": .init(name: "updateWorkflowInstanceConfiguration", arguments: "input: WorkflowInstanceConfigurationInput!", type: "ConfigurationRevision!"),
     "Query.configuration": .init(name: "configuration", type: "RielaConfiguration!"),
     "Query.consoleInstance": .init(name: "consoleInstance", arguments: "identity: String!", type: "ConsoleInstancePayload!"),

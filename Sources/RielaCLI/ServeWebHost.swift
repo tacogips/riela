@@ -62,10 +62,14 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     sessionStoreOverride = sessionStoreRoot
     let state = RielaAppDaemonWorkflowStore(profileName: profile, homeDirectory: homeDirectory).load()
     self.state = state
-    let sources = RielaAppDaemonWorkflowDiscovery(homeDirectory: homeDirectory, projectRoot: workingDirectory)
+    let sources = RielaAppDaemonWorkflowDiscovery(projectRoot: workingDirectory)
       .discoverUserDaemonWorkflows(
-        appWorkflowRoot: RielaAppProfileStore.workflowRootURL(appRootURL: appRoot, profileName: profile),
-        appPackageRoot: RielaAppProfileStore.packageRootURL(appRootURL: appRoot, profileName: profile),
+        appWorkflowRoot: RielaAppProfileStore.workflowRootURL(
+          appRootURL: appRoot, profileName: profile, storageDirectory: state.workflowStorageDirectory
+        ),
+        appPackageRoot: RielaAppProfileStore.packageRootURL(
+          appRootURL: appRoot, profileName: profile, storageDirectory: state.workflowStorageDirectory
+        ),
         projectDirectories: state.projectDirectories,
         additionalWorkflowDirectories: state.workflowDirectories
       )
@@ -147,11 +151,11 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       let executor = ServeWebRegistryExecutor(
         workingDirectory: workingDirectory.path,
         sessionStoreRoot: sessionStoreRoot,
-        environment: environment,
+        environment: workflowEnvironment,
         configurationProvider: self,
         consoleProvider: RielaConsoleGraphQLProviderAdapter { [self] in await consoleGraphQLProvider() }
       )
-      return await CLIRuntimeEnvironment.$overrides.withValue(environment) {
+      return await CLIRuntimeEnvironment.$overrides.withValue(workflowEnvironment) {
         await DeterministicServerHTTPAdapter(
           routeHandler: DeterministicServerRouteHandler(graphQLExecutor: executor),
           context: ServerRequestContext(serviceName: "riela-serve")
@@ -161,7 +165,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     let editor = webWorkflowRuntime.handler(context: RielaWebWorkflowContext(
       profile: profile, assistant: state.assistant, sources: sources,
       workingDirectory: workingDirectory, appRoot: profileStore.appRootURL,
-      sessionStoreRoot: sessionStoreRoot, principalId: "riela-serve-local-web", environment: environment
+      sessionStoreRoot: sessionStoreRoot, principalId: "riela-serve-local-web", environment: workflowEnvironment
     ))
     if let response = await editor.response(for: request) { return response }
     return RielaWebAPIProjection(

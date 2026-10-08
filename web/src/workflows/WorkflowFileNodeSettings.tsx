@@ -64,11 +64,11 @@ export function WorkflowFileNodeSettings(props: {
     <Show when={props.disabled || !props.target}><p>Save the graph before editing the node file.</p></Show>
     <dialog ref={dialog} class="editor-node-dialog" aria-label="File-backed node settings" onCancel={(event) => { event.preventDefault(); close() }}>
       <h3>File-backed node settings · {props.nodeId}</h3>
-      <p>Save creates a separate node file and updates this workflow atomically. Original files and other settings remain unchanged.</p>
+      
       <Show when={busy()}><p role="status">Working…</p></Show>
       <Show when={error()}><p role="alert">{error()}</p></Show>
       <Show when={settings()}>{(data) => <>
-        <Show when={data().promptHidden || data().modelHidden}><p>Protected values are hidden and retained unless you type a replacement.</p></Show>
+        <Show when={data().promptHidden || data().modelHidden}><p>Protected value hidden; leave it untouched to keep it.</p></Show>
         <label>Node file prompt<textarea rows="10" disabled={busy()} value={prompt()} onInput={(event) => setPrompt(event.currentTarget.value)} /></label>
         <label>Node file model<input disabled={busy()} value={model()} onInput={(event) => setModel(event.currentTarget.value)} /></label>
         <ActionButton disabled={busy() || !dirty()} onClick={() => void save()}>Save node settings</ActionButton>

@@ -55,7 +55,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     XCTAssertTrue(visibleTexts.contains("Lost Instance"))
     XCTAssertTrue(visibleTexts.contains("Missing source, missing-source"))
     XCTAssertTrue(visibleTexts.contains("Relink Source"))
-    XCTAssertTrue(visibleTexts.contains("実行設定を削除"))
+    XCTAssertTrue(visibleTexts.contains("Remove run configuration"))
     XCTAssertFalse(visibleTexts.contains("Start"))
     XCTAssertFalse(visibleTexts.contains("Stop"))
     XCTAssertFalse(visibleTexts.contains("Restart"))
@@ -65,12 +65,12 @@ final class RielaAppControllerLayoutTests: XCTestCase {
 
     let relinkRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Relink Source", in: root))
     XCTAssertEqual(relinkRow.accessibilityRole(), .button)
-    XCTAssertEqual(relinkRow.accessibilityHelp(), "この実行設定で使うワークフローを選択します。")
-    XCTAssertEqual(relinkRow.toolTip, "この実行設定で使うワークフローを選択します。")
+    XCTAssertEqual(relinkRow.accessibilityHelp(), "Choose the workflow this run configuration uses.")
+    XCTAssertEqual(relinkRow.toolTip, "Choose the workflow this run configuration uses.")
     XCTAssertTrue(relinkRow.acceptsFirstResponder)
-    let removeRow = try XCTUnwrap(selectableRow(accessibilityLabel: "実行設定を削除", in: root))
+    let removeRow = try XCTUnwrap(selectableRow(accessibilityLabel: "Remove run configuration", in: root))
     XCTAssertEqual(removeRow.accessibilityRole(), .button)
-    XCTAssertEqual(removeRow.toolTip, "この実行設定を削除します。")
+    XCTAssertEqual(removeRow.toolTip, "Remove this run configuration.")
     XCTAssertTrue(removeRow.acceptsFirstResponder)
   }
 
@@ -195,7 +195,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     XCTAssertEqual(cell.accessibilityRole(), NSAccessibility.Role.button)
     XCTAssertEqual(cell.accessibilityLabel(), "Morning Summary")
     XCTAssertEqual(cell.accessibilityValue() as? String, "Stopped")
-    XCTAssertEqual(cell.accessibilityHelp(), "実行設定の詳細を表示")
+    XCTAssertEqual(cell.accessibilityHelp(), "Show run configuration details")
     XCTAssertTrue(cell.accessibilityPerformPress())
     controller.window?.layoutIfNeeded()
 
@@ -257,7 +257,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     controller.window?.layoutIfNeeded()
 
     let detailIndicator = try XCTUnwrap(allSubviews(of: NSProgressIndicator.self, in: root).first {
-      $0.accessibilityLabel() == "実行設定の状態"
+      $0.accessibilityLabel() == "Run configuration status"
     })
     XCTAssertTrue(detailIndicator.isIndeterminate)
     XCTAssertFalse(detailIndicator.hasHiddenAncestor)
@@ -328,7 +328,7 @@ final class RielaAppControllerLayoutTests: XCTestCase {
     )
     XCTAssertNil(idField.superview)
     XCTAssertEqual(nameField.contentCompressionResistancePriority(for: .horizontal), .defaultLow)
-    XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "実行設定" })
+    XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "Run configuration" })
     XCTAssertFalse(visibleTextFields(in: nameStack).contains { $0.stringValue == "Instance ID" })
     XCTAssertTrue(visibleTextFields(in: nameStack).contains { $0.stringValue == "Display Name" })
 

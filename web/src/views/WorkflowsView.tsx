@@ -18,14 +18,14 @@ export function WorkflowsView(props: { profileKey: string; profileName: string; 
     async () => requireExpectedProfile(await api.get<WorkflowSources>('/api/v1/workflows/sources'), props.profileName))
   const [registry, { refetch: refreshRegistry }] = createResource(() => props.profileKey, listMutableWorkflows)
   const [search, setSearch] = createSignal('')
-  const [studio, setStudio] = createSignal<{ workflow?: RegistryWorkflow }>()
+  const [studio, setStudio] = createSignal<{ workflow?: RegistryWorkflow; source?: { id: string; name: string } }>()
   const [importing, setImporting] = createSignal(false)
   const [path, setPath] = createSignal('')
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal('')
   const [message, setMessage] = createSignal('')
   const rows = createMemo(() => searchWorkflows([
-    ...(sources.error ? [] : sources()?.discovered ?? []).map(source => ({ ...source, kind: 'source' as const })),
+    ...(sources.error ? [] : sources()?.discovered ?? []).map(source => ({ ...source, kind: 'source' as const, copyable: true })),
     ...(registry.error ? [] : registry() ?? []).filter(workflow => workflow.mutable).map(workflow => ({ ...workflow, kind: 'mutable' as const })),
     ...[...new Map((instances.data()?.items ?? []).filter(item => item.status === 'needsSource').map(item => [item.sourceId, item])).values()]
       .map(item => ({ id: item.sourceId, name: item.name, workflowId: item.workflowId, description: 'Missing source', scope: item.source, kind: 'source' as const })),
@@ -61,17 +61,17 @@ export function WorkflowsView(props: { profileKey: string; profileName: string; 
     } catch (failure) { setError(failure instanceof APIError && failure.status === 409 ? 'Changed elsewhere — refresh before adding this directory.' : String(failure)) }
     finally { setBusy(false) }
   }
-  return <Show when={!studio()} fallback={<WorkflowStudio profileKey={props.profileKey} newWorkflow={!studio()?.workflow}
-    initialWorkflow={studio()?.workflow} onClose={() => { setStudio(undefined); refresh() }} />}>
+  return <Show when={!studio()} fallback={<WorkflowStudio profileKey={props.profileKey}
+    copySource={studio()?.source} initialWorkflow={studio()?.workflow} onClose={() => { setStudio(undefined); refresh() }} />}>
     <section class="page workflow-list-page">
       <div class="workflow-list-toolbar">
-        <label class="grow"><span class="action-button-caption">ワークフローを正規表現で検索</span><input type="search" placeholder="検索 (正規表現)"
+        <label class="grow"><span class="action-button-caption">Search workflows (regex)</span><input type="search" placeholder="Search (regex)"
           value={search()} aria-invalid={!!rows().error} aria-describedby={rows().error ? 'workflow-search-error' : undefined}
           onInput={event => setSearch(event.currentTarget.value)} /></label>
         <span class="source-label">{rows().items.length}</span>
-        <ActionButton class="secondary" onClick={refresh}>Refresh</ActionButton>
+        <ActionButton class="secondary" iconOnly onClick={refresh}>Refresh</ActionButton>
         <ActionButton class="secondary" onClick={() => setImporting(value => !value)}>Import directory</ActionButton>
-        <ActionButton onClick={() => setStudio({})}>新規ワークフローを作成</ActionButton>
+        <ActionButton onClick={() => setStudio({})}>New workflow</ActionButton>
       </div>
       <Show when={rows().error}><p id="workflow-search-error" class="field-error" role="alert">{rows().error}</p></Show>
       <Show when={error()}><ErrorBanner message={error()} /></Show>
@@ -81,11 +81,11 @@ export function WorkflowsView(props: { profileKey: string; profileName: string; 
         <ActionButton type="button" class="secondary" onClick={() => setImporting(false)}>Cancel</ActionButton>
         <ActionButton type="submit" disabled={busy() || !path().trim()}>Add directory</ActionButton>
       </form></Show>
-      <div class="workflow-list-pane" role="region" aria-label="ワークフロー一覧" tabindex="0">
+      <div class="workflow-list-pane" role="region" aria-label="Workflow list" tabindex="0">
         <Show when={sources.loading || registry.loading || (instances.loading() && !instances.data())}><LoadingState label="Loading workflows…" /></Show>
         <Show when={sources.error || registry.error || instances.error()}><ErrorBanner message={String(sources.error ?? registry.error ?? instances.error())} /></Show>
         <For each={rows().items}>{item => <div class="workflow-source-row"><button class="list-row selectable-row" disabled={busy()}
-          aria-label={item.kind === 'source' ? `ワークフローを開く ${item.name}` : `グラフを編集 ${item.name}`}
+          aria-label={item.kind === 'source' ? `Open workflow ${item.name}` : `Edit graph ${item.name}`}
           onClick={() => item.kind === 'source' ? props.onInspect(item.id) : void openMutable(item)}>
           <span class="row-icon">W</span><div><strong>{item.name}</strong><span>{item.workflowId} · {item.scope}</span></div>
         </button><Show when={item.kind === 'mutable' ? item : undefined}>{workflow => {
@@ -93,9 +93,14 @@ export function WorkflowsView(props: { profileKey: string; profileName: string; 
             <ActionButton class="secondary" disabled={busy()} onClick={() => void manageMutable(workflow(), false)}>{workflow().activationState === 'ACTIVE' ? 'Deactivate' : 'Activate'}</ActionButton>
             <ActionButton class="danger" disabled={busy()} onClick={() => void manageMutable(workflow(), true)}>Delete</ActionButton>
           </div>
-        }}</Show></div>}</For>
+        }}</Show><Show when={item.kind === 'source' && 'copyable' in item && item.copyable ? item : undefined}>{source =>
+          <div class="header-actions">
+            <ActionButton class="secondary" disabled={busy()} aria-label={`Edit a copy of ${source().name}`}
+              onClick={() => setStudio({ source: { id: source().id, name: source().name } })}>Edit a copy</ActionButton>
+          </div>
+        }</Show></div>}</For>
         <Show when={!sources.loading && !registry.loading && !sources.error && !registry.error && !rows().error && rows().items.length === 0}>
-          <EmptyState title={search() ? '一致するワークフローがありません' : 'ワークフローがありません'} detail={search() ? '検索条件を変更してください。' : '＋から作成できます。'} />
+          <EmptyState title={search() ? 'No matching workflows' : 'No workflows'} />
         </Show>
       </div>
     </section>

@@ -523,6 +523,36 @@ final class RielaAppWebRegistryProviderTests: XCTestCase {
     }
   }
 
+  func testWorkflowHomeOverrideKeepsRegistryOutOfCLIHome() async throws {
+    let home = try makeHome()
+    let storage = home.appendingPathComponent("app-storage/profile", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+    try await CLIRuntimeEnvironment.$overrides.withValue([
+      "HOME": home.path,
+      CLIRuntimeEnvironment.workflowHomeEnvironmentName: storage.path
+    ]) {
+      let provider = webProvider()
+      let bundle = try makeBundle(description: "App owned", includeNode: true, workflowId: "app-owned-workflow")
+      defer { try? FileManager.default.removeItem(at: bundle) }
+      let registered = try await provider.registerMutableWorkflow(
+        input: GraphQLRegisterMutableWorkflowInput(definition: [:]),
+        resolvedBundleURL: bundle
+      )
+      let entry = try await detail(provider: provider, mutation: registered)
+      XCTAssertEqual(entry.workflowId, "app-owned-workflow")
+      XCTAssertTrue(FileManager.default.fileExists(atPath: storage.appendingPathComponent(
+        "temporary-workflows/app-owned-workflow/workflow.json"
+      ).path))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(
+        ".riela/temporary-workflows"
+      ).path))
+    }
+    try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": home.path]) {
+      let workflows = try await webProvider().workflows(filter: WorkflowRegistryFilter())
+      XCTAssertFalse(workflows.contains { $0.workflowId == "app-owned-workflow" })
+    }
+  }
+
   func testConcurrentWebUpdatesShareCanonicalRegistryLocks() async throws {
     let home = try makeHome()
     defer { try? FileManager.default.removeItem(at: home) }

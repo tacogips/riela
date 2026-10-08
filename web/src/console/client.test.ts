@@ -7,7 +7,7 @@ const instance: Instance = {
   id: 'default',
   sourceId: 'source-a',
   isDefault: true,
-  name: '標準設定',
+  name: 'Default',
   workflowId: 'workflow-a',
   source: '/workflows/workflow-a',
   sourceKind: 'directory',

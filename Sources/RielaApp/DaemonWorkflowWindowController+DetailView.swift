@@ -6,27 +6,27 @@ extension DaemonWorkflowWindowController {
   func buildInstanceDetailView() -> NSView {
     let relinkRow = actionRow(
       title: "Relink Source",
-      detail: "この実行設定で使うワークフローを選択します。",
+      detail: "Choose the workflow this run configuration uses.",
       action: #selector(relinkSelectedSource)
     )
     let openWebUIRow = actionRow(
-      title: "設定",
-      detail: "作業フォルダ、環境変数、入力を設定します。",
+      title: "Settings",
+      detail: "Set the working folder, environment variables, and input.",
       action: #selector(openSelectedInstanceInWebUI)
     )
     let startRow = actionRow(
       title: "Start",
-      detail: "この実行設定で開始し、次回のアプリ起動時も自動で開始します。",
+      detail: "Start with this run configuration and start it again automatically on the next app launch.",
       action: #selector(startSelectedInstance)
     )
     let stopRow = actionRow(
       title: "Stop",
-      detail: "設定を保存したまま停止します。",
+      detail: "Stop while keeping the saved settings.",
       action: #selector(stopSelectedInstance)
     )
     let restartRow = actionRow(
       title: "Restart",
-      detail: "この実行設定で再起動します。",
+      detail: "Restart with this run configuration.",
       action: #selector(restartSelectedInstance)
     )
     let workflowRow = settingRow(
@@ -75,8 +75,8 @@ extension DaemonWorkflowWindowController {
     stopInstanceActionRow = stopRow
     restartInstanceActionRow = restartRow
     let removeRow = actionRow(
-      title: "実行設定を削除",
-      detail: "この実行設定を削除します。",
+      title: "Remove run configuration",
+      detail: "Remove this run configuration.",
       style: .destructive,
       action: #selector(removeSelectedInstance)
     )
@@ -95,8 +95,8 @@ extension DaemonWorkflowWindowController {
     let actionsSection = rielaAppSettingsSection(rows: [
       openWebUIRow,
       actionRow(
-        title: "実行履歴",
-        detail: "この実行設定の実行結果とログを表示します。",
+        title: "Run history",
+        detail: "Show the results and logs of this run configuration.",
         action: #selector(openSelectedConfigurationHistory)
       ),
       relinkRow,
@@ -112,7 +112,7 @@ extension DaemonWorkflowWindowController {
       settingsSectionCaption("Current Settings"),
       settingsSection
     ] + kaibaBindingViews + [
-      settingsSectionCaption("実行設定の管理"),
+      settingsSectionCaption("Manage run configuration"),
       actionsSection
     ])
     return overviewPane(
@@ -127,7 +127,7 @@ extension DaemonWorkflowWindowController {
     summaryLabel.textColor = .secondaryLabelColor
     summaryLabel.lineBreakMode = .byTruncatingTail
     let scopeValue = NSTextField(
-      labelWithString: "プロファイル \(row.profileName.rawValue) の実行設定を削除します。ワークフローは保持されます。"
+      labelWithString: "Remove this run configuration from profile \(row.profileName.rawValue). The workflow is kept."
     )
     scopeValue.lineBreakMode = .byWordWrapping
     scopeValue.maximumNumberOfLines = 3
@@ -135,17 +135,17 @@ extension DaemonWorkflowWindowController {
       settingRow(title: "Scope", valueLabel: scopeValue, action: nil)
     ]
     if row.state == .running || row.state == .starting || row.state == .reloading {
-      let runningValue = NSTextField(labelWithString: "実行中の処理を停止します。")
+      let runningValue = NSTextField(labelWithString: "Running work will be stopped.")
       messageRows.append(settingRow(title: "Status", valueLabel: runningValue, action: nil))
     }
     let cancelRow = actionRow(
       title: "Cancel",
-      detail: "実行設定に戻ります。",
+      detail: "Return to the run configuration.",
       action: #selector(cancelRemoveSelectedInstance)
     )
     let removeRow = actionRow(
-      title: "実行設定を削除",
-      detail: "実行設定を削除します。ワークフローは保持されます。",
+      title: "Remove run configuration",
+      detail: "Remove the run configuration. The workflow is kept.",
       style: .destructive,
       action: #selector(confirmRemoveSelectedInstance)
     )

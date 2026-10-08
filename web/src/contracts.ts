@@ -95,6 +95,13 @@ export interface RielaConfiguration {
   revision: number
   profiles: string[]
   workflowDirectories: string[]
+  /** Profile workflow storage; kept apart from the riela CLI's `~/.riela`. */
+  workflowStorage?: {
+    directory: string
+    defaultDirectory: string
+    isDefault: boolean
+    cliWorkflowHome: string
+  } | null
   assistant: {
     assistance: string
     vendor: string

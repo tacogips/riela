@@ -77,7 +77,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
     try Data(definition.utf8).write(to: source.appendingPathComponent("workflow.json"))
     try Data(node.utf8).write(to: source.appendingPathComponent("nodes/work.json"))
     try Data(prompt.utf8).write(to: source.appendingPathComponent("prompts/work.md"))
-    try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": root.path]) {
+    try await CLIRuntimeEnvironment.$overrides.withValue(appRegistryEnvironment(root)) {
       let app = RielaApp()
       app.appHomeDirectory = root
       app.daemonWorkflowSources = [RielaAppDaemonWorkflowCandidate(
@@ -91,7 +91,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       XCTAssertTrue(result.accepted)
       XCTAssertEqual(result.workflow?.activationState, "DEACTIVATED")
       XCTAssertNotNil(result.workflow?.definitionRevision)
-      let destination = root.appendingPathComponent(".riela/temporary-workflows/editor-copy")
+      let destination = root.appendingPathComponent(".riela/rielaapp/profiles/default/temporary-workflows/editor-copy")
       for path in ["workflow.json", "nodes/work.json", "prompts/work.md"] {
         XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent(path)),
           try Data(contentsOf: source.appendingPathComponent(path)))
@@ -156,7 +156,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
                 {"id":"second","nodeId":"second","role":"worker","description":"password=STEP_SECRET_CANARY"}]}
       """#
     try Data(raw.utf8).write(to: source.appendingPathComponent("workflow.json"))
-    try await CLIRuntimeEnvironment.$overrides.withValue(["HOME": root.path]) {
+    try await CLIRuntimeEnvironment.$overrides.withValue(appRegistryEnvironment(root)) {
       let provider = FileWorkflowRegistryGraphQLProvider(workingDirectory: root.path,
         webPrincipalId: RielaAppWebRegistryAuthorizer.principalId)
       let registered = try await FileWorkflowRegistryGraphQLProvider(workingDirectory: root.path).registerMutableWorkflow(
@@ -185,7 +185,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       let routeUpdate = try await provider.updateMutableWorkflow(input: GraphQLUpdateMutableWorkflowInput(
         target: target, definition: definition, expectedDefinitionRevision: entry.definitionRevision), resolvedBundleURL: source)
       XCTAssertTrue(routeUpdate.accepted, "Deleting an earlier route must retain the surviving route's protected fields")
-      let routeData = try String(contentsOf: root.appendingPathComponent(".riela/temporary-workflows/editor-settings/workflow.json"), encoding: .utf8)
+      let routeData = try String(contentsOf: root.appendingPathComponent(".riela/rielaapp/profiles/default/temporary-workflows/editor-settings/workflow.json"), encoding: .utf8)
       XCTAssertFalse(routeData.contains("secret-route-A"))
       XCTAssertTrue(routeData.contains("secret-route-B"))
       let afterRoute = await app.webAPIResponse(for: request, csrfToken: "unused")
@@ -224,7 +224,7 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       let updated = try await provider.updateMutableWorkflow(input: GraphQLUpdateMutableWorkflowInput(
         target: target, definition: definition, expectedDefinitionRevision: entry.definitionRevision), resolvedBundleURL: source)
       XCTAssertTrue(updated.accepted)
-      let persisted = try String(contentsOf: root.appendingPathComponent(".riela/temporary-workflows/editor-settings/workflow.json"), encoding: .utf8)
+      let persisted = try String(contentsOf: root.appendingPathComponent(".riela/rielaapp/profiles/default/temporary-workflows/editor-settings/workflow.json"), encoding: .utf8)
       XCTAssertTrue(persisted.contains("Changed in the graph"))
       XCTAssertTrue(persisted.contains("SECOND_SECRET_CANARY"))
       XCTAssertTrue(persisted.contains("STEP_SECRET_CANARY"))
@@ -240,6 +240,13 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       let rejected = await app.webAPIResponse(for: request, csrfToken: "unused")
       XCTAssertEqual(rejected.status, 409)
     }
+  }
+
+  /// The desktop host keeps its registry in the profile storage, so direct
+  /// registry calls in these tests must resolve the same workflow home.
+  private func appRegistryEnvironment(_ root: URL) -> [String: String] {
+    ["HOME": root.path, CLIRuntimeEnvironment.workflowHomeEnvironmentName:
+      root.appendingPathComponent(".riela/rielaapp/profiles/default", isDirectory: true).path]
   }
 }
 #endif

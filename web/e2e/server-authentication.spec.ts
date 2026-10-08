@@ -11,7 +11,7 @@ test('real server registers and authenticates Passkeys, clears sessions and appl
     await page.screenshot({ path: test.info().outputPath('passkey-registration.png') })
     expect(page.url()).not.toBe(invitation)
     await page.getByRole('button', { name: 'Create Passkey', exact: true }).click()
-    await expect(page.getByRole('region', { name: 'ワークフロー一覧', exact: true })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Workflow list', exact: true })).toBeVisible()
     const users = JSON.parse(await server.cli('users'))
     expect(users[0].credentials).toHaveLength(1)
     await page.getByRole('button', { name: 'Settings', exact: true }).click()

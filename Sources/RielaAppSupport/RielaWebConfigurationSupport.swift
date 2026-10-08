@@ -19,6 +19,77 @@ public enum RielaWebConfigurationSupport {
     }
   }
 
+  public static func workflowStorageConfiguration(
+    appRootURL: URL, profileName: RielaAppProfileName, state: RielaAppDaemonWorkflowState, homeDirectory: URL
+  ) -> GraphQLWorkflowStorageConfiguration {
+    let defaultDirectory = RielaAppProfileStore.workflowStorageRootURL(appRootURL: appRootURL, profileName: profileName)
+    let directory = RielaAppProfileStore.workflowStorageRootURL(
+      appRootURL: appRootURL, profileName: profileName, storageDirectory: state.workflowStorageDirectory
+    )
+    return GraphQLWorkflowStorageConfiguration(
+      directory: directory.path, defaultDirectory: defaultDirectory.path,
+      isDefault: directory.path == defaultDirectory.path,
+      cliWorkflowHome: cliWorkflowHome(homeDirectory: homeDirectory).path
+    )
+  }
+
+  /// Applies a requested storage directory to `state` and creates its
+  /// `workflows` and `packages` roots. A blank request restores the default;
+  /// the CLI's own `~/.riela` workflow storage is refused so RielaApp and the
+  /// CLI never share definitions.
+  public static func applyingWorkflowStorage(
+    _ input: GraphQLUpdateWorkflowStorageConfigInput, to original: RielaAppDaemonWorkflowState,
+    appRootURL: URL, profileName: RielaAppProfileName, homeDirectory: URL
+  ) throws -> RielaAppDaemonWorkflowState {
+    var state = original
+    let requested = input.directory?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let defaultDirectory = RielaAppProfileStore.workflowStorageRootURL(appRootURL: appRootURL, profileName: profileName)
+    var directory = defaultDirectory
+    if !requested.isEmpty {
+      let expanded = requested == "~" || requested.hasPrefix("~/")
+        ? homeDirectory.path + requested.dropFirst()
+        : requested
+      guard expanded.hasPrefix("/") else {
+        throw RielaConfigurationGraphQLError(
+          code: "INVALID_CONFIGURATION", message: "workflow storage directory must be an absolute path"
+        )
+      }
+      directory = URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
+    }
+    let cliHome = cliWorkflowHome(homeDirectory: homeDirectory).standardizedFileURL.path
+    let cliOwned = [cliHome] + ["workflows", "packages", "temporary-workflows", "workflow-state"].map { "\(cliHome)/\($0)" }
+    if cliOwned.contains(where: { directory.path == $0 || ($0 != cliHome && directory.path.hasPrefix($0 + "/")) }) {
+      throw RielaConfigurationGraphQLError(
+        code: "INVALID_CONFIGURATION",
+        message: "workflow storage directory must be separate from the riela CLI workflow home \(cliHome)"
+      )
+    }
+    var isDirectory: ObjCBool = false
+    if FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+      throw RielaConfigurationGraphQLError(
+        code: "INVALID_CONFIGURATION", message: "workflow storage path is not a directory: \(directory.path)"
+      )
+    }
+    do {
+      for child in ["workflows", "packages"] {
+        try FileManager.default.createDirectory(
+          at: directory.appendingPathComponent(child, isDirectory: true), withIntermediateDirectories: true
+        )
+      }
+    } catch {
+      throw RielaConfigurationGraphQLError(
+        code: "CONFIGURATION_IO_FAILURE", message: "could not create workflow storage: \(error.localizedDescription)"
+      )
+    }
+    state.workflowStorageDirectory = directory.path == defaultDirectory.path ? nil : directory.path
+    return state
+  }
+
+  /// The CLI's default user-scope workflow storage (`$HOME/.riela`).
+  public static func cliWorkflowHome(homeDirectory: URL) -> URL {
+    homeDirectory.appendingPathComponent(".riela", isDirectory: true)
+  }
+
   public static func assistantConfiguration(_ settings: RielaAppAssistantSettings) async -> GraphQLAssistantConfiguration {
     let selectedVendor = settings.vendor.settingsSelectableVendor
     var catalogs: [GraphQLConfigurationModelCatalog] = []

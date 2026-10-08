@@ -14,7 +14,7 @@ extension ServeWebHost {
   func instanceEnvironment(_ instance: WorkflowInstance) -> [String: String] {
     var values = RielaAppEnvironmentFileStore(
       environmentFileURL: instance.preference.environmentFilePath.map { URL(fileURLWithPath: $0) },
-      processEnvironment: environment
+      processEnvironment: workflowEnvironment
     ).mergedEnvironment()
     values.merge(instance.preference.environmentVariables) { _, configured in configured }
     return values
@@ -97,7 +97,7 @@ extension ServeWebHost {
     let root = sessionStoreRoot
     var configuration = instance.preference.configuration.serveConfiguration(inheritedEnvironment: instanceEnvironment(instance))
     if configuration.workingDirectory == nil { configuration.workingDirectory = instance.candidate.workingDirectory }
-    await CLIRuntimeEnvironment.$overrides.withValue(environment) {
+    await CLIRuntimeEnvironment.$overrides.withValue(workflowEnvironment) {
       await runtime.start(instance.candidate, configuration: configuration, sessionStoreRoot: root)
     }
   }

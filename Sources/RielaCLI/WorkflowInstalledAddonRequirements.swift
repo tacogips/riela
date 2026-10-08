@@ -50,15 +50,15 @@ func verifiedInstalledAddon(
   else { return nil }
 
   let project = URL(fileURLWithPath: workingDirectory, isDirectory: true)
-  let home = URL(fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(), isDirectory: true)
+  let workflowHome = CLIRuntimeEnvironment.workflowHomeDirectory()
   let projectRoot = project.appendingPathComponent(".riela/packages", isDirectory: true)
-  let userRoot = home.appendingPathComponent(".riela/packages", isDirectory: true)
+  let userRoot = workflowHome.appendingPathComponent("packages", isDirectory: true)
   let ownerURL = URL(fileURLWithPath: ownerDirectory, isDirectory: true).standardizedFileURL
   let roots: [InstalledDependencyRoot] = [
     InstalledDependencyRoot(scope: .project, packages: projectRoot,
       lockfile: project.appendingPathComponent("riela-lock.json")),
     InstalledDependencyRoot(scope: .user, packages: userRoot,
-      lockfile: home.appendingPathComponent(".riela/riela-lock.json"))
+      lockfile: workflowHome.appendingPathComponent("riela-lock.json"))
   ]
   guard let selectedRoot = roots.first(where: { root in
     let canonicalRoot = root.packages.resolvingSymlinksInPath().standardizedFileURL.path

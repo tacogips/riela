@@ -2,6 +2,7 @@ import Foundation
 import RielaAppSupport
 import RielaCore
 import RielaGraphQL
+import RielaWorkflowRegistry
 
 extension ServeWebHost: RielaConfigurationGraphQLProviding {
   var profileStore: RielaAppProfileStore {
@@ -19,6 +20,20 @@ extension ServeWebHost: RielaConfigurationGraphQLProviding {
   var sessionStoreRoot: String {
     sessionStoreOverride ?? homeDirectory
       .appendingPathComponent(".riela/profiles/\(profile.rawValue)/sessions", isDirectory: true).path
+  }
+
+  /// The active profile's workflow storage; workflows edited, listed and run
+  /// from this host resolve user scope here instead of the CLI's `~/.riela`.
+  var workflowStorageRoot: URL {
+    RielaAppProfileStore.workflowStorageRootURL(
+      appRootURL: profileStore.appRootURL, profileName: profile, storageDirectory: state.workflowStorageDirectory
+    )
+  }
+
+  var workflowEnvironment: [String: String] {
+    var values = environment
+    values[CLIRuntimeEnvironment.workflowHomeEnvironmentName] = workflowStorageRoot.path
+    return values
   }
 
   var configurationRevision: GraphQLConfigurationRevision {
@@ -40,7 +55,10 @@ extension ServeWebHost: RielaConfigurationGraphQLProviding {
         restartRequired: configuredPort != port, state: "running"
       ),
       profiles: profileStore.listProfileNames(including: profile).map(\.rawValue),
-      workflowDirectories: state.workflowDirectories
+      workflowDirectories: state.workflowDirectories,
+      workflowStorage: RielaWebConfigurationSupport.workflowStorageConfiguration(
+        appRootURL: profileStore.appRootURL, profileName: profile, state: state, homeDirectory: homeDirectory
+      )
     )
   }
 
@@ -120,6 +138,14 @@ extension ServeWebHost: RielaConfigurationGraphQLProviding {
     return configurationRevision
   }
 
+  func updateWorkflowStorage(input: GraphQLUpdateWorkflowStorageConfigInput) async throws -> GraphQLRielaConfiguration {
+    try validateRevision(input.expectedRevision, profile: input.expectedProfile)
+    try saveState(RielaWebConfigurationSupport.applyingWorkflowStorage(
+      input, to: state, appRootURL: profileStore.appRootURL, profileName: profile, homeDirectory: homeDirectory
+    ))
+    return try await configuration()
+  }
+
   func updateWorkflowInstance(input: GraphQLWorkflowInstanceConfigInput) async throws -> GraphQLConfigurationRevision {
     try requireIdleInstanceOperation()
     try validateRevision(input.expectedRevision, profile: input.expectedProfile)
@@ -160,10 +186,16 @@ extension ServeWebHost: RielaConfigurationGraphQLProviding {
   func refreshConfigurationState() {
     let nextProfile = profileStore.loadActiveProfileName()
     let nextState = RielaAppDaemonWorkflowStore(profileName: nextProfile, homeDirectory: homeDirectory).load()
-    let nextSources = RielaAppDaemonWorkflowDiscovery(homeDirectory: homeDirectory, projectRoot: workingDirectory)
+    let nextSources = RielaAppDaemonWorkflowDiscovery(projectRoot: workingDirectory)
       .discoverUserDaemonWorkflows(
-        appWorkflowRoot: RielaAppProfileStore.workflowRootURL(appRootURL: profileStore.appRootURL, profileName: nextProfile),
-        appPackageRoot: RielaAppProfileStore.packageRootURL(appRootURL: profileStore.appRootURL, profileName: nextProfile),
+        appWorkflowRoot: RielaAppProfileStore.workflowRootURL(
+          appRootURL: profileStore.appRootURL, profileName: nextProfile,
+          storageDirectory: nextState.workflowStorageDirectory
+        ),
+        appPackageRoot: RielaAppProfileStore.packageRootURL(
+          appRootURL: profileStore.appRootURL, profileName: nextProfile,
+          storageDirectory: nextState.workflowStorageDirectory
+        ),
         projectDirectories: nextState.projectDirectories,
         additionalWorkflowDirectories: nextState.workflowDirectories
       )

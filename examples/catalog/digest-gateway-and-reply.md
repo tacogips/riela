@@ -74,8 +74,8 @@ Hourly X follower-post digest for Telegram:
 - uses the built-in `riela/x-digest` add-on with `stateBackend: "kv"` to keep
   the saved post id in the workflow key-value store (store `x-digest`, key
   `digest-state`, scope = workflow id) for dedupe/accounting
-- runs `riela/x-gateway-read` in Docker with
-  `ghcr.io/tacogips/x-gateway:latest`
+- runs `riela/x-gateway-read` in the discovered container runtime with
+  `riela-x-gateway:local`
 - queries the stable x-gateway `followingTimeline` field for followed-account posts
 - maps X credentials from environment variables only; do not put token values
   in workflow files
@@ -134,8 +134,8 @@ Minimal incremental X fetch cursor on the built-in workflow key-value store:
   `x-posts`; the first run returns `found: false` with the configured
   `default` value, and later steps reference
   `{{inbox.latest.output.payload.value.sinceId}}`
-- `fetch-posts` runs `riela/x-gateway-read` in Docker with
-  `ghcr.io/tacogips/x-gateway:latest` and maps X credentials from environment
+- `fetch-posts` runs `riela/x-gateway-read` in the discovered container runtime with
+  `riela-x-gateway:local` and maps X credentials from environment
   variables only
 - `persist-cursor` uses `riela/kv-set` with a `valueTemplate` that upserts the
   newest fetched post id from `pageInfo.newestId` back into the same
@@ -161,8 +161,8 @@ Scheduled Gmail digest for Telegram:
 - reads seen message ids from the workflow key-value store
   (`stateBackend: "kv"`, store `gmail-digest`, key `digest-state`, scope =
   workflow id) for first-time-seen dedupe
-- runs `riela/gmail-gateway-read` in Docker with
-  `ghcr.io/tacogips/gmail-gateway:latest`
+- runs `riela/gmail-gateway-read` in the discovered container runtime with
+  `riela-gmail-gateway:local`
 - uses the read-only `gmail-gateway-reader` client through the built-in add-on
   to fetch Gmail thread edges for `accountId: "gmail"` through the stable
   `threads(input:)` GraphQL field

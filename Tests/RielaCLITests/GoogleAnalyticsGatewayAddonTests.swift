@@ -8,6 +8,20 @@ import XCTest
 /// variables, and the environment the gateway is allowed to see — instead of
 /// stubbing an executable on `PATH`. The gateway's own tests cover the runtime.
 final class GoogleAnalyticsGatewayAddonTests: XCTestCase {
+  func testWriterAndAdminIncludeLowerTierCapabilities() throws {
+    #if canImport(GoogleAnalyticsGatewayCore)
+    let reader = Set(BuiltinGoogleAnalyticsGatewayAddon.read.capabilities.map(\.id))
+    let writer = Set(BuiltinGoogleAnalyticsGatewayAddon.write.capabilities.map(\.id))
+    let admin = Set(BuiltinGoogleAnalyticsGatewayAddon.admin.capabilities.map(\.id))
+    XCTAssertTrue(reader.isSubset(of: writer))
+    XCTAssertTrue(writer.isSubset(of: admin))
+    XCTAssertGreaterThan(writer.count, reader.count)
+    XCTAssertGreaterThan(admin.count, writer.count)
+    #else
+    throw XCTSkip("Analytics SDK is not linked in this build")
+    #endif
+  }
+
   func testReadRendersDocumentAndVariables() async throws {
     let gateway = RecordingGatewayGraphQLRunner(
       response: #"{"data":{"gaAccountSummaries":{"nodes":[{"name":"accountSummaries/1","displayName":"Main"}]}}}"#

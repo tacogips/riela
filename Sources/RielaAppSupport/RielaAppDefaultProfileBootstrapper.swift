@@ -369,8 +369,8 @@ private extension RielaAppDefaultProfileBootstrapper {
                 },
                 "config": {
                   "queryTemplate": \(jsonString(gmailGatewayQueryTemplate)),
-                  "image": "ghcr.io/tacogips/gmail-gateway:latest",
-                  "runnerKind": "docker",
+                  "image": \(jsonString(RielaBuiltinGatewayContainerImages.gmail)),
+                  "runnerKind": "auto",
                   "networkPolicy": "egress-allowed"
                 }
               }

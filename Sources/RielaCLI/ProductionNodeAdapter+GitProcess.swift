@@ -318,6 +318,17 @@ private final class GitCStringArray {
 
 struct GitExecutablePolicy: Sendable {
   static let versionOneURL = URL(fileURLWithPath: "/usr/bin/git")
+  static var workerURL: URL {
+    #if os(macOS)
+    return macOSWorkerURLs.first { FileManager.default.isExecutableFile(atPath: $0.path) } ?? versionOneURL
+    #else
+    return versionOneURL
+    #endif
+  }
+  private static let macOSWorkerURLs = [
+    URL(fileURLWithPath: "/Applications/Xcode.app/Contents/Developer/usr/bin/git"),
+    URL(fileURLWithPath: "/Library/Developer/CommandLineTools/usr/bin/git")
+  ]
   static let macOSCredentialHelperURL = URL(fileURLWithPath: "/usr/bin/git-credential-osxkeychain")
   static let sshURL = URL(fileURLWithPath: "/usr/bin/ssh")
 
@@ -327,7 +338,7 @@ struct GitExecutablePolicy: Sendable {
   }
 
   func validateGit(at selectedURL: URL, repositoryRoot: URL) throws -> URL {
-    guard selectedURL.standardizedFileURL.path == Self.versionOneURL.path else {
+    guard ([Self.versionOneURL] + Self.macOSWorkerURLs).contains(where: { $0.path == selectedURL.standardizedFileURL.path }) else {
       throw policyError("git executable is outside the version 1 system allowlist")
     }
     return try validateTrustedExecutable(at: selectedURL, repositoryRoot: repositoryRoot)
@@ -497,7 +508,7 @@ extension BuiltinWorkflowAddonResolver {
   }
 
   private func minimalGitEnvironment(additional: [String: String]) -> [String: String] {
-    let preservedKeys = ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "SSH_AUTH_SOCK"]
+    let preservedKeys = ["HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "SSH_AUTH_SOCK"]
     var result = environment.filter { preservedKeys.contains($0.key) }
     result["GIT_TERMINAL_PROMPT"] = "0"
     result["GIT_PAGER"] = "cat"

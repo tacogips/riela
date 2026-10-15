@@ -149,6 +149,10 @@ public enum WorkflowInstanceResolver {
     if let agentSandbox = patch.agentSandbox {
       patched.agentSandbox = agentSandbox
     }
+    if let sandbox = patch.sandbox {
+      try sandbox.validate()
+      patched.sandbox = sandbox
+    }
     if let model = normalizedModel(patch.model) {
       guard !patched.modelFreeze || model == patched.model else {
         throw WorkflowInstanceResolutionError.modelChangeFrozen(nodeId)

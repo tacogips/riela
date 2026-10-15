@@ -34,10 +34,14 @@ extension WorkflowHostCapabilityTests {
       "riela/chat-persona-memory-write",
       "riela/memory-save",
       "riela/memory-load",
+      "riela/memory-update",
+      "riela/memory-search",
       "riela/gmail-digest",
       "riela/x-digest",
       "riela/gemini-sdk-worker",
       "riela/codex-sdk-worker",
+      "riela/claude-sdk-worker",
+      "riela/cursor-sdk-worker",
       "riela/time-signal",
       "riela/gmail-gateway-read",
       "riela/x-gateway-read"
@@ -58,10 +62,14 @@ extension WorkflowHostCapabilityTests {
       "riela/chat-persona-memory-write",
       "riela/memory-save",
       "riela/memory-load",
+      "riela/memory-update",
+      "riela/memory-search",
       "riela/gmail-digest",
       "riela/x-digest",
       "riela/gemini-sdk-worker",
       "riela/codex-sdk-worker",
+      "riela/claude-sdk-worker",
+      "riela/cursor-sdk-worker",
       "riela/time-signal",
       "riela/gmail-gateway-read",
       "riela/x-gateway-read"
@@ -82,7 +90,7 @@ extension WorkflowHostCapabilityTests {
     let memoryId: String?
     if name.hasPrefix("riela/chat-persona-memory-") {
       memoryId = "persona-chat-memory"
-    } else if name == "riela/memory-save" || name == "riela/memory-load" {
+    } else if BuiltinMemoryAddon(rawValue: name) != nil {
       memoryId = "chat-memory"
     } else {
       memoryId = nil

@@ -7,7 +7,7 @@ import RielaCore
 import RielaKaibaAddons
 import RielaMemory
 
-func makeProductionNodeAdapter(
+public func makeProductionNodeAdapter(
   environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
   codexSupervisorModeEnabled: Bool = false,
   workingDirectory: String? = nil
@@ -19,7 +19,7 @@ func makeProductionNodeAdapter(
       defaultWorkingDirectory: workingDirectory
     )
   }
-  return DispatchingNodeAdapter(
+  let primary = DispatchingNodeAdapter(
     configuration: DispatchingNodeAdapterConfiguration(
       registry: [
         .codexAgent: gatewayFactory,
@@ -32,6 +32,8 @@ func makeProductionNodeAdapter(
       ]
     )
   )
+  return SandboxingNodeAdapter(primary: primary, environment: environment, workingDirectory: workingDirectory,
+    supervisorMode: codexSupervisorModeEnabled)
 }
 
 func makeScenarioBackedNodeAdapter(
@@ -112,19 +114,22 @@ func makeProductionAddonResolver(
   let builtin = BuiltinWorkflowAddonResolver(
     environment: environment,
     workingDirectory: workingDirectory,
-    workflowTaskExecutor: workflowTaskExecutor
+    workflowTaskExecutor: workflowTaskExecutor,
+    containerProcessRunner: processRunner
   )
   let registrations = try await installedContainerAddonRegistrations(workingDirectory: workingDirectory)
-  guard !registrations.isEmpty else {
-    return builtin
+  var primary: any WorkflowAddonResolving = builtin
+  if !registrations.isEmpty {
+    let container = ContainerWorkflowAddonResolver(
+      registrations: registrations,
+      workingDirectory: workingDirectory,
+      environment: environment,
+      runner: processRunner
+    )
+    primary = CompositeWorkflowAddonResolver(primary: builtin, fallback: container)
   }
-  let container = ContainerWorkflowAddonResolver(
-    registrations: registrations,
-    workingDirectory: workingDirectory,
-    environment: environment,
-    runner: processRunner
-  )
-  return CompositeWorkflowAddonResolver(primary: builtin, fallback: container)
+  return BuiltinAddonContainerResolver(primary: primary, environment: environment,
+    workingDirectory: workingDirectory, runner: processRunner)
 }
 
 func installedContainerAddonRegistrations(workingDirectory: URL) async throws -> [ContainerAddonRegistration] {
@@ -368,6 +373,7 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
   /// The same seam for apple-gateway, whose add-ons would otherwise reach the
   /// machine's real Notes, Mail, Calendars, and Reminders.
   var appleGatewayRunner: AppleGatewayRunner?
+  var containerProcessRunner: any LocalProcessRunning
 
   init(
     environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment(),
@@ -388,7 +394,8 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     },
     localGatewayGraphQLRunner: LocalGatewayGraphQLRunner? = nil,
     googleDocumentsGatewayRunner: GoogleDocumentsGatewayRunner? = nil,
-    appleGatewayRunner: AppleGatewayRunner? = nil
+    appleGatewayRunner: AppleGatewayRunner? = nil,
+    containerProcessRunner: any LocalProcessRunning = FoundationLocalProcessRunner()
   ) {
     self.environment = environment
     self.workingDirectory = workingDirectory.standardizedFileURL
@@ -407,12 +414,20 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     self.localGatewayGraphQLRunner = localGatewayGraphQLRunner
     self.googleDocumentsGatewayRunner = googleDocumentsGatewayRunner
     self.appleGatewayRunner = appleGatewayRunner
+    self.containerProcessRunner = containerProcessRunner
   }
 
-  func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+  private func validateBuiltinWorkerInput(_ input: WorkflowAddonExecutionInput) throws {
+    guard input.addon.sandbox == nil else {
+      throw AdapterExecutionError(.policyBlocked, "sandboxed add-ons must use the isolated Riela worker resolver")
+    }
     guard input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") else {
       throw AdapterExecutionError(.providerError, "missing add-on resolver for '\(input.addon.name)'")
     }
+  }
+
+  func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    try validateBuiltinWorkerInput(input)
     if input.addon.name == "riela/gemini-sdk-worker" {
       return try await executeGeminiSDKWorker(input, context: context)
     }
@@ -505,18 +520,10 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if let output = try await executeStatefulAddonIfSupported(input) {
       return output
     }
-    if Self.deferredContainerAddons.contains(input.addon.name) {
-      return AdapterExecutionOutput(
-        provider: "riela-builtin-addon",
-        model: input.addon.name,
-        promptText: "",
-        completionPassed: true,
-        payload: [
-          "status": .string("ok"),
-          "addon": .string(input.addon.name),
-          "stepId": .string(input.stepId)
-        ]
-      )
+    if let gateway = ContainerGatewayAddon(rawValue: input.addon.name) {
+      return try await ContainerGatewayAddonExecutor(
+        environment: environment, workingDirectory: workingDirectory, runner: containerProcessRunner
+      ).execute(input, gateway: gateway, context: context)
     }
     if let renamed = Self.renamedAddons[input.addon.name] {
       throw AdapterExecutionError(
@@ -529,11 +536,6 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
       "missing add-on resolver for '\(input.addon.name)'"
     )
   }
-
-  private static let deferredContainerAddons: Set<String> = [
-    "riela/gmail-gateway-read",
-    "riela/x-gateway-read"
-  ]
 
   private static let renamedAddons: [String: String] = [
     "riela/mail-gateway-read": "riela/gmail-gateway-read",

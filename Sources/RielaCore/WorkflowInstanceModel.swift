@@ -3,6 +3,7 @@ import Foundation
 public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public var executionBackend: NodeExecutionBackend?
   public var agentSandbox: AgentSandboxMode?
+  public var sandbox: WorkflowExecutionSandbox?
   public var model: String?
   public var effort: NodeReasoningEffort?
   /// A stable named Kaiba API instance override for a `kaiba/*` node.
@@ -14,6 +15,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public init(
     executionBackend: NodeExecutionBackend? = nil,
     agentSandbox: AgentSandboxMode? = nil,
+    sandbox: WorkflowExecutionSandbox? = nil,
     model: String? = nil,
     effort: NodeReasoningEffort? = nil,
     kaibaInstanceId: String? = nil,
@@ -21,6 +23,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   ) {
     self.executionBackend = executionBackend
     self.agentSandbox = agentSandbox
+    self.sandbox = sandbox
     self.model = model
     self.effort = effort
     self.kaibaInstanceId = kaibaInstanceId
@@ -30,6 +33,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   public var isEmpty: Bool {
     executionBackend == nil
       && agentSandbox == nil
+      && sandbox == nil
       && normalizedModel == nil
       && effort == nil
       && kaibaInstanceId == nil
@@ -44,6 +48,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     if let agentSandbox {
       object["agentSandbox"] = .string(agentSandbox.rawValue)
     }
+    if let sandbox { object["sandbox"] = .object(sandbox.jsonObject) }
     if let normalizedModel {
       object["model"] = .string(normalizedModel)
     }
@@ -77,6 +82,11 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
           throw WorkflowInstanceResolutionError.invalidFieldValue(field)
         }
         agentSandbox = sandbox
+      case "sandbox":
+        guard let value = jsonObject[field], case .object = value else {
+          throw WorkflowInstanceResolutionError.invalidFieldValue(field)
+        }
+        sandbox = try JSONDecoder().decode(WorkflowExecutionSandbox.self, from: JSONEncoder().encode(value))
       case "model":
         guard let model = Self.stringValue(jsonObject[field]),
               !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -107,12 +117,13 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
   }
 
   private static let supportedFields: Set<String> = [
-    "executionBackend", "agentSandbox", "model", "effort", "kaibaInstanceId"
+    "executionBackend", "agentSandbox", "sandbox", "model", "effort", "kaibaInstanceId"
   ]
 
   private enum CodingKeys: String, CodingKey {
     case executionBackend
     case agentSandbox
+    case sandbox
     case model
     case effort
     case kaibaInstanceId
@@ -122,6 +133,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     executionBackend = try container.decodeIfPresent(NodeExecutionBackend.self, forKey: .executionBackend)
     agentSandbox = try container.decodeIfPresent(AgentSandboxMode.self, forKey: .agentSandbox)
+    sandbox = try container.decodeIfPresent(WorkflowExecutionSandbox.self, forKey: .sandbox)
     model = try container.decodeIfPresent(String.self, forKey: .model)
     effort = try container.decodeIfPresent(NodeReasoningEffort.self, forKey: .effort)
     if container.contains(.kaibaInstanceId) {
@@ -138,6 +150,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encodeIfPresent(executionBackend, forKey: .executionBackend)
     try container.encodeIfPresent(agentSandbox, forKey: .agentSandbox)
+    try container.encodeIfPresent(sandbox, forKey: .sandbox)
     try container.encodeIfPresent(model, forKey: .model)
     try container.encodeIfPresent(effort, forKey: .effort)
     if clearsKaibaInstanceId {
@@ -155,6 +168,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
     if let agentSandbox = override.agentSandbox {
       merged.agentSandbox = agentSandbox
     }
+    if let sandbox = override.sandbox { merged.sandbox = sandbox }
     if let model = override.model {
       merged.model = model
     }

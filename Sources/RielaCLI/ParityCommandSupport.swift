@@ -20,6 +20,13 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Flag var check = false
   @Flag var locked = false
   @Option var variables: String?
+  @Option var sandbox: String?
+  @Option var sandboxOptions: String?
+  @Flag var container = false
+  @Option var containerOptions: String?
+  @Option var containerImage: String?
+  @Option(name: .customLong("config")) var addonConfig: String?
+  @Option(name: .customLong("env")) var addonEnv: String?
   @Option var nodePatch: String?
   @Option(name: .customLong("mock-scenario")) var mockScenarioPath: String?
   @Option var sessionStore: String?

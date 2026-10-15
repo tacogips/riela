@@ -36,8 +36,8 @@
         },
         "config": {
           "queryTemplate": "query {\n  threads(input: {\n    accountId: \"{{inbox.latest.output.payload.accountId}}\"\n    query: \"{{inbox.latest.output.payload.gmailSearchQuery}}\"\n  }) {\n    totalCount\n    pageInfo {\n      hasNextPage\n      endCursor\n    }\n    edges {\n      cursor\n      node {\n        id\n        accountId\n        subject\n        snippet\n        messages {\n          id\n          threadId\n          subject\n          snippet\n          sentAt\n          receivedAt\n          textBody\n          htmlBody\n          from {\n            name\n            address\n          }\n          to {\n            name\n            address\n          }\n          cc {\n            name\n            address\n          }\n          attachments {\n            id\n            filename\n            mimeType\n            sizeBytes\n            localPath\n            downloadKey\n            materializationState\n          }\n        }\n      }\n    }\n  }\n}",
-          "image": "ghcr.io/tacogips/gmail-gateway:latest",
-          "runnerKind": "docker",
+          "image": "riela-gmail-gateway:local",
+          "runnerKind": "auto",
           "networkPolicy": "egress-allowed"
         }
       }

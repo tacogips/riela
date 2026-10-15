@@ -2,6 +2,15 @@ import Foundation
 
 public enum RielaCLIMain {
   public static func run() async {
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    if arguments == [SandboxNodeWorker.command] {
+      await SandboxNodeWorker.run()
+      return
+    }
+    if arguments == [SandboxNodeWorker.addonCommand] {
+      await BuiltinAddonWorker.run()
+      return
+    }
     let jsonlRecordWriter: WorkflowJSONLRecordWriting = { line in
       FileHandle.standardOutput.write(Data(line.utf8))
     }
@@ -12,7 +21,6 @@ public enum RielaCLIMain {
       FileHandle.standardError.write(Data("invalid specialist monitor launch binding\n".utf8))
       Foundation.exit(CLIExitCode.failure.rawValue)
     }
-    let arguments = Array(CommandLine.arguments.dropFirst())
     let taskSignalState = arguments.starts(with: ["task", "run"]) ? TaskRunSignalState() : nil
     let app = RielaCLIApplication(
       runCommand: runCommand,

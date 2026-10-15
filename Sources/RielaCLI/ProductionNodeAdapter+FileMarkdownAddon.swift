@@ -35,9 +35,7 @@ extension BuiltinWorkflowAddonResolver {
     context: AdapterExecutionContext
   ) async throws -> AdapterExecutionOutput {
     #if !canImport(AnydocKit)
-    // The converter's Linux route is a pkg-config staticlib built from Rust,
-    // which riela does not require; refuse rather than half-convert.
-    throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
+    throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires the linked AnydocKit converter")
     #else
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(

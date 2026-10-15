@@ -64,10 +64,13 @@ enum KaibaExecutionPreflight {
 
   static func direct(
     addon: WorkflowNodeAddonRef,
-    environment: [String: String]
+    environment: [String: String],
+    capturedInstance: KaibaInstance? = nil,
+    clientFactory: KaibaClientFactory = .init()
   ) async throws -> KaibaExecutionSnapshot? {
     guard let request = try request(for: addon) else { return nil }
-    return try await run(requests: [request], addons: [addon], environment: environment)
+    return try await run(requests: [request], addons: [addon], environment: environment,
+      catalog: capturedInstance.map { KaibaInstanceCatalog(instances: [$0]) }, clientFactory: clientFactory)
   }
 
   private static func request(
@@ -94,7 +97,9 @@ enum KaibaExecutionPreflight {
   private static func run(
     requests: [KaibaExecutionSnapshot.BindingRequest],
     addons: [WorkflowNodeAddonRef],
-    environment: [String: String]
+    environment: [String: String],
+    catalog: KaibaInstanceCatalog? = nil,
+    clientFactory: KaibaClientFactory = .init()
   ) async throws -> KaibaExecutionSnapshot? {
     guard !requests.isEmpty else { return nil }
     do {
@@ -104,8 +109,9 @@ enum KaibaExecutionPreflight {
       )
       let snapshot = try KaibaExecutionSnapshot(
         requests: requests,
-        catalog: try KaibaInstanceStore(homeURL: home).load(),
-        environment: environment
+        catalog: try catalog ?? KaibaInstanceStore(homeURL: home).load(),
+        environment: environment,
+        clientFactory: clientFactory
       )
       try validateLegacyCompatibility(addons: addons, environment: environment, snapshot: snapshot)
       _ = try await snapshot.preflight(requests: requests)

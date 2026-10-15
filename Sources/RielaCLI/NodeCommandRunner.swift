@@ -108,11 +108,12 @@ public struct NodeCommandRunner: Sendable {
     let variables = try parsed.variables.map {
       try JSONReferenceLoader().object(from: $0, workingDirectory: workingDirectory)
     } ?? [:]
+    let addon = try nodeRunAddon(target: target, variables: variables, parsed: parsed, workingDirectory: workingDirectory)
     let kaibaSnapshot: KaibaExecutionSnapshot?
     if parsed.mockScenarioPath == nil {
       do {
         kaibaSnapshot = try await KaibaExecutionPreflight.direct(
-          addon: WorkflowNodeAddonRef(name: target, version: nil, inputs: variables),
+          addon: addon,
           environment: environment
         )
       } catch {
@@ -121,12 +122,14 @@ public struct NodeCommandRunner: Sendable {
         }
         throw error
       }
-      try await preflightInstalledAddonExecution(
-        target: target,
-        parsed: parsed,
-        workingDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true),
-        environment: environment
-      )
+      if addon.container == nil && addon.sandbox == nil {
+        try await preflightInstalledAddonExecution(
+          target: target,
+          parsed: parsed,
+          workingDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true),
+          environment: environment
+        )
+      }
     } else {
       kaibaSnapshot = nil
     }
@@ -144,7 +147,7 @@ public struct NodeCommandRunner: Sendable {
           workflowId: "node-run",
           stepId: "node-run",
           nodeId: "node-run",
-          addon: WorkflowNodeAddonRef(name: target, version: nil, inputs: variables),
+          addon: addon,
           variables: variables,
           resolvedInputPayload: variables
         ),
@@ -170,6 +173,36 @@ public struct NodeCommandRunner: Sendable {
       }
       return lines.joined(separator: "\n") + "\n"
     }
+  }
+
+  private func nodeRunAddon(target: String, variables: JSONObject, parsed: ParsedParityOptions, workingDirectory: String) throws -> WorkflowNodeAddonRef {
+    let loader = JSONReferenceLoader()
+    let config = try parsed.addonConfig.map { try loader.object(from: $0, workingDirectory: workingDirectory) }
+    let env = try parsed.addonEnv.map { try loader.object(from: $0, workingDirectory: workingDirectory) }
+    var container: WorkflowAddonContainerExecution?
+    if parsed.container || parsed.containerOptions != nil || parsed.containerImage != nil {
+      if let reference = parsed.containerOptions {
+        let object = try loader.object(from: reference, workingDirectory: workingDirectory)
+        container = try JSONDecoder().decode(WorkflowAddonContainerExecution.self, from: JSONEncoder().encode(object))
+      } else {
+        container = .init()
+      }
+      if let image = parsed.containerImage { container?.image = image }
+      try container?.validate()
+    }
+    var sandbox = try parsed.sandboxOptions.map { reference in
+      let object = try loader.object(from: reference, workingDirectory: workingDirectory)
+      return try JSONDecoder().decode(WorkflowExecutionSandbox.self, from: JSONEncoder().encode(object))
+    }
+    if let raw = parsed.sandbox {
+      guard let backend = WorkflowSandboxBackend(rawValue: raw) else { throw CLIUsageError("invalid sandbox backend '\(raw)'") }
+      sandbox = sandbox ?? .init()
+      sandbox?.backend = backend
+    }
+    guard container == nil || sandbox == nil else { throw CLIUsageError("--sandbox and --container cannot be combined") }
+    try sandbox?.validate()
+    return WorkflowNodeAddonRef(name: target, version: container == nil && sandbox == nil ? nil : "1",
+      config: config, env: env, inputs: variables, container: container, sandbox: sandbox)
   }
 
   private func nodeAddonPackages(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> [WorkflowPackageSummary] {

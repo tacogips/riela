@@ -49,7 +49,7 @@ public extension RielaWebWorkflowRequestHandler {
       let model = settings.selectedModel(for: vendor.settingsSelectableVendor)
       let root = context.appRoot.appendingPathComponent("workflow-editor-agents/\(UUID().uuidString)", isDirectory: true)
       try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-      let adapter = AgentGatewayNodeAdapter(environment: context.environment)
+      let adapter = makeProductionNodeAdapter(environment: context.environment)
       let deadline = Date().addingTimeInterval(600)
       let systemPrompt = Self.workflowEditorSystemPrompt
       do {

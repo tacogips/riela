@@ -898,7 +898,7 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       if options.workflowId == nil && !options.allWorkflows {
         throw CLIUsageError("memory \(kind.rawValue) requires --workflow-id")
       }
-    case .metadata, .tags, .relatedIds:
+    case .metadata, .tags, .relatedIds, .history, .showVersion, .restoreVersion:
       break
     }
     return MemoryCommand(kind: kind, options: options)

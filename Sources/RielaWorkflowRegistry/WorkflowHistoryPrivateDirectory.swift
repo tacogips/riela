@@ -10,7 +10,7 @@ import Glibc
 import Foundation
 import RielaCore
 
-enum WorkflowHistoryConstructionBoundary: Equatable, Sendable {
+package enum WorkflowHistoryConstructionBoundary: Equatable, Sendable {
   case childDirectory
   case leafFile
   case beforeVerification
@@ -19,14 +19,14 @@ enum WorkflowHistoryConstructionBoundary: Equatable, Sendable {
 /// A private history artifact whose parent and root directory identities remain
 /// pinned from creation through publication. Every child operation is relative
 /// to the retained artifact descriptor and rejects links and special files.
-final class WorkflowHistoryPrivateDirectory {
-  let url: URL
+package final class WorkflowHistoryPrivateDirectory {
+  package let url: URL
   private let parentDescriptor: Int32
   private let descriptor: Int32
   private let leaf: String
   private var published = false
 
-  init(parent: URL, pinnedRoot: WorkflowHistoryPinnedRoot) throws {
+  package init(parent: URL, pinnedRoot: WorkflowHistoryPinnedRoot) throws {
     try pinnedRoot.ensureDirectory(parent)
     parentDescriptor = try pinnedRoot.openDirectory(pinnedRoot.relativePath(for: parent))
     leaf = ".tmp-\(UUID().uuidString.lowercased())"
@@ -49,12 +49,12 @@ final class WorkflowHistoryPrivateDirectory {
     _ = close(parentDescriptor)
   }
 
-  func ensureDirectory(_ relative: String) throws {
+  package func ensureDirectory(_ relative: String) throws {
     let directory = try openDirectory(relative, create: true)
     _ = close(directory)
   }
 
-  func write(_ bytes: Data, to relative: String) throws {
+  package func write(_ bytes: Data, to relative: String) throws {
     let (parent, name) = try openParent(relative, create: true)
     defer { _ = close(parent) }
     let file = openat(parent, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
@@ -76,7 +76,7 @@ final class WorkflowHistoryPrivateDirectory {
     guard fsync(file) == 0 else { throw CLIUsageError("unable to fsync private workflow history file") }
   }
 
-  func read(_ relative: String, requireNonWritable: Bool = false) throws -> Data {
+  package func read(_ relative: String, requireNonWritable: Bool = false) throws -> Data {
     let (parent, name) = try openParent(relative)
     defer { _ = close(parent) }
     let file = openat(parent, name, O_RDONLY | O_NOFOLLOW)
@@ -102,7 +102,7 @@ final class WorkflowHistoryPrivateDirectory {
     return result
   }
 
-  func entryExists(_ relative: String) throws -> Bool {
+  package func entryExists(_ relative: String) throws -> Bool {
     try WorkflowHistoryCanonicalCoding.validateRelativePath(relative)
     let parts = relative.split(separator: "/").map(String.init)
     guard let name = parts.last else { return false }
@@ -127,7 +127,7 @@ final class WorkflowHistoryPrivateDirectory {
     return true
   }
 
-  func verifyTopology(files: Set<String>, directories: Set<String>, requireNonWritable: Bool) throws {
+  package func verifyTopology(files: Set<String>, directories: Set<String>, requireNonWritable: Bool) throws {
     var actualFiles: Set<String> = []
     var actualDirectories: Set<String> = []
     try enumerate(descriptor: descriptor, prefix: "", requireNonWritable: requireNonWritable) { path, type in
@@ -138,11 +138,11 @@ final class WorkflowHistoryPrivateDirectory {
     }
   }
 
-  func syncAndMakeImmutable() throws {
+  package func syncAndMakeImmutable() throws {
     try transformTree(descriptor: descriptor)
   }
 
-  func publish(to destination: URL, pinnedRoot: WorkflowHistoryPinnedRoot) throws {
+  package func publish(to destination: URL, pinnedRoot: WorkflowHistoryPinnedRoot) throws {
     let destinationParent = destination.deletingLastPathComponent()
     guard destinationParent.standardizedFileURL == url.deletingLastPathComponent().standardizedFileURL else {
       throw CLIUsageError("private workflow history publication requires sibling directories")
@@ -177,7 +177,7 @@ final class WorkflowHistoryPrivateDirectory {
     published = true
   }
 
-  func remove() throws {
+  package func remove() throws {
     try makeMutableAndRemoveContents(descriptor)
     guard unlinkat(parentDescriptor, leaf, AT_REMOVEDIR) == 0 || errno == ENOENT else {
       throw CLIUsageError("unable to remove private workflow history artifact")

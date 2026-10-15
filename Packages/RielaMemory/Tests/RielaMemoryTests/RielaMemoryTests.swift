@@ -266,7 +266,7 @@ final class RielaMemoryTests: XCTestCase {
     let replacementStoredPath = try XCTUnwrap(replaced.files.first?.path)
     XCTAssertEqual(replaced.files.map(\.kind), ["pdf"])
     XCTAssertTrue(FileManager.default.fileExists(atPath: replacementStoredPath))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: originalStoredPath))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: originalStoredPath))
 
     let cleared = try store.update(
       memoryId: "chat-memory",
@@ -276,7 +276,7 @@ final class RielaMemoryTests: XCTestCase {
       payload: .object(["text": .string("clear file")])
     )
     XCTAssertEqual(cleared.files, [])
-    XCTAssertFalse(FileManager.default.fileExists(atPath: replacementStoredPath))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: replacementStoredPath))
   }
 
   func testFilesMustBeUniqueExistingAndLimited() throws {

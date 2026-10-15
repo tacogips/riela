@@ -7,6 +7,9 @@ struct ParsedMemoryOptions: ParsableArguments {
   @Flag var allWorkflows = false
   @Option var nodeId: String?
   @Option var recordId: Int64?
+  @Option var version: Int64?
+  @Option var beforeVersion: Int64?
+  @Option var expectedHeadVersion: Int64?
   @Option var payloadJSON: String?
   @Option var payloadFile: String?
   @Option var registeredAt: String?
@@ -44,6 +47,9 @@ struct ParsedMemoryOptions: ParsableArguments {
       allWorkflows: allWorkflows,
       nodeId: nodeId,
       recordId: recordId,
+      version: version,
+      beforeVersion: beforeVersion,
+      expectedHeadVersion: expectedHeadVersion,
       payloadJSON: payloadJSON,
       payloadFile: payloadFile,
       registeredAt: registeredAt,
@@ -62,6 +68,9 @@ struct ParsedMemoryOptions: ParsableArguments {
   }
 
   private func validateValues() throws {
+    for value in [version, beforeVersion, expectedHeadVersion].compactMap({ $0 }) where value <= 0 {
+      throw CLIUsageError("history version options must be positive integers")
+    }
     if let recordId, recordId <= 0 {
       throw CLIUsageError("--record-id must be a positive integer")
     }

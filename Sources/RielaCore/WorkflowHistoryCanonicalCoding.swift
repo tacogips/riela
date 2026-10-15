@@ -81,7 +81,13 @@ public enum WorkflowHistoryCanonicalCoding {
   }
 
   public static func validate(_ manifest: WorkflowBundleSnapshotManifest) throws {
-    try validateSchema(manifest.schemaVersion)
+    guard [1, 2].contains(manifest.schemaVersion) else {
+      throw WorkflowHistoryValidationError.unsupportedSchemaVersion(manifest.schemaVersion)
+    }
+    guard manifest.schemaVersion == 2 ? manifest.storageFormat == .sharedChunks
+      : manifest.storageFormat == nil || manifest.storageFormat == .rawObjects else {
+      throw WorkflowHistoryValidationError.invalidContract("snapshot storage format does not match schema version")
+    }
     try validateSafeComponent(manifest.snapshotId)
     try validate(manifest.target)
     try validateDigest(manifest.bundleDigest)

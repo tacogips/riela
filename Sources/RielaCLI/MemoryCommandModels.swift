@@ -9,6 +9,9 @@ public enum MemoryCommandKind: String, Codable, CaseIterable, Sendable {
   case metadata
   case tags
   case relatedIds = "related-ids"
+  case history
+  case showVersion = "show-version"
+  case restoreVersion = "restore-version"
 }
 
 public struct MemoryCommand: Equatable, Sendable {
@@ -27,6 +30,9 @@ public struct MemoryCommandOptions: Equatable, Sendable {
   public var allWorkflows: Bool
   public var nodeId: String?
   public var recordId: Int64?
+  public var version: Int64?
+  public var beforeVersion: Int64?
+  public var expectedHeadVersion: Int64?
   public var payloadJSON: String?
   public var payloadFile: String?
   public var registeredAt: String?
@@ -48,6 +54,9 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     allWorkflows: Bool = false,
     nodeId: String? = nil,
     recordId: Int64? = nil,
+    version: Int64? = nil,
+    beforeVersion: Int64? = nil,
+    expectedHeadVersion: Int64? = nil,
     payloadJSON: String? = nil,
     payloadFile: String? = nil,
     registeredAt: String? = nil,
@@ -68,6 +77,9 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     self.allWorkflows = allWorkflows
     self.nodeId = nodeId
     self.recordId = recordId
+    self.version = version
+    self.beforeVersion = beforeVersion
+    self.expectedHeadVersion = expectedHeadVersion
     self.payloadJSON = payloadJSON
     self.payloadFile = payloadFile
     self.registeredAt = registeredAt

@@ -64,11 +64,41 @@ public struct MemoryCommandRunner: Sendable {
         return try tags(command.options)
       case .relatedIds:
         return try relatedIds(command.options)
+      case .history, .showVersion, .restoreVersion:
+        return try evolution(command)
       }
     } catch let error as CLIUsageError {
       return failure(error.message, output: command.options.output, options: command.options.cliOptions)
     } catch {
       return failure("\(error)", output: command.options.output, options: command.options.cliOptions)
+    }
+  }
+
+  private func evolution(_ command: MemoryCommand) throws -> CLICommandResult {
+    let options = command.options
+    guard let recordId = options.recordId else { throw CLIUsageError("memory history commands require --record-id") }
+    let store = memoryStore(options)
+    if command.kind == .history {
+      let history = try store.evolutionHistory(memoryId: options.memoryId, recordId: recordId,
+        limit: options.limit, beforeVersion: options.beforeVersion)
+      return try render(history, output: options.output) { revisions in
+        revisions.map { "version \($0.version) \($0.recordedAt) \($0.reverseDelta?.direction.rawValue ?? "baseline")" }
+          .joined(separator: "\n") + "\n"
+      }
+    }
+    guard let version = options.version else { throw CLIUsageError("memory version commands require --version") }
+    let record: MemoryRecord
+    if command.kind == .restoreVersion {
+      guard let head = options.expectedHeadVersion else {
+        throw CLIUsageError("memory restore-version requires --expected-head-version (read memory history first)")
+      }
+      record = try store.restoreRecordVersion(memoryId: options.memoryId, recordId: recordId,
+        version: version, expectedHeadVersion: head)
+    } else {
+      record = try store.recordVersion(memoryId: options.memoryId, recordId: recordId, version: version)
+    }
+    return try render(record, output: options.output) { record in
+      "\(command.kind.rawValue) memory \(record.memoryId) record \(record.recordId) version \(version)\n\(compactPayload(record.payload))\n"
     }
   }
 

@@ -166,7 +166,7 @@ public enum WorkflowHistoryIdentityResolver {
     case .project, .direct:
       workingDirectory.standardizedFileURL
     }
-    let relativeRoot = configuredRoot ?? ".riela/workflow-history"
+    let relativeRoot = try WorkflowEvolutionLocation.recordedRoot(for: target) ?? configuredRoot ?? ".riela/workflow-history"
     try WorkflowHistoryCanonicalCoding.validateRelativePath(relativeRoot)
     let base = scopeRoot.appendingPathComponent(relativeRoot, isDirectory: true).standardizedFileURL
     guard contained(base, in: scopeRoot) else {

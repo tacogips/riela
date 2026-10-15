@@ -10,10 +10,14 @@ let package = Package(
   products: [
     .library(name: "RielaMemory", targets: ["RielaMemory"])
   ],
+  dependencies: [
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1")
+  ],
   targets: [
     .target(
       name: "RielaMemory",
       dependencies: [
+        .product(name: "Crypto", package: "swift-crypto"),
         .target(name: "SQLite3", condition: .when(platforms: [.linux]))
       ]
     ),

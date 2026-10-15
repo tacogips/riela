@@ -58,6 +58,10 @@ extension WorkflowMutableRegistry {
           )
           var replacementPublished = false
           do {
+            if hadOriginal {
+              try captureEvolutionSnapshot(workflowId: workflowId, transactionId: transactionId,
+                beforeMutation: true, pinned: pinned)
+            }
             try publish(record, pinned: pinned)
             try hooks.afterPhase(.prepared)
             if hadOriginal {

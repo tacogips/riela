@@ -10,7 +10,7 @@ struct SQLiteRow {
   }
 }
 
-let currentSchemaVersion = 3
+let currentSchemaVersion = 4
 
 /// One in-place memory-store schema upgrade: brings a database stamped
 /// `fromVersion` to `fromVersion + 1`. Append a step here for every future
@@ -21,7 +21,9 @@ struct RielaMemorySchemaMigration: Sendable {
   var migrate: @Sendable (OpaquePointer?) throws -> Void
 }
 
-let memorySchemaMigrations: [RielaMemorySchemaMigration] = []
+let memorySchemaMigrations: [RielaMemorySchemaMigration] = [
+  RielaMemorySchemaMigration(fromVersion: 3, migrate: ensureMemoryEvolutionSchema)
+]
 let maximumMemoryTags = 10
 let maximumRelatedRecordIds = 10
 let maximumMemoryFiles = 10

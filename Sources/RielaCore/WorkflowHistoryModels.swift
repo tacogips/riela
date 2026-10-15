@@ -58,6 +58,17 @@ public struct WorkflowBundleIdentity: Codable, Equatable, Sendable {
   public var workflowContractVersion: String?
   public var sourceMutable: Bool
 
+  /// An authored contract version describes a revision, not a different
+  /// history owner. Package identity/version remains exact and immutable.
+  public func sharesHistoryOwner(with other: Self) -> Bool {
+    guard sourceKind == .authoredWorkflow, other.sourceKind == .authoredWorkflow else { return self == other }
+    var lhs = self
+    var rhs = other
+    lhs.workflowContractVersion = nil
+    rhs.workflowContractVersion = nil
+    return lhs == rhs
+  }
+
   public init(
     workflowId: String,
     sourceScope: WorkflowHistorySourceScope,
@@ -246,8 +257,14 @@ public struct WorkflowBundleSnapshotFile: Codable, Equatable, Sendable {
   }
 }
 
+public enum WorkflowSnapshotStorageFormat: String, Codable, Equatable, Sendable {
+  case rawObjects = "raw-objects"
+  case sharedChunks = "content-addressed-chunks"
+}
+
 public struct WorkflowBundleSnapshotManifest: Codable, Equatable, Sendable {
   public var schemaVersion: Int
+  public var storageFormat: WorkflowSnapshotStorageFormat?
   public var snapshotId: String
   public var target: WorkflowBundleIdentity
   public var createdBySessionId: String?
@@ -263,6 +280,7 @@ public struct WorkflowBundleSnapshotManifest: Codable, Equatable, Sendable {
 
   public init(
     schemaVersion: Int = 1,
+    storageFormat: WorkflowSnapshotStorageFormat? = nil,
     snapshotId: String,
     target: WorkflowBundleIdentity,
     createdBySessionId: String? = nil,
@@ -277,6 +295,7 @@ public struct WorkflowBundleSnapshotManifest: Codable, Equatable, Sendable {
     complete: Bool = true
   ) {
     self.schemaVersion = schemaVersion
+    self.storageFormat = storageFormat
     self.snapshotId = snapshotId
     self.target = target
     self.createdBySessionId = createdBySessionId

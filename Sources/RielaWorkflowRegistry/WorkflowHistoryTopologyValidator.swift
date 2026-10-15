@@ -10,8 +10,8 @@ import Glibc
 import Foundation
 import RielaCore
 
-enum WorkflowHistoryTopologyValidator {
-  static func canonicalDirectories(forFiles files: Set<String>, required: Set<String> = []) -> Set<String> {
+package enum WorkflowHistoryTopologyValidator {
+  package static func canonicalDirectories(forFiles files: Set<String>, required: Set<String> = []) -> Set<String> {
     files.reduce(into: required) { result, file in
       var components = file.split(separator: "/").map(String.init)
       _ = components.popLast()
@@ -22,7 +22,7 @@ enum WorkflowHistoryTopologyValidator {
     }
   }
 
-  static func validate(
+  package static func validate(
     directory: URL,
     historyRoot: URL,
     expectedFiles: Set<String>,

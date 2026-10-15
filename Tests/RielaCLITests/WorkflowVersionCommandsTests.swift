@@ -30,7 +30,7 @@ final class WorkflowVersionCommandsTests: XCTestCase {
       "--working-dir", root.path, "--output", "json"
     ], environment: fixture.environment)
     XCTAssertEqual(list.exitCode, .success, list.stderr)
-    let listed = try decodeVersionJSON(WorkflowVersionsCommandResult.self, list.stdout).snapshots.first
+    let listed = try decodeVersionJSON(WorkflowVersionsCommandResult.self, list.stdout).snapshots.first { $0.snapshotId == snapshot.snapshotId }
     XCTAssertEqual(listed?.snapshotId, snapshot.snapshotId)
     XCTAssertEqual(listed?.sourceKind, .authoredWorkflow)
     XCTAssertEqual(listed?.retentionClass, "standard")

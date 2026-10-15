@@ -82,6 +82,8 @@ extension WorkflowMutableRegistry {
         )
         var deletionCommitted = false
         do {
+          try captureEvolutionSnapshot(workflowId: workflowId, transactionId: transactionId,
+            beforeMutation: true, pinned: pinned)
           try publish(record, pinned: pinned)
           try hooks.afterPhase(.prepared)
           record.phase = .movingOriginal

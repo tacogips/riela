@@ -81,6 +81,7 @@ public struct RielaMemoryStore: Sendable {
     let recordId = sqlite3_last_insert_rowid(db)
     let storedFiles = try storeFiles(files, memoryId: memoryId, recordId: recordId, copiedPaths: &copiedPaths)
     _ = try replaceFiles(storedFiles, recordId: recordId, db: db)
+    try recordEvolution(previous: nil, next: record(memoryId: memoryId, recordId: recordId, db: db), db: db)
     try execute(db, "COMMIT")
     committed = true
     return MemoryRecord(
@@ -127,7 +128,6 @@ public struct RielaMemoryStore: Sendable {
     }
     try ensureSchema(db)
     var copiedPaths: [String] = []
-    var replacedFilePaths: [String] = []
     try execute(db, "BEGIN IMMEDIATE")
     var committed = false
     defer {
@@ -137,6 +137,7 @@ public struct RielaMemoryStore: Sendable {
       }
     }
     try validateRelatedRecordIdsExist(relatedRecordIds, db: db)
+    let previous = try record(memoryId: memoryId, recordId: recordId, db: db)
     var sql = """
       UPDATE memory_entries
       SET tags_json = jsonb(?),
@@ -164,12 +165,13 @@ public struct RielaMemoryStore: Sendable {
     }
     if let files {
       let storedFiles = try storeFiles(files, memoryId: memoryId, recordId: recordId, copiedPaths: &copiedPaths)
-      replacedFilePaths = try replaceFiles(storedFiles, recordId: recordId, db: db)
+      _ = try replaceFiles(storedFiles, recordId: recordId, db: db)
     }
+    let updated = try record(memoryId: memoryId, recordId: recordId, db: db)
+    try recordEvolution(previous: previous, next: updated, db: db)
     try execute(db, "COMMIT")
     committed = true
-    removeStoredFiles(replacedFilePaths)
-    return try record(memoryId: memoryId, recordId: recordId, db: db)
+    return updated
   }
 
   public func registerMetadata(
@@ -451,7 +453,7 @@ public struct RielaMemoryStore: Sendable {
     }
   }
 
-  private func openDatabase(memoryId: String, readOnly: Bool = false) throws -> OpaquePointer? {
+  func openDatabase(memoryId: String, readOnly: Bool = false) throws -> OpaquePointer? {
     let path = try databasePath(memoryId: memoryId)
     let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
     if !readOnly {
@@ -471,7 +473,7 @@ public struct RielaMemoryStore: Sendable {
     return opened
   }
 
-  private func ensureSchema(_ db: OpaquePointer?) throws {
+  func ensureSchema(_ db: OpaquePointer?) throws {
     try ensureJSONBAvailable(db)
     try requireCurrentSchemaVersion(db)
     try execute(db, "BEGIN IMMEDIATE")
@@ -549,6 +551,7 @@ public struct RielaMemoryStore: Sendable {
       db,
       "CREATE INDEX IF NOT EXISTS idx_memory_files_record ON memory_files (record_id, file_id ASC)"
     )
+    try ensureMemoryEvolutionSchema(db)
     try execute(db, "PRAGMA user_version = \(currentSchemaVersion)")
     try execute(db, "COMMIT")
     committed = true
@@ -648,7 +651,7 @@ public struct RielaMemoryStore: Sendable {
     )
   }
 
-  private func record(memoryId: String, recordId: Int64, db: OpaquePointer?) throws -> MemoryRecord {
+  func record(memoryId: String, recordId: Int64, db: OpaquePointer?) throws -> MemoryRecord {
     let rows = try queryRows(
       db,
       sql: """
@@ -719,7 +722,7 @@ public struct RielaMemoryStore: Sendable {
     }
   }
 
-  private func validateRelatedRecordIdsExist(_ relatedRecordIds: [Int64], db: OpaquePointer?) throws {
+  func validateRelatedRecordIdsExist(_ relatedRecordIds: [Int64], db: OpaquePointer?) throws {
     for relatedRecordId in relatedRecordIds {
       let rows = try queryRows(
         db,
@@ -833,7 +836,7 @@ public struct RielaMemoryStore: Sendable {
     }
   }
 
-  private func replaceFiles(_ files: [MemoryFileReference], recordId: Int64, db: OpaquePointer?) throws -> [String] {
+  func replaceFiles(_ files: [MemoryFileReference], recordId: Int64, db: OpaquePointer?) throws -> [String] {
     let oldPaths = try memoryFiles(recordId: recordId, db: db).map(\.path)
     try execute(db, "DELETE FROM memory_files WHERE record_id = ?", bindings: [.int64(recordId)])
     let createdAt = currentTimestamp()

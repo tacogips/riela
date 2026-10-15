@@ -571,6 +571,12 @@ node level; the `riela memory` commands and the `riela/memory-*` /
 (or the memory root given by `--memory-root`, addon config `memoryRoot`, or
 `RIELA_MEMORY_ROOT`).
 
+Memory record changes are versioned atomically using the latest value and
+explicit `next-to-previous` deltas. Use `riela memory history`, `show-version`,
+and `restore-version` to inspect or restore an earlier value. Replaced
+attachments remain available to historical versions. See
+[evolution history](docs/evolution-history.md) for commands and storage details.
+
 Long-term memory is kaiba's: `kaiba/memory-consolidate` distills a short-term
 window into notes in the canonical `Kaiba Long-Term Memory` notebook and links
 their graph associations, and `kaiba/memory-recall` searches those notes and

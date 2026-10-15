@@ -27,6 +27,7 @@ public struct WorkflowVersionDifference: Codable, Equatable, Sendable {
 public struct WorkflowVersionsCommandResult: Codable, Equatable, Sendable {
   public var workflow: WorkflowBundleIdentity
   public var snapshots: [WorkflowSnapshotReference]
+  public var nextBeforeSnapshotId: String?
 }
 
 public struct WorkflowVersionShowCommandResult: Codable, Equatable, Sendable {
@@ -100,14 +101,16 @@ public struct WorkflowVersionCommand: Sendable {
       let store = WorkflowHistoryStore(root: historyRoot)
       switch options.kind {
       case .list:
-        let snapshots = try store.list(expectedIdentity: target).map { snapshot in
+        let limit = parsed.limit ?? 100
+        let snapshots = try store.list(expectedIdentity: target, limit: limit, beforeSnapshotId: parsed.beforeSnapshot).map { snapshot in
           var snapshot = snapshot
           let related = try historyReferences(snapshotId: snapshot.snapshotId, historyRoot: historyRoot)
           snapshot.mutationReferences = Set(related.mutations + [snapshot.createdBeforeChangeSetId].compactMap { $0 }).sorted()
           snapshot.restoreReferences = Set(related.restores + [snapshot.createdBeforeRestoreId].compactMap { $0 }).sorted()
           return snapshot
         }
-        let result = WorkflowVersionsCommandResult(workflow: target, snapshots: snapshots)
+        let result = WorkflowVersionsCommandResult(workflow: target, snapshots: snapshots,
+          nextBeforeSnapshotId: snapshots.count == limit ? snapshots.last?.snapshotId : nil)
         return try render(result, output: output) { result in
           result.snapshots.map { "\($0.snapshotId) \($0.bundleDigest) integrity=verified" }.joined(separator: "\n") + "\n"
         }
@@ -229,6 +232,9 @@ public struct WorkflowVersionCommand: Sendable {
     postCommitPublication: (URL) throws -> Void
   ) throws -> WorkflowRestoreCommandResult {
     let source = try store.loadSnapshot(snapshotId, expectedIdentity: target)
+    // Digests include the operation's identity metadata. A historical authored
+    // contract version may differ while the history owner stays the same.
+    let restoredDigest = try WorkflowHistoryCanonicalCoding.bundleDigest(target: target, files: source.files)
     let current = try WorkflowHistoryIdentityResolver.inventory(
       for: target,
       rootOverride: physicalOwnershipRoot
@@ -281,7 +287,7 @@ public struct WorkflowVersionCommand: Sendable {
       historyRoot: historyRoot,
       kind: .restore,
       expectedBeforeBundleDigest: current.bundleDigest,
-      expectedAfterBundleDigest: source.bundleDigest,
+      expectedAfterBundleDigest: restoredDigest,
       preOperationSnapshotId: preRestore.snapshotId,
       operationAuditIntent: { transactionId in
         .restore(WorkflowRestoreRecord(

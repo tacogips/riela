@@ -58,6 +58,18 @@ final class WorkflowEditorDefinitionTests: XCTestCase {
       XCTAssertEqual(savedStep["placement"], .object(placement))
       let persisted = try String(contentsOf: root.appendingPathComponent(".riela/temporary-workflows/remote-editor/workflow.json"), encoding: .utf8)
       XCTAssertTrue(persisted.contains("PROTECTED_REMOTE_EDITOR_CANARY"), "Editing placement must retain protected node environment bindings")
+      let bundle = try FileSystemWorkflowBundleResolver().resolve(.init(
+        workflowName: "remote-editor", scope: .user, workingDirectory: root.path))
+      let historyIdentity = try WorkflowHistoryIdentityResolver.identity(for: bundle)
+      let history = WorkflowHistoryStore(root: try WorkflowHistoryIdentityResolver.historyRoot(
+        for: historyIdentity, workingDirectory: root))
+      let snapshots = try history.list(expectedIdentity: historyIdentity)
+      XCTAssertEqual(snapshots.count, 3, "Editor publication must retain the initial, before and after observations")
+      let before = try XCTUnwrap(snapshots.first { $0.snapshotId.hasPrefix("registry-before-") })
+      let beforeManifest = try history.loadSnapshot(before.snapshotId, expectedIdentity: historyIdentity)
+      let beforeFile = try XCTUnwrap(beforeManifest.files.first { $0.relativePath == "workflow.json" })
+      let beforeBytes = try history.objectBytes(digest: beforeFile.contentDigest, snapshotId: before.snapshotId)
+      XCTAssertTrue(String(decoding: beforeBytes, as: UTF8.self).contains("build"))
     }
   }
 

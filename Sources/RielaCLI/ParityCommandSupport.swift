@@ -38,6 +38,7 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Flag(name: .customLong("include-children")) var includeChildren = false
   @Option var status: String?
   @Option var limit: Int?
+  @Option var beforeSnapshot: String?
   @Option var reason: String?
   @Option var registry: String?
   @Option var registryURL: String?

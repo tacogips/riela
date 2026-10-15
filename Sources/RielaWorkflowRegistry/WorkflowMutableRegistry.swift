@@ -61,6 +61,7 @@ public struct WorkflowMutableRegistry: Sendable {
         throw WorkflowResolutionError.invalidWorkflow(diagnostics)
       }
       let replacementDigest = candidate.registryDigest
+      try captureEvolutionSnapshot(workflowId: workflowId, transactionId: transactionId, beforeMutation: true, pinned: pinned)
       var record = WorkflowMutableRegistryTransaction(
         schemaVersion: 1,
         workflowId: workflowId,
@@ -462,9 +463,7 @@ public struct WorkflowMutableRegistry: Sendable {
     }
     if replacementPresent {
       try applyRequestedActivation(record)
-      if backupExists, let backup { try removeArtifact(backup, pinned: pinned) }
-      if stagingExists { try removeArtifact(staging, pinned: pinned) }
-      try removeRecord(recordURL, pinned: pinned)
+      try finish(record, pinned: pinned)
       return
     }
     if backupExists, let backup {
@@ -651,6 +650,10 @@ public struct WorkflowMutableRegistry: Sendable {
     _ record: WorkflowMutableRegistryTransaction,
     pinned: WorkflowMutableRegistryPinnedRoot
   ) throws {
+    if record.operation != .delete {
+      try captureEvolutionSnapshot(workflowId: record.workflowId, transactionId: record.transactionId,
+        beforeMutation: false, pinned: pinned)
+    }
     if let backupPath = record.backupPath {
       let backup = root.appendingPathComponent(backupPath, isDirectory: true)
       if try realDirectoryExists(

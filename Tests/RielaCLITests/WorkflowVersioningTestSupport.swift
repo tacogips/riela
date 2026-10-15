@@ -5,7 +5,8 @@ import XCTest
 @testable import RielaCore
 
 func makeWorkflowVersioningFixture(_ testCase: XCTestCase) async throws -> (URL, WorkflowCreateCommandResult) {
-  let root = FileManager.default.temporaryDirectory
+  let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    .deletingLastPathComponent().appendingPathComponent("tmp/evolution-history")
     .appendingPathComponent("riela-version-tests-\(UUID().uuidString)", isDirectory: true)
   try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
   testCase.addTeardownBlock { removeWorkflowVersioningTestDirectory(root) }

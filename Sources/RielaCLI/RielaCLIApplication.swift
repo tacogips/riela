@@ -105,6 +105,9 @@ public struct RielaCLIApplication: Sendable {
   }
 
   private func runParsed(_ arguments: [String]) async -> CLICommandResult {
+    if arguments.first == "sandbox" {
+      return await SandboxCommand().run(Array(arguments.dropFirst()))
+    }
     if arguments.first == "auth" {
       return PasskeyCommand().run(arguments: Array(arguments.dropFirst()))
     }
@@ -290,6 +293,7 @@ Riela CLI
 
 Usage:
   riela --version
+  riela sandbox run --backend auto|container|seatbelt|bubblewrap [options] -- executable [arguments]
   riela workflow validate <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow inspect <workflow> [--scope project|user|auto] [--output jsonl|json|text]
   riela workflow usage <workflow> [--scope project|user|auto] [--output jsonl|json|text]
@@ -315,6 +319,7 @@ Usage:
   riela node list [query] [--scope project|user|auto] [--registry <id>] [--refresh] [--output json|text|table]
   riela node install <addon-or-package> [--scope project|user] [--registry <id>] [--source <path>] [--output json|text]
   riela node run <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
+    [--sandbox auto|container|seatbelt|bubblewrap] [--sandbox-options <json|@file>]
   riela rrun <addon-name> [--variables <json|@file>] [--mock-scenario <path>] [--output json|text]
   riela specialist catalog|catalog-refresh --state-root <path> [--working-dir <dir>] [--output json]
   riela specialist submit <request-id> --workflow <registered-workflow> --specialist-config <path> --state-root <path> [--variables <json>] [--output json]

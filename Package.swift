@@ -44,6 +44,7 @@ let package = Package(
     .library(name: "RielaHook", targets: ["RielaHook"]),
     .library(name: "RielaAppSupport", targets: ["RielaAppSupport"]),
     .executable(name: "riela", targets: ["RielaCLIExecutable"]),
+    .executable(name: "riela-addon-worker", targets: ["RielaAddonWorkerExecutable"]),
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
@@ -232,10 +233,9 @@ let package = Package(
         // Gateway add-ons run inside this process; riela spawns no `*-gateway`
         // executable. The cumulative tier products carry every tier module, and
         // each add-on stays pinned to one tier through its role descriptor.
-        // These gateways use Darwin, Security, Network, and AppKit without
-        // portability guards, so they are macOS-only; the add-ons that call
-        // them refuse to run elsewhere.
-        .product(name: "WrikeGatewayAdmin", package: "wrike-gateway", condition: .when(platforms: [.macOS])),
+        // Wrike's pinned source supports Darwin and Linux. Other gateway
+        // dependencies still require platform-specific build adaptations.
+        .product(name: "WrikeGatewayAdmin", package: "wrike-gateway"),
         .product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS])),
         .product(
           name: "GoogleAnalyticsGatewayAdmin",
@@ -247,10 +247,8 @@ let package = Package(
           package: "google-documents-gateway",
           condition: .when(platforms: [.macOS])
         ),
-        // The document converter is the same native library kaiba already
-        // links. Its Linux route is a pkg-config staticlib that has to be
-        // built from Rust, so — like kaiba — the dependency is conditional and
-        // the add-on refuses to run where the converter is unavailable.
+        // Container builds explicitly enable Linux after provisioning its Rust
+        // static library. Ordinary Linux CLI builds need no Rust dependency.
         .product(name: "AnydocKit", package: "anydoc-swift", condition: .when(platforms: [.macOS])),
         .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -277,6 +275,11 @@ let package = Package(
     ),
     .executableTarget(
       name: "RielaCLIExecutable",
+      dependencies: ["RielaCLI"],
+      linkerSettings: rielaInfoPlistLinkerSettings
+    ),
+    .executableTarget(
+      name: "RielaAddonWorkerExecutable",
       dependencies: ["RielaCLI"],
       linkerSettings: rielaInfoPlistLinkerSettings
     ),

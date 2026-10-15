@@ -507,13 +507,13 @@ exists, not that a provider is reachable or that all configurations succeed.
 | `riela/gemini-sdk-worker` | Invokes the Gemini worker adapter | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `executeGeminiSDKWorker` dispatch |
 | `riela/codex-sdk-worker` | Invokes the configured SDK worker adapter | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `BuiltinSDKWorker` and `executeSDKWorker` |
 | `riela/time-signal` | Calculates announcement flags and text from timestamp, timezone and interval | `Sources/RielaCLI/ProductionNodeAdapter+TimeSignal.swift` |
-| `riela/gmail-gateway-read` | Deferred no-op: returns `status: ok`, add-on name and step ID with completion passed; no gateway request | `Sources/RielaCLI/ProductionNodeAdapter.swift`, `deferredContainerAddons` |
-| `riela/x-gateway-read` | Same deferred no-op response; no gateway request | Same deferred dispatch |
+| `riela/gmail-gateway-read` | Runs the pinned Gmail reader CLI in a container; failures fail the step | `Sources/RielaCLI/ContainerGatewayAddonExecutor.swift` |
+| `riela/x-gateway-read` | Runs the pinned X reader CLI in a container; failures fail the step | Same container gateway executor |
 
-The two deferred entries must be visibly identified as deferred in catalog
-organization/comments and documentation. Do not route them to the local gateway
-engine or equate `riela/gmail-gateway-read` with the distinct implemented
-`riela/gmail-gateway-reader`. Their existing success envelope remains unchanged.
+These two entries use the container gateway executor, distinct from the local
+gateway engine and `riela/gmail-gateway-reader`. The former placeholder success
+is replaced by the gateway response. See [container add-ons](../../../docs/container-addons.md)
+for runtime selection, images, environment bindings, and mounts.
 No new gateway execution, aliases, runtime version policy, capabilities schema,
 or general catalog-generation framework is required. Other names discovered in
 runtime enums are outside this example-driven correction.

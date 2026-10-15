@@ -73,6 +73,9 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
   }
 
   public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    guard input.node.sandbox == nil else {
+      throw AdapterExecutionError(.policyBlocked, "OS-sandboxed nodes must use the isolated Riela worker adapter")
+    }
     let vendor = try gatewayVendor(input.node)
     let outputSessionKey = gatewayOutputSessionKey(input)
     let inputSessionKey = gatewayInputSessionKey(input)

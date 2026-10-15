@@ -13,6 +13,7 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
   public var unsetEnvironmentKeys: Set<String>
   public var workingDirectoryURL: URL?
   public var sandboxPolicy: LocalProcessSandboxPolicy?
+  public var inheritEnvironment: Bool
 
   public init(
     executableURL: URL,
@@ -20,7 +21,8 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     environment: [String: String] = [:],
     unsetEnvironmentKeys: Set<String> = [],
     workingDirectoryURL: URL? = nil,
-    sandboxPolicy: LocalProcessSandboxPolicy? = nil
+    sandboxPolicy: LocalProcessSandboxPolicy? = nil,
+    inheritEnvironment: Bool = true
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
@@ -28,6 +30,7 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     self.unsetEnvironmentKeys = unsetEnvironmentKeys
     self.workingDirectoryURL = workingDirectoryURL
     self.sandboxPolicy = sandboxPolicy
+    self.inheritEnvironment = inheritEnvironment
   }
 }
 
@@ -605,7 +608,7 @@ private func spawnProcess(
   try checkPosixSpawn(posix_spawnattr_setpgroup(&attributes, 0), operation: "set child process group")
 
   let arguments = [configuration.executableURL.path] + configuration.arguments
-  let environment = ProcessInfo.processInfo.environment
+  let environment = (configuration.inheritEnvironment ? ProcessInfo.processInfo.environment : [:])
     .filter { !configuration.unsetEnvironmentKeys.contains($0.key) }
     .merging(configuration.environment) { _, new in new }
     .map { "\($0.key)=\($0.value)" }

@@ -153,7 +153,7 @@ func sanitizedGatewayEnvironment(
   return environment
 }
 
-struct AppleGatewayProcessOutput {
+struct AppleGatewayProcessOutput: Codable, Sendable {
   var stdout: String
   var stderr: String
   var terminationStatus: Int32

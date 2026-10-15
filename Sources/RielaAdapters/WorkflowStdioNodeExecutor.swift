@@ -23,6 +23,9 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     _ input: WorkflowStdioNodeExecutionInput,
     context: AdapterExecutionContext
   ) async throws -> WorkflowStdioNodeExecutionResult {
+    guard input.node.sandbox == nil else {
+      throw AdapterExecutionError(.policyBlocked, "stdio node sandbox selection is not supported; use riela sandbox run explicitly")
+    }
     try enforcePolicy(input.policy, input: input)
     let inputLine = try invocationInputJSONL(for: input)
     let configuration = try processConfiguration(for: input)

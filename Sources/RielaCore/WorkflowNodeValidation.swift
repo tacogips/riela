@@ -5,6 +5,14 @@ public func validateAgentNodePayload(
   path: String = "node"
 ) -> [WorkflowValidationDiagnostic] {
   var diagnostics: [WorkflowValidationDiagnostic] = []
+  if let sandbox = payload.sandbox {
+    do { try sandbox.validate() } catch {
+      diagnostics.append(.init(severity: .error, path: "\(path).sandbox", message: "\(error)"))
+    }
+    if payload.nodeType.map({ $0 != .agent }) ?? false || payload.command != nil || payload.container != nil || payload.sleep != nil {
+      diagnostics.append(.init(severity: .error, path: "\(path).sandbox", message: "sandbox currently applies to vendor agent nodes"))
+    }
+  }
   diagnostics += WorkflowBackendPolicyValidation.diagnostics(
     pin: payload.executionBackend,
     policy: payload.backendPolicy,
@@ -18,10 +26,14 @@ public func validateAgentNodePayload(
     diagnostics.append(error("\(path).apiKeyEnvironment", "requires baseURL"))
   }
   if let baseURL = payload.baseURL {
-    if ![.codexAgent, .claudeCodeAgent].contains(payload.executionBackend) {
+    // SDK executors already forward the endpoint override to their linked
+    // gateway. Cursor CLI alone has no custom HTTP endpoint contract.
+    let supportsEndpoint: Set<NodeExecutionBackend> = [.codexAgent, .claudeCodeAgent, .officialOpenAISDK,
+      .officialAnthropicSDK, .officialGeminiSDK, .officialCursorSDK]
+    if !(payload.executionBackend.map(supportsEndpoint.contains) ?? false) {
       diagnostics.append(error(
         "\(path).baseURL",
-        "requires executionBackend 'codex-agent' or 'claude-code-agent'"
+        "requires executionBackend 'codex-agent', 'claude-code-agent', or an HTTP SDK backend"
       ))
     } else if (try? AgentProviderConfiguration(
       name: "custom",

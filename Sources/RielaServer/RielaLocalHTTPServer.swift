@@ -101,8 +101,8 @@ public final class RielaLocalHTTPServer: @unchecked Sendable {
   }
 
   @discardableResult
-  func startForTesting() async throws -> Int {
-    try await start(host: "127.0.0.1", port: 0, allowsEphemeralPort: true)
+  func startForTesting(host: String = "127.0.0.1") async throws -> Int {
+    try await start(host: host, port: 0, allowsEphemeralPort: true)
   }
 
   private func start(host: String, port: Int, allowsEphemeralPort: Bool) async throws -> Int {

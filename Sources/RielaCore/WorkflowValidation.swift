@@ -50,6 +50,25 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     let registryIds = Set(workflow.nodeRegistry.map(\.id))
     let stepIds = Set(workflow.steps.map(\.id))
     let addonNames = workflow.nodeRegistry.compactMap(\.addon?.name)
+    for (index, node) in workflow.nodeRegistry.enumerated() {
+      if let sandbox = node.addon?.sandbox {
+        do {
+          try sandbox.validate()
+          guard node.addon?.container == nil else {
+            throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")
+          }
+        } catch {
+          diagnostics.append(.init(severity: .error, path: "workflow.nodes[\(index)].addon.sandbox", message: "\(error)"))
+        }
+      }
+      if let container = node.addon?.container {
+        do {
+          try container.validate()
+        } catch {
+          diagnostics.append(.init(severity: .error, path: "workflow.nodes[\(index)].addon.container", message: "\(error)"))
+        }
+      }
+    }
     if addonNames.contains(where: { $0.hasPrefix("riela/memory-") || $0.hasPrefix("riela/kv-") })
       && !addonNames.contains(where: { $0.hasPrefix("kaiba/") }) {
       diagnostics.append(WorkflowValidationDiagnostic(

@@ -91,7 +91,9 @@ public enum RielaBuiltinAddonCatalog {
 
   public static let memoryAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/memory-save", version: "1"),
-    .init(name: "riela/memory-load", version: "1")
+    .init(name: "riela/memory-load", version: "1"),
+    .init(name: "riela/memory-update", version: "1"),
+    .init(name: "riela/memory-search", version: "1")
   ]
 
   public static let digestAddons: [RielaAddonDescriptor] = [
@@ -101,14 +103,17 @@ public enum RielaBuiltinAddonCatalog {
 
   public static let workerAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/gemini-sdk-worker", version: "1"),
-    .init(name: "riela/codex-sdk-worker", version: "1")
+    .init(name: "riela/codex-sdk-worker", version: "1"),
+    .init(name: "riela/claude-sdk-worker", version: "1"),
+    .init(name: "riela/cursor-sdk-worker", version: "1")
   ]
 
   public static let timeAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/time-signal", version: "1")
   ]
 
-  // These container gateway dispatches currently return a no-op success envelope.
+  // Legacy property name retained for source compatibility. These gateways
+  // execute their reader surface in a container and fail if execution fails.
   public static let deferredContainerGatewayAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/gmail-gateway-read", version: "1"),
     .init(name: "riela/x-gateway-read", version: "1")

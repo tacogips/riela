@@ -51,8 +51,8 @@
         },
         "config": {
           "queryTemplate": "query {\n  followingTimeline(\n    maxResults: 50\n    maxUsers: 50\n    maxResultsPerUser: 5\n    includePromoted: false\n  ) {\n    posts {\n      id\n      text\n      createdAt\n      author {\n        username\n        name\n      }\n    }\n    pageInfo {\n      resultCount\n      newestId\n      oldestId\n      nextToken\n    }\n  }\n}",
-          "image": "ghcr.io/tacogips/x-gateway:latest",
-          "runnerKind": "docker",
+          "image": "riela-x-gateway:local",
+          "runnerKind": "auto",
           "networkPolicy": "egress-allowed"
         }
       }

@@ -41,7 +41,7 @@ extension BuiltinWorkflowAddonResolver {
   }
 }
 
-private struct AppleGatewayAdminContext {
+struct AppleGatewayAdminContext {
   private static let allowedSchemaRoles = Set(["full", "reader"])
   private static let allowedPermissionDomains = Set(["calendar", "reminders", "notes", "notifications"])
 
@@ -51,6 +51,8 @@ private struct AppleGatewayAdminContext {
   var renderedInputs: JSONObject
   var variables: JSONObject
   var currentDirectory: URL
+
+  var downloadOutputDirectory: String? { stringValue("outputDir") }
 
   init(input: WorkflowAddonExecutionInput, currentDirectory: URL) throws {
     self.input = input

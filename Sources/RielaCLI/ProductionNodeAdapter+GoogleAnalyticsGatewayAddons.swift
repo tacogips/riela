@@ -48,9 +48,9 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
     case .read:
       ReadCapabilities.all
     case .write:
-      WriteCapabilities.all
+      ReadCapabilities.all + WriteCapabilities.all
     case .admin:
-      AdminCapabilities.all
+      ReadCapabilities.all + WriteCapabilities.all + AdminCapabilities.all
     }
   }
   #endif

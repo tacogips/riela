@@ -1,57 +1,200 @@
 # Workflow defect detection and verified repair
 
-Status: Planning-only finalization, 2026-09-23. Historical D1–D8 acceptance and D9 Step 3 acceptance are distinguished below. This status correction requires renewed Step 3 review; Step 5 acceptance of the current plan remains pending. Runtime implementation remains pending and is not authorized in this run.
+Status: T2 ownership design amendment, 2026-09-26; independent review pending.
+D1–D9, A1–A16 and L1–L8 remain normative and unchanged below.
 
-## Current finalization authority and review status
+## Current implementation authority and review status
 
-Issue: **Finalize workflow defect detection and verified repair design and
-implementation plan**. Issue reference: `workflowInput local request`; no GitHub
-issue number/URL or Codex-agent reference was supplied (`codexAgentReferences=[]`).
-Mode: `planning-only`. Authoritative intake is `comm-000002`,
-`step1-issue-intake-attempt-1-exec-2`, execution
-`codex-design-and-implement-review-loop-session-1`. The runtime-resolved immutable
-user-scope workflow and effective workflowInput are authoritative; this node does
-not rediscover package provenance or readiness.
+Issue: **Repair bounded T2 provenance ownership and continue serial defect implementation**,
+`tacogips/riela`, Draft PR [#109](https://github.com/tacogips/riela/pull/109).
+No issue number supplied. Mode: `issue-resolution`; `codexAgentReferences=[]`.
+Intake `comm-000002`, `step1-issue-intake-attempt-1-exec-2`, execution
+`codex-design-and-implement-review-loop-session-1` is authoritative together with
+the effective `workflowInput` and runner-resolved immutable user-scope
+`codex-design-and-implement-review-loop` 0.3.44. No supplied contradiction exists.
+Runner preflight owns workflow resolution and integrity; no rediscovery is needed.
 
-Inspected local `main`, `origin/main` and branch
-`design/workflow-defect-liveness-finalize` all point to
-`0fab7f95e300ecb9e5d236813a9a6519df6025e8`. This is the local source baseline,
-not a claim that the remote was fetched. Only material documentation corrections
-are in scope; Work Runtime P1's separate branch and runtime code remain outside
-this run. Later workflow stages own plan review, accepted-document commit/push,
-and any main integration after acceptance and verification.
+HEAD is `8341d09671d501fa687343c418917c96fbb49770` on
+`feat/remaining-impl-plans`. Intake reports accepted prior Step 3/5 reviews;
+that acceptance does not cover this amendment. Preserve all dirty T1/T2 source,
+tests, shared progress and prior evidence. No reset, stash, broad rewrite, new
+worktree, global continuation-limit increase, or work in main/Monja/archived
+rielflow. Scratch stays under repository-root `tmp/`.
 
-| Review scope | Evidence and current decision |
+This section supersedes stale execution/checkpoint instructions in the historical
+sections and plan; it does not replace their behavioral requirements. Step 4 must
+refresh the plan and matching dispatch against the newly reviewed design bytes.
+No implementation or plan changes are made by this Step 2 author.
+
+### Existing API evidence and bounded decision
+
+The active dispatch is
+`impl-plans/active/workflow-defect-repair-20260926-comm000006-a8e1beb-dispatch.json`:
+five serial items already exist; T2 has 18 exact writePaths. Do not split again.
+The child receipt in
+`tmp/workflow-defect-serial-split/artifacts/nested-v1-353ac2cb068ca66cb9c7acb73abe6fd8a0dd5875d031db407c73ff8bbfbb3076/runtime-snapshot.json`
+records a provenance ownership stop and incomplete publication/location coverage.
+Its successful test counts are historical evidence, not acceptance of missing work.
+
+Read-only source inspection establishes why the current APIs do not suffice:
+
+| Existing source | Evidence and necessary boundary |
 | --- | --- |
-| Historical D1–D8 | Intake reports accepted design and plan. The plan retains Step 3 `comm-000006`, `step3-design-review-attempt-1-exec-3`, accepted design digest `258cc1d34f78d64971e96e4f130ed8ee8db02eba5209657ee39f8a0ac416b170`, and resolved Step 5 `comm-000008` Package.swift ownership feedback. A later raw Step 5 acceptance receipt is not available in this checkout; historical acceptance is attributed to intake, not independently reconstructed. |
-| D9 Step 3 | Plan records `comm-000004`, `step3-design-review-attempt-1-exec-4`, `accepted`, no findings, for SHA-256 `998818586b15ab158a6dd956ef9a69de52b3bbdcd3a008702a2e96e593b45a0c`. That digest matches this design before the current status correction. This is historical receipt evidence, not acceptance of the newly edited bytes. |
-| Current design | D1–D9 behavior is retained; current authority/status supersedes historical pending-review prose below. Renewed Step 3 review must bind the corrected bytes. |
-| Current plan / implementation | Independent Step 5 review of exact final plan bytes is pending; all six runtime tasks remain unimplemented. The README's blanket acceptance statement must not substitute for this gate. |
+| `Sources/RielaCore/WorkflowNodeContracts.swift` | `NodeOutputContract` has schema, attempts and payload projection, but no explicit when guarantee. `latest-input-payload` cannot declare an envelope when control. |
+| `Sources/RielaCore/WorkflowValidation.swift` | `requiredProducerNodeIds` walks through add-ons without proving forwarding/overwrites; current route analysis reports add-on provenance incomplete. Reuse the walk, but never treat traversal as proof. |
+| `Sources/RielaAddons/RielaAddons.swift` | `RielaAddonDescriptor` exposes name/version only; catalog membership is not a routing guarantee. |
+| `Sources/RielaAddons/WorkflowPackageManifest.swift` | `WorkflowPackageNodeAddon` has no route descriptor and rejects unsupported keys; authored metadata cannot be smuggled into capabilities. |
+| `Sources/RielaCLI/ContainerWorkflowAddonResolver.swift` | Registration carries identity/digest/capabilities, not output guarantees; execution decodes payload only. Do not invent container when forwarding. |
+| `Sources/RielaCLI/ProductionNodeAdapter.swift` | Registration copies manifest fields; chat reply forwards application payload then overwrites status/addon/stepId/text/replyText/dispatchStatus and sometimes replyAs. SDK output also overwrites fields. A predecessor schema alone is insufficient. |
+| `Sources/RielaAddonSupport/WorkflowAddonSupport.swift` | Forwarding removes `_rielaInput`, `upstream`, `runtime`; retain this implementation unchanged and account for those exclusions in proof. |
+| `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` | Existing bundle-aware validator calls are the composition seam for resolved catalog evidence; Core must not discover packages. |
 
-Current source recheck confirms `WorkflowBranchEvaluation.swift` still falls back
-to false for missing controls; `RuntimePublication.swift` validates before normal
-transition selection; loop gate eligibility remains in
-`DeterministicWorkflowRunner+LoopPolicy.swift`. `AgentGatewayNodeAdapter.swift`
-still maps the four ACP discriminators, `RuntimeStore.swift` trusts generic event
-time/sequence, and `SessionObservability.swift` classifies generic event time.
-`FailClosedSQLiteWorkflowRuntimeStore.swift` and the SQLite `session_json` store
-remain the durable implementation seams. These facts support the existing
-ownership boundaries; they do not establish runtime implementation of D1–D9.
+A narrow ownership amendment is therefore necessary, subject to Step 3/5 review.
+The following are proposed additions, not permission for a child to edit before
+review and checkpoint. Retain the existing 18 T2 paths and their dirty contents.
 
-No new Codex schema mapping is required by this intake. D9's historical behavioral
-references remain context only; Cursor-specific mapping stays in the gateway
-adapter. No user decision is unresolved. Historical incident causal reconstruction,
-exact upstream event-schema equivalence and cross-host freshness remain evidence
-limits, not prerequisites for synthetic deterministic implementation tests.
+| Proposed exact writePath | Required purpose |
+| --- | --- |
+| `Sources/RielaCore/WorkflowNodeContracts.swift` | Add explicit authored when-control declaration and the shared route-proof value types. |
+| `Sources/RielaAddons/RielaAddons.swift` | Attach explicit built-in route/forwarding metadata to the existing catalog. |
+| `Sources/RielaAddons/WorkflowPackageManifest.swift` | Decode and validate optional package add-on route metadata. |
+| `Sources/RielaCLI/ContainerWorkflowAddonResolver.swift` | Carry selected registration metadata with exact identity/digest; retain payload-only execution semantics. |
+| `Sources/RielaCLI/ProductionNodeAdapter.swift` | Preserve manifest-to-registration evidence and describe only proven built-in forwarding/overwrites. |
+| `Sources/RielaCLI/WorkflowValidateInspectCommands.swift` | Supply resolved evidence at existing validation composition points. |
+| `Tests/RielaCoreTests/WorkflowModelTests.swift` | Round-trip when declaration and compatibility of absent metadata. |
+| `Tests/RielaAddonsTests/WorkflowPackageManifestTests.swift` | Package metadata validation and malformed declarations. |
+| `Tests/RielaAddonsTests/RoutineAddonCatalogTests.swift` | Catalog metadata identity and unknown-default behavior. |
+| `Tests/RielaCLITests/ContainerWorkflowAddonResolverTests.swift` | Registration propagation and payload-only/identity mismatch negatives. |
+| `Tests/RielaCLITests/WorkflowOutputContractPreflightTests.swift` | End-to-end resolved proof, forwarding exclusions and overwrite rejection. |
 
-The historical scratch verifiers cited below are absent in this checkout and their
-reported results are not fresh verification. Current author checks use
-`python3 tmp/workflow-defect-finalize/step2/verify.py`, complete log
-`tmp/workflow-defect-finalize/step2/verification.log`; require terminal exit 0.
-The checks cover baseline hashes, preserved D1–D9 contracts, source seams, unchanged
-plan/index, changed-file scope and whitespace. Step 4 must reconcile the plan's
-old design digest and authority prose before Step 5; acceptance cannot carry across
-changed bytes. No independent acceptance, runtime test, commit or push is claimed.
+Already-owned route, raw-validation, runner and publication files implement the
+consumer side and core negative coverage. Existing dirty agent-contract tests are
+preserved; new coverage can use owned route tests. No new service, registry,
+producer framework or blanket ownership expansion is required. Any further exact
+path discovered during planning must have concrete code evidence and review before
+editing; do not silently bypass an owner or weaken the requirement.
+
+### D1/D8 provenance contract refinement
+
+An optional `output.guaranteedWhen` string array declares controls the agent must
+supply as Boolean members of `when`. Absence means no additional guarantee;
+empty is valid, empty names, duplicate names and reserved constants are invalid.
+It does not create values or coerce missing controls to false. Runtime validates
+these declarations, including controls not used by a route. Required payload
+schema properties remain mandatory independently. Same-name Boolean payload and
+when values must agree; invalid payload types remain errors. Existing schema-only
+workflows preserve their encoding and behavior.
+
+Catalog evidence identifies the exact add-on name/version and, for package
+registrations, content digest. Its bounded descriptor states explicit guaranteed
+Boolean payload/when controls, which application payload fields are forwarded,
+and which are removed or overwritten. Unspecified forwarding/overwrite behavior
+is unknown, not universal pass-through. Built-in descriptors must match actual
+execution; package declarations are checked against emitted values at publication.
+Do not treat arbitrary workflow fields, capabilities, a matching name alone, or
+an upstream agent schema as catalog authority. Container descriptors cannot claim
+when controls while their adapter produces only payload.
+
+Resolved evidence is supplied as a Core value to the existing validator and
+execution setup, bound to the captured workflow and selected producer identity;
+Core does not import CLI/Addons or discover registries. Bundle-less validation
+reports `analysis_incomplete` for unavailable evidence. Unknown/ambiguous versions,
+digest mismatch, unsupported producer or unresolved forwarding never prove safety.
+Existing runtime input mapping determines the forwarded source; ambiguous multiple
+inputs require proof on every possible selected source or remain incomplete.
+Walk predecessors with the existing visited/bounded traversal, stopping at unknown
+or destructive transformations. A field survives only if its source guarantee and
+every hop's forwarding, removals and overwrite behavior prove a Boolean remains.
+An explicit independently guaranteed Boolean overwrite can establish a new producer;
+a non-Boolean or unknown overwrite invalidates inherited proof. Do not transfer
+upstream when fields through payload-only forwarding.
+
+Normalization and authorized completion-review reconciliation precede validation
+of the effective candidate. Schema/declaration/all-referenced-control checks precede
+reservation, finalization, accepted persistence, outgoing routing and enqueue.
+Retain recognized-review `accepted = !needs_replan && !needs_work`, all-control
+checking even for short-circuited expressions, two-total-attempt agent correction,
+and single execution for add-ons/direct calls. Ordinary, inline, fanout-join,
+callee-resume and recovered pending publication must reject missing, wrong-type
+and conflicting controls with zero downstream effects. Already-performed producer
+tool effects are not rolled back. Typed diagnostics bind captured-source digest and
+exact escaped JSON pointers, including typed step IDs; never guess an array index
+from a step name. Raw/typed locations must agree on the same source.
+
+### Serial review, verification and delivery
+
+Preserve exactly:
+`workflow-defect-t2-remaining` → `workflow-defect-t3` → `workflow-defect-t4` →
+`workflow-defect-t5` → `workflow-defect-t6`.
+T2 depends on `[]`; each successor depends on its immediate predecessor. T1 is
+complete preserved input. Keep D2–D9, A1–A16/L1–L8 and all V3–V9/L-V1–L-V5 gates.
+
+Step 3 reviews this amendment adversarially. Step 4 updates exact ownership,
+matching embedded plan/dispatch arrays and verification; Step 5 reviews the exact
+amended bytes. Before checkpoint verify five unique IDs, dependencies, nonempty
+string-array acceptanceCriteria, ownership and plan/manifest consistency. Then
+checkpoint and non-force push only reviewed design/plan/dispatch files to
+`feat/remaining-impl-plans`, excluding dirty source/tests/progress. Failed push
+prevents redispatch. No global continuation-limit increase is authorized.
+
+Fresh T2 commands on completed source, with added ownership-specific coverage:
+
+```bash
+arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowRouteContractTests|RuntimeOutputValidationTests|RuntimePublicationTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'DefaultLoopGuardTests|DeterministicWorkflowRunnerLoopPolicyTests|AdapterUtilitiesTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'AgentNodeOutputContractValidationTests|WorkflowOutputContractPreflightTests|RuntimeOutputValidationTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowModelTests|AgentNodeOutputContractValidationTests'"
+arch -arm64 /bin/zsh -lc "swift test --filter 'WorkflowPackageManifestTests|RoutineAddonCatalogTests|ContainerWorkflowAddonResolverTests'"
+xargs -0 swiftlint lint --strict --quiet --no-cache < tmp/workflow-defect-implementation/workflow-defect-t2-remaining/changed-swift.nul
+git diff --check
+```
+
+Cover when-only true/false, missing declared when, required payload despite when,
+matching/conflicting dual values, catalog identity/digest mismatch, unknown add-on,
+all predecessor alternatives, retained/removed/overwritten fields and declarations
+violated at runtime. Retain the complete publication matrix and exact-pointer tests.
+Record command, cwd, tested source/fixture hashes, positive counts, complete log
+path and terminal status. Run foreground only and poll every yielded handle through
+exit. Zero selected tests or an incomplete log cannot pass.
+
+T6 must rerun on final combined source after later adapter changes:
+
+```bash
+arch -arm64 /bin/zsh -lc "swift test --filter 'AdapterUtilitiesTests'"
+```
+
+After serial implementation, independent adversarial/test-integrity/combined review
+must resolve all high/mid findings. Finish docs/index and exact-reviewed-file commit
+and non-force push to `feat/remaining-impl-plans`, verifying the remote tip and Draft
+PR #109. Downstream formal review/publication are not individual child self-blockers.
+
+### Issue mapping, unresolved work and author self-check
+
+| Intake requirement / feedback | Design resolution |
+| --- | --- |
+| Prove existing APIs before expanding ownership | Source evidence table establishes missing declaration/catalog seams; eleven exact proposed additions only. |
+| Preserve D1/D8 when-only, schema and add-on proof | Explicit independent when declaration, catalog-bound forwarding/overwrite proof and runtime checks. |
+| Child mid: incomplete provenance/publication matrix | Required implementation and negative gates above; implementation finding remains open until tested. |
+| Child mid: typed step-ID JSON pointers | Captured-source exact-pointer contract and raw/typed tests remain mandatory. |
+| Prior Step 5 final adapter regression finding | Explicit T6 final combined-source AdapterUtilitiesTests retained. |
+| Preserve serial scope and dirty evidence | Five unchanged IDs/dependencies, no limit increase, review/checkpoint before redispatch. |
+
+No unresolved user decision: no user-QA file is needed. Implementation findings
+above are downstream work, not completed fixes. `codexAgentReferences=[]`,
+`cursorCliBehaviorMapping=[]`, `intentionalDivergences=[]` for this intake. Historical
+D9 references remain historical; Cursor normalization stays isolated in
+`Sources/RielaAdapters/AgentGatewayNodeAdapter.swift`. No new reference investigation
+or protocol divergence is required.
+
+Author verification: `python3 tmp/workflow-defect-step2-ownership/verify.py`, complete
+log `tmp/workflow-defect-step2-ownership/verification.log`, terminal exit 0.
+It checks preservation, unchanged historical D1–D9 body, exact proposed path existence,
+five serial IDs/dependencies and nonempty acceptance arrays, plus design whitespace.
+This is design verification only, not fresh Swift tests or review acceptance.
+No unresolved high/mid design-author finding or blocked design check remains.
+Residual implementation risks are unsound metadata/forwarding claims and cross-task
+publication/adapter regressions; the explicit negative tests and final gates above
+remain required before implementation acceptance.
 
 ## Historical D9 extension authority (2026-09-22)
 

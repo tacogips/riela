@@ -120,6 +120,17 @@ final class GatewayCommandTests: XCTestCase {
     XCTAssertFalse((result.stdout + result.stderr).contains("private-client-fixture"))
   }
 
+  func testNativeXHomeTimelineAcceptsBoundsBeforeAuthentication() async {
+    let document = """
+    { homeTimeline(startTime: "2026-10-16T15:00:00Z", endTime: "2026-10-17T15:00:00Z",
+      sinceId: "123", untilId: "456", paginationToken: "page-two") { posts { id } pageInfo { nextToken } } }
+    """
+    let result = await GatewayCommand().run(["x", "graphql", "query", document, "--json"], environment: ["PATH": "/nonexistent"])
+    XCTAssertEqual(result.exitCode, .failure)
+    XCTAssertTrue(result.stderr.contains("homeTimeline requires X_GW_TOKEN"), result.stderr)
+    XCTAssertFalse(result.stderr.contains("Unsupported argument"), result.stderr)
+  }
+
   func testNativeXAuthScopesDoesNotPrintCredentialValues() async {
     let result = await GatewayCommand().run(["x", "auth", "scopes", "--json"],
       environment: ["PATH": "/nonexistent", "X_GW_TOKEN": "private-x-fixture"])

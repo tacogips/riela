@@ -108,7 +108,7 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     XCTAssertEqual(result.stdout, "private-credential-lock-ok")
   }
 
-  func testXImageExposesIncrementalRecentSearchWithoutCredentials() async throws {
+  func testXImageExposesIncrementalSearchAndBoundedHomeTimelineWithoutCredentials() async throws {
     try requireLiveImages()
     let root = try makeRielaCLITestTemporaryDirectory("x-incremental-schema")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -120,6 +120,7 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
       arguments: [driver.executable] + arguments, environment: [:], workingDirectoryURL: root), stdin: "", deadline: Date().addingTimeInterval(300))
     XCTAssertEqual(result.terminationStatus, 0, result.stderr)
     XCTAssertTrue(result.stdout.contains("searchPosts(query: String!, maxResults: Int, sinceId: String, nextToken: String"))
+    XCTAssertTrue(result.stdout.contains("maxResults: Int, startTime: String, endTime: String, sinceId: String, untilId: String, paginationToken: String"))
   }
 
   private func syntheticCredentials(credentialID: String) -> [String: String] {

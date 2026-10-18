@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { WorkflowDefinitionResponse } from '../contracts'
-import { discoveredDefinitionMatchesSelection } from './WorkflowDefinitionView'
+import { discoveredDefinitionMatchesSelection } from '../workflows/discoveredDefinition'
 
 describe('discovered workflow selection ownership', () => {
   test('permits display only for the exact profile and source', () => {

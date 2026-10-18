@@ -3,7 +3,7 @@ import type { RunDetailLog, RunDetailStep } from '../contracts'
 import {
   logsForStepExecution,
   routingLogsWithoutVisibleExecution,
-} from './RunDetailView'
+} from './runDetailLogs'
 
 function step(executionId: string, attempt: number): RunDetailStep {
   return {

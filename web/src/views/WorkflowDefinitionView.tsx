@@ -1,3 +1,5 @@
+import { discoveredDefinitionMatchesSelection } from '../workflows/discoveredDefinition'
+export { discoveredDefinitionMatchesSelection } from '../workflows/discoveredDefinition'
 import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
@@ -6,24 +8,6 @@ import { ErrorBanner, LoadingState, PageHeader } from '../components/Primitives'
 import { OpsScene } from '../ops/OpsScene'
 import { definitionEdgePath, definitionGraph } from '../workflows/definitionGraph'
 import '../workflows/definition.css'
-
-export interface DiscoveredDefinitionResource {
-  profileKey: string
-  sourceId: string
-  detail: WorkflowDefinitionResponse
-}
-
-export function discoveredDefinitionMatchesSelection(
-  profileKey: string,
-  selectedSourceId: string,
-  resource: DiscoveredDefinitionResource | undefined,
-): boolean {
-  return Boolean(
-    resource
-      && resource.profileKey === profileKey
-      && resource.sourceId === selectedSourceId,
-  )
-}
 
 export function WorkflowDefinitionView(props: { profileKey: string; sourceId: string; onBack: () => void; embedded?: boolean }) {
   const [resource, { refetch }] = createResource(

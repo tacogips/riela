@@ -2,7 +2,7 @@ FROM rust:1.88.0-bookworm AS anydoc-source
 ENV CARGO_PROFILE_RELEASE_LTO=false
 WORKDIR /anydoc-swift
 RUN git init . && git remote add origin https://github.com/tacogips/anydoc-swift.git && \
-    git fetch --depth 1 origin d957c08372786b7062553e83fe9c29880fdee7a4 && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin 0aa4756d0ce3f97cc94f1de9efe26879808097c8 && git checkout --detach FETCH_HEAD
 RUN --mount=type=cache,id=riela-anydoc-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=riela-anydoc-rust188,target=/anydoc-swift/native/anydoc-ffi/target,sharing=locked \
     cargo build --manifest-path native/anydoc-ffi/Cargo.toml --release --locked --jobs 4 && \
@@ -11,32 +11,35 @@ COPY scripts/container-gateway-support/AnydocFFISmoke.c /anydoc-smoke.c
 RUN cc -I/anydoc-native/include /anydoc-smoke.c /anydoc-native/lib/libanydoc_ffi.a \
     -lm -ldl -lpthread -o /anydoc-smoke && /anydoc-smoke
 
-FROM swift:6.2-noble AS gmail-source
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS gmail-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /gmail-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
-    git fetch --depth 1 origin 2761f3bccf30ead78de5d6968d827929925eae80 && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin a7b0204e5869b3be8475fec8460b1881e54fb174 && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
-RUN python3 /prepare.py gmail /gmail-gateway --crypto-version 4.5.1
+COPY scripts/container-gateway-support /container-gateway-support
+RUN python3 /prepare.py gmail /gmail-gateway --crypto-version 4.5.2
 
-FROM swift:6.2-noble AS analytics-source
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS analytics-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /google-analytics-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-analytics-gateway.git && \
-    git fetch --depth 1 origin c46443a5e8f744244cb9825d3238958a797c4f2b && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin 6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0 && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
-RUN python3 /prepare.py analytics /google-analytics-gateway --crypto-version 4.5.1
+RUN python3 /prepare.py analytics /google-analytics-gateway --crypto-version 4.5.2
 
-FROM swift:6.2-noble AS documents-source
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS documents-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /google-documents-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-documents-gateway.git && \
-    git fetch --depth 1 origin cda93cdd770a51f6f9d1bc63b1db555884824606 && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin dadc2f7d0070f92df07278873262f9f7aad5d16e && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 COPY scripts/container-gateway-support /container-gateway-support
-RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 4.5.1
+RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 4.5.2
+RUN swiftc /container-gateway-support/GatewayPOSIX.swift \
+    /container-gateway-support/GatewayPOSIXSmoke.swift -o /posix-smoke && /posix-smoke
 
-FROM swift:6.2-noble AS build
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3 pkg-config && rm -rf /var/lib/apt/lists/*
 # Rust's ARM64 static library uses relocations unsupported by GNU gold.
 # Provision LLD only when it is absent from the Swift builder toolchain.
@@ -59,7 +62,7 @@ COPY scripts/prepare-container-gateway-source.py /prepare.py
 RUN python3 /prepare.py riela /src
 # Keep incremental compiler outputs in the builder, never in the runtime image.
 # The lock prevents simultaneous builds from mutating one SwiftPM directory.
-RUN --mount=type=cache,id=riela-builtin-swift62,target=/src/.build,sharing=locked \
+RUN --mount=type=cache,id=riela-builtin-swift633,target=/src/.build,sharing=locked \
     swift build -c release --product riela --jobs 4 -Xswiftc -use-ld=lld && \
     mkdir /install && cp .build/release/riela /install/ && \
     for resource in .build/release/*.resources; do if [ -d "$resource" ]; then cp -R "$resource" /install/; fi; done

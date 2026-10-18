@@ -1,7 +1,9 @@
+import { logsForStepExecution, routingLogsWithoutVisibleExecution } from './runDetailLogs'
+export { logsForStepExecution, routingLogsWithoutVisibleExecution } from './runDetailLogs'
 import { ActionButton } from '../components/ActionButton'
 import { For, Show } from 'solid-js'
 import { api } from '../api'
-import type { RunDetailLog, RunDetailResponse, RunDetailStep } from '../contracts'
+import type { RunDetailResponse } from '../contracts'
 import { EmptyState, ErrorBanner, LoadingState, PageHeader } from '../components/Primitives'
 import { createPollingResource, pollingStatusLabel } from '../polling'
 import { RunTrace } from './RunTrace'
@@ -59,20 +61,4 @@ export function RunDetailView(props: {
       <Show when={run().diagnostics.length > 0}><div class="diagnostics"><h2>Diagnostics</h2><For each={run().diagnostics}>{(diagnostic) => <p>{diagnostic.summary}</p>}</For><Show when={run().diagnosticsTruncated}><p class="truncation-notice">Showing {run().diagnostics.length} of {run().diagnosticsTotalCount} diagnostics.</p></Show></div></Show>
     </>}</Show>
   </section>
-}
-
-export function logsForStepExecution(
-  logs: RunDetailLog[],
-  step: RunDetailStep,
-): RunDetailLog[] {
-  return logs.filter((log) => log.sourceStepExecutionId === step.executionId)
-}
-
-export function routingLogsWithoutVisibleExecution(
-  logs: RunDetailLog[],
-  steps: RunDetailStep[],
-): RunDetailLog[] {
-  const visibleExecutionIds = new Set(steps.map((step) => step.executionId))
-  return logs.filter((log) =>
-    !log.sourceStepExecutionId || !visibleExecutionIds.has(log.sourceStepExecutionId))
 }

@@ -45,7 +45,9 @@ extension DefaultEventLiveServer {
       )
       for message in messages.sorted(by: { $0.sortKey < $1.sortKey }) {
         observedMessages += 1
-        try offsetStore.saveLastMessageId(message.id)
+        if try !EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment) {
+          try offsetStore.saveLastMessageId(message.id)
+        }
         let resolvedAttachments = try await resolveDiscordAttachments(
           source: source,
           message: message,
@@ -56,6 +58,7 @@ extension DefaultEventLiveServer {
           eventRoot: eventRoot,
           resolvedAttachments: resolvedAttachments
         ) else {
+          try offsetStore.saveLastMessageId(message.id)
           continue
         }
         let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
@@ -63,6 +66,9 @@ extension DefaultEventLiveServer {
           bindings: config.bindings,
           envelope: envelope
         ))
+        if try recordReadOnlyEventIfNeeded(
+          envelope: envelope, triggerResult: triggerResult, parsed: parsed, eventRoot: eventRoot
+        ) { try offsetStore.saveLastMessageId(message.id); continue }
         guard triggerResult.accepted else {
           continue
         }
@@ -72,7 +78,7 @@ extension DefaultEventLiveServer {
           }
           let result: WorkflowRunResult
           do {
-            result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+            result = try await runEventWorkflow(EventWorkflowRunRequest(
               workflowName: workflowName,
               runtimeVariables: trigger.runtimeVariables,
               parsed: parsed

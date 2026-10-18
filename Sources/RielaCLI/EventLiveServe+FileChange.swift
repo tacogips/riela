@@ -29,6 +29,9 @@ extension DefaultEventLiveServer {
         bindings: config.bindings,
         envelope: envelope
       ))
+      if try recordReadOnlyEventIfNeeded(
+        envelope: envelope, triggerResult: triggerResult, parsed: parsed, eventRoot: eventRoot
+      ) { dispatched += 1; continue }
       guard triggerResult.accepted else {
         try? writeServeRecord(
           eventRoot: eventRoot,
@@ -48,7 +51,7 @@ extension DefaultEventLiveServer {
         // A malformed dropped document must not kill the listener: the
         // failure is recorded on the serve record and watching continues.
         do {
-          _ = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+          _ = try await runEventWorkflow(EventWorkflowRunRequest(
             workflowName: workflowName,
             runtimeVariables: trigger.runtimeVariables,
             parsed: parsed

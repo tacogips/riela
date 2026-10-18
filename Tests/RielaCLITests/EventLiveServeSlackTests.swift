@@ -4,6 +4,50 @@ import RielaCore
 import XCTest
 
 final class EventLiveServeSlackTests: XCTestCase {
+  func testSlackLegacyEnvironmentReadOnlyPersistsReceiptWithoutWorkflowOrReply() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeSlackEventConfig(eventRoot: eventRoot)
+    let api = FakeSlackGatewayAPI(messages: [
+      try SlackMessage.fixture(ts: "1780000000.000100", text: "Riela, can you answer from Slack?")
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "Slackから受け取ったよ。短く返します。", replyAs: "riela")
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      discordAPI: FakeDiscordGatewayAPI(messages: []),
+      slackAPI: api,
+      workflowRunner: workflowRunner
+    )
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "RIEL_EVENTS_READ_ONLY": "true",
+      "TEST_SLACK_TOKEN": "source-token",
+      "TEST_SLACK_BOT_USER_ID": "U999",
+      "TEST_SLACK_RIELA_TOKEN": "riela-token",
+      "TEST_SLACK_YUI_TOKEN": "yui-token",
+      "TEST_SLACK_MIKA_TOKEN": "mika-token",
+      "TEST_SLACK_RINA_TOKEN": "rina-token",
+      "RIELA_SLACK_CHANNEL_ID": "C1C278ZBL"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let captured = await workflowRunner.requests
+    XCTAssertTrue(captured.isEmpty)
+    let replies = await api.sentMessages
+    XCTAssertTrue(replies.isEmpty)
+    try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+
   func testSlackGatewayServePollsRunsWorkflowAndSendsThreadReply() async throws {
     let eventRoot = try temporaryDirectory()
     try writeSlackEventConfig(eventRoot: eventRoot)
@@ -100,7 +144,7 @@ final class EventLiveServeSlackTests: XCTestCase {
     XCTAssertEqual(sentMessages, [])
   }
 
-  func testSlackGatewayServeDoesNotAdvanceOffsetWhenWorkflowProcessingFails() async throws {
+  func testSlackGatewayServeRecordsFailureAndKeepsIngestionMovingWithoutReply() async throws {
     let eventRoot = try temporaryDirectory()
     try writeSlackEventConfig(eventRoot: eventRoot)
     let api = FakeSlackGatewayAPI(messages: [
@@ -114,8 +158,7 @@ final class EventLiveServeSlackTests: XCTestCase {
       workflowRunner: workflowRunner
     )
 
-    do {
-      _ = try await CLIRuntimeEnvironment.$overrides.withValue([
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
         "TEST_SLACK_TOKEN": "source-token",
         "TEST_SLACK_BOT_USER_ID": "U999",
         "TEST_SLACK_RIELA_TOKEN": "riela-token",
@@ -130,14 +173,19 @@ final class EventLiveServeSlackTests: XCTestCase {
           output: .json
         )
       }
-      XCTFail("expected Slack workflow processing failure")
-    } catch {
-      XCTAssertTrue(String(describing: error).contains("forced workflow failure"))
-    }
-
-    XCTAssertFalse(FileManager.default.fileExists(
-      atPath: eventRoot.appendingPathComponent("slack/slack-live-C200-offset.json").path
-    ))
+    XCTAssertEqual(result.status, "ok")
+    let requests = await workflowRunner.requests
+    let replies = await api.sentMessages
+    XCTAssertEqual(requests.count, 1)
+    XCTAssertTrue(replies.isEmpty)
+    let recordData = try Data(contentsOf: eventRoot.appendingPathComponent("serve-record.json"))
+    let record = try XCTUnwrap(JSONSerialization.jsonObject(with: recordData) as? [String: Any])
+    XCTAssertEqual(record["lastIgnoredReason"] as? String, "slack-workflow-failed")
+    XCTAssertTrue((record["detail"] as? String)?.contains("forced workflow failure") == true)
+    XCTAssertNil(record["workflowExecutionId"])
+    XCTAssertNil(record["lastReplyDispatchCount"])
+    let offset = try String(contentsOf: eventRoot.appendingPathComponent("slack/slack-live-C200-offset.json"), encoding: .utf8)
+    XCTAssertTrue(offset.contains("1780000000.000250"))
   }
 
   func testSlackGatewayServeRejectsEscapingOffsetPath() async throws {

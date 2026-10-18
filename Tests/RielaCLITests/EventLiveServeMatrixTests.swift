@@ -4,6 +4,48 @@ import RielaCore
 import XCTest
 
 final class EventLiveServeMatrixTests: XCTestCase {
+  func testMatrixReadOnlyPersistsReceiptWithoutWorkflowOrReply() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeMatrixEventConfig(eventRoot: eventRoot)
+    let api = FakeMatrixGatewayAPI(responses: [MatrixSyncResponse(
+      nextBatch: "sync-2",
+      rooms: MatrixSyncRooms(join: [
+        "!room:localhost": MatrixJoinedRoom(timeline: MatrixRoomTimeline(events: [
+          MatrixRoomEvent(
+            type: "m.room.message",
+            eventId: "$event-1",
+            sender: "@alice:localhost",
+            originServerTimestamp: 1_000,
+            content: MatrixMessageContent(body: "Yui, hello", messageType: "m.text", relatesTo: nil)
+          )
+        ]))
+      ]))
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "Matrix reply", replyAs: "yui")
+    let server = DefaultEventLiveServer(matrixAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_MATRIX_HOMESERVER": "https://matrix.example",
+      "TEST_MATRIX_TOKEN": "source-token",
+      "TEST_MATRIX_YUI_TOKEN": "yui-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions(["--read-only", "--limit", "1"]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let captured = await workflowRunner.requests
+    XCTAssertTrue(captured.isEmpty)
+    let replies = await api.sentMessages
+    XCTAssertTrue(replies.isEmpty)
+    try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+
   func testMatrixServeSyncsRunsWorkflowSendsReplyAndPersistsSinceToken() async throws {
     let eventRoot = try temporaryDirectory()
     try writeMatrixEventConfig(eventRoot: eventRoot)

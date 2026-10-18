@@ -5,6 +5,48 @@ import WebHooky
 import XCTest
 
 final class EventLiveServeWebhookyTests: XCTestCase {
+  func testWebhookyReadOnlyPersistsReceiptWithoutWorkflow() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeWebhookyEventConfig(eventRoot: eventRoot)
+    let record = WebhookRecord(
+      t: 1_754_438_400,
+      fetched: false,
+      payload: .object([
+        "source": .string("wrike"),
+        "events": .array([
+          .object([
+            "eventType": .string("TaskCreated"),
+            "taskId": .string("TASK-91")
+          ])
+        ])
+      ])
+    )
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "", replyAs: "")
+    let server = DefaultEventLiveServer(
+      webhookyStreamer: FakeWebhookyStreamer(records: [record]),
+      workflowRunner: workflowRunner
+    )
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_WEBHOOKY_URL": "https://hooks.example.test",
+      "TEST_WEBHOOKY_CREDENTIAL": "key-1:secret-1",
+      "TEST_WEBHOOKY_FETCH_UUID": "fetch-uuid-1"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions(["--read-only", "--limit", "1"]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let captured = await workflowRunner.requests
+    XCTAssertTrue(captured.isEmpty)
+    try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+
   func testWebhookyServeDispatchesStreamedRecordToBoundWorkflow() async throws {
     let eventRoot = try temporaryDirectory()
     try writeWebhookyEventConfig(eventRoot: eventRoot)

@@ -701,6 +701,17 @@ path checks the SQLite status before every run, so completing or disabling a
 routine stops it immediately without restarting the serve loop (new/changed
 schedules still need one restart to load).
 
+To inspect live event ingestion without executing workflows or sending replies,
+use `riela events serve --read-only` (or `RIELA_EVENTS_READ_ONLY=true`). The
+listener keeps receiving events and writes skipped receipts with the original
+envelope and matched input, with no workflow execution ID. Matched provider
+polling cursors advance after durable evidence is saved; file watchers retain
+their existing in-memory scan and startup snapshot behavior. Skipped deliveries
+do not count as completed routine runs. `--limit 1` provides a bounded check.
+`--dry-run` is a separate one-shot check that does not start the listener.
+`events replay` currently persists a replay receipt; it does not execute a
+workflow. Replaying read-only evidence retains a dry-run status and no execution ID.
+
 Relative routine-store paths resolve against `--working-dir`, and routine list
 limits must be between 1 and 1,000 so CLI, GraphQL, and add-on queries stay
 bounded.

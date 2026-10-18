@@ -1,10 +1,63 @@
-# Riela
+# Riela — put your AI agents on rails
+
+**Riela turns Codex, Claude Code, Cursor and API models into a team that follows
+your process.** You draw the workflow — design, implement, review, fix, ship —
+and Riela runs it step by step: the right agent for each step, every result
+recorded, any run resumable, and the whole thing testable before you spend a
+token.
 
 <p align="center">
   <img src="img/riela.png" alt="Riela logo with a railway track mark on a black background" width="480">
 </p>
 
-Riela is the Swift-native command line runtime.
+```bash
+brew tap tacogips/tap && brew install --cask riela   # RielaApp + riela CLI (macOS)
+riela workflow run <workflow> --variables '{"task": "..."}'
+```
+
+## What you can do with Riela
+
+- **Chain agents into real pipelines.** Mix Codex, Claude Code, Cursor, OpenAI /
+  Anthropic / Gemini SDK workers, shell commands and containers in one workflow,
+  with branching, fan-out/fan-in, review loops and manager/worker routing.
+- **Never lose a run.** The runtime owns every session, step execution, message
+  and output. Resume, continue, rerun or replay from any step, and trace what
+  each agent saw and returned.
+- **Test before you pay.** Mock scenarios run whole workflows deterministically;
+  output contracts are checked before and after every step.
+- **Trigger work from anywhere.** Run from the CLI, the RielaApp menu-bar app and
+  web console, a GraphQL control plane, or let Telegram, Discord, Slack,
+  webhooks, cron schedules and file changes start workflows for you.
+- **Connect your tools.** Built-in add-ons for Gmail, Google Docs / Sheets /
+  Analytics, Wrike, X, Apple Notes and notifications, document-to-Markdown
+  conversion, key-value state, workflow memory and kaiba long-term notes.
+- **Edit, share and scale.** Edit workflows as graphs in the app, publish and
+  install them as packages, run recurring routines, and spread steps across
+  distributed workers.
+
+## How Riela differs from Hermes Agent and OpenClaw
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) and
+[OpenClaw](https://github.com/openclaw/openclaw) are autonomous assistants: one
+agent lives in your chats, decides what to do next, and grows its own skills
+and memory. Riela takes the other side of the trade-off: **you decide the
+process, and Riela makes many agents follow it reliably.**
+
+| | Riela | Hermes Agent | OpenClaw |
+| --- | --- | --- | --- |
+| What it is | Workflow runtime that orchestrates many agents | Self-improving personal agent | Personal AI assistant in your chat apps and devices |
+| Who picks the next step | Your workflow graph — explicit and reviewable | The agent's own loop and learned skills | The assistant's own loop, skills and plugins |
+| Which AI does the work | Existing coding agents (Codex, Claude Code, Cursor) and API models, chosen per step | Its own agent on your chosen model | Its own agent on hosted or local models |
+| Reproducibility | Every step recorded; resume / rerun / replay; deterministic mock runs | Session search and persistent memory | Sessions managed by its local gateway |
+| How it improves | Workflow changes you review (reviewed self-improve flows) | Creates and patches its own skills | Skills and plugins from its ecosystem |
+| Best for | Repeatable multi-agent work: dev loops, reviews, scheduled and chat-triggered pipelines | An agent that learns you over time | An always-on assistant across chats and devices |
+| Built with | Swift; native macOS app, CLI on macOS and Linux | Python / JavaScript | Node.js / TypeScript |
+
+They are complementary: keep a conversational assistant for open-ended help,
+and use Riela when the work has to follow the same steps every time, across
+several agents, with a record you can audit and rerun.
+
+## Naming
 
 The public executable is `riela`. The Swift module names still use
 `Riela*` and workflow package manifests still use `riela-package.json`

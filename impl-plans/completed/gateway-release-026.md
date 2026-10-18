@@ -11,9 +11,9 @@ gateway authentication and incremental source support.
 - [x] Integrate Gmail v0.1.20 released revision 5bbcb03bcd0ef09249081694b1a75dfc3a1ca2e1 in native dependency and official image.
 - [x] Align VERSION and Package.swift embedded version at 0.2.6; run focused
   gateway/privacy/native auth/image regressions and changed-file lint.
-- [ ] Build final macOS arm64 CLI archive and signed/notarized/stapled app DMG.
-- [ ] Push source/tag, publish assets, run Linux x64 release workflow at tag.
-- [ ] Render/update formula and Cask, validate release assets and tap metadata.
+- [x] Build final macOS arm64 CLI archive and signed/notarized/stapled app DMG.
+- [x] Push source/tag, publish assets, run Linux x64 release workflow at tag.
+- [x] Render/update formula and Cask, validate release assets and tap metadata.
 
 The release follows the previous supported artifact layout: macOS arm64 CLI
 and app, plus Linux x64 CLI. No UI behavior changes are part of this release.
@@ -34,3 +34,26 @@ Gmail is pinned to the immutable v0.1.20 revision because SwiftPM rejects a
 stable-version package that itself depends on revision-pinned packages. Its
 standalone Linux CI retains an existing CryptoKit import issue; the Riela
 maintained Linux image adaptations built successfully and passed image tests.
+
+Completed release: https://github.com/tacogips/riela/releases/tag/v0.2.6
+Release source: e856fe41452e22a3c7d09ccbb06cbf04da5e79de.
+
+- Published six assets: macOS arm64 CLI tarball and checksum, signed notarized
+  macOS arm64 DMG and checksum, Linux x64 CLI tarball and checksum. Unauthenticated
+  GitHub API confirmed the public non-draft release and all uploaded assets.
+- macOS archive and final signed CLI passed version, all nine provider help
+  routes, Gmail 0.1.20, X 0.1.8 and incremental schema checks. DMG notarization
+  accepted; stapling, validation and Gatekeeper assessment passed.
+- Linux build run 39105734283 and release run 39105756268 succeeded. The release
+  job checks archive checksum/version and runs a clean Ubuntu archive smoke test.
+- Homebrew tap commit a1f1ef2d3a908f857ee1313e3f69cb85e232f701 updates formula
+  and Cask. Both strict audits and fetch/checksum checks passed. Metadata run
+  39106632912 succeeded; both public main JSON endpoints and immutable metadata
+  commit e6b2a4ba376b1699c70c4c19a35e9a47ca473d50 report 0.2.6 and exact formula/
+  Cask source checksums. The global Riela installation was not replaced.
+- Cask build used the supported RIELA_CASK_RELEASE_DIR=dist/homebrew override to
+  reuse the identical final-source Swift cache after CLI archive verification.
+  Its DMG artifacts are therefore beside the CLI archive in dist/homebrew.
+- Caller independently verified native Gmail/X collection and actual X recent
+  sinceId/nextToken pagination with no page overlap. Caller node-memory/cache
+  behavior is implemented in ART, not in this Riela release.

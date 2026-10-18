@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.5"
+let rielaVersion = "0.2.6"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -74,7 +74,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "a7b0204e5869b3be8475fec8460b1881e54fb174"
+      revision: "5bbcb03bcd0ef09249081694b1a75dfc3a1ca2e1" // v0.1.20; SDK has revision-pinned dependencies.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",

@@ -30,7 +30,7 @@ extension BuiltinWorkflowAddonResolver {
       input: input,
       currentDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
     )
-    let output = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
+    let output = try AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner).run(
       arguments: try adminContext.arguments(for: operation),
       deadline: context.deadline
     )

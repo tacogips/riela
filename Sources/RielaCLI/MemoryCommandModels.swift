@@ -43,6 +43,7 @@ public struct MemoryCommandOptions: Equatable, Sendable {
   public var clearFiles: Bool
   public var sortOrder: MemoryValueSortOrder
   public var limit: Int
+  public var maxPayloadBytes: Int
   public var offset: Int
   public var databaseRoot: String?
   public var workingDirectory: String
@@ -67,6 +68,7 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     clearFiles: Bool = false,
     sortOrder: MemoryValueSortOrder = .valueAsc,
     limit: Int = 30,
+    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes,
     offset: Int = 0,
     databaseRoot: String? = nil,
     workingDirectory: String = FileManager.default.currentDirectoryPath,
@@ -90,6 +92,7 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     self.clearFiles = clearFiles
     self.sortOrder = sortOrder
     self.limit = limit
+    self.maxPayloadBytes = maxPayloadBytes
     self.offset = offset
     self.databaseRoot = databaseRoot
     self.workingDirectory = workingDirectory

@@ -112,7 +112,8 @@ private struct AppleClockAlarmEngine {
     }
     let processOutput = try runGraphQLRequest(
       arguments: arguments,
-      deadline: context.deadline
+      deadline: context.deadline,
+      retryEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_")
     )
     if processOutput.terminationStatus != 0 {
       if let envelope = graphQLErrorEnvelope(from: processOutput, addonName: input.addon.name) {
@@ -139,9 +140,10 @@ private struct AppleClockAlarmEngine {
 
   private func runGraphQLRequest(
     arguments: [String],
-    deadline: Date?
+    deadline: Date?,
+    retryEnvironment: [String: String]
   ) throws -> AppleGatewayProcessOutput {
-    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
+    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: retryEnvironment, runnerOverride: appleGatewayRunner)
     return try runner.run(
       arguments: arguments,
       deadline: deadline,

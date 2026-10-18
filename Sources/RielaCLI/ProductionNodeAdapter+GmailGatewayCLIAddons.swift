@@ -48,7 +48,8 @@ enum BuiltinGmailGatewayCLIAddon: String {
   /// credential-directory variable, plus the four credential-material forms
   /// for any credential suffix.
   static func isAllowedTargetEnvironmentName(_ name: String) -> Bool {
-    if name == "GMAIL_GATEWAY_CONFIG" || name == "GMAIL_GATEWAY_CREDENTIAL_DIR" {
+    if name == "GMAIL_GATEWAY_CONFIG" || name == "GMAIL_GATEWAY_CREDENTIAL_DIR"
+      || name == "GMAIL_GATEWAY_WRITE_RETRY_INITIAL_WAIT_SECONDS" || name == "GMAIL_GATEWAY_WRITE_RETRY_MAX_RETRIES" {
       return true
     }
     let prefix = "GMAIL_GATEWAY_CREDENTIAL_"

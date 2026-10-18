@@ -41,7 +41,7 @@ private struct AppleMailAddonEngine {
 
     let config = input.addon.config ?? [:]
     let variables = try addonVariables(for: input)
-    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
+    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner)
     let query = try graphQLQuery(for: input, config: config, variables: variables)
     let processOutput: AppleGatewayProcessOutput
     do {
@@ -533,7 +533,7 @@ private struct AppleMailAddonEngine {
     let basePath = configured?.isEmpty == false ? configured : env
     let rawPath = basePath ?? defaultDownloadRoot(input: input, variables: variables).path
     let validator = AppleGatewayFileDownloader(
-      runner: AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner),
+      runner: AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner),
       currentDirectory: currentDirectory
     )
     let validatedPath = try validator.validatedOutputRootPath(rawPath, label: "downloadDir")

@@ -333,7 +333,7 @@ Usage:
   riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
-  riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--memory-root <dir>]
+  riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--max-payload-bytes 1000000] [--memory-root <dir>]
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
   riela memory history <memory-id> --record-id <id> [--before-version <n>] [--limit 30] [--memory-root <dir>]
   riela memory show-version <memory-id> --record-id <id> --version <n> [--memory-root <dir>]

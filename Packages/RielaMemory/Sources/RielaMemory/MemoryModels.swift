@@ -4,6 +4,7 @@ public enum RielaMemoryError: Error, Equatable, Sendable {
   case invalidMemoryId(String)
   case invalidWorkflowId(String)
   case invalidLimit(Int)
+  case payloadTooLarge(recordId: Int64, limit: Int)
   case invalidPattern(String)
   case invalidOffset(Int)
   case tooManyTags(Int)
@@ -171,6 +172,11 @@ public struct MemoryRecordReference: Codable, Equatable, Sendable {
   }
 }
 
+public enum MemoryPayloadOverflowPolicy: String, Codable, Sendable {
+  case skip
+  case fail
+}
+
 public struct MemorySearchOptions: Equatable, Sendable {
   public static let defaultMaxPayloadBytes = 1_000_000
 
@@ -183,6 +189,7 @@ public struct MemorySearchOptions: Equatable, Sendable {
   public var sortOrder: MemorySortOrder
   public var limit: Int
   public var maxPayloadBytes: Int
+  public var payloadOverflowPolicy: MemoryPayloadOverflowPolicy
 
   public init(
     workflowId: String,
@@ -193,7 +200,8 @@ public struct MemorySearchOptions: Equatable, Sendable {
     relatedRecordIds: [Int64] = [],
     sortOrder: MemorySortOrder = .registeredDesc,
     limit: Int = 30,
-    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
+    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes,
+    payloadOverflowPolicy: MemoryPayloadOverflowPolicy = .skip
   ) {
     self.workflowId = workflowId
     self.includeAllWorkflows = includeAllWorkflows
@@ -204,6 +212,7 @@ public struct MemorySearchOptions: Equatable, Sendable {
     self.sortOrder = sortOrder
     self.limit = limit
     self.maxPayloadBytes = maxPayloadBytes
+    self.payloadOverflowPolicy = payloadOverflowPolicy
   }
 }
 

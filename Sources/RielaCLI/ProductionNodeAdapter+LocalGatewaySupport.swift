@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(GmailGatewayCore)
+import GmailGatewayCore
+#endif
 import RielaAddonSupport
 import RielaCore
 
@@ -65,7 +68,10 @@ struct LocalGatewayGraphQLEngine {
     let nowVariables = try localGatewayNowVariables(config: config, addonName: input.addon.name)
       .mapValues(JSONValue.string)
     let variables = try addonVariables(for: input, additionalVariables: nowVariables)
-    let childEnvironment = try resolvedChildEnvironment(input)
+    var childEnvironment = try resolvedChildEnvironment(input)
+    if descriptor.providerName == "gmail-gateway" {
+      childEnvironment.merge(try gatewayWriteRetryEnvironment(input, prefix: "GMAIL_GATEWAY_")) { _, configured in configured }
+    }
     let document = try renderedDocument(config: config, variables: variables, addonName: input.addon.name)
     let variablesJSON: String?
     if descriptor.acceptsVariables {
@@ -85,12 +91,20 @@ struct LocalGatewayGraphQLEngine {
     )
     let run = descriptor.run
     let tier = descriptor.tier
+    let providerName = descriptor.providerName
     let stdout = try await localGatewayRunWithDeadline(
       deadline: context.deadline,
       addonName: input.addon.name,
       providerName: descriptor.providerName
     ) {
-      try await run(tier, document, variablesJSON, gatewayEnvironment)
+      #if canImport(GmailGatewayCore)
+      if providerName == "gmail-gateway" {
+        return try await GmailWriteExecutionContext.withDeadline(context.deadline) {
+          try await run(tier, document, variablesJSON, gatewayEnvironment)
+        }
+      }
+      #endif
+      return try await run(tier, document, variablesJSON, gatewayEnvironment)
     }
     let envelope = try envelope(from: stdout, addonName: input.addon.name)
     guard envelope.errors.isEmpty else {

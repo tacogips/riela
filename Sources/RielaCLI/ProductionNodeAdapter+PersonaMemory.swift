@@ -17,7 +17,8 @@ extension BuiltinWorkflowAddonResolver {
         workflowId: input.workflowId,
         includeAllWorkflows: true,
         tags: ["persona:\(context.personaId)"],
-        limit: context.limit
+        limit: context.limit,
+        maxPayloadBytes: context.maxPayloadBytes
       )
     )
     let chunks = records.map { personaMemoryMarkdown(record: $0) }
@@ -38,6 +39,7 @@ extension BuiltinWorkflowAddonResolver {
         "memoryId": .string(context.memoryId),
         "memoryDirectory": .string(context.memoryId),
         "memoryRecordCount": .number(Double(records.count)),
+        "maxPayloadBytes": .number(Double(context.maxPayloadBytes)),
         "memoryAttachmentCountRead": .number(Double(files.count)),
         "records": .array(records.map(personaMemoryRecordJSON)),
         "files": .array(files.map(personaMemoryFileJSON)),
@@ -80,7 +82,9 @@ extension BuiltinWorkflowAddonResolver {
         options: MemorySearchOptions(
           workflowId: input.workflowId,
           tags: [idempotencyTag],
-          limit: max(entries.count, 30)
+          limit: max(entries.count, 30),
+          maxPayloadBytes: context.maxPayloadBytes,
+          payloadOverflowPolicy: .fail
         )
       )
       if !existing.isEmpty {
@@ -180,6 +184,7 @@ private struct PersonaMemoryContext {
   var memoryId: String
   var memoryRoot: String
   var limit: Int
+  var maxPayloadBytes: Int
 }
 
 private struct PersonaMemoryEntry {
@@ -263,7 +268,8 @@ private func personaMemoryContext(_ input: WorkflowAddonExecutionInput) throws -
     personaName: personaName,
     memoryId: memoryId,
     memoryRoot: memoryRoot,
-    limit: max(1, min(limit, 30))
+    limit: max(1, min(limit, 30)),
+    maxPayloadBytes: try memoryPayloadBudget(config: config, variables: variables)
   )
 }
 

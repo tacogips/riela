@@ -21,6 +21,7 @@ struct ParsedMemoryOptions: ParsableArguments {
   @Flag var clearFiles = false
   @Option var sort = MemoryValueSortOrder.valueAsc
   @Option var limit = 30
+  @Option var maxPayloadBytes = MemorySearchOptions.defaultMaxPayloadBytes
   @Option var offset = 0
   @Option(name: [.customLong("database-root"), .customLong("memory-root")]) var databaseRoot: String?
   @Option(name: [.customLong("working-dir"), .customLong("working-directory")])
@@ -60,6 +61,7 @@ struct ParsedMemoryOptions: ParsableArguments {
       clearFiles: clearFiles,
       sortOrder: sort,
       limit: limit,
+      maxPayloadBytes: maxPayloadBytes,
       offset: offset,
       databaseRoot: databaseRoot,
       workingDirectory: workingDirectory,
@@ -76,6 +78,9 @@ struct ParsedMemoryOptions: ParsableArguments {
     }
     if relatedRecordIds.contains(where: { $0 <= 0 }) {
       throw CLIUsageError("--related-id must be a positive integer")
+    }
+    guard (1...67_108_864).contains(maxPayloadBytes) else {
+      throw CLIUsageError("--max-payload-bytes must be an integer in 1...67108864")
     }
     if limit <= 0 {
       throw CLIUsageError("--limit must be a positive integer")

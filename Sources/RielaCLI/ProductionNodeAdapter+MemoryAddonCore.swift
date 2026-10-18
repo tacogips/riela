@@ -461,11 +461,13 @@ extension BuiltinWorkflowAddonResolver {
         ]
       )
     case .load:
+      let maxPayloadBytes = try memoryPayloadBudget(config: config, variables: variables)
       let records = try store.load(
         memoryId: memoryId,
         workflowId: input.workflowId,
         nodeId: optionalNodeScope(config: config, variables: variables),
-        limit: limit
+        limit: limit,
+        maxPayloadBytes: maxPayloadBytes
       )
       return memoryAddonOutput(
         input: input,
@@ -475,10 +477,12 @@ extension BuiltinWorkflowAddonResolver {
         payload: memoryRecordsPayload(records: records).merging([
           "records": .array(records.map(memoryRecordJSON)),
           "recordsText": .string(memoryRecordsText(records)),
-          "limit": .number(Double(limit))
+          "limit": .number(Double(limit)),
+          "maxPayloadBytes": .number(Double(maxPayloadBytes))
         ]) { _, new in new }
       )
     case .search:
+      let maxPayloadBytes = try memoryPayloadBudget(config: config, variables: variables)
       let patterns = memoryMatchPatterns(config: config, variables: variables)
       let tags = try memoryTags(config: config, variables: variables)
       let relatedRecordIds = try memoryRelatedRecordIds(config: config, variables: variables)
@@ -490,7 +494,8 @@ extension BuiltinWorkflowAddonResolver {
           matchPatterns: patterns,
           tags: tags,
           relatedRecordIds: relatedRecordIds,
-          limit: limit
+          limit: limit,
+          maxPayloadBytes: maxPayloadBytes
         )
       )
       return memoryAddonOutput(
@@ -504,7 +509,8 @@ extension BuiltinWorkflowAddonResolver {
           "matchPatterns": .array(patterns.map { .string($0) }),
           "tags": .array(tags.map { .string($0) }),
           "relatedRecordIds": .array(relatedRecordIds.map { .number(Double($0)) }),
-          "limit": .number(Double(limit))
+          "limit": .number(Double(limit)),
+          "maxPayloadBytes": .number(Double(maxPayloadBytes))
         ]) { _, new in new }
       )
     }

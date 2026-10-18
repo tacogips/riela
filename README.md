@@ -624,6 +624,18 @@ node level; the `riela memory` commands and the `riela/memory-*` /
 (or the memory root given by `--memory-root`, addon config `memoryRoot`, or
 `RIELA_MEMORY_ROOT`).
 
+Each memory record has a default 1,000,000-byte payload read budget, measured
+as its stored SQLite JSONB bytes. `memory load` fails with `payloadTooLarge`
+when a selected record exceeds the budget; it never substitutes an older
+record. `memory search` and persona context reads retain the existing behavior
+of skipping oversized records. Set `--max-payload-bytes` on CLI load/search,
+or `config.maxPayloadBytes` on memory-load, memory-search, and persona memory
+add-ons, to an integer from 1 through 67,108,864. This is a per-record budget,
+not a total response limit. Persona write deduplication always fails closed
+on oversized prior records, preventing a replay from creating duplicates.
+The Swift `MemorySearchOptions.payloadOverflowPolicy` explicitly selects
+`.skip` (search default) or `.fail`; store load helpers use `.fail`.
+
 Memory record changes are versioned atomically using the latest value and
 explicit `next-to-previous` deltas. Use `riela memory history`, `show-version`,
 and `restore-version` to inspect or restore an earlier value. Replaced
@@ -762,6 +774,23 @@ macOS attaches Apple Events, Calendars, Reminders, and Contacts permission
 grants to the executable that asks, so `riela` is now the asker — see
 [Apple permissions](#apple-permissions) for what that means for existing
 grants.
+
+Native Apple and Gmail add-ons accept `config.writeRetry` with
+`initialWaitSeconds` (1...60, default 2) and `maxRetries` (0...5, default 3).
+Retries exclude the initial attempt; zero disables retries. Delays double
+from the initial wait up to 60 seconds. Only transient failures proven not
+to have dispatched the mutation are replayed. Ambiguous outcomes fail closed;
+GraphQL operations and successful mutation aliases are never replayed as a
+whole. Notes verification may retry reads against the confirmed resource ID.
+Cancellation and the node deadline stop pending retries.
+
+The linked gateways also accept explicitly supplied
+`APPLE_GATEWAY_WRITE_RETRY_INITIAL_WAIT_SECONDS` /
+`APPLE_GATEWAY_WRITE_RETRY_MAX_RETRIES` and the corresponding
+`GMAIL_GATEWAY_WRITE_RETRY_*` keys. Add-on configuration takes precedence over
+explicit Gmail environment bindings; ambient process retry variables are not
+forwarded. Apple settings also apply to host-native bridge operations,
+including note attachments, Calendar, Mail, Reminders, and notifications.
 
 Current Apple gateway add-ons include `riela/apple-notes-list`,
 `riela/apple-notifications-list`, `riela/apple-notification-post`, and

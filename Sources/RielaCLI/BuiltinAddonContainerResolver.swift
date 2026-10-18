@@ -187,8 +187,11 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       }
       let channel = try NativeAddonBridgeChannel.create(workingDirectory: workingDirectory)
       wireRequest.nativeAppleBridgeDirectory = channel.directory.path
-      let nativeRunner: AppleGatewayRunner = nativeAppleGatewayRunner ?? { arguments, environment, deadline in
-        try AppleGatewayInvoker(runtimeEnvironment: environment).run(arguments: arguments, deadline: deadline, allowNonzeroExit: true)
+      let retryEnvironment = try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_")
+      let selectedRunner = nativeAppleGatewayRunner
+      let nativeRunner: AppleGatewayRunner = { arguments, environment, deadline in
+        try AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: retryEnvironment,
+          runnerOverride: selectedRunner).run(arguments: arguments, deadline: deadline, allowNonzeroExit: true)
       }
       nativeBridge = .init(channel: channel, capability: try .init(input: input, workingDirectory: workingDirectory, mounts: invocation.settings.mounts), environment: environment,
         deadline: request.deadline ?? Date().addingTimeInterval(120), runner: nativeRunner)

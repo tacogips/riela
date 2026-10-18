@@ -49,7 +49,7 @@ struct AppleCalendarAddonEngine {
     let config = input.addon.config ?? [:]
     let inputValues = try renderedInputValues(for: input)
     let request = try graphQLRequest(operation, input: input, config: config, inputValues: inputValues)
-    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
+    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", request.document, "--variables", try request.variables.compactJSONString()],
       deadline: context.deadline
     )

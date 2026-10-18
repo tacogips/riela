@@ -259,14 +259,20 @@ public struct RielaMemoryStore: Sendable {
     )
   }
 
-  public func load(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30) throws -> [MemoryRecord] {
-    try search(memoryId: memoryId, options: MemorySearchOptions(workflowId: workflowId, nodeId: nodeId, limit: limit))
+  public func load(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30,
+    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
+  ) throws -> [MemoryRecord] {
+    try search(memoryId: memoryId, options: MemorySearchOptions(workflowId: workflowId, nodeId: nodeId, limit: limit,
+      maxPayloadBytes: maxPayloadBytes, payloadOverflowPolicy: .fail))
   }
 
-  public func loadAllWorkflows(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30) throws -> [MemoryRecord] {
+  public func loadAllWorkflows(memoryId: String, workflowId: String, nodeId: String? = nil, limit: Int = 30,
+    maxPayloadBytes: Int = MemorySearchOptions.defaultMaxPayloadBytes
+  ) throws -> [MemoryRecord] {
     try search(
       memoryId: memoryId,
-      options: MemorySearchOptions(workflowId: workflowId, includeAllWorkflows: true, nodeId: nodeId, limit: limit)
+      options: MemorySearchOptions(workflowId: workflowId, includeAllWorkflows: true, nodeId: nodeId, limit: limit,
+        maxPayloadBytes: maxPayloadBytes, payloadOverflowPolicy: .fail)
     )
   }
 
@@ -297,12 +303,16 @@ public struct RielaMemoryStore: Sendable {
       SELECT record_id, workflow_id, node_id, registered_at,
         json(tags_json) AS tags_json,
         json(related_record_ids_json) AS related_record_ids_json,
-        json(payload_json) AS payload_json
+        length(payload_json) AS payload_bytes,
+        CASE WHEN length(payload_json) <= ? THEN json(payload_json) ELSE NULL END AS payload_json
       FROM memory_entries
       """
-    var bindings: [SQLiteBinding] = []
-    var whereClauses: [String] = ["length(payload_json) <= ?"]
-    bindings.append(.int(options.maxPayloadBytes))
+    var bindings: [SQLiteBinding] = [.int(options.maxPayloadBytes)]
+    var whereClauses: [String] = []
+    if options.payloadOverflowPolicy == .skip {
+      whereClauses.append("length(payload_json) <= ?")
+      bindings.append(.int(options.maxPayloadBytes))
+    }
     if !options.includeAllWorkflows {
       whereClauses.append("workflow_id = ?")
       bindings.append(.text(options.workflowId))
@@ -336,6 +346,10 @@ public struct RielaMemoryStore: Sendable {
 
     var records: [MemoryRecord] = []
     try streamRows(db, sql: sql, bindings: bindings) { row in
+      if let bytes = row.columns["payload_bytes"].flatMap(Int.init), bytes > options.maxPayloadBytes {
+        throw RielaMemoryError.payloadTooLarge(
+          recordId: Int64(row.columns["record_id"] ?? "") ?? 0, limit: options.maxPayloadBytes)
+      }
       let fullPayloadRange = NSRange(row.payloadJSON.startIndex..., in: row.payloadJSON)
       guard regexes.isEmpty || regexes.contains(where: { regex in
         regex.firstMatch(in: row.payloadJSON, range: fullPayloadRange) != nil

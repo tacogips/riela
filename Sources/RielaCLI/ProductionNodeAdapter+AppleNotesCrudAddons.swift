@@ -52,7 +52,7 @@ private struct AppleNotesCrudEngine {
 
     let config = input.addon.config ?? [:]
     let variables = try addonVariables(for: input)
-    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner)
+    let runner = AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner)
     let request = try graphQLRequest(operation: operation, input: input, config: config, variables: variables)
     let processOutput = try runner.run(
       arguments: ["graphql", "--query", request.document, "--variables", request.variables.compactJSONString()],

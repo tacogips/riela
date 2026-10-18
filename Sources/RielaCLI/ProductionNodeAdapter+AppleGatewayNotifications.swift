@@ -64,7 +64,7 @@ private struct AppleGatewayNotificationsEngine {
     let document = try graphQLDocument(operation: operation, input: input, config: config, variables: variables)
     let processOutput: AppleGatewayProcessOutput
     do {
-      processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
+      processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner).run(
         arguments: ["graphql", "--query", document],
         deadline: context.deadline
       )

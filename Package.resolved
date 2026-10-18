@@ -1,5 +1,5 @@
 {
-  "originHash" : "b72008b67e848467aad9256059475f22208a9c71c1c1c21c7b5c2a75b3eba15c",
+  "originHash" : "0328a10c22b18200c0dff42b5fb87fad3c6ab92c51450da488f3afb799eac634",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "6a7df871e1ed76a5e374a35f4e4da9760e070535"
+        "revision" : "d707af7478f5f33c6c47fbd3476fb097ea7452e1"
       }
     },
     {
@@ -39,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "488b2e23bceb6457bed4d596109b0b166c6c6c82"
+        "revision" : "185cba5396d8afa43919f735c9329eb477b17418"
       }
     },
     {

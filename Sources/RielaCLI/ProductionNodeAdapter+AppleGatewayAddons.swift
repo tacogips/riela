@@ -17,7 +17,7 @@ extension BuiltinWorkflowAddonResolver {
 
     let listContext = try AppleNotesListContext(input: input, environment: environment)
     let query = try listContext.graphQLQuery()
-    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
+    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", query],
       deadline: context.deadline
     )

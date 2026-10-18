@@ -62,7 +62,7 @@ private struct AppleReminderEngine {
       operationInputs: operationInputs,
       templateVariables: templateVariables
     )
-    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, runnerOverride: appleGatewayRunner).run(
+    let processOutput = try AppleGatewayInvoker(runtimeEnvironment: environment, extraEnvironment: try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"), runnerOverride: appleGatewayRunner).run(
       arguments: ["graphql", "--query", request.document, "--variables", request.variables.compactJSONString()],
       deadline: context.deadline
     )

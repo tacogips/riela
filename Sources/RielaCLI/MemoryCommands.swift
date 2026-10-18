@@ -24,6 +24,7 @@ public struct MemorySearchCommandResult: Codable, Equatable, Sendable {
   public var tags: [String]
   public var relatedRecordIds: [Int64]
   public var limit: Int
+  public var maxPayloadBytes: Int
   public var records: [MemoryRecord]
 }
 
@@ -55,7 +56,7 @@ public struct MemoryCommandRunner: Sendable {
       case .update:
         return try update(command.options)
       case .load:
-        return try list(command.options, matchPatterns: [])
+        return try list(command.options, matchPatterns: [], overflowPolicy: .fail)
       case .search:
         return try list(command.options, matchPatterns: command.options.matchPatterns)
       case .metadata:
@@ -156,7 +157,10 @@ public struct MemoryCommandRunner: Sendable {
     }
   }
 
-  private func list(_ options: MemoryCommandOptions, matchPatterns: [String]) throws -> CLICommandResult {
+  private func list(_ options: MemoryCommandOptions, matchPatterns: [String], overflowPolicy: MemoryPayloadOverflowPolicy = .skip) throws -> CLICommandResult {
+    guard (1...67_108_864).contains(options.maxPayloadBytes) else {
+      throw CLIUsageError("--max-payload-bytes must be an integer in 1...67108864")
+    }
     let workflowId = options.workflowId ?? "*"
     let store = memoryStore(options)
     let records = try store.search(
@@ -168,7 +172,9 @@ public struct MemoryCommandRunner: Sendable {
         matchPatterns: matchPatterns,
         tags: options.tags,
         relatedRecordIds: options.relatedRecordIds,
-        limit: options.limit
+        limit: options.limit,
+        maxPayloadBytes: options.maxPayloadBytes,
+        payloadOverflowPolicy: overflowPolicy
       )
     )
     let result = MemorySearchCommandResult(
@@ -181,6 +187,7 @@ public struct MemoryCommandRunner: Sendable {
       tags: options.tags,
       relatedRecordIds: options.relatedRecordIds,
       limit: options.limit,
+      maxPayloadBytes: options.maxPayloadBytes,
       records: records
     )
     return try render(result, output: options.output) { result in

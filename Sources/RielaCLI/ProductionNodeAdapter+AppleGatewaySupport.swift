@@ -50,10 +50,9 @@ struct AppleGatewayInvoker {
 
   /// Runs one gateway command.
   ///
-  /// `deadline` is checked before the call: the gateway is a linked library
-  /// now, so unlike the child process it replaced, a call already under way
-  /// cannot be killed. A step whose deadline passes mid-call fails when the
-  /// call returns rather than at the deadline itself.
+  /// The linked gateway checks this deadline before each write attempt and
+  /// during retry backoff. An already-dispatched native call is not replayed
+  /// or assumed to have failed when its deadline passes.
   func run(
     arguments: [String],
     deadline: Date?,
@@ -75,11 +74,13 @@ struct AppleGatewayInvoker {
     #if canImport(AppleGatewayCore)
     let result: AppleGatewayCommandResult
     do {
-      result = try AppleGatewayCommand(
+      result = try AppleWriteExecutionContext.withDeadline(deadline) {
+        try AppleGatewayCommand(
         arguments: arguments,
         environment: gatewayEnvironment(),
         role: .full
-      ).runResult()
+        ).runResult()
+      }
     } catch let error as AppleGatewayCommand.Error {
       throw AdapterExecutionError(.invalidInput, "apple-gateway rejected the request: \(error)")
     } catch {

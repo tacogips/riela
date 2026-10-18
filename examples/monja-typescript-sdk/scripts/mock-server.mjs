@@ -60,12 +60,13 @@ function principalPayload(extra = {}) {
       id: "user-riela-sdk",
       username: "riela-sdk",
       displayName: "Riela SDK Probe",
-      isBot: false,
+      userType: "human",
       isAdmin: false,
       deactivatedAt: null,
       ...extra,
     },
     scopes: [],
+    permissions: [],
   };
 }
 

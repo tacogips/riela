@@ -1,3 +1,5 @@
+import { profileViewTransition, type NavigationView, type View } from './profileViewState'
+export { profileViewTransition } from './profileViewState'
 import { ActionButton } from './components/ActionButton'
 import { RailIcon } from './components/RailIcon'
 import type { ActionIconName } from './components/ActionIcons'
@@ -17,29 +19,6 @@ import { WorkflowsView } from './views/WorkflowsView'
 import { OpsRunView } from './ops/OpsRunView'
 import { OpsWorkflowsView } from './ops/OpsWorkflowsView'
 import { parseViewHash, viewHash, type HashRoute } from './routes'
-
-type NavigationView = 'instances' | 'logs' | 'workflows' | 'ops' | 'settings'
-type View = NavigationView | 'workflow-detail' | 'run-detail' | 'ops-run'
-
-export interface ProfileViewTransition {
-  clearSelection: boolean
-  view: View
-}
-
-export function profileViewTransition(
-  previousProfileKey: string | undefined,
-  nextProfileKey: string,
-  mode: 'riela-app' | 'cli-serve' | undefined,
-  currentView: View,
-): ProfileViewTransition {
-  const profileChanged = previousProfileKey !== undefined && previousProfileKey !== nextProfileKey
-  void mode
-  const fallbackView = currentView === 'workflow-detail' ? 'workflows' : currentView === 'run-detail' ? 'workflows' : currentView === 'ops-run' ? 'ops' : currentView
-  return {
-    clearSelection: profileChanged,
-    view: profileChanged ? fallbackView : currentView,
-  }
-}
 
 const navigation: Array<{ id: NavigationView; label: string; icon: ActionIconName }> = [
   { id: 'workflows', label: 'Workflows', icon: 'workflow' },

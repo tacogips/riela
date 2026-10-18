@@ -8,7 +8,7 @@ import {
   rawDataModuleCount,
   smallestVersionFor,
   totalCodewordCount,
-} from './QRCode'
+} from './qrEncoding'
 
 const QUIET_ZONE = 4
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { profileViewTransition } from './App'
+import { profileViewTransition } from './profileViewState'
 
 describe('profile-owned view state', () => {
   test('returns from a discovered definition to workflows on profile changes', () => {

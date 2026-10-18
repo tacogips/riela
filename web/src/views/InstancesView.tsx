@@ -1,3 +1,5 @@
+import { instanceEditorSnapshot } from './instanceEditorState'
+export { instanceSelectionForProfile, instanceEditorSnapshot, instanceEditorIdentity } from './instanceEditorState'
 import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { APIError, api, requireExpectedProfile } from '../api'
@@ -11,39 +13,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-
-export function instanceSelectionForProfile(
-  previousProfileKey: string | undefined,
-  nextProfileKey: string,
-  selectedId: string | undefined,
-): string | undefined {
-  return previousProfileKey !== undefined && previousProfileKey !== nextProfileKey
-    ? undefined
-    : selectedId
-}
-
-export interface InstanceEditorSnapshot {
-  workingDirectory: string
-  environmentFilePath: string
-  variables: string
-  expectedRevision: number
-}
-
-export function instanceEditorSnapshot(
-  instance: Instance,
-  expectedRevision: number,
-): InstanceEditorSnapshot {
-  return {
-    workingDirectory: instance.workingDirectory ?? '',
-    environmentFilePath: instance.environmentFilePath ?? '',
-    variables: JSON.stringify(instance.workflowVariables, null, 2),
-    expectedRevision,
-  }
-}
-
-export function instanceEditorIdentity(profileKey: string, instanceId: string): string {
-  return `${profileKey}\u{1f}${instanceId}`
-}
 
 export function MissingSourceDetail(props: { instance: Instance }) {
   return <div class="editor-panel" role="status"><div class="section-title"><div><span class="eyebrow">SOURCE REQUIRED</span><h2>{props.instance.name}</h2></div><span class="status-chip needsSource">Needs source</span></div>

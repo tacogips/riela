@@ -10,9 +10,9 @@
 		"lint": "biome check . --diagnostic-level=warn"
 	},
 	"devDependencies": {
-		"@types/bun": "1.1.14",
-		"typescript": "5.7.2",
-		"@biomejs/biome": "2.4.13"
+		"@types/bun": "1.4.3",
+		"typescript": "7.0.2",
+		"@biomejs/biome": "2.5.15"
 	},
 	"trustedDependencies": []
 }

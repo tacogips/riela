@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.4"
+let rielaVersion = "0.2.5"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -51,44 +51,44 @@ let package = Package(
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
-      revision: "c7f269753ec36aca92d429ec13316ba033128967"
+      revision: "dae69561f05b75be6d680af1267da1af9db16d13"
     ),
-    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.1"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
     .package(url: "https://github.com/swift-server/swift-webauthn.git", exact: "1.0.0-beta.1"),
-    .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.4.7"),
+    .package(url: "https://github.com/unrelentingtech/SwiftCBOR.git", from: "0.6.0"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
     .package(url: "https://github.com/tacogips/web-hooky.git", from: "0.2.0"),
     .package(
       url: "https://github.com/tacogips/kaiba.git",
-      revision: "bdaf0ab503b59b7065f110e4c1984f0f767461bb"
+      revision: "24fc356a3073821c31866279c419abb707077a8d"
     ),
     .package(
       url: "https://github.com/tacogips/google-service-gateway.git",
-      revision: "3d964e69b3342cb70726f668f4600832421f7bf9"
+      revision: "4cfef44b245893e6de4f30780c70fb0314da70eb"
     ),
     .package(
       url: "https://github.com/tacogips/wrike-gateway.git",
-      revision: "d607aaa6783fef2b34c1a73ec9e091ef421143bf"
+      revision: "066ae02a3238e3d2d3304901139a89387f1e95cc"
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "2761f3bccf30ead78de5d6968d827929925eae80"
+      revision: "a7b0204e5869b3be8475fec8460b1881e54fb174"
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
-      revision: "c46443a5e8f744244cb9825d3238958a797c4f2b"
+      revision: "6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0"
     ),
     .package(
       url: "https://github.com/tacogips/apple-gateway.git",
-      revision: "3a2320ef74aa40c6ee42852b10f48f3c3911b917"
+      revision: "ac0dd8f0f5f100e2f4d4e44a2c18f49d11a0c1cd"
     ),
     .package(
       url: "https://github.com/tacogips/anydoc-swift.git",
-      revision: "d957c08372786b7062553e83fe9c29880fdee7a4"
+      revision: "0aa4756d0ce3f97cc94f1de9efe26879808097c8"
     ),
     .package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
-      revision: "cda93cdd770a51f6f9d1bc63b1db555884824606"
+      revision: "dadc2f7d0070f92df07278873262f9f7aad5d16e"
     )
   ],
   targets: [

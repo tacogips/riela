@@ -1,12 +1,12 @@
 {
-  "originHash" : "f5af345bc57add682b18ceba983560bdd0df07bb2a000bd461e673ff445873a8",
+  "originHash" : "7443bfa7b38dba897859ad37a99c04869cc5a91a63d758aa6dacdbdc00d9b5a9",
   "pins" : [
     {
       "identity" : "agent-gateway",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/agent-gateway.git",
       "state" : {
-        "revision" : "c7f269753ec36aca92d429ec13316ba033128967"
+        "revision" : "dae69561f05b75be6d680af1267da1af9db16d13"
       }
     },
     {
@@ -14,7 +14,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/anydoc-swift.git",
       "state" : {
-        "revision" : "d957c08372786b7062553e83fe9c29880fdee7a4"
+        "revision" : "0aa4756d0ce3f97cc94f1de9efe26879808097c8"
       }
     },
     {
@@ -22,7 +22,16 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "3a2320ef74aa40c6ee42852b10f48f3c3911b917"
+        "revision" : "ac0dd8f0f5f100e2f4d4e44a2c18f49d11a0c1cd"
+      }
+    },
+    {
+      "identity" : "gateway-sdk-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/gateway-sdk-kit.git",
+      "state" : {
+        "revision" : "4d4b56c686f6875defccb54f74e2276022eb524e",
+        "version" : "0.1.0"
       }
     },
     {
@@ -30,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "2761f3bccf30ead78de5d6968d827929925eae80"
+        "revision" : "a7b0204e5869b3be8475fec8460b1881e54fb174"
       }
     },
     {
@@ -38,7 +47,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-analytics-gateway.git",
       "state" : {
-        "revision" : "c46443a5e8f744244cb9825d3238958a797c4f2b"
+        "revision" : "6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0"
       }
     },
     {
@@ -46,7 +55,15 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-documents-gateway.git",
       "state" : {
-        "revision" : "cda93cdd770a51f6f9d1bc63b1db555884824606"
+        "revision" : "dadc2f7d0070f92df07278873262f9f7aad5d16e"
+      }
+    },
+    {
+      "identity" : "google-gateway-auth",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/google-gateway-auth.git",
+      "state" : {
+        "revision" : "48e0112fb5eb057cf012194cfffaa2581ba29d76"
       }
     },
     {
@@ -54,7 +71,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-service-gateway.git",
       "state" : {
-        "revision" : "3d964e69b3342cb70726f668f4600832421f7bf9"
+        "revision" : "4cfef44b245893e6de4f30780c70fb0314da70eb"
       }
     },
     {
@@ -62,7 +79,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
-        "revision" : "bdaf0ab503b59b7065f110e4c1984f0f767461bb"
+        "revision" : "24fc356a3073821c31866279c419abb707077a8d"
       }
     },
     {
@@ -79,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
       "state" : {
-        "revision" : "d9a5b37470adc940d22c3bcd5ca6953a516b727f",
-        "version" : "1.7.2"
+        "revision" : "3b6410f7dee09eb33cdd26260c5fd47fda19b0e2",
+        "version" : "1.7.3"
       }
     },
     {
@@ -88,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-crypto.git",
       "state" : {
-        "revision" : "47d3869a7291f085c1fb9fb1e6d3b97a793f45c6",
-        "version" : "4.5.1"
+        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
+        "version" : "4.5.2"
       }
     },
     {
@@ -97,8 +114,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-log.git",
       "state" : {
-        "revision" : "9c6fb14227f55d8f711ce3847dc2f419fb0ecacb",
-        "version" : "1.15.1"
+        "revision" : "4038b6a4f74a1426f47eb1dd5b4bb5628a15d597",
+        "version" : "1.16.1"
       }
     },
     {
@@ -133,7 +150,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/wrike-gateway.git",
       "state" : {
-        "revision" : "d607aaa6783fef2b34c1a73ec9e091ef421143bf"
+        "revision" : "066ae02a3238e3d2d3304901139a89387f1e95cc"
       }
     }
   ],

@@ -5,7 +5,7 @@ import {
   instanceEditorIdentity,
   instanceEditorSnapshot,
   instanceSelectionForProfile,
-} from './InstancesView'
+} from './instanceEditorState'
 
 function instance(
   id: string,

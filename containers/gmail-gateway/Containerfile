@@ -1,6 +1,6 @@
 FROM swift:6.2-noble AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
-ARG GATEWAY_REVISION=2761f3bccf30ead78de5d6968d827929925eae80
+ARG GATEWAY_REVISION=a7b0204e5869b3be8475fec8460b1881e54fb174
 WORKDIR /src
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
     git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD

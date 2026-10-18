@@ -6,7 +6,7 @@ drift fail rather than silently producing a different gateway implementation.
 """
 
 import argparse
-import textwrap
+import re
 from pathlib import Path
 
 
@@ -15,6 +15,24 @@ def replace(path: Path, old: str, new: str) -> None:
     if text.count(old) != 1:
         raise SystemExit(f"Expected exactly one Linux adaptation anchor in {path.name}")
     path.write_text(text.replace(old, new, 1))
+
+
+def add_crypto_dependency(root: Path, target: str, version: str) -> None:
+    manifest = root / "Package.swift"
+    replace(manifest, "\n  dependencies: [\n",
+            f'\n  dependencies: [\n    .package(url: "https://github.com/apple/swift-crypto.git", exact: "{version}"),\n')
+    anchor = f'      name: "{target}",\n      dependencies: ['
+    replace(manifest, anchor, anchor + '.product(name: "Crypto", package: "swift-crypto"), ')
+
+
+def local_package(root: Path, name: str) -> None:
+    manifest = root / "Package.swift"
+    pattern = (r'\.package\(\s*url: "https://github\.com/tacogips/'
+               + re.escape(name) + r'\.git",\s*revision: "[0-9a-f]{40}"\s*\)')
+    source, count = re.subn(pattern, f'.package(path: "/{name}")', manifest.read_text())
+    if count != 1:
+        raise SystemExit(f"Expected exactly one pinned {name} dependency")
+    manifest.write_text(source)
 
 
 def prepare_x(root: Path) -> None:
@@ -28,22 +46,29 @@ def prepare_x(root: Path) -> None:
     executor.write_text(text)
 
 
-def prepare_gmail(root: Path, crypto_version: str = "3.15.1") -> None:
+def prepare_gmail(root: Path, crypto_version: str = "4.5.2") -> None:
     crypto_import = "#if canImport(CryptoKit)\nimport CryptoKit\n#else\nimport Crypto\n#endif\n"
     bootstrap = root / "Sources/GmailGatewayCore/GmailOAuthBootstrap.swift"
-    replace(bootstrap, "import CryptoKit\nimport Darwin\nimport Foundation\nimport Security\n",
-            crypto_import + "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\nimport Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
+    replace(bootstrap, "import CryptoKit\n", crypto_import)
+    replace(bootstrap, "import Darwin\n", "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\n")
+    replace(bootstrap, "import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
+    replace(bootstrap, "import Security\n", "")
     replace(root / "Sources/GmailGatewayCore/GmailGatewayUtilities.swift", "import Foundation\n", "import Foundation\nimport CoreFoundation\n")
     replace(root / "Sources/GmailGatewayCore/MessageFileDownloads.swift", "import CryptoKit\n", crypto_import)
-    replace(root / "Package.swift", "  targets: [\n",
-            f'  dependencies: [.package(url: "https://github.com/apple/swift-crypto.git", exact: "{crypto_version}")],\n  targets: [\n')
-    replace(root / "Package.swift", '.target(name: "GmailGatewayCore"),',
-            '.target(name: "GmailGatewayCore", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),')
-    replace(bootstrap, "        let fd = socket(AF_INET, SOCK_STREAM, 0)\n",
-            "#if os(Linux)\n        let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)\n#else\n        let fd = socket(AF_INET, SOCK_STREAM, 0)\n#endif\n")
+    for name in ("GmailCredentialResolution.swift", "GmailOAuthClientFingerprint.swift"):
+        replace(root / "Sources/GmailGatewayCore" / name, "import CryptoKit\n", crypto_import)
+    add_crypto_dependency(root, "GmailGatewayCore", crypto_version)
+    replace(bootstrap, "    let descriptor = socket(addressFamily, SOCK_STREAM, 0)\n",
+            "#if os(Linux)\n    let descriptor = socket(addressFamily, Int32(SOCK_STREAM.rawValue), 0)\n#else\n    let descriptor = socket(addressFamily, SOCK_STREAM, 0)\n#endif\n")
     replace(bootstrap, "        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)\n",
             "#if !os(Linux)\n        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)\n#endif\n")
-    for function in ("bind", "read", "write"):
+    replace(bootstrap, "        address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)\n",
+            "#if !os(Linux)\n        address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)\n#endif\n")
+    replace(bootstrap, "Darwin.bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))",
+            "bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))")
+    replace(bootstrap, "Darwin.bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in6>.size))",
+            "bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in6>.size))")
+    for function in ("read", "write"):
         replace(bootstrap, f"Darwin.{function}(", f"{function}(")
     text = bootstrap.read_text()
     if text.count("Darwin.poll(") != 2:
@@ -61,7 +86,7 @@ def prepare_gmail(root: Path, crypto_version: str = "3.15.1") -> None:
     return base64URLString(bytes)""")
 
 
-def prepare_analytics(root: Path, crypto_version: str = "4.5.1") -> None:
+def prepare_analytics(root: Path, crypto_version: str = "4.5.2") -> None:
     core = root / "Sources/GoogleAnalyticsGatewayCore"
     portable_posix = "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\n"
     loopback = core / "Auth/OAuthLoopback.swift"
@@ -102,25 +127,18 @@ private func nativeFileTimesMatch(_ before: stat, _ after: stat) -> Bool {
 """)
     replace(core / "Auth/OAuthClientConfiguration.swift", "import CryptoKit\n",
             "#if canImport(CryptoKit)\nimport CryptoKit\n#else\nimport Crypto\n#endif\n")
-    replace(root / "Package.swift", "  ],\n  targets: [\n",
-            f'  ],\n  dependencies: [.package(url: "https://github.com/apple/swift-crypto.git", exact: "{crypto_version}")],\n  targets: [\n')
-    replace(root / "Package.swift", '.target(name: "GoogleAnalyticsGatewayCore"),',
-            '.target(name: "GoogleAnalyticsGatewayCore", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),')
+    add_crypto_dependency(root, "GoogleAnalyticsGatewayCore", crypto_version)
 
 
-def prepare_documents(root: Path, crypto_version: str = "4.5.1") -> None:
+def prepare_documents(root: Path, crypto_version: str = "4.5.2") -> None:
     core = root / "Sources/GoogleDocumentsGatewayCore"
     replace(core / "GatewayCredentials.swift", "import CryptoKit\n",
             "#if canImport(CryptoKit)\nimport CryptoKit\n#else\nimport Crypto\n#endif\n")
     replace(core / "GatewayRuntime.swift", "@preconcurrency import Foundation\n",
             "@preconcurrency import Foundation\nimport CoreFoundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
-    replace(root / "Package.swift", "  ],\n  targets: [\n",
-            f'  ],\n  dependencies: [.package(url: "https://github.com/apple/swift-crypto.git", exact: "{crypto_version}")],\n  targets: [\n')
-    replace(root / "Package.swift", '.target(name: "GoogleDocumentsGatewayCore"),',
-            '.target(name: "GoogleDocumentsGatewayCore", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),')
+    add_crypto_dependency(root, "GoogleDocumentsGatewayCore", crypto_version)
     loopback = core / "GatewayLoopbackOAuth.swift"
-    replace(loopback, "import AppKit\nimport Foundation\nimport Network\n",
-            "import Foundation\n#if canImport(AppKit)\nimport AppKit\n#endif\n#if canImport(Network)\nimport Network\n#else\nimport Glibc\n#endif\n")
+    replace(loopback, "import AppKit\n", "#if canImport(AppKit)\nimport AppKit\n#endif\n")
     replace(loopback, "    browserOpener: { NSWorkspace.shared.open($0) },", """    browserOpener: { url in
 #if canImport(AppKit)
       return NSWorkspace.shared.open(url)
@@ -131,45 +149,33 @@ def prepare_documents(root: Path, crypto_version: str = "4.5.1") -> None:
       do { try process.run(); process.waitUntilExit(); return process.terminationStatus == 0 } catch { return false }
 #endif
     },""")
-    source = loopback.read_text()
-    marker = "private final class LoopbackCallback: @unchecked Sendable {"
-    parser_marker = "  private static func parseRequest(_ data: Data) -> LoopbackResult? {"
-    if source.count(marker) != 1 or source.count(parser_marker) != 1 or not source.endswith("}\n"):
-        raise SystemExit("Expected fixed Documents loopback implementation")
-    class_start = source.index(marker)
-    parser_start = source.index(parser_marker)
-    parser = textwrap.dedent(source[parser_start:-2]).replace("private static func parseRequest", "private func parseLoopbackRequest", 1)
-    native_class = source[class_start:parser_start].replace("data.flatMap(Self.parseRequest)", "data.flatMap(parseLoopbackRequest)") + "}\n"
-    linux_class = Path(__file__).with_name("container-gateway-support").joinpath("GoogleDocumentsLoopbackLinux.swift").read_text()
-    loopback.write_text(source[:class_start] + "#if canImport(Network)\n" + native_class + "#else\n" + linux_class + "\n#endif\n" + parser)
+    # OAuthCallbackServer now comes from portable GoogleGatewayAuth upstream.
+    for relative in ("GatewaySecureTokenFilesystem.swift", "SDK/GatewaySDKFileAccessPolicy.swift",
+                     "SDK/GatewaySDKCatalogFileSnapshots.swift", "SDK/GatewaySDKCommandRouter.swift",
+                     "SDK/GatewaySDKCredentialLoading.swift"):
+        path = core / relative
+        replace(path, "import Darwin\n", "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\n")
+        path.write_text(path.read_text().replace("RENAME_EXCL", "gatewayRenameExclusive").replace("RENAME_SWAP", "gatewayRenameExchange"))
+    filesystem = core / "GatewaySecureTokenFilesystem.swift"
+    filesystem.write_text(filesystem.read_text().replace("flock(", "gatewayFlock("))
+    shim = Path(__file__).with_name("container-gateway-support") / "GoogleDocumentsPOSIX.swift"
+    (core / shim.name).write_text(shim.read_text())
 
 
 def prepare_riela(root: Path) -> None:
     replace(root / "Package.swift",
             '.product(name: "AnydocKit", package: "anydoc-swift", condition: .when(platforms: [.macOS])),',
             '.product(name: "AnydocKit", package: "anydoc-swift"),')
-    replace(root / "Package.swift", """    .package(
-      url: "https://github.com/tacogips/anydoc-swift.git",
-      revision: "d957c08372786b7062553e83fe9c29880fdee7a4"
-    ),""", '    .package(path: "/anydoc-swift"),')
-    replace(root / "Package.swift", """    .package(
-      url: "https://github.com/tacogips/google-documents-gateway.git",
-      revision: "cda93cdd770a51f6f9d1bc63b1db555884824606"
-    )""", '    .package(path: "/google-documents-gateway")')
+    local_package(root, "anydoc-swift")
+    local_package(root, "google-documents-gateway")
     replace(root / "Package.swift", """          package: "google-documents-gateway",
           condition: .when(platforms: [.macOS])""", """          package: "google-documents-gateway",
           condition: .when(platforms: [.macOS, .linux])""")
-    replace(root / "Package.swift", """    .package(
-      url: "https://github.com/tacogips/google-analytics-gateway.git",
-      revision: "c46443a5e8f744244cb9825d3238958a797c4f2b"
-    ),""", '    .package(path: "/google-analytics-gateway"),')
+    local_package(root, "google-analytics-gateway")
     replace(root / "Package.swift", """          package: "google-analytics-gateway",
           condition: .when(platforms: [.macOS])""", """          package: "google-analytics-gateway",
           condition: .when(platforms: [.macOS, .linux])""")
-    replace(root / "Package.swift", """    .package(
-      url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "2761f3bccf30ead78de5d6968d827929925eae80"
-    ),""", '    .package(path: "/gmail-gateway"),')
+    local_package(root, "gmail-gateway")
     replace(root / "Package.swift",
             '.product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS])),',
             '.product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS, .linux])),')
@@ -179,7 +185,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("gateway", choices=("x", "gmail", "analytics", "documents", "riela"))
     parser.add_argument("source", type=Path)
-    parser.add_argument("--crypto-version", choices=("3.15.1", "4.5.1"), default="3.15.1")
+    parser.add_argument("--crypto-version", choices=("4.5.2",), default="4.5.2")
     arguments = parser.parse_args()
     if arguments.gateway in ("gmail", "analytics", "documents"):
         {"gmail": prepare_gmail, "analytics": prepare_analytics, "documents": prepare_documents}[arguments.gateway](arguments.source, arguments.crypto_version)

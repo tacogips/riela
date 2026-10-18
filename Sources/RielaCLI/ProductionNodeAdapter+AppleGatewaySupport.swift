@@ -50,9 +50,9 @@ struct AppleGatewayInvoker {
 
   /// Runs one gateway command.
   ///
-  /// The linked gateway checks this deadline before each write attempt and
-  /// during retry backoff. An already-dispatched native call is not replayed
-  /// or assumed to have failed when its deadline passes.
+  /// The linked gateway checks this deadline before each attempt, during backoff,
+  /// and while waiting for owned osascript children. An already-delivered
+  /// AppleEvent remains uncertain after cleanup and is never blindly replayed.
   func run(
     arguments: [String],
     deadline: Date?,

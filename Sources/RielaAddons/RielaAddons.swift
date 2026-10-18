@@ -125,6 +125,12 @@ public enum RielaBuiltinAddonCatalog {
 
   public static let keyValueStoreAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/kv-set", version: "1"),
+    .init(name: "riela/cache-configure", version: "1"),
+    .init(name: "riela/cache-put", version: "1"),
+    .init(name: "riela/cache-get", version: "1"),
+    .init(name: "riela/cache-delete", version: "1"),
+    .init(name: "riela/cache-prune", version: "1"),
+
     .init(name: "riela/kv-get", version: "1"),
     .init(name: "riela/kv-delete", version: "1"),
     .init(name: "riela/kv-list", version: "1")

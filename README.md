@@ -615,6 +615,14 @@ the variables' JSON types. The reference bundle
 `examples/kaiba-document-intake` shows directory intake and GraphQL retrieval.
 
 
+## Temporary retrieval cache
+
+Use `riela cache` or the `riela/cache-*` add-ons for disposable inspected
+retrieval bodies and media. The opt-in cache defaults to a fixed 24-hour TTL
+and a 256 MiB LRU budget, with bounded batch stdin operations and physical
+SQLite reclamation. Durable memory and export receipts are unaffected. See
+[the cache contract and safe replay rules](docs/retrieval-cache.md).
+
 ## Workflow memory (short-term)
 
 Riela owns short-term workflow memory in its own standalone SQLite store,

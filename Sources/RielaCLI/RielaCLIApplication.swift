@@ -136,6 +136,8 @@ public struct RielaCLIApplication: Sendable {
         return await GatewayCommand().run(arguments)
       case let .setup(options):
         return await setupContainerCommand.run(options)
+      case let .cache(arguments):
+        return CacheCommandRunner().run(arguments)
       case let .memory(command):
         return memoryCommandRunner.run(command)
       case let .kaiba(options):
@@ -331,6 +333,7 @@ Usage:
   riela gateway list [--json]
   riela gateway <name> [--role ROLE] <gateway-command> [gateway-options...]
   riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
+  riela cache configure|put|get|delete|prune <cache-id> [--cache-root <dir>] [--scope <scope>] [--entries-file <path|->] [--keys-file <path|->]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]
   riela memory load|search <memory-id> --workflow-id <workflow> [--match <regex>] [--tag <tag>] [--related-id <id>] [--limit 30] [--max-payload-bytes 1000000] [--memory-root <dir>]

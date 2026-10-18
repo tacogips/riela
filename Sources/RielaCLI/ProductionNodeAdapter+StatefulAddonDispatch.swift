@@ -13,6 +13,9 @@ extension BuiltinWorkflowAddonResolver {
     if let memoryAddon = BuiltinMemoryAddon(rawValue: input.addon.name) {
       return try executeMemoryAddon(input, operation: memoryAddon)
     }
+    if let cacheAddon = BuiltinCacheAddon(rawValue: input.addon.name) {
+      return try executeCacheAddon(input, operation: cacheAddon)
+    }
     if let keyValueAddon = BuiltinKeyValueAddon(rawValue: input.addon.name) {
       return try executeKeyValueAddon(input, operation: keyValueAddon)
     }

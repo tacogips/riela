@@ -48,6 +48,8 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
+    .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.7"),
+    .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
     .package(path: "Packages/RielaMemory"),
     .package(
       url: "https://github.com/tacogips/agent-gateway.git",
@@ -230,6 +232,8 @@ let package = Package(
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
+        .product(name: "GoogleGatewayAuth", package: "google-gateway-auth"),
+        .product(name: "XGatewayCore", package: "x-gateway", condition: .when(platforms: [.macOS])),
         // Gateway add-ons run inside this process; riela spawns no `*-gateway`
         // executable. The cumulative tier products carry every tier module, and
         // each add-on stays pinned to one tier through its role descriptor.

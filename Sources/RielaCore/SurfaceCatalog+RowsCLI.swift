@@ -71,7 +71,13 @@ extension SurfaceCatalog {
   static let registryClientRows: [SurfaceOperation] =
     packageRows + nodeRows + memoryRows + instanceRows + specialistRows
       + localToolRows + eventRows + routineCLIRows + serveRows + graphQLClientRows + operatorRows
-      + taskMutationRows
+      + taskMutationRows + gatewayRows
+
+  private static var gatewayRows: [SurfaceOperation] {
+    ["list", "gmail", "x", "apple", "wrike", "google-service", "google-analytics", "google-docs", "google-sheets", "google-drive"].map {
+      surfaceRow(localToolDefaults, id: "gateway.\($0)", family: "gateway", kind: .process, cli: "gateway \($0)")
+    }
+  }
 
   private static var taskMutationRows: [SurfaceOperation] {
     let p5Evidence = "the GraphQL task API and task board land in work-runtime P5"

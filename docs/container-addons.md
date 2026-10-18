@@ -131,6 +131,9 @@ execution identity.
 
 ## X and Gmail container readers
 
+For host-side credential setup and native gateway authentication, see
+[`riela gateway`](gateway-cli.md).
+
 For existing X/Gmail references, adding `container: {}` retains legacy image,
 mounts, and network denial from `config`. Non-default common options override
 the corresponding legacy choices. `networkPolicy: "denied"` takes precedence

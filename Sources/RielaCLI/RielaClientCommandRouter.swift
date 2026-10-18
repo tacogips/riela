@@ -11,6 +11,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       NodeRoute.self,
       RrunRoute.self,
       SetupRoute.self,
+      GatewayRoute.self,
       KaibaRoute.self,
       MemoryRoute.self,
       InstanceRoute.self,
@@ -167,4 +168,9 @@ private func passthroughRouteConfiguration(
     shouldDisplay: shouldDisplay,
     helpNames: []
   )
+}
+
+struct GatewayRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("gateway", abstract: "Delegate commands and authentication to builtin gateway SDKs.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }

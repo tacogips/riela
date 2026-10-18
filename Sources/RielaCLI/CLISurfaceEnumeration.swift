@@ -62,6 +62,8 @@ public enum CLISurfaceEnumerator {
       return nested(PackageCommandKind.allRawValues)
     case "node":
       return nested(NodeCommandKind.allRawValues)
+    case "gateway":
+      return nested(["list"] + BuiltinGatewayCLI.allCases.map(\.rawValue))
     case "setup":
       return nested(SetupClientSubcommand.allRawValues)
     case "kaiba":
@@ -119,7 +121,7 @@ public enum CLISurfaceEnumerator {
 
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = [
-    "workflow", "package", "node", "setup", "kaiba", "memory", "instance",
+    "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "instance",
     "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve"
   ]
 
@@ -147,6 +149,8 @@ public enum CLISurfaceEnumerator {
     // Options parsed by hand rather than by swift-argument-parser.
     names.formUnion([
       "--config",            // riela worker --config <worker.json>
+      "--role",              // riela gateway <name> --role <role>
+      "--json",              // riela gateway list --json
       "--check",             // riela loop gates --check
       "--baseline",          // riela loop diff --baseline
       "--follow",            // riela session logs --follow

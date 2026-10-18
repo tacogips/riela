@@ -43,6 +43,7 @@ public enum RielaCommand: Equatable, Sendable {
   case package(PackageCommand)
   case node(NodeCommand)
   case setup(CLICommandOptions)
+  case gateway([String])
   case memory(MemoryCommand)
   case kaiba(CLICommandOptions)
   case instance(CLICommandOptions)
@@ -417,6 +418,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .node(try parseNode(route.passthroughArguments))
     case let route as RrunRoute:
       return .node(try parseRrun(route.passthroughArguments))
+    case let route as GatewayRoute:
+      return .gateway(route.passthroughArguments)
     case let route as SetupRoute:
       return .setup(try parseSetup(route.passthroughArguments))
     case let route as MemoryRoute:

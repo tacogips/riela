@@ -132,6 +132,8 @@ public struct RielaCLIApplication: Sendable {
         return await packageCommandRunner.run(command)
       case let .node(command):
         return await nodeCommandRunner.run(command)
+      case let .gateway(arguments):
+        return await GatewayCommand().run(arguments)
       case let .setup(options):
         return await setupContainerCommand.run(options)
       case let .memory(command):
@@ -326,6 +328,8 @@ Usage:
   riela specialist status|cancel <task-id> --state-root <path> [--output json]
   riela specialist execute <dispatch-id> --state-root <path> [--working-dir <dir>] [--output json]
   riela specialist reconcile|smoke --state-root <path> [--output json]
+  riela gateway list [--json]
+  riela gateway <name> [--role ROLE] <gateway-command> [gateway-options...]
   riela setup container [--yes] [--dry-run] [--print-script] [--open-installer] [--output json|text]
   riela memory save <memory-id> --workflow-id <workflow> --payload-json <json> [--node-id <node>] [--tag <tag>] [--related-id <id>] [--file <path>] [--memory-root <dir>]
   riela memory update <memory-id> --workflow-id <workflow> --record-id <id> --payload-json <json> [--tag <tag>] [--related-id <id>] [--file <path>|--clear-files] [--memory-root <dir>]

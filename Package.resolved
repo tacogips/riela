@@ -1,5 +1,5 @@
 {
-  "originHash" : "77d32af5e7c7814b7943764a6f9b1695939654870116379c2506604b2ef9593d",
+  "originHash" : "8037abecc249e9ee256cb85c04f0158870f2c91295717881850acea8e69502cd",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -151,6 +151,15 @@
       "location" : "https://github.com/tacogips/wrike-gateway.git",
       "state" : {
         "revision" : "ec1b9e770a18e5a2b463b09becb69492a21abf5d"
+      }
+    },
+    {
+      "identity" : "x-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/x-gateway.git",
+      "state" : {
+        "revision" : "4eb610a0b53f517572851b4a96494b0e5ad92e9c",
+        "version" : "0.1.7"
       }
     }
   ],

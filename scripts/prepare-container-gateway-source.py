@@ -57,6 +57,8 @@ def prepare_gmail(root: Path, crypto_version: str = "4.5.2") -> None:
     replace(root / "Sources/GmailGatewayCore/MessageFileDownloads.swift", "import CryptoKit\n", crypto_import)
     for name in ("GmailCredentialResolution.swift", "GmailOAuthClientFingerprint.swift"):
         replace(root / "Sources/GmailGatewayCore" / name, "import CryptoKit\n", crypto_import)
+    replace(root / "Sources/GmailGatewayCore/GraphQL/GmailGatewayProviderCancellation.swift",
+            "import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
     add_crypto_dependency(root, "GmailGatewayCore", crypto_version)
     replace(bootstrap, "    let descriptor = socket(addressFamily, SOCK_STREAM, 0)\n",
             "#if os(Linux)\n    let descriptor = socket(addressFamily, Int32(SOCK_STREAM.rawValue), 0)\n#else\n    let descriptor = socket(addressFamily, SOCK_STREAM, 0)\n#endif\n")
@@ -136,6 +138,8 @@ def prepare_documents(root: Path, crypto_version: str = "4.5.2") -> None:
             "#if canImport(CryptoKit)\nimport CryptoKit\n#else\nimport Crypto\n#endif\n")
     replace(core / "GatewayRuntime.swift", "@preconcurrency import Foundation\n",
             "@preconcurrency import Foundation\nimport CoreFoundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
+    replace(core / "SDK/GatewaySDKExecutionSupport.swift", "import Foundation\n",
+            "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
     add_crypto_dependency(root, "GoogleDocumentsGatewayCore", crypto_version)
     loopback = core / "GatewayLoopbackOAuth.swift"
     replace(loopback, "import AppKit\n", "#if canImport(AppKit)\nimport AppKit\n#endif\n")

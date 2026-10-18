@@ -3,7 +3,7 @@ import Foundation
 import Glibc
 
 @main
-enum GoogleDocumentsPOSIXSmoke {
+enum GatewayPOSIXSmoke {
   private static func expectFile(_ url: URL, _ expected: String) throws {
     let bytes = try Data(contentsOf: url)
     precondition(bytes == Data(expected.utf8))
@@ -39,7 +39,7 @@ enum GoogleDocumentsPOSIXSmoke {
     try expectFile(second, "first")
     precondition(gatewayFlock(descriptor, LOCK_EX | LOCK_NB) == 0)
     precondition(gatewayFlock(descriptor, LOCK_UN) == 0)
-    print("Google Documents POSIX exclusive rename, exchange and lock smoke passed")
+    print("Gateway POSIX exclusive rename, exchange and lock smoke passed")
   }
 }
 #endif

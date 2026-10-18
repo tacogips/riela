@@ -5,6 +5,7 @@ WORKDIR /src
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
     git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD
 COPY prepare-container-gateway-source.py /prepare.py
+COPY container-gateway-support /container-gateway-support
 RUN python3 /prepare.py gmail /src
 RUN swift build -c release --product gmail-gateway-reader --jobs 4 && \
     swift build -c release --product gmail-gateway-draft --jobs 4 && \

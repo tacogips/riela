@@ -17,6 +17,7 @@ WORKDIR /gmail-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
     git fetch --depth 1 origin a7b0204e5869b3be8475fec8460b1881e54fb174 && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
+COPY scripts/container-gateway-support /container-gateway-support
 RUN python3 /prepare.py gmail /gmail-gateway --crypto-version 4.5.2
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS analytics-source
@@ -35,8 +36,8 @@ RUN git init . && git remote add origin https://github.com/tacogips/google-docum
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 COPY scripts/container-gateway-support /container-gateway-support
 RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 4.5.2
-RUN swiftc /container-gateway-support/GoogleDocumentsPOSIX.swift \
-    /container-gateway-support/GoogleDocumentsPOSIXSmoke.swift -o /posix-smoke && /posix-smoke
+RUN swiftc /container-gateway-support/GatewayPOSIX.swift \
+    /container-gateway-support/GatewayPOSIXSmoke.swift -o /posix-smoke && /posix-smoke
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3 pkg-config && rm -rf /var/lib/apt/lists/*

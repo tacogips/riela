@@ -48,6 +48,9 @@ extension DefaultEventLiveServer {
           bindings: config.bindings,
           envelope: envelope
         ))
+        if try recordReadOnlyEventIfNeeded(
+          envelope: envelope, triggerResult: triggerResult, parsed: parsed, eventRoot: eventRoot
+        ) { try offsetStore.saveLastTimestamp(message.ts); continue }
         guard triggerResult.accepted else {
           try offsetStore.saveLastTimestamp(message.ts)
           continue
@@ -58,7 +61,7 @@ extension DefaultEventLiveServer {
           }
           let result: WorkflowRunResult
           do {
-            result = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+            result = try await runEventWorkflow(EventWorkflowRunRequest(
               workflowName: workflowName,
               runtimeVariables: trigger.runtimeVariables,
               parsed: parsed

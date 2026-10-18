@@ -83,6 +83,7 @@ struct DefaultEventLiveServer: EventLiveServing {
   }
 
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
+    _ = try EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
     let startedAt = Date()
     let config = try EventLiveConfig.load(eventRoot: eventRoot)
     let enabledSources = config.enabledSources(target: target)
@@ -393,7 +394,7 @@ struct DefaultEventLiveServer: EventLiveServing {
     dedupeStore: TelegramMessageDedupeStore
   ) async throws -> WorkflowRunResult? {
     do {
-      return try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+      return try await runEventWorkflow(EventWorkflowRunRequest(
         workflowName: workflowName,
         runtimeVariables: runtimeVariables,
         parsed: parsed
@@ -446,7 +447,9 @@ struct DefaultEventLiveServer: EventLiveServing {
       )
       for update in updates {
         observedUpdates += 1
-        try offsetStore.saveOffset(update.updateId + 1)
+        if try !EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: environment) {
+          try offsetStore.saveOffset(update.updateId + 1)
+        }
         let resolvedAttachments: EventResolvedAttachmentInputs
         if let message = update.message {
           resolvedAttachments = try await resolveTelegramAttachments(
@@ -468,6 +471,7 @@ struct DefaultEventLiveServer: EventLiveServing {
             status: "ready",
             lastIgnoredReason: "telegram-envelope-filtered-or-empty"
           )
+          try offsetStore.saveOffset(update.updateId + 1)
           continue
         }
         if let message = update.message, try dedupeStore.hasSeen(message: message) {
@@ -476,6 +480,7 @@ struct DefaultEventLiveServer: EventLiveServing {
             status: "ready",
             lastIgnoredReason: "telegram-duplicate-message"
           )
+          try offsetStore.saveOffset(update.updateId + 1)
           continue
         }
         let triggerResult = await DeterministicEventDryRunTrigger().dryRun(EventDryRunRequest(
@@ -483,6 +488,9 @@ struct DefaultEventLiveServer: EventLiveServing {
           bindings: config.bindings,
           envelope: envelope
         ))
+        if try recordReadOnlyEventIfNeeded(
+          envelope: envelope, triggerResult: triggerResult, parsed: parsed, eventRoot: eventRoot
+        ) { try offsetStore.saveOffset(update.updateId + 1); continue }
         guard triggerResult.accepted else {
           try? writeServeRecord(
             eventRoot: eventRoot,
@@ -773,6 +781,9 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
   }
 
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
+    guard try !EventReadOnlyPolicy.isEnabled(
+      parsed: request.parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
+    ) else { throw EventReadOnlyDispatchBlocked() }
     let workingDirectory = request.parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     let result = await command.run(WorkflowRunOptions(
       target: request.workflowName,

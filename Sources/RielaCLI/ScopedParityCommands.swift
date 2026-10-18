@@ -579,20 +579,6 @@ fileprivate extension ScopedParityCommandRunner {
     var bindings: [EventBindingContract]
   }
 
-  private struct PersistedEventReceipt: Codable, Equatable, Sendable {
-    var receiptId: String
-    var sourceId: String
-    var eventId: String
-    var status: String
-    var duplicate: Bool
-    var workflowExecutionId: String?
-    var workflowName: String?
-    var replayedFromReceiptId: String?
-    var reason: String?
-    var updatedAt: Date
-    var envelope: ExternalEventEnvelope
-  }
-
   private struct PersistedEventReply: Codable, Equatable, Sendable {
     var idempotencyKey: String
     var sourceId: String
@@ -699,20 +685,23 @@ fileprivate extension ScopedParityCommandRunner {
         throw CLIUsageError("events replay requires <receipt-id>")
       }
       let original = try loadEventReceipt(receiptId: receiptId, eventRoot: root)
+      let readOnlyEvidence = original.reason == "read-only" || original.readOnlyTriggers != nil
       var replayEnvelope = original.envelope
       replayEnvelope.eventId = "\(original.eventId)-replay"
       let replay = PersistedEventReceipt(
         receiptId: safeReceiptId(sourceId: original.sourceId, eventId: replayEnvelope.eventId),
         sourceId: original.sourceId,
         eventId: replayEnvelope.eventId,
-        status: parsed.dryRun ? "dry-run" : "replayed",
+        status: parsed.dryRun || readOnlyEvidence ? "dry-run" : "replayed",
         duplicate: false,
-        workflowExecutionId: original.workflowExecutionId,
+        workflowExecutionId: readOnlyEvidence ? nil : original.workflowExecutionId,
         workflowName: original.workflowName,
         replayedFromReceiptId: original.receiptId,
         reason: parsed.reason,
         updatedAt: Date(timeIntervalSince1970: 0),
-        envelope: replayEnvelope
+        envelope: replayEnvelope,
+        readOnlyTriggers: original.readOnlyTriggers,
+        readOnlyDiagnostics: original.readOnlyDiagnostics
       )
       try saveEventReceipt(replay, eventRoot: root)
       return ScopedParityCommandResult(scope: "events", command: action, target: receiptId, status: "ok", records: ["replayedFrom=\(original.receiptId)", "receipt=\(replay.receiptId)", "status=\(replay.status)"])

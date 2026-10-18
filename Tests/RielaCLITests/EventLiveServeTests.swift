@@ -4,6 +4,7 @@ import RielaCore
 import XCTest
 
 final class EventLiveServeTests: XCTestCase {
+
   func testTelegramGatewayServePollsRunsWorkflowAndSendsReply() async throws {
     let eventRoot = try temporaryDirectory()
     try writeTelegramEventConfig(eventRoot: eventRoot)
@@ -843,4 +844,142 @@ final class EventLiveServeTests: XCTestCase {
     }
     """.write(to: bindings.appendingPathComponent("discord-to-workflow.json"), atomically: true, encoding: .utf8)
   }
+}
+
+extension EventLiveServeTests {
+  func testReadOnlyReceiptFailureDoesNotAdvanceTelegramOffset() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    try Data("blocked".utf8).write(to: eventRoot.appendingPathComponent("receipts"))
+    let api = FakeTelegramGatewayAPI(updates: [
+      TelegramUpdate(
+        updateId: 42,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "200",
+          text: "Yui, hello"
+        )
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "承知しました。短く返します。", replyAs: "yui")
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    do {
+      _ = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--read-only", "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+      XCTFail("Receipt failure must stop ingestion before its cursor advances")
+    } catch {}
+    let captured = await workflowRunner.requests
+    let replies = await api.sentMessages
+    XCTAssertTrue(captured.isEmpty)
+    XCTAssertTrue(replies.isEmpty)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: eventRoot.appendingPathComponent("telegram/telegram-live-offset.json").path))
+  }
+  func testTelegramReadOnlyPersistsReceiptWithoutWorkflowOrReply() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeTelegramEventConfig(eventRoot: eventRoot)
+    let api = FakeTelegramGatewayAPI(updates: [
+      TelegramUpdate(
+        updateId: 42,
+        message: try TelegramMessage.fixture(
+          chatId: "100",
+          fromId: "200",
+          text: "Yui, hello"
+        )
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replyText: "承知しました。短く返します。", replyAs: "yui")
+    let server = DefaultEventLiveServer(telegramAPI: api, workflowRunner: workflowRunner)
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "TEST_TELEGRAM_TOKEN": "source-token",
+      "TEST_TELEGRAM_BOT_ID": "999",
+      "TEST_TELEGRAM_YUI_TOKEN": "yui-token",
+      "TEST_TELEGRAM_MIKA_TOKEN": "mika-token"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--read-only", "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let captured = await workflowRunner.requests
+    XCTAssertTrue(captured.isEmpty)
+    let replies = await api.sentMessages
+    XCTAssertTrue(replies.isEmpty)
+    try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+  func testDiscordEnvironmentReadOnlyPersistsReceiptWithoutWorkflowOrReply() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeDiscordEventConfig(eventRoot: eventRoot)
+    let api = FakeDiscordGatewayAPI(messages: [
+      try DiscordMessage.fixture(
+        id: "1510000000000000001",
+        channelId: "200",
+        guildId: "100",
+        content: "Yui、MikaとRinaにも自然に聞いて"
+      )
+    ])
+    let workflowRunner = FakeEventWorkflowRunner(replies: [
+      ("YuiからMikaに渡します。@Mika、どう見えますか？", "yui"),
+      ("Mikaだよ。自然だと思う。@Rina、技術面どう？", "mika"),
+      ("問題ない。routing と reply identity は分離。", "rina")
+    ])
+    let server = DefaultEventLiveServer(
+      telegramAPI: FakeTelegramGatewayAPI(updates: []),
+      discordAPI: api,
+      workflowRunner: workflowRunner
+    )
+
+    let result = try await CLIRuntimeEnvironment.$overrides.withValue([
+      "RIELA_EVENTS_READ_ONLY": "true",
+      "TEST_DISCORD_TOKEN": "source-token",
+      "TEST_DISCORD_APP_ID": "999",
+      "TEST_DISCORD_YUI_TOKEN": "yui-token",
+      "TEST_DISCORD_MIKA_TOKEN": "mika-token",
+      "TEST_DISCORD_RINA_TOKEN": "rina-token",
+      "RIELA_DISCORD_CHANNEL_ID": "999"
+    ]) {
+      try await server.serve(
+        eventRoot: eventRoot,
+        target: nil,
+        parsed: try ParsedParityOptions([
+          "--workflow-definition-dir", eventRoot.deletingLastPathComponent().path,
+          "--limit", "1"
+        ]),
+        output: .json
+      )
+    }
+
+    XCTAssertEqual(result.status, "ok")
+    XCTAssertTrue(result.records.contains("processedEvents=1"))
+    let captured = await workflowRunner.requests
+    XCTAssertTrue(captured.isEmpty)
+    let replies = await api.sentMessages
+    XCTAssertTrue(replies.isEmpty)
+    try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+
 }

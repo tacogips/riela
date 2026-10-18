@@ -62,6 +62,26 @@ final class EventLiveServeCronTests: XCTestCase {
     )
   }
 
+  func testReadOnlyCronRetainsFixedClockEnvelopeWithoutDispatchOrRoutineCompletion() async throws {
+    let eventRoot = try temporaryDirectory()
+    try writeCronEventConfig(eventRoot: eventRoot)
+    let runner = FakeEventWorkflowRunner(replyText: "", replyAs: "")
+    let server = DefaultEventLiveServer(workflowRunner: runner)
+    let scheduled = Date(timeIntervalSince1970: 1_754_438_400)
+    let count = try await server.dispatchCronTick(
+      source: CronScheduleSource(id: "cron-live", schedule: "* * * * * *", timezone: "UTC"),
+      scheduledAt: scheduled, firedAt: scheduled.addingTimeInterval(1),
+      config: try EventLiveConfig.load(eventRoot: eventRoot), eventRoot: eventRoot,
+      parsed: try ParsedParityOptions(["--read-only"])
+    )
+    XCTAssertEqual(count, 1)
+    let requests = await runner.requests
+    XCTAssertTrue(requests.isEmpty)
+    let receipt = try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+    XCTAssertEqual(receipt.envelope.input["scheduledAt"], .string("2025-08-06T00:00:00.000Z"))
+    XCTAssertEqual(receipt.envelope.input["firedAt"], .string("2025-08-06T00:00:01.000Z"))
+  }
+
   func testCronServeFiresTickAndRunsBoundWorkflow() async throws {
     let eventRoot = try temporaryDirectory()
     try writeCronEventConfig(eventRoot: eventRoot)

@@ -52,6 +52,31 @@ Recommended environment variables:
 - `RIELA_EVENTS_ENABLED`
 - `RIELA_EVENTS_READ_ONLY`
 
+`events serve --read-only` is a listening/ingestion mode, not an alias for
+`--dry-run`. It continues polling or watching enabled sources, validates and
+maps normalized envelopes, and persists receipts with `reason: "read-only"`.
+Matching deliveries have `status: "skipped"`, original envelopes and mapped
+trigger evidence, and no workflow execution ID. No workflow backend, supervised
+target execution, chat reply, or completed-workflow history/dedupe update is
+allowed. Provider reads and local ingestion artifacts remain enabled. Matched
+provider polling cursors advance after the skipped receipt is durable. File
+watchers retain their existing in-memory scan and startup snapshot semantics;
+receipt persistence does not rewind a completed scan or promise transactional
+watcher replay. Persisted envelopes remain available for operator inspection.
+`events replay` currently persists a replay receipt without executing a
+workflow; read-only evidence retains its mapped inputs, a dry-run status and no
+execution ID when replayed.
+
+The canonical environment policy is `RIELA_EVENTS_READ_ONLY`. The historical
+skill spelling `RIEL_EVENTS_READ_ONLY` is accepted as a compatibility alias.
+Both accept `1/true/yes/on` and `0/false/no/off` (case-insensitive); an empty
+value is false. The CLI flag or either true variable enables read-only, and a
+false value cannot override another true setting. Invalid values fail closed
+before provider polling. All live source dispatch paths share the same guard,
+including calls through injected workflow runners. The listener's existing
+`--limit` processing bound remains available in this mode. `--dry-run` retains its separate
+one-shot validation/serve-record behavior without starting listeners.
+
 `riela serve` may later gain `--events`, but the first implementation should
 prefer a separate command to keep the control plane and event listener lifecycle
 clear.

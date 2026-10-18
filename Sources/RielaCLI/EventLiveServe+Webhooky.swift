@@ -108,6 +108,9 @@ extension DefaultEventLiveServer {
       bindings: config.bindings,
       envelope: envelope
     ))
+    if try recordReadOnlyEventIfNeeded(
+      envelope: envelope, triggerResult: triggerResult, parsed: parsed, eventRoot: eventRoot
+    ) { return 1 }
     guard triggerResult.accepted else {
       return 0
     }
@@ -116,7 +119,7 @@ extension DefaultEventLiveServer {
         continue
       }
       do {
-        _ = try await workflowRunner.runWorkflow(EventWorkflowRunRequest(
+        _ = try await runEventWorkflow(EventWorkflowRunRequest(
           workflowName: workflowName,
           runtimeVariables: trigger.runtimeVariables,
           parsed: parsed

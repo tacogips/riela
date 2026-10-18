@@ -222,6 +222,27 @@ final class EventLiveServeFileChangeTests: XCTestCase {
     XCTAssertTrue(diagnostics.first?.message.contains("does not exist") == true)
   }
 
+  func testReadOnlyFileChangeRetainsCreatedDocumentWithoutWorkflow() async throws {
+    let eventRoot = try temporaryDirectory()
+    let watched = eventRoot.appendingPathComponent("inbox", isDirectory: true)
+    try FileManager.default.createDirectory(at: watched, withIntermediateDirectories: true)
+    try writeFileChangeEventConfig(eventRoot: eventRoot)
+    let config = try EventLiveConfig.load(eventRoot: eventRoot)
+    let source = try XCTUnwrap(config.fileChangeSources(eventRoot: eventRoot).first)
+    let state = try FileChangeWatchState(source: source)
+    try write("%PDF-1.4 demo", to: watched.appendingPathComponent("paper.pdf"))
+    let runner = FakeEventWorkflowRunner(replyText: "", replyAs: "")
+    let server = DefaultEventLiveServer(workflowRunner: runner)
+    let count = try await server.pollFileChangeSource(
+      source: source, state: state, config: config, eventRoot: eventRoot,
+      parsed: ParsedParityOptions(["--read-only"])
+    )
+    XCTAssertEqual(count, 1)
+    let requests = await runner.requests
+    XCTAssertTrue(requests.isEmpty)
+    try assertReadOnlyEventReceipt(eventRoot: eventRoot)
+  }
+
   func testFileChangeServeDispatchesBoundWorkflowForCreatedDocument() async throws {
     let eventRoot = try temporaryDirectory()
     let watched = eventRoot.appendingPathComponent("inbox", isDirectory: true)

@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 
 extension ScopedParityCommandRunner {
@@ -8,7 +9,10 @@ extension ScopedParityCommandRunner {
       .replacingOccurrences(of: "+", with: "-")
       .replacingOccurrences(of: "/", with: "_")
       .replacingOccurrences(of: "=", with: "")
-    return "event-\(encoded)"
+    let legacyId = "event-\(encoded)"
+    if legacyId.count <= 128 { return legacyId }
+    let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+    return "event-sha256-" + digest
   }
 
   func eventRecordURL(id: String, root: URL, kind: String) throws -> URL {

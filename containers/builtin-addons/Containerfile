@@ -11,7 +11,7 @@ COPY scripts/container-gateway-support/AnydocFFISmoke.c /anydoc-smoke.c
 RUN cc -I/anydoc-native/include /anydoc-smoke.c /anydoc-native/lib/libanydoc_ffi.a \
     -lm -ldl -lpthread -o /anydoc-smoke && /anydoc-smoke
 
-FROM swift:6.2-noble AS gmail-source
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS gmail-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /gmail-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
@@ -19,7 +19,7 @@ RUN git init . && git remote add origin https://github.com/tacogips/gmail-gatewa
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 RUN python3 /prepare.py gmail /gmail-gateway --crypto-version 4.5.2
 
-FROM swift:6.2-noble AS analytics-source
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS analytics-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /google-analytics-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-analytics-gateway.git && \
@@ -27,7 +27,7 @@ RUN git init . && git remote add origin https://github.com/tacogips/google-analy
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 RUN python3 /prepare.py analytics /google-analytics-gateway --crypto-version 4.5.2
 
-FROM swift:6.2-noble AS documents-source
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS documents-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /google-documents-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-documents-gateway.git && \
@@ -38,7 +38,7 @@ RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 4.5
 RUN swiftc /container-gateway-support/GoogleDocumentsPOSIX.swift \
     /container-gateway-support/GoogleDocumentsPOSIXSmoke.swift -o /posix-smoke && /posix-smoke
 
-FROM swift:6.2-noble AS build
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3 pkg-config && rm -rf /var/lib/apt/lists/*
 # Rust's ARM64 static library uses relocations unsupported by GNU gold.
 # Provision LLD only when it is absent from the Swift builder toolchain.
@@ -61,7 +61,7 @@ COPY scripts/prepare-container-gateway-source.py /prepare.py
 RUN python3 /prepare.py riela /src
 # Keep incremental compiler outputs in the builder, never in the runtime image.
 # The lock prevents simultaneous builds from mutating one SwiftPM directory.
-RUN --mount=type=cache,id=riela-builtin-swift62,target=/src/.build,sharing=locked \
+RUN --mount=type=cache,id=riela-builtin-swift633,target=/src/.build,sharing=locked \
     swift build -c release --product riela --jobs 4 -Xswiftc -use-ld=lld && \
     mkdir /install && cp .build/release/riela /install/ && \
     for resource in .build/release/*.resources; do if [ -d "$resource" ]; then cp -R "$resource" /install/; fi; done

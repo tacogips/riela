@@ -1,5 +1,5 @@
 ARG WORKER_IMAGE=riela-builtin-addons:local
-FROM swift:6.2-noble AS fixture-build
+FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS fixture-build
 COPY Tests/Fixtures/BuiltinProviderFixture/main.swift /fixture/main.swift
 RUN swiftc -O /fixture/main.swift -o /fixture/provider-fixture
 

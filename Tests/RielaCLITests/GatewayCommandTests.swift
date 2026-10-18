@@ -136,13 +136,27 @@ final class GatewayCommandTests: XCTestCase {
 
   func testNativeXHomeTimelineAcceptsBoundsBeforeAuthentication() async {
     let document = """
-    { homeTimeline(startTime: "2026-10-16T15:00:00Z", endTime: "2026-10-17T15:00:00Z",
+    { homeTimeline(userId: "123", startTime: "2026-10-16T15:00:00Z", endTime: "2026-10-17T15:00:00Z",
       sinceId: "123", untilId: "456", paginationToken: "page-two") { posts { id } pageInfo { nextToken } } }
     """
     let result = await GatewayCommand().run(["x", "graphql", "query", document, "--json"], environment: ["PATH": "/nonexistent"])
     XCTAssertEqual(result.exitCode, .failure)
     XCTAssertTrue(result.stderr.contains("homeTimeline requires X_GW_TOKEN"), result.stderr)
     XCTAssertFalse(result.stderr.contains("Unsupported argument"), result.stderr)
+  }
+
+  func testNativeXVerifiedTimelineUserIdSchemaAndValidation() async {
+    let schema = await GatewayCommand().run(["x", "graphql", "schema"], environment: ["PATH": "/nonexistent"])
+    XCTAssertEqual(schema.exitCode, .success)
+    XCTAssertTrue(schema.stdout.contains("userId: ID, maxResults: Int, startTime: String"), schema.stderr)
+    for value in ["abc", "123/456", "", "１２３"] {
+      let document = "{ homeTimeline(userId: \"\(value)\") { posts { id text } } }"
+      let result = await GatewayCommand().run(["x", "graphql", "query", document, "--json"], environment: ["PATH": "/nonexistent"])
+      XCTAssertEqual(result.exitCode, .failure, result.stderr)
+      XCTAssertTrue(result.stderr.contains("VALIDATION_ERROR"), result.stderr)
+      XCTAssertTrue(result.stderr.contains("homeTimeline.userId"), result.stderr)
+      XCTAssertFalse(result.stderr.contains("requires X_GW_TOKEN"), result.stderr)
+    }
   }
 
   func testNativeXAuthScopesDoesNotPrintCredentialValues() async {

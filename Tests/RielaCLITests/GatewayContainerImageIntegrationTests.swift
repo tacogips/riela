@@ -106,7 +106,7 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     XCTAssertEqual(result.terminationStatus, 0, result.stderr)
     XCTAssertTrue(result.stdout.contains("references: [PostReference!]!"))
     XCTAssertTrue(result.stdout.contains("searchPosts(query: String!, maxResults: Int, sinceId: String, nextToken: String"))
-    XCTAssertTrue(result.stdout.contains("maxResults: Int, startTime: String, endTime: String, sinceId: String, untilId: String, paginationToken: String"))
+    XCTAssertTrue(result.stdout.contains("userId: ID, maxResults: Int, startTime: String, endTime: String, sinceId: String, untilId: String, paginationToken: String"))
   }
 
   private func runImage(_ image: String, command: [String], bindings: [String: String] = [:], root: URL) async throws -> LocalProcessResult {

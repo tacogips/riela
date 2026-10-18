@@ -4,8 +4,19 @@ import Foundation
 import XCTest
 
 final class AppleGatewayLinkedDeadlineTests: XCTestCase {
+  func testLinkedSDKExposesScopedFolderDeletionOnlyForFullRole() throws {
+    let full = AppleGatewaySDK(role: .full).catalog
+    let operation = try XCTUnwrap(full.operations.first { $0.name == "deleteNoteFolder" })
+    XCTAssertTrue(operation.isDestructive)
+    XCTAssertEqual(operation.tier, "full")
+    XCTAssertFalse(AppleGatewaySDK(role: .reader).catalog.operations
+      .contains { $0.name == "deleteNoteFolder" })
+    let input = DeleteNoteFolderInput(accountId: "account", folderId: "folder")
+    XCTAssertFalse(input.allowNonEmpty)
+  }
+
   func testLinkedSDKStopsTimedOutChildWithoutReadReplay() throws {
-    XCTAssertEqual(AppleGatewayCore.Version.current, "0.1.17")
+    XCTAssertEqual(AppleGatewayCore.Version.current, "0.1.18")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("riela-apple-deadline-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }

@@ -1,5 +1,6 @@
 import Foundation
 import RielaCore
+import RielaSQLite
 #if os(Linux)
 import Glibc
 #else
@@ -10,6 +11,7 @@ enum SessionExecutionLockError: Error, CustomStringConvertible, Equatable {
   case invalidSessionId(String)
   case unavailable(String)
   case alreadyRunning(String)
+  case retiredSession(String)
 
   var description: String {
     switch self {
@@ -19,6 +21,8 @@ enum SessionExecutionLockError: Error, CustomStringConvertible, Equatable {
       "session execution lock unavailable: \(message)"
     case let .alreadyRunning(sessionId):
       "session '\(sessionId)' is already owned by another live execution"
+    case let .retiredSession(sessionId):
+      "session '\(sessionId)' payloads have expired under terminal retention"
     }
   }
 }
@@ -27,15 +31,17 @@ enum SessionExecutionLockError: Error, CustomStringConvertible, Equatable {
 /// lock if the process exits, so crash recovery does not depend on a timeout.
 final class SessionExecutionLockRegistry: @unchecked Sendable {
   private let lockRoot: URL
+  private let databasePath: String
   private let mutex = NSLock()
   private var heldLocks: [String: SessionExecutionLock] = [:]
 
   init(sessionStoreRoot: String) {
+    databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: sessionStoreRoot)
     lockRoot = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot), isDirectory: true)
       .appendingPathComponent("execution-locks", isDirectory: true)
   }
 
-  func acquire(sessionId: String) throws {
+  func acquire(sessionId: String, allowRetired: Bool = false) throws {
     guard sessionId.range(of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#, options: .regularExpression) != nil else {
       throw SessionExecutionLockError.invalidSessionId(sessionId)
     }
@@ -44,10 +50,19 @@ final class SessionExecutionLockRegistry: @unchecked Sendable {
     guard heldLocks[sessionId] == nil else {
       return
     }
-    heldLocks[sessionId] = try SessionExecutionLock(
+    let acquired = try SessionExecutionLock(
       url: lockRoot.appendingPathComponent(sessionId).appendingPathExtension("lock"),
       sessionId: sessionId
     )
+    if !allowRetired, FileManager.default.fileExists(atPath: databasePath) {
+      let db = try SQLiteDatabase.open(path: databasePath, mode: .strictReadOnly, options: .readOnlyDefault)
+      if try db.tableExists("session_retention_tombstones"),
+         try !db.query("SELECT 1 FROM session_retention_tombstones WHERE session_id=? LIMIT 1",
+          bindings: [.text(sessionId)]).isEmpty {
+        throw SessionExecutionLockError.retiredSession(sessionId)
+      }
+    }
+    heldLocks[sessionId] = acquired
   }
 
   /// Releases a lock this registry holds. Used when a reserved session id
@@ -112,6 +127,9 @@ final class LockReservingWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerating
       do {
         try registry.acquire(sessionId: candidate)
       } catch SessionExecutionLockError.alreadyRunning {
+        lastContended = candidate
+        continue
+      } catch SessionExecutionLockError.retiredSession {
         lastContended = candidate
         continue
       }

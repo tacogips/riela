@@ -2,6 +2,7 @@ import Foundation
 
 extension RielaArgumentParser {
   func parseSession(_ arguments: [String]) throws -> RielaCommand {
+    if arguments.first == "prune" { return .session(.prune(Array(arguments.dropFirst()))) }
     if arguments.first == "handover" {
       let route = try ParsedTargetAndOptions.parseCLI(Array(arguments.dropFirst()))
       guard let target = route.target, !target.isEmpty else {

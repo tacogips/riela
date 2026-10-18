@@ -199,6 +199,8 @@ public struct RielaCLIApplication: Sendable {
 
   private func runSession(_ command: SessionCommand) async -> CLICommandResult {
     switch command {
+    case let .prune(arguments):
+      return SessionPruneCommandRunner().run(arguments)
     case let .handover(options):
       return await TaskHandoverCommandRunner().runSessionHandover(options)
     case let .rerun(options):
@@ -347,6 +349,7 @@ Usage:
   riela session rerun <session-id> <step-id> [--preserve-history] [--scope project|user|auto] [--output jsonl|json|text]
   riela session resume <session-id> [--retry-failed-step] [--max-steps <n>] [--scope project|user|auto] [--output jsonl|json|text]
   riela session list [--workflow <name>] [--status created|running|completed|failed] [--limit 10] [--scope project|user|auto] [--output jsonl|json|text|table]
+  riela session prune --session-store <absolute-path> --artifact-root <absolute-path> --memory-root <absolute-path> --workflow-id <id> [--retention-hours 24] [--max-payload-bytes 268435456] [--dry-run] [--output json]
   riela session latest --workflow <name> [--scope project|user|auto] [--output jsonl|json|text|table]
   riela session progress <session-id> [--follow] [--poll-interval 2.0] [--include-children] [--output text|jsonl|json]
   riela session health <session-id> [--output text|jsonl|json]  # backendActivity: active|quiet|stalled-suspect|unknown

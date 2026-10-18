@@ -73,8 +73,8 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
     XCTAssertTrue(report.enabled)
     XCTAssertFalse(FileManager.default.fileExists(atPath: oldSnapshot.path))
     XCTAssertFalse(FileManager.default.fileExists(atPath: oldReceipt.path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: oldArtifact.path))
-    XCTAssertFalse(FileManager.default.fileExists(atPath: oldLog.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: oldArtifact.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: oldLog.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: workflow.path))
   }
 
@@ -116,7 +116,7 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: session.path))
   }
 
-  func testCollectRemovesExpiredSQLiteRuntimeSnapshots() throws {
+  func testAgeOnlyCollectionPreservesRuntimeSnapshotsForScopedRetention() throws {
     let home = try makeRoot()
     let runtimeRoot = home.appendingPathComponent(".riela/sessions/runtime-records", isDirectory: true)
     let store = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: runtimeRoot.path)
@@ -149,8 +149,9 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
       now: newDate
     )
 
-    XCTAssertEqual(report.removedSessionCount, 1)
-    XCTAssertThrowsError(try store.load(sessionId: oldSession.sessionId))
+    XCTAssertEqual(report.removedSessionCount, 0)
+    XCTAssertEqual(try store.load(sessionId: oldSession.sessionId).session, oldSession)
+    XCTAssertTrue(report.diagnostics.contains { $0.contains("session prune") })
     XCTAssertEqual(try store.load(sessionId: newSession.sessionId).session, newSession)
   }
 

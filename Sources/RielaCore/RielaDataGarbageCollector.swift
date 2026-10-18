@@ -225,23 +225,9 @@ public struct RielaDataGarbageCollector {
       report.diagnostics.append("refusing symbolic-link GC root: \(root.path)")
       return
     }
-    let sessions = root.appendingPathComponent("sessions", isDirectory: true)
-    let database = sessions
-      .appendingPathComponent("runtime-records", isDirectory: true)
-      .appendingPathComponent("runtime-message-log.sqlite")
-    if fileManager.fileExists(atPath: database.path) {
-      do {
-        let databaseResult = try collectDatabase(
-          at: database,
-          cutoff: cutoff,
-          dryRun: dryRun
-        )
-        report.removedSessionCount += databaseResult.sessionIds.count
-        report.removedEntryCount += databaseResult.rowCount
-      } catch {
-        report.diagnostics.append("\(database.path): \(error.localizedDescription)")
-      }
-    }
+    // Age alone cannot prove that a runtime family is terminal or unlocked.
+    // Payload retention is handled by the explicitly scoped `session prune` command.
+    report.diagnostics.append("runtime sessions, artifacts and logs preserved; use scoped session prune for terminal payload retention")
     collectWorkflowHistory(
       at: root.appendingPathComponent("workflow-history", isDirectory: true),
       cutoff: cutoff,
@@ -254,14 +240,6 @@ public struct RielaDataGarbageCollector {
       dryRun: dryRun,
       report: &report
     )
-    for directory in ["artifacts", "logs"] {
-      collectDirectAgedChildren(
-        at: root.appendingPathComponent(directory, isDirectory: true),
-        cutoff: cutoff,
-        dryRun: dryRun,
-        report: &report
-      )
-    }
     let sessionStore = root.appendingPathComponent("sessions", isDirectory: true)
     let runtimeRecords = sessionStore.appendingPathComponent("runtime-records", isDirectory: true)
     // File-sink packets live under `<session-store>/handovers` and under the Work Runtime
@@ -510,69 +488,6 @@ public struct RielaDataGarbageCollector {
       stderr: errorOutput.string,
       exitCode: process.terminationStatus
     )
-  }
-
-  private func collectDatabase(
-    at databaseURL: URL,
-    cutoff: Date,
-    dryRun: Bool
-  ) throws -> (sessionIds: Set<String>, rowCount: Int) {
-    let database = try SQLiteDatabase.open(path: databaseURL.path)
-    let cutoffString = Self.dateString(cutoff)
-    var sessionIds = Set<String>()
-    if try database.tableExists("workflow_runtime_snapshots") {
-      let rows = try database.query(
-        "SELECT workflow_execution_id FROM workflow_runtime_snapshots WHERE updated_at < ?",
-        bindings: [.text(cutoffString)]
-      )
-      sessionIds.formUnion(rows.compactMap { $0["workflow_execution_id"] })
-    }
-    if try database.tableExists("cli_workflow_sessions") {
-      let rows = try database.query(
-        "SELECT session_id FROM cli_workflow_sessions WHERE updated_at < ?",
-        bindings: [.text(cutoffString)]
-      )
-      sessionIds.formUnion(rows.compactMap { $0["session_id"] })
-    }
-    guard !dryRun, !sessionIds.isEmpty else {
-      return (sessionIds, sessionIds.count)
-    }
-    var removedRows = 0
-    try database.transaction { database in
-      for sessionId in sessionIds {
-        for table in ["workflow_message_payload_index", "workflow_messages"] where try database.tableExists(table) {
-          removedRows += try database.executeAndReturnChangedRowCount(
-            "DELETE FROM \(table) WHERE workflow_execution_id = ?",
-            bindings: [.text(sessionId)]
-          )
-        }
-        if try database.tableExists("workflow_runtime_snapshots") {
-          removedRows += try database.executeAndReturnChangedRowCount(
-            "DELETE FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?",
-            bindings: [.text(sessionId)]
-          )
-        }
-        if try database.tableExists("cli_workflow_sessions") {
-          removedRows += try database.executeAndReturnChangedRowCount(
-            "DELETE FROM cli_workflow_sessions WHERE session_id = ?",
-            bindings: [.text(sessionId)]
-          )
-        }
-        if try database.tableExists("loop_baselines") {
-          removedRows += try database.executeAndReturnChangedRowCount(
-            "DELETE FROM loop_baselines WHERE session_id = ?",
-            bindings: [.text(sessionId)]
-          )
-        }
-        if try database.tableExists("loop_concurrency_leases") {
-          removedRows += try database.executeAndReturnChangedRowCount(
-            "DELETE FROM loop_concurrency_leases WHERE session_id = ? AND heartbeat_at < ?",
-            bindings: [.text(sessionId), .text(cutoffString)]
-          )
-        }
-      }
-    }
-    return (sessionIds, removedRows)
   }
 
   private func collectWorkflowHistory(

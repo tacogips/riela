@@ -256,15 +256,13 @@ public struct CLIWorkflowSessionStore: Sendable {
     guard isSafeSessionId(sessionId), FileManager.default.fileExists(atPath: databasePath) else {
       return false
     }
-    guard let db = try? openDatabase(readOnly: true),
-          (try? tableExists(db, name: "cli_workflow_sessions")) == true else {
-      return false
+    guard let db = try? openDatabase(readOnly: true) else { return false }
+    for table in ["cli_workflow_sessions", "session_retention_tombstones"] where (try? db.tableExists(table)) == true {
+      if let rows = try? db.query("SELECT 1 FROM \(table) WHERE session_id=? LIMIT 1", bindings: [.text(sessionId)]), !rows.isEmpty {
+        return true
+      }
     }
-    let rows = try? db.query(
-      "SELECT 1 FROM cli_workflow_sessions WHERE session_id = ? LIMIT 1",
-      bindings: [.text(sessionId)]
-    )
-    return !(rows ?? []).isEmpty
+    return false
   }
 
   func loadRawSessionIdentities() throws -> [(sessionId: String, workflowId: String)] {
@@ -272,15 +270,11 @@ public struct CLIWorkflowSessionStore: Sendable {
       return []
     }
     let db = try openDatabase(readOnly: true)
-    guard try tableExists(db, name: "cli_workflow_sessions") else {
-      return []
-    }
-    let rows = try mapSQLiteError {
-      try db.query(
-        "SELECT session_id, workflow_id FROM cli_workflow_sessions ORDER BY session_id"
-      )
-    }
-    return rows.compactMap { row in
+    let rows = try db.tableExists("cli_workflow_sessions")
+      ? db.query("SELECT session_id,workflow_id FROM cli_workflow_sessions ORDER BY session_id") : []
+    let tombstones = try db.tableExists("session_retention_tombstones")
+      ? db.query("SELECT session_id,workflow_id FROM session_retention_tombstones ORDER BY session_id") : []
+    return (rows + tombstones).compactMap { row in
       guard let sessionId = row["session_id"],
             let workflowId = row["workflow_id"] else {
         return nil
@@ -393,6 +387,7 @@ public struct CLIWorkflowSessionStore: Sendable {
       )
       try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_updated ON cli_workflow_sessions (updated_at DESC, session_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_workflow_status_updated ON cli_workflow_sessions (workflow_name, status, updated_at DESC)")
+      try ensureSessionRetentionTriggers(db)
     }
   }
 

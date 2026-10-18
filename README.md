@@ -538,9 +538,11 @@ riela gc --retention-days 30 --scope project --dry-run --output json
 ```
 
 With no configured or explicit retention period, `riela gc` reports that GC is
-off and changes nothing. The collector removes expired session/runtime rows,
-message-log rows, workflow-history snapshots, event
-receipts, artifacts, and logs. Authored workflows, installed packages,
+off and changes nothing. The age-only collector removes expired workflow-history
+snapshots and event receipts, and preserves runtime sessions, message logs,
+artifacts and logs. Age alone does not prove a session is terminal or unlocked.
+Use the explicitly scoped [terminal payload retention command](docs/terminal-retention.md)
+for those runtime payloads. Authored workflows, installed packages,
 registries, profiles, notes, and configuration files are not GC targets.
 `--scope all` covers both `~/.riela` and the current project's `.riela`;
 RielaApp automatically collects only its configured user home.

@@ -70,19 +70,19 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/wrike-gateway.git",
-      revision: "ec1b9e770a18e5a2b463b09becb69492a21abf5d"
+      revision: "8c67ad9452abdcad38924855bd1ae5a182a3dea2"
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "5bbcb03bcd0ef09249081694b1a75dfc3a1ca2e1" // v0.1.20; SDK has revision-pinned dependencies.
+      revision: "488b2e23bceb6457bed4d596109b0b166c6c6c82" // v0.1.21; SDK has revision-pinned dependencies.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
-      revision: "6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0"
+      revision: "3bd0048a01295ed3559da65b9aef9e767268a907"
     ),
     .package(
       url: "https://github.com/tacogips/apple-gateway.git",
-      revision: "97dccf0be085e8567fef341b6719edaac84f9d93"
+      revision: "6a7df871e1ed76a5e374a35f4e4da9760e070535" // v0.1.13; shared SDK diagnostics compatibility.
     ),
     .package(
       url: "https://github.com/tacogips/anydoc-swift.git",
@@ -90,7 +90,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
-      revision: "dadc2f7d0070f92df07278873262f9f7aad5d16e"
+      revision: "e97d952459305828461e3a808d0dfdace902079f"
     )
   ],
   targets: [

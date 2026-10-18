@@ -1,5 +1,5 @@
 {
-  "originHash" : "e5fe7671b84c7ea576d2e3e12ef75b583d04845cce72f8d09ec1994e9868ce0f",
+  "originHash" : "c9ba9bd3d0de763dae2d64bdda5f2901c1455737d2596ef42a93e2d825e0014d",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "97dccf0be085e8567fef341b6719edaac84f9d93"
+        "revision" : "6a7df871e1ed76a5e374a35f4e4da9760e070535"
       }
     },
     {
@@ -30,8 +30,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gateway-sdk-kit.git",
       "state" : {
-        "revision" : "4d4b56c686f6875defccb54f74e2276022eb524e",
-        "version" : "0.1.0"
+        "revision" : "b133fcaab52265dcd508df7e2c3f11a073d20d83",
+        "version" : "0.1.1"
       }
     },
     {
@@ -39,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "5bbcb03bcd0ef09249081694b1a75dfc3a1ca2e1"
+        "revision" : "488b2e23bceb6457bed4d596109b0b166c6c6c82"
       }
     },
     {
@@ -47,7 +47,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-analytics-gateway.git",
       "state" : {
-        "revision" : "6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0"
+        "revision" : "3bd0048a01295ed3559da65b9aef9e767268a907"
       }
     },
     {
@@ -55,7 +55,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/google-documents-gateway.git",
       "state" : {
-        "revision" : "dadc2f7d0070f92df07278873262f9f7aad5d16e"
+        "revision" : "e97d952459305828461e3a808d0dfdace902079f"
       }
     },
     {
@@ -150,7 +150,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/wrike-gateway.git",
       "state" : {
-        "revision" : "ec1b9e770a18e5a2b463b09becb69492a21abf5d"
+        "revision" : "8c67ad9452abdcad38924855bd1ae5a182a3dea2"
       }
     },
     {

@@ -1,6 +1,6 @@
 # Apple Container private gateway execution
 
-Issue: https://github.com/tacogips/riela/issues/144
+Issues: https://github.com/tacogips/riela/issues/144 and https://github.com/tacogips/riela/issues/145
 
 Apple Container 1.5.0 persists init stdout/stderr to stdio.log and has no log-disable flag. Launch only a bounded secret-free idle init. Send explicit provider bindings in a bounded RIELAENV1 stdin frame to attached exec; invoke a guest guard that sets NoNewPrivs and verifies nonroot, zero capabilities, readonly root, protected bounded tmpfs and process/core limits. Always force-delete, including failures/cancellation. Preserve Docker/Podman transport.
 
@@ -21,3 +21,7 @@ Publication hold: 0.2.10 completed all six artifacts, Linux clean-Ubuntu smoke a
 X0.1.11 is publicly released at 9f0c0d002efa4e061d6ed8795dbe5eab89f7432c with public-only metrics and finite problem/reason diagnostics. Its reader image passed isolation/frame/privacy proofs. The coordinated minimal provider request still returned HTTP403 with unknown finite cause; this external access failure is not treated as a successful archive retrieval.
 
 Gmail GraphQL errors currently lose numeric provider diagnostics in the shared SDK. Add bounded error-array/typed-extension parsing in Riela; accept only known codes, HTTP100...599 and provider integers0...99999, never messages, paths, identifiers or arbitrary metadata. The producer fix belongs in GatewaySDKKit0.1.1 and Gmail0.1.21; Apple also needs a compatibility dependency patch. Hold the final Riela tag and packaging until all immutable public pins, image tests and the coordinated finite Gmail probe are complete.
+
+Shared SDK integration: SDKKit0.1.1 (b133fca) adds validated numeric diagnostics with default-nil source compatibility; Gmail0.1.21 (488b2e23) preserves them through actual GraphQL and canonical CLI serialization. Apple0.1.13 (6a7df871) shares this dependency. Manifest-only public compatibility commits Wrike8c67ad9, Analytics3bd0048 and Documentse97d952 allow the tested0.1.x range; their complete suites passed370/306/180 tests respectively. Apple288 tests/smoke/lint and both architecture/public/tap gates passed. No provider messages, arbitrary extensions or alias-correlation side channels were introduced.
+
+Final native graph resolves with all public SDK revisions. Focused final suite:55 tests, one optional live skip, zero failures; SwiftLint clean. Staged native candidate reports Riela0.2.11, Gmail0.1.21, Apple0.1.13 and X0.1.11; all nine gateway help routes pass. Final Gmail image proof and coordinated finite profile diagnosis precede the release tag.

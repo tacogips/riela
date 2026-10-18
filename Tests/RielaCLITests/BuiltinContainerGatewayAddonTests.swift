@@ -11,6 +11,8 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
     let root = try makeRielaCLITestTemporaryDirectory("builtin-gateway-live")
     defer { try? FileManager.default.removeItem(at: root) }
     let reader = root.appendingPathComponent("x-gateway-reader")
+    let guardPath = try XCTUnwrap(environment["RIELA_TEST_GATEWAY_GUARD"], "path to Linux guard compiled from containers/gateway-support/guard.c")
+    try FileManager.default.copyItem(atPath: guardPath, toPath: root.appendingPathComponent("riela-gateway-guard").path)
     try """
     #!/bin/sh
     set -eu
@@ -29,7 +31,7 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
     selectedEnvironment["UNRELATED_SECRET"] = "must-not-forward"
     let output = try await BuiltinWorkflowAddonResolver(environment: selectedEnvironment, workingDirectory: root).execute(
       input(.xRead, env: ["X_GW_ACCESS_TOKEN": .object(["fromEnv": .string("SOURCE_TOKEN")])], extraConfig: [
-        "image": .string("swift:6.2-noble"), "networkPolicy": .string("denied"),
+        "image": .string(ContainerGatewayAddon.xRead.defaultImage), "networkPolicy": .string("denied"),
         "mounts": .array([.object(["source": .string(root.path), "target": .string("/usr/local/bin")])])
       ]), context: AdapterExecutionContext(deadline: Date().addingTimeInterval(120)))
     XCTAssertEqual(output.provider, "container-addon")
@@ -47,8 +49,12 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
       ).execute(input(gateway, env: ["X_GW_ACCESS_TOKEN": .object(["fromEnv": .string("SOURCE_TOKEN")])]),
         context: AdapterExecutionContext())
       let calls = await runner.calls
-      let call = try XCTUnwrap(calls.first)
-      XCTAssertEqual(calls.count, 1)
+      let call = try XCTUnwrap(calls.dropFirst().first)
+      XCTAssertEqual(calls.count, 3)
+      XCTAssertEqual(calls.first?.arguments.first, "run")
+      XCTAssertEqual(calls.last?.arguments.prefix(2), ["delete", "--force"])
+      XCTAssertNil(calls.first?.environment["X_GW_ACCESS_TOKEN"])
+      XCTAssertNil(calls.last?.environment["X_GW_ACCESS_TOKEN"])
       XCTAssertEqual(call.executableURL.path, "/usr/local/bin/container")
       XCTAssertTrue(call.arguments.contains("X_GW_ACCESS_TOKEN"))
       XCTAssertFalse(call.arguments.contains { $0.contains("secret") || $0.contains("private") })
@@ -58,7 +64,8 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
       XCTAssertFalse(call.inheritEnvironment)
       XCTAssertFalse(call.arguments.contains("--log-driver"))
       XCTAssertFalse(call.arguments.contains("UNRELATED=private"))
-      XCTAssertTrue(call.arguments.contains("--read-only"))
+      XCTAssertTrue(calls[0].arguments.contains("--read-only"))
+      XCTAssertTrue(call.arguments.contains("/usr/local/bin/riela-gateway-guard"))
       XCTAssertTrue(call.arguments.contains(gateway.entrypoint))
       XCTAssertEqual(Array(call.arguments.suffix(gateway.arguments(document: "query { posts(limit: 3) }").count)),
         gateway.arguments(document: "query { posts(limit: 3) }"))

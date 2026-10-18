@@ -1,6 +1,8 @@
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 ARG GATEWAY_REVISION=d7a7cd9947b43dccaec6708c24de35bfa4742396
+COPY guard.c /guard.c
+RUN cc -O2 -Wall -Wextra -Werror /guard.c -o /riela-gateway-guard
 WORKDIR /src
 RUN git init . && git remote add origin https://github.com/tacogips/x-gateway.git && \
     git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD
@@ -14,6 +16,11 @@ RUN sh /collect-swift-runtime.sh /runtime-swift /src/.build/release/x-gateway-re
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata libcurl4t64 libxml2 libstdc++6 libgcc-s1 libssl3t64 zlib1g && rm -rf /var/lib/apt/lists/*
 COPY --from=build /runtime-swift/ /usr/lib/swift/linux/
+COPY --from=build /riela-gateway-guard /usr/local/bin/riela-gateway-guard
+RUN rm -rf /tmp && ln -s /dev/shm /tmp
 ENV LD_LIBRARY_PATH="/usr/lib/swift/linux"
 COPY --from=build /src/.build/release/x-gateway-reader /src/.build/release/x-gateway-writer /usr/local/bin/
+RUN useradd --uid 10001 --home-dir /tmp/riela-x --no-create-home --shell /usr/sbin/nologin riela-x
+ENV HOME="/tmp/riela-x"
+USER 10001:10001
 ENTRYPOINT ["x-gateway-reader"]

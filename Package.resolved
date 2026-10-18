@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "35df811d3acb44907f3635b34cc9e9bf601295b9"
+        "revision" : "06845a15d8bb03aa1bdadc5da7d38a4ed9aef929"
       }
     },
     {

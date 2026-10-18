@@ -86,6 +86,13 @@ struct ContainerGatewayAddonExecutor {
       }
     }
     let gatewayEnvironment = try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment)
+    let result: LocalProcessResult
+    if driver.kind == .appleContainer {
+      result = try await AppleContainerGatewayProcess(executable: driver.executable, environment: runtimeProcessEnvironment,
+        workingDirectory: workingDirectory, runner: runner).run(image: image, mounts: mounts,
+          networkAllowed: networkPolicy == .egressAllowed, gateway: gateway, document: document,
+          bindings: gatewayEnvironment, deadline: context.deadline)
+    } else {
     var arguments = driver.runArguments(image: image, options: ContainerRuntimeRunOptions(
       environment: gatewayEnvironment,
       mounts: mounts,
@@ -106,7 +113,8 @@ struct ContainerGatewayAddonExecutor {
       workingDirectoryURL: workingDirectory,
       inheritEnvironment: false
     )
-    let result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
+    result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
+    }
     // Do not surface raw gateway stderr: it may contain provider credentials.
     guard result.terminationStatus == 0 else {
       throw AdapterExecutionError(.providerError, "\(input.addon.name) container failed with exit code \(result.terminationStatus)"

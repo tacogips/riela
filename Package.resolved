@@ -1,5 +1,5 @@
 {
-  "originHash" : "8037abecc249e9ee256cb85c04f0158870f2c91295717881850acea8e69502cd",
+  "originHash" : "49ac86b9dcf367b03a0f9e3d490e9e70f22424c5bce5acc3ac34c0955767370b",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -158,8 +158,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/x-gateway.git",
       "state" : {
-        "revision" : "4eb610a0b53f517572851b4a96494b0e5ad92e9c",
-        "version" : "0.1.7"
+        "revision" : "9421ddcc264d7692e6f6135445f42993b854a334",
+        "version" : "0.1.8"
       }
     }
   ],

@@ -108,6 +108,20 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     XCTAssertEqual(result.stdout, "private-credential-lock-ok")
   }
 
+  func testXImageExposesIncrementalRecentSearchWithoutCredentials() async throws {
+    try requireLiveImages()
+    let root = try makeRielaCLITestTemporaryDirectory("x-incremental-schema")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let driver = try XCTUnwrap(ContainerRuntimeDiscovery(environment: ["RIELA_CONTAINER_RUNTIME": liveRuntime]).configuredDriver())
+    let arguments = driver.runArguments(image: ContainerGatewayAddon.xRead.defaultImage,
+      options: .init(environment: [:], mounts: [], entrypoint: "x-gateway-reader", workingDirectory: nil,
+        networkAllowed: false, readOnlyRootFilesystem: true, disablePersistentLogs: true)) + ["graphql", "schema"]
+    let result = try await FoundationLocalProcessRunner().run(configuration: .init(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+      arguments: [driver.executable] + arguments, environment: [:], workingDirectoryURL: root), stdin: "", deadline: Date().addingTimeInterval(300))
+    XCTAssertEqual(result.terminationStatus, 0, result.stderr)
+    XCTAssertTrue(result.stdout.contains("searchPosts(query: String!, maxResults: Int, sinceId: String, nextToken: String"))
+  }
+
   private func syntheticCredentials(credentialID: String) -> [String: String] {
     let suffix = credentialID.replacingOccurrences(of: "-", with: "_").uppercased()
     return [

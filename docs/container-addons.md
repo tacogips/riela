@@ -175,6 +175,11 @@ use a digest reference for reproducible execution. The image must contain
 to that reader. X receives `graphql query <rendered-query> --json`; Gmail
 receives `graphql --query <rendered-query>`. No shell evaluates the query.
 
+Gateway failures retain only finite machine diagnostics: SDK code/classification,
+HTTP status, allowlisted provider problem/reason, and a bounded integer provider
+error code. Provider messages, details, resource IDs and arbitrary URLs are
+excluded; unknown diagnostic strings are discarded.
+
 Only `addon.env` bindings are forwarded into the container. Gateway target names
 must be uppercase `X_GW_*` or `GMAIL_GATEWAY_*` names (letters, digits, underscore);
 source names in `fromEnv` are unrestricted. Host runtime controls such as `PATH`,

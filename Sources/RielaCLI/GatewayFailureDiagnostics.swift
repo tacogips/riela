@@ -6,26 +6,71 @@ enum GatewayFailureDiagnostics {
   private static let codes: Set<String> = [
     "VALIDATION_ERROR", "AUTH_MISSING", "AUTH_INVALID", "AUTH_EXPIRED", "AUTH_REVOKED",
     "PERMISSION_DENIED", "RATE_LIMITED", "RESOURCE_NOT_FOUND", "CONFLICT", "UPSTREAM_FAILURE",
-    "NETWORK_FAILURE", "UNSUPPORTED", "INTERNAL_ERROR"
+    "NETWORK_FAILURE", "UNSUPPORTED", "INTERNAL_ERROR",
+    "ACCESS_MODE_INSUFFICIENT", "ACCOUNT_NOT_FOUND", "ATTACHMENT_NOT_FOUND", "AUTH_BOOTSTRAP_NOT_IMPLEMENTED",
+    "AUTH_REQUIRED", "CANCELLED", "CONFIG_INVALID", "CREDENTIAL_NOT_FOUND", "DRAFT_NOT_FOUND",
+    "FILE_OPERATION_FAILED", "INVALID_DOWNLOAD_KEY", "INVALID_ARGUMENT", "MESSAGE_NOT_FOUND",
+    "MUTATION_OUTCOME_UNKNOWN", "PROVIDER_API_ERROR", "PROVIDER_RATE_LIMITED", "RESOURCE_LIMIT",
+    "LABEL_NOT_FOUND", "MAIL_INGEST_NOT_SUPPORTED", "MAILBOX_MUTATION_NOT_SUPPORTED",
+    "SEND_DISABLED_IN_DRAFT_GATEWAY", "SEND_DISABLED_IN_READER", "SEND_NOT_SUPPORTED", "UNEXPECTED_ERROR"
   ]
   private static let classifications: Set<String> = [
     "validation", "auth", "permission", "rate_limit", "upstream", "network", "internal"
   ]
+  private static let providerProblems: Set<String> = [
+    "client-forbidden", "not-authorized-for-resource", "unsupported-authentication", "insufficient-scope",
+    "usage-capped", "rate-limit-exceeded", "invalid-request", "resource-not-found", "unknown"
+  ]
+  private static let providerReasons: Set<String> = [
+    "client-not-enrolled", "insufficient-scope", "unsupported-authentication", "usage-capped", "unknown"
+  ]
 
   static func suffix(stdout: String, stderr: String = "") -> String {
     for text in [stderr, stdout] where text.utf8.count <= 65_536 {
-      guard let response = try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8)),
-            case let .object(error)? = response["error"],
-            case let .string(code)? = error["code"], codes.contains(code) else { continue }
-      var fields = ["code=\(code)"]
-      if case let .string(classification)? = error["classification"], classifications.contains(classification) {
-        fields.append("classification=\(classification)")
+      guard let response = try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8)) else { continue }
+      var errors: [JSONObject] = []
+      if case let .object(error)? = response["error"] { errors.append(error) }
+      if case let .array(values)? = response["errors"] {
+        errors += values.prefix(16).compactMap { value in
+          guard case let .object(error) = value else { return nil }
+          return error
+        }
       }
-      if case let .integer(status)? = error["httpStatus"], (100...599).contains(status) {
-        fields.append("httpStatus=\(status)")
+      for error in errors {
+        if let suffix = suffix(error: error) { return suffix }
       }
-      return " (\(fields.joined(separator: ", ")))"
     }
     return ""
+  }
+
+  private static func suffix(error: JSONObject) -> String? {
+    guard case let .string(code)? = error["code"], codes.contains(code) else { return nil }
+    var fields = ["code=\(code)"]
+    if case let .string(classification)? = error["classification"], classifications.contains(classification) {
+      fields.append("classification=\(classification)")
+    }
+    if let status = boundedInteger(error: error, key: "httpStatus", range: 100...599) {
+      fields.append("httpStatus=\(status)")
+    }
+    if case let .string(problem)? = error["providerProblem"], providerProblems.contains(problem) {
+      fields.append("providerProblem=\(problem)")
+    }
+    if case let .string(reason)? = error["providerReason"], providerReasons.contains(reason) {
+      fields.append("providerReason=\(reason)")
+    }
+    if let providerCode = boundedInteger(error: error, key: "providerErrorCode", range: 0...99_999) {
+      fields.append("providerErrorCode=\(providerCode)")
+    }
+    return " (\(fields.joined(separator: ", ")))"
+  }
+
+  private static func boundedInteger(error: JSONObject, key: String, range: ClosedRange<Int64>) -> Int64? {
+    if case let .integer(value)? = error[key], range.contains(value) { return value }
+    if case let .object(extensions)? = error["extensions"],
+       case let .integer(value)? = extensions[key], range.contains(value) { return value }
+    guard case let .object(details)? = error["details"], case let .string(text)? = details[key],
+          (1...5).contains(text.utf8.count), text.utf8.allSatisfy({ (48...57).contains($0) }),
+          let value = Int64(text), range.contains(value) else { return nil }
+    return value
   }
 }

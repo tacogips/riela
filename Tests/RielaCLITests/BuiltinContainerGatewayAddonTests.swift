@@ -208,6 +208,47 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
     XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: "prefix " + failure), "")
   }
 
+  func testProviderProblemDiagnosticsRejectArbitraryTextURLsAndNonintegerCodes() {
+    let safe = #"""
+    {"error":{"code":"PERMISSION_DENIED","httpStatus":403,"providerProblem":"client-forbidden",
+      "providerReason":"client-not-enrolled","providerErrorCode":453,"details":"secret-token",
+      "message":"private-post","resource_id":"private-id"}}
+    """#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: safe),
+      " (code=PERMISSION_DENIED, httpStatus=403, providerProblem=client-forbidden, providerReason=client-not-enrolled, providerErrorCode=453)")
+    for value in [#""https://api.x.com/2/problems/client-forbidden?secret""#, #""secret-token""#] {
+      let unsafe = "{\"error\":{\"code\":\"PERMISSION_DENIED\",\"providerProblem\":\(value),\"providerReason\":\(value)}}"
+      XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: unsafe), " (code=PERMISSION_DENIED)")
+    }
+    for value in ["true", "-1", "100000", "1.5", #""453""#] {
+      let unsafe = "{\"error\":{\"code\":\"PERMISSION_DENIED\",\"providerErrorCode\":\(value)}}"
+      XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: unsafe), " (code=PERMISSION_DENIED)")
+    }
+  }
+
+  func testGmailFailureCodesCrossBoundaryWithoutProviderDetails() {
+    for code in ["UNEXPECTED_ERROR", "AUTH_REQUIRED", "PROVIDER_API_ERROR", "PROVIDER_RATE_LIMITED", "CONFIG_INVALID"] {
+      let failure = "{\"error\":{\"code\":\"\(code)\",\"message\":\"secret-token\",\"details\":{\"accountId\":\"private-id\"}}}"
+      XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: "", stderr: failure), " (code=\(code))")
+    }
+  }
+
+  func testGmailGraphQLAndCLIEnvelopesPreserveOnlyBoundedNumbers() {
+    let graphql = #"{"data":null,"errors":[{"code":"PROVIDER_API_ERROR","message":"secret-token","path":["private-id"],"httpStatus":403,"providerErrorCode":403}]}"#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: graphql),
+      " (code=PROVIDER_API_ERROR, httpStatus=403, providerErrorCode=403)")
+    let typed = #"{"errors":[{"code":"PROVIDER_API_ERROR","extensions":{"httpStatus":403,"providerErrorCode":403,"token":"secret-token"}}]}"#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: typed),
+      " (code=PROVIDER_API_ERROR, httpStatus=403, providerErrorCode=403)")
+    let cli = #"{"error":{"code":"PROVIDER_API_ERROR","details":{"httpStatus":"403","providerErrorCode":"403","token":"secret-token"}}}"#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: "", stderr: cli),
+      " (code=PROVIDER_API_ERROR, httpStatus=403, providerErrorCode=403)")
+    for invalid in ["-1", "100000", "1.5", " 403", "+403", "403secret", "", "１２３"] {
+      let value = "{\"errors\":[{\"code\":\"PROVIDER_API_ERROR\",\"details\":{\"httpStatus\":\"\(invalid)\",\"providerErrorCode\":\"\(invalid)\"}}]}"
+      XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: value), " (code=PROVIDER_API_ERROR)")
+    }
+  }
+
   private func input(_ gateway: ContainerGatewayAddon, env: JSONObject? = nil, extraConfig: JSONObject = [:]) -> WorkflowAddonExecutionInput {
     var config: JSONObject = ["queryTemplate": .string("query { posts(limit: {{limit}}) }")]
     config.merge(extraConfig) { _, new in new }

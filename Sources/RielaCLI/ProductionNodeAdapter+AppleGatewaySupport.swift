@@ -219,6 +219,7 @@ struct AppleGatewayFileDownloader {
     ".riela-artifact/",
     ".riela-artifacts/",
     ".private/",
+    ".runtime/",
     "tmp/",
     "temp/"
   ]

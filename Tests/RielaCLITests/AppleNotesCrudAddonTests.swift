@@ -22,6 +22,27 @@ final class AppleNotesCrudAddonTests: XCTestCase {
     XCTAssertTrue(try String(contentsOf: fake.variablesLogURL).contains(#""noteId":"note-1""#))
   }
 
+  func testHTMLSelectionRequestsSDKRepresentationAndRejectsAmbiguousBodiesBeforeLaunch() async throws {
+    let fake = try CrudFakeAppleGateway(mode: "get")
+    defer { fake.cleanup() }
+    _ = try await runAppleNoteAddon(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(fake.executableURL.path), "includeBodyHtml": .bool(true)],
+      inputs: ["noteId": .string("note-1")]
+    )
+    let query = try String(contentsOf: fake.queryLogURL)
+    XCTAssertTrue(query.contains("bodyKind: HTML"))
+    XCTAssertTrue(query.contains("bodyHtml"))
+    XCTAssertFalse(query.contains("plaintext"))
+    try FileManager.default.removeItem(at: fake.queryLogURL)
+    try await assertAppleNoteFailure(
+      "riela/apple-note-get",
+      config: ["binaryPath": .string(fake.executableURL.path), "includeBodyHtml": .bool(true), "includePlaintext": .bool(true)],
+      inputs: ["noteId": .string("note-1")], code: .policyBlocked, messageContains: "one body representation"
+    )
+    XCTAssertFalse(FileManager.default.fileExists(atPath: fake.queryLogURL.path))
+  }
+
   func testAppleNoteGetNullOrMissingNoteReportsHasNoteFalse() async throws {
     let nullNoteFake = try CrudFakeAppleGateway(mode: "get-null-note")
     let missingNoteFake = try CrudFakeAppleGateway(mode: "get-missing-note")

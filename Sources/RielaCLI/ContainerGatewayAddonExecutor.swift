@@ -109,7 +109,8 @@ struct ContainerGatewayAddonExecutor {
     let result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
     // Do not surface raw gateway stderr: it may contain provider credentials.
     guard result.terminationStatus == 0 else {
-      throw AdapterExecutionError(.providerError, "\(input.addon.name) container failed with exit code \(result.terminationStatus)")
+      throw AdapterExecutionError(.providerError, "\(input.addon.name) container failed with exit code \(result.terminationStatus)"
+        + GatewayFailureDiagnostics.suffix(stdout: result.stdout, stderr: result.stderr))
     }
     let response: JSONObject
     do {
@@ -119,7 +120,8 @@ struct ContainerGatewayAddonExecutor {
     }
     guard response["ok"] != .bool(false), response["error"] == nil,
           nonEmptyString(response["status"]) != "error", !containsGraphQLErrors(response) else {
-      throw AdapterExecutionError(.providerError, "\(input.addon.name) gateway returned an error")
+      throw AdapterExecutionError(.providerError, "\(input.addon.name) gateway returned an error"
+        + GatewayFailureDiagnostics.suffix(stdout: result.stdout))
     }
     guard case .object? = response["data"] else {
       throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) gateway response is missing data")

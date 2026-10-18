@@ -3100,3 +3100,7 @@ git status --short
 
 No Swift source should change, but `swift build` remains part of implementation
 verification because the issue acceptance criteria requires it.
+
+### Note body representation
+
+`apple-note-get` defaults to plaintext. `includeBodyHtml: true` selects the native HTML read representation and defaults `includePlaintext` to false. Explicitly requesting both representations is rejected before invocation because one `bodyFile` descriptor cannot represent two materialized bodies. HTML materialization preserves the HTML body kind. Private download roots may use project-relative `.runtime/` directories, subject to the existing owner-only permissions and symlink checks.

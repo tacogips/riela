@@ -89,6 +89,18 @@ final class GatewayCommandTests: XCTestCase {
     }
   }
 
+  func testLinkedAppleSchemaContainsHTMLAndNativeAttachmentImport() async {
+    #if os(macOS)
+    let full = await GatewayCommand().run(["apple", "schema", "print"], environment: [:])
+    XCTAssertEqual(full.exitCode, .success)
+    XCTAssertTrue(full.stdout.contains("note(noteId: ID!, bodyKind: NoteBodyKind): Note"))
+    XCTAssertTrue(full.stdout.contains("createNoteAttachment(input: CreateNoteAttachmentInput!): NoteAttachment!"))
+    let reader = await GatewayCommand().run(["apple", "--role", "reader", "schema", "print"], environment: [:])
+    XCTAssertEqual(reader.exitCode, .success)
+    XCTAssertFalse(reader.stdout.contains("createNoteAttachment"))
+    #endif
+  }
+
   func testSharedGoogleClientBootstrapHelpIsAvailableThroughServiceGateway() async {
     let result = await GatewayCommand().run(["google-service", "clients", "register", "--help"], environment: ["PATH": "/nonexistent"])
     XCTAssertEqual(result.exitCode, .success)

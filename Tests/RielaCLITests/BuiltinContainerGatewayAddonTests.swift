@@ -177,6 +177,30 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
     }
   }
 
+  func testProviderFailureRetainsOnlyFiniteDiagnostics() async throws {
+    let failure = #"{"ok":false,"error":{"code":"AUTH_INVALID","classification":"auth","httpStatus":401,"details":"secret-provider-token","traceId":"private-id","summary":"private-post"}}"#
+    for result in [LocalProcessResult(stdout: "", stderr: failure, terminationStatus: 4),
+                   LocalProcessResult(stdout: failure, stderr: "", terminationStatus: 0)] {
+      let runner = GatewayContainerRecordingRunner(result: result)
+      do {
+        _ = try await ContainerGatewayAddonExecutor(environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
+          workingDirectory: URL(fileURLWithPath: "/tmp"), runner: runner
+        ).execute(input(.xRead), gateway: .xRead, context: AdapterExecutionContext())
+        XCTFail("expected gateway failure")
+      } catch let error as AdapterExecutionError {
+        XCTAssertTrue(error.message.contains("code=AUTH_INVALID, classification=auth, httpStatus=401"))
+        for privateValue in ["secret-provider-token", "private-id", "private-post"] {
+          XCTAssertFalse(error.message.contains(privateValue))
+        }
+      }
+    }
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: #"{"error":{"code":"secret-code","classification":"auth","httpStatus":401}}"#), "")
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: #"{"error":{"code":"AUTH_INVALID","classification":"secret-class","httpStatus":"secret-status"}}"#), " (code=AUTH_INVALID)")
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: #"{"error":{"code":"AUTH_INVALID","httpStatus":900}}"#), " (code=AUTH_INVALID)")
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: failure + String(repeating: " ", count: 65_537)), "")
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: "prefix " + failure), "")
+  }
+
   private func input(_ gateway: ContainerGatewayAddon, env: JSONObject? = nil, extraConfig: JSONObject = [:]) -> WorkflowAddonExecutionInput {
     var config: JSONObject = ["queryTemplate": .string("query { posts(limit: {{limit}}) }")]
     config.merge(extraConfig) { _, new in new }

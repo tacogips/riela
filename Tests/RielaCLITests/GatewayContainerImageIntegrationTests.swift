@@ -119,6 +119,7 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     let result = try await FoundationLocalProcessRunner().run(configuration: .init(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
       arguments: [driver.executable] + arguments, environment: [:], workingDirectoryURL: root), stdin: "", deadline: Date().addingTimeInterval(300))
     XCTAssertEqual(result.terminationStatus, 0, result.stderr)
+    XCTAssertTrue(result.stdout.contains("references: [PostReference!]!"))
     XCTAssertTrue(result.stdout.contains("searchPosts(query: String!, maxResults: Int, sinceId: String, nextToken: String"))
     XCTAssertTrue(result.stdout.contains("maxResults: Int, startTime: String, endTime: String, sinceId: String, untilId: String, paginationToken: String"))
   }

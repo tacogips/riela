@@ -1,5 +1,5 @@
 {
-  "originHash" : "f931945e725f30f244d2dd6ba658f98820884c8679e0bfd75262e9bbed0cfef4",
+  "originHash" : "53a344c9b679036ef3f132dc600395999311146bb3cca0432cb809c69b977b02",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "ac0dd8f0f5f100e2f4d4e44a2c18f49d11a0c1cd"
+        "revision" : "35df811d3acb44907f3635b34cc9e9bf601295b9"
       }
     },
     {
@@ -158,8 +158,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/x-gateway.git",
       "state" : {
-        "revision" : "1ca8380b74e5fc1da02d80bb0e1a46ee43a0765a",
-        "version" : "0.1.9"
+        "revision" : "d7a7cd9947b43dccaec6708c24de35bfa4742396",
+        "version" : "0.1.10"
       }
     }
   ],

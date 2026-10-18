@@ -124,8 +124,11 @@ private struct AppleNotesCrudEngine {
     switch operation {
     case .get:
       let noteId = try requiredString("noteId", input: input, config: config, variables: variables)
-      let includePlaintext = try bool("includePlaintext", config: config, defaultValue: true)
       let includeBodyHtml = try bool("includeBodyHtml", config: config, defaultValue: false)
+      let includePlaintext = try bool("includePlaintext", config: config, defaultValue: !includeBodyHtml)
+      guard !(includePlaintext && includeBodyHtml) else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires one body representation; choose includePlaintext or includeBodyHtml")
+      }
       let includeBodyFile = try bool("includeBodyFile", config: config, defaultValue: false)
       let includeAttachments = try bool("includeAttachments", config: config, defaultValue: false)
       let materializeBody = try bool("materializeBody", config: config, defaultValue: false)
@@ -381,7 +384,7 @@ private struct AppleNotesCrudEngine {
     }
     return """
     query RielaAppleNoteGet($noteId: ID!) {
-      note(noteId: $noteId) {
+      note(noteId: $noteId\(flags.includeBodyHtml ? ", bodyKind: HTML" : "")) {
     \(fields.joined(separator: "\n"))
       }
     }

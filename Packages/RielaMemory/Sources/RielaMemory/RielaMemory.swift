@@ -489,7 +489,6 @@ public struct RielaMemoryStore: Sendable {
 
   func ensureSchema(_ db: OpaquePointer?) throws {
     try ensureJSONBAvailable(db)
-    try requireCurrentSchemaVersion(db)
     try execute(db, "BEGIN IMMEDIATE")
     var committed = false
     defer {
@@ -497,6 +496,9 @@ public struct RielaMemoryStore: Sendable {
         try? execute(db, "ROLLBACK")
       }
     }
+    // Read version and migrate under the same schema admission lock. A
+    // concurrent initializer must not make a previously-read version stale.
+    try requireCurrentSchemaVersion(db)
     try execute(
       db,
       """
@@ -606,15 +608,8 @@ public struct RielaMemoryStore: Sendable {
       .filter { (version..<currentSchemaVersion).contains($0.fromVersion) }
       .sorted { $0.fromVersion < $1.fromVersion }
     for step in steps {
-      try execute(db, "BEGIN IMMEDIATE")
-      do {
-        try step.migrate(db)
-        try execute(db, "PRAGMA user_version = \(step.fromVersion + 1)")
-        try execute(db, "COMMIT")
-      } catch {
-        try? execute(db, "ROLLBACK")
-        throw error
-      }
+      try step.migrate(db)
+      try execute(db, "PRAGMA user_version = \(step.fromVersion + 1)")
     }
   }
 

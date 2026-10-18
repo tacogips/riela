@@ -65,6 +65,8 @@ public struct MemoryCommandRunner: Sendable {
         return try tags(command.options)
       case .relatedIds:
         return try relatedIds(command.options)
+      case .retireHistory:
+        return try retireHistory(command.options)
       case .history, .showVersion, .restoreVersion:
         return try evolution(command)
       }
@@ -73,6 +75,19 @@ public struct MemoryCommandRunner: Sendable {
     } catch {
       return failure("\(error)", output: command.options.output, options: command.options.cliOptions)
     }
+  }
+
+  private func retireHistory(_ options: MemoryCommandOptions) throws -> CLICommandResult {
+    guard let recordId = options.recordId, let workflowId = options.workflowId,
+      let nodeId = options.nodeId, let head = options.expectedHeadVersion,
+      let through = options.throughVersion, let root = options.databaseRoot,
+      root.hasPrefix("/"), !options.tags.isEmpty, !options.allWorkflows else {
+      throw CLIUsageError("retire-history requires explicit absolute --memory-root, --record-id, --workflow-id, --node-id, --tag, --expected-head-version and --through-version")
+    }
+    let report = try memoryStore(options).retireHistory(memoryId: options.memoryId, recordId: recordId,
+      workflowId: workflowId, nodeId: nodeId, requiredTags: options.tags,
+      expectedHeadVersion: head, throughVersion: through, dryRun: options.dryRun)
+    return try render(report, output: options.output) { $0.status + "\n" }
   }
 
   private func evolution(_ command: MemoryCommand) throws -> CLICommandResult {

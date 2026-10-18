@@ -13,6 +13,7 @@ public enum MemoryEvolutionError: Error, Equatable, Sendable {
 }
 
 func ensureMemoryEvolutionSchema(_ db: OpaquePointer?) throws {
+  try ensureMemoryRetirementSchema(db)
   try execute(db, """
     CREATE TABLE IF NOT EXISTS memory_evolution_attachments (
       path TEXT PRIMARY KEY NOT NULL,
@@ -42,9 +43,9 @@ extension RielaMemoryStore {
     defer { sqlite3_close(db) }
     try ensureSchema(db)
     let rows = try queryRows(db, sql: """
-      SELECT version, recorded_at, reverse_delta_json FROM memory_evolution
-      WHERE record_id = ? AND version < ? ORDER BY version DESC LIMIT ?
-      """, bindings: [.int64(recordId), .int64(beforeVersion ?? Int64.max), .int(limit)])
+      SELECT version, recorded_at, CASE WHEN version = COALESCE((SELECT retained_floor FROM memory_retirement WHERE record_id = ?), 1) THEN NULL ELSE reverse_delta_json END AS reverse_delta_json FROM memory_evolution
+      WHERE record_id = ? AND version < ? AND version >= COALESCE((SELECT retained_floor FROM memory_retirement WHERE record_id = ?), 1) ORDER BY version DESC LIMIT ?
+      """, bindings: [.int64(recordId), .int64(recordId), .int64(beforeVersion ?? Int64.max), .int64(recordId), .int(limit)])
     return try rows.map { row in
       guard let version = row.columns["version"].flatMap(Int64.init),
         let timestamp = row.columns["recorded_at"] else {
@@ -112,9 +113,13 @@ extension RielaMemoryStore {
     return head
   }
 
-  private func recordVersion(memoryId: String, recordId: Int64, version: Int64, db: OpaquePointer?) throws -> MemoryRecord {
+  func recordVersion(memoryId: String, recordId: Int64, version: Int64, db: OpaquePointer?) throws -> MemoryRecord {
     let current = try record(memoryId: memoryId, recordId: recordId, db: db)
     let head = try evolutionHead(recordId: recordId, db: db)
+    let hasFloor = try !queryRows(db, sql: "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_retirement'", bindings: []).isEmpty
+    let floor = try hasFloor ? queryRows(db, sql: "SELECT retained_floor FROM memory_retirement WHERE record_id = ?",
+      bindings: [.int64(recordId)]).first?.columns["retained_floor"].flatMap(Int64.init) ?? 1 : 1
+    guard version >= floor else { throw MemoryHistoryRetirementError.retiredVersion }
     guard version > 0, version <= head else {
       throw EvolutionReverseDelta.ValidationError.invalidVersion
     }

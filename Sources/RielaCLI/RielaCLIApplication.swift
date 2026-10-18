@@ -342,6 +342,7 @@ Usage:
   riela memory metadata|tags|related-ids <memory-id> [--limit 30] [--offset 0] [--sort value-asc|value-desc] [--memory-root <dir>]
   riela memory history <memory-id> --record-id <id> [--before-version <n>] [--limit 30] [--memory-root <dir>]
   riela memory show-version <memory-id> --record-id <id> --version <n> [--memory-root <dir>]
+  riela memory retire-history <memory-id> --memory-root <absolute-dir> --record-id <id> --workflow-id <id> --node-id <id> --tag <tag> --expected-head-version <n> --through-version <n-1> [--dry-run]
   riela memory restore-version <memory-id> --record-id <id> --version <n> --expected-head-version <n> [--memory-root <dir>]
   riela serve [--host <host>] [--port <port>]
   riela auth invite <user> | users | revoke-user <user> | revoke-key <credential-id>

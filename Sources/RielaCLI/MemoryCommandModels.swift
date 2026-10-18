@@ -12,6 +12,7 @@ public enum MemoryCommandKind: String, Codable, CaseIterable, Sendable {
   case history
   case showVersion = "show-version"
   case restoreVersion = "restore-version"
+  case retireHistory = "retire-history"
 }
 
 public struct MemoryCommand: Equatable, Sendable {
@@ -33,6 +34,8 @@ public struct MemoryCommandOptions: Equatable, Sendable {
   public var version: Int64?
   public var beforeVersion: Int64?
   public var expectedHeadVersion: Int64?
+  public var throughVersion: Int64?
+  public var dryRun: Bool
   public var payloadJSON: String?
   public var payloadFile: String?
   public var registeredAt: String?
@@ -58,6 +61,8 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     version: Int64? = nil,
     beforeVersion: Int64? = nil,
     expectedHeadVersion: Int64? = nil,
+    throughVersion: Int64? = nil,
+    dryRun: Bool = false,
     payloadJSON: String? = nil,
     payloadFile: String? = nil,
     registeredAt: String? = nil,
@@ -82,6 +87,8 @@ public struct MemoryCommandOptions: Equatable, Sendable {
     self.version = version
     self.beforeVersion = beforeVersion
     self.expectedHeadVersion = expectedHeadVersion
+    self.throughVersion = throughVersion
+    self.dryRun = dryRun
     self.payloadJSON = payloadJSON
     self.payloadFile = payloadFile
     self.registeredAt = registeredAt

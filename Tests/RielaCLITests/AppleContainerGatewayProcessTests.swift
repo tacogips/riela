@@ -15,6 +15,10 @@ final class AppleContainerGatewayProcessTests: XCTestCase {
     for flag in ["--rm", "--read-only", "--cap-drop", "--shm-size", "nproc=256:256", "core=0:0", "--no-dns"] {
       XCTAssertTrue(calls[0].0.arguments.contains(flag))
     }
+    XCTAssertFalse(calls[0].0.arguments.contains("--dns-option"))
+    XCTAssertFalse(calls[0].0.arguments.contains("no-aaaa"))
+    let network = try XCTUnwrap(calls[0].0.arguments.firstIndex(of: "--network"))
+    XCTAssertEqual(calls[0].0.arguments[network + 1], "none")
     XCTAssertFalse(calls[0].0.arguments.contains("-e"))
     XCTAssertFalse(calls[0].0.arguments.contains("--tmpfs"))
     XCTAssertNil(calls[0].0.environment["X_GW_TOKEN"])
@@ -30,6 +34,29 @@ final class AppleContainerGatewayProcessTests: XCTestCase {
       XCTAssertFalse(call.0.inheritEnvironment)
     }
     XCTAssertLessThan(try XCTUnwrap(calls[2].1).timeIntervalSinceNow, 11)
+  }
+
+  func testNetworkAllowedUsesHostResolverWithoutAAAAAndKeepsPrivateExec() async throws {
+    for gateway in [ContainerGatewayAddon.gmailRead, .xRead] {
+      let runner = PrivateExecRunner(failure: nil)
+      _ = try await process(runner).run(image: "fixture", mounts: [], networkAllowed: true, gateway: gateway,
+        document: "query {}", bindings: ["X_GW_TOKEN": "private-sentinel"], deadline: nil)
+      let calls = await runner.calls
+      let start = calls[0].0.arguments
+      let option = try XCTUnwrap(start.firstIndex(of: "--dns-option"))
+      XCTAssertEqual(start[option + 1], "no-aaaa")
+      XCTAssertFalse(start.contains("--dns"))
+      XCTAssertFalse(start.contains("--no-dns"))
+      XCTAssertFalse(start.contains("--network"))
+      XCTAssertFalse(start.contains("-e"))
+      XCTAssertEqual(calls[0].2, "")
+      XCTAssertTrue(calls[1].2.hasPrefix("RIELAENV1\n"))
+      XCTAssertEqual(calls[2].0.arguments.prefix(2), ["delete", "--force"])
+      for call in calls {
+        XCTAssertFalse(call.0.arguments.joined().contains("private-sentinel"))
+        XCTAssertNil(call.0.environment["X_GW_TOKEN"])
+      }
+    }
   }
 
   func testCleanupAfterInitFailureExecFailureAndCancellation() async throws {

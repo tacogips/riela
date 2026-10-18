@@ -212,8 +212,15 @@ without mounting host credentials or making the root filesystem writable.
 Mounted configuration and token files must be readable by that non-root user.
 On Apple Container, explicit `GMAIL_GATEWAY_CREDENTIAL_DIR` values must also use
 a direct `/dev/shm/...` path rather than the symlinked `/tmp/...` path.
-Networking defaults to `egress-allowed`;
-set `config.networkPolicy` to `denied` to disable networking.
+Networking defaults to `egress-allowed`. Gateway readers running on Apple Container add the resolver
+option `--dns-option no-aaaa` for this policy. On the verified Apple Container
+1.5.0 default network (one link-local IPv6 address, no global-scope IPv6 address),
+Gmail's default-family lookup failed while IPv4 reached
+verified TLS and HTTP; suppressing AAAA lookups restores that path without
+replacing the host DNS resolver or pinning endpoint addresses. This is a policy
+for the current default network, not a claim about future Apple IPv6 support.
+Set `config.networkPolicy` to `denied` to disable networking; that policy retains
+`--network none --no-dns` and does not add a resolver option.
 
 The opt-in image checks can use Docker on macOS or Linux:
 

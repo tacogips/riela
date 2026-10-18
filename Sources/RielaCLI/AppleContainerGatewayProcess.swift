@@ -20,7 +20,13 @@ struct AppleContainerGatewayProcess: Sendable {
     var start = ["run", "-d", "--rm", "--name", name, "--read-only", "--cap-drop", "ALL",
                  "--user", "10001:10001", "--cpus", "2", "--memory", "1G", "--shm-size", "256M",
                  "--ulimit", "nproc=256:256", "--ulimit", "core=0:0"]
-    if !networkAllowed { start += ["--network", "none", "--no-dns"] }
+    if networkAllowed {
+      // The current Apple default network uses IPv4. Avoid failed AAAA resolution
+      // suppressing a usable A response, without replacing the host DNS resolver.
+      start += ["--dns-option", "no-aaaa"]
+    } else {
+      start += ["--network", "none", "--no-dns"]
+    }
     for mount in mounts.sorted(by: { $0.volumeArgument < $1.volumeArgument }) {
       start += ["--mount", mount.mountArgument]
     }

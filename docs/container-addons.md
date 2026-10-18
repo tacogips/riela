@@ -172,9 +172,38 @@ use a digest reference for reproducible execution. The image must contain
 to that reader. X receives `graphql query <rendered-query> --json`; Gmail
 receives `graphql --query <rendered-query>`. No shell evaluates the query.
 
-Only `addon.env` bindings are forwarded into the container. The root filesystem
-is read-only with writable `/tmp`. Networking defaults to `egress-allowed`;
+Only `addon.env` bindings are forwarded into the container. Gateway target names
+must be uppercase `X_GW_*` or `GMAIL_GATEWAY_*` names (letters, digits, underscore);
+source names in `fromEnv` are unrestricted. Host runtime controls such as `PATH`,
+`HOME`, `DOCKER_HOST`, and loader/interpreter variables cannot be addon targets.
+Gateway values are
+supplied through the runtime process environment using name-only `-e NAME`
+arguments, so credential values do not appear in its command line. The runtime
+process inherits only connection/configuration variables (such as `HOME`, `PATH`,
+Docker/Podman connection settings, and proxy settings) plus the explicit bindings.
+Docker and Podman gateway reads use `--log-driver none` to avoid persisting raw
+reader stdout/stderr. Apple Container has no equivalent CLI option, and custom
+runtime wrappers must enforce their own logging policy. These settings apply to
+the dedicated X/Gmail reader path, not every container add-on.
+
+The root filesystem is read-only with writable `/tmp`. The official Gmail image
+runs as UID/GID 10001, with passwd home `/tmp/riela-gmail`; its reader, draft, and
+sender entrypoints create that private home before invoking the pinned SDK.
+This lets the SDK acquire credential lifecycle locks with inline OAuth JSON
+without mounting host credentials or making the root filesystem writable.
+Mounted configuration and token files must be readable by that non-root user.
+Networking defaults to `egress-allowed`;
 set `config.networkPolicy` to `denied` to disable networking.
+
+The opt-in image checks can use Docker on macOS or Linux:
+
+```bash
+RIELA_TEST_LIVE_GATEWAY_IMAGES=1 RIELA_TEST_GATEWAY_RUNTIME=docker \
+  swift test --filter GatewayContainerImageIntegrationTests
+```
+
+The credential-lock check uses synthetic inline credentials and denied networking;
+it checks the production lock path without contacting Gmail.
 
 Files are shared only through explicit `config.mounts`, for example:
 

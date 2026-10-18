@@ -77,22 +77,34 @@ struct ContainerGatewayAddonExecutor {
         }
       }
     }
+    // Name-only forwarding also puts these keys in the host runtime process.
+    // Restrict targets to provider namespaces so bindings cannot override PATH,
+    // runtime connection settings, dynamic loaders, or interpreter startup hooks.
+    for name in input.addon.env?.keys ?? [:].keys {
+      guard name.range(of: #"^(X_GW_|GMAIL_GATEWAY_)[A-Z0-9_]+\z"#, options: .regularExpression) != nil else {
+        throw AdapterExecutionError(.policyBlocked, "gateway addon.env targets must use X_GW_ or GMAIL_GATEWAY_ uppercase names")
+      }
+    }
+    let gatewayEnvironment = try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment)
     var arguments = driver.runArguments(image: image, options: ContainerRuntimeRunOptions(
-      environment: try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment),
+      environment: gatewayEnvironment,
       mounts: mounts,
       entrypoint: gateway.entrypoint,
       workingDirectory: nil,
       networkAllowed: networkPolicy == .egressAllowed,
-      readOnlyRootFilesystem: true
+      readOnlyRootFilesystem: true,
+      environmentValuesFromProcess: true,
+      disablePersistentLogs: true
     ))
     arguments += gateway.arguments(document: document)
     let executable = driver.executable
     let configuration = LocalProcessConfiguration(
       executableURL: URL(fileURLWithPath: executable.hasPrefix("/") ? executable : "/usr/bin/env"),
       arguments: executable.hasPrefix("/") ? arguments : [executable] + arguments,
-      environment: environment,
+      environment: runtimeProcessEnvironment.merging(gatewayEnvironment) { _, bound in bound },
       unsetEnvironmentKeys: ["RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"],
-      workingDirectoryURL: workingDirectory
+      workingDirectoryURL: workingDirectory,
+      inheritEnvironment: false
     )
     let result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
     // Do not surface raw gateway stderr: it may contain provider credentials.
@@ -132,6 +144,20 @@ struct ContainerGatewayAddonExecutor {
         ])
       ]
     )
+  }
+
+  // Runtime connection/configuration variables are host concerns; unrelated workflow
+  // secrets must not reach the runtime process. Container bindings are merged explicitly.
+  private var runtimeProcessEnvironment: [String: String] {
+    let keys: Set<String> = [
+      "PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+      "XDG_CONFIG_HOME", "XDG_RUNTIME_DIR", "XDG_DATA_HOME",
+      "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH",
+      "DOCKER_API_VERSION", "CONTAINER_HOST", "CONTAINER_CONNECTION", "CONTAINER_SSHKEY",
+      "CONTAINERS_CONF", "CONTAINERS_REGISTRIES_CONF", "REGISTRY_AUTH_FILE", "SSH_AUTH_SOCK",
+      "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"
+    ]
+    return environment.filter { keys.contains($0.key) }
   }
 
   private func runtimeDriver(config: JSONObject) throws -> any ContainerRuntimeDriver {

@@ -23,6 +23,9 @@ struct ContainerRuntimeRunOptions: Equatable, Sendable {
   var workingDirectory: String?
   var networkAllowed: Bool
   var readOnlyRootFilesystem: Bool
+  // Opt in only when the launcher supplies resolved bindings in its process environment.
+  var environmentValuesFromProcess: Bool = false
+  var disablePersistentLogs: Bool = false
 }
 
 struct ContainerRuntimeMount: Equatable, Sendable {
@@ -104,12 +107,16 @@ extension ContainerRuntimeDriver {
     renderMount: (ContainerRuntimeMount) -> String
   ) -> [String] {
     var arguments = ["run", "--rm", "-i"]
+    if options.disablePersistentLogs, kind == .docker || kind == .podman {
+      arguments += ["--log-driver", "none"]
+    }
     if options.readOnlyRootFilesystem {
       arguments.append("--read-only")
       arguments += ["--tmpfs", "/tmp"]
     }
     for key in options.environment.keys.sorted() {
-      arguments += ["-e", "\(key)=\(options.environment[key] ?? "")"]
+      let binding = options.environmentValuesFromProcess ? key : "\(key)=\(options.environment[key] ?? "")"
+      arguments += ["-e", binding]
     }
     for mount in options.mounts.sorted(by: { $0.volumeArgument < $1.volumeArgument }) {
       arguments += [volumeFlag, renderMount(mount)]

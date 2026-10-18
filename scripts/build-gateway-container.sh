@@ -18,6 +18,9 @@ mkdir -p "$repo_root/tmp"
 build_context=$(mktemp -d "$repo_root/tmp/gateway-container.XXXXXX")
 trap 'rm -rf "$build_context"' EXIT HUP INT TERM
 cp "$repo_root/containers/$gateway-gateway/Containerfile" "$build_context/Containerfile"
+if [ "$gateway" = gmail ]; then
+  cp "$repo_root/containers/gmail-gateway/entrypoint.sh" "$build_context/entrypoint.sh"
+fi
 cp "$repo_root/scripts/prepare-container-gateway-source.py" "$build_context/prepare-container-gateway-source.py"
 cp "$repo_root/scripts/collect-swift-runtime.sh" "$build_context/collect-swift-runtime.sh"
 cp -R "$repo_root/scripts/container-gateway-support" "$build_context/container-gateway-support"

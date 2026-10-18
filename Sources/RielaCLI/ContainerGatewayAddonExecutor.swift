@@ -77,7 +77,7 @@ struct ContainerGatewayAddonExecutor {
         }
       }
     }
-    // Name-only forwarding also puts these keys in the host runtime process.
+    // Docker/Podman name-only forwarding also puts keys in the host runtime process.
     // Restrict targets to provider namespaces so bindings cannot override PATH,
     // runtime connection settings, dynamic loaders, or interpreter startup hooks.
     for name in input.addon.env?.keys ?? [:].keys {

@@ -1,5 +1,5 @@
 {
-  "originHash" : "851572eebf9de2006e44967eb0cafe2954be75237ee0fe62c2d2cb0f94d8780a",
+  "originHash" : "5233bca09103460b5c32cb090d3b3c785df291b0214da518df193c383c7d1b1b",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -22,7 +22,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/apple-gateway.git",
       "state" : {
-        "revision" : "8513b6c1b3fd478664c02043bba15995f5898abf"
+        "revision" : "1444d1e484ec4d4538a90dee3753cf2fa5c25234"
       }
     },
     {

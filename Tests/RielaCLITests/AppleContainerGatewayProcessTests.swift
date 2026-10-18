@@ -18,8 +18,10 @@ final class AppleContainerGatewayProcessTests: XCTestCase {
     XCTAssertFalse(calls[0].0.arguments.contains("-e"))
     XCTAssertFalse(calls[0].0.arguments.contains("--tmpfs"))
     XCTAssertNil(calls[0].0.environment["X_GW_TOKEN"])
-    XCTAssertEqual(calls[1].0.arguments.prefix(4), ["exec", "-i", "-e", "X_GW_TOKEN"])
-    XCTAssertEqual(calls[1].0.environment["X_GW_TOKEN"], "private-sentinel")
+    XCTAssertEqual(calls[1].0.arguments.prefix(2), ["exec", "-i"])
+    XCTAssertFalse(calls[1].0.arguments.contains("-e"))
+    XCTAssertNil(calls[1].0.environment["X_GW_TOKEN"])
+    XCTAssertEqual(calls[1].2, "RIELAENV1\n1\n10\n16\nX_GW_TOKENprivate-sentinel")
     XCTAssertTrue(calls[1].0.arguments.contains("/usr/local/bin/riela-gateway-guard"))
     XCTAssertEqual(calls[2].0.arguments.prefix(2), ["delete", "--force"])
     XCTAssertNil(calls[2].0.environment["X_GW_TOKEN"])
@@ -31,11 +33,14 @@ final class AppleContainerGatewayProcessTests: XCTestCase {
   }
 
   func testCleanupAfterInitFailureExecFailureAndCancellation() async throws {
-    for failure in ["run", "exec", "cancel"] {
+    for failure in ["run", "exec", "cancel", "status"] {
       let runner = PrivateExecRunner(failure: failure)
       do {
-        _ = try await process(runner).run(image: "fixture", mounts: [], networkAllowed: true, gateway: .gmailRead,
-          document: "query {}", bindings: [:], deadline: nil)
+        let process = process(runner)
+        _ = try await Task {
+          try await process.run(image: "fixture", mounts: [], networkAllowed: true, gateway: .gmailRead,
+            document: "query {}", bindings: [:], deadline: nil)
+        }.value
         XCTFail("expected failure")
       } catch {}
       let calls = await runner.calls
@@ -43,6 +48,13 @@ final class AppleContainerGatewayProcessTests: XCTestCase {
       let cleanupWasCancelled = await runner.cleanupWasCancelled
       XCTAssertFalse(cleanupWasCancelled)
     }
+  }
+
+  func testPrivateFrameBoundsAndUTF8Lengths() throws {
+    XCTAssertEqual(try AppleContainerGatewayProcess.bindingFrame(["X_GW_TOKEN": "a\nb=é"]),
+      "RIELAENV1\n1\n10\n6\nX_GW_TOKENa\nb=é")
+    XCTAssertThrowsError(try AppleContainerGatewayProcess.bindingFrame(["X_GW_TOKEN": "x\0y"]))
+    XCTAssertThrowsError(try AppleContainerGatewayProcess.bindingFrame(["X_GW_TOKEN": String(repeating: "x", count: 1_048_576)]))
   }
 
   private func process(_ runner: PrivateExecRunner) -> AppleContainerGatewayProcess {
@@ -53,15 +65,21 @@ final class AppleContainerGatewayProcessTests: XCTestCase {
 
 private actor PrivateExecRunner: LocalProcessRunning {
   let failure: String?
-  var calls: [(LocalProcessConfiguration, Date?)] = []
+  var calls: [(LocalProcessConfiguration, Date?, String)] = []
   var cleanupWasCancelled = false
   init(failure: String?) { self.failure = failure }
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
-    calls.append((configuration, deadline))
+    calls.append((configuration, deadline, stdin))
     let command = configuration.arguments.first
     if command == "delete" { cleanupWasCancelled = Task.isCancelled }
     if command == failure { throw CancellationError() }
-    if failure == "cancel", command == "exec" { throw CancellationError() }
+    if failure == "cancel", command == "exec" {
+      withUnsafeCurrentTask { $0?.cancel() }
+      throw CancellationError()
+    }
+    if failure == "status", command == "run" {
+      return .init(stdout: "", stderr: "private runtime detail", terminationStatus: 1)
+    }
     return .init(stdout: command == "exec" ? "exec-output" : "init-or-cleanup", stderr: "", terminationStatus: 0)
   }
 }

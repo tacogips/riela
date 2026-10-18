@@ -93,27 +93,27 @@ struct ContainerGatewayAddonExecutor {
           networkAllowed: networkPolicy == .egressAllowed, gateway: gateway, document: document,
           bindings: gatewayEnvironment, deadline: context.deadline)
     } else {
-    var arguments = driver.runArguments(image: image, options: ContainerRuntimeRunOptions(
-      environment: gatewayEnvironment,
-      mounts: mounts,
-      entrypoint: gateway.entrypoint,
-      workingDirectory: nil,
-      networkAllowed: networkPolicy == .egressAllowed,
-      readOnlyRootFilesystem: true,
-      environmentValuesFromProcess: true,
-      disablePersistentLogs: true
-    ))
-    arguments += gateway.arguments(document: document)
-    let executable = driver.executable
-    let configuration = LocalProcessConfiguration(
-      executableURL: URL(fileURLWithPath: executable.hasPrefix("/") ? executable : "/usr/bin/env"),
-      arguments: executable.hasPrefix("/") ? arguments : [executable] + arguments,
-      environment: runtimeProcessEnvironment.merging(gatewayEnvironment) { _, bound in bound },
-      unsetEnvironmentKeys: ["RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"],
-      workingDirectoryURL: workingDirectory,
-      inheritEnvironment: false
-    )
-    result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
+      var arguments = driver.runArguments(image: image, options: ContainerRuntimeRunOptions(
+        environment: gatewayEnvironment,
+        mounts: mounts,
+        entrypoint: gateway.entrypoint,
+        workingDirectory: nil,
+        networkAllowed: networkPolicy == .egressAllowed,
+        readOnlyRootFilesystem: true,
+        environmentValuesFromProcess: true,
+        disablePersistentLogs: true
+      ))
+      arguments += gateway.arguments(document: document)
+      let executable = driver.executable
+      let configuration = LocalProcessConfiguration(
+        executableURL: URL(fileURLWithPath: executable.hasPrefix("/") ? executable : "/usr/bin/env"),
+        arguments: executable.hasPrefix("/") ? arguments : [executable] + arguments,
+        environment: runtimeProcessEnvironment.merging(gatewayEnvironment) { _, bound in bound },
+        unsetEnvironmentKeys: ["RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"],
+        workingDirectoryURL: workingDirectory,
+        inheritEnvironment: false
+      )
+      result = try await runner.run(configuration: configuration, stdin: "", deadline: context.deadline)
     }
     // Do not surface raw gateway stderr: it may contain provider credentials.
     guard result.terminationStatus == 0 else {

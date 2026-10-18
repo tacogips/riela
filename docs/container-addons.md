@@ -179,15 +179,24 @@ Only `addon.env` bindings are forwarded into the container. Gateway target names
 must be uppercase `X_GW_*` or `GMAIL_GATEWAY_*` names (letters, digits, underscore);
 source names in `fromEnv` are unrestricted. Host runtime controls such as `PATH`,
 `HOME`, `DOCKER_HOST`, and loader/interpreter variables cannot be addon targets.
-Gateway values are
-supplied through the runtime process environment using name-only `-e NAME`
-arguments, so credential values do not appear in its command line. The runtime
-process inherits only connection/configuration variables (such as `HOME`, `PATH`,
-Docker/Podman connection settings, and proxy settings) plus the explicit bindings.
-Docker and Podman gateway reads use `--log-driver none` to avoid persisting raw
-reader stdout/stderr. Apple Container has no equivalent CLI option, and custom
-runtime wrappers must enforce their own logging policy. These settings apply to
-the dedicated X/Gmail reader path, not every container add-on.
+Docker and Podman receive values through the runtime process environment using
+name-only `-e NAME` arguments and disable output persistence with `--log-driver
+none`. Custom runtime wrappers must enforce their own logging policy.
+
+Apple Container uses a secret-free, bounded idle init and attached `exec` because
+its init stdout/stderr are persisted in `stdio.log`. The reader receives bindings
+through a bounded `RIELAENV1` stdin frame, not runtime environment/configuration
+or argv; this also avoids debug logging of exec process specifications. The
+runtime process inherits only host connection/configuration variables. The
+bundled `riela-gateway-guard` validates UID/GID10001, zero capabilities, readonly
+root, a <=256MiB nosuid/nodev/noexec tmpfs at `/tmp`, nproc<=256 and core=0, then
+sets/verifies NoNewPrivs before reading credentials and executing the reader.
+The official images map `/tmp` to `/dev/shm`. The idle process has a bounded
+lifetime and the container is force-deleted on success, failure or cancellation.
+Custom Apple reader images must provide this guard and filesystem contract.
+These settings apply to the dedicated X/Gmail reader path, not every container
+add-on. Use `RIELA_CONTAINER_RUNTIME=container` or `config.runnerKind` set to
+`apple-container`; the general `addon.container.runtime` value is `apple-container`.
 
 The root filesystem is read-only with writable `/tmp`. The official Gmail image
 runs as UID/GID 10001, with passwd home `/tmp/riela-gmail`; its reader, draft, and

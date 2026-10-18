@@ -98,6 +98,8 @@ final class GatewayCommandTests: XCTestCase {
     let reader = await GatewayCommand().run(["apple", "--role", "reader", "schema", "print"], environment: [:])
     XCTAssertEqual(reader.exitCode, .success)
     XCTAssertFalse(reader.stdout.contains("createNoteAttachment"))
+    XCTAssertTrue(full.stdout.contains("createNoteFolder(input: CreateNoteFolderInput!): NoteFolder!"))
+    XCTAssertFalse(reader.stdout.contains("createNoteFolder"))
     #endif
   }
 

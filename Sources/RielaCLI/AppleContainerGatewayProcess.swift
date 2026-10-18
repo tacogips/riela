@@ -13,6 +13,7 @@ struct AppleContainerGatewayProcess: Sendable {
   func run(image: String, mounts: [ContainerRuntimeMount], networkAllowed: Bool,
            gateway: ContainerGatewayAddon, document: String, bindings: [String: String],
            deadline: Date?) async throws -> LocalProcessResult {
+    let frame = try Self.bindingFrame(bindings)
     let name = "riela-gateway-" + UUID().uuidString.lowercased()
     let effectiveDeadline = deadline ?? Date().addingTimeInterval(600)
     let lifetime = max(1, Int(ceil(effectiveDeadline.timeIntervalSinceNow)) + 30)
@@ -31,10 +32,9 @@ struct AppleContainerGatewayProcess: Sendable {
         throw AdapterExecutionError(.providerError, "Apple Container gateway initialization failed")
       }
       var execute = ["exec", "-i"]
-      for key in bindings.keys.sorted() { execute += ["-e", key] }
       execute += [name, "/usr/local/bin/riela-gateway-guard", gateway.entrypoint]
       execute += gateway.arguments(document: document)
-      result = try await runner.run(configuration: configuration(execute, bindings: bindings), stdin: "", deadline: effectiveDeadline)
+      result = try await runner.run(configuration: configuration(execute), stdin: frame, deadline: effectiveDeadline)
     } catch {
       await cleanup(name)
       throw error
@@ -43,11 +43,27 @@ struct AppleContainerGatewayProcess: Sendable {
     return result
   }
 
-  private func configuration(_ arguments: [String], bindings: [String: String] = [:]) -> LocalProcessConfiguration {
+  static func bindingFrame(_ bindings: [String: String]) throws -> String {
+    guard bindings.count <= 128 else { throw AdapterExecutionError(.policyBlocked, "too many gateway environment bindings") }
+    var frame = "RIELAENV1\n\(bindings.count)\n"
+    for key in bindings.keys.sorted() {
+      let value = bindings[key] ?? ""
+      guard !value.contains("\0"), key.utf8.count <= 255 else {
+        throw AdapterExecutionError(.policyBlocked, "invalid gateway environment binding")
+      }
+      frame += "\(key.utf8.count)\n\(value.utf8.count)\n\(key)\(value)"
+    }
+    guard frame.utf8.count <= 1_048_576 else {
+      throw AdapterExecutionError(.policyBlocked, "gateway environment exceeds private transport limit")
+    }
+    return frame
+  }
+
+  private func configuration(_ arguments: [String]) -> LocalProcessConfiguration {
     LocalProcessConfiguration(
       executableURL: URL(fileURLWithPath: executable.hasPrefix("/") ? executable : "/usr/bin/env"),
       arguments: executable.hasPrefix("/") ? arguments : [executable] + arguments,
-      environment: environment.merging(bindings) { _, bound in bound },
+      environment: environment,
       unsetEnvironmentKeys: ["RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"],
       workingDirectoryURL: workingDirectory, inheritEnvironment: false)
   }

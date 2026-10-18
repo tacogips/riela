@@ -58,14 +58,9 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     try requireLiveImages()
     let root = try makeRielaCLITestTemporaryDirectory("gateway-readonly-image")
     defer { try? FileManager.default.removeItem(at: root) }
-    let driver = try XCTUnwrap(ContainerRuntimeDiscovery(environment: ["RIELA_CONTAINER_RUNTIME": liveRuntime]).configuredDriver())
     for gateway in [ContainerGatewayAddon.xRead, .gmailRead] {
       let query = gateway == .xRead ? "mutation { createPost(text: \"must not send\") { id } }" : #"mutation { sendMessage(input: { accountId: "personal", to: ["a@example.test"], textBody: "x" }) { status } }"#
-      let arguments = driver.runArguments(image: gateway.defaultImage,
-        options: .init(environment: [:], mounts: [], entrypoint: gateway.entrypoint, workingDirectory: nil,
-          networkAllowed: false, readOnlyRootFilesystem: true)) + gateway.arguments(document: query)
-      let result = try await FoundationLocalProcessRunner().run(configuration: .init(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-        arguments: [driver.executable] + arguments, environment: [:], workingDirectoryURL: root), stdin: "", deadline: Date().addingTimeInterval(300))
+      let result = try await runImage(gateway.defaultImage, command: [gateway.entrypoint] + gateway.arguments(document: query), root: root)
       XCTAssertNotEqual(result.terminationStatus, 0)
       if gateway == .gmailRead {
         XCTAssertTrue(result.stdout.contains("CAPABILITY_DENIED"), result.stdout)
@@ -79,7 +74,6 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     try requireLiveImages()
     let root = try makeRielaCLITestTemporaryDirectory("gmail-container-lock")
     defer { try? FileManager.default.removeItem(at: root) }
-    let driver = try XCTUnwrap(ContainerRuntimeDiscovery(environment: ["RIELA_CONTAINER_RUNTIME": liveRuntime]).configuredDriver())
     // Synthetic credentials reach the production lock before a deliberately denied
     // network request. No provider credentials or external API calls are needed.
     let bindings = syntheticCredentials(credentialID: "gmail-personal")
@@ -92,18 +86,14 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     status=$?
     set -e
     test "$status" -ne 0
-    test -f /tmp/riela-gmail/.local/state/gmail-gateway/auth-locks/gmail-personal-read.lock
-    test "$(stat -c %a /tmp/riela-gmail)" = 700
-    test "$(stat -c %a /tmp/riela-gmail/.local/state/gmail-gateway/auth-locks/gmail-personal-read.lock)" = 600
+    test -f /dev/shm/riela-gmail/.local/state/gmail-gateway/auth-locks/gmail-personal-read.lock
+    test "$(stat -c %a /dev/shm/riela-gmail)" = 700
+    test "$(stat -c %a /dev/shm/riela-gmail/.local/state/gmail-gateway/auth-locks/gmail-personal-read.lock)" = 600
     if grep -q 'cannot lock persistent credential lifecycle\\|persistent credentials require re-login' /tmp/result.json /tmp/error.txt; then exit 1; fi
     printf 'private-credential-lock-ok'
     """
-    let arguments = driver.runArguments(image: ContainerGatewayAddon.gmailRead.defaultImage,
-      options: .init(environment: bindings, mounts: [], entrypoint: "/bin/sh", workingDirectory: nil,
-        networkAllowed: false, readOnlyRootFilesystem: true, environmentValuesFromProcess: true, disablePersistentLogs: true))
-    let result = try await FoundationLocalProcessRunner().run(configuration: .init(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-      arguments: [driver.executable] + arguments + ["-c", script], environment: bindings, workingDirectoryURL: root),
-      stdin: "", deadline: Date().addingTimeInterval(120))
+    let result = try await runImage(ContainerGatewayAddon.gmailRead.defaultImage, command: ["/bin/sh", "-c", script],
+      bindings: bindings, root: root)
     XCTAssertEqual(result.terminationStatus, 0, result.stderr)
     XCTAssertEqual(result.stdout, "private-credential-lock-ok")
   }
@@ -112,16 +102,28 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     try requireLiveImages()
     let root = try makeRielaCLITestTemporaryDirectory("x-incremental-schema")
     defer { try? FileManager.default.removeItem(at: root) }
-    let driver = try XCTUnwrap(ContainerRuntimeDiscovery(environment: ["RIELA_CONTAINER_RUNTIME": liveRuntime]).configuredDriver())
-    let arguments = driver.runArguments(image: ContainerGatewayAddon.xRead.defaultImage,
-      options: .init(environment: [:], mounts: [], entrypoint: "x-gateway-reader", workingDirectory: nil,
-        networkAllowed: false, readOnlyRootFilesystem: true, disablePersistentLogs: true)) + ["graphql", "schema"]
-    let result = try await FoundationLocalProcessRunner().run(configuration: .init(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-      arguments: [driver.executable] + arguments, environment: [:], workingDirectoryURL: root), stdin: "", deadline: Date().addingTimeInterval(300))
+    let result = try await runImage(ContainerGatewayAddon.xRead.defaultImage, command: ["x-gateway-reader", "graphql", "schema"], root: root)
     XCTAssertEqual(result.terminationStatus, 0, result.stderr)
     XCTAssertTrue(result.stdout.contains("references: [PostReference!]!"))
     XCTAssertTrue(result.stdout.contains("searchPosts(query: String!, maxResults: Int, sinceId: String, nextToken: String"))
     XCTAssertTrue(result.stdout.contains("maxResults: Int, startTime: String, endTime: String, sinceId: String, untilId: String, paginationToken: String"))
+  }
+
+  private func runImage(_ image: String, command: [String], bindings: [String: String] = [:], root: URL) async throws -> LocalProcessResult {
+    let driver = try XCTUnwrap(ContainerRuntimeDiscovery(environment: ["RIELA_CONTAINER_RUNTIME": liveRuntime]).configuredDriver())
+    if driver.kind == .appleContainer {
+      // Reuse the production idle/exec/frame/cleanup path; only substitute the
+      // SDK command for image-only schema and filesystem probes.
+      return try await AppleContainerGatewayProcess(executable: driver.executable, environment: [:], workingDirectory: root,
+        runner: ImageProbeCommandRunner(command: command)).run(image: image, mounts: [], networkAllowed: false,
+          gateway: .xRead, document: "", bindings: bindings, deadline: Date().addingTimeInterval(300))
+    }
+    let arguments = driver.runArguments(image: image,
+      options: .init(environment: bindings, mounts: [], entrypoint: command.first, workingDirectory: nil,
+        networkAllowed: false, readOnlyRootFilesystem: true, environmentValuesFromProcess: true, disablePersistentLogs: true))
+    return try await FoundationLocalProcessRunner().run(configuration: .init(executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+      arguments: [driver.executable] + arguments + command.dropFirst(), environment: bindings, workingDirectoryURL: root),
+      stdin: "", deadline: Date().addingTimeInterval(300))
   }
 
   private func syntheticCredentials(credentialID: String) -> [String: String] {
@@ -149,5 +151,16 @@ final class GatewayContainerImageIntegrationTests: XCTestCase {
     if liveRuntime == "container" {
       try XCTSkipUnless(RielaHostPlatform.current == .darwin, "Apple Container integration requires Darwin")
     }
+  }
+}
+
+private struct ImageProbeCommandRunner: LocalProcessRunning {
+  let command: [String]
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
+    var configuration = configuration
+    if let index = configuration.arguments.firstIndex(of: "/usr/local/bin/riela-gateway-guard") {
+      configuration.arguments = Array(configuration.arguments.prefix(index + 1)) + command
+    }
+    return try await FoundationLocalProcessRunner().run(configuration: configuration, stdin: stdin, deadline: deadline)
   }
 }

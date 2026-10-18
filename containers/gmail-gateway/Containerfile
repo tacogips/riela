@@ -25,12 +25,12 @@ RUN rm -rf /tmp && ln -s /dev/shm /tmp
 ENV LD_LIBRARY_PATH="/usr/lib/swift/linux"
 COPY --from=build /src/.build/release/gmail-gateway-reader /src/.build/release/gmail-gateway-draft /src/.build/release/gmail-gateway-sender /usr/local/libexec/
 # Foundation resolves the passwd home for credential lifecycle locks. Keep it
-# private and ephemeral under the runtime's writable /tmp, including --entrypoint.
-RUN useradd --uid 10001 --home-dir /tmp/riela-gmail --no-create-home --shell /usr/sbin/nologin riela-gmail
+# private on the real tmpfs path: credential locks reject symlink ancestors.
+RUN useradd --uid 10001 --home-dir /dev/shm/riela-gmail --no-create-home --shell /usr/sbin/nologin riela-gmail
 COPY entrypoint.sh /usr/local/bin/gmail-gateway-reader
 RUN chmod 755 /usr/local/bin/gmail-gateway-reader && \
     ln -s gmail-gateway-reader /usr/local/bin/gmail-gateway-draft && \
     ln -s gmail-gateway-reader /usr/local/bin/gmail-gateway-sender
-ENV HOME="/tmp/riela-gmail"
+ENV HOME="/dev/shm/riela-gmail"
 USER 10001:10001
 ENTRYPOINT ["gmail-gateway-reader"]

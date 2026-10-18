@@ -199,11 +199,14 @@ add-on. Use `RIELA_CONTAINER_RUNTIME=container` or `config.runnerKind` set to
 `apple-container`; the general `addon.container.runtime` value is `apple-container`.
 
 The root filesystem is read-only with writable `/tmp`. The official Gmail image
-runs as UID/GID 10001, with passwd home `/tmp/riela-gmail`; its reader, draft, and
+runs as UID/GID 10001, with passwd home `/dev/shm/riela-gmail`; its reader, draft, and
 sender entrypoints create that private home before invoking the pinned SDK.
+The direct tmpfs path avoids symlink components rejected by secure credential locks.
 This lets the SDK acquire credential lifecycle locks with inline OAuth JSON
 without mounting host credentials or making the root filesystem writable.
 Mounted configuration and token files must be readable by that non-root user.
+On Apple Container, explicit `GMAIL_GATEWAY_CREDENTIAL_DIR` values must also use
+a direct `/dev/shm/...` path rather than the symlinked `/tmp/...` path.
 Networking defaults to `egress-allowed`;
 set `config.networkPolicy` to `denied` to disable networking.
 

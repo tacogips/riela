@@ -68,7 +68,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/wrike-gateway.git",
-      revision: "066ae02a3238e3d2d3304901139a89387f1e95cc"
+      revision: "ec1b9e770a18e5a2b463b09becb69492a21abf5d"
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",

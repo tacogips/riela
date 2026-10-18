@@ -90,7 +90,7 @@ final class BuiltinAddonImageIntegrationTests: XCTestCase {
       document: "mutation { gtmDeleteContainer(path: \"accounts/1/containers/2\") { success } }",
       contains: "requires the admin capability tier")
     try await assertGuestFailure(resolver, name: "riela/google-analytics-gateway-admin",
-      document: "query { gtmAccount(path: \"accounts/1\") { accountId } }", contains: "No environment access token")
+      document: "query { gtmAccount(path: \"accounts/1\") { accountId } }", contains: "AUTHENTICATION_FAILED")
   }
 
   private func assertGuestFailure(_ resolver: BuiltinAddonContainerResolver, name: String, document: String, contains message: String) async throws {

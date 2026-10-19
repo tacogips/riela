@@ -1,4 +1,4 @@
-name: Linux release
+name: Linux arm64 public 0.2.22 supplement
 
 on:
   workflow_dispatch:
@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-linux-x64:
-    name: Build and upload Linux x64 CLI archive
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+  release-linux-arm64:
+    name: Build and upload Linux arm64 CLI archive
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
@@ -27,6 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: 03da7af15b075dd32cf8f9872bbf230c1ea4dddf
 
       - name: Validate release tag
         env:
@@ -35,6 +36,12 @@ jobs:
           set -euo pipefail
           if ! printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$'; then
             echo "release tag must look like v<major>.<minor>.<patch>" >&2
+            exit 1
+          fi
+          test "$RELEASE_TAG" = v0.2.24
+          test "$(git rev-parse HEAD)" = 03da7af15b075dd32cf8f9872bbf230c1ea4dddf
+          if grep -qi notion-gateway Package.swift Package.resolved; then
+            echo "private dependency forbidden in public supplement" >&2
             exit 1
           fi
           VERSION="$(tr -d '[:space:]' < VERSION)"
@@ -48,15 +55,15 @@ jobs:
           fi
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Build Linux x64 CLI archive
+      - name: Build Linux arm64 CLI archive
         env:
           SWIFT_IMAGE: swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278
           BUN_VERSION: 1.4.3
-          BUN_SHA256: 3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18
+          BUN_SHA256: efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21
         run: |
           set -euo pipefail
           docker run --rm \
-            --platform linux/amd64 \
+            --platform linux/arm64 \
             -e BUN_VERSION \
             -e BUN_SHA256 \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -64,31 +71,31 @@ jobs:
             "$SWIFT_IMAGE" \
             bash -lc '
               set -euo pipefail
-              test "$(uname -m)" = "x86_64"
+              test "$(uname -m)" = "aarch64"
               swift --version
               apt-get update >/dev/null
               apt-get install -y libsqlite3-dev curl unzip >/dev/null
               mkdir -p tmp/linux-release-bun
               curl --fail --location --retry 3 \
-                "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" \
+                "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-aarch64.zip" \
                 -o tmp/linux-release-bun/bun.zip
               printf "%s  %s\n" "$BUN_SHA256" tmp/linux-release-bun/bun.zip | sha256sum -c -
               unzip -q tmp/linux-release-bun/bun.zip -d tmp/linux-release-bun
-              install -m 0755 tmp/linux-release-bun/bun-linux-x64/bun /usr/local/bin/bun
+              install -m 0755 tmp/linux-release-bun/bun-linux-aarch64/bun /usr/local/bin/bun
               bun --version
-              scripts/build-homebrew-release.sh linux-x64
+              scripts/build-homebrew-release.sh linux-arm64
             '
 
-      - name: Verify Linux x64 CLI archive
+      - name: Verify Linux arm64 CLI archive
         run: |
           set -euo pipefail
-          archive="dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz"
+          archive="dist/homebrew/riela-$RELEASE_VERSION-linux-arm64.tar.gz"
           checksum="$archive.sha256"
           test -f "$archive"
           test -f "$checksum"
-          (cd dist/homebrew && sha256sum -c "riela-$RELEASE_VERSION-linux-x64.tar.gz.sha256")
+          (cd dist/homebrew && sha256sum -c "riela-$RELEASE_VERSION-linux-arm64.tar.gz.sha256")
           tar -tzf "$archive" | grep -Fx './bin/riela'
-          "dist/homebrew/work/riela-$RELEASE_VERSION-linux-x64/bin/riela" --version | grep -Fx "$RELEASE_VERSION"
+          "dist/homebrew/work/riela-$RELEASE_VERSION-linux-arm64/bin/riela" --version | grep -Fx "$RELEASE_VERSION"
 
       - name: Smoke test archive on clean Ubuntu
         env:
@@ -96,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
-            --platform linux/amd64 \
+            --platform linux/arm64 \
             -e RELEASE_VERSION="$RELEASE_VERSION" \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
@@ -106,26 +113,27 @@ jobs:
               apt-get update >/dev/null
               apt-get install -y ca-certificates libcurl4 libsqlite3-0 libxml2 >/dev/null
               mkdir -p /tmp/riela-install
-              tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz" -C /tmp/riela-install
+              tar -xzf "dist/homebrew/riela-$RELEASE_VERSION-linux-arm64.tar.gz" -C /tmp/riela-install
               install -m 0755 /tmp/riela-install/bin/riela /usr/local/bin/riela
               riela --version | grep -Fx "$RELEASE_VERSION"
             '
 
-      - name: Upload Linux x64 release assets
+      - name: Upload Linux arm64 release assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          release_notes="Linux x64 CLI archive for riela $RELEASE_TAG."
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "riela $RELEASE_TAG" \
-              --notes "$release_notes"
-          fi
+          # Add only the two missing ARM assets; never create releases or replace assets.
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          existing="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for name in "riela-$RELEASE_VERSION-linux-arm64.tar.gz" "riela-$RELEASE_VERSION-linux-arm64.tar.gz.sha256"; do
+            if printf '%s\n' "$existing" | grep -Fx "$name"; then
+              echo "asset already exists; refusing replacement" >&2
+              exit 1
+            fi
+          done
           gh release upload "$RELEASE_TAG" \
-            "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz" \
-            "dist/homebrew/riela-$RELEASE_VERSION-linux-x64.tar.gz.sha256" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+            "dist/homebrew/riela-$RELEASE_VERSION-linux-arm64.tar.gz" \
+            "dist/homebrew/riela-$RELEASE_VERSION-linux-arm64.tar.gz.sha256" \
+            --repo "$GITHUB_REPOSITORY"

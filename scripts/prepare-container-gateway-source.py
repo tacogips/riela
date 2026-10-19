@@ -37,12 +37,23 @@ def local_package(root: Path, name: str) -> None:
 
 def prepare_x(root: Path) -> None:
     executor = root / "Sources/XGatewayCore/XGatewayLiveExecutor.swift"
-    replace(executor, "import Foundation\n",
-            "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
     text = executor.read_text()
-    if text.count("URLResponse()") != 4:
-        raise SystemExit("Expected exactly four URLResponse adaptations")
-    text = text.replace("URLResponse()", 'URLResponse(url: URL(fileURLWithPath: "/"), mimeType: nil, expectedContentLength: 0, textEncodingName: nil)')
+    networking = "#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n"
+    if networking not in text:
+        if text.count("import Foundation\n") != 1 or "import FoundationNetworking" in text:
+            raise SystemExit("Expected one supported X Foundation import")
+        text = text.replace("import Foundation\n", "import Foundation\n" + networking, 1)
+    elif text.count(networking) != 1 or text.count("import FoundationNetworking") != 1 or text.count("import Foundation\n") != 1:
+        raise SystemExit("Expected one X FoundationNetworking import")
+    legacy = "URLResponse()"
+    adapted = 'URLResponse(url: URL(fileURLWithPath: "/"), mimeType: nil, expectedContentLength: 0, textEncodingName: nil)'
+    portable = "URLResponse(url: url, mimeType: nil, expectedContentLength: 0, textEncodingName: nil)"
+    counts = tuple(text.count(value) for value in (legacy, adapted, portable))
+    if counts == (4, 0, 0):
+        text = text.replace(legacy, adapted)
+    elif counts not in ((0, 4, 0), (0, 0, 4)):
+        raise SystemExit("Expected four known X URLResponse fallbacks")
+    # Validate all anchors before writing; unsupported drift leaves the copy intact.
     executor.write_text(text)
 
 

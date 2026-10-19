@@ -75,7 +75,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "5b083463280efb6880270ab3b864b871dde1ca6f" // v0.1.22; SDK has revision-pinned dependencies.
+      revision: "5b083463280efb6880270ab3b864b871dde1ca6f" // v0.1.23; SDK has revision-pinned dependencies.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",

@@ -67,6 +67,8 @@ final class NotionGatewayAddonTests: XCTestCase {
     XCTAssertFalse(schema.stdout.contains("createPage"))
     let writerSchema = try await runNativeGatewayCLI(.init(gateway: .notion, role: "writer", arguments: ["schema"]), environment: [:])
     XCTAssertTrue(writerSchema.stdout.contains("createPage"))
+    let createPageField = try XCTUnwrap(writerSchema.stdout.split(separator: "\n").first { $0.contains("createPage(") })
+    XCTAssertTrue(createPageField.contains("position: JSON"))
     XCTAssertTrue(writerSchema.stdout.contains("createFileUpload"))
     XCTAssertTrue(writerSchema.stdout.contains("sendFileUpload"))
     XCTAssertTrue(writerSchema.stdout.contains("position: JSON"))

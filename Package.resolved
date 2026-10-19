@@ -87,7 +87,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/notion-gateway.git",
       "state" : {
-        "revision" : "cb55d9108dd797da4fa581bb07ea50c0bec69401"
+        "revision" : "15e7cbf714ad4e667d9319ad80a1be3fbdb9579b"
       }
     },
     {

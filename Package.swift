@@ -49,7 +49,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.12"),
-    .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "cb55d9108dd797da4fa581bb07ea50c0bec69401"),
+    .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "15e7cbf714ad4e667d9319ad80a1be3fbdb9579b"),
     .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
     .package(path: "Packages/RielaMemory"),
     .package(

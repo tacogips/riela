@@ -96,160 +96,9 @@
   },
   "plans": [
     {
-      "planId": "ar-01-core-config",
-      "planPath": "impl-plans/active/automatic-retention-01-core-config.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCore/RielaRetentionConfiguration.swift",
-        "Sources/RielaCore/RielaRetentionReport.swift",
-        "Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift",
-        "impl-plans/progress/ar-01-core-config.md"
-      ],
-      "sharedPaths": [],
-      "acceptanceCriteria": [
-        "RielaRetentionConfiguration.load(homeDirectory:projectDirectory:environment:fileManager:) implements the design §2 shape, validation, removed-key errors and env > project > user precedence; RielaByteSize parses 1000/1024-based units and rejects decimals.",
-        "RielaRetentionReport.swift defines the shared per-category report DTOs (struct RetentionCategoryReport) used by ar-05/ar-06/ar-07.",
-        "RielaRetentionConfigurationTests pass with testsRun >= 15 and failureCount 0; swiftlint is clean; RielaDataGarbageCollector.swift is unchanged."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift test --filter RielaRetentionConfigurationTests > tmp/automatic-retention/ar-01-core-config/test.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift > tmp/automatic-retention/ar-01-core-config/swiftlint.log 2>&1'",
-        "git diff --quiet -- Sources/RielaCore/RielaDataGarbageCollector.swift"
-      ]
-    },
-    {
-      "planId": "ar-02-core-planners",
-      "planPath": "impl-plans/active/automatic-retention-02-core-planners.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCore/TerminalRetentionPlan.swift",
-        "Sources/RielaCore/RielaLogRetentionPlan.swift",
-        "Tests/RielaCoreTests/TerminalRetentionPlanTests.swift",
-        "Tests/RielaCoreTests/RielaLogRetentionPlanTests.swift",
-        "impl-plans/progress/ar-02-core-planners.md"
-      ],
-      "sharedPaths": [],
-      "acceptanceCriteria": [
-        "TerminalRetentionPlan gains policy modes (case allExcept with keepWorkflowIds, age/cap selection, messages byte selector) and `public var eligible` (unprotected families in (updatedAt, rootId) order, zero-message families excluded for .messages), while the legacy make wrapper keeps session prune behavior.",
-        "RielaLogRetentionPlan implements age/cap/grace (graceInterval 86_400) with symlink and non-regular protection, oldest mtime first.",
-        "Planner tests pass with testsRun >= pre-existing TerminalRetentionPlanTests + 15 and failureCount 0; TerminalRetentionTests regression green; swiftlint clean."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionPlanTests|RielaLogRetentionPlanTests\" > tmp/automatic-retention/ar-02-core-planners/test.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/TerminalRetentionPlan.swift Sources/RielaCore/RielaLogRetentionPlan.swift Tests/RielaCoreTests/TerminalRetentionPlanTests.swift Tests/RielaCoreTests/RielaLogRetentionPlanTests.swift > tmp/automatic-retention/ar-02-core-planners/swiftlint.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter TerminalRetentionTests > tmp/automatic-retention/ar-02-core-planners/cli-regression.log 2>&1'"
-      ]
-    },
-    {
-      "planId": "ar-03-cli-reclaimer",
-      "planPath": "impl-plans/active/automatic-retention-03-cli-reclaimer.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCLI/RetentionSQLiteReclaimer.swift",
-        "Tests/RielaCLITests/RetentionReclamationTests.swift",
-        "impl-plans/progress/ar-03-cli-reclaimer.md"
-      ],
-      "sharedPaths": [],
-      "acceptanceCriteria": [
-        "func reclaim(databasePath: String, mode: RetentionReclamationMode) -> RetentionReclamationResult implements design §5.3: incremental_vacuum + PASSIVE checkpoint, free-space-gated INCREMENTAL conversion (automatic mode capped at 64 MiB), busy as a warning, honest reclaimedBytes and reusableFreeBytes.",
-        "No wal_checkpoint(TRUNCATE|RESTART) in the reclaimer.",
-        "RetentionReclamationTests pass with testsRun >= 8 and failureCount 0, including physical shrink without VACUUM on an incremental DB; swiftlint clean."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift test --filter RetentionReclamationTests > tmp/automatic-retention/ar-03-cli-reclaimer/test.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/RetentionSQLiteReclaimer.swift Tests/RielaCLITests/RetentionReclamationTests.swift > tmp/automatic-retention/ar-03-cli-reclaimer/swiftlint.log 2>&1'"
-      ]
-    },
-    {
-      "planId": "ar-04-cli-lock-admission",
-      "planPath": "impl-plans/active/automatic-retention-04-cli-lock-admission.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCLI/SessionExecutionLock.swift",
-        "Sources/RielaCLI/SessionCommands.swift",
-        "Tests/RielaCLITests/SessionExecutionLockTests.swift",
-        "Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift",
-        "impl-plans/progress/ar-04-cli-lock-admission.md"
-      ],
-      "sharedPaths": [],
-      "acceptanceCriteria": [
-        "SessionExecutionLock.init re-validates fstat vs stat inode after flock (up to 8 retries); func removeOrphanLocks removes only absent-session, non-busy locks with an under-lock DB recheck.",
-        "acquire throws messagesRetired for sessions in session_message_retention_tombstones unless allowRetired/allowMessagesRetired; the rerun source load rejects them with `workflow messages expired under retention`.",
-        "Tests pass with testsRun >= pre-existing SessionExecutionLockTests + 9 and failureCount 0; TerminalRetentionTests|WorkflowCommandScenarioTests regression green; swiftlint clean."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionExecutionLockTests|SessionMessageRetentionAdmissionTests\" > tmp/automatic-retention/ar-04-cli-lock-admission/test.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionTests|WorkflowCommandScenarioTests\" > tmp/automatic-retention/ar-04-cli-lock-admission/regression.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/SessionExecutionLock.swift Sources/RielaCLI/SessionCommands.swift Tests/RielaCLITests/SessionExecutionLockTests.swift Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift > tmp/automatic-retention/ar-04-cli-lock-admission/swiftlint.log 2>&1'"
-      ]
-    },
-    {
-      "planId": "ar-05-cli-executor",
-      "planPath": "impl-plans/active/automatic-retention-05-cli-executor.md",
-      "dependsOn": [
-        "ar-01-core-config",
-        "ar-02-core-planners",
-        "ar-03-cli-reclaimer",
-        "ar-04-cli-lock-admission"
-      ],
-      "writePaths": [
-        "Sources/RielaCLI/TerminalRetentionExecutor.swift",
-        "Sources/RielaCLI/TerminalRetentionMetadata.swift",
-        "Sources/RielaCLI/TerminalRetentionSecondary.swift",
-        "Sources/RielaCLI/TerminalRetentionPaths.swift",
-        "Sources/RielaCLI/SessionRetentionTombstones.swift",
-        "Sources/RielaCLI/SessionPruneCommand.swift",
-        "Tests/RielaCLITests/TerminalRetentionTests.swift",
-        "Tests/RielaCLITests/TerminalRetentionPolicyTests.swift",
-        "impl-plans/progress/ar-05-cli-executor.md"
-      ],
-      "sharedPaths": [],
-      "acceptanceCriteria": [
-        "func runPolicy( executes results, messages-only (over plan.eligible + orphan sets, recheck against currentPlan.eligible) and orphan-message pruning with locks (allowMessagesRetired: true), in-transaction recheck and tombstones; optional artifact/memory roots; pendingRootsMismatch protection.",
-        "No VACUUM or wal_checkpoint(TRUNCATE) remains in TerminalRetentionSecondary/Executor; session prune uses the ar-03 reclaimer in manual mode and reports reclamation.",
-        "Tests pass with testsRun >= pre-existing TerminalRetentionTests + 14 and failureCount 0, using both-table updated_at backdating relative to the injected clock; dependency suites green; swiftlint clean."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionTests|TerminalRetentionPolicyTests\" > tmp/automatic-retention/ar-05-cli-executor/test.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionExecutionLockTests|RetentionReclamationTests|TerminalRetentionPlanTests\" > tmp/automatic-retention/ar-05-cli-executor/deps.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/TerminalRetentionExecutor.swift Sources/RielaCLI/TerminalRetentionMetadata.swift Sources/RielaCLI/TerminalRetentionSecondary.swift Sources/RielaCLI/TerminalRetentionPaths.swift Sources/RielaCLI/SessionRetentionTombstones.swift Sources/RielaCLI/SessionPruneCommand.swift Tests/RielaCLITests/TerminalRetentionTests.swift Tests/RielaCLITests/TerminalRetentionPolicyTests.swift > tmp/automatic-retention/ar-05-cli-executor/swiftlint.log 2>&1'"
-      ]
-    },
-    {
-      "planId": "ar-06-cli-targets-logs",
-      "planPath": "impl-plans/active/automatic-retention-06-cli-targets-logs.md",
-      "dependsOn": [
-        "ar-01-core-config",
-        "ar-02-core-planners"
-      ],
-      "writePaths": [
-        "Sources/RielaCLI/RetentionTargets.swift",
-        "Sources/RielaCLI/RetentionTargetState.swift",
-        "Sources/RielaCLI/RetentionLogPruner.swift",
-        "Sources/RielaCLI/RielaRetentionScheduler.swift",
-        "Tests/RielaCLITests/RetentionTargetStateTests.swift",
-        "Tests/RielaCLITests/RetentionLogPrunerTests.swift",
-        "Tests/RielaCLITests/RielaRetentionSchedulerTests.swift",
-        "impl-plans/progress/ar-06-cli-targets-logs.md"
-      ],
-      "sharedPaths": [],
-      "acceptanceCriteria": [
-        "RetentionTargets resolves deduplicated user/project/explicit targets without creating missing roots and skips unsafe paths; RetentionTargetState provides static func tryAcquire(stateDirectory: String) non-blocking flock plus an atomic last-run.json throttle stamp (future stamps stale).",
-        "RetentionLogPruner applies the log plan with a pre-unlink re-lstat and the unlink bound; public final class RielaRetentionScheduler runs non-overlapping passes on an injectable interval.",
-        "Tests pass with testsRun >= 19 and failureCount 0; swiftlint clean."
-      ],
-      "verification": [
-        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RetentionTargetStateTests|RetentionLogPrunerTests|RielaRetentionSchedulerTests\" > tmp/automatic-retention/ar-06-cli-targets-logs/test.log 2>&1'",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/RetentionTargets.swift Sources/RielaCLI/RetentionTargetState.swift Sources/RielaCLI/RetentionLogPruner.swift Sources/RielaCLI/RielaRetentionScheduler.swift Tests/RielaCLITests/RetentionTargetStateTests.swift Tests/RielaCLITests/RetentionLogPrunerTests.swift Tests/RielaCLITests/RielaRetentionSchedulerTests.swift > tmp/automatic-retention/ar-06-cli-targets-logs/swiftlint.log 2>&1'"
-      ]
-    },
-    {
       "planId": "ar-07-cli-service-gc-docs",
       "planPath": "impl-plans/active/automatic-retention-07-cli-service-gc-docs.md",
-      "dependsOn": [
-        "ar-05-cli-executor",
-        "ar-06-cli-targets-logs"
-      ],
+      "dependsOn": [],
       "writePaths": [
         "Sources/RielaCLI/RielaRetentionService.swift",
         "Sources/RielaCLI/GarbageCollectionCommand.swift",
@@ -275,7 +124,7 @@
         }
       ],
       "acceptanceCriteria": [
-        "public func run(_ request: RielaRetentionRequest) throws -> RielaRetentionReport orchestrates per-target recovery, results, messages, logs, generated sweep, orphan locks and reclamation in the design §5.2 order, with throttle and lock semantics and dry runs that write nothing.",
+        "public func run(_ request: RielaRetentionRequest) throws -> RielaRetentionReport orchestrates per-target recovery, results, messages, logs, generated sweep, orphan locks and reclamation in the design \u00a75.2 order, with throttle and lock semantics and dry runs that write nothing.",
         "riela gc exposes --scope/--dry-run/per-category overrides/--output text|json, exits 0/1/2, rejects overrides on keepForever categories and --retention-days, and no longer references RielaGarbageCollectionConfiguration.",
         "README, docs/terminal-retention.md and the riela-workflow-run skill describe the policy with the keep-forever example; old keys appear only in the README removal sentence.",
         "Tests pass with testsRun >= 18 + pre-existing CommandParsingTests and failureCount 0; dependency suites green; swiftlint clean."
@@ -365,5 +214,25 @@
         "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaApp/EntryPoint+Retention.swift Sources/RielaApp/EntryPoint.swift Sources/RielaCore/RielaDataGarbageCollector.swift Tests/RielaCoreTests/RielaDataGarbageCollectorTests.swift Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift > tmp/automatic-retention/ar-09-app-legacy-removal/swiftlint.log 2>&1'"
       ]
     }
-  ]
+  ],
+  "acceptedBaseline": {
+    "commit": "10e9aa6e",
+    "planIds": [
+      "ar-01-core-config",
+      "ar-02-core-planners",
+      "ar-03-cli-reclaimer",
+      "ar-04-cli-lock-admission",
+      "ar-05-cli-executor",
+      "ar-06-cli-targets-logs"
+    ],
+    "planPaths": [
+      "impl-plans/active/automatic-retention-01-core-config.md",
+      "impl-plans/active/automatic-retention-02-core-planners.md",
+      "impl-plans/active/automatic-retention-03-cli-reclaimer.md",
+      "impl-plans/active/automatic-retention-04-cli-lock-admission.md",
+      "impl-plans/active/automatic-retention-05-cli-executor.md",
+      "impl-plans/active/automatic-retention-06-cli-targets-logs.md"
+    ],
+    "note": "ar-01..ar-06 were implemented, reviewed and integration-accepted in session opus-luna-design-and-implement-loop-nopush-session-452 and are committed in 10e9aa6e. They are not redispatched. ar-07 resumes from its uncommitted work-in-progress in the working tree."
+  }
 }

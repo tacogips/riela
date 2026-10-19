@@ -4,7 +4,7 @@
 {
   "planId": "ar-07-cli-service-gc-docs",
   "planPath": "impl-plans/active/automatic-retention-07-cli-service-gc-docs.md",
-  "dependsOn": ["ar-05-cli-executor", "ar-06-cli-targets-logs"],
+  "dependsOn": [],
   "wave": 3,
   "writePaths": [
     "Sources/RielaCLI/RielaRetentionService.swift",
@@ -26,6 +26,23 @@
   ]
 }
 ```
+
+## Resume note (2026-10-19)
+
+Session 452 blocked this plan on two items. Both are resolved, so do not report them again:
+
+1. `CommandParsingTests.testArgumentParserRegistersEveryTopLevelClientCommand` failed on
+   `main` because its expected set omitted the existing `cache` and `gateway` commands. The
+   operator added both names to the expected set in the working tree (shared path of this plan).
+   The required aggregate command now passes.
+2. Runtime-database reclamation ran twice and ignored the injected `freeSpace`. The operator
+   fixed `TerminalRetentionExecutor` (stored `reclaimer`, single reclamation in `finalize`,
+   `runPolicy(... reclamationMode:)`) in commit 10e9aa6e, and wired it in
+   `RielaRetentionService` (`makeExecutor()`, `reclamationMode(_:)`) with the regression test
+   `testManualRunReclaimsRuntimeDatabaseOnceThroughInjectedFreeSpace`.
+
+ar-05 and ar-06 are accepted and committed in 10e9aa6e. Keep the existing work in progress, finish
+the remaining plan items, rerun the exact verification commands and submit the result.
 
 ## Intent and context
 

@@ -3,7 +3,7 @@ import Foundation
 import RielaMemory
 
 struct ParsedCacheArguments: ParsableArguments {
-  @Argument(help: "configure, put, get, delete, or prune") var operation: String
+  @Argument(help: "configure, put, get, protect, delete, or prune") var operation: String
   @Argument var cacheId: String
   @Option var cacheRoot = RielaCacheStore.defaultRootDirectory()
   @Option var scope: String?
@@ -60,6 +60,9 @@ struct CacheCommandRunner {
         } else { keys = [try required(parsed.key, "--key")] }
         response = try store.get(cacheId: parsed.cacheId, scope: required(parsed.scope, "--scope"),
           keys: keys, maxOutputBytes: parsed.maxOutputBytes)
+      case "protect":
+        response = try store.protect(cacheId: parsed.cacheId, scope: required(parsed.scope, "--scope"),
+          entries: decode([CacheProtection].self, file: required(parsed.entriesFile, "--entries-file")))
       case "delete":
         let entries: [CacheDelete]
         if let file = parsed.entriesFile {
@@ -71,7 +74,7 @@ struct CacheCommandRunner {
           entries = [.init(key: try required(parsed.key, "--key"), revision: try required(parsed.expectedRevision, "--expected-revision"))]
         }
         response = try store.delete(cacheId: parsed.cacheId, scope: required(parsed.scope, "--scope"), entries: entries)
-      default: throw CLIUsageError("cache operation must be configure, put, get, delete, or prune")
+      default: throw CLIUsageError("cache operation must be configure, put, get, protect, delete, or prune")
       }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -90,6 +93,7 @@ struct CacheCommandRunner {
       "configure": ["--ttl-seconds", "--max-bytes"],
       "put": ["--scope", "--entries-file", "--key", "--fetched-at", "--payload-file"],
       "get": ["--scope", "--keys-file", "--key", "--max-output-bytes"],
+      "protect": ["--scope", "--entries-file"],
       "delete": ["--scope", "--entries-file", "--key", "--expected-revision"],
       "prune": []
     ]

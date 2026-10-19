@@ -23,6 +23,117 @@ final class RielaCacheStoreTests: XCTestCase {
       payload: .string(String(repeating: "x", count: count)))
   }
 
+  func testConcurrentProtectedWritersCannotOversubscribeSharedBudget() async throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "cache", policy: .init(maxBytes: 600))
+    let first = CachePut(key: "a", fetchedAt: cacheTimestamp(Int64(clock.now().timeIntervalSince1970 * 1000)),
+      payload: .string("pending"), protectFromEviction: true)
+    let second = CachePut(key: "b", fetchedAt: first.fetchedAt, payload: first.payload, protectFromEviction: true)
+    let admitted = await withTaskGroup(of: Bool.self) { group in
+      for value in [first, second] {
+        group.addTask {
+          do { _ = try store.put(cacheId: "cache", scope: value.key, entries: [value]); return true }
+          catch { return false }
+        }
+      }
+      var count = 0
+      for await success in group where success { count += 1 }
+      return count
+    }
+    XCTAssertEqual(admitted, 1)
+    let stats = try store.prune(cacheId: "cache").stats
+    XCTAssertEqual(stats.entryCount, 1)
+    XCTAssertEqual(stats.byteCount, stats.protectedByteCount)
+    XCTAssertLessThanOrEqual(stats.byteCount, 600)
+  }
+
+  func testVersionOneMigrationPreservesEntriesRevisionAndTTL() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let saved = try store.put(cacheId: "cache", scope: "s", entries: [entry("a", clock)]).results[0].entry!
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(try store.databasePath(cacheId: "cache"), &db), SQLITE_OK)
+    try execute(db, "ALTER TABLE cache_entries DROP COLUMN protected")
+    try execute(db, "PRAGMA user_version = 1")
+    sqlite3_close(db)
+    let migrated = try store.get(cacheId: "cache", scope: "s", keys: ["a"]).results[0].entry!
+    XCTAssertEqual(migrated.revision, saved.revision)
+    XCTAssertEqual(migrated.expiresAt, saved.expiresAt)
+    XCTAssertEqual(migrated.protectFromEviction, false)
+    let protected = try store.protect(cacheId: "cache", scope: "s", entries: [
+      .init(key: "a", revision: saved.revision, protectFromEviction: true)])
+    XCTAssertEqual(protected.stats.protectedByteCount, saved.byteCount)
+    XCTAssertEqual(sqlite3_open(try store.databasePath(cacheId: "cache"), &db), SQLITE_OK)
+    defer { sqlite3_close(db) }
+    XCTAssertEqual(try queryRows(db, sql: "PRAGMA user_version", bindings: []).first?.columns["user_version"], "2")
+  }
+
+  func testCapacityProtectionAcrossScopesAndReleaseRetainsOriginalLRUAndTTL() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "cache", policy: .init(ttlSeconds: 10, maxBytes: 1100))
+    var pending = entry("pending", clock)
+    pending.protectFromEviction = true
+    let saved = try store.put(cacheId: "cache", scope: "s", entries: [pending]).results[0].entry!
+    _ = try store.put(cacheId: "cache", scope: "other", entries: [entry("exported", clock)])
+    let fresh = try store.put(cacheId: "cache", scope: "other", entries: [entry("new", clock)])
+    XCTAssertEqual(fresh.stats.evictedCount, 1)
+    XCTAssertEqual(fresh.stats.protectedByteCount, saved.byteCount)
+    // Release neither deletes nor touches LRU: pending is still oldest and is evicted next.
+    clock.advance(8)
+    let released = try store.protect(cacheId: "cache", scope: "s", entries: [
+      .init(key: "pending", revision: saved.revision, protectFromEviction: false)])
+    XCTAssertEqual(released.stats.entryCount, 2)
+    XCTAssertEqual(released.results[0].entry?.expiresAt, saved.expiresAt)
+    _ = try store.put(cacheId: "cache", scope: "other", entries: [entry("latest", clock)])
+    XCTAssertEqual(try store.get(cacheId: "cache", scope: "s", keys: ["pending"]).results[0].status, "miss")
+  }
+
+  func testProtectedCapacityFailureRollsBackPutAndPolicyShrink() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "cache", policy: .init(maxBytes: 1100))
+    var first = entry("a", clock); first.protectFromEviction = true
+    var second = entry("b", clock); second.protectFromEviction = true
+    _ = try store.put(cacheId: "cache", scope: "s", entries: [first, second])
+    XCTAssertThrowsError(try store.put(cacheId: "cache", scope: "other", entries: [entry("c", clock)]))
+    XCTAssertThrowsError(try store.configure(cacheId: "cache", policy: .init(ttlSeconds: 80000, maxBytes: 600)))
+    let result = try store.get(cacheId: "cache", scope: "s", keys: ["a", "b"])
+    XCTAssertEqual(result.results.map(\.status), ["hit", "hit"])
+    XCTAssertEqual(result.stats.policy, CachePolicy(maxBytes: 1100))
+    XCTAssertEqual(result.stats.byteCount, result.stats.protectedByteCount)
+  }
+
+  func testStaleProtectionReleaseIsAtomicAndReplacementPreservesProtection() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var first = entry("a", clock); first.protectFromEviction = true
+    let original = try store.put(cacheId: "cache", scope: "s", entries: [first, entry("b", clock)])
+    let old = original.results[0].entry!
+    clock.advance(1)
+    let updated = try store.put(cacheId: "cache", scope: "s", entries: [entry("a", clock)]).results[0].entry!
+    XCTAssertEqual(updated.protectFromEviction, true)
+    XCTAssertThrowsError(try store.protect(cacheId: "cache", scope: "s", entries: [
+      .init(key: "b", revision: original.results[1].entry!.revision, protectFromEviction: true),
+      .init(key: "a", revision: old.revision, protectFromEviction: false)]))
+    let current = try store.get(cacheId: "cache", scope: "s", keys: ["a", "b"])
+    XCTAssertEqual(current.results.map { $0.entry!.protectFromEviction }, [true, false])
+  }
+
+  func testCapacityProtectionDoesNotOverrideFixedTTL() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "cache", policy: .init(ttlSeconds: 10, maxBytes: 1100))
+    var value = entry("a", clock); value.protectFromEviction = true
+    _ = try store.put(cacheId: "cache", scope: "s", entries: [value])
+    clock.advance(10)
+    let result = try store.get(cacheId: "cache", scope: "s", keys: ["a"])
+    XCTAssertEqual(result.results[0].reason, "expired")
+    XCTAssertEqual(result.stats.protectedByteCount, 0)
+    XCTAssertEqual(result.stats.byteCount, 0)
+  }
+
   func testReadsAndIdempotentReplayDoNotExtendTTL() throws {
     let (store, clock, root) = fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -131,7 +242,7 @@ final class RielaCacheStoreTests: XCTestCase {
     }
     XCTAssertEqual(try queryRows(db, sql: "SELECT value FROM durable", bindings: []).first?.columns["value"], "preserve")
     try execute(db, "PRAGMA application_id = 1380533064")
-    try execute(db, "PRAGMA user_version = 2")
+    try execute(db, "PRAGMA user_version = 3")
     XCTAssertThrowsError(try store.prune(cacheId: "foreign"))
   }
 

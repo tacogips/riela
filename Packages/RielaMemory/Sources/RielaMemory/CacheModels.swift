@@ -5,6 +5,7 @@ public enum RielaCacheError: Error, Equatable, Sendable {
   case oversized(bytes: Int, limit: Int)
   case expiredInput(String)
   case revisionConflict(String)
+  case protectedCapacityExceeded(limit: Int)
   case foreignDatabase
 }
 
@@ -26,8 +27,19 @@ public struct CachePut: Codable, Sendable {
   public var key: String
   public var fetchedAt: String
   public var payload: MemoryJSONValue
-  public init(key: String, fetchedAt: String, payload: MemoryJSONValue) {
+  public var protectFromEviction: Bool?
+  public init(key: String, fetchedAt: String, payload: MemoryJSONValue, protectFromEviction: Bool? = nil) {
     self.key = key; self.fetchedAt = fetchedAt; self.payload = payload
+    self.protectFromEviction = protectFromEviction
+  }
+}
+
+public struct CacheProtection: Codable, Sendable {
+  public var key: String
+  public var revision: String
+  public var protectFromEviction: Bool
+  public init(key: String, revision: String, protectFromEviction: Bool) {
+    self.key = key; self.revision = revision; self.protectFromEviction = protectFromEviction
   }
 }
 
@@ -45,6 +57,7 @@ public struct CacheEntry: Codable, Equatable, Sendable {
   public var expiresAt: String
   public var payload: MemoryJSONValue?
   public var byteCount: Int
+  public var protectFromEviction: Bool?
 }
 
 public struct CacheLookup: Codable, Equatable, Sendable {
@@ -60,6 +73,7 @@ public struct CacheStats: Codable, Equatable, Sendable {
   public var expiredCount: Int
   public var evictedCount: Int
   public var policy: CachePolicy
+  public var protectedByteCount: Int = 0
 }
 
 public struct CacheResult: Codable, Equatable, Sendable {

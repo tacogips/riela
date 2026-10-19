@@ -627,6 +627,23 @@ the variables' JSON types. The reference bundle
 
 ## Temporary retrieval cache
 
+Pending retrievals can opt into capacity protection with `protectFromEviction: true`
+on each `cache put --entries-file` entry. Protected entries still count against the
+shared budget; every writer and policy shrink respects protection and rejects an
+operation atomically when protected data plus the incoming batch cannot fit.
+`stats.protectedByteCount` reports the exact protected charged bytes. Replacement
+puts preserve existing protection, including older callers that omit the flag.
+After a durable export receipt is verified, release protection without deleting:
+`riela cache protect CACHE --scope S --entries-file -` accepts an array such as
+`[{"key":"post","revision":"<current SHA256>","protectFromEviction":false}]`.
+Use `true` to protect an existing current revision. The entire batch (up to 1024
+keys) fails on missing, expired, or changed revisions. Protection/release does not
+touch LRU order, content revision, or fetchedAt. Released entries remain reusable
+until normal TTL/LRU eviction. **Capacity protection does not override TTL**:
+expired pending payloads require repair or a fail-closed stop before advancing a
+checkpoint. Protect body and image entries separately. This uses cache schema 2;
+stop older shared-cache callers before migration, since older CLIs reject schema 2.
+
 Use `riela cache` or the `riela/cache-*` add-ons for disposable inspected
 retrieval bodies and media. The opt-in cache defaults to a fixed 24-hour TTL
 and a 256 MiB LRU budget, with bounded batch stdin operations and physical

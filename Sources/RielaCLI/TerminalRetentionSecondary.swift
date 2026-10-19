@@ -6,7 +6,7 @@ import RielaSQLite
 enum TerminalRetentionSecondary {
   static func decorate(_ supplied: [TerminalRetentionSession], paths: TerminalRetentionPaths) throws -> [TerminalRetentionSession] {
     var rows = Dictionary(uniqueKeysWithValues: supplied.map { ($0.id, $0) })
-    for row in supplied {
+    for row in supplied where paths.artifactRoot != nil {
       let file = try paths.artifactSnapshot(row.id)
       let directory = URL(fileURLWithPath: file).deletingLastPathComponent()
       if FileManager.default.fileExists(atPath: directory.path) {
@@ -34,7 +34,7 @@ enum TerminalRetentionSecondary {
         FROM workflow_messages GROUP BY workflow_execution_id
         """) {
         if let id = row["id"], let prior = rows[id], let size = row["bytes"].flatMap(Int64.init) {
-          rows[id]?.payloadBytes = try TerminalRetentionMetadata.adding(prior.payloadBytes, size)
+          rows[id]?.messageBytes = try TerminalRetentionMetadata.adding(prior.messageBytes, size)
         }
       }
     }
@@ -82,7 +82,10 @@ enum TerminalRetentionSecondary {
     return rows.values.sorted { $0.id < $1.id }
   }
 
-  static func clean(ids: [String], workflows: [String: String], paths: TerminalRetentionPaths) throws {
+  static func clean(ids: [String], workflows: [String: String], paths: TerminalRetentionPaths,
+                    mode: RetentionReclamationMode,
+                    reclaimer: RetentionSQLiteReclaimer = RetentionSQLiteReclaimer()) throws -> [RetentionReclamationResult] {
+    var reclamations: [RetentionReclamationResult] = []
     for path in try paths.memoryDatabases() {
       let db = try SQLiteDatabase.open(path: path, options: .init(enableWAL: false))
       guard try db.tableExists("memory_metadata"), try db.tableExists("memory_entries") else { continue }
@@ -117,16 +120,19 @@ enum TerminalRetentionSecondary {
           removed += try db.executeAndReturnChangedRowCount("DELETE FROM memory_entries WHERE record_id IN (\(selection))", bindings: bindings)
         }
       }
-      if removed > 0 { try reclaim(db) }
+      if removed > 0 {
+        reclamations.append(reclaimer.reclaim(databasePath: path, mode: mode))
+      }
     }
     if let db = try artifactDatabase(paths, writable: true) {
       _ = try db.query("PRAGMA secure_delete=ON")
       try db.transaction { db in
         for id in ids { try deleteMessages(id: id, db: db) }
       }
-      try reclaim(db)
+      let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: paths.artifactRoot ?? "")
+      reclamations.append(reclaimer.reclaim(databasePath: path, mode: mode))
     }
-    for id in ids {
+    for id in ids where paths.artifactRoot != nil {
       let path = try paths.artifactSnapshot(id)
       let directory = URL(fileURLWithPath: path).deletingLastPathComponent().path
       if FileManager.default.fileExists(atPath: directory),
@@ -135,6 +141,7 @@ enum TerminalRetentionSecondary {
       }
       if FileManager.default.fileExists(atPath: path) { try FileManager.default.removeItem(atPath: path) }
     }
+    return reclamations
   }
 
   static func deleteMessages(id: String, db: SQLiteDatabase) throws {
@@ -143,20 +150,9 @@ enum TerminalRetentionSecondary {
     }
   }
 
-  static func reclaim(_ db: SQLiteDatabase) throws {
-    _ = try db.query("PRAGMA secure_delete=ON")
-    try checkpoint(db)
-    try db.execute("VACUUM")
-    try checkpoint(db)
-  }
-
-  private static func checkpoint(_ db: SQLiteDatabase) throws {
-    let result = try db.query("PRAGMA wal_checkpoint(TRUNCATE)")
-    guard result.first?["busy"] != "1" else { throw TerminalRetentionError.reclamationBusy }
-  }
-
   private static func artifactDatabase(_ paths: TerminalRetentionPaths, writable: Bool = false) throws -> SQLiteDatabase? {
-    let path = try TerminalRetentionPaths.checkedDatabase(SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: paths.artifactRoot))
+    guard let artifactRoot = paths.artifactRoot else { return nil }
+    let path = try TerminalRetentionPaths.checkedDatabase(SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: artifactRoot))
     guard FileManager.default.fileExists(atPath: path) else { return nil }
     let db = try SQLiteDatabase.open(path: path, mode: writable ? .readWriteCreate : .strictReadOnly, options: writable ? .writableDefault : .readOnlyDefault)
     guard try db.tableExists("workflow_messages") else { throw TerminalRetentionError.foreignDatabase }

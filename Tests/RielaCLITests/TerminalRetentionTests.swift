@@ -54,7 +54,7 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot)
+    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot!)
     try memory.save(memoryId: "mixed", workflowId: "news", payload: .object([
       "source": .string("riela-node-manager"), "direction": .string("outbox"),
       "workflowId": .string("news"), "sessionId": .string("old"), "output": .string("temporary body")]))
@@ -161,7 +161,7 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("referenced", db: db); try insert("artifact", db: db)
-    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot)
+    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot!)
     let journal = try memory.save(memoryId: "mixed", workflowId: "news", payload: .object([
       "source": .string("riela-node-manager"), "direction": .string("outbox"),
       "workflowId": .string("news"), "sessionId": .string("referenced"), "output": .string("body")]))
@@ -181,7 +181,7 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot)
+    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot!)
     let journal = try memory.save(memoryId: "mixed", workflowId: "news", payload: .object([
       "source": .string("riela-node-manager"), "direction": .string("outbox"),
       "workflowId": .string("news"), "sessionId": .string("old"), "output": .string("body")]))
@@ -221,8 +221,8 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    let arguments = ["--session-store", paths.sessionRoot, "--artifact-root", paths.artifactRoot,
-      "--memory-root", paths.memoryRoot, "--workflow-id", "news", "--dry-run"]
+    let arguments = ["--session-store", paths.sessionRoot, "--artifact-root", paths.artifactRoot!,
+      "--memory-root", paths.memoryRoot!, "--workflow-id", "news", "--dry-run"]
     XCTAssertEqual(runner.run(arguments + ["--retention-hours", "0"]).exitCode, .failure)
     XCTAssertFalse(try db.tableExists("session_retention_tombstones"))
   }
@@ -247,12 +247,12 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    try FileManager.default.createDirectory(atPath: paths.artifactRoot, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(atPath: URL(fileURLWithPath: paths.artifactRoot).appendingPathComponent("old").path,
+    try FileManager.default.createDirectory(atPath: paths.artifactRoot!, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(atPath: URL(fileURLWithPath: paths.artifactRoot!).appendingPathComponent("old").path,
       withDestinationPath: root.path)
     XCTAssertThrowsError(try execute(paths))
     XCTAssertEqual(try db.query("SELECT * FROM workflow_runtime_snapshots").count, 1)
     XCTAssertThrowsError(try TerminalRetentionPaths(sessionRoot: paths.sessionRoot,
-      artifactRoot: paths.sessionRoot + "/artifacts", memoryRoot: paths.memoryRoot))
+      artifactRoot: paths.sessionRoot + "/artifacts", memoryRoot: paths.memoryRoot!))
   }
 }

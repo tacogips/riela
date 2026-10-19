@@ -2,15 +2,15 @@ import Foundation
 
 struct TerminalRetentionPaths: Equatable, Sendable {
   var sessionRoot: String
-  var artifactRoot: String
-  var memoryRoot: String
+  var artifactRoot: String?
+  var memoryRoot: String?
 
-  init(sessionRoot: String, artifactRoot: String, memoryRoot: String) throws {
+  init(sessionRoot: String, artifactRoot: String?, memoryRoot: String?) throws {
     self.sessionRoot = try Self.checked(sessionRoot)
-    self.artifactRoot = try Self.checked(artifactRoot)
-    self.memoryRoot = try Self.checked(memoryRoot)
-    let roots = [self.sessionRoot, self.artifactRoot, self.memoryRoot]
-    guard Set(roots).count == 3 else { throw TerminalRetentionError.unsafePath }
+    self.artifactRoot = try artifactRoot.map(Self.checked)
+    self.memoryRoot = try memoryRoot.map(Self.checked)
+    let roots = [self.sessionRoot, self.artifactRoot, self.memoryRoot].compactMap { $0 }
+    guard Set(roots).count == roots.count else { throw TerminalRetentionError.unsafePath }
     for root in roots {
       guard !roots.contains(where: { $0 != root && root.hasPrefix($0 + "/") }) else {
         throw TerminalRetentionError.unsafePath
@@ -48,6 +48,7 @@ struct TerminalRetentionPaths: Equatable, Sendable {
   }
 
   func artifactSnapshot(_ id: String) throws -> String {
+    guard let artifactRoot else { throw TerminalRetentionError.unsafePath }
     guard id.range(of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#, options: .regularExpression) != nil,
           !id.contains("..") else { throw TerminalRetentionError.unsafePath }
     return try Self.checked(URL(fileURLWithPath: artifactRoot).appendingPathComponent(id)
@@ -55,6 +56,7 @@ struct TerminalRetentionPaths: Equatable, Sendable {
   }
 
   func memoryDatabases() throws -> [String] {
+    guard let memoryRoot else { return [] }
     guard FileManager.default.fileExists(atPath: memoryRoot) else { return [] }
     return try FileManager.default.contentsOfDirectory(atPath: memoryRoot).filter { $0.hasSuffix(".sqlite") }
       .sorted().map { try Self.checkedDatabase(URL(fileURLWithPath: memoryRoot).appendingPathComponent($0).path) }

@@ -539,6 +539,13 @@ final class LocalProcessHandle: @unchecked Sendable {
   }
 }
 
+private func checkLocalProcessAdmission(deadline: Date?) throws {
+  try Task.checkCancellation()
+  if let deadline, deadline <= Date() {
+    throw AdapterExecutionError(.timeout, "local agent process deadline expired before dispatch")
+  }
+}
+
 private func localProcessTimeoutError() -> AdapterExecutionError {
   AdapterExecutionError(.timeout, "local agent process exceeded deadline and was terminated")
 }
@@ -675,6 +682,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
     outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?,
     stdinWriterStartedHandler: (@Sendable () -> Void)?
   ) async throws -> LocalProcessResult {
+    try checkLocalProcessAdmission(deadline: deadline)
     let effectiveConfiguration = try seatbeltInvocation(for: configuration) ?? configuration
     let cancellationState = LocalProcessCancellationState()
     return try await withTaskCancellationHandler {
@@ -715,6 +723,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
 
         do {
           let stdinWriter = try LocalProcessStdinWriter(fileHandle: inputPipe.fileHandleForWriting, stdin: stdin)
+          try checkLocalProcessAdmission(deadline: deadline)
           let processId = try spawnProcess(
             configuration: effectiveConfiguration,
             inputReadDescriptor: inputPipe.fileHandleForReading.fileDescriptor,

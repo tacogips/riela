@@ -99,6 +99,9 @@ expanded entries, 8,000,000 bytes per file, and 64,000,000 total file bytes.
 Snapshots occur at workflow node boundaries, so writes that begin and end
 within one agent invocation may not appear in the evidence.
 
+Local command invocations reject an already-expired deadline or pre-existing task
+cancellation before dispatch. Cancellation racing with spawn uses the owned
+process-group cleanup; commands are never automatically replayed.
 Local command nodes run foreground work: their process group is reclaimed when
 the command leader exits, including background children that retain its pipes.
 Foreground exit status and captured logs remain available. Commands must not

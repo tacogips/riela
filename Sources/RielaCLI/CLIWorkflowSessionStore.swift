@@ -283,6 +283,21 @@ public struct CLIWorkflowSessionStore: Sendable {
     }
   }
 
+  /// Preserve execution ID high-water marks without decoding stored payloads.
+  func observePersistedExecutionIdentities(_ generator: any WorkflowRuntimeIDGenerating) throws {
+    guard FileManager.default.fileExists(atPath: databasePath) else { return }
+    let db = try openDatabase(readOnly: true)
+    guard try tableExists(db, name: "cli_workflow_sessions") else { return }
+    for row in try mapSQLiteError({
+      try db.query(
+        "SELECT json_extract(e.value, '$.executionId') AS execution_id "
+          + "FROM cli_workflow_sessions, json_each(record_json, '$.session.executions') AS e"
+      )
+    }) {
+      if let executionId = row["execution_id"] { generator.noteExistingStepExecutionId(executionId) }
+    }
+  }
+
   public func list(
     workflowName: String? = nil,
     status: WorkflowSessionStatus? = nil,
@@ -482,7 +497,8 @@ func canonicalRuntimeStoreRoot(sessionStoreRoot: String) -> String {
 /// recognises the reservation instead of re-acquiring it.
 func makeSeededProductionRuntimeStore(
   sessionStoreRoot: String,
-  executionLocks: SessionExecutionLockRegistry
+  executionLocks: SessionExecutionLockRegistry,
+  hydrateSessions: Bool = true
 ) async throws -> InMemoryWorkflowRuntimeStore {
   let sessionStore = CLIWorkflowSessionStore(rootDirectory: sessionStoreRoot)
   let persistenceStore = SQLiteWorkflowRuntimePersistenceStore(
@@ -493,7 +509,15 @@ func makeSeededProductionRuntimeStore(
       || ((try? persistenceStore.sessionExists(sessionId: sessionId)) ?? false)
   }
   let runtimeStore = InMemoryWorkflowRuntimeStore(idGenerator: generator)
-  try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: sessionStoreRoot)
+  if hydrateSessions {
+    try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: sessionStoreRoot)
+  } else {
+    for identity in try sessionStore.loadRawSessionIdentities() {
+      generator.noteExistingSessionId(identity.sessionId, workflowId: identity.workflowId)
+    }
+    try sessionStore.observePersistedExecutionIdentities(generator)
+    try persistenceStore.observePersistedIdentities(generator)
+  }
   return runtimeStore
 }
 

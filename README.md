@@ -116,6 +116,11 @@ aggregate tests inside AI nodes; retain tool-session handles until terminal
 exit and record complete logs. Long-lived services need an explicitly owned
 service/workflow lifecycle.
 
+Fresh workflow runs seed ID high-water marks from SQLite identity metadata
+without loading unrelated session outputs or message payloads into their execution
+cache. Resume and recovery retain their persisted-history hydration behavior;
+existing session records and execution locks remain authoritative.
+
 The default SQLite session-store connections wait for another process to
 release its database lock, including during WAL initialization. Parallel runs
 can share a session store without a fixed three-second contention timeout.

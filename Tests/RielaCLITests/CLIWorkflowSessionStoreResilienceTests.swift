@@ -171,6 +171,123 @@ final class CLIWorkflowSessionStoreResilienceTests: XCTestCase {
     XCTAssertEqual(try rawRecordCount(rootDirectory: root.path), 2)
   }
 
+  func testFreshRuntimeFailsClosedForUnreadableDatabase() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("fresh-runtime-corruption")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("not a SQLite database".utf8).write(to: URL(fileURLWithPath: path))
+    do {
+      _ = try await makeSeededProductionRuntimeStore(
+        sessionStoreRoot: root.path,
+        executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path),
+        hydrateSessions: false
+      )
+      XCTFail("corrupt store must prevent fresh execution")
+    } catch {
+      XCTAssertTrue(error is CLIWorkflowSessionStoreError)
+    }
+  }
+
+  func testFreshRuntimeReadsOnlyIdentitiesAndPreservesHighWaterMarks() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("fresh-runtime-identities")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = CLIWorkflowSessionStore(rootDirectory: root.path)
+    let canonical = SQLiteWorkflowRuntimePersistenceStore(
+      rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path)
+    )
+    let now = Date(timeIntervalSince1970: 2)
+    var record = makeRecord(sessionId: "resilient-workflow-session-40", updatedAt: now)
+    record.session.executions = [WorkflowStepExecution(
+      executionId: "start-attempt-1-exec-80", stepId: "start", nodeId: "worker", attempt: 1,
+      inputSnapshot: ["large": .string(String(repeating: "x", count: 512 * 1024))],
+      createdAt: now, updatedAt: now
+    )]
+    try store.save(record)
+    var reserved = record.session
+    reserved.sessionId = "resilient-workflow-session-50"
+    reserved.executions[0].executionId = "start-attempt-1-exec-90"
+    let messages = (1...200).map { index in
+      WorkflowMessageRecord(
+        communicationId: "comm-\(String(format: "%06d", index))",
+        workflowExecutionId: reserved.sessionId, fromStepId: "start", toStepId: "worker",
+        sourceStepExecutionId: reserved.executions[0].executionId,
+        payload: ["large": .string(String(repeating: "x", count: 16 * 1024))],
+        lifecycleStatus: .delivered, createdOrder: index, createdAt: now
+      )
+    }
+    try canonical.save(WorkflowRuntimePersistenceSnapshot(session: reserved, workflowMessages: messages))
+    // A retired/unreadable CLI identity must still reserve its counter.
+    var unreadable = record
+    unreadable.session.sessionId = "resilient-workflow-session-60"
+    try insertRecordMissingIncludeDeactivated(unreadable, rootDirectory: root.path)
+    let database = try fixtureDatabase(rootDirectory: root.path)
+    try database.execute("""
+      CREATE TABLE session_retention_tombstones(
+        session_id TEXT PRIMARY KEY, workflow_id TEXT NOT NULL, root_id TEXT NOT NULL, pruned_at TEXT NOT NULL,
+        artifact_root TEXT NOT NULL, memory_root TEXT NOT NULL, payload_bytes INTEGER NOT NULL, cleanup_pending INTEGER NOT NULL)
+      """)
+    try database.execute("""
+      INSERT INTO session_retention_tombstones VALUES(
+        'resilient-workflow-session-65', 'resilient-workflow', 'resilient-workflow-session-65', '2026-01-01', '', '', 0, 0)
+      """)
+    let owner = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    try owner.acquire(sessionId: "active-session")
+    let locks = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    let start = ContinuousClock.now
+    let runtime = try await makeSeededProductionRuntimeStore(
+      sessionStoreRoot: root.path, executionLocks: locks, hydrateSessions: false
+    )
+    FileHandle.standardError.write(Data("fresh identity startup: \(start.duration(to: .now))\n".utf8))
+    let unrelated = try await runtime.loadSession(id: record.session.sessionId)
+    let reservedUnrelated = try await runtime.loadSession(id: reserved.sessionId)
+    XCTAssertNil(unrelated)
+    XCTAssertNil(reservedUnrelated)
+    XCTAssertThrowsError(try locks.acquire(sessionId: "active-session"))
+    let created = try await runtime.createSession(WorkflowSessionCreateInput(
+      workflowId: "resilient-workflow", entryStepId: "start"
+    ))
+    XCTAssertEqual(created.sessionId, "resilient-workflow-session-66")
+    let execution = try await runtime.recordStepExecution(WorkflowStepExecutionRecordInput(
+      sessionId: created.sessionId, stepId: "start", nodeId: "worker", attempt: 1
+    ))
+    XCTAssertEqual(execution.executionId, "start-attempt-1-exec-91")
+    let message = try await runtime.appendWorkflowMessage(WorkflowMessageAppendInput(
+      workflowExecutionId: created.sessionId, fromStepId: "start", toStepId: "worker",
+      sourceStepExecutionId: execution.executionId, payload: [:]
+    ))
+    XCTAssertEqual(message.communicationId, "comm-000201")
+    XCTAssertEqual(try canonical.load(sessionId: reserved.sessionId).workflowMessages, messages)
+    XCTAssertEqual(try store.load(sessionId: record.session.sessionId), record)
+    let workflowRoot = root.appendingPathComponent("workflows")
+    let workflowDirectory = workflowRoot.appendingPathComponent("fresh-command")
+    try FileManager.default.createDirectory(at: workflowDirectory, withIntermediateDirectories: true)
+    try """
+    {
+      "workflowId": "fresh-command", "entryStepId": "start",
+      "defaults": {"maxLoopIterations": 1, "nodeTimeoutMs": 10000},
+      "nodes": [{"id": "worker", "nodeFile": "worker.json"}],
+      "steps": [{"id": "start", "nodeId": "worker", "role": "worker"}]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try #"{"id":"worker","nodeType":"command","modelFreeze":false,"command":{"executable":"/bin/echo","arguments":["{\"status\":\"done\"}"]}}"#
+      .write(to: workflowDirectory.appendingPathComponent("worker.json"), atomically: true, encoding: .utf8)
+    let command = await RielaCLIApplication().run([
+      "workflow", "run", "fresh-command", "--workflow-definition-dir", workflowRoot.path,
+      "--session-store", root.path, "--output", "json"
+    ])
+    XCTAssertEqual(command.exitCode, .success, command.stderr + command.stdout)
+    XCTAssertEqual(try canonical.load(sessionId: reserved.sessionId).workflowMessages, messages)
+    let fullStart = ContinuousClock.now
+    let hydrated = try await makeSeededProductionRuntimeStore(
+      sessionStoreRoot: root.path,
+      executionLocks: SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    )
+    FileHandle.standardError.write(Data("legacy full hydration startup: \(fullStart.duration(to: .now))\n".utf8))
+    let hydratedReserved = try await hydrated.loadSession(id: reserved.sessionId)
+    XCTAssertEqual(hydratedReserved, reserved)
+  }
+
   private func makeRecord(
     sessionId: String,
     updatedAt: Date

@@ -265,6 +265,38 @@ public struct CLIWorkflowSessionStore: Sendable {
     return false
   }
 
+  func observeStartupIdentities(_ generator: any WorkflowRuntimeIDGenerating) throws {
+    guard FileManager.default.fileExists(atPath: databasePath) else { return }
+    do {
+      let db = try openDatabase(readOnly: true)
+      if try db.tableExists("cli_workflow_sessions"),
+         !(try SQLiteWorkflowStartupIdentities.isPrepared(db, source: .cli)) {
+        try prepareStartupIdentityMetadata()
+      }
+    }
+    let db = try openDatabase(readOnly: true)
+    if try db.tableExists("cli_workflow_sessions") {
+      for row in try SQLiteWorkflowStartupIdentities.load(db, source: .cli) {
+        generator.noteExistingSessionId(row.sessionId, workflowId: row.workflowId)
+        row.executionIds.forEach { generator.noteExistingStepExecutionId($0) }
+      }
+    }
+    if try db.tableExists("session_retention_tombstones") {
+      for row in try db.query("SELECT session_id,workflow_id FROM session_retention_tombstones") {
+        if let id = row["session_id"], let workflow = row["workflow_id"] {
+          generator.noteExistingSessionId(id, workflowId: workflow)
+        }
+      }
+    }
+  }
+
+  private func prepareStartupIdentityMetadata() throws {
+    let db = try openDatabase()
+    try db.transaction { database in
+      try SQLiteWorkflowStartupIdentities.backfill(database, source: .cli)
+    }
+  }
+
   func loadRawSessionIdentities() throws -> [(sessionId: String, workflowId: String)] {
     guard FileManager.default.fileExists(atPath: databasePath) else {
       return []
@@ -402,6 +434,7 @@ public struct CLIWorkflowSessionStore: Sendable {
       )
       try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_updated ON cli_workflow_sessions (updated_at DESC, session_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_cli_workflow_sessions_workflow_status_updated ON cli_workflow_sessions (workflow_name, status, updated_at DESC)")
+      try SQLiteWorkflowStartupIdentities.ensureSchema(db, source: .cli)
       try ensureSessionRetentionTriggers(db)
     }
   }
@@ -429,6 +462,9 @@ public struct CLIWorkflowSessionStore: Sendable {
         .text(Self.dateString(record.session.updatedAt))
       ]
       )
+      try SQLiteWorkflowStartupIdentities.save(db, source: .cli,
+        sessionId: record.session.sessionId, workflowId: record.session.workflowId,
+        executionIds: record.session.executions.map(\.executionId))
     }
   }
 
@@ -512,11 +548,15 @@ func makeSeededProductionRuntimeStore(
   if hydrateSessions {
     try await seedRuntimeStoreFromPersistedCLIState(runtimeStore, sessionStoreRoot: sessionStoreRoot)
   } else {
-    for identity in try sessionStore.loadRawSessionIdentities() {
-      generator.noteExistingSessionId(identity.sessionId, workflowId: identity.workflowId)
+    for attempt in 0..<3 {
+      do {
+        try sessionStore.observeStartupIdentities(generator)
+        try persistenceStore.observePersistedIdentities(generator)
+        break
+      } catch SQLiteWorkflowStartupIdentities.MetadataError.staleProjection {
+        if attempt == 2 { throw SQLiteWorkflowStartupIdentities.MetadataError.staleProjection }
+      }
     }
-    try sessionStore.observePersistedExecutionIdentities(generator)
-    try persistenceStore.observePersistedIdentities(generator)
   }
   return runtimeStore
 }

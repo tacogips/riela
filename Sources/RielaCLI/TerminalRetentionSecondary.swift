@@ -129,8 +129,9 @@ enum TerminalRetentionSecondary {
       try db.transaction { db in
         for id in ids { try deleteMessages(id: id, db: db) }
       }
-      let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: paths.artifactRoot ?? "")
-      reclamations.append(reclaimer.reclaim(databasePath: path, mode: mode))
+      // secure_delete plus a successful checkpoint completes logical cleanup.
+      // Compact this shared database once after all admitted families.
+      try checkpoint(db)
     }
     for id in ids where paths.artifactRoot != nil {
       let path = try paths.artifactSnapshot(id)
@@ -148,6 +149,23 @@ enum TerminalRetentionSecondary {
     for table in ["workflow_message_payload_index", "workflow_messages"] where try db.tableExists(table) {
       try db.execute("DELETE FROM \(table) WHERE workflow_execution_id=?", bindings: [.text(id)])
     }
+  }
+
+  static func checkpointArtifacts(_ paths: TerminalRetentionPaths) throws {
+    if let db = try artifactDatabase(paths, writable: true) { try checkpoint(db) }
+  }
+
+  static func reclaimArtifacts(_ paths: TerminalRetentionPaths, mode: RetentionReclamationMode,
+                               reclaimer: RetentionSQLiteReclaimer) throws -> RetentionReclamationResult? {
+    // Reopen through fresh component/sidecar checks, including on zero-family retries.
+    guard let artifactRoot = paths.artifactRoot, try artifactDatabase(paths, writable: false) != nil else { return nil }
+    return reclaimer.reclaim(databasePath: SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: artifactRoot), mode: mode)
+  }
+
+  /// PASSIVE never waits on or truncates another connection's WAL; a busy result defers compaction.
+  static func checkpoint(_ db: SQLiteDatabase) throws {
+    let result = try db.query("PRAGMA wal_checkpoint(PASSIVE)")
+    guard result.first?["busy"] != "1" else { throw TerminalRetentionError.reclamationBusy }
   }
 
   private static func artifactDatabase(_ paths: TerminalRetentionPaths, writable: Bool = false) throws -> SQLiteDatabase? {

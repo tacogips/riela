@@ -1,4 +1,10 @@
 import Foundation
+import RielaCore
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 struct TerminalRetentionPaths: Equatable, Sendable {
   var sessionRoot: String
@@ -27,15 +33,18 @@ struct TerminalRetentionPaths: Equatable, Sendable {
     for component in (path as NSString).pathComponents where component != "/" {
       guard component != ".", component != ".." else { throw TerminalRetentionError.unsafePath }
       prefix += "/" + component
-      do {
-        let attributes = try FileManager.default.attributesOfItem(atPath: prefix)
-        guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
+      // Only file type is needed. Foundation's broad attribute API also
+      // reads extended attributes for every ancestor and sidecar on every fresh
+      // admission. lstat keeps the same no-follow component checks without them.
+      var attributes = stat()
+      if lstat(prefix, &attributes) == 0 {
+        guard attributes.st_mode & mode_t(S_IFMT) != mode_t(S_IFLNK) else {
           throw TerminalRetentionError.unsafePath
         }
-      } catch let error as NSError where error.domain == NSCocoaErrorDomain
-        && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) {
-        // A new/missing managed suffix is safe; all existing parents were checked.
-        continue
+      } else {
+        let code = errno
+        if code == ENOENT || code == ENOTDIR { continue }
+        throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
       }
     }
     return prefix.isEmpty ? "/" : prefix
@@ -45,6 +54,27 @@ struct TerminalRetentionPaths: Equatable, Sendable {
     let result = try checked(path)
     for suffix in ["-wal", "-shm", "-journal"] { _ = try checked(result + suffix) }
     return result
+  }
+
+  func databaseBytes() throws -> Int64 {
+    let databases = [CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: sessionRoot)]
+      + [artifactRoot].compactMap { $0 }.map { SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: $0) }
+    var total: Int64 = 0
+    for database in databases {
+      let path = try Self.checkedDatabase(database)
+      for suffix in ["", "-wal", "-shm", "-journal"] {
+        var attributes = stat()
+        if lstat(path + suffix, &attributes) == 0 {
+          guard attributes.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG), attributes.st_size >= 0 else {
+            throw TerminalRetentionError.unsafePath
+          }
+          total = try TerminalRetentionMetadata.adding(total, Int64(attributes.st_size))
+        } else if errno != ENOENT && errno != ENOTDIR {
+          throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+      }
+    }
+    return total
   }
 
   func artifactSnapshot(_ id: String) throws -> String {

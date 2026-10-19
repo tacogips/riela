@@ -12,6 +12,9 @@ struct TerminalRetentionReport: Codable, Equatable {
   var remainingPayloadBytes: Int64
   var capAchieved: Bool
   var reclamation: [RetentionReclamationResult]
+  var deferredFamilyCount: Int = 0
+  var deferredCompaction: Bool = false
+  var remainingDatabaseBytes: Int64?
 }
 
 struct TerminalRetentionCategoryPolicy: Equatable, Sendable {
@@ -37,6 +40,7 @@ struct TerminalRetentionExecutor {
   // Deterministic fault/race injection; production uses the no-op default.
   var beforeTransaction: () throws -> Void = {}
   var beforeSecondaryCleanup: () throws -> Void = {}
+  var beforeFinalCompaction: () throws -> Void = {}
   // One reclaimer for every SQLite file this executor touches, so callers can inject free-space probes.
   var reclaimer = RetentionSQLiteReclaimer()
 
@@ -121,7 +125,9 @@ struct TerminalRetentionExecutor {
     let locks = SessionExecutionLockRegistry(sessionStoreRoot: paths.sessionRoot)
     var reclamations: [RetentionReclamationResult] = []
     var protected: [String: String] = [:]
-    protected.merge(try finishPending(db: db, locks: locks, paths: paths, workflows: [])) { _, new in new }
+    var pendingBudget = Int.max, deferredPending = 0
+    protected.merge(try finishPending(db: db, locks: locks, paths: paths, workflows: [],
+      remainingFamilies: &pendingBudget, deferred: &deferredPending)) { _, new in new }
 
     if let policy = results {
       let plan = try TerminalRetentionPlan.make(sessions: original, scope: .allExcept(keepWorkflowIds), now: now,
@@ -269,7 +275,10 @@ struct TerminalRetentionExecutor {
   }
 
   func run(paths: TerminalRetentionPaths, workflows: Set<String>, retentionHours: Int,
-           maxPayloadBytes: Int64, dryRun: Bool) throws -> TerminalRetentionReport {
+           maxPayloadBytes: Int64, dryRun: Bool, maxFamilies: Int? = nil) throws -> TerminalRetentionReport {
+    guard maxFamilies == nil || (1...10_000).contains(maxFamilies ?? 0) else {
+      throw TerminalRetentionPlanError.invalidPolicyOrMetadata
+    }
     _ = try TerminalRetentionPlan.make(sessions: [], workflows: workflows, now: clock(),
       retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)
     let path = try TerminalRetentionPaths.checkedDatabase(CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: paths.sessionRoot))
@@ -283,16 +292,24 @@ struct TerminalRetentionExecutor {
     guard try db.tableExists("workflow_runtime_snapshots") || db.tableExists("cli_workflow_sessions") else {
       throw TerminalRetentionError.foreignDatabase
     }
+    if !dryRun { try TerminalRetentionIndexes.prepare(db) }
     let now = clock()
     let original = try metadata(db, paths: paths)
     let plan = try TerminalRetentionPlan.make(sessions: original, workflows: workflows, now: now,
       retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)
-    var report = TerminalRetentionReport(dryRun: dryRun, selectedFamilies: plan.selected.map(\.rootId),
+    var remainingFamilies = maxFamilies ?? Int.max
+    let selected = Array(plan.selected.prefix(remainingFamilies))
+    var report = TerminalRetentionReport(dryRun: dryRun, selectedFamilies: selected.map(\.rootId),
       removedSessionCount: 0, protectedFamilies: Dictionary(uniqueKeysWithValues: plan.protected.map { ($0.rootId, $0.protection ?? "unknown") }),
       pendingCleanupCount: 0, beforePayloadBytes: plan.beforeBytes,
-      remainingPayloadBytes: plan.projectedRemainingBytes, capAchieved: plan.capAchieved, reclamation: [])
+      remainingPayloadBytes: plan.beforeBytes - selected.reduce(Int64(0)) { $0 + $1.payloadBytes },
+      capAchieved: plan.beforeBytes - selected.reduce(Int64(0)) { $0 + $1.payloadBytes } <= maxPayloadBytes,
+      reclamation: [])
+    report.deferredFamilyCount = plan.selected.count - selected.count
+    var pendingRoots: Set<String> = []
     if try db.tableExists("session_retention_tombstones") {
       for row in try pendingRows(db) where workflows.contains(row["workflow_id"] ?? "") {
+        if let root = row["root_id"] { pendingRoots.insert(root) }
         let bytes = row["payload_bytes"].flatMap(Int64.init) ?? 0
         report.pendingCleanupCount += 1
         report.beforePayloadBytes = try TerminalRetentionMetadata.adding(report.beforePayloadBytes, bytes)
@@ -300,13 +317,26 @@ struct TerminalRetentionExecutor {
       }
       report.capAchieved = report.remainingPayloadBytes <= maxPayloadBytes && report.pendingCleanupCount == 0
     }
-    guard !dryRun else { return report }
+    if dryRun {
+      let available = max(0, remainingFamilies - min(remainingFamilies, pendingRoots.count))
+      let admitted = Array(plan.selected.prefix(available))
+      report.selectedFamilies = admitted.map(\.rootId)
+      report.deferredFamilyCount = plan.selected.count - admitted.count + max(0, pendingRoots.count - remainingFamilies)
+      report.remainingPayloadBytes = report.beforePayloadBytes - admitted.reduce(Int64(0)) { $0 + $1.payloadBytes }
+      report.capAchieved = report.remainingPayloadBytes <= maxPayloadBytes && report.pendingCleanupCount == 0
+      return report
+    }
     try ensureTombstones(db)
     try ensureSessionRetentionTriggers(db)
     let locks = SessionExecutionLockRegistry(sessionStoreRoot: paths.sessionRoot)
     // Recover secondary copies left by a prior interrupted cleanup first.
-    report.protectedFamilies.merge(try finishPending(db: db, locks: locks, paths: paths, workflows: workflows)) { _, new in new }
-    for family in plan.selected {
+    report.protectedFamilies.merge(try finishPending(db: db, locks: locks, paths: paths, workflows: workflows,
+      remainingFamilies: &remainingFamilies, deferred: &report.deferredFamilyCount)) { _, new in new }
+    let admitted = Array(plan.selected.prefix(remainingFamilies))
+    report.selectedFamilies = admitted.map(\.rootId)
+    // Pending recovery shares the same family budget with new admission.
+    report.deferredFamilyCount += selected.count - admitted.count
+    for family in admitted {
       var acquired: [String] = []
       defer { for id in acquired { locks.release(sessionId: id) } }
       do {
@@ -358,7 +388,22 @@ struct TerminalRetentionExecutor {
         report.protectedFamilies[family.rootId] = "secondaryOwnershipChanged"
       }
     }
-    report.reclamation.append(reclaimer.reclaim(databasePath: path, mode: .manual))
+    // Only explicitly bounded work may defer compaction. Every deleted byte is
+    // securely zeroed and checkpointed before returning, even when compaction waits.
+    let outstanding = try TerminalRetentionPlan.make(sessions: metadata(db, paths: paths), workflows: workflows,
+      now: now, retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)
+    let hasPendingCleanup = !(try pendingRows(db)).filter { workflows.contains($0["workflow_id"] ?? "") }.isEmpty
+    report.deferredCompaction = maxFamilies != nil && (!outstanding.selected.isEmpty || hasPendingCleanup)
+    if report.deferredCompaction {
+      try TerminalRetentionSecondary.checkpointArtifacts(paths)
+      try TerminalRetentionSecondary.checkpoint(db)
+    } else {
+      try beforeFinalCompaction()
+      if let artifacts = try TerminalRetentionSecondary.reclaimArtifacts(paths, mode: .manual, reclaimer: reclaimer) {
+        report.reclamation.append(artifacts)
+      }
+      report.reclamation.append(reclaimer.reclaim(databasePath: path, mode: .manual))
+    }
     let final = try TerminalRetentionPlan.make(sessions: metadata(db, paths: paths), workflows: workflows, now: now,
       retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)
     report.remainingPayloadBytes = final.beforeBytes
@@ -367,6 +412,7 @@ struct TerminalRetentionExecutor {
       report.pendingCleanupCount += 1
       report.remainingPayloadBytes = try TerminalRetentionMetadata.adding(report.remainingPayloadBytes, row["payload_bytes"].flatMap(Int64.init) ?? 0)
     }
+    report.remainingDatabaseBytes = try paths.databaseBytes()
     report.capAchieved = report.remainingPayloadBytes <= maxPayloadBytes && report.pendingCleanupCount == 0
     return report
   }
@@ -535,7 +581,7 @@ struct TerminalRetentionExecutor {
   }
 
   private func pendingRows(_ db: SQLiteDatabase) throws -> [SQLiteRow] {
-    try db.query("SELECT root.workflow_id,t.payload_bytes FROM session_retention_tombstones t JOIN session_retention_tombstones root ON root.session_id=t.root_id WHERE t.cleanup_pending=1")
+    try db.query("SELECT root.workflow_id,t.root_id,t.payload_bytes FROM session_retention_tombstones t JOIN session_retention_tombstones root ON root.session_id=t.root_id WHERE t.cleanup_pending=1")
   }
 
   private func ensureTombstones(_ db: SQLiteDatabase) throws {
@@ -547,18 +593,26 @@ struct TerminalRetentionExecutor {
   }
 
   private func finishPending(db: SQLiteDatabase, locks: SessionExecutionLockRegistry,
-                             paths: TerminalRetentionPaths, workflows: Set<String>) throws -> [String: String] {
+                             paths: TerminalRetentionPaths, workflows: Set<String>, remainingFamilies: inout Int,
+                             deferred: inout Int) throws -> [String: String] {
     var protected: [String: String] = [:]
     let rows = try db.query("""
       SELECT t.session_id,t.root_id,root.workflow_id,t.artifact_root,t.memory_root FROM session_retention_tombstones t
       JOIN session_retention_tombstones root ON root.session_id=t.root_id
       WHERE t.cleanup_pending=1 ORDER BY t.session_id
       """)
+    var attemptedRoots: Set<String> = [], deferredRoots: Set<String> = []
     for row in rows where workflows.isEmpty || workflows.contains(row["workflow_id"] ?? "") {
       guard let id = row["session_id"] else { continue }
       guard row["artifact_root"] == (paths.artifactRoot ?? ""), row["memory_root"] == (paths.memoryRoot ?? "") else {
         protected[row["root_id"] ?? id] = "pendingRootsMismatch"
         continue
+      }
+      guard let root = row["root_id"] else { throw TerminalRetentionError.pendingRootsMismatch }
+      if !attemptedRoots.contains(root) {
+        guard remainingFamilies > 0 else { deferredRoots.insert(root); continue }
+        attemptedRoots.insert(root)
+        remainingFamilies -= 1
       }
       try locks.acquire(sessionId: id, allowRetired: true)
       defer { locks.release(sessionId: id) }
@@ -566,6 +620,7 @@ struct TerminalRetentionExecutor {
         protected[row["root_id"] ?? id] = "secondaryOwnershipChanged"
       }
     }
+    deferred += deferredRoots.count
     return protected
   }
 

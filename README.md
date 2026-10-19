@@ -116,9 +116,14 @@ aggregate tests inside AI nodes; retain tool-session handles until terminal
 exit and record complete logs. Long-lived services need an explicitly owned
 service/workflow lifecycle.
 
-Fresh workflow runs seed ID high-water marks from SQLite identity metadata
+Fresh workflow runs seed ID high-water marks from compact SQLite identity projections
 without loading unrelated session outputs or message payloads into their execution
-cache. Resume and recovery retain their persisted-history hydration behavior;
+cache. Projections are updated with snapshot writes; database triggers invalidate them
+when an older writer replaces a snapshot. Existing stores need a one-time ID-only
+backfill, after which startup reads small projections and covering ID indexes.
+Missing trigger lineage rebuilds the projection, while unsupported projection
+versions fail closed. This changes neither session reservations nor stored payloads.
+Resume and recovery retain their persisted-history hydration behavior;
 existing session records and execution locks remain authoritative.
 
 The default SQLite session-store connections wait for another process to

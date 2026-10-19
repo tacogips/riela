@@ -448,6 +448,24 @@ collide.
   `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's own
   role, plus `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`.
 
+### Notion pages and images
+
+`riela/notion-gateway-read@1` and `riela/notion-gateway-write@1` call the linked
+Notion SDK with fixed reader/writer roles. Use `config.queryTemplate` and
+`config.variablesTemplate`; native Notion JSON, pagination and truncation flags
+remain in `payload.data`. Bind the credential explicitly with
+`addon.env: {"NOTION_API_KEY": {"fromEnv": "NOTION_API_KEY"}}`; ambient unrelated credentials
+are excluded. Reader mutations are rejected before credentials or transport.
+
+`riela gateway notion --role reader|writer ...` delegates the gateway's native
+CLI commands, including `schema`, `graphql`, `page` and `block`; reader is the
+default. Supply `NOTION_API_KEY` from the caller environment, for example through
+`kinko exec --env NOTION_API_KEY --`. For `node run`, pass the same binding via `--env '{"NOTION_API_KEY":{"fromEnv":"NOTION_API_KEY"}}'`.
+No external gateway executable is launched.
+Writes are never automatically replayed: retain native IDs and reconcile an
+uncertain result before retrying. The integration must be connected to each
+chosen parent page; gateway installation does not grant access to existing pages.
+
 ### Apple permissions
 
 The apple-gateway add-ons are linked the same way, which moves one thing that

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(NotionGatewayCore)
+import NotionGatewayCore
+#endif
 import GoogleGatewayAuth
 import GoogleServiceGatewayCore
 import WrikeGatewayCore
@@ -57,6 +60,14 @@ func runNativeGatewayCLI(_ invocation: GatewayCLIInvocation, environment: [Strin
     let result = XGatewayCLI(commandName: "x-gateway-\(invocation.role)", surface: surface)
       .run(arguments: invocation.arguments, environment: environment)
     return GatewayCLIOutput(exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr)
+    #else
+    return unavailableGateway(invocation.gateway)
+    #endif
+  case .notion:
+    #if canImport(NotionGatewayCore)
+    let result = await NotionCLI.run(arguments: invocation.arguments,
+      role: invocation.role == "writer" ? .writer : .reader, environment: environment)
+    return GatewayCLIOutput(exitCode: result.exitCode, stdout: result.output + "\n")
     #else
     return unavailableGateway(invocation.gateway)
     #endif

@@ -468,6 +468,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
     if let googleAnalyticsGatewayAddon = BuiltinGoogleAnalyticsGatewayAddon(rawValue: input.addon.name) {
       return try await executeGoogleAnalyticsGatewayAddon(input, operation: googleAnalyticsGatewayAddon, context: context)
     }
+    if let notionGatewayAddon = BuiltinNotionGatewayAddon(rawValue: input.addon.name) {
+      return try await executeNotionGatewayAddon(input, operation: notionGatewayAddon, context: context)
+    }
     if let googleDocumentsGatewayAddon = BuiltinGoogleDocumentsGatewayAddon(rawValue: input.addon.name) {
       return try await executeGoogleDocumentsGatewayAddon(input, operation: googleDocumentsGatewayAddon, context: context)
     }

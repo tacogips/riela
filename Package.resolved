@@ -1,5 +1,5 @@
 {
-  "originHash" : "5233bca09103460b5c32cb090d3b3c785df291b0214da518df193c383c7d1b1b",
+  "originHash" : "37e4ddc3656c01fe5ede5d54d3ba2a8b57e964beff3802534162e3ef9a5bb681",
   "pins" : [
     {
       "identity" : "agent-gateway",
@@ -80,6 +80,14 @@
       "location" : "https://github.com/tacogips/kaiba.git",
       "state" : {
         "revision" : "24fc356a3073821c31866279c419abb707077a8d"
+      }
+    },
+    {
+      "identity" : "notion-gateway",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tacogips/notion-gateway.git",
+      "state" : {
+        "revision" : "3baf8e41057098c5959853a82314460b11436da2"
       }
     },
     {

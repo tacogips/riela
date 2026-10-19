@@ -2,7 +2,7 @@ import Foundation
 
 /// Gateway names belong to the delegated SDK namespace, not Riela's own auth family.
 enum BuiltinGatewayCLI: String, CaseIterable, Sendable {
-  case gmail, x, apple, wrike
+  case gmail, x, apple, wrike, notion
   case googleService = "google-service"
   case googleAnalytics = "google-analytics"
   case googleDocs = "google-docs"
@@ -12,7 +12,7 @@ enum BuiltinGatewayCLI: String, CaseIterable, Sendable {
   var roles: [String] {
     switch self {
     case .gmail: ["reader", "draft", "sender", "threads", "message-box"]
-    case .x, .googleDocs, .googleSheets, .googleDrive: ["reader", "writer"]
+    case .x, .notion, .googleDocs, .googleSheets, .googleDrive: ["reader", "writer"]
     case .apple: ["full", "reader"]
     case .wrike, .googleAnalytics: ["reader", "writer", "admin"]
     case .googleService: ["auth"]
@@ -26,6 +26,7 @@ enum BuiltinGatewayCLI: String, CaseIterable, Sendable {
     case .gmail: "auth setup|login|status|logout|revoke (persistent reader/draft/sender; legacy threads/message-box)"
     case .x: "auth oauth2|verify|scopes; OAuth2 can store credentials with --store kinko"
     case .apple: "permissions status|request; macOS permissions rather than OAuth"
+    case .notion: "NOTION_API_KEY from caller environment; connect target parent page to the Notion integration"
     case .wrike: "auth oauth2|status|logout"
     case .googleService: "clients register|setup|import|list|delete; consent, scopes, auth, oauth"
     case .googleAnalytics: "auth login|oauth2|status|logout; doctor"

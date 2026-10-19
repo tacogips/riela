@@ -74,7 +74,7 @@ extension SurfaceCatalog {
       + taskMutationRows + gatewayRows
 
   private static var gatewayRows: [SurfaceOperation] {
-    ["list", "gmail", "x", "apple", "wrike", "google-service", "google-analytics", "google-docs", "google-sheets", "google-drive"].map {
+    ["list", "gmail", "x", "apple", "wrike", "notion", "google-service", "google-analytics", "google-docs", "google-sheets", "google-drive"].map {
       surfaceRow(localToolDefaults, id: "gateway.\($0)", family: "gateway", kind: .process, cli: "gateway \($0)")
     }
   }

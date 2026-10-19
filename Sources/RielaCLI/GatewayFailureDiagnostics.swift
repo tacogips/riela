@@ -25,6 +25,15 @@ enum GatewayFailureDiagnostics {
     "client-not-enrolled", "insufficient-scope", "unsupported-authentication", "usage-capped", "unknown"
   ]
 
+  private static let gmailBodyReasons: Set<String> = [
+    "messageEnvelope", "bodyDescriptor", "externalBodyDescriptor", "externalBodyResponse", "treeLimit",
+    "filename", "mimeType", "partIdentity", "children", "missingData", "decodedSize", "headers",
+    "duplicateContentType", "headerValue", "mimeMismatch", "duplicateCharset", "charsetQuotes", "charsetValue"
+  ]
+  private static let gmailReadReasons: Set<String> = [
+    "timeout", "missingResponse", "cancelled", "dns", "connect", "connectionLost", "tls", "offline", "transport"
+  ]
+
   static func suffix(stdout: String, stderr: String = "") -> String {
     for text in [stderr, stdout] where text.utf8.count <= 65_536 {
       guard let response = try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8)) else { continue }
@@ -60,6 +69,16 @@ enum GatewayFailureDiagnostics {
     }
     if let providerCode = boundedInteger(error: error, key: "providerErrorCode", range: 0...99_999) {
       fields.append("providerErrorCode=\(providerCode)")
+    }
+    if code == "PROVIDER_API_ERROR", case let .string(message)? = error["message"] {
+      for (field, prefix, reasons) in [
+        ("gmailBodyReason", "Invalid message body response", gmailBodyReasons),
+        ("gmailReadReason", "Bounded Gmail read failed", gmailReadReasons)
+      ] {
+        for reason in reasons where message == "\(prefix) [\(field)=\(reason)]" {
+          fields.append("\(field)=\(reason)")
+        }
+      }
     }
     return " (\(fields.joined(separator: ", ")))"
   }

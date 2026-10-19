@@ -39,7 +39,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/gmail-gateway.git",
       "state" : {
-        "revision" : "185cba5396d8afa43919f735c9329eb477b17418"
+        "revision" : "5b083463280efb6880270ab3b864b871dde1ca6f"
       }
     },
     {
@@ -87,7 +87,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/tacogips/notion-gateway.git",
       "state" : {
-        "revision" : "3baf8e41057098c5959853a82314460b11436da2"
+        "revision" : "cb55d9108dd797da4fa581bb07ea50c0bec69401"
       }
     },
     {

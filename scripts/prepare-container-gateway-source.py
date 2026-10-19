@@ -55,7 +55,7 @@ def prepare_gmail(root: Path, crypto_version: str = "4.5.2") -> None:
     replace(bootstrap, "import Security\n", "")
     replace(root / "Sources/GmailGatewayCore/GmailGatewayUtilities.swift", "import Foundation\n", "import Foundation\nimport CoreFoundation\n")
     replace(root / "Sources/GmailGatewayCore/MessageFileDownloads.swift", "import CryptoKit\n", crypto_import)
-    for name in ("GmailCredentialResolution.swift", "GmailOAuthClientFingerprint.swift"):
+    for name in ("GmailCredentialResolution.swift", "GmailOAuthClientFingerprint.swift", "GmailArchiveReads.swift"):
         replace(root / "Sources/GmailGatewayCore" / name, "import CryptoKit\n", crypto_import)
     replace(root / "Sources/GmailGatewayCore/GraphQL/GmailGatewayProviderCancellation.swift",
             "import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")

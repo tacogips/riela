@@ -6,13 +6,14 @@ import RielaSQLite
 enum TerminalRetentionMetadata {
   static func sessions(_ db: SQLiteDatabase) throws -> [TerminalRetentionSession] {
     var sessions: [String: TerminalRetentionSession] = [:]
+    let dates = DateDecoder()
     if try db.tableExists("workflow_runtime_snapshots") {
       for row in try db.query("""
         SELECT workflow_execution_id AS id, workflow_id, session_status AS status,
           parent_session_id AS parent_id, root_session_id AS root_id, updated_at,
           \(TerminalRetentionIndexes.runtimeBytes) AS bytes
         FROM \(TerminalRetentionIndexes.source("workflow_runtime_snapshots", in: db))
-        """) { try merge(row, into: &sessions) }
+        """) { try merge(row, into: &sessions, dates: dates) }
     }
     if try db.tableExists("cli_workflow_sessions") {
       for row in try db.query("""
@@ -20,7 +21,7 @@ enum TerminalRetentionMetadata {
           json_extract(record_json, '$.session.parentSessionId') AS parent_id,
           coalesce(json_extract(record_json, '$.session.rootSessionId'),session_id) AS root_id,
           updated_at, length(CAST(record_json AS BLOB)) AS bytes FROM \(TerminalRetentionIndexes.source("cli_workflow_sessions", in: db))
-        """) { try merge(row, into: &sessions) }
+        """) { try merge(row, into: &sessions, dates: dates) }
     }
     if try db.tableExists("workflow_messages") {
       for row in try db.query("""
@@ -75,12 +76,12 @@ enum TerminalRetentionMetadata {
     return sessions.values.sorted { $0.id < $1.id }
   }
 
-  private static func merge(_ row: SQLiteRow, into sessions: inout [String: TerminalRetentionSession]) throws {
+  private static func merge(_ row: SQLiteRow, into sessions: inout [String: TerminalRetentionSession], dates: DateDecoder) throws {
     guard let id = row["id"], let workflow = row["workflow_id"], let status = row["status"],
           let root = row["root_id"], let bytes = row["bytes"].flatMap(Int64.init), bytes >= 0 else {
       throw TerminalRetentionPlanError.invalidPolicyOrMetadata
     }
-    let parent = row["parent_id"], updated = row["updated_at"].flatMap(date)
+    let parent = row["parent_id"], updated = row["updated_at"].flatMap(dates.date)
     if var existing = sessions[id] {
       if existing.workflowId != workflow || existing.parentId != parent || existing.rootId != root {
         existing.protection = "conflictingLineage"
@@ -95,12 +96,23 @@ enum TerminalRetentionMetadata {
     }
   }
 
-  static func date(_ text: String) -> Date? {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let result = formatter.date(from: text) { return result }
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter.date(from: text)
+  static func date(_ text: String) -> Date? { DateDecoder().date(text) }
+
+  /// Invocation-local formatter objects; no timestamps or rows are cached.
+  private struct DateDecoder {
+    private let fractional: ISO8601DateFormatter
+    private let whole: ISO8601DateFormatter
+
+    init() {
+      fractional = ISO8601DateFormatter()
+      fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      whole = ISO8601DateFormatter()
+      whole.formatOptions = [.withInternetDateTime]
+    }
+
+    func date(_ text: String) -> Date? {
+      fractional.date(from: text) ?? whole.date(from: text)
+    }
   }
 
   static func adding(_ left: Int64, _ right: Int64) throws -> Int64 {

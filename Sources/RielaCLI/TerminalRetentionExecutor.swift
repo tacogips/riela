@@ -12,6 +12,8 @@ struct TerminalRetentionReport: Codable, Equatable {
   var remainingPayloadBytes: Int64
   var capAchieved: Bool
   var deferredFamilyCount: Int = 0
+  var deferredCompaction: Bool = false
+  var remainingDatabaseBytes: Int64?
 }
 
 struct TerminalRetentionExecutor {
@@ -19,6 +21,7 @@ struct TerminalRetentionExecutor {
   // Deterministic fault/race injection; production uses the no-op default.
   var beforeTransaction: () throws -> Void = {}
   var beforeSecondaryCleanup: () throws -> Void = {}
+  var beforeFinalCompaction: () throws -> Void = {}
 
   func run(paths: TerminalRetentionPaths, workflows: Set<String>, retentionHours: Int,
            maxPayloadBytes: Int64, dryRun: Bool, maxFamilies: Int? = nil) throws -> TerminalRetentionReport {
@@ -133,8 +136,20 @@ struct TerminalRetentionExecutor {
         report.protectedFamilies[family.rootId] = "secondaryOwnershipChanged"
       }
     }
-    try TerminalRetentionSecondary.reclaimArtifacts(paths)
-    try TerminalRetentionSecondary.reclaim(db)
+    // Only explicitly bounded work may defer compaction. Every deleted byte is
+    // securely zeroed and checkpointed before returning, even when VACUUM waits.
+    let outstanding = try TerminalRetentionPlan.make(sessions: metadata(db, paths: paths), workflows: workflows,
+      now: now, retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)
+    let hasPendingCleanup = !(try pendingRows(db)).filter { workflows.contains($0["workflow_id"] ?? "") }.isEmpty
+    report.deferredCompaction = maxFamilies != nil && (!outstanding.selected.isEmpty || hasPendingCleanup)
+    if report.deferredCompaction {
+      try TerminalRetentionSecondary.checkpointArtifacts(paths)
+      try TerminalRetentionSecondary.checkpoint(db)
+    } else {
+      try beforeFinalCompaction()
+      try TerminalRetentionSecondary.reclaimArtifacts(paths)
+      try TerminalRetentionSecondary.reclaim(db)
+    }
     let final = try TerminalRetentionPlan.make(sessions: metadata(db, paths: paths), workflows: workflows, now: now,
       retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)
     report.remainingPayloadBytes = final.beforeBytes
@@ -143,6 +158,7 @@ struct TerminalRetentionExecutor {
       report.pendingCleanupCount += 1
       report.remainingPayloadBytes = try TerminalRetentionMetadata.adding(report.remainingPayloadBytes, row["payload_bytes"].flatMap(Int64.init) ?? 0)
     }
+    report.remainingDatabaseBytes = try paths.databaseBytes()
     report.capAchieved = report.remainingPayloadBytes <= maxPayloadBytes && report.pendingCleanupCount == 0
     return report
   }

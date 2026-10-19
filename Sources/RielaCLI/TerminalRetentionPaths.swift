@@ -1,4 +1,5 @@
 import Foundation
+import RielaCore
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
@@ -53,6 +54,27 @@ struct TerminalRetentionPaths: Equatable, Sendable {
     let result = try checked(path)
     for suffix in ["-wal", "-shm", "-journal"] { _ = try checked(result + suffix) }
     return result
+  }
+
+  func databaseBytes() throws -> Int64 {
+    let databases = [CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: sessionRoot),
+      SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: artifactRoot)]
+    var total: Int64 = 0
+    for database in databases {
+      let path = try Self.checkedDatabase(database)
+      for suffix in ["", "-wal", "-shm", "-journal"] {
+        var attributes = stat()
+        if lstat(path + suffix, &attributes) == 0 {
+          guard attributes.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG), attributes.st_size >= 0 else {
+            throw TerminalRetentionError.unsafePath
+          }
+          total = try TerminalRetentionMetadata.adding(total, Int64(attributes.st_size))
+        } else if errno != ENOENT && errno != ENOTDIR {
+          throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+      }
+    }
+    return total
   }
 
   func artifactSnapshot(_ id: String) throws -> String {

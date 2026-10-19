@@ -145,6 +145,10 @@ enum TerminalRetentionSecondary {
     }
   }
 
+  static func checkpointArtifacts(_ paths: TerminalRetentionPaths) throws {
+    if let db = try artifactDatabase(paths, writable: true) { try checkpoint(db) }
+  }
+
   static func reclaimArtifacts(_ paths: TerminalRetentionPaths) throws {
     // Reopen through fresh component/sidecar checks, including on zero-family retries.
     if let db = try artifactDatabase(paths, writable: true) { try reclaim(db) }
@@ -157,7 +161,7 @@ enum TerminalRetentionSecondary {
     try checkpoint(db)
   }
 
-  private static func checkpoint(_ db: SQLiteDatabase) throws {
+  static func checkpoint(_ db: SQLiteDatabase) throws {
     let result = try db.query("PRAGMA wal_checkpoint(TRUNCATE)")
     guard result.first?["busy"] != "1" else { throw TerminalRetentionError.reclamationBusy }
   }

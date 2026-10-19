@@ -10,9 +10,8 @@ enum TerminalRetentionMetadata {
       for row in try db.query("""
         SELECT workflow_execution_id AS id, workflow_id, session_status AS status,
           parent_session_id AS parent_id, root_session_id AS root_id, updated_at,
-          length(CAST(session_json AS BLOB)) + coalesce(length(CAST(root_output_json AS BLOB)),0) + length(CAST(diagnostics_json AS BLOB))
-            + coalesce(length(CAST(loop_evidence_json AS BLOB)),0) + coalesce(length(CAST(loop_summary_json AS BLOB)),0) AS bytes
-        FROM workflow_runtime_snapshots
+          \(TerminalRetentionIndexes.runtimeBytes) AS bytes
+        FROM \(TerminalRetentionIndexes.source("workflow_runtime_snapshots", in: db))
         """) { try merge(row, into: &sessions) }
     }
     if try db.tableExists("cli_workflow_sessions") {
@@ -20,14 +19,14 @@ enum TerminalRetentionMetadata {
         SELECT session_id AS id, workflow_id, status,
           json_extract(record_json, '$.session.parentSessionId') AS parent_id,
           coalesce(json_extract(record_json, '$.session.rootSessionId'),session_id) AS root_id,
-          updated_at, length(CAST(record_json AS BLOB)) AS bytes FROM cli_workflow_sessions
+          updated_at, length(CAST(record_json AS BLOB)) AS bytes FROM \(TerminalRetentionIndexes.source("cli_workflow_sessions", in: db))
         """) { try merge(row, into: &sessions) }
     }
     if try db.tableExists("workflow_messages") {
       for row in try db.query("""
         SELECT workflow_execution_id AS id,
-          sum(length(CAST(payload_json AS BLOB))+length(CAST(artifact_refs_json AS BLOB))) AS bytes
-        FROM workflow_messages GROUP BY workflow_execution_id
+          sum(\(TerminalRetentionIndexes.messageBytes)) AS bytes
+        FROM \(TerminalRetentionIndexes.source("workflow_messages", in: db)) GROUP BY workflow_execution_id
         """) {
         guard let id = row["id"], var session = sessions[id], let bytes = row["bytes"].flatMap(Int64.init) else { continue }
         session.payloadBytes = try adding(session.payloadBytes, bytes)
@@ -36,11 +35,11 @@ enum TerminalRetentionMetadata {
     }
     if try db.tableExists("workflow_nested_invocations") {
       for row in try db.query("""
-        SELECT json_extract(reservation_json,'$.parentSessionId') AS parent,
-          json_extract(reservation_json,'$.childSnapshot.session.sessionId') AS child,
-          length(CAST(reservation_json AS BLOB))+coalesce(length(CAST(child_terminal_json AS BLOB)),0)+coalesce(length(CAST(parent_message_json AS BLOB)),0) AS bytes,
-          (child_terminal_json IS NOT NULL AND parent_message_json IS NOT NULL AND recovery_reason IS NULL) AS settled
-        FROM workflow_nested_invocations
+        SELECT \(TerminalRetentionIndexes.parent) AS parent,
+          \(TerminalRetentionIndexes.child) AS child,
+          \(TerminalRetentionIndexes.nestedBytes) AS bytes,
+          \(TerminalRetentionIndexes.settled) AS settled
+        FROM \(TerminalRetentionIndexes.source("workflow_nested_invocations", in: db))
         """) {
         let parent = row["parent"], child = row["child"]
         if let parent, let prior = sessions[parent], let bytes = row["bytes"].flatMap(Int64.init) {

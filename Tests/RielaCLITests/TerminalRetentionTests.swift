@@ -213,6 +213,136 @@ final class TerminalRetentionTests: XCTestCase {
     XCTAssertEqual(try db.query("SELECT * FROM workflow_runtime_snapshots").count, 1)
   }
 
+  func testMetadataIndexesPreserveLegacyPlansAndOlderWriterUpdates() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    try insert("parent", db: f.db)
+    try insert("child", parent: "parent", root: "parent", db: f.db)
+    try insert("running", status: "running", db: f.db)
+    try insert("interrupted", status: "interrupted", db: f.db)
+    try f.db.execute("""
+      CREATE TABLE cli_workflow_sessions(session_id TEXT PRIMARY KEY,workflow_id TEXT,status TEXT,updated_at TEXT,record_json BLOB)
+      """)
+    try f.db.execute("""
+      INSERT INTO cli_workflow_sessions VALUES('legacy','news','completed',?,jsonb(?))
+      """, bindings: [.text(ISO8601DateFormatter().string(from: now.addingTimeInterval(-90_000))),
+        .text("{\"session\":{\"rootSessionId\":\"legacy\"},\"output\":\"" + String(repeating: "研究", count: 2000) + "\"}")])
+    try f.db.execute("""
+      CREATE TABLE workflow_nested_invocations(reservation_json BLOB,child_terminal_json BLOB,parent_message_json BLOB,recovery_reason TEXT)
+      """)
+    try f.db.execute("""
+      INSERT INTO workflow_nested_invocations VALUES(
+        jsonb('{"parentSessionId":"parent","childSnapshot":{"session":{"sessionId":"child"}}}'),jsonb('{}'),jsonb('{}'),NULL)
+      """)
+    let before = try TerminalRetentionMetadata.sessions(f.db)
+    let plan = try TerminalRetentionPlan.make(sessions: before, workflows: ["news"], now: now,
+      retentionHours: 24, maxPayloadBytes: 268_435_456)
+    try TerminalRetentionIndexes.prepare(f.db)
+    XCTAssertEqual(try TerminalRetentionMetadata.sessions(f.db), before)
+    XCTAssertEqual(try TerminalRetentionPlan.make(sessions: TerminalRetentionMetadata.sessions(f.db),
+      workflows: ["news"], now: now, retentionHours: 24, maxPayloadBytes: 268_435_456), plan)
+    // No typed save or projection cache: SQL writes by older binaries must update immediately.
+    try f.db.execute("UPDATE cli_workflow_sessions SET record_json=jsonb('{\"session\":{\"parentSessionId\":\"parent\",\"rootSessionId\":\"parent\"}}')")
+    try f.db.execute("UPDATE workflow_nested_invocations SET recovery_reason='unsettled'")
+    let changed = try TerminalRetentionMetadata.sessions(f.db)
+    XCTAssertEqual(changed.first { $0.id == "legacy" }?.parentId, "parent")
+    XCTAssertEqual(changed.first { $0.id == "child" }?.protection, "unsettledNestedInvocation")
+    XCTAssertNotEqual(changed, before)
+  }
+
+  func testIndexedAdmissionStillProtectsNewRunningDescendant() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    try insert("parent", db: f.db)
+    let executor = TerminalRetentionExecutor(clock: { self.now }, beforeTransaction: {
+      try self.insert("new-child", status: "running", parent: "parent", root: "parent", db: f.db)
+    })
+    let report = try execute(f.paths, executor: executor)
+    XCTAssertEqual(report.protectedFamilies["parent"], "changedDuringAdmission")
+    XCTAssertEqual(try f.db.query("SELECT count(*) AS count FROM workflow_runtime_snapshots").first?["count"], "2")
+  }
+
+  func testLegacyDryRunDoesNotInstallIndexesOrChangeDatabaseBytes() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    try insert("old", db: f.db)
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: f.paths.sessionRoot)
+    let before = try Data(contentsOf: URL(fileURLWithPath: path))
+    let schema = try f.db.query("SELECT name,sql FROM sqlite_master ORDER BY name")
+    _ = try execute(f.paths, dryRun: true)
+    XCTAssertEqual(try f.db.query("SELECT name,sql FROM sqlite_master ORDER BY name"), schema)
+    XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), before)
+    XCTAssertEqual(try TerminalRetentionIndexes.source("workflow_runtime_snapshots", in: f.db), "workflow_runtime_snapshots")
+  }
+
+  func testFreshPathChecksRejectNewAndDanglingSymlinks() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    let child = f.root.appendingPathComponent("managed/new/database.sqlite")
+    XCTAssertEqual(try TerminalRetentionPaths.checkedDatabase(child.path), child.path)
+    let managed = f.root.appendingPathComponent("managed")
+    try FileManager.default.createSymbolicLink(at: managed,
+      withDestinationURL: f.root.appendingPathComponent("missing-target"))
+    XCTAssertThrowsError(try TerminalRetentionPaths.checkedDatabase(child.path)) {
+      XCTAssertEqual($0 as? TerminalRetentionError, .unsafePath)
+    }
+    try FileManager.default.removeItem(at: managed)
+    try FileManager.default.createDirectory(at: managed, withIntermediateDirectories: true)
+    XCTAssertEqual(try TerminalRetentionPaths.checkedDatabase(child.path), child.path)
+    XCTAssertThrowsError(try TerminalRetentionPaths.checked(f.root.path + "/nul\0/escape")) {
+      XCTAssertEqual($0 as? TerminalRetentionError, .unsafePath)
+    }
+    XCTAssertThrowsError(try TerminalRetentionPaths.checked("relative/path"))
+    XCTAssertThrowsError(try TerminalRetentionPaths.checked(f.root.path + "/../escape"))
+  }
+
+  func testPathCheckFailsClosedOnSearchPermissionError() throws {
+    #if canImport(Darwin) || canImport(Glibc)
+    guard geteuid() != 0 else { throw XCTSkip("Root bypasses directory search permissions") }
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    let denied = f.root.appendingPathComponent("denied")
+    try FileManager.default.createDirectory(at: denied, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: denied.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: denied.path) }
+    XCTAssertThrowsError(try TerminalRetentionPaths.checked(denied.appendingPathComponent("missing").path)) {
+      XCTAssertEqual(($0 as? POSIXError)?.code, .EACCES)
+    }
+    #endif
+  }
+
+  func testArtifactCleanupCheckpointAndZeroFamilyRetryReclaimsWithoutDeletingRunningRows() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: f.paths.artifactRoot)
+    try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
+    let artifact = try SQLiteDatabase.open(path: path)
+    try artifact.execute("CREATE TABLE workflow_messages(workflow_execution_id TEXT,payload_json BLOB,artifact_refs_json BLOB)")
+    let sentinel = "private-synthetic-deleted-marker-" + String(repeating: "z", count: 200_000)
+    try artifact.execute("INSERT INTO workflow_messages VALUES('done',?, '[]')", bindings: [.text(sentinel)])
+    try artifact.execute("INSERT INTO workflow_messages VALUES('running','preserve-running','[]')")
+    try TerminalRetentionSecondary.clean(ids: ["done"], workflows: ["done": "news"], paths: f.paths)
+    // Simulated interruption after per-family cleanup, before final compaction.
+    XCTAssertFalse(try Data(contentsOf: URL(fileURLWithPath: path)).contains(Data("private-synthetic-deleted-marker-".utf8)))
+    let before = Int(try artifact.query("PRAGMA page_count").first?["page_count"] ?? "0") ?? 0
+    XCTAssertGreaterThan(Int(try artifact.query("PRAGMA freelist_count").first?["freelist_count"] ?? "0") ?? 0, 0)
+    XCTAssertEqual(try execute(f.paths).removedSessionCount, 0)
+    XCTAssertLessThan(Int(try artifact.query("PRAGMA page_count").first?["page_count"] ?? "0") ?? 0, before)
+    XCTAssertEqual(try artifact.query("SELECT payload_json FROM workflow_messages").first?["payload_json"], "preserve-running")
+  }
+
+  func testFinalArtifactReclaimRechecksSymlink() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: f.paths.artifactRoot)
+    try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
+    let foreign = f.root.appendingPathComponent("foreign")
+    try Data("unchanged".utf8).write(to: foreign)
+    try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: foreign.path)
+    XCTAssertThrowsError(try TerminalRetentionSecondary.reclaimArtifacts(f.paths))
+    XCTAssertEqual(try Data(contentsOf: foreign), Data("unchanged".utf8))
+  }
+
   func testPruneCLIValidationAndHelp() throws {
     let runner = SessionPruneCommandRunner()
     XCTAssertEqual(runner.run(["--help"]).exitCode, .success)

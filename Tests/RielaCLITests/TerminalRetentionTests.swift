@@ -366,6 +366,58 @@ final class TerminalRetentionTests: XCTestCase {
     }
   }
 
+  func testBoundedFamiliesProgressAcrossFreshInvocationsPreservesProtectedFamily() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["a", "b", "c"] { try insert(id, db: f.db) }
+    try insert("live", status: "running", db: f.db)
+    for remaining in [2, 1, 0] {
+      let result = try TerminalRetentionExecutor(clock: { self.now }).run(paths: f.paths,
+        workflows: ["news"], retentionHours: 24, maxPayloadBytes: 1, dryRun: false, maxFamilies: 1)
+      XCTAssertEqual(result.removedSessionCount, 1)
+      XCTAssertEqual(result.selectedFamilies.count, 1)
+      XCTAssertEqual(result.deferredFamilyCount, remaining)
+      XCTAssertFalse(result.capAchieved)
+      XCTAssertEqual(result.pendingCleanupCount, 0)
+      XCTAssertEqual(try f.db.query("SELECT workflow_execution_id FROM workflow_runtime_snapshots WHERE session_status='running'").first?["workflow_execution_id"], "live")
+    }
+    XCTAssertEqual(try f.db.query("SELECT * FROM workflow_runtime_snapshots").count, 1)
+  }
+
+  func testPendingRecoveryConsumesSameBoundAndDoesNotAdmitNewFamily() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["a", "b", "c"] { try insert(id, db: f.db) }
+    var interrupted = TerminalRetentionExecutor(clock: { self.now })
+    interrupted.beforeSecondaryCleanup = { throw TerminalRetentionError.reclamationBusy }
+    XCTAssertThrowsError(try interrupted.run(paths: f.paths, workflows: ["news"], retentionHours: 24,
+      maxPayloadBytes: 1, dryRun: false, maxFamilies: 1))
+    let result = try TerminalRetentionExecutor(clock: { self.now }).run(paths: f.paths,
+      workflows: ["news"], retentionHours: 24, maxPayloadBytes: 1, dryRun: false, maxFamilies: 1)
+    XCTAssertEqual(result.removedSessionCount, 0)
+    XCTAssertTrue(result.selectedFamilies.isEmpty)
+    XCTAssertEqual(result.pendingCleanupCount, 0)
+    XCTAssertEqual(result.deferredFamilyCount, 2)
+    XCTAssertEqual(try f.db.query("SELECT * FROM workflow_runtime_snapshots").count, 2)
+  }
+
+  func testBoundedDryRunAndInvalidFamilyLimitNeverWrite() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["a", "b"] { try insert(id, db: f.db) }
+    let executor = TerminalRetentionExecutor(clock: { self.now })
+    let result = try executor.run(paths: f.paths, workflows: ["news"], retentionHours: 24,
+      maxPayloadBytes: 1, dryRun: true, maxFamilies: 1)
+    XCTAssertEqual(result.selectedFamilies, ["a"])
+    XCTAssertEqual(result.deferredFamilyCount, 1)
+    XCTAssertGreaterThan(result.remainingPayloadBytes, 0)
+    for limit in [0, -1, 10_001] {
+      XCTAssertThrowsError(try executor.run(paths: f.paths, workflows: ["news"], retentionHours: 24,
+        maxPayloadBytes: 1, dryRun: false, maxFamilies: limit))
+    }
+    XCTAssertFalse(try f.db.tableExists("session_retention_tombstones"))
+  }
+
   func testPruneCLIValidationAndHelp() throws {
     let runner = SessionPruneCommandRunner()
     XCTAssertEqual(runner.run(["--help"]).exitCode, .success)

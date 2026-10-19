@@ -22,3 +22,14 @@ running descendants, strict dry-run, fresh symlink/error/NUL rejection, secure
 physical marker removal, zero-family compaction retry and retained running rows.
 Large-copy benchmarks must start from the same pristine baseline, with full
 secondary roots. No canonical prune is authorized by this change.
+
+## Bounded maintenance
+
+`--max-families 20` optionally bounds the total pending-recovery and newly
+admitted family attempts. Omission retains full-plan behavior. Remaining
+families stay eligible for a later invocation; `deferredFamilyCount` reports
+them and final remaining bytes/protection are recomputed from the actual stores.
+No family is split by the limit. A pending family's member cleanups consume one
+family allowance together; new admission uses only the remaining allowance.
+Strict dry-run applies the same pending-first allowance without writes. Final
+compaction still runs once, and failure remains nonzero.

@@ -343,6 +343,29 @@ final class TerminalRetentionTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: foreign), Data("unchanged".utf8))
   }
 
+  func testInvocationLocalDateDecodingPreservesFractionalFallbackAndInvalidProtection() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    let values = ["2026-01-02T03:04:05.123456Z", "2026-01-02T03:04:05Z",
+      "2026-01-02T12:04:05+09:00", "invalid"]
+    for (index, value) in values.enumerated() {
+      try insert("date-\(index)", db: f.db)
+      try f.db.execute("UPDATE workflow_runtime_snapshots SET updated_at=? WHERE workflow_execution_id=?",
+        bindings: [.text(value), .text("date-\(index)")])
+    }
+    for row in try TerminalRetentionMetadata.sessions(f.db) {
+      let index = try XCTUnwrap(Int(row.id.replacingOccurrences(of: "date-", with: "")))
+      let old = ISO8601DateFormatter()
+      old.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      var expected = old.date(from: values[index])
+      if expected == nil {
+        old.formatOptions = [.withInternetDateTime]
+        expected = old.date(from: values[index])
+      }
+      XCTAssertEqual(row.updatedAt, expected)
+    }
+  }
+
   func testPruneCLIValidationAndHelp() throws {
     let runner = SessionPruneCommandRunner()
     XCTAssertEqual(runner.run(["--help"]).exitCode, .success)

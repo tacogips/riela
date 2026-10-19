@@ -104,11 +104,14 @@ struct RetentionSQLiteReclaimer: Sendable {
       result.warning = String(describing: error)
     }
 
-    result.fileBytesAfter = fileBytes(at: databasePath)
-    result.reclaimedBytes = max(0, result.fileBytesBefore - result.fileBytesAfter)
     if result.action == .busy || result.action == .diskFull || result.action == .failed {
       result.reusableFreeBytes = reusableFreeBytes(database)
     }
+    // Close before measuring: while this connection is open the converted pages are still in
+    // the WAL, so the files only settle once the last connection checkpoints on close.
+    database = nil
+    result.fileBytesAfter = fileBytes(at: databasePath)
+    result.reclaimedBytes = max(0, result.fileBytesBefore - result.fileBytesAfter)
     return result
   }
 

@@ -53,6 +53,23 @@ final class RetentionReclamationTests: XCTestCase {
     XCTAssertLessThan(try fileSize(fixture.databasePath), before)
   }
 
+  func testReportedSizeAfterConversionMatchesDiskOnceTheConnectionCloses() throws {
+    let fixture = try makeDatabase(incremental: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let before = try diskBytes(fixture.databasePath)
+    let reclaimer = RetentionSQLiteReclaimer(freeSpace: { _ in Int64.max })
+
+    let result = reclaimer.reclaim(databasePath: fixture.databasePath, mode: .manual)
+    let onDisk = try diskBytes(fixture.databasePath)
+
+    // The converted pages sit in the WAL until the reclaimer's connection closes, so a size
+    // measured while it is open double-counts them and reports no reclaimed bytes.
+    XCTAssertEqual(result.action, .converted)
+    XCTAssertEqual(result.fileBytesAfter, onDisk)
+    XCTAssertEqual(result.reclaimedBytes, before - onDisk)
+    XCTAssertGreaterThan(result.reclaimedBytes, 20_000_000)
+  }
+
   func testManualConversionDefersWhenFreeSpaceIsInsufficient() throws {
     let fixture = try makeDatabase(incremental: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -146,6 +163,11 @@ final class RetentionReclamationTests: XCTestCase {
     }
     defer { free(resolvedPath) }
     return URL(fileURLWithPath: String(cString: resolvedPath), isDirectory: true)
+  }
+
+  private func diskBytes(_ databasePath: String) throws -> Int64 {
+    let wal = databasePath + "-wal"
+    return try fileSize(databasePath) + (FileManager.default.fileExists(atPath: wal) ? try fileSize(wal) : 0)
   }
 
   private func fileSize(_ path: String) throws -> Int64 {

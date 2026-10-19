@@ -69,6 +69,11 @@ final class NotionGatewayAddonTests: XCTestCase {
     XCTAssertTrue(writerSchema.stdout.contains("createPage"))
     XCTAssertTrue(writerSchema.stdout.contains("createFileUpload"))
     XCTAssertTrue(writerSchema.stdout.contains("sendFileUpload"))
+    XCTAssertTrue(writerSchema.stdout.contains("position: JSON"))
+    XCTAssertTrue(writerSchema.stdout.contains("createAttachmentUpload"))
+    XCTAssertTrue(writerSchema.stdout.contains("sendAttachmentUpload"))
+    XCTAssertTrue(schema.stdout.contains("downloadBlockFile"))
+    XCTAssertFalse(schema.stdout.contains("createAttachmentUpload"))
     XCTAssertTrue(schema.stdout.contains("downloadBlockImage"))
     XCTAssertFalse(schema.stdout.contains("sendFileUpload"))
   }

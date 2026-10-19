@@ -8,6 +8,8 @@ struct ParsedSessionPruneArguments: ParsableArguments {
   @Option(name: .customLong("workflow-id")) var workflowIds: [String] = []
   @Option var retentionHours = 24
   @Option var maxPayloadBytes: Int64 = 268_435_456
+  @Option(help: "Limit total pending-recovery and newly admitted families; omitted processes the full plan.")
+  var maxFamilies: Int?
   @Flag var dryRun = false
   @Option var output = "json"
 }
@@ -26,7 +28,7 @@ struct SessionPruneCommandRunner {
       let paths = try TerminalRetentionPaths(sessionRoot: parsed.sessionStore,
         artifactRoot: parsed.artifactRoot, memoryRoot: parsed.memoryRoot)
       let result = try TerminalRetentionExecutor().run(paths: paths, workflows: Set(parsed.workflowIds),
-        retentionHours: parsed.retentionHours, maxPayloadBytes: parsed.maxPayloadBytes, dryRun: parsed.dryRun)
+        retentionHours: parsed.retentionHours, maxPayloadBytes: parsed.maxPayloadBytes, dryRun: parsed.dryRun, maxFamilies: parsed.maxFamilies)
       let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
       return CLICommandResult(exitCode: .success, stdout: (String(data: try encoder.encode(result), encoding: .utf8) ?? "{}") + "\n")
     } catch {

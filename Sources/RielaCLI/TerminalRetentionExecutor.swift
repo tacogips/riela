@@ -34,6 +34,7 @@ struct TerminalRetentionExecutor {
     guard try db.tableExists("workflow_runtime_snapshots") || db.tableExists("cli_workflow_sessions") else {
       throw TerminalRetentionError.foreignDatabase
     }
+    if !dryRun { try TerminalRetentionIndexes.prepare(db) }
     let now = clock()
     let original = try metadata(db, paths: paths)
     let plan = try TerminalRetentionPlan.make(sessions: original, workflows: workflows, now: now,
@@ -109,6 +110,7 @@ struct TerminalRetentionExecutor {
         report.protectedFamilies[family.rootId] = "secondaryOwnershipChanged"
       }
     }
+    try TerminalRetentionSecondary.reclaimArtifacts(paths)
     try TerminalRetentionSecondary.reclaim(db)
     let final = try TerminalRetentionPlan.make(sessions: metadata(db, paths: paths), workflows: workflows, now: now,
       retentionHours: retentionHours, maxPayloadBytes: maxPayloadBytes)

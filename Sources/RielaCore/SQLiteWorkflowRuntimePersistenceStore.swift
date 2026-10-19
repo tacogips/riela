@@ -297,6 +297,33 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     return try snapshot(from: row, db: db)
   }
 
+  /// Advances runtime ID high-water marks without materializing unrelated
+  /// session outputs, backend events, or message payloads during a fresh run.
+  public func observePersistedIdentities(_ generator: any WorkflowRuntimeIDGenerating) throws {
+    guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else { return }
+    let db = try openDatabase(readOnly: true)
+    try mapRuntimeSQLiteError {
+      if try runtimeSnapshotTableExists(db) {
+        for row in try db.query("SELECT workflow_execution_id, workflow_id FROM workflow_runtime_snapshots") {
+          if let sessionId = row["workflow_execution_id"], let workflowId = row["workflow_id"] {
+            generator.noteExistingSessionId(sessionId, workflowId: workflowId)
+          }
+        }
+        for row in try db.query(
+          "SELECT json_extract(e.value, '$.executionId') AS execution_id "
+            + "FROM workflow_runtime_snapshots, json_each(session_json, '$.executions') AS e"
+        ) {
+          if let executionId = row["execution_id"] { generator.noteExistingStepExecutionId(executionId) }
+        }
+      }
+      if try db.tableExists("workflow_messages") {
+        for row in try db.query("SELECT communication_id FROM workflow_messages") {
+          if let communicationId = row["communication_id"] { generator.noteExistingCommunicationId(communicationId) }
+        }
+      }
+    }
+  }
+
   public func loadAll() throws -> [WorkflowRuntimePersistenceSnapshot] {
     guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else {
       return []

@@ -314,7 +314,8 @@ public struct WorkflowRunCommand: Sendable {
   ) async throws -> WorkflowRunProductionDurableRuntime {
     let backingStore = try await makeSeededProductionRuntimeStore(
       sessionStoreRoot: storeRoot,
-      executionLocks: executionLocks
+      executionLocks: executionLocks,
+      hydrateSessions: options.resumeSessionId != nil
     )
     let canonicalRoot = canonicalRuntimeStoreRoot(sessionStoreRoot: storeRoot)
     let durableStore = FailClosedSQLiteWorkflowRuntimeStore(
@@ -322,7 +323,7 @@ public struct WorkflowRunCommand: Sendable {
       beforeTerminalPersistence: beforeTerminalPersistence,
       deferTerminalPersistence: deferTerminalPersistence
     )
-    try await durableStore.hydrate()
+    if options.resumeSessionId != nil { try await durableStore.hydrate() }
     return WorkflowRunProductionDurableRuntime(
       backingStore: backingStore,
       runtimeStore: durableStore,

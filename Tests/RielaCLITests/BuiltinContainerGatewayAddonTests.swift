@@ -249,6 +249,32 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
     }
   }
 
+  func testClosedGmailBodyAndTransportReasonsCrossContainerBoundary() throws {
+    let body = ["messageEnvelope", "bodyDescriptor", "externalBodyDescriptor", "externalBodyResponse",
+      "treeLimit", "filename", "mimeType", "partIdentity", "children", "missingData", "decodedSize",
+      "headers", "duplicateContentType", "headerValue", "mimeMismatch", "duplicateCharset", "charsetQuotes", "charsetValue"]
+    let transport = ["timeout", "missingResponse", "cancelled", "dns", "connect", "connectionLost", "tls", "offline", "transport"]
+    for (field, prefix, reasons) in [("gmailBodyReason", "Invalid message body response", body),
+                                    ("gmailReadReason", "Bounded Gmail read failed", transport)] {
+      for reason in reasons {
+        let failure = "{\"errors\":[{\"code\":\"PROVIDER_API_ERROR\",\"message\":\"\(prefix) [\(field)=\(reason)]\",\"details\":{\"body\":\"PRIVATE_BODY\",\"accountId\":\"PRIVATE_ID\"}}]}"
+        XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: failure),
+          " (code=PROVIDER_API_ERROR, \(field)=\(reason))")
+        XCTAssertFalse(GatewayFailureDiagnostics.suffix(stdout: failure).contains("PRIVATE"))
+      }
+      for message in ["\(prefix) [\(field)=PRIVATE_BODY]", "PRIVATE_BODY \(prefix) [\(field)=timeout]",
+                      "\(prefix) [\(field)=timeout] PRIVATE_BODY", "\(prefix) [\(field)=timeout]\nPRIVATE_BODY"] {
+        let error: JSONObject = ["code": .string("PROVIDER_API_ERROR"), "message": .string(message)]
+        let data = try JSONEncoder().encode(["error": JSONValue.object(error)])
+        XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: try XCTUnwrap(String(data: data, encoding: .utf8))), " (code=PROVIDER_API_ERROR)")
+      }
+    }
+    let wrongCode = #"{"error":{"code":"AUTH_INVALID","message":"Invalid message body response [gmailBodyReason=headerValue]"}}"#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: wrongCode), " (code=AUTH_INVALID)")
+    let privateMessage = #"{"error":{"code":"PROVIDER_API_ERROR","message":"PRIVATE_BODY","details":{"gmailBodyReason":"headerValue"}}}"#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: privateMessage), " (code=PROVIDER_API_ERROR)")
+  }
+
   private func input(_ gateway: ContainerGatewayAddon, env: JSONObject? = nil, extraConfig: JSONObject = [:]) -> WorkflowAddonExecutionInput {
     var config: JSONObject = ["queryTemplate": .string("query { posts(limit: {{limit}}) }")]
     config.merge(extraConfig) { _, new in new }

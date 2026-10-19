@@ -124,7 +124,9 @@ enum TerminalRetentionSecondary {
       try db.transaction { db in
         for id in ids { try deleteMessages(id: id, db: db) }
       }
-      try reclaim(db)
+      // secure_delete plus a successful checkpoint completes logical cleanup.
+      // Compact this shared database once after all admitted families.
+      try checkpoint(db)
     }
     for id in ids {
       let path = try paths.artifactSnapshot(id)
@@ -141,6 +143,11 @@ enum TerminalRetentionSecondary {
     for table in ["workflow_message_payload_index", "workflow_messages"] where try db.tableExists(table) {
       try db.execute("DELETE FROM \(table) WHERE workflow_execution_id=?", bindings: [.text(id)])
     }
+  }
+
+  static func reclaimArtifacts(_ paths: TerminalRetentionPaths) throws {
+    // Reopen through fresh component/sidecar checks, including on zero-family retries.
+    if let db = try artifactDatabase(paths, writable: true) { try reclaim(db) }
   }
 
   static func reclaim(_ db: SQLiteDatabase) throws {

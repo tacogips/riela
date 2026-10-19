@@ -252,7 +252,7 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
   func testClosedGmailBodyAndTransportReasonsCrossContainerBoundary() throws {
     let body = ["messageEnvelope", "bodyDescriptor", "externalBodyDescriptor", "externalBodyResponse",
       "treeLimit", "filename", "mimeType", "partIdentity", "children", "missingData", "decodedSize",
-      "headers", "duplicateContentType", "headerValue", "mimeMismatch", "duplicateCharset", "charsetQuotes", "charsetValue"]
+      "headers", "duplicateContentType", "headerValue", "mimeMismatch", "duplicateCharset", "charsetQuotes", "charsetValue", "invalidBase64"]
     let transport = ["timeout", "missingResponse", "cancelled", "dns", "connect", "connectionLost", "tls", "offline", "transport"]
     for (field, prefix, reasons) in [("gmailBodyReason", "Invalid message body response", body),
                                     ("gmailReadReason", "Bounded Gmail read failed", transport)] {
@@ -273,6 +273,28 @@ final class BuiltinContainerGatewayAddonTests: XCTestCase {
     XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: wrongCode), " (code=AUTH_INVALID)")
     let privateMessage = #"{"error":{"code":"PROVIDER_API_ERROR","message":"PRIVATE_BODY","details":{"gmailBodyReason":"headerValue"}}}"#
     XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: privateMessage), " (code=PROVIDER_API_ERROR)")
+  }
+
+  func testGmailDecodedSizeDiagnosticsRetainOnlyCanonicalBoundedCounts() throws {
+    func suffix(_ message: String) throws -> String {
+      let value: JSONObject = ["error": .object(["code": .string("PROVIDER_API_ERROR"), "message": .string(message)])]
+      return GatewayFailureDiagnostics.suffix(stdout: try XCTUnwrap(String(data: JSONEncoder().encode(value), encoding: .utf8)))
+    }
+    for (declared, decoded) in [(0, 1), (8_388_608, 0), (123, 124)] {
+      XCTAssertEqual(try suffix("Invalid message body response [gmailBodyReason=decodedSize declaredByteCount=\(declared) decodedByteCount=\(decoded)]"),
+        " (code=PROVIDER_API_ERROR, gmailBodyReason=decodedSize, gmailDeclaredByteCount=\(declared), gmailDecodedByteCount=\(decoded))")
+    }
+    for number in ["", "-1", "+1", "01", "8388609", "99999999", "1.0", "1 PRIVATE_BODY", " 1", "1\n"] {
+      for message in ["Invalid message body response [gmailBodyReason=decodedSize declaredByteCount=\(number) decodedByteCount=1]",
+                      "Invalid message body response [gmailBodyReason=decodedSize declaredByteCount=1 decodedByteCount=\(number)]"] {
+        XCTAssertEqual(try suffix(message), " (code=PROVIDER_API_ERROR)")
+      }
+    }
+    for message in ["Invalid message body response [gmailBodyReason=decodedSize declaredByteCount=1]",
+                    "Invalid message body response [gmailBodyReason=PRIVATE_BODY declaredByteCount=1 decodedByteCount=2]",
+                    "Invalid message body response [gmailBodyReason=decodedSize declaredByteCount=1 decodedByteCount=2] PRIVATE_BODY"] {
+      XCTAssertEqual(try suffix(message), " (code=PROVIDER_API_ERROR)")
+    }
   }
 
   private func input(_ gateway: ContainerGatewayAddon, env: JSONObject? = nil, extraConfig: JSONObject = [:]) -> WorkflowAddonExecutionInput {

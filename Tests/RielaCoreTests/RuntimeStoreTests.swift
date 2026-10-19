@@ -993,3 +993,27 @@ private struct StaticWorkflowRuntimeStore: WorkflowRuntimeStore {
     nil
   }
 }
+
+extension RuntimeStoreTests {
+  func testCommandFailureDiagnosticsPersistAsMetadataWithoutAcceptedOutput() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let session = try await store.createSession(WorkflowSessionCreateInput(workflowId: "wf", entryStepId: "start"))
+    let execution = try await store.recordStepExecution(WorkflowStepExecutionRecordInput(
+      sessionId: session.sessionId, stepId: "start", nodeId: "node", attempt: 1))
+    let metadata: JSONObject = ["authoritative": .bool(false), "captureStatus": .string("validated"),
+      "exitCode": .integer(1), "diagnostics": .object(["count": .integer(2)])]
+    _ = try await store.recordStepBackendEvent(WorkflowStepBackendEventInput(sessionId: session.sessionId,
+      executionId: execution.executionId, eventType: "other", metadata: ["private": .string("not retained")]))
+    _ = try await store.recordStepBackendEvent(WorkflowStepBackendEventInput(sessionId: session.sessionId,
+      executionId: execution.executionId, eventType: "command_failure_diagnostics", channel: .lifecycle, metadata: metadata))
+    let updated = try await store.updateStepExecution(WorkflowStepExecutionUpdateInput(sessionId: session.sessionId,
+      executionId: execution.executionId, status: .failed, failureReason: "command failed"))
+    XCTAssertNil(updated.acceptedOutput)
+    XCTAssertNil(updated.recentBackendEvents?.first?.metadata)
+    XCTAssertEqual(updated.recentBackendEvents?.last?.metadata, metadata)
+    let decoded = try JSONDecoder().decode(WorkflowStepExecution.self, from: JSONEncoder().encode(updated))
+    XCTAssertEqual(decoded.recentBackendEvents?.last?.metadata, metadata)
+    XCTAssertNil(decoded.streamedResponseText)
+  }
+
+}

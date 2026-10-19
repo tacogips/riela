@@ -632,6 +632,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
+  public var failureDiagnostics: WorkflowFailureDiagnostics?
   public var executable: String
   public var arguments: [String]
   public var environment: [String: String]
@@ -641,8 +642,10 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     executable: String,
     arguments: [String] = [],
     environment: [String: String] = [:],
-    workingDirectory: String? = nil
+    workingDirectory: String? = nil,
+    failureDiagnostics: WorkflowFailureDiagnostics? = nil
   ) {
+    self.failureDiagnostics = failureDiagnostics
     self.executable = executable
     self.arguments = arguments
     self.environment = environment
@@ -650,6 +653,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case failureDiagnostics
     case executable
     case arguments
     case environment
@@ -657,6 +661,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
   }
 
   enum RielaCommandCodingKeys: String, CodingKey {
+    case failureDiagnostics
     case executable
     case scriptPath
     case arguments
@@ -668,6 +673,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: RielaCommandCodingKeys.self)
+    self.failureDiagnostics = try container.decodeIfPresent(WorkflowFailureDiagnostics.self, forKey: .failureDiagnostics)
     let workingDirectory = try container.decodeIfPresent(String.self, forKey: .workingDirectory)
     let executable = try container.decodeIfPresent(String.self, forKey: .executable)
     self.executable = try executable ?? normalizedScriptExecutable(

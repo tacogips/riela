@@ -1576,3 +1576,17 @@ RielaApp and `riela serve` can host a worker controller, with outbound
 `riela worker --config` processes and step-level worker ID/group selection.
 See [controller and worker setup](docs/distributed-workers.md) for configuration,
 workspace mapping, verified platform coverage and operational limits.
+
+Command nodes can opt into non-authoritative failure metadata with
+`command.failureDiagnostics: {"path": ["diagnostics"], "schema": ..., "maxBytes": 16384}`.
+The trusted path selects an object; raw sibling fields are never retained. Opted-in
+commands drain stdout while retaining at most 64 KiB plus one overflow byte; oversized
+stdout is rejected even on exit zero, never accepted as a truncated result. Only a deliberately
+restricted metadata schema is supported: closed objects (`additionalProperties:false`,
+`properties`, `required`), bounded arrays (`items`, `maxItems`), enum-only strings,
+bounded integers (`minimum`, `maximum`), booleans and null. Unexpected fields,
+invalid schemas/values or oversized stdout produce only a `rejected` receipt.
+Validated metadata is stored in the execution's `command_failure_diagnostics`
+backend event. Nonzero commands still fail; this metadata never becomes an accepted
+output or root output. Default behavior persists no failed stdout. See
+[the implementation plan](impl-plans/command-failure-metadata.md) for exact limits.

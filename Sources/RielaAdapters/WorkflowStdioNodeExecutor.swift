@@ -33,11 +33,27 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     let result = try await runner.run(configuration: configuration, stdin: inputLine, deadline: context.deadline)
     let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
     guard result.terminationStatus == 0 else {
+      if input.kind == .command, let policy = input.node.command?.failureDiagnostics {
+        let selected = policy.metadata(from: result.stdout)
+        var metadata: JSONObject = [
+          "authoritative": .bool(false), "exitCode": .integer(Int64(result.terminationStatus)),
+          "captureStatus": .string(selected == nil ? "rejected" : "validated")
+        ]
+        if let selected { metadata["diagnostics"] = .object(selected) }
+        await context.backendEventHandler?(AdapterBackendEvent(
+          provider: "command", eventType: "command_failure_diagnostics", channel: .lifecycle,
+          metadata: metadata
+        ))
+      }
       let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
       throw AdapterExecutionError(
         .providerError,
         "\(input.kind.rawValue) node '\(input.nodeId)' failed with exit code \(result.terminationStatus): \(detail)"
       )
+    }
+    if input.kind == .command, input.node.command?.failureDiagnostics != nil,
+      result.stdout.utf8.count > WorkflowFailureDiagnostics.stdoutByteLimit {
+      throw AdapterExecutionError(.providerError, "command stdout exceeded diagnostic capture limit")
     }
     return WorkflowStdioNodeExecutionResult(
       payload: try outputPayload(fromStdout: result.stdout, kind: input.kind),
@@ -86,7 +102,8 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         unsetEnvironmentKeys: strippedEnvironmentKeys,
         workingDirectoryURL: workingDirectoryURL(
           command.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
-        )
+        ),
+        stdoutCaptureByteLimit: command.failureDiagnostics == nil ? nil : WorkflowFailureDiagnostics.stdoutByteLimit + 1
       )
     case .container:
       guard let container = input.node.container else {

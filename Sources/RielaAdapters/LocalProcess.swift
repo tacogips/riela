@@ -14,6 +14,8 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
   public var workingDirectoryURL: URL?
   public var sandboxPolicy: LocalProcessSandboxPolicy?
   public var inheritEnvironment: Bool
+  /// Maximum retained stdout bytes; excess bytes are drained without retaining or streaming them.
+  public var stdoutCaptureByteLimit: Int?
 
   public init(
     executableURL: URL,
@@ -22,7 +24,8 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     unsetEnvironmentKeys: Set<String> = [],
     workingDirectoryURL: URL? = nil,
     sandboxPolicy: LocalProcessSandboxPolicy? = nil,
-    inheritEnvironment: Bool = true
+    inheritEnvironment: Bool = true,
+    stdoutCaptureByteLimit: Int? = nil
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
@@ -31,6 +34,7 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     self.workingDirectoryURL = workingDirectoryURL
     self.sandboxPolicy = sandboxPolicy
     self.inheritEnvironment = inheritEnvironment
+    self.stdoutCaptureByteLimit = stdoutCaptureByteLimit
   }
 }
 
@@ -95,16 +99,19 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
   private let fileHandle: FileHandle
   private let fileDescriptor: Int32
   private let stream: LocalProcessOutputStream
+  private let captureByteLimit: Int?
   private let outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
 
   init(
     fileHandle: FileHandle,
     stream: LocalProcessOutputStream,
+    captureByteLimit: Int? = nil,
     outputEventHandler: (@Sendable (LocalProcessOutputEvent) -> Void)?
   ) {
     self.fileHandle = fileHandle
     self.fileDescriptor = fileHandle.fileDescriptor
     self.stream = stream
+    self.captureByteLimit = captureByteLimit.map { max(0, $0) }
     self.outputEventHandler = outputEventHandler
   }
 
@@ -126,7 +133,8 @@ private final class LocalProcessPipeReader: @unchecked Sendable {
         }
         break
       }
-      let chunk = Data(buffer.prefix(byteCount))
+      let retainedCount = captureByteLimit.map { min(byteCount, max(0, $0 - output.count)) } ?? byteCount
+      let chunk = Data(buffer.prefix(retainedCount))
       output.append(chunk)
       if outputEventHandler != nil {
         emitCompleteLines(in: chunk, pendingLine: &pendingLine)
@@ -699,6 +707,7 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
         let outputReader = LocalProcessPipeReader(
           fileHandle: outputPipe.fileHandleForReading,
           stream: .stdout,
+          captureByteLimit: configuration.stdoutCaptureByteLimit,
           outputEventHandler: outputEventHandler
         )
         let errorReader = LocalProcessPipeReader(

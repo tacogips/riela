@@ -4,7 +4,7 @@
 - Issue reference: `workflowInput:automatic-config-driven-retention` (no GitHub issue URL/number).
 - Codex agent: `/root`, Step 6 implementation owner for `ar-02-core-planners`.
 - Branch: `feat/automatic-retention` in `tmp/automatic-retention-worktree`.
-- Plan: `impl-plans/active/automatic-retention-02-core-planners.md`.
+- Plan: `impl-plans/completed/automatic-retention-02-core-planners.md`.
 - Design: `design-docs/specs/design-automatic-retention.md`, §§4.1 and 4.4.
 - Dependency decision: `dependsOn: []`; ready to implement.
 

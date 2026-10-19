@@ -32,7 +32,7 @@ retention needs four things:
 Logs need a pure planner that sees no filesystem. The existing family-building
 logic and every protection reason must stay byte-for-byte equivalent.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

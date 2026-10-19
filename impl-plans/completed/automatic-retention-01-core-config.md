@@ -26,7 +26,7 @@ new type alongside it. Do not delete the old type: ar-09 deletes it after its
 last users are rewritten. This plan also pins the per-category report DTO that
 ar-05, ar-06 and ar-07 share.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

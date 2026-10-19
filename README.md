@@ -537,41 +537,75 @@ remediation or proof of deadlock. Provider fallback correlation inspects at
 most 200 launch-window candidates and returns `unknown` if that limit is
 exceeded; native session ids use targeted SQLite lookup.
 
-## Runtime Data Garbage Collection
+## Runtime Data Retention
 
-Runtime data GC is off by default. Enable automatic RielaApp cleanup by writing
-the retention period to `~/.riela/config.json`:
+Retention is off when no `retention` policy is configured. Configure results,
+workflow messages and logs independently in `~/.riela/config.json` (project
+`.riela/config.json` can override the user policy for project data):
 
 ```json
 {
-  "gc": {
-    "retentionDays": 30
+  "retention": {
+    "automatic": true,
+    "minIntervalMinutes": 60,
+    "results": { "maxAgeDays": 30, "maxTotalBytes": "5GB" },
+    "messages": { "maxAgeDays": 30 },
+    "logs": { "maxAgeDays": 14, "maxTotalBytes": "1GB" }
   }
 }
 ```
 
-RielaApp starts cleanup asynchronously during launch, so opening the app and
-starting configured workflows do not wait for GC. `RIELA_GC_RETENTION_DAYS`
-overrides the configuration file when an environment-based deployment is more
-convenient.
+To keep all results and messages forever while limiting logs to 14 days and
+1GB, use:
 
-Run the same cleanup manually with the CLI:
-
-```bash
-riela gc --scope all
-riela gc --retention-days 30 --scope user
-riela gc --retention-days 30 --scope project --dry-run --output json
+```json
+{
+  "retention": {
+    "results": { "keepForever": true },
+    "messages": { "keepForever": true },
+    "logs": { "maxAgeDays": 14, "maxTotalBytes": "1GB" }
+  }
+}
 ```
 
-With no configured or explicit retention period, `riela gc` reports that GC is
-off and changes nothing. The age-only collector removes expired workflow-history
-snapshots and event receipts, and preserves runtime sessions, message logs,
-artifacts and logs. Age alone does not prove a session is terminal or unlocked.
-Use the explicitly scoped [terminal payload retention command](docs/terminal-retention.md)
-for those runtime payloads. Authored workflows, installed packages,
-registries, profiles, notes, and configuration files are not GC targets.
-`--scope all` covers both `~/.riela` and the current project's `.riela`;
-RielaApp automatically collects only its configured user home.
+`RIELA_RETENTION` supplies the complete policy as inline JSON and takes
+precedence over both files. Project policy takes precedence over user policy
+for the project target. `RIELA_RETENTION_AUTOMATIC=true|false|1|0` overrides
+only the automatic switch. Automatic passes are throttled per target and run
+after workflow run/resume/rerun/continue, inside `riela events serve` and
+`riela serve`, and at RielaApp startup and periodically.
+
+`automatic` defaults to `true` and `minIntervalMinutes` defaults to `60`, so the
+keep-forever example above also prunes logs automatically. Byte caps accept
+integers or sizes such as `500MB`, `5GB` (decimal) and `1GiB` (binary). Unknown
+keys inside `retention` are errors. A failed automatic pass only prints a
+`riela retention warning:` line on stderr. It never changes the workflow exit
+code or stdout. `riela gc` exits `0` on success, `1` when a target fails or is
+busy, and `2` on usage or configuration errors. Overriding a `keepForever`
+category on the command line is a usage error.
+
+The legacy `gc.retentionDays` and `RIELA_GC_RETENTION_DAYS` keys were removed.
+Using them returns `gc.retentionDays was removed; configure "retention" (see
+riela gc --help)`.
+
+Preview and apply the same configured policy with `riela gc`:
+
+```bash
+riela gc --scope all --dry-run --output json
+riela gc --results-max-age-days 30 --logs-max-total-bytes 1GB --scope user
+```
+
+The JSON report lists selected and removed counts/bytes, protected reasons,
+cap status and database reclamation. Use `--session-store` or
+`RIELA_SESSION_STORE` for an alternate session store. Large databases that use
+SQLite's default `auto_vacuum=NONE` need a one-time conversion; run `riela gc`
+when about twice the database size is available. Automatic passes defer this
+conversion for databases larger than 64MiB. Automatic cleanup only removes
+eligible terminal session families and directly managed log files. Unpaired
+memory journals are retained. Authored workflows, packages, registries,
+profiles, notes and user outputs are not retention targets. `riela session
+prune` remains the explicit low-level command for caller-selected workflow
+ids and artifact roots; see [terminal retention](docs/terminal-retention.md).
 
 ## Kaiba Notes (external note store)
 

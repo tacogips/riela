@@ -37,7 +37,7 @@ in §4.3.
 - **Executor tolerance.** The retention executor itself must be able to lock a
   messages-retired session (`allowMessagesRetired`).
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

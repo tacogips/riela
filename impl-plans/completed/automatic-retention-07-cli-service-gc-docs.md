@@ -53,7 +53,7 @@ logs), the existing generated sweep `RielaDataGarbageCollector.collect`, and
 ar-03 (reclaimer, through ar-05) into one service. Automatic triggers (ar-08),
 RielaApp (ar-09) and the manual command all call this service.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

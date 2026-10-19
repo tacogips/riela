@@ -3,36 +3,6 @@ import XCTest
 @testable import RielaCore
 
 final class RielaDataGarbageCollectorTests: XCTestCase {
-  func testConfigurationDefaultsToDisabledAndSupportsEnvironmentOverride() throws {
-    let home = try makeRoot()
-
-    XCTAssertNil(try RielaGarbageCollectionConfiguration.load(
-      homeDirectory: home,
-      environment: [:]
-    ).gc.retentionDays)
-    XCTAssertEqual(try RielaGarbageCollectionConfiguration.load(
-      homeDirectory: home,
-      environment: ["RIELA_GC_RETENTION_DAYS": "14"]
-    ).gc.retentionDays, 14)
-  }
-
-  func testConfigurationFileEnablesRetention() throws {
-    let home = try makeRoot()
-    let configurationURL = home.appendingPathComponent(".riela/config.json")
-    try FileManager.default.createDirectory(
-      at: configurationURL.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data(#"{"gc":{"retentionDays":30}}"#.utf8).write(to: configurationURL)
-
-    let configuration = try RielaGarbageCollectionConfiguration.load(
-      homeDirectory: home,
-      environment: [:]
-    )
-
-    XCTAssertEqual(configuration.gc.retentionDays, 30)
-  }
-
   func testCollectRemovesOnlyGeneratedEntriesOlderThanCutoff() throws {
     let home = try makeRoot()
     let rielaRoot = home.appendingPathComponent(".riela", isDirectory: true)
@@ -151,7 +121,6 @@ final class RielaDataGarbageCollectorTests: XCTestCase {
 
     XCTAssertEqual(report.removedSessionCount, 0)
     XCTAssertEqual(try store.load(sessionId: oldSession.sessionId).session, oldSession)
-    XCTAssertTrue(report.diagnostics.contains { $0.contains("session prune") })
     XCTAssertEqual(try store.load(sessionId: newSession.sessionId).session, newSession)
   }
 

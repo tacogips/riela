@@ -51,6 +51,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   var marketplaceErrors: [String: String] = [:]
   var marketplaceRefreshingRepositoryIds: Set<String> = []
   var appHomeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+  var retentionScheduler: RielaRetentionScheduler?
   /// Injectable only to make approval races deterministic in App-target tests.
   /// Production always reloads the catalog from its configured home.
   var kaibaCatalogLoader: @Sendable (URL) async throws -> KaibaInstanceCatalog = { homeURL in
@@ -87,7 +88,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     appHomeDirectory = configuredHomeDirectory()
-    startGarbageCollection()
+    startRetention()
     profileStore = RielaAppProfileStore(
       appRootURL: launchOptions.appRoot ?? RielaAppProfileStore.defaultAppRootURL(homeDirectory: appHomeDirectory)
     )

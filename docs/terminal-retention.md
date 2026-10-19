@@ -61,10 +61,15 @@ write tombstones, reclaim storage or delete files. Apply always rechecks eligibi
 
 The cap measures managed payload bytes, not total filesystem allocation. SQLite
 indexes, compact tombstones, page allocation and concurrent rollback/WAL overhead
-are additional. Successful cleanup uses secure deletion, checkpointing and VACUUM
-to reclaim database storage. It never truncates files directly or bypasses SQLite
-writer locks. Durable memory records in the same database remain intact.
+are additional. Successful cleanup uses secure deletion, incremental vacuuming
+and a PASSIVE checkpoint to reclaim database storage without truncating another
+writer's WAL. The first conversion from SQLite's default `auto_vacuum=NONE`
+requires a manual `riela gc` run with sufficient free space. It never truncates
+files directly or bypasses SQLite writer locks. Durable memory records in the
+same database remain intact. See [Runtime Data Retention](../README.md#runtime-data-retention)
+for the policy and automatic schedule; `riela session prune` remains the
+low-level command for explicitly selected workflow ids and artifact roots.
 
-The older `riela gc` command no longer deletes runtime sessions, artifacts or logs
-based only on age. Its existing workflow-history/event-receipt and terminal task
-handover behavior remains separate.
+`riela gc` is the manual front door for the configured results, messages and
+logs policy. Artifact-root cleanup remains explicit through `riela session
+prune`.

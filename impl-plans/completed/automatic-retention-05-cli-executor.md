@@ -48,7 +48,7 @@ Every existing safety rule stays as it is:
 - no inference of terminal state from process absence;
 - the user-memory exclusions.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

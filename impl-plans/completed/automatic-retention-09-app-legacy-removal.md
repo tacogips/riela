@@ -38,7 +38,7 @@ RielaApp tests leak into the real `~/.riela` unless roots are injected, so the
 request builder must be a pure function of the injected home, project root and
 environment.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

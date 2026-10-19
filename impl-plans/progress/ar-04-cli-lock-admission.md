@@ -3,7 +3,7 @@
 Issue: `workflowInput:automatic-config-driven-retention` (no GitHub issue URL or number).
 Codex agent: `/root`, Step 6 implementation.
 Workflow mode: `issue-resolution`; branch: `feat/automatic-retention`.
-Plan: `impl-plans/active/automatic-retention-04-cli-lock-admission.md`.
+Plan: `impl-plans/completed/automatic-retention-04-cli-lock-admission.md`.
 Design: `design-docs/specs/design-automatic-retention.md`.
 
 ## Implemented

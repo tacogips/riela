@@ -24,7 +24,7 @@ throws `reclamationBusy`. The operator's 6.0G DB has `auto_vacuum=0`. This plan
 builds a standalone reclaimer that never throws. ar-05 replaces every
 `reclaim(...)` call with it.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

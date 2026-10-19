@@ -17,6 +17,15 @@ Resume status (2026-10-19): ar-01..ar-06 were accepted by integration review in 
 are committed in 10e9aa6e. The dispatch manifest lists only the pending plans ar-07, ar-08 and
 ar-09; do not add the accepted plans back to it.
 
+Completion status (2026-10-19, session 454): ar-07, ar-08 and ar-09 passed the
+test-integrity and adversarial gates, and the combined-tree integration review
+accepted ar-01..ar-09 with no blocking findings. Focused suites ran 138 tests
+with 0 failures, and the temp-HOME mock run pruned the stale log. Evidence is in
+`tmp/automatic-retention/serial-reconcile-wave3/`. Step 8 archived this plan set
+to `impl-plans/completed/`. The `planPath` metadata inside each child plan keeps
+its original `impl-plans/active/` value, which is the identity recorded in
+`active/automatic-retention-dispatch.json`.
+
 | Wave | planId | Plan | dependsOn |
 |---|---|---|---|
 | done | ar-01-core-config | `automatic-retention-01-core-config.md` | accepted, committed in 10e9aa6e |
@@ -25,9 +34,9 @@ ar-09; do not add the accepted plans back to it.
 | done | ar-04-cli-lock-admission | `automatic-retention-04-cli-lock-admission.md` | accepted, committed in 10e9aa6e |
 | done | ar-05-cli-executor | `automatic-retention-05-cli-executor.md` | accepted, committed in 10e9aa6e |
 | done | ar-06-cli-targets-logs | `automatic-retention-06-cli-targets-logs.md` | accepted, committed in 10e9aa6e |
-| 3 | ar-07-cli-service-gc-docs | `automatic-retention-07-cli-service-gc-docs.md` | none (ar-05, ar-06 accepted in 10e9aa6e) |
-| 4 | ar-08-cli-triggers | `automatic-retention-08-cli-triggers.md` | ar-07 |
-| 4 | ar-09-app-legacy-removal | `automatic-retention-09-app-legacy-removal.md` | ar-07 |
+| done (3) | ar-07-cli-service-gc-docs | `automatic-retention-07-cli-service-gc-docs.md` | accepted by integration review, session 454 |
+| done (4) | ar-08-cli-triggers | `automatic-retention-08-cli-triggers.md` | ar-07; accepted by integration review, session 454 |
+| done (4) | ar-09-app-legacy-removal | `automatic-retention-09-app-legacy-removal.md` | ar-07; accepted by integration review, session 454 |
 
 The `writePaths` of all plans are disjoint. The `sharedPaths` are touched by
 exactly one plan each, and only for the narrow edit named in that plan's

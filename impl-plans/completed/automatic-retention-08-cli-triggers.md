@@ -40,7 +40,7 @@ The service (ar-07) does all the work. The scheduler (ar-06) is generic.
 be unit tested. So the decision logic and the pass live in a testable
 `AutomaticRetentionHook`.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

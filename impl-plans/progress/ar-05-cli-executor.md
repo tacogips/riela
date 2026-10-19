@@ -3,7 +3,7 @@
 Workflow mode: `issue-resolution`  
 Issue reference: `workflowInput:automatic-config-driven-retention` (no GitHub issue URL/number)  
 Codex-agent reference: `/root (Codex) Step 6 implementation`  
-Plan: `impl-plans/active/automatic-retention-05-cli-executor.md`  
+Plan: `impl-plans/completed/automatic-retention-05-cli-executor.md`  
 Branch/worktree: `feat/automatic-retention`, `tmp/automatic-retention-worktree`
 
 ## Implementation status

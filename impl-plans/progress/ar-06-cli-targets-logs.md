@@ -3,7 +3,7 @@
 Workflow mode: `issue-resolution`  
 Issue: `workflowInput:automatic-config-driven-retention` (no GitHub issue URL/number)  
 Codex-agent reference: `/root` (Step 6 implementation)  
-Plan: `impl-plans/active/automatic-retention-06-cli-targets-logs.md`
+Plan: `impl-plans/completed/automatic-retention-06-cli-targets-logs.md`
 
 ## Scope and implementation
 

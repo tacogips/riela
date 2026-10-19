@@ -30,7 +30,7 @@ This plan builds four independent pieces that ar-07, ar-08 and ar-09 consume:
 - a generic periodic scheduler (design §6.1). It takes a closure, so it does not
   depend on the service.
 
-Follow the shared worker protocol in `impl-plans/active/automatic-retention.md`.
+Follow the shared worker protocol in `impl-plans/completed/automatic-retention.md`.
 
 ## Non-goals
 

@@ -418,6 +418,33 @@ final class TerminalRetentionTests: XCTestCase {
     XCTAssertFalse(try f.db.tableExists("session_retention_tombstones"))
   }
 
+  func testBoundedCompactionDeferralSecurelyCheckpointsAndZeroSelectionRetryCompacts() throws {
+    let f = try fixture()
+    defer { try? FileManager.default.removeItem(at: f.root) }
+    for id in ["a", "b"] { try insert(id, db: f.db) }
+    let sentinel = "synthetic-secure-delete-sentinel"
+    try f.db.execute("UPDATE workflow_runtime_snapshots SET root_output_json=jsonb(?) WHERE workflow_execution_id='a'",
+      bindings: [.text("{\"body\":\"" + sentinel + String(repeating: "z", count: 200_000) + "\"}")])
+    let executor = TerminalRetentionExecutor(clock: { self.now })
+    let first = try executor.run(paths: f.paths, workflows: ["news"], retentionHours: 24,
+      maxPayloadBytes: 10_000_000, dryRun: false, maxFamilies: 1)
+    XCTAssertTrue(first.deferredCompaction)
+    XCTAssertTrue(first.capAchieved) // Logical cap is unchanged; deferral is independently partial.
+    XCTAssertNotNil(first.remainingDatabaseBytes)
+    let database = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: f.paths.sessionRoot)
+    XCTAssertFalse(try Data(contentsOf: URL(fileURLWithPath: database)).contains(Data(sentinel.utf8)))
+    XCTAssertGreaterThan(Int(try f.db.query("PRAGMA freelist_count").first?["freelist_count"] ?? "0") ?? 0, 0)
+    var interrupted = executor
+    interrupted.beforeFinalCompaction = { throw TerminalRetentionError.reclamationBusy }
+    XCTAssertThrowsError(try interrupted.run(paths: f.paths, workflows: ["news"], retentionHours: 24,
+      maxPayloadBytes: 10_000_000, dryRun: false, maxFamilies: 1))
+    let retry = try executor.run(paths: f.paths, workflows: ["news"], retentionHours: 24,
+      maxPayloadBytes: 10_000_000, dryRun: false, maxFamilies: 1)
+    XCTAssertEqual(retry.removedSessionCount, 0)
+    XCTAssertFalse(retry.deferredCompaction)
+    XCTAssertEqual(Int(try f.db.query("PRAGMA freelist_count").first?["freelist_count"] ?? "-1"), 0)
+  }
+
   func testPruneCLIValidationAndHelp() throws {
     let runner = SessionPruneCommandRunner()
     XCTAssertEqual(runner.run(["--help"]).exitCode, .success)

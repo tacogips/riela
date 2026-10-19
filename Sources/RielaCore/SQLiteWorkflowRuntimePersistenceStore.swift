@@ -301,19 +301,20 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
   /// session outputs, backend events, or message payloads during a fresh run.
   public func observePersistedIdentities(_ generator: any WorkflowRuntimeIDGenerating) throws {
     guard FileManager.default.fileExists(atPath: Self.defaultDatabasePath(rootDirectory: rootDirectory)) else { return }
+    do {
+      let read = try openDatabase(readOnly: true)
+      if try runtimeSnapshotTableExists(read),
+         !(try SQLiteWorkflowStartupIdentities.isPrepared(read, source: .runtime)) {
+        let write = try openDatabase()
+        try write.transaction { try SQLiteWorkflowStartupIdentities.backfill($0, source: .runtime) }
+      }
+    }
     let db = try openDatabase(readOnly: true)
     try mapRuntimeSQLiteError {
       if try runtimeSnapshotTableExists(db) {
-        for row in try db.query("SELECT workflow_execution_id, workflow_id FROM workflow_runtime_snapshots") {
-          if let sessionId = row["workflow_execution_id"], let workflowId = row["workflow_id"] {
-            generator.noteExistingSessionId(sessionId, workflowId: workflowId)
-          }
-        }
-        for row in try db.query(
-          "SELECT json_extract(e.value, '$.executionId') AS execution_id "
-            + "FROM workflow_runtime_snapshots, json_each(session_json, '$.executions') AS e"
-        ) {
-          if let executionId = row["execution_id"] { generator.noteExistingStepExecutionId(executionId) }
+        for row in try SQLiteWorkflowStartupIdentities.load(db, source: .runtime) {
+          generator.noteExistingSessionId(row.sessionId, workflowId: row.workflowId)
+          row.executionIds.forEach { generator.noteExistingStepExecutionId($0) }
         }
       }
       if try db.tableExists("workflow_messages") {
@@ -738,6 +739,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_workflow_updated ON workflow_runtime_snapshots (workflow_id, updated_at DESC, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_parent ON workflow_runtime_snapshots (parent_session_id, created_at, workflow_execution_id)")
       try db.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runtime_snapshots_root ON workflow_runtime_snapshots (root_session_id, created_at, workflow_execution_id)")
+      try SQLiteWorkflowStartupIdentities.ensureSchema(db, source: .runtime)
       try Self.createNestedInvocationSchema(in: db)
     }
   }
@@ -795,6 +797,9 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
         .text(Self.dateString(snapshot.session.updatedAt))
       ]
       )
+      try SQLiteWorkflowStartupIdentities.save(db, source: .runtime,
+        sessionId: snapshot.session.sessionId, workflowId: snapshot.session.workflowId,
+        executionIds: snapshot.session.executions.map(\.executionId))
       try touchLoopConcurrencyLease(db, snapshot)
     }
   }

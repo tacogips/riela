@@ -1,0 +1,369 @@
+{
+  "taskId": "automatic-retention",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/automatic-retention",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "4e22d71bf66b1d4de7b3e1fb59556624d5cc1fe6",
+  "designDocPaths": [
+    "design-docs/specs/design-automatic-retention.md",
+    "design-docs/specs/scoped-terminal-retention.md",
+    "design-docs/user-qa/qa-automatic-retention.md"
+  ],
+  "indexPlanPath": "impl-plans/active/automatic-retention.md",
+  "evidenceRoot": "tmp/automatic-retention",
+  "reviewContext": {
+    "issueReference": "workflowInput:automatic-config-driven-retention (no GitHub issue URL/number)",
+    "userProblem": "~/.riela grew to 7.8G (6.0G runtime-message-log.sqlite with auto_vacuum=0, 1.2G sessions-telescreen store, 534M logs, ~1300 execution-lock files). riela gc never removes runtime sessions or logs, and session prune needs explicit roots and workflow ids, never runs automatically, and reclaims space with a full VACUUM that needs about the DB size in free disk. The user wants automatic limit-based deletion of results, messages and logs, plus a keep-forever setting.",
+    "requiredOutcomes": [
+      "One `retention` policy in ~/.riela/config.json (project override, RIELA_RETENTION / RIELA_RETENTION_AUTOMATIC env) with results/messages/logs categories (keepForever, maxAgeDays, maxTotalBytes with human sizes, results.keepWorkflowIds) replaces gc.retentionDays with no alias; a removed key gives an exact error.",
+      "Automatic, throttled, single-flight passes (per-target automatic.lock + last-run.json) after workflow run/resume/rerun/continue, inside events serve and serve, and at RielaApp startup plus periodically; failures only warn and never change exit code or stdout.",
+      "Only fully terminal, unprotected lineage families are pruned, after lock + in-transaction recheck + tombstones; cap pressure never overrides protection; oldest first; capAchieved reported.",
+      "Messages are independent of results: messages-only pruning with message tombstones and triggers, a messagesRetired admission rejection for resume/continue/rerun, and orphan-message pruning.",
+      "Log pruning covers only regular files directly in <root>/logs, with lstat, no symlinks, a 24h grace window and a pre-unlink re-lstat.",
+      "Reclamation without a full VACUUM on automatic runs: incremental_vacuum + PASSIVE checkpoint, a one-time INCREMENTAL conversion gated on free space (automatic mode capped at 64 MiB), honest reclaimedBytes.",
+      "Orphan execution-lock removal with SessionExecutionLock inode hardening.",
+      "riela gc becomes the manual front door (--scope, --dry-run, per-category overrides, text/json report, exit codes 0/1/2); session prune stays as the low-level command and uses the new reclaimer.",
+      "Docs: README retention section with the keep-forever example, docs/terminal-retention.md, CLI help, riela-workflow-run skill."
+    ],
+    "nonGoals": [
+      "No GraphQL, SDL, SurfaceCatalog or web change (gc.sweep already excluded via localToolDefaults).",
+      "No discovery of alternate stores beyond user, project and explicit (--session-store / RIELA_SESSION_STORE).",
+      "No artifact-root cleanup in automatic passes or riela gc (stays in session prune).",
+      "No riela-troubleshooting skill edit (lives in the riela-packages registry).",
+      "No back-compat alias for gc.retentionDays / RIELA_GC_RETENTION_DAYS / --retention-days.",
+      "No push, merge or release."
+    ],
+    "constraints": [
+      "Work only in worktree tmp/automatic-retention-worktree on feat/automatic-retention; workers never stage, commit, stash, reset or push; serial finalization commits locally.",
+      "Disjoint writePaths per plan; sharedPaths edited only per sharedPathNotes; per-file sha256 pre/post hash drift protocol.",
+      "Focused `swift test --filter` runs from an arm64 shell; no full-suite baseline or per-plan full-suite gate.",
+      "Verification records carry integer exitStatus, testsRun and failureCount, with complete logs under tmp/automatic-retention/<planId>/.",
+      "Tests use realpath-resolved roots under <cwd>/tmp, fake clocks and injected free space; never the real ~/.riela or /var/folders.",
+      "Deletion is deterministic and fails closed; residual-risk and note text never starts with a severity word."
+    ],
+    "designDecisionsAndRationale": [
+      "Reuse TerminalRetentionPlan/Executor semantics (lineage families, locks, recheck, tombstones) so automatic retention is no weaker than session prune.",
+      "Unknown keys inside retention are errors, so a typo cannot silently disable a limit; absent config means no deletion.",
+      "Messages-only pruning writes payload-free session_message_retention_tombstones and blocks re-creation and resume, so retired sessions fail closed instead of resuming with missing history.",
+      "allowMessagesRetired lets results pruning proceed on message-retired families without mapping them to executionLocked.",
+      "TerminalRetentionPlan exposes `eligible` so messages-only cap selection can include orphan bytes and its recheck stays consistent.",
+      "Incremental vacuum + PASSIVE checkpoint avoids 2x disk and never truncates another writer's WAL; a large DB converts once on an operator-run riela gc.",
+      "The post-run hook sits in RielaCLIMain.run after output and before exit, so exit code and stdout contracts are untouched."
+    ],
+    "intentionalTradeoffs": [
+      "Until a large DB is converted to INCREMENTAL, freed pages are only reused, so the file stops growing but does not shrink on automatic passes.",
+      "A fixed 24h log grace window means byte caps can stay unmet (capAchieved=false).",
+      "keepWorkflowIds applies to results only; messages of kept workflows follow the messages policy.",
+      "Per-pass work bounds (500 families, 1000 log unlinks, 2000 lock unlinks, 65536 vacuum pages) defer the remaining work to later passes.",
+      "When messages are notConfigured, results pruning deletes the family's message rows, which matches today's behavior."
+    ],
+    "supportedEdgeCases": [
+      "No config, keepForever per category while another category is pruned, and CLI overrides on keepForever as usage errors.",
+      "Running, suspended, created, locked and ambiguous-lineage families protected under cap pressure.",
+      "Throttle stamp in the future treated as stale; busy lock skip; concurrent processes single-flight.",
+      "Message-retired families re-selected neither by messages nor blocked for results; results-tombstoned sessions still fail closed.",
+      "Log symlinks, hidden or non-regular entries, files changed between plan and unlink.",
+      "Orphan locks busy or re-created after inode swap; pendingRootsMismatch protects a family instead of aborting the pass.",
+      "SQLITE_BUSY during reclamation is a warning; insufficient free space defers conversion."
+    ],
+    "outOfScopeEdgeCases": [
+      "Automatic discovery of stores like ~/.riela/sessions-telescreen without RIELA_SESSION_STORE or --session-store.",
+      "Shrinking a large NONE-mode DB during automatic passes.",
+      "Log files written outside <riela-root>/logs.",
+      "Crash consistency beyond the existing tombstone/pending-cleanup recovery."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-automatic-retention.md",
+      "design-docs/specs/scoped-terminal-retention.md",
+      "design-docs/user-qa/qa-automatic-retention.md",
+      "impl-plans/active/automatic-retention.md",
+      "Sources/RielaCore/RielaDataGarbageCollector.swift",
+      "Sources/RielaCore/TerminalRetentionPlan.swift",
+      "Sources/RielaCLI/TerminalRetentionExecutor.swift",
+      "Sources/RielaCLI/TerminalRetentionSecondary.swift",
+      "Sources/RielaCLI/SessionExecutionLock.swift",
+      "Sources/RielaCLI/SessionCommands.swift",
+      "Sources/RielaCLI/GarbageCollectionCommand.swift",
+      "Sources/RielaCLI/EntryPoint.swift",
+      "Sources/RielaCLI/EventLiveServe.swift",
+      "Sources/RielaCLI/ServeHTTPCommand.swift",
+      "Sources/RielaApp/EntryPoint+GarbageCollection.swift"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "Step 3 design accepted; Step 5 plan review accepted all 9 plans plus the index with no open findings, after two plan self-repairs (ar-02 `eligible` + ar-05 messages-only cap selection; ar-05/ar-08 fake-clock backdating of both session tables). Low-rated residual risks are recorded for implementers: ar-07 state-dir creation on empty targets, the RielaDataGarbageCollector.collect non-optional projectDirectory, the resume failure snapshot updated_at bump, and the ar-03 WAL-inclusive reclaimedBytes fixture.",
+    "finalGate": "arch -arm64 /bin/zsh -lc 'swift build && swift test --filter \"Retention|GarbageCollection|GarbageCollector|SessionPrune|SessionExecutionLock|CommandParsing\"' plus swiftlint lint --quiet --no-cache on every touched Swift file"
+  },
+  "plans": [
+    {
+      "planId": "ar-01-core-config",
+      "planPath": "impl-plans/active/automatic-retention-01-core-config.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/RielaRetentionConfiguration.swift",
+        "Sources/RielaCore/RielaRetentionReport.swift",
+        "Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift",
+        "impl-plans/progress/ar-01-core-config.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "RielaRetentionConfiguration.load(homeDirectory:projectDirectory:environment:fileManager:) implements the design §2 shape, validation, removed-key errors and env > project > user precedence; RielaByteSize parses 1000/1024-based units and rejects decimals.",
+        "RielaRetentionReport.swift defines the shared per-category report DTOs (struct RetentionCategoryReport) used by ar-05/ar-06/ar-07.",
+        "RielaRetentionConfigurationTests pass with testsRun >= 15 and failureCount 0; swiftlint is clean; RielaDataGarbageCollector.swift is unchanged."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RielaRetentionConfigurationTests > tmp/automatic-retention/ar-01-core-config/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/RielaRetentionConfiguration.swift Sources/RielaCore/RielaRetentionReport.swift Tests/RielaCoreTests/RielaRetentionConfigurationTests.swift > tmp/automatic-retention/ar-01-core-config/swiftlint.log 2>&1'",
+        "git diff --quiet -- Sources/RielaCore/RielaDataGarbageCollector.swift"
+      ]
+    },
+    {
+      "planId": "ar-02-core-planners",
+      "planPath": "impl-plans/active/automatic-retention-02-core-planners.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/TerminalRetentionPlan.swift",
+        "Sources/RielaCore/RielaLogRetentionPlan.swift",
+        "Tests/RielaCoreTests/TerminalRetentionPlanTests.swift",
+        "Tests/RielaCoreTests/RielaLogRetentionPlanTests.swift",
+        "impl-plans/progress/ar-02-core-planners.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "TerminalRetentionPlan gains policy modes (case allExcept with keepWorkflowIds, age/cap selection, messages byte selector) and `public var eligible` (unprotected families in (updatedAt, rootId) order, zero-message families excluded for .messages), while the legacy make wrapper keeps session prune behavior.",
+        "RielaLogRetentionPlan implements age/cap/grace (graceInterval 86_400) with symlink and non-regular protection, oldest mtime first.",
+        "Planner tests pass with testsRun >= pre-existing TerminalRetentionPlanTests + 15 and failureCount 0; TerminalRetentionTests regression green; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionPlanTests|RielaLogRetentionPlanTests\" > tmp/automatic-retention/ar-02-core-planners/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCore/TerminalRetentionPlan.swift Sources/RielaCore/RielaLogRetentionPlan.swift Tests/RielaCoreTests/TerminalRetentionPlanTests.swift Tests/RielaCoreTests/RielaLogRetentionPlanTests.swift > tmp/automatic-retention/ar-02-core-planners/swiftlint.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter TerminalRetentionTests > tmp/automatic-retention/ar-02-core-planners/cli-regression.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ar-03-cli-reclaimer",
+      "planPath": "impl-plans/active/automatic-retention-03-cli-reclaimer.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/RetentionSQLiteReclaimer.swift",
+        "Tests/RielaCLITests/RetentionReclamationTests.swift",
+        "impl-plans/progress/ar-03-cli-reclaimer.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "func reclaim(databasePath: String, mode: RetentionReclamationMode) -> RetentionReclamationResult implements design §5.3: incremental_vacuum + PASSIVE checkpoint, free-space-gated INCREMENTAL conversion (automatic mode capped at 64 MiB), busy as a warning, honest reclaimedBytes and reusableFreeBytes.",
+        "No wal_checkpoint(TRUNCATE|RESTART) in the reclaimer.",
+        "RetentionReclamationTests pass with testsRun >= 8 and failureCount 0, including physical shrink without VACUUM on an incremental DB; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RetentionReclamationTests > tmp/automatic-retention/ar-03-cli-reclaimer/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/RetentionSQLiteReclaimer.swift Tests/RielaCLITests/RetentionReclamationTests.swift > tmp/automatic-retention/ar-03-cli-reclaimer/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ar-04-cli-lock-admission",
+      "planPath": "impl-plans/active/automatic-retention-04-cli-lock-admission.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/SessionExecutionLock.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Tests/RielaCLITests/SessionExecutionLockTests.swift",
+        "Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift",
+        "impl-plans/progress/ar-04-cli-lock-admission.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "SessionExecutionLock.init re-validates fstat vs stat inode after flock (up to 8 retries); func removeOrphanLocks removes only absent-session, non-busy locks with an under-lock DB recheck.",
+        "acquire throws messagesRetired for sessions in session_message_retention_tombstones unless allowRetired/allowMessagesRetired; the rerun source load rejects them with `workflow messages expired under retention`.",
+        "Tests pass with testsRun >= pre-existing SessionExecutionLockTests + 9 and failureCount 0; TerminalRetentionTests|WorkflowCommandScenarioTests regression green; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionExecutionLockTests|SessionMessageRetentionAdmissionTests\" > tmp/automatic-retention/ar-04-cli-lock-admission/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionTests|WorkflowCommandScenarioTests\" > tmp/automatic-retention/ar-04-cli-lock-admission/regression.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/SessionExecutionLock.swift Sources/RielaCLI/SessionCommands.swift Tests/RielaCLITests/SessionExecutionLockTests.swift Tests/RielaCLITests/SessionMessageRetentionAdmissionTests.swift > tmp/automatic-retention/ar-04-cli-lock-admission/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ar-05-cli-executor",
+      "planPath": "impl-plans/active/automatic-retention-05-cli-executor.md",
+      "dependsOn": [
+        "ar-01-core-config",
+        "ar-02-core-planners",
+        "ar-03-cli-reclaimer",
+        "ar-04-cli-lock-admission"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/TerminalRetentionExecutor.swift",
+        "Sources/RielaCLI/TerminalRetentionMetadata.swift",
+        "Sources/RielaCLI/TerminalRetentionSecondary.swift",
+        "Sources/RielaCLI/TerminalRetentionPaths.swift",
+        "Sources/RielaCLI/SessionRetentionTombstones.swift",
+        "Sources/RielaCLI/SessionPruneCommand.swift",
+        "Tests/RielaCLITests/TerminalRetentionTests.swift",
+        "Tests/RielaCLITests/TerminalRetentionPolicyTests.swift",
+        "impl-plans/progress/ar-05-cli-executor.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "func runPolicy( executes results, messages-only (over plan.eligible + orphan sets, recheck against currentPlan.eligible) and orphan-message pruning with locks (allowMessagesRetired: true), in-transaction recheck and tombstones; optional artifact/memory roots; pendingRootsMismatch protection.",
+        "No VACUUM or wal_checkpoint(TRUNCATE) remains in TerminalRetentionSecondary/Executor; session prune uses the ar-03 reclaimer in manual mode and reports reclamation.",
+        "Tests pass with testsRun >= pre-existing TerminalRetentionTests + 14 and failureCount 0, using both-table updated_at backdating relative to the injected clock; dependency suites green; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionTests|TerminalRetentionPolicyTests\" > tmp/automatic-retention/ar-05-cli-executor/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionExecutionLockTests|RetentionReclamationTests|TerminalRetentionPlanTests\" > tmp/automatic-retention/ar-05-cli-executor/deps.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/TerminalRetentionExecutor.swift Sources/RielaCLI/TerminalRetentionMetadata.swift Sources/RielaCLI/TerminalRetentionSecondary.swift Sources/RielaCLI/TerminalRetentionPaths.swift Sources/RielaCLI/SessionRetentionTombstones.swift Sources/RielaCLI/SessionPruneCommand.swift Tests/RielaCLITests/TerminalRetentionTests.swift Tests/RielaCLITests/TerminalRetentionPolicyTests.swift > tmp/automatic-retention/ar-05-cli-executor/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ar-06-cli-targets-logs",
+      "planPath": "impl-plans/active/automatic-retention-06-cli-targets-logs.md",
+      "dependsOn": [
+        "ar-01-core-config",
+        "ar-02-core-planners"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/RetentionTargets.swift",
+        "Sources/RielaCLI/RetentionTargetState.swift",
+        "Sources/RielaCLI/RetentionLogPruner.swift",
+        "Sources/RielaCLI/RielaRetentionScheduler.swift",
+        "Tests/RielaCLITests/RetentionTargetStateTests.swift",
+        "Tests/RielaCLITests/RetentionLogPrunerTests.swift",
+        "Tests/RielaCLITests/RielaRetentionSchedulerTests.swift",
+        "impl-plans/progress/ar-06-cli-targets-logs.md"
+      ],
+      "sharedPaths": [],
+      "acceptanceCriteria": [
+        "RetentionTargets resolves deduplicated user/project/explicit targets without creating missing roots and skips unsafe paths; RetentionTargetState provides static func tryAcquire(stateDirectory: String) non-blocking flock plus an atomic last-run.json throttle stamp (future stamps stale).",
+        "RetentionLogPruner applies the log plan with a pre-unlink re-lstat and the unlink bound; public final class RielaRetentionScheduler runs non-overlapping passes on an injectable interval.",
+        "Tests pass with testsRun >= 19 and failureCount 0; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RetentionTargetStateTests|RetentionLogPrunerTests|RielaRetentionSchedulerTests\" > tmp/automatic-retention/ar-06-cli-targets-logs/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/RetentionTargets.swift Sources/RielaCLI/RetentionTargetState.swift Sources/RielaCLI/RetentionLogPruner.swift Sources/RielaCLI/RielaRetentionScheduler.swift Tests/RielaCLITests/RetentionTargetStateTests.swift Tests/RielaCLITests/RetentionLogPrunerTests.swift Tests/RielaCLITests/RielaRetentionSchedulerTests.swift > tmp/automatic-retention/ar-06-cli-targets-logs/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ar-07-cli-service-gc-docs",
+      "planPath": "impl-plans/active/automatic-retention-07-cli-service-gc-docs.md",
+      "dependsOn": [
+        "ar-05-cli-executor",
+        "ar-06-cli-targets-logs"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/RielaRetentionService.swift",
+        "Sources/RielaCLI/GarbageCollectionCommand.swift",
+        "Tests/RielaCLITests/RielaRetentionServiceTests.swift",
+        "Tests/RielaCLITests/GarbageCollectionCommandTests.swift",
+        "README.md",
+        "docs/terminal-retention.md",
+        "Resources/skills/riela-workflow-run/SKILL.md",
+        "impl-plans/progress/ar-07-cli-service-gc-docs.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Tests/RielaCLITests/CommandParsingTests.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/RielaCLIApplication.swift",
+          "intendedEdit": "Replace only the `riela gc [...]` usage line in rielaCLIHelpText (currently line 322) with the new flag list; no other change."
+        },
+        {
+          "path": "Tests/RielaCLITests/CommandParsingTests.swift",
+          "intendedEdit": "Replace only the gc passthrough parsing case (currently lines 52-60) so it uses `--results-max-age-days 30` instead of `--retention-days 30`; no other change."
+        }
+      ],
+      "acceptanceCriteria": [
+        "public func run(_ request: RielaRetentionRequest) throws -> RielaRetentionReport orchestrates per-target recovery, results, messages, logs, generated sweep, orphan locks and reclamation in the design §5.2 order, with throttle and lock semantics and dry runs that write nothing.",
+        "riela gc exposes --scope/--dry-run/per-category overrides/--output text|json, exits 0/1/2, rejects overrides on keepForever categories and --retention-days, and no longer references RielaGarbageCollectionConfiguration.",
+        "README, docs/terminal-retention.md and the riela-workflow-run skill describe the policy with the keep-forever example; old keys appear only in the README removal sentence.",
+        "Tests pass with testsRun >= 18 + pre-existing CommandParsingTests and failureCount 0; dependency suites green; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaRetentionServiceTests|GarbageCollectionCommandTests|CommandParsingTests\" > tmp/automatic-retention/ar-07-cli-service-gc-docs/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetention|RetentionTargetState|RetentionLogPruner|RielaDataGarbageCollector\" > tmp/automatic-retention/ar-07-cli-service-gc-docs/deps.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/RielaRetentionService.swift Sources/RielaCLI/GarbageCollectionCommand.swift Sources/RielaCLI/RielaCLIApplication.swift Tests/RielaCLITests/RielaRetentionServiceTests.swift Tests/RielaCLITests/GarbageCollectionCommandTests.swift Tests/RielaCLITests/CommandParsingTests.swift > tmp/automatic-retention/ar-07-cli-service-gc-docs/swiftlint.log 2>&1'",
+        "grep -n '\"keepForever\": true' README.md Resources/skills/riela-workflow-run/SKILL.md",
+        "grep -n \"retention-days\\|RIELA_GC_RETENTION_DAYS\" README.md docs/terminal-retention.md Resources/skills/riela-workflow-run/SKILL.md Sources/RielaCLI/RielaCLIApplication.swift Sources/RielaCLI/GarbageCollectionCommand.swift"
+      ]
+    },
+    {
+      "planId": "ar-08-cli-triggers",
+      "planPath": "impl-plans/active/automatic-retention-08-cli-triggers.md",
+      "dependsOn": [
+        "ar-07-cli-service-gc-docs"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/AutomaticRetentionHook.swift",
+        "Tests/RielaCLITests/AutomaticRetentionTests.swift",
+        "impl-plans/progress/ar-08-cli-triggers.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/EntryPoint.swift",
+        "Sources/RielaCLI/EventLiveServe.swift",
+        "Sources/RielaCLI/ServeHTTPCommand.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/EntryPoint.swift",
+          "intendedEdit": "In RielaCLIMain.run, after stdout/stderr of `result` are written and before Foundation.exit, call AutomaticRetentionHook.runIfApplicable(arguments:exitCode:cancelled: runTask.isCancelled ...) and write each returned warning line to stderr; exit code unchanged."
+        },
+        {
+          "path": "Sources/RielaCLI/EventLiveServe.swift",
+          "intendedEdit": "In serve(eventRoot:target:parsed:output:), after EventLiveConfig.load succeeds and only when maximumEvents == nil, create and start a RielaRetentionScheduler(runImmediately: false) whose pass calls AutomaticRetentionHook.runAutomaticPass; `defer { scheduler?.stop() }` covers every return path. No other change."
+        },
+        {
+          "path": "Sources/RielaCLI/ServeHTTPCommand.swift",
+          "intendedEdit": "In run(command:parsed:onReady:), start a RielaRetentionScheduler(runImmediately: false) right before the long Task.sleep and stop it after the sleep returns or is cancelled. No other change."
+        }
+      ],
+      "acceptanceCriteria": [
+        "AutomaticRetentionHook.runIfApplicable runs after workflow run/session resume/rerun/continue, is skipped for usage exit, --help, cancellation, absent or non-automatic policy, warns on config errors with a `riela retention warning:` stderr prefix, and never changes exit code or stdout.",
+        "events serve (unbounded) and serve run RielaRetentionScheduler(runImmediately: false) and stop it on every exit path.",
+        "AutomaticRetentionTests pass with testsRun >= 6 and failureCount 0 (sessions backdated in both tables relative to the injected clock); the riela product builds; a mock-scenario workflow run against a temp HOME removes a 20-day-old log under logs.maxAgeDays 14 while emitting valid run JSON; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter AutomaticRetentionTests > tmp/automatic-retention/ar-08-cli-triggers/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift build --product riela > tmp/automatic-retention/ar-08-cli-triggers/build.log 2>&1'",
+        "HOME=tmp/automatic-retention/ar-08-cli-triggers/home .build/debug/riela workflow run worker-only-single-step --workflow-definition-dir examples --mock-scenario examples/worker-only-single-step/mock-scenario.json --session-store tmp/automatic-retention/ar-08-cli-triggers/home/.riela/sessions --working-dir tmp/automatic-retention/ar-08-cli-triggers/home --output json",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaCLI/AutomaticRetentionHook.swift Sources/RielaCLI/EntryPoint.swift Sources/RielaCLI/EventLiveServe.swift Sources/RielaCLI/ServeHTTPCommand.swift Tests/RielaCLITests/AutomaticRetentionTests.swift > tmp/automatic-retention/ar-08-cli-triggers/swiftlint.log 2>&1'"
+      ]
+    },
+    {
+      "planId": "ar-09-app-legacy-removal",
+      "planPath": "impl-plans/active/automatic-retention-09-app-legacy-removal.md",
+      "dependsOn": [
+        "ar-07-cli-service-gc-docs"
+      ],
+      "writePaths": [
+        "Sources/RielaApp/EntryPoint+GarbageCollection.swift",
+        "Sources/RielaApp/EntryPoint+Retention.swift",
+        "Sources/RielaCore/RielaDataGarbageCollector.swift",
+        "Tests/RielaCoreTests/RielaDataGarbageCollectorTests.swift",
+        "Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift",
+        "impl-plans/progress/ar-09-app-legacy-removal.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaApp/EntryPoint.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaApp/EntryPoint.swift",
+          "intendedEdit": "Replace the `startGarbageCollection()` call in applicationDidFinishLaunching (line 90) with `startRetention()`, and add one stored property `var retentionScheduler: RielaRetentionScheduler?` next to the other stored properties (around line 53). No other change."
+        }
+      ],
+      "acceptanceCriteria": [
+        "EntryPoint+GarbageCollection.swift is removed and EntryPoint+Retention.swift runs one automatic pass at launch then the scheduler, using appHomeDirectory and launchOptions.projectRoot with roots injected in tests (never the real ~/.riela).",
+        "RielaGarbageCollectionConfiguration and startGarbageCollection no longer exist anywhere under Sources or Tests.",
+        "Tests pass with testsRun >= 3 + remaining collector tests and failureCount 0; RielaApp builds; swiftlint clean."
+      ],
+      "verification": [
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaAppRetentionStartTests|RielaDataGarbageCollectorTests|RielaDataGarbageCollectorHandoverTests\" > tmp/automatic-retention/ar-09-app-legacy-removal/test.log 2>&1'",
+        "arch -arm64 /bin/zsh -lc 'swift build --product RielaApp > tmp/automatic-retention/ar-09-app-legacy-removal/build.log 2>&1'",
+        "grep -rn \"RielaGarbageCollectionConfiguration\\|startGarbageCollection\" Sources Tests",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet --no-cache Sources/RielaApp/EntryPoint+Retention.swift Sources/RielaApp/EntryPoint.swift Sources/RielaCore/RielaDataGarbageCollector.swift Tests/RielaCoreTests/RielaDataGarbageCollectorTests.swift Tests/RielaAppSupportTests/RielaAppRetentionStartTests.swift > tmp/automatic-retention/ar-09-app-legacy-removal/swiftlint.log 2>&1'"
+      ]
+    }
+  ]
+}

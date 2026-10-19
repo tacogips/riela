@@ -33,3 +33,12 @@ No family is split by the limit. A pending family's member cleanups consume one
 family allowance together; new admission uses only the remaining allowance.
 Strict dry-run applies the same pending-first allowance without writes. Final
 compaction still runs once, and failure remains nonzero.
+
+Explicitly bounded invocations securely checkpoint the main and artifact stores
+but defer their VACUUM while freshly computed eligible families or pending
+cleanup remain. `deferredCompaction` independently reports this incomplete work.
+The next drained invocation, including a zero-selection retry after interruption,
+performs mandatory fresh-checked compaction. Default full-plan behavior is unchanged.
+`remainingDatabaseBytes` is a separate checked size of main/artifact SQLite files
+and their sidecars; it does not replace or mix with the existing ownership-based
+`remainingPayloadBytes` / `capAchieved` calculation.

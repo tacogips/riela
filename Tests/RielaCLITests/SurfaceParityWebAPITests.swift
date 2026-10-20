@@ -17,6 +17,13 @@ final class SurfaceParityWebAPITests: XCTestCase {
     XCTAssertTrue(SurfaceCatalog.all.contains { $0.id == "console.instance-environment" })
   }
 
+  func testDesktopAPIKeyMethodsMatchTheirActualDispatcher() {
+    let routes = Set(RielaWebAPIRouteTable.desktopOnly
+      .filter { $0.path == "/api/v1/settings/api-keys" }.map(\.method))
+    XCTAssertEqual(routes, ["GET", "POST", "PUT", "DELETE"])
+    XCTAssertFalse(RielaWebAPIRouteTable.all.contains { $0.path == "/api/v1/settings/worker-credentials" })
+  }
+
   func testDeclaredRoutesMatchTheCatalog() {
     let violations = SurfaceCatalog.bijectionViolations(
       surface: .webAPI,

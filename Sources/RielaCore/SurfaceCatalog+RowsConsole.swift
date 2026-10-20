@@ -332,14 +332,50 @@ extension SurfaceCatalog {
       ),
       surfaceRow(
         webPlatformDefaults,
-        id: "web-settings.worker-credentials",
+        id: "web-settings.api-keys-read",
+        family: "web-settings",
+        kind: .query,
+        graphqlState: .excluded(
+          reason: "API key management is available only over the inherited desktop IPC channel",
+          design: "\(SurfaceCatalog.controlSurfaceDesign)#24-retire-the-parallel-console-surface"
+        ),
+        web: webRoute("GET", "/api/v1/settings/api-keys"),
+        desktop: .implemented
+      ),
+      surfaceRow(
+        webPlatformDefaults,
+        id: "web-settings.api-keys-issue",
         family: "web-settings",
         kind: .mutation,
         graphqlState: .excluded(
-          reason: "worker credentials are opened in a local editor by the desktop host; they never cross the control plane",
+          reason: "API key management is available only over the inherited desktop IPC channel",
           design: "\(SurfaceCatalog.controlSurfaceDesign)#24-retire-the-parallel-console-surface"
         ),
-        web: webRoute("POST", "/api/v1/settings/worker-credentials"),
+        web: webRoute("POST", "/api/v1/settings/api-keys"),
+        desktop: .implemented
+      ),
+      surfaceRow(
+        webPlatformDefaults,
+        id: "web-settings.api-keys-policy",
+        family: "web-settings",
+        kind: .mutation,
+        graphqlState: .excluded(
+          reason: "API key management is available only over the inherited desktop IPC channel",
+          design: "\(SurfaceCatalog.controlSurfaceDesign)#24-retire-the-parallel-console-surface"
+        ),
+        web: webRoute("PUT", "/api/v1/settings/api-keys"),
+        desktop: .implemented
+      ),
+      surfaceRow(
+        webPlatformDefaults,
+        id: "web-settings.api-keys-revoke",
+        family: "web-settings",
+        kind: .mutation,
+        graphqlState: .excluded(
+          reason: "API key management is available only over the inherited desktop IPC channel",
+          design: "\(SurfaceCatalog.controlSurfaceDesign)#24-retire-the-parallel-console-surface"
+        ),
+        web: webRoute("DELETE", "/api/v1/settings/api-keys"),
         desktop: .implemented
       )
     ]

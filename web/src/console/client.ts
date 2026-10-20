@@ -19,7 +19,7 @@ export interface ConsoleClientEnvironment {
 
 const instanceFields = `
   id sourceId isDefault name workflowId source sourceKind status statusDetail
-  active enabledAtLaunch workingDirectory environmentFilePath environmentResolution
+  active enabledAtLaunch workingDirectory environmentFilePath environmentResolution environmentStatus
   environmentVariables { name isSet masked }
   requiredEnvironment { name description required secret source present }
   workflowVariables nodePatchCount nodePatches

@@ -16,6 +16,7 @@ public struct RielaConsoleGraphQLProvider {
   private let revision: Int
   private let sessionStoreRootPath: String
   private let runtimeSnapshot: (String) -> RielaAppDaemonWorkflowRuntime.RuntimeSnapshot
+  private let environmentStatus: (String) -> RuntimeEnvironmentStatus
   private let environment: (WorkflowInstance) -> [String: String]
 
   public init(
@@ -26,7 +27,8 @@ public struct RielaConsoleGraphQLProvider {
     revision: Int,
     sessionStoreRoot: String,
     runtimeSnapshot: @escaping (String) -> RielaAppDaemonWorkflowRuntime.RuntimeSnapshot,
-    environment: @escaping (WorkflowInstance) -> [String: String]
+    environment: @escaping (WorkflowInstance) -> [String: String],
+    environmentStatus: @escaping (String) -> RuntimeEnvironmentStatus = { _ in .init() }
   ) {
     profileName = profile
     self.state = state
@@ -36,6 +38,7 @@ public struct RielaConsoleGraphQLProvider {
     sessionStoreRootPath = sessionStoreRoot
     self.runtimeSnapshot = runtimeSnapshot
     self.environment = environment
+    self.environmentStatus = environmentStatus
   }
 
   public func consoleInstanceList() -> GraphQLConsoleInstanceListPayload {
@@ -185,6 +188,12 @@ public struct RielaConsoleGraphQLProvider {
     )
   }
 
+  private func safeEnvironmentStatus(identity: String) -> JSONObject? {
+    guard let data = try? JSONEncoder().encode(environmentStatus(identity)),
+          case let .object(value)? = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
+    return value
+  }
+
   // MARK: - Instance projection
 
   private func consoleInstance(_ instance: WorkflowInstance) -> GraphQLConsoleInstanceDTO {
@@ -206,6 +215,7 @@ public struct RielaConsoleGraphQLProvider {
       workingDirectory: preference.workingDirectory,
       environmentFilePath: preference.environmentFilePath,
       environmentResolution: preference.configuration.environmentResolution,
+      environmentStatus: safeEnvironmentStatus(identity: instance.identity),
       environmentVariables: maskedEnvironmentVariables(preference.environmentVariables),
       requiredEnvironment: instance.candidate.requiredEnvironment.map { requirement in
         let value = effectiveEnvironment[requirement.name]?.trimmingCharacters(in: .whitespacesAndNewlines)

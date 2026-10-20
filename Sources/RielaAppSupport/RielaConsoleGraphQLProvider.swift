@@ -224,7 +224,7 @@ public struct RielaConsoleGraphQLProvider {
           description: requirement.description,
           secret: requirement.secret,
           source: "workflow",
-          present: value?.isEmpty == false
+          present: value?.isEmpty == false || environmentStatus(instance.identity).configuredNames.contains(requirement.name)
         )
       },
       workflowVariables: preference.defaultVariables,

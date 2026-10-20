@@ -87,7 +87,7 @@ export function WorkflowsView(props: { profileKey: string; profileName: string; 
         <For each={rows().items}>{item => <div class="workflow-source-row"><button class="list-row selectable-row" disabled={busy()}
           aria-label={item.kind === 'source' ? `Open workflow ${item.name}` : `Edit graph ${item.name}`}
           onClick={() => item.kind === 'source' ? props.onInspect(item.id) : void openMutable(item)}>
-          <span class="row-icon">W</span><div><strong>{item.name}</strong><span>{item.workflowId} · {item.scope}</span></div>
+          <div><strong>{item.name}</strong><span>{item.workflowId} · {item.scope}</span></div>
         </button><Show when={item.kind === 'mutable' ? item : undefined}>{workflow => {
           return <div class="header-actions">
             <ActionButton class="secondary" disabled={busy()} onClick={() => void manageMutable(workflow(), false)}>{workflow().activationState === 'ACTIVE' ? 'Deactivate' : 'Activate'}</ActionButton>

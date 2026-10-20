@@ -73,6 +73,24 @@ final class RuntimeEnvironmentChannelTests: XCTestCase {
     XCTAssertEqual(request.runtimeVariables, ["public": .bool(true)])
   }
 
+  func testEnvironmentHelpIsStaticAndNeverUsesTransportOrEchoesArguments() async {
+    let calls = EnvironmentHTTPCalls()
+    let command = EnvironmentCommand(transport: { request in
+      await calls.append(request.httpMethod ?? "GET", request.url?.path ?? "")
+      throw CLIUsageError("unexpected_transport")
+    })
+    for arguments in [["--help"], ["status", "-h"], ["reload", "--instance", "secret-sentinel", "--help"]] {
+      let result = await command.run(arguments)
+      XCTAssertEqual(result.exitCode, .success)
+      XCTAssertTrue(result.stdout.contains("--instance"))
+      XCTAssertTrue(result.stdout.contains("--profile"))
+      XCTAssertTrue(result.stderr.isEmpty)
+      XCTAssertFalse(result.stdout.contains("secret-sentinel"))
+    }
+    let requests = await calls.values
+    XCTAssertTrue(requests.isEmpty)
+  }
+
   func testEnvironmentClientProfileConflictNeverPostsAndResponseIsTyped() async throws {
     let command = EnvironmentCommand(transport: { request in
       XCTAssertEqual(request.httpMethod, "GET")

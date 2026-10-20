@@ -32,6 +32,9 @@ struct EnvironmentCommand {
   }
 
   func run(_ arguments: [String]) async -> CLICommandResult {
+    if arguments.contains("--help") || arguments.contains("-h") {
+      return CLICommandResult(exitCode: .success, stdout: EnvironmentArguments.helpMessage() + "\n")
+    }
     do {
       let args = try EnvironmentArguments.parse(arguments)
       guard ["status", "reload"].contains(args.action), args.output == "json",

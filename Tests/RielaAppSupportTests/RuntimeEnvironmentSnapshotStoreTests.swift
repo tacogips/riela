@@ -28,16 +28,16 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
     let canary = "synthetic-secret-canary-never-persist"
     let runner = EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\"\(canary)\"}".utf8)), .failure(.sourceFailed), .success(Data("{\"TOKEN\":\"next\"}".utf8))])
     let store = RuntimeEnvironmentSnapshotStore(runner: runner)
-    let first = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["HOME":"/fixture"])
-    let cached = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["HOME":"/fixture"])
+    let first = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["HOME": "/fixture"])
+    let cached = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["HOME": "/fixture"])
     XCTAssertEqual(first.generation, cached.generation)
     let calls = await runner.count(); XCTAssertEqual(calls, 1)
     XCTAssertEqual(first.runtimeEnvironment()["TOKEN"], canary)
-    do { _ = try await store.reload(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("reload must fail") }
-    catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .sourceFailed) }
+    do { _ = try await store.reload(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("reload must fail") } catch {
+      XCTAssertEqual(error as? RuntimeEnvironmentError, .sourceFailed) }
     let retained = try await store.capture(scope: scope); XCTAssertEqual(retained.runtimeEnvironment()["TOKEN"], canary)
     let status = await store.status(scope: scope); XCTAssertEqual(status.readiness, .ready); XCTAssertEqual(status.lastError, .sourceFailed)
-    XCTAssertFalse(String(decoding: try JSONEncoder().encode(status), as: UTF8.self).contains(canary))
+    XCTAssertFalse((String(bytes: try JSONEncoder().encode(status), encoding: .utf8) ?? "encoding-failed").contains(canary))
     XCTAssertFalse(String(reflecting: first).contains(canary))
     XCTAssertFalse(String(describing: first.customMirror.children.map(\.value)).contains(canary))
     _ = try await store.reload(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:])
@@ -49,8 +49,8 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
   func testInitialMissingAndChangedDescriptorBlockCapture() async throws {
     let runner = EnvironmentRunnerStub([.success(Data("{}".utf8)), .success(Data("{\"TOKEN\":\"old\"}".utf8)), .failure(.sourceFailed)])
     let store = RuntimeEnvironmentSnapshotStore(runner: runner)
-    do { _ = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("missing") }
-    catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .requiredMissing) }
+    do { _ = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("missing") } catch {
+      XCTAssertEqual(error as? RuntimeEnvironmentError, .requiredMissing) }
     let missing = await store.status(scope: scope); XCTAssertEqual(missing.missingNames, ["TOKEN"])
     do { _ = try await store.capture(scope: scope); XCTFail("initial failure must block") } catch {}
     _ = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:])
@@ -62,18 +62,20 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
   func testConcurrentPrepareSharesLoaderAndNewBaseDoesNotReloadSecrets() async throws {
     let runner = EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\"cached-secret\"}".utf8))], delay: 30_000_000)
     let store = RuntimeEnvironmentSnapshotStore(runner: runner)
-    async let first = store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH":"old"])
-    async let second = store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH":"old"])
+    let scope = self.scope
+    let config = configuration()
+    async let first = store.prepare(scope: scope, configuration: config, requiredNames: [], baseEnvironment: ["CONFIG_PATH": "old"])
+    async let second = store.prepare(scope: scope, configuration: config, requiredNames: [], baseEnvironment: ["CONFIG_PATH": "old"])
     let both = try await [first, second]
     XCTAssertEqual(both.map(\.generation), [1, 1])
-    let rebased = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH":"new", "TOKEN":"untrusted-base"])
+    let rebased = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH": "new", "TOKEN": "untrusted-base"])
     XCTAssertEqual(rebased.runtimeEnvironment()["CONFIG_PATH"], "new")
     XCTAssertEqual(rebased.runtimeEnvironment()["TOKEN"], "cached-secret")
     XCTAssertEqual(rebased.generation, 2)
     let calls = await runner.count(); XCTAssertEqual(calls, 1)
     let whitespace = RuntimeEnvironmentSnapshotStore(runner: EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\" \\n\"}".utf8))]))
-    do { _ = try await whitespace.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("whitespace required value") }
-    catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .requiredMissing) }
+    do { _ = try await whitespace.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("whitespace required value") } catch {
+      XCTAssertEqual(error as? RuntimeEnvironmentError, .requiredMissing) }
   }
 
   func testCancellationCleansOwnedProcessGroup() async throws {
@@ -84,7 +86,7 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
     let pidFile = directory.appendingPathComponent("child.pid")
     let source = RuntimeEnvironmentCommandSource(id: "cancel", names: ["TOKEN"], command: ["/bin/sh", "-c",
       "sleep 20 & printf '%s' \"$!\" > \"$1\"; wait", "environment-fixture", pidFile.path])
-    let task = Task { try await RuntimeEnvironmentProcessRunner().run(source: source, baseEnvironment: ["PATH":"/usr/bin:/bin"], maxOutputBytes: 128) }
+    let task = Task { try await RuntimeEnvironmentProcessRunner().run(source: source, baseEnvironment: ["PATH": "/usr/bin:/bin"], maxOutputBytes: 128) }
     for _ in 0..<100 where !FileManager.default.fileExists(atPath: pidFile.path) { try await Task.sleep(nanoseconds: 10_000_000) }
     let pid = try String(contentsOf: pidFile, encoding: .utf8)
     task.cancel()
@@ -93,7 +95,7 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
     process.arguments = ["-p", pid, "-o", "stat="]
     let output = Pipe(); process.standardOutput = output; process.standardError = FileHandle.nullDevice
     try process.run(); let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-    let state = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    let state = (String(bytes: data, encoding: .utf8) ?? "encoding-failed").trimmingCharacters(in: .whitespacesAndNewlines)
     XCTAssertTrue(state.isEmpty || state.hasPrefix("Z"), "owned descendant remains live")
   }
 
@@ -121,22 +123,29 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
     let runner = EnvironmentRunnerStub([.success(Data("TOKEN=kept\0OTHER=discarded-canary\0".utf8))])
     let store = RuntimeEnvironmentSnapshotStore(runner: runner)
     let snapshot = try await store.prepare(scope: scope, configuration: configuration(.env0), requiredNames: [], baseEnvironment: [:])
-    XCTAssertEqual(snapshot.runtimeEnvironment(), ["TOKEN":"kept"])
+    XCTAssertEqual(snapshot.runtimeEnvironment(), ["TOKEN": "kept"])
     let large = RuntimeEnvironmentSnapshotStore(runner: EnvironmentRunnerStub([.success(Data(repeating: 65, count: 65))]), maxOutputBytes: 64)
-    do { _ = try await large.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("oversize") }
-    catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .outputTooLarge) }
+    do { _ = try await large.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("oversize") } catch {
+      XCTAssertEqual(error as? RuntimeEnvironmentError, .outputTooLarge) }
   }
 
   func testRealProcessTimeoutOutputBoundAndNonzeroErrorsAreSafe() async throws {
     let runner = RuntimeEnvironmentProcessRunner()
-    let cases: [(RuntimeEnvironmentCommandSource, Int, RuntimeEnvironmentError)] = [
-      (.init(id: "timeout", names: ["TOKEN"], command: ["/bin/sleep", "5"], timeoutSeconds: 0.05), 128, .sourceTimeout),
-      (.init(id: "large", names: ["TOKEN"], command: ["/usr/bin/printf", "%s", String(repeating: "canary", count: 100)]), 32, .outputTooLarge),
-      (.init(id: "failure", names: ["TOKEN"], command: ["/usr/bin/false"]), 128, .sourceFailed)
+    struct FailureCase {
+      var source: RuntimeEnvironmentCommandSource
+      var limit: Int
+      var expected: RuntimeEnvironmentError
+    }
+    let cases: [FailureCase] = [
+      .init(source: .init(id: "timeout", names: ["TOKEN"], command: ["/bin/sleep", "5"], timeoutSeconds: 0.05), limit: 128, expected: .sourceTimeout),
+      .init(source: .init(id: "large", names: ["TOKEN"], command: ["/usr/bin/printf", "%s", String(repeating: "canary", count: 100)]), limit: 32, expected: .outputTooLarge),
+      .init(source: .init(id: "failure", names: ["TOKEN"], command: ["/usr/bin/false"]), limit: 128, expected: .sourceFailed)
     ]
-    for (source, limit, expected) in cases {
-      do { _ = try await runner.run(source: source, baseEnvironment: [:], maxOutputBytes: limit); XCTFail("expected failure") }
-      catch { XCTAssertEqual(error as? RuntimeEnvironmentError, expected); XCTAssertFalse(String(describing: error).contains("canary")) }
+    for item in cases {
+      let source = item.source; let limit = item.limit; let expected = item.expected
+      do { _ = try await runner.run(source: source, baseEnvironment: [:], maxOutputBytes: limit); XCTFail("expected failure") } catch {
+      XCTAssertEqual(error as? RuntimeEnvironmentError, expected); XCTAssertFalse(String(describing: error).contains("canary"))
+      }
     }
   }
 }

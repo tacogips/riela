@@ -832,7 +832,16 @@ public final class RielaAppDaemonWorkflowRuntime {
     configuration: WorkflowServeRuntimeConfiguration
   ) async throws -> RuntimeEnvironmentStatus {
     let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? "default")
-    let controller = runningWorkflows[candidate.id]?.controller
+    let running = runningWorkflows[candidate.id]
+    let requiresChannel = configuration.environmentResolution != nil || !candidate.requiredEnvironment.isEmpty
+    let hasChannel = running.map {
+      $0.configuration.environmentResolution != nil || !$0.candidate.requiredEnvironment.isEmpty
+    } ?? false
+    // A legacy child has no private control pipe. Adding managed names requires a restart.
+    if running?.snapshot.status == .running, requiresChannel, !hasChannel {
+      throw RuntimeEnvironmentError.invalidConfiguration
+    }
+    let controller = hasChannel ? running?.controller : nil
     do {
       let status = try await environmentStore.reload(
         scope: scope, configuration: configuration.environmentResolution ?? RuntimeEnvironmentConfiguration(),
@@ -963,9 +972,11 @@ public final class RielaAppDaemonWorkflowRuntime {
     do {
       let environment = try await prepareEnvironment(for: candidate, configuration: configuration)
       var preparedConfiguration = configuration
-      preparedConfiguration.runtimeEnvironmentValues = environment.runtimeEnvironment()
-      preparedConfiguration.runtimeEnvironmentGeneration = environment.generation
-      preparedConfiguration.runtimeEnvironmentNames = environment.names
+      if configuration.environmentResolution != nil || !environment.names.isEmpty {
+        preparedConfiguration.runtimeEnvironmentValues = environment.runtimeEnvironment()
+        preparedConfiguration.runtimeEnvironmentGeneration = environment.generation
+        preparedConfiguration.runtimeEnvironmentNames = environment.names
+      }
       let state = try await controller.start(WorkflowServeStartRequest(
         selection: candidate.serveSelection,
         server: server,

@@ -10,6 +10,7 @@ public struct RielaAppDaemonEventServeCommand: Equatable, Sendable {
   public var environment: [String: String]
   public var runtimeEnvironmentGeneration: UInt64? = nil
   public var runtimeEnvironmentNames: [String] = []
+  public var runtimeEnvironmentValues: [String: String] = [:]
 
   public init(
     executablePath: String,
@@ -85,6 +86,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     )
     command.runtimeEnvironmentGeneration = request.configuration.runtimeEnvironmentGeneration
     command.runtimeEnvironmentNames = request.configuration.runtimeEnvironmentNames ?? []
+    command.runtimeEnvironmentValues = request.configuration.runtimeEnvironmentValues ?? [:]
     if command.runtimeEnvironmentGeneration != nil { command.arguments.append("--runtime-environment-channel") }
     logEventServe("launch \(command.executablePath) \(command.arguments.joined(separator: " ")) cwd=\(command.workingDirectory)")
     let process: any RielaAppDaemonEventServeProcessHandle
@@ -101,7 +103,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     if let generation = command.runtimeEnvironmentGeneration {
       do {
         try await process.updateRuntimeEnvironment(generation: generation, names: command.runtimeEnvironmentNames,
-          values: command.environment.filter { command.runtimeEnvironmentNames.contains($0.key) })
+          values: command.runtimeEnvironmentValues.filter { command.runtimeEnvironmentNames.contains($0.key) })
       } catch {
         await process.terminate()
         throw RuntimeEnvironmentError.notPrepared
@@ -391,7 +393,7 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     for _ in 0..<500 {
       let result = lock.withLock { acknowledgements[generation].map { ($0, acknowledgedNames[generation] ?? []) } }
       if let result {
-        guard result.0, Set(result.1) == Set(values.keys) else { throw RuntimeEnvironmentError.outputInvalid }
+        guard result.0, Set(result.1) == Set(names) else { throw RuntimeEnvironmentError.outputInvalid }
         return
       }
       guard isRunning else { throw RuntimeEnvironmentError.sourceFailed }

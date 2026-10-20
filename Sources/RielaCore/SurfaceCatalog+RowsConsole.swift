@@ -140,6 +140,15 @@ extension SurfaceCatalog {
       ),
       web: webRoute("POST", "/api/v1/instances/{identity}/actions"),
       desktop: .implemented
+    ),
+    surfaceRow(
+      consoleDefaults,
+      id: "console.instance-run",
+      family: "console",
+      kind: .mutation,
+      graphqlState: .blocked(evidence: "desktop app-owned configured launches use profile/revision approval and its owned launch lifecycle"),
+      web: webRoute("POST", "/api/v1/instances/{identity}/runs"),
+      desktop: .implemented
     )
   ]
 

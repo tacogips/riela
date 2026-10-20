@@ -89,6 +89,8 @@ public enum RielaWebAPIRouteTable {
   ]
 
   public static let desktopOnly: [RielaWebAPIRoute] = [
+    .init(method: "POST", path: "/api/v1/instances/{identity}/runs",
+          owner: "Sources/RielaApp/RielaAppConfiguredRunAPI.swift", ownerMarker: #"parts[4] == "runs""#),
     .init(method: "GET", path: "/api/v1/settings/workers", owner: desktopWorkerSettings),
     .init(method: "PUT", path: "/api/v1/settings/workers", owner: desktopWorkerSettings),
     .init(method: "POST", path: "/api/v1/settings/worker-credentials", owner: desktopRequest)

@@ -59,9 +59,10 @@ func makeScenarioBackedNodeAdapter(
 
 func makeScenarioBackedStdioNodeExecutor(
   scenarioPath: String?,
-  workingDirectory: String
+  workingDirectory: String,
+  environment: [String: String] = CLIRuntimeEnvironment.mergedProcessEnvironment()
 ) throws -> any WorkflowStdioNodeExecuting {
-  let fallback = LocalWorkflowStdioNodeExecutor(defaultWorkingDirectory: workingDirectory)
+  let fallback = LocalWorkflowStdioNodeExecutor(hostEnvironment: environment, defaultWorkingDirectory: workingDirectory)
   guard let scenarioPath else {
     return fallback
   }

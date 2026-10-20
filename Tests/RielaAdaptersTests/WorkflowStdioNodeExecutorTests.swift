@@ -4,6 +4,21 @@ import XCTest
 @testable import RielaCore
 
 final class WorkflowStdioNodeExecutorTests: XCTestCase {
+  func testExplicitHostEnvironmentIsExactAndNodeOverridesRemainScoped() async throws {
+    let runner = RecordingStdioNodeProcessRunner { configuration, _ in
+      XCTAssertFalse(configuration.inheritEnvironment)
+      XCTAssertEqual(configuration.environment["HOST_ONLY"], "configured")
+      XCTAssertEqual(configuration.environment["OVERRIDE"], "node")
+      XCTAssertNil(configuration.environment["RIELA_WORKFLOW_INPUT"])
+      return #"{"status":"ok"}"# + "\n"
+    }
+    let executor = LocalWorkflowStdioNodeExecutor(runner: runner,
+      hostEnvironment: ["HOST_ONLY": "configured", "OVERRIDE": "host", "RIELA_WORKFLOW_INPUT": "private"])
+    _ = try await executor.execute(input(kind: .command, node: AgentNodePayload(id: "node", nodeType: .command,
+      model: "", command: WorkflowCommandExecution(executable: "true", environment: ["OVERRIDE": "node"]))),
+      context: AdapterExecutionContext())
+  }
+
   func testCommandNodeUsesExecutorDefaultWorkingDirectory() async throws {
     let expected = "/tmp/riela-target-worktree"
     let runner = RecordingStdioNodeProcessRunner { configuration, _ in

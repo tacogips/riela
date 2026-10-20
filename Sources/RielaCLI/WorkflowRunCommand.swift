@@ -20,6 +20,7 @@ public struct WorkflowRunCommand: Sendable {
   var beforeTerminalPersistence: (@Sendable () throws -> Void)?
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
+  var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
   /// Projects loop evidence for required-gate enforcement; injectable so a
   /// projector failure can be exercised without a broken evidence fixture.
@@ -76,7 +77,8 @@ public struct WorkflowRunCommand: Sendable {
       )
       let stdioNodeExecutor = try makeScenarioBackedStdioNodeExecutor(
         scenarioPath: options.mockScenarioPath,
-        workingDirectory: runWorkingDirectory
+        workingDirectory: runWorkingDirectory,
+        environment: runEnvironment
       )
       let addonResolver = try await makeScenarioBackedAddonResolver(
         scenarioPath: options.mockScenarioPath,
@@ -365,6 +367,12 @@ public struct WorkflowRunCommand: Sendable {
     options: WorkflowRunOptions,
     workflowId: String
   ) throws -> WorkflowInstanceDefinition? {
+    if let configuredInstanceOverride {
+      guard configuredInstanceOverride.workflowId == workflowId, options.instance == nil else {
+        throw CLIUsageError("configured workflow identity changed")
+      }
+      return configuredInstanceOverride
+    }
     guard let identity = nonEmptyString(options.instance),
           identity != WorkflowInstanceIdentity.defaultIdentity else {
       return nil
@@ -414,6 +422,9 @@ public struct WorkflowRunCommand: Sendable {
     workingDirectory: String
   ) throws -> [String: String] {
     var environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    // App configured launches already captured the merged file/inline environment
+    // during approval. Do not re-read a mutable env file after that snapshot.
+    if configuredInstanceOverride != nil { return environment }
     if let environmentFilePath = configuration.environmentFilePath?.trimmingCharacters(in: .whitespacesAndNewlines),
        !environmentFilePath.isEmpty {
       let environmentFileURL = absoluteURL(

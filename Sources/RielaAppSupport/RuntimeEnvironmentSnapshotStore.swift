@@ -68,6 +68,7 @@ public actor RuntimeEnvironmentSnapshotStore {
     for name in entry.configuration.sources.flatMap(\.names) { environment[name] = previous[name] }
     guard entry.required.allSatisfy({ !Self.empty(environment[$0]) }) else { throw RuntimeEnvironmentError.requiredMissing }
     if previous != environment {
+      guard !busy.contains(scope) else { throw RuntimeEnvironmentError.sourceFailed }
       entry.snapshot = RuntimeEnvironmentSnapshot(generation: entry.snapshot.generation + 1, names: entry.snapshot.names, environment: environment)
       entries[scope] = entry
       if var status = statuses[scope] {

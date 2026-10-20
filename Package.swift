@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.23"
+let rielaVersion = "0.2.30"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -22,6 +22,20 @@ let rielaInfoPlistLinkerSettings: [LinkerSetting] = [
     .when(platforms: [.macOS])
   )
 ]
+
+// SwiftPM resolves conditional products even on platforms where they cannot run.
+// Keep the private, macOS-only Notion package out of Linux dependency resolution.
+#if os(macOS)
+let notionPackageDependencies: [Package.Dependency] = [
+  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "cb55d9108dd797da4fa581bb07ea50c0bec69401")
+]
+let notionTargetDependencies: [Target.Dependency] = [
+  .product(name: "NotionGatewayCore", package: "notion-gateway", condition: .when(platforms: [.macOS]))
+]
+#else
+let notionPackageDependencies: [Package.Dependency] = []
+let notionTargetDependencies: [Target.Dependency] = []
+#endif
 
 let package = Package(
   name: "riela",
@@ -49,7 +63,6 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.12"),
-    .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "cb55d9108dd797da4fa581bb07ea50c0bec69401"),
     .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
     .package(path: "Packages/RielaMemory"),
     .package(
@@ -93,7 +106,7 @@ let package = Package(
       url: "https://github.com/tacogips/google-documents-gateway.git",
       revision: "e97d952459305828461e3a808d0dfdace902079f"
     )
-  ],
+  ] + notionPackageDependencies,
   targets: [
     .target(
       name: "RielaJavaScript",
@@ -256,7 +269,6 @@ let package = Package(
         // static library. Ordinary Linux CLI builds need no Rust dependency.
         .product(name: "AnydocKit", package: "anydoc-swift", condition: .when(platforms: [.macOS])),
         .product(name: "AppleGatewayCore", package: "apple-gateway", condition: .when(platforms: [.macOS])),
-        .product(name: "NotionGatewayCore", package: "notion-gateway", condition: .when(platforms: [.macOS])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         "RielaCore",
         "RielaWork",
@@ -277,7 +289,7 @@ let package = Package(
         "RielaWorkflowRegistry",
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "WebHooky", package: "web-hooky")
-      ]
+      ] + notionTargetDependencies
     ),
     .executableTarget(
       name: "RielaCLIExecutable",

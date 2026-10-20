@@ -86,7 +86,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         unsetEnvironmentKeys: strippedEnvironmentKeys,
         workingDirectoryURL: workingDirectoryURL(
           command.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
-        )
+        ), inheritEnvironment: false
       )
     case .container:
       guard let container = input.node.container else {
@@ -109,7 +109,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         unsetEnvironmentKeys: strippedEnvironmentKeys,
         workingDirectoryURL: workingDirectoryURL(
           container.workingDirectory ?? input.node.workingDirectory ?? defaultWorkingDirectory
-        )
+        ), inheritEnvironment: false
       )
     }
   }
@@ -118,7 +118,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     base: [String: String],
     input: WorkflowStdioNodeExecutionInput
   ) -> [String: String] {
-    var environment = base
+    var environment = hostEnvironment.merging(base) { _, nodeValue in nodeValue }
     for key in strippedEnvironmentKeys {
       environment.removeValue(forKey: key)
     }

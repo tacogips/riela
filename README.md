@@ -1563,3 +1563,19 @@ RielaApp and `riela serve` can host a worker controller, with outbound
 `riela worker --config` processes and step-level worker ID/group selection.
 See [controller and worker setup](docs/distributed-workers.md) for configuration,
 workspace mapping, verified platform coverage and operational limits.
+
+### Run a desktop configuration once
+
+The authenticated desktop API accepts `POST /api/v1/instances/{identity}/runs`
+with `x-riela-profile` and JSON `{"expectedProfile":"default","expectedRevision":0,"variables":{}}`.
+Use the current profile/revision and exact configuration identity from the console.
+Only these three body keys are accepted. The app validates readiness and rechecks
+the configuration after asynchronous approval, then snapshots its trusted source,
+working directory, scoped environment, default variables and node patches. Request
+variables override matching default-variable keys; callers cannot override paths
+or environment. The response is 202 with a launch ID; poll
+`GET /api/v1/workflow-editor/launches/{id}` with the same profile header.
+This starts one app-owned workflow run without starting/restarting its cron listener
+or changing launch enablement. App shutdown cancels and awaits these launches with
+other editor runs. The existing launch limit applies. Failed preflight returns only
+a closed error code; the selected environment is not returned by this API.

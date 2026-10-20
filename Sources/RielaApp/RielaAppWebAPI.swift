@@ -8,6 +8,7 @@ import RielaWorkflowRegistry
 
 extension RielaApp {
   func webAPIResponse(for request: RielaHTTPRequest, csrfToken: String) async -> RielaHTTPResponse {
+    if let response = await webConfiguredRunResponse(for: request) { return response }
     if let response = await webInstanceResponse(for: request) { return response }
     if let response = await workerSettingsResponse(for: request) { return response }
     if let response = await webWorkflowHandler.response(for: request) { return response }

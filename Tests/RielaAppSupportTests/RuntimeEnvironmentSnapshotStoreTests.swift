@@ -6,9 +6,11 @@ import XCTest
 private actor EnvironmentRunnerStub: RuntimeEnvironmentCommandRunning {
   var outputs: [Result<Data, RuntimeEnvironmentError>]
   var calls = 0
-  init(_ outputs: [Result<Data, RuntimeEnvironmentError>]) { self.outputs = outputs }
+  var delay: UInt64
+  init(_ outputs: [Result<Data, RuntimeEnvironmentError>], delay: UInt64 = 0) { self.outputs = outputs; self.delay = delay }
   func run(source: RuntimeEnvironmentCommandSource, baseEnvironment: [String: String], maxOutputBytes: Int) async throws -> Data {
     calls += 1
+    if delay > 0 { try await Task.sleep(nanoseconds: delay) }
     return try outputs.removeFirst().get()
   }
   func count() -> Int { calls }
@@ -27,7 +29,7 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
     let runner = EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\"\(canary)\"}".utf8)), .failure(.sourceFailed), .success(Data("{\"TOKEN\":\"next\"}".utf8))])
     let store = RuntimeEnvironmentSnapshotStore(runner: runner)
     let first = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["HOME":"/fixture"])
-    let cached = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:])
+    let cached = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["HOME":"/fixture"])
     XCTAssertEqual(first.generation, cached.generation)
     let calls = await runner.count(); XCTAssertEqual(calls, 1)
     XCTAssertEqual(first.runtimeEnvironment()["TOKEN"], canary)
@@ -55,6 +57,44 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
     var changed = configuration(); changed.sources[0].command = ["/changed"]
     do { _ = try await store.prepare(scope: scope, configuration: changed, requiredNames: [], baseEnvironment: [:]); XCTFail("changed source fails") } catch {}
     do { _ = try await store.capture(scope: scope); XCTFail("old descriptor must not remain usable") } catch {}
+  }
+
+  func testConcurrentPrepareSharesLoaderAndNewBaseDoesNotReloadSecrets() async throws {
+    let runner = EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\"cached-secret\"}".utf8))], delay: 30_000_000)
+    let store = RuntimeEnvironmentSnapshotStore(runner: runner)
+    async let first = store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH":"old"])
+    async let second = store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH":"old"])
+    let both = try await [first, second]
+    XCTAssertEqual(both.map(\.generation), [1, 1])
+    let rebased = try await store.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: ["CONFIG_PATH":"new", "TOKEN":"untrusted-base"])
+    XCTAssertEqual(rebased.runtimeEnvironment()["CONFIG_PATH"], "new")
+    XCTAssertEqual(rebased.runtimeEnvironment()["TOKEN"], "cached-secret")
+    XCTAssertEqual(rebased.generation, 2)
+    let calls = await runner.count(); XCTAssertEqual(calls, 1)
+    let whitespace = RuntimeEnvironmentSnapshotStore(runner: EnvironmentRunnerStub([.success(Data("{\"TOKEN\":\" \\n\"}".utf8))]))
+    do { _ = try await whitespace.prepare(scope: scope, configuration: configuration(), requiredNames: [], baseEnvironment: [:]); XCTFail("whitespace required value") }
+    catch { XCTAssertEqual(error as? RuntimeEnvironmentError, .requiredMissing) }
+  }
+
+  func testCancellationCleansOwnedProcessGroup() async throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let directory = root.appendingPathComponent("tmp/environment-runner-tests/" + UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let pidFile = directory.appendingPathComponent("child.pid")
+    let source = RuntimeEnvironmentCommandSource(id: "cancel", names: ["TOKEN"], command: ["/bin/sh", "-c",
+      "sleep 20 & printf '%s' \"$!\" > \"$1\"; wait", "environment-fixture", pidFile.path])
+    let task = Task { try await RuntimeEnvironmentProcessRunner().run(source: source, baseEnvironment: ["PATH":"/usr/bin:/bin"], maxOutputBytes: 128) }
+    for _ in 0..<100 where !FileManager.default.fileExists(atPath: pidFile.path) { try await Task.sleep(nanoseconds: 10_000_000) }
+    let pid = try String(contentsOf: pidFile, encoding: .utf8)
+    task.cancel()
+    do { _ = try await task.value; XCTFail("cancelled loader") } catch { XCTAssertTrue(error is CancellationError) }
+    let process = Process(); process.executableURL = URL(fileURLWithPath: "/bin/ps")
+    process.arguments = ["-p", pid, "-o", "stat="]
+    let output = Pipe(); process.standardOutput = output; process.standardError = FileHandle.nullDevice
+    try process.run(); let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
+    let state = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    XCTAssertTrue(state.isEmpty || state.hasPrefix("Z"), "owned descendant remains live")
   }
 
   func testChildInstallFailureDoesNotSwapSnapshot() async throws {

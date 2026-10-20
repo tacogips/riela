@@ -42,7 +42,8 @@ public actor RuntimeEnvironmentSnapshotStore {
   }
 
   public func reload(scope: RuntimeEnvironmentScope, configuration: RuntimeEnvironmentConfiguration,
-                     requiredNames: [String], baseEnvironment: [String: String]) async throws -> RuntimeEnvironmentStatus {
+                     requiredNames: [String], baseEnvironment: [String: String],
+                     install: (@Sendable (RuntimeEnvironmentSnapshot) async throws -> Void)? = nil) async throws -> RuntimeEnvironmentStatus {
     guard !busy.contains(scope) else { throw RuntimeEnvironmentError.sourceFailed }
     busy.insert(scope)
     defer { busy.remove(scope) }
@@ -67,6 +68,9 @@ public actor RuntimeEnvironmentSnapshotStore {
       let missing = required.filter { environment[$0]?.isEmpty != false }
       guard missing.isEmpty else { throw RuntimeEnvironmentError.requiredMissing }
       let snapshot = RuntimeEnvironmentSnapshot(generation: generation + 1, names: names, environment: environment)
+      // A parent may require its private child-pipe ACK before publication.
+      // Failure preserves the last successful snapshot without a partial swap.
+      if let install { try await install(snapshot) }
       entries[scope] = Entry(configuration: configuration, required: required, snapshot: snapshot)
       statuses[scope] = RuntimeEnvironmentStatus(names: names, configuredNames: names.filter { environment[$0]?.isEmpty == false },
         sourceIDs: configuration.sources.map(\.id), generation: snapshot.generation, readiness: .ready)

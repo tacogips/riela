@@ -67,17 +67,29 @@ public struct WorkflowServeSelection: Codable, Equatable, Sendable {
 public struct WorkflowServeRuntimeConfiguration: Codable, Equatable, Sendable {
   public var workingDirectory: String?
   public var inheritedEnvironment: [String: String]
+  public var environmentResolution: RuntimeEnvironmentConfiguration?
+  public var environmentProfile: String?
+  public var runtimeEnvironmentGeneration: UInt64?
+  public var runtimeEnvironmentNames: [String]?
   public var defaultVariables: JSONObject
   public var nodePatch: JSONObject?
 
   public init(
     workingDirectory: String? = nil,
     inheritedEnvironment: [String: String] = [:],
+    environmentResolution: RuntimeEnvironmentConfiguration? = nil,
+    environmentProfile: String? = nil,
+    runtimeEnvironmentGeneration: UInt64? = nil,
+    runtimeEnvironmentNames: [String]? = nil,
     defaultVariables: JSONObject = [:],
     nodePatch: JSONObject? = nil
   ) {
     self.workingDirectory = workingDirectory
     self.inheritedEnvironment = inheritedEnvironment
+    self.environmentResolution = environmentResolution
+    self.environmentProfile = environmentProfile
+    self.runtimeEnvironmentGeneration = runtimeEnvironmentGeneration
+    self.runtimeEnvironmentNames = runtimeEnvironmentNames
     self.defaultVariables = defaultVariables
     self.nodePatch = nodePatch
   }

@@ -24,6 +24,7 @@ export interface Instance {
   enabledAtLaunch: boolean
   workingDirectory: string | null
   environmentFilePath: string | null
+  environmentResolution?: { required: string[]; sources: Array<{ id: string; names: string[]; command: string[]; format: "json" | "env0"; timeoutSeconds: number }> } | null
   environmentVariables: MaskedEnvironmentVariable[]
   requiredEnvironment: RequiredEnvironmentVariable[]
   workflowVariables: Record<string, JSONValue>

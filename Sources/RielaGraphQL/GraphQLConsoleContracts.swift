@@ -66,6 +66,7 @@ public struct GraphQLConsoleInstanceDTO: Codable, Equatable, Sendable {
   public var enabledAtLaunch: Bool
   public var workingDirectory: String?
   public var environmentFilePath: String?
+  public var environmentResolution: RuntimeEnvironmentConfiguration?
   public var environmentVariables: [GraphQLConsoleEnvironmentVariableDTO]
   public var requiredEnvironment: [GraphQLConsoleRequiredEnvironmentDTO]
   public var workflowVariables: JSONObject
@@ -87,6 +88,7 @@ public struct GraphQLConsoleInstanceDTO: Codable, Equatable, Sendable {
     enabledAtLaunch: Bool,
     workingDirectory: String? = nil,
     environmentFilePath: String? = nil,
+    environmentResolution: RuntimeEnvironmentConfiguration? = nil,
     environmentVariables: [GraphQLConsoleEnvironmentVariableDTO] = [],
     requiredEnvironment: [GraphQLConsoleRequiredEnvironmentDTO] = [],
     workflowVariables: JSONObject = [:],
@@ -107,6 +109,7 @@ public struct GraphQLConsoleInstanceDTO: Codable, Equatable, Sendable {
     self.enabledAtLaunch = enabledAtLaunch
     self.workingDirectory = workingDirectory
     self.environmentFilePath = environmentFilePath
+    self.environmentResolution = environmentResolution
     self.environmentVariables = environmentVariables
     self.requiredEnvironment = requiredEnvironment
     self.workflowVariables = workflowVariables

@@ -30,6 +30,7 @@ export function InstanceEditor(props: {
   const initialSnapshot = instanceEditorSnapshot(initialInstance, props.revision())
   const [workingDirectory, setWorkingDirectory] = createSignal(initialSnapshot.workingDirectory)
   const [environmentFilePath, setEnvironmentFilePath] = createSignal(initialSnapshot.environmentFilePath)
+  const [environmentResolution, setEnvironmentResolution] = createSignal(JSON.stringify(initialInstance.environmentResolution ?? { required: [], sources: [] }, null, 2))
   const [environmentUpdates, setEnvironmentUpdates] = createSignal<Record<string, string>>({})
   const [environmentToClear, setEnvironmentToClear] = createSignal<string[]>([])
   const [newEnvironmentName, setNewEnvironmentName] = createSignal('')
@@ -97,6 +98,7 @@ export function InstanceEditor(props: {
         environmentFilePath: environmentFilePath(),
         environmentVariableUpdates: updates,
         environmentVariablesToClear: environmentToClear(),
+        environmentResolution: JSON.parse(environmentResolution()),
         workflowVariables: validation.value,
       })
       setExpectedRevision(response.revision)
@@ -167,6 +169,7 @@ export function InstanceEditor(props: {
         </div>
     </div>
     <Show when={props.instance().requiredEnvironment.length > 0}><div class="requirements" aria-label="Required environment"><h3>Required environment</h3><For each={props.instance().requiredEnvironment}>{(requirement) => <div class="requirement-row"><span classList={{ 'presence-dot': true, present: requirement.present }} aria-hidden="true" /><div><strong>{requirement.name}</strong><span>{requirement.description ?? 'No description'} · {requirement.source}</span></div><span>{requirement.present ? 'Present' : 'Missing'}</span></div>}</For></div></Show>
+    <label><span>Runtime environment loader descriptors (required names, command argv, json/env0, timeoutSeconds; never secret values)</span><textarea value={environmentResolution()} onInput={(event) => setEnvironmentResolution(event.currentTarget.value)} /></label>
     <div class="form-grid"><label><span>Working directory</span><input value={workingDirectory()} onInput={(event) => setWorkingDirectory(event.currentTarget.value)} /></label><label><span>Environment file</span><input value={environmentFilePath()} onInput={(event) => setEnvironmentFilePath(event.currentTarget.value)} /></label></div>
     <div class="secret-editor"><h3>Inline environment variables</h3><p class="subtle">Stored values stay hidden; leave blank to keep.</p>
       <For each={props.instance().environmentVariables}>{(variable) => <div class="secret-row"><label><span>{variable.name} · {variable.masked}</span><input type="password" autocomplete="new-password" placeholder="Leave blank to keep current value" value={environmentUpdates()[variable.name] ?? ''} onInput={(event) => setEnvironmentUpdates((current) => ({ ...current, [variable.name]: event.currentTarget.value }))} /></label><label class="check-row clear-secret"><input type="checkbox" checked={environmentToClear().includes(variable.name)} onChange={(event) => toggleClear(variable.name, event.currentTarget.checked)} /><span>Clear</span></label></div>}</For>

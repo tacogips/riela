@@ -92,6 +92,7 @@ extension RielaApp {
     var configuration = preference.configuration.serveConfiguration(
       inheritedEnvironment: daemonEnvironment(for: candidate, preference: preference)
     )
+    configuration.environmentProfile = resolveDaemonWorkflowInstance(identity: candidate.id)?.profileName.rawValue ?? daemonProfileName.rawValue
     if configuration.workingDirectory == nil {
       configuration.workingDirectory = candidate.workingDirectory
     }

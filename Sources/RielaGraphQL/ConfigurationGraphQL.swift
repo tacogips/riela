@@ -152,6 +152,8 @@ public struct GraphQLWorkflowInstanceConfigInput: Codable, Equatable, Sendable {
   public var environmentFilePath: String?
   public var environmentVariableUpdates: [String: String]?
   public var environmentVariablesToClear: [String]?
+  public var environmentResolution: RuntimeEnvironmentConfiguration?
+  public var clearEnvironmentResolution: Bool?
   public var workflowVariables: JSONObject?
 }
 

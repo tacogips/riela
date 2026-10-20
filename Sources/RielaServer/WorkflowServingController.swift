@@ -23,6 +23,13 @@ public protocol WorkflowServeListenerFactory: Sendable {
 public protocol WorkflowServeEventSourceHandle: Sendable {
   var status: WorkflowServeEventSourceStatus { get }
   func shutdown() async throws
+  func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws
+}
+
+public extension WorkflowServeEventSourceHandle {
+  func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
+    throw NSError(domain: "RielaRuntimeEnvironment", code: 1)
+  }
 }
 
 public protocol WorkflowServeEventSourceFactory: Sendable {
@@ -74,6 +81,13 @@ public actor WorkflowServingController {
 
   public init(dependencies: WorkflowServingDependencies = WorkflowServingDependencies()) {
     self.dependencies = dependencies
+  }
+
+  public func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
+    guard let current = activeGeneration else { return }
+    for handle in current.eventSources {
+      try await handle.updateRuntimeEnvironment(generation: generation, names: names, values: values)
+    }
   }
 
   public func currentState() -> WorkflowServeState {

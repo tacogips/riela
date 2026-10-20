@@ -19,6 +19,8 @@ struct ParsedParityOptions: ParsableArguments, Sendable {
   @Flag var dryRun = false
   @Flag var check = false
   @Flag var locked = false
+  @Option var runtimeEnvironmentFile: String?
+  @Flag var runtimeEnvironmentChannel = false
   @Option var variables: String?
   @Option var sandbox: String?
   @Option var sandboxOptions: String?

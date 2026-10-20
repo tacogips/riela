@@ -117,6 +117,7 @@ public extension WorkflowInstanceConfiguration {
     WorkflowServeRuntimeConfiguration(
       workingDirectory: normalizedWorkingDirectory,
       inheritedEnvironment: inheritedEnvironment,
+      environmentResolution: environmentResolution,
       defaultVariables: defaultVariables,
       nodePatch: nodePatchJSONObject
     )

@@ -205,6 +205,7 @@ public struct RielaConsoleGraphQLProvider {
       enabledAtLaunch: preference.enabledAtLaunch,
       workingDirectory: preference.workingDirectory,
       environmentFilePath: preference.environmentFilePath,
+      environmentResolution: preference.configuration.environmentResolution,
       environmentVariables: maskedEnvironmentVariables(preference.environmentVariables),
       requiredEnvironment: instance.candidate.requiredEnvironment.map { requirement in
         let value = effectiveEnvironment[requirement.name]?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -246,6 +247,7 @@ public struct RielaConsoleGraphQLProvider {
       enabledAtLaunch: preference.enabledAtLaunch,
       workingDirectory: preference.workingDirectory,
       environmentFilePath: preference.environmentFilePath,
+      environmentResolution: preference.configuration.environmentResolution,
       environmentVariables: maskedEnvironmentVariables(preference.environmentVariables),
       requiredEnvironment: [],
       workflowVariables: preference.defaultVariables,

@@ -142,6 +142,8 @@ input WorkflowInstanceConfigurationInput {
   environmentFilePath: String
   environmentVariableUpdates: JSONObject
   environmentVariablesToClear: [String!]
+  environmentResolution: JSONObject
+  clearEnvironmentResolution: Boolean
   workflowVariables: JSONObject
 }
 input EventSourceConfigurationInput {

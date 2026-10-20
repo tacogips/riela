@@ -592,7 +592,8 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
       execution: registryNode.execution,
       repeatPolicy: registryNode.repeatPolicy,
       inputFilters: registryNode.inputFilters,
-      memories: registryNode.memories
+      memories: registryNode.memories,
+      requiredEnvironment: registryNode.requiredEnvironment
     )
   }
 
@@ -608,6 +609,7 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     steps: steps,
     nodes: runtimeNodes,
     loop: workflow.loop,
-    handover: workflow.handover
+    handover: workflow.handover,
+    requiredEnvironment: workflow.requiredEnvironment
   )
 }

@@ -203,6 +203,7 @@ public struct WorkflowInstanceNodePatch: Codable, Equatable, Sendable {
 public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
   public var workingDirectory: String?
   public var environmentFilePath: String?
+  public var environmentResolution: RuntimeEnvironmentConfiguration?
   public var environmentVariables: [String: String]
   public var defaultVariables: JSONObject
   public var nodePatches: [String: WorkflowInstanceNodePatch]
@@ -210,12 +211,14 @@ public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
   public init(
     workingDirectory: String? = nil,
     environmentFilePath: String? = nil,
+    environmentResolution: RuntimeEnvironmentConfiguration? = nil,
     environmentVariables: [String: String] = [:],
     defaultVariables: JSONObject = [:],
     nodePatches: [String: WorkflowInstanceNodePatch] = [:]
   ) {
     self.workingDirectory = workingDirectory
     self.environmentFilePath = environmentFilePath
+    self.environmentResolution = environmentResolution
     self.environmentVariables = environmentVariables
     self.defaultVariables = defaultVariables
     self.nodePatches = nodePatches
@@ -224,6 +227,7 @@ public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
   private enum CodingKeys: String, CodingKey {
     case workingDirectory
     case environmentFilePath
+    case environmentResolution
     case environmentVariables
     case defaultVariables
     case nodePatches
@@ -234,6 +238,7 @@ public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
     self.init(
       workingDirectory: try container.decodeIfPresent(String.self, forKey: .workingDirectory),
       environmentFilePath: try container.decodeIfPresent(String.self, forKey: .environmentFilePath),
+      environmentResolution: try container.decodeIfPresent(RuntimeEnvironmentConfiguration.self, forKey: .environmentResolution),
       environmentVariables: try container.decodeIfPresent([String: String].self, forKey: .environmentVariables) ?? [:],
       defaultVariables: try container.decodeIfPresent(JSONObject.self, forKey: .defaultVariables) ?? [:],
       nodePatches: try container.decodeIfPresent(
@@ -246,6 +251,7 @@ public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
   public var isEmpty: Bool {
     normalizedWorkingDirectory == nil
       && environmentFilePath == nil
+      && environmentResolution == nil
       && environmentVariables.isEmpty
       && defaultVariables.isEmpty
       && nodePatches.values.allSatisfy(\.isEmpty)
@@ -277,6 +283,7 @@ public struct WorkflowInstanceConfiguration: Codable, Equatable, Sendable {
     if let environmentFilePath = override.environmentFilePath {
       merged.environmentFilePath = environmentFilePath
     }
+    if let resolution = override.environmentResolution { merged.environmentResolution = resolution }
     for (key, value) in override.environmentVariables {
       merged.environmentVariables[key] = value
     }

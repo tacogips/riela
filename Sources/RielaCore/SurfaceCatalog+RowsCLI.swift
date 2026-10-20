@@ -71,7 +71,13 @@ extension SurfaceCatalog {
   static let registryClientRows: [SurfaceOperation] =
     packageRows + nodeRows + memoryRows + instanceRows + specialistRows
       + localToolRows + eventRows + routineCLIRows + serveRows + graphQLClientRows + operatorRows
-      + taskMutationRows + gatewayRows
+      + taskMutationRows + gatewayRows + environmentRows
+
+  private static var environmentRows: [SurfaceOperation] {
+    ["status", "reload"].map {
+      surfaceRow(localToolDefaults, id: "environment.\($0)", family: "environment", kind: .process, cli: "environment \($0)")
+    }
+  }
 
   private static var gatewayRows: [SurfaceOperation] {
     ["list", "gmail", "x", "apple", "wrike", "notion", "google-service", "google-analytics", "google-docs", "google-sheets", "google-drive"].map {

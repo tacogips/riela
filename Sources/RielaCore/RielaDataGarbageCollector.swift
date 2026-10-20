@@ -6,58 +6,6 @@ import Darwin
 import Glibc
 #endif
 
-public struct RielaGarbageCollectionConfiguration: Codable, Equatable, Sendable {
-  public struct GarbageCollection: Codable, Equatable, Sendable {
-    public var retentionDays: Int?
-
-    public init(retentionDays: Int? = nil) {
-      self.retentionDays = retentionDays
-    }
-  }
-
-  public var gc: GarbageCollection
-
-  public init(gc: GarbageCollection = GarbageCollection()) {
-    self.gc = gc
-  }
-
-  private enum CodingKeys: String, CodingKey {
-    case gc
-  }
-
-  public init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    gc = try container.decodeIfPresent(GarbageCollection.self, forKey: .gc) ?? GarbageCollection()
-  }
-
-  public static func load(
-    homeDirectory: URL,
-    environment: [String: String] = ProcessInfo.processInfo.environment,
-    fileManager: FileManager = .default
-  ) throws -> RielaGarbageCollectionConfiguration {
-    var configuration = RielaGarbageCollectionConfiguration()
-    let configurationURL = homeDirectory
-      .appendingPathComponent(".riela", isDirectory: true)
-      .appendingPathComponent("config.json")
-    if fileManager.fileExists(atPath: configurationURL.path) {
-      configuration = try JSONDecoder().decode(
-        RielaGarbageCollectionConfiguration.self,
-        from: Data(contentsOf: configurationURL)
-      )
-    }
-    if let rawValue = environment["RIELA_GC_RETENTION_DAYS"], !rawValue.isEmpty {
-      guard let days = Int(rawValue), days > 0 else {
-        throw RielaGarbageCollectionError.invalidRetentionDays(rawValue)
-      }
-      configuration.gc.retentionDays = days
-    }
-    if let days = configuration.gc.retentionDays, days <= 0 {
-      throw RielaGarbageCollectionError.invalidRetentionDays(String(days))
-    }
-    return configuration
-  }
-}
-
 public enum RielaGarbageCollectionScope: String, Codable, Equatable, Sendable {
   case user
   case project
@@ -227,7 +175,6 @@ public struct RielaDataGarbageCollector {
     }
     // Age alone cannot prove that a runtime family is terminal or unlocked.
     // Payload retention is handled by the explicitly scoped `session prune` command.
-    report.diagnostics.append("runtime sessions, artifacts and logs preserved; use scoped session prune for terminal payload retention")
     collectWorkflowHistory(
       at: root.appendingPathComponent("workflow-history", isDirectory: true),
       cutoff: cutoff,

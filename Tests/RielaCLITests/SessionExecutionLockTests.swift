@@ -1,9 +1,136 @@
 import Foundation
 import RielaCore
+import RielaSQLite
 import XCTest
 @testable import RielaCLI
 
 final class SessionExecutionLockTests: XCTestCase {
+  func testOrphanLockSweepRemovesAbsentSessionsAndSkipsBusyLock() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    try owner.acquire(sessionId: "busy")
+    for id in ["orphan-a", "orphan-b"] {
+      let seed = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      try seed.acquire(sessionId: id)
+      seed.release(sessionId: id)
+    }
+    let sweep = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    let result = sweep.removeOrphanLocks(dryRun: false) { _ in false }
+    XCTAssertEqual(result, .init(selectedCount: 3, removedCount: 2, skippedBusy: 1))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: lockPath(root, "busy")))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: lockPath(root, "orphan-a")))
+  }
+
+  func testOrphanLockSweepKeepsPersistedSession() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let seed = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    try seed.acquire(sessionId: "present")
+    seed.release(sessionId: "present")
+    let result = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      .removeOrphanLocks(dryRun: false) { $0 == "present" }
+    XCTAssertEqual(result.removedCount, 0)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: lockPath(root, "present")))
+  }
+
+  func testOrphanLockSweepDryRunOnlyCountsCandidates() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let seed = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    try seed.acquire(sessionId: "dry-run")
+    seed.release(sessionId: "dry-run")
+    let result = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      .removeOrphanLocks(dryRun: true) { _ in false }
+    XCTAssertEqual(result, .init(selectedCount: 1, removedCount: 0, skippedBusy: 0))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: lockPath(root, "dry-run")))
+  }
+
+  func testOrphanLockSweepHonorsLimitInSortedOrder() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    for id in ["z-last", "a-first"] {
+      let seed = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      try seed.acquire(sessionId: id)
+      seed.release(sessionId: id)
+    }
+    let result = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      .removeOrphanLocks(limit: 1, dryRun: false) { _ in false }
+    XCTAssertEqual(result.removedCount, 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: lockPath(root, "a-first")))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: lockPath(root, "z-last")))
+  }
+
+  func testOrphanLockSweepLeavesSymlinkUntouched() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let lockRoot = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+      .appendingPathComponent("execution-locks", isDirectory: true)
+    try FileManager.default.createDirectory(at: lockRoot, withIntermediateDirectories: true)
+    let target = lockRoot.appendingPathComponent("target")
+    try Data().write(to: target)
+    let link = lockRoot.appendingPathComponent("linked.lock")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    let result = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      .removeOrphanLocks(dryRun: false) { _ in false }
+    XCTAssertEqual(result.selectedCount, 0)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: link.path))
+  }
+
+  func testLockAcquisitionRetriesWhenPathInodeChangesAfterFlock() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let lockPath = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+      .appendingPathComponent("execution-locks/session-race.lock")
+    var replaced = false
+    let contender = SessionExecutionLockRegistry(sessionStoreRoot: root.path) {
+      guard !replaced else { return }
+      replaced = true
+      try? FileManager.default.removeItem(at: lockPath)
+      FileManager.default.createFile(atPath: lockPath.path, contents: Data())
+    }
+    try contender.acquire(sessionId: "session-race")
+    let third = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    XCTAssertThrowsError(try third.acquire(sessionId: "session-race")) { error in
+      XCTAssertEqual(error as? SessionExecutionLockError, .alreadyRunning("session-race"))
+    }
+  }
+
+  func testMessageRetiredAdmissionAndOverrides() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try createMessageTombstone(root: root, sessionId: "message-retired")
+    let registry = SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+    XCTAssertThrowsError(try registry.acquire(sessionId: "message-retired")) { error in
+      XCTAssertEqual(error as? SessionExecutionLockError, .messagesRetired("message-retired"))
+    }
+    try registry.acquire(sessionId: "message-retired", allowMessagesRetired: true)
+    registry.release(sessionId: "message-retired")
+    try registry.acquire(sessionId: "message-retired", allowRetired: true)
+  }
+
+  func testResultsRetirementStillBlocksAllowMessagesRetired() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+    try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path,
+      withIntermediateDirectories: true)
+    let db = try SQLiteDatabase.open(path: path)
+    try db.execute("CREATE TABLE session_retention_tombstones(session_id TEXT PRIMARY KEY)")
+    try db.execute("INSERT INTO session_retention_tombstones VALUES('results-retired')")
+    XCTAssertThrowsError(try SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      .acquire(sessionId: "results-retired", allowMessagesRetired: true)) { error in
+        XCTAssertEqual(error as? SessionExecutionLockError, .retiredSession("results-retired"))
+      }
+  }
+
+  func testSessionMessagesRetiredReturnsFalseWhenTableMissing() throws {
+    let root = try retentionTempRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    XCTAssertFalse(try SessionExecutionLockRegistry(sessionStoreRoot: root.path)
+      .sessionMessagesRetired(sessionId: "missing"))
+  }
+
   func testSecondRegistryCannotAcquireLiveSessionAndCanAcquireAfterRelease() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("riela-session-execution-lock-\(UUID().uuidString)", isDirectory: true)
@@ -60,6 +187,28 @@ final class SessionExecutionLockTests: XCTestCase {
     }
   }
 
+}
+
+private func retentionTempRoot() throws -> URL {
+  let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+    .appendingPathComponent("tmp/automatic-retention-test-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  return root.resolvingSymlinksInPath()
+}
+
+private func lockPath(_ root: URL, _ id: String) -> String {
+  URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: root.path))
+    .appendingPathComponent("execution-locks/\(id).lock").path
+}
+
+private func createMessageTombstone(root: URL, sessionId: String) throws {
+  let path = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: root.path)
+  try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path,
+    withIntermediateDirectories: true)
+  let db = try SQLiteDatabase.open(path: path)
+  try db.execute("CREATE TABLE session_message_retention_tombstones(session_id TEXT PRIMARY KEY, workflow_id TEXT NOT NULL, pruned_at TEXT NOT NULL, message_bytes INTEGER NOT NULL)")
+  try db.execute("INSERT INTO session_message_retention_tombstones VALUES(?,?,?,?)",
+    bindings: [.text(sessionId), .text("workflow"), .text("2026-10-19T00:00:00Z"), .int(4)])
 }
 
 extension WorkflowCommandTests {

@@ -82,10 +82,17 @@ struct DefaultEventLiveServer: EventLiveServing {
     ))
   }
 
+  // One event-serve lifecycle coordinates all configured source adapters.
+  // swiftlint:disable:next function_body_length
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
     _ = try EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
     let startedAt = Date()
     let config = try EventLiveConfig.load(eventRoot: eventRoot)
+    let retentionScheduler = parsed.limit == nil
+      ? makeEventServeRetentionScheduler(workingDirectory: parsed.workingDirectory, sessionStore: parsed.sessionStore)
+      : nil
+    retentionScheduler?.start()
+    defer { retentionScheduler?.stop() }
     let enabledSources = config.enabledSources(target: target)
     await telemetry.recordLog(RielaTelemetryLog(
       name: "riela.events.serve.start",
@@ -892,4 +899,28 @@ struct EventLiveConfig: Sendable {
 private struct EventLiveConfigFile: Codable {
   var sources: [EventSourceContract]
   var bindings: [EventBindingContract]
+}
+
+private func makeEventServeRetentionScheduler(
+  workingDirectory: String?,
+  sessionStore: String?
+) -> RielaRetentionScheduler {
+  let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+  let projectDirectory = workingDirectory ?? FileManager.default.currentDirectoryPath
+  let request = RielaRetentionRequest(
+    trigger: .automatic,
+    homeDirectory: URL(
+      fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment),
+      isDirectory: true
+    ),
+    projectDirectory: URL(fileURLWithPath: projectDirectory, isDirectory: true),
+    explicitSessionStore: sessionStore,
+    environment: environment,
+    scope: .all
+  )
+  return RielaRetentionScheduler(runImmediately: false) {
+    for warning in AutomaticRetentionHook.runAutomaticPass(request) {
+      FileHandle.standardError.write(Data((warning + "\n").utf8))
+    }
+  }
 }

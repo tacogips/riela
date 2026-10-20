@@ -1,6 +1,22 @@
 # Scoped terminal payload retention
 
 Status: implemented for 0.2.16; independent source review and focused regression gates passed.
+Superseding notes: see `design-automatic-retention.md`.
+
+- The planner and executor are now shared with automatic, config-driven
+  retention and with `riela gc`. This command keeps its explicit-root,
+  explicit-workflow contract (`.workflows(Set)` scope).
+- Payload bytes and message bytes are accounted separately.
+- Artifact and memory roots may be absent for policy runs. Pending cleanup
+  recorded under different roots protects that family (`pendingRootsMismatch`)
+  instead of aborting the run.
+- Physical reclamation no longer runs a full `VACUUM` plus
+  `wal_checkpoint(TRUNCATE)`. It uses the shared reclaimer: incremental vacuum
+  plus a PASSIVE checkpoint, with a one-time conversion to
+  `auto_vacuum=INCREMENTAL` only when free space allows. A busy result is a
+  warning, not `reclamationBusy`.
+
+All other rules below are unchanged.
 
 The retrieval cache bounds its own database. Workflow snapshots, message logs,
 artifact snapshots and automatic inbox/outbox journals can independently contain

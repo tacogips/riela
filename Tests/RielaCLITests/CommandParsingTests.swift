@@ -34,7 +34,7 @@ final class CommandParsingTests: XCTestCase {
     XCTAssertEqual(
       Set(RielaClientCommandRouter.configuration.subcommands.map { $0._commandName }),
       Set([
-        "workflow", "package", "node", "rrun", "setup", "memory", "instance", "doctor", "gc",
+        "workflow", "package", "node", "rrun", "setup", "gateway", "memory", "cache", "instance", "doctor", "gc",
         "session", "loop", "task", "graphql", "gql", "hook", "events", "routine", "serve", "call-step", "workflow-call", "kaiba", "version",
         "specialist"
       ])
@@ -50,12 +50,12 @@ final class CommandParsingTests: XCTestCase {
   func testParsesGarbageCollectionCommand() throws {
     XCTAssertEqual(
       try RielaArgumentParser().parse([
-        "gc", "--retention-days", "30", "--scope", "user", "--dry-run", "--output", "json"
+        "gc", "--results-max-age-days", "30", "--scope", "user", "--dry-run", "--output", "json"
       ]),
       .gc(CLICommandOptions(
         scope: "gc",
         command: "gc",
-        arguments: ["--retention-days", "30", "--scope", "user", "--dry-run", "--output", "json"],
+        arguments: ["--results-max-age-days", "30", "--scope", "user", "--dry-run", "--output", "json"],
         output: .json
       ))
     )

@@ -8,7 +8,7 @@ public struct RuntimeEnvironmentScope: Hashable, Sendable {
   }
 }
 
-public enum RuntimeEnvironmentError: String, Error, Codable, Sendable, LocalizedError {
+public enum RuntimeEnvironmentError: String, Error, Codable, Sendable, LocalizedError, CustomStringConvertible {
   case notPrepared = "environment_not_prepared"
   case invalidConfiguration = "environment_configuration_invalid"
   case sourceFailed = "environment_source_failed"
@@ -17,6 +17,7 @@ public enum RuntimeEnvironmentError: String, Error, Codable, Sendable, Localized
   case outputInvalid = "environment_source_output_invalid"
   case requiredMissing = "environment_required_missing"
   public var errorDescription: String? { rawValue }
+  public var description: String { rawValue }
 }
 
 public struct RuntimeEnvironmentStatus: Codable, Equatable, Sendable {

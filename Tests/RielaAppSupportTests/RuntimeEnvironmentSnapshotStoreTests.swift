@@ -17,6 +17,16 @@ private actor EnvironmentRunnerStub: RuntimeEnvironmentCommandRunning {
 }
 
 final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
+  func testErrorsRenderOnlyStableSafeCodes() {
+    let errors: [RuntimeEnvironmentError] = [.notPrepared, .invalidConfiguration, .sourceFailed,
+      .sourceTimeout, .outputTooLarge, .outputInvalid, .requiredMissing]
+    for error in errors {
+      XCTAssertEqual(String(describing: error), error.rawValue)
+      XCTAssertEqual(error.localizedDescription, error.rawValue)
+    }
+    XCTAssertEqual(String(describing: RuntimeEnvironmentError.requiredMissing), "environment_required_missing")
+  }
+
   private let scope = RuntimeEnvironmentScope(profile: "default", instanceIdentity: "fixture")
   private func configuration(_ format: RuntimeEnvironmentCommandSource.Format = .json) -> RuntimeEnvironmentConfiguration {
     RuntimeEnvironmentConfiguration(required: ["TOKEN"], sources: [

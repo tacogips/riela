@@ -1,7 +1,7 @@
 #if os(macOS)
 import AppKit
 
-extension RielaApp {
+extension RielaApp: NSMenuDelegate {
   func configureStatusItem() {
     guard let button = statusItem.button else {
       return
@@ -14,6 +14,10 @@ extension RielaApp {
   }
 
   func rebuildMenu() {
+    guard !isStatusMenuOpen else {
+      statusMenuNeedsRebuild = true
+      return
+    }
     let menu = NSMenu()
     menu.addItem(menuItem("Open Riela...", action: #selector(openDesktopFromMenu)))
     menu.addItem(menuItem("Settings...", action: #selector(openSettingsFromMenu)))
@@ -65,7 +69,24 @@ extension RielaApp {
     menu.addItem(.separator())
     menu.addItem(menuItem("About Riela", action: #selector(showAboutPanel)))
     menu.addItem(menuItem("Quit", action: #selector(quitFromStatusMenu)))
+    menu.delegate = self
     statusItem.menu = menu
+    statusMenuNeedsRebuild = false
+  }
+
+  func menuWillOpen(_ menu: NSMenu) {
+    isStatusMenuOpen = true
+    refreshLaunchAtLoginStatus()
+  }
+
+  func menuDidClose(_ menu: NSMenu) {
+    isStatusMenuOpen = false
+    guard statusMenuNeedsRebuild else {
+      return
+    }
+    Task { @MainActor [weak self] in
+      self?.rebuildMenu()
+    }
   }
 
   private func supplementaryMenuItem(_ title: String) -> NSMenuItem {

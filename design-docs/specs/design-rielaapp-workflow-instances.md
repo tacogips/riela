@@ -609,6 +609,10 @@ only exceptional states such as approval required or unavailable may show a
 short supplemental line. That line is disabled, styled as secondary menu text,
 and uses the same copy as its tooltip.
 
+Menu rebuild timing, and the cached off-main-thread login-item status that
+these rules render, are specified in
+[design-rielaapp-status-menu-refresh.md](design-rielaapp-status-menu-refresh.md).
+
 ## Empty States
 
 Instances empty state:

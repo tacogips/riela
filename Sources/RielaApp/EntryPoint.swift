@@ -57,6 +57,10 @@ final class RielaApp: NSObject, NSApplicationDelegate {
     try KaibaInstanceStore(homeURL: homeURL).load()
   }
   private var daemonStatusRefreshTimer: Timer?
+  /// Tracks whether AppKit is currently displaying the status menu.
+  var isStatusMenuOpen = false
+  /// Defers menu item list changes until the open status menu closes.
+  var statusMenuNeedsRebuild = false
   var daemonWindowController: DaemonWorkflowWindowController?
   var webServerController: RielaAppWebServerController?
   var distributedController: DistributedControllerHost?
@@ -121,6 +125,7 @@ final class RielaApp: NSObject, NSApplicationDelegate {
       if launchOptions.opensWorkerStatus { showDistributedWorkerStatus() }
     }
     rebuildMenu()
+    refreshLaunchAtLoginStatus()
     startDaemonStatusRefreshTimer()
     importDaemonSourcesIfRequested()
     openInitialWorkflowsIfRequested()
@@ -281,7 +286,8 @@ final class RielaApp: NSObject, NSApplicationDelegate {
         self?.refreshDaemonWorkflowWindow(refreshesInstanceCache: false)
       }
     }
-    RunLoop.main.add(timer, forMode: .common)
+    // Pause refresh ticks while any window tracks events or a modal session runs.
+    RunLoop.main.add(timer, forMode: .default)
     daemonStatusRefreshTimer = timer
   }
 
@@ -308,11 +314,32 @@ final class RielaApp: NSObject, NSApplicationDelegate {
   @objc func toggleLaunchAtLogin() {
     do {
       try launchAtLogin.setEnabled(!launchAtLogin.isEnabled)
-      status = "Launch on Login \(launchAtLogin.statusDescription)"
     } catch {
       status = "Failed to update Launch on Login: \(error.localizedDescription)"
+      rebuildMenu()
+      return
     }
-    rebuildMenu()
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await launchAtLogin.refreshStatus()
+      status = "Launch on Login \(launchAtLogin.statusDescription)"
+      rebuildMenu()
+    }
+  }
+
+  func refreshLaunchAtLoginStatus() {
+    Task { @MainActor [weak self] in
+      guard let self, await launchAtLogin.refreshStatus() else {
+        return
+      }
+      if isStatusMenuOpen {
+        let launchAtLoginItem = statusItem.menu?.items.first { $0.action == #selector(toggleLaunchAtLogin) }
+        launchAtLoginItem?.state = launchAtLogin.isEnabled ? .on : .off
+        statusMenuNeedsRebuild = true
+      } else {
+        rebuildMenu()
+      }
+    }
   }
 
   private func shouldAutostartDaemonWorkflows() -> Bool {

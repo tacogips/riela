@@ -1,0 +1,106 @@
+{
+  "taskId": "rielaapp-status-menu-refresh-20261020-session-459",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "fix/menubar-launch-at-login-status",
+  "baseBranch": "main",
+  "remote": "origin",
+  "originalHead": "8c843b842040ac8876f789c82841cfaa5a9ac2d4",
+  "designDocPaths": [
+    "design-docs/specs/design-rielaapp-status-menu-refresh.md",
+    "design-docs/specs/design-rielaapp-workflow-instances.md"
+  ],
+  "evidenceRoot": "tmp/rielaapp-status-menu-refresh-20261020-session-459",
+  "reviewContext": {
+    "issueReference": "local:workflowInput.issueTitle — \"RielaApp menu bar is extremely slow: periodic menu rebuild blocks the main thread on SMAppService.status\" (no issueUrl/issueNumber; plan review comm-008021)",
+    "userProblem": "Opening the Riela status menu and selecting items is extremely slow. A 2 s .common-mode timer calls rebuildMenu(), which makes two synchronous SMAppService.mainApp.status XPC reads on the main thread per tick. Because .common includes event tracking, the timer also replaces statusItem.menu while the menu is open.",
+    "requiredOutcomes": [
+      "No path reachable from the refresh timer or rebuildMenu() calls ServiceManagement; the derived properties of RielaLaunchAtLoginController read a cached SMAppService.Status? only.",
+      "The login-item status is read off the main thread (Task.detached) only at launch, after a toggle, and on menuWillOpen; the latest refresh wins through a refresh generation.",
+      "An open status menu is never replaced: rebuildMenu() is guarded by isStatusMenuOpen and sets statusMenuNeedsRebuild; a changed status updates the Launch on Login item in place, found by #selector(toggleLaunchAtLogin); menuDidClose schedules an asynchronous rebuild.",
+      "The refresh timer is scheduled in .default mode.",
+      "Toggling Launch on Login still registers/unregisters synchronously, then refreshes the cache, the status text and the menu.",
+      "A new RielaLaunchAtLoginControllerTests suite (5 tests) covers cache-only reads, the nil state, change reporting, requiresApproval/notFound supplementary text and latest-refresh-wins."
+    ],
+    "nonGoals": [
+      "Changing daemonStatusRefreshInterval, the refreshDaemonWorkflowWindow logic, menu layout, copy or order.",
+      "Making register()/unregister() async or moving setEnabled off the main actor.",
+      "Observing System Settings login-item changes, or adding notifications, KVO or SMAppService polling.",
+      "Touching the other rebuildMenu() callers, RielaAppBehaviorRegressionTests.swift, storage code or Package.swift.",
+      "Pushing, merging or integrating origin/main (gitPush=false)."
+    ],
+    "constraints": [
+      "One plan, local commits only on fix/menubar-launch-at-login-status; never push.",
+      "Tests use an injected status reader; they must not construct RielaApp(), call setEnabled, or touch ~/.riela, RielaApp storage or the real login item.",
+      "No GUI launch or accessibility automation; verification is build, focused unit tests and swiftlint --strict from an arm64 shell.",
+      "Every verification record has integer exitStatus, testsRun and failureCount plus the complete logPath; scratch files go under the repository tmp/ only.",
+      "Swift 6 language mode: the default reader is @Sendable and nonisolated, and the detached task captures only the local reader copy.",
+      "Keep the RielaApp class body below the swiftlint type_body_length limit (800 lines, an error under --strict)."
+    ],
+    "designDecisionsAndRationale": [
+      "Make the controller a @MainActor final class so the single RielaApp.launchAtLogin let shares one cache.",
+      "Put the open-menu guard inside rebuildMenu() because it has 12 call sites, including @MainActor task completions that run during event tracking.",
+      "Defer the rebuild from menuDidClose asynchronously because AppKit sends the selected item's action after that callback.",
+      "setEnabled reads the live status once for its guards and never writes the cache; the caller refreshes the cache afterwards.",
+      "A refresh generation discards superseded results so a slow launch-time read cannot overwrite the post-toggle status."
+    ],
+    "intentionalTradeoffs": [
+      "In .default mode, daemon-window and menu refresh ticks also pause while any window tracks events or a modal session runs; they resume on the next tick.",
+      "A System Settings change made while the menu is closed and the app idle is picked up only on the next menu open.",
+      "The explicit user toggle may briefly block the main thread on register/unregister."
+    ],
+    "supportedEdgeCases": [
+      "A nil status before the first read shows 'Checking', isEnabled false and no supplementary line.",
+      "requiresApproval and notFound show the supplementary line; enabled and notRegistered do not.",
+      "Overlapping refreshes are resolved latest-wins, and unchanged reads return false.",
+      "A status change while the menu is open updates the item state in place and defers the item-list change until close.",
+      "A setEnabled failure sets the failure status text and rebuilds the menu."
+    ],
+    "outOfScopeEdgeCases": [
+      "Live observation of login-item changes made outside the app.",
+      "Deduplicating overlapping refreshes beyond latest-wins."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-rielaapp-status-menu-refresh.md",
+      "design-docs/specs/design-rielaapp-workflow-instances.md",
+      "impl-plans/active/rielaapp-status-menu-refresh.md",
+      "impl-plans/progress/rielaapp-status-menu-refresh.md",
+      "Sources/RielaApp/RielaLaunchAtLoginController.swift",
+      "Sources/RielaApp/EntryPoint.swift",
+      "Sources/RielaApp/EntryPoint+Menu.swift",
+      "Tests/RielaAppSupportTests/RielaLaunchAtLoginControllerTests.swift",
+      "tmp/menubar/reference-manual-fix.patch"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "The Step 3 design was accepted (comm-008019, no findings) and the Step 5 plan was accepted (comm-008021, reviewDecision accept, needs_revision false). Residual notes: (a) the V1 filter term RielaAppUXOnboardingTests matches no class, because the file declares RielaAppStatusMessageTests, RielaAppEnvironmentValueFormatterTests and RielaAppUXOnboardingControllerTests, so the V1 record must report the classes and test counts actually executed; (b) the design and plan files are committed by this checkpoint, so the fix commit touches only the four source/test files and the progress log; (c) Swift 6 isolation of the deferred menuDidClose rebuild and of the @Sendable default reader is confirmed only by V1; (d) the optional V4 is the existing RielaAppBehaviorRegressionTests/testStatusMenuUsesCompactSummaryItemsAtRuntime test, whose log goes to tmp/menubar-impl/v4-menu-regression.log."
+  },
+  "plans": [
+    {
+      "planId": "rielaapp-status-menu-refresh",
+      "planPath": "impl-plans/active/rielaapp-status-menu-refresh.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaApp/RielaLaunchAtLoginController.swift",
+        "Sources/RielaApp/EntryPoint.swift",
+        "Sources/RielaApp/EntryPoint+Menu.swift",
+        "Tests/RielaAppSupportTests/RielaLaunchAtLoginControllerTests.swift",
+        "impl-plans/progress/rielaapp-status-menu-refresh.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "No code path reachable from the 2-second refresh timer or rebuildMenu() calls SMAppService.",
+        "Launch on Login status is read off the main thread at launch, after a toggle, and on menuWillOpen; an open menu is updated in place and never replaced.",
+        "The refresh timer is scheduled in .default mode and does not rebuild the menu while it is open.",
+        "Toggling Launch on Login still registers/unregisters and the menu/status text reflect the refreshed status.",
+        "New unit tests cover cache-only reads, change reporting and supplementary status text; they pass along with RielaAppAPIKeyTests and the focused filter, and swiftlint --strict is clean for touched files.",
+        "V1-V3 records with integer exitStatus, testsRun, failureCount and logPath are in the progress log; grep shows SMAppService only in RielaLaunchAtLoginController.swift and forMode .default."
+      ],
+      "verification": [
+        "mkdir -p tmp/menubar-impl",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela/tmp/menubar-fix-worktree && swift build --skip-update --build-tests && swift test --skip-update --skip-build --filter \"RielaLaunchAtLoginControllerTests|RielaAppUXOnboardingTests|RielaAppAPIKeyTests\"' > tmp/menubar-impl/v1-build-test.log 2>&1",
+        "arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela/tmp/menubar-fix-worktree && swiftlint --strict Sources/RielaApp/RielaLaunchAtLoginController.swift Sources/RielaApp/EntryPoint.swift Sources/RielaApp/EntryPoint+Menu.swift Tests/RielaAppSupportTests/RielaLaunchAtLoginControllerTests.swift' > tmp/menubar-impl/v2-lint.log 2>&1",
+        "grep -rn \"SMAppService\" Sources/RielaApp > tmp/menubar-impl/v3-grep.log; grep -n \"forMode\" Sources/RielaApp/EntryPoint.swift >> tmp/menubar-impl/v3-grep.log"
+      ]
+    }
+  ]
+}

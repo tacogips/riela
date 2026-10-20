@@ -3,6 +3,13 @@ import XCTest
 @testable import RielaAppSupport
 
 final class RielaAppLaunchOptionsTests: XCTestCase {
+  func testWebServerStartupRequiresExactExplicitArgument() {
+    XCTAssertTrue(RielaAppLaunchOptions(arguments: ["--start-web-server"], environment: [:]).startsWebServer)
+    for arguments in [[], ["--open-desktop"], ["--start-web-server=true"]] {
+      XCTAssertFalse(RielaAppLaunchOptions(arguments: arguments, environment: ["RIELA_START_WEB_SERVER": "true"]).startsWebServer)
+    }
+  }
+
   func testRelativePathOptionsResolveAgainstLaunchWorkingDirectory() {
     let options = RielaAppLaunchOptions(
       arguments: [

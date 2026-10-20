@@ -41,6 +41,10 @@ public struct RielaAppLaunchOptions: Equatable, Sendable {
     values(flag: "--import-workflow-or-package").map { absoluteURL($0) }
   }
 
+  public var startsWebServer: Bool {
+    arguments.contains("--start-web-server")
+  }
+
   public var opensDesktop: Bool {
     arguments.contains("--open-desktop")
   }

@@ -48,7 +48,7 @@ extension RielaApp {
     guard hasSource else {
       return "needs source"
     }
-    switch daemonRuntime.snapshot(for: identity).status {
+    switch daemonRuntime.snapshot(for: profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity)).status {
     case .running:
       return "running"
     case .starting:

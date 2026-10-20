@@ -2,9 +2,11 @@ import Foundation
 
 public enum CLIRuntimeEnvironment {
   @TaskLocal public static var overrides: [String: String]?
+  /// Complete execution snapshot, including deliberate removals. Never persisted.
+  @TaskLocal public static var captured: [String: String]?
 
   public static func mergedProcessEnvironment() -> [String: String] {
-    var environment = ProcessInfo.processInfo.environment
+    var environment = captured ?? ProcessInfo.processInfo.environment
     if let overrides {
       for (key, value) in overrides {
         environment[key] = value

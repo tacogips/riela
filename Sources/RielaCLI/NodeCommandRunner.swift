@@ -104,11 +104,13 @@ public struct NodeCommandRunner: Sendable {
       throw CLIUsageError("node run requires an add-on name")
     }
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+    let inheritedEnvironment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     let variables = try parsed.variables.map {
       try JSONReferenceLoader().object(from: $0, workingDirectory: workingDirectory)
     } ?? [:]
     let addon = try nodeRunAddon(target: target, variables: variables, parsed: parsed, workingDirectory: workingDirectory)
+    let environment = try await CLIRuntimeEnvironmentPreparation.prepare(path: parsed.runtimeEnvironmentFile,
+      required: WorkflowEnvironmentRequirements.addonNames(addon.env), base: inheritedEnvironment, workingDirectory: workingDirectory)
     let kaibaSnapshot: KaibaExecutionSnapshot?
     if parsed.mockScenarioPath == nil {
       do {

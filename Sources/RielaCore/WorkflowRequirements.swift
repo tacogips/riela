@@ -147,11 +147,13 @@ public struct WorkflowRequirementResolver: Sendable {
           || hostRequirement?.addonExecutable != nil
           || hostRequirement?.requiredEnvironment.isEmpty == false
           || payload?.agentEnvironment.values.contains(where: { $0.required }) == true
-          || payload?.apiKeyEnvironment != nil {
+          || payload?.apiKeyEnvironment != nil || payload?.requiredEnvironment?.isEmpty == false
+          || currentWorkflow.requiredEnvironment?.isEmpty == false {
           let environment = (payload?.agentEnvironment.values.compactMap { binding in
             binding.required ? binding.fromEnv : nil
           } ?? []) + [payload?.apiKeyEnvironment].compactMap { $0 }
             + (hostRequirement?.requiredEnvironment ?? [])
+            + (payload?.requiredEnvironment ?? []) + (currentWorkflow.requiredEnvironment ?? [])
           requirements.append(WorkflowBackendRequirement(
             pin: payload?.executionBackend,
             policy: payload?.backendPolicy,

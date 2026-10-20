@@ -44,8 +44,9 @@ struct ServeHTTPCommand: Sendable {
       port: requestedPort,
     )
     let listenerHandle = try await inProcessListener(configuration: configuration)
-    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
     let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let environment = try await CLIRuntimeEnvironmentPreparation.prepare(path: parsed.runtimeEnvironmentFile,
+      required: [], base: CLIRuntimeEnvironment.mergedProcessEnvironment(), workingDirectory: workingDirectory)
     let sessionRoot = CLIWorkflowSessionStore.resolveRootDirectory(
       sessionStore: parsed.sessionStore,
       scope: parsed.scope,

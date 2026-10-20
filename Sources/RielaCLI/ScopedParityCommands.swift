@@ -471,6 +471,7 @@ fileprivate extension ScopedParityCommandRunner {
       let runner = DeterministicWorkflowRunner(
         store: runtimeStore,
         adapter: adapter,
+        runtimeEnvironment: kaibaContext.environment,
         distributedExecutor: try configuredDistributedExecutor(environment: kaibaContext.environment),
         addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,

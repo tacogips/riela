@@ -1,6 +1,7 @@
 import Foundation
 
 public struct AgentNodePayload: Codable, Equatable, Sendable {
+  public var requiredEnvironment: [String]?
   public var id: String
   public var description: String?
   public var nodeType: NodeType?
@@ -66,8 +67,10 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
     memories: [WorkflowMemoryDeclaration]? = nil,
     variables: JSONObject = [:],
     input: NodeInputContract? = nil,
-    output: NodeOutputContract? = nil
+    output: NodeOutputContract? = nil,
+    requiredEnvironment: [String]? = nil
   ) {
+    self.requiredEnvironment = requiredEnvironment
     self.id = id
     self.description = description
     self.nodeType = nodeType
@@ -103,6 +106,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case requiredEnvironment
     case id
     case description
     case nodeType
@@ -139,6 +143,7 @@ public struct AgentNodePayload: Codable, Equatable, Sendable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.requiredEnvironment = try container.decodeIfPresent([String].self, forKey: .requiredEnvironment)
     self.id = try container.decode(String.self, forKey: .id)
     self.description = try container.decodeIfPresent(String.self, forKey: .description)
     self.nodeType = try container.decodeIfPresent(NodeType.self, forKey: .nodeType)

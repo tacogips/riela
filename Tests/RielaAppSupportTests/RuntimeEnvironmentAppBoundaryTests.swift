@@ -31,16 +31,26 @@ final class RuntimeEnvironmentAppBoundaryTests: XCTestCase {
     serving.runtimeEnvironmentNames = snapshot.names
     serving.runtimeEnvironmentGeneration = snapshot.generation
     let status = await store.status(scope: scope)
-    let console = GraphQLConsoleInstanceDTO(id: "one", sourceId: "source", isDefault: false, name: "one", workflowId: "test", source: "fixture", sourceKind: "directory", status: "running", statusDetail: "running", active: true, enabledAtLaunch: true, environmentResolution: descriptor)
+    let console = GraphQLConsoleInstanceDTO(
+      id: "one", sourceId: "source", isDefault: false, name: "one", workflowId: "test",
+      source: "fixture", sourceKind: "directory", status: "running", statusDetail: "running",
+      active: true, enabledAtLaunch: true, environmentResolution: descriptor
+    )
     for data in [try JSONEncoder().encode(instance), try JSONEncoder().encode(serving), try JSONEncoder().encode(status), try JSONEncoder().encode(console)] {
-      XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(canary))
+      XCTAssertFalse(try XCTUnwrap(String(bytes: data, encoding: .utf8)).contains(canary))
     }
     XCTAssertFalse(String(describing: snapshot).contains(canary))
     XCTAssertEqual(try JSONDecoder().decode(WorkflowServeRuntimeConfiguration.self, from: JSONEncoder().encode(serving)).runtimeEnvironmentValues, nil)
   }
 
   func testPrivatePipeAcknowledgesManagedNamesIncludingAbsentOptionalAndDiscardsRawOutput() async throws {
-    let script = "import sys,json\nfor line in sys.stdin:\n f=json.loads(line); print('private-canary-never-retained',file=sys.stderr,flush=True); print(json.dumps({'type':'runtime-environment-ack','generation':f['generation'],'names':f['managedNames'],'accepted':True}),flush=True)"
+    let script = """
+    import sys,json
+    for line in sys.stdin:
+     f=json.loads(line)
+     print('private-canary-never-retained',file=sys.stderr,flush=True)
+     print(json.dumps({'type':'runtime-environment-ack','generation':f['generation'],'names':f['managedNames'],'accepted':True}),flush=True)
+    """
     var command = RielaAppDaemonEventServeCommand(executablePath: "/usr/bin/python3", arguments: ["-u", "-c", script], workingDirectory: FileManager.default.currentDirectoryPath, environment: [:])
     command.runtimeEnvironmentGeneration = 1
     command.runtimeEnvironmentNames = ["OPTIONAL", "SECRET"]

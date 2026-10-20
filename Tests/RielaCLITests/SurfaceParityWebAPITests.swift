@@ -9,6 +9,14 @@ import XCTest
 /// enumeration; the catalog is the declaration; the gate is their bijection,
 /// backed by owner-file checks and live dispatch spot tests.
 final class SurfaceParityWebAPITests: XCTestCase {
+  func testEnvironmentStatusIsDeclaredAsDesktopOwnedRead() throws {
+    let route = "GET /api/v1/instances/{identity}/environment"
+    let declaration = try XCTUnwrap(RielaWebAPIRouteTable.desktopOnly.first { $0.route == route })
+    XCTAssertEqual(declaration.owner, "Sources/RielaApp/RielaAppInstanceAPI.swift")
+    XCTAssertTrue(SurfaceCatalog.declaredWebAPIRoutes.contains(route))
+    XCTAssertTrue(SurfaceCatalog.all.contains { $0.id == "console.instance-environment" })
+  }
+
   func testDeclaredRoutesMatchTheCatalog() {
     let violations = SurfaceCatalog.bijectionViolations(
       surface: .webAPI,

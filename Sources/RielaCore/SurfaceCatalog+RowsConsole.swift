@@ -143,6 +143,18 @@ extension SurfaceCatalog {
     ),
     surfaceRow(
       consoleDefaults,
+      id: "console.instance-environment",
+      family: "console",
+      kind: .query,
+      graphqlState: .blocked(
+        evidence: "desktop-owned environment status is scoped to its live memory-only snapshot store; "
+          + "the consoleInstance projection exposes its safe cached status separately"
+      ),
+      web: webRoute("GET", "/api/v1/instances/{identity}/environment"),
+      desktop: .implemented
+    ),
+    surfaceRow(
+      consoleDefaults,
       id: "console.instance-run",
       family: "console",
       kind: .mutation,

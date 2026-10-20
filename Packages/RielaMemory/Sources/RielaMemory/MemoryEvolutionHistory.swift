@@ -144,6 +144,33 @@ extension RielaMemoryStore {
     return restored
   }
 
+  // Visit each historical snapshot once, following the reverse chain from the
+  // current head. Reconstructing each version independently repeats every edge.
+  func walkHistoricalRecords(current: MemoryRecord, head: Int64, floor: Int64,
+                             db: OpaquePointer?, visit: (MemoryRecord) throws -> Bool) throws -> Bool {
+    var bytes = Data(try encodedJSONString(current).utf8)
+    var expected = head
+    var completed = true
+    try streamRows(db, sql: """
+      SELECT version, reverse_delta_json FROM memory_evolution
+      WHERE record_id = ? AND version > ? ORDER BY version DESC
+      """, bindings: [.int64(current.recordId), .int64(floor)]) { row in
+      guard row.columns["version"].flatMap(Int64.init) == expected,
+        let encoded = row.columns["reverse_delta_json"] else {
+        throw RielaMemoryError.sqliteFailed("evolution history has a missing edge")
+      }
+      let delta = try JSONDecoder().decode(EvolutionReverseDelta.self, from: Data(encoded.utf8))
+      bytes = try delta.reconstructPrevious(from: bytes, version: expected)
+      expected -= 1
+      let restored = try JSONDecoder().decode(MemoryRecord.self, from: bytes)
+      try verifyEvolutionAttachments(restored.files, db: db, recordMissing: false)
+      if try !visit(restored) { completed = false; return false }
+      return true
+    }
+    if completed && expected != floor { throw EvolutionReverseDelta.ValidationError.invalidVersion }
+    return completed
+  }
+
   func recordEvolution(previous: MemoryRecord?, next: MemoryRecord, db: OpaquePointer?, forceRevision: Bool = false) throws {
     if let previous { try verifyEvolutionAttachments(previous.files, db: db, recordMissing: true) }
     try verifyEvolutionAttachments(next.files, db: db, recordMissing: true)

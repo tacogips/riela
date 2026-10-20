@@ -124,12 +124,11 @@ extension RielaMemoryStore {
     guard chainRows == head - report.retainedFloor + 1 else {
       report.status = "invalid_chain"; return report
     }
-    for version in report.retainedFloor..<head {
-      let historical = try recordVersion(memoryId: memoryId, recordId: recordId, version: version, db: db)
-      guard historical.relatedRecordIds.isEmpty, historical.files.isEmpty else {
-        report.status = "historical_references"; return report
-      }
+    let unreferencedHistory = try walkHistoricalRecords(current: row, head: head,
+      floor: report.retainedFloor, db: db) { historical in
+      historical.relatedRecordIds.isEmpty && historical.files.isEmpty
     }
+    guard unreferencedHistory else { report.status = "historical_references"; return report }
     let count = try queryRows(db, sql: """
       SELECT COUNT(*) AS count, COALESCE(SUM(length(CAST(reverse_delta_json AS BLOB))),0) AS bytes
       FROM memory_evolution WHERE record_id=? AND version> ?

@@ -23,6 +23,56 @@ final class MemoryHistoryRetirementTests: XCTestCase {
       requiredTags: ["checkpoint"], expectedHeadVersion: head, throughVersion: head - 1, dryRun: dryRun)
   }
 
+  func testSinglePassMatchesEverySnapshotAndVisitsEachEdgeOnce() throws {
+    let (store, initial) = try fixture()
+    var head = initial
+    var snapshots = [try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 1), head]
+    for version in 3...96 {
+      head = try store.update(memoryId: "m", recordId: head.recordId, workflowId: "wf",
+        nodeId: "collect", tags: ["checkpoint"], payload: .object(["cursor": .string("cursor-\(version)"),
+          "body": .string(String(repeating: "revision-\(version)-", count: 2048))]))
+      snapshots.append(head)
+    }
+    let db = try store.openDatabase(memoryId: "m")
+    defer { sqlite3_close(db) }
+    var visited: [MemoryRecord] = []
+    XCTAssertTrue(try store.walkHistoricalRecords(current: head, head: 96, floor: 1, db: db) {
+      visited.append($0); return true
+    })
+    XCTAssertEqual(visited, Array(snapshots.dropLast().reversed()))
+    XCTAssertEqual(visited.count, 95)
+    XCTAssertEqual(try retire(store, head, dryRun: true, head: 96).status, "planned")
+    XCTAssertEqual(try retire(store, head, head: 96).status, "retired")
+    XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 96), head)
+  }
+
+  func testRepeatedRetirementStartsAtPreviouslyRetainedFloor() throws {
+    let (store, initial) = try fixture()
+    XCTAssertEqual(try retire(store, initial).status, "retired")
+    var head = initial
+    for version in 3...5 {
+      head = try store.update(memoryId: "m", recordId: head.recordId, workflowId: "wf",
+        nodeId: "collect", tags: ["checkpoint"], payload: .string("cursor-\(version)"))
+    }
+    XCTAssertEqual(try retire(store, head, dryRun: true, head: 5).status, "planned")
+    XCTAssertEqual(try retire(store, head, head: 5).status, "retired")
+    XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 5), head)
+    XCTAssertThrowsError(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 2))
+  }
+
+  func testMalformedHistoricalDeltaFailsBeforeAnyRetirementMutation() throws {
+    let (store, head) = try fixture()
+    let db = try store.openDatabase(memoryId: "m")
+    try execute(db, "UPDATE memory_evolution SET reverse_delta_json='{}' WHERE record_id=1 AND version=2")
+    sqlite3_close(db)
+    let url = URL(fileURLWithPath: try store.databasePath(memoryId: "m"))
+    let before = try Data(contentsOf: url)
+    XCTAssertThrowsError(try retire(store, head, dryRun: true))
+    XCTAssertEqual(try Data(contentsOf: url), before)
+    XCTAssertThrowsError(try retire(store, head))
+    XCTAssertEqual(try Data(contentsOf: url), before)
+  }
+
   func testRetirementPreservesHeadAndMonotonicVersionsAndReclaimsBytes() throws {
     let (store, head) = try fixture()
     let other = try store.save(memoryId: "m", workflowId: "other", payload: .string("preserve-other"))

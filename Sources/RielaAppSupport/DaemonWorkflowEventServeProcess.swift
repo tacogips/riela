@@ -327,7 +327,14 @@ private final class EventServeSourceHandle: WorkflowServeEventSourceHandle, @unc
   }
 
   public func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
-    try await process.updateRuntimeEnvironment(generation: generation, names: names, values: values)
+    do {
+      try await process.updateRuntimeEnvironment(generation: generation, names: names, values: values)
+    } catch {
+      // An ACK may be lost after installation. Reap the uncertain child before
+      // keeping the parent's previous snapshot; never leave split generations.
+      await process.terminate()
+      throw error
+    }
   }
 
   public func shutdown() async throws {

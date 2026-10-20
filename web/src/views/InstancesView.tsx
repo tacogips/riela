@@ -157,7 +157,7 @@ export function InstanceEditor(props: {
         { action: 'reloadEnvironment', expectedProfile: props.profileName }, expectedRevision())
       setMessage('Environment reloaded. Active configurations resume; existing runs retain their captured environment.')
     } catch {
-      setSaveError(true); setMessage('Environment reload failed. The previous successful snapshot is retained. Unlock the loader and reload, or select Run after recovery.')
+      setSaveError(true); setMessage('Environment reload failed. The previous successful snapshot is retained. Unlock the loader and reload; restart after changing managed names or loader configuration.')
     } finally {
       await loadEnvironmentStatus().catch(() => undefined)
       await props.onRefresh(); setSaving(false)

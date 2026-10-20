@@ -653,6 +653,22 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     return RielaAppProfiledWorkflowInstance(profileName: profileName, instance: instance ?? .unconfigured(source: source))
   }
 
+  func testMenuSummaryUsesProfileQualifiedRuntimeIdentity() async throws {
+    let temp = try scratchRoot(name: "profile-menu-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temp) }
+    try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+    try writeWorkflow(id: "profile-runtime", to: temp)
+    let instance = profiledRuntimeInstance(profileName: .default, workflowDirectory: temp)
+    let app = RielaApp()
+    app.daemonState = .init(preferences: [instance.localIdentity: instance.preference])
+    app.daemonWorkflowSources = [instance.instance.source]
+    await app.daemonRuntime.start(instance.runtimeCandidate, configuration: WorkflowServeRuntimeConfiguration())
+    XCTAssertEqual(app.daemonRuntime.snapshot(for: instance.id).status, .running)
+    XCTAssertEqual(app.daemonSummary(), "1 running")
+    await app.daemonRuntime.stopAll()
+    XCTAssertEqual(app.daemonSummary(), "1 stopped")
+  }
+
   private func profiledRuntimeInstance(
     profileName: RielaAppProfileName,
     workflowDirectory: URL

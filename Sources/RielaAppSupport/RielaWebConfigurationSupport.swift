@@ -139,6 +139,8 @@ public enum RielaWebConfigurationSupport {
       if !value.isEmpty { preference.environmentVariables[name] = value }
     }
     input.environmentVariablesToClear?.forEach { preference.environmentVariables.removeValue(forKey: $0) }
+    if input.clearEnvironmentResolution == true { preference.configuration.environmentResolution = nil }
+    if let resolution = input.environmentResolution { preference.configuration.environmentResolution = resolution }
     if let workflowVariables = input.workflowVariables { preference.defaultVariables = workflowVariables }
     return preference
   }

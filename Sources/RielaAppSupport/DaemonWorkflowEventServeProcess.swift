@@ -8,6 +8,8 @@ public struct RielaAppDaemonEventServeCommand: Equatable, Sendable {
   public var arguments: [String]
   public var workingDirectory: String
   public var environment: [String: String]
+  public var runtimeEnvironmentGeneration: UInt64? = nil
+  public var runtimeEnvironmentNames: [String] = []
 
   public init(
     executablePath: String,
@@ -28,6 +30,13 @@ public protocol RielaAppDaemonEventServeProcessHandle: Sendable {
   var terminationStatus: Int32? { get }
   var capturedOutput: String { get }
   func terminate() async
+  func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws
+}
+
+public extension RielaAppDaemonEventServeProcessHandle {
+  func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
+    throw RuntimeEnvironmentError.notPrepared
+  }
 }
 
 public protocol RielaAppDaemonEventServeProcessLaunching: Sendable {
@@ -63,7 +72,7 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
     guard let eventRoot = request.eventRoot, !eventRoot.isEmpty else {
       return []
     }
-    let command = eventServeCommand(
+    var command = eventServeCommand(
       workflowDefinitionDirectory: resolvedWorkflow.workflowDirectory ?? request.workingDirectory,
       workingDirectory: request.workingDirectory,
       eventRoot: eventRoot,
@@ -74,6 +83,9 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
       executablePath: executablePath,
       inheritedEnvironment: request.inheritedEnvironment
     )
+    command.runtimeEnvironmentGeneration = request.configuration.runtimeEnvironmentGeneration
+    command.runtimeEnvironmentNames = request.configuration.runtimeEnvironmentNames ?? []
+    if command.runtimeEnvironmentGeneration != nil { command.arguments.append("--runtime-environment-channel") }
     logEventServe("launch \(command.executablePath) \(command.arguments.joined(separator: " ")) cwd=\(command.workingDirectory)")
     let process: any RielaAppDaemonEventServeProcessHandle
     do {
@@ -85,6 +97,15 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
         message: "failed to launch riela events serve: \(error)",
         selection: request.selection
       ))
+    }
+    if let generation = command.runtimeEnvironmentGeneration {
+      do {
+        try await process.updateRuntimeEnvironment(generation: generation, names: command.runtimeEnvironmentNames,
+          values: command.environment.filter { command.runtimeEnvironmentNames.contains($0.key) })
+      } catch {
+        await process.terminate()
+        throw RuntimeEnvironmentError.notPrepared
+      }
     }
     if earlyExitGraceNanoseconds > 0 {
       try? await Task.sleep(nanoseconds: earlyExitGraceNanoseconds)
@@ -262,7 +283,9 @@ public struct DefaultEventServeProcessLauncher: RielaAppDaemonEventServeProcessL
     process.executableURL = URL(fileURLWithPath: command.executablePath)
     process.arguments = command.arguments
     process.currentDirectoryURL = URL(fileURLWithPath: command.workingDirectory, isDirectory: true)
-    process.environment = command.environment
+    process.environment = command.environment.filter { command.runtimeEnvironmentGeneration == nil || !command.runtimeEnvironmentNames.contains($0.key) }
+    let input = command.runtimeEnvironmentGeneration == nil ? nil : Pipe()
+    if let input { process.standardInput = input }
     let output = Pipe()
     let error = Pipe()
     process.standardOutput = output
@@ -270,7 +293,7 @@ public struct DefaultEventServeProcessLauncher: RielaAppDaemonEventServeProcessL
     let handle = FoundationEventServeProcessHandle(
       process: process,
       outputPipe: output,
-      errorPipe: error
+      errorPipe: error, inputPipe: input
     )
     try process.run()
     handle.startCapturing()
@@ -301,6 +324,10 @@ private final class EventServeSourceHandle: WorkflowServeEventSourceHandle, @unc
     self.generationId = generationId
   }
 
+  public func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
+    try await process.updateRuntimeEnvironment(generation: generation, names: names, values: values)
+  }
+
   public func shutdown() async throws {
     await process.terminate()
   }
@@ -310,11 +337,16 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   private let process: Process
   private let outputPipe: Pipe
   private let errorPipe: Pipe
+  private let inputPipe: Pipe?
+  private var acknowledgementBuffer = Data()
+  private var acknowledgements: [UInt64: Bool] = [:]
+  private var acknowledgedNames: [UInt64: [String]] = [:]
   private let lock = NSLock()
   private var outputBuffer = Data()
   private var errorBuffer = Data()
 
-  init(process: Process, outputPipe: Pipe, errorPipe: Pipe) {
+  init(process: Process, outputPipe: Pipe, errorPipe: Pipe, inputPipe: Pipe? = nil) {
+    self.inputPipe = inputPipe
     self.process = process
     self.outputPipe = outputPipe
     self.errorPipe = errorPipe
@@ -351,6 +383,23 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     }
   }
 
+  func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
+    guard let inputPipe, isRunning, Set(values.keys).isSubset(of: Set(names)) else { throw RuntimeEnvironmentError.notPrepared }
+    let frame: [String: Any] = ["generation": generation, "managedNames": names, "values": values]
+    var data = try JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys]); data.append(10)
+    try inputPipe.fileHandleForWriting.write(contentsOf: data)
+    for _ in 0..<500 {
+      let result = lock.withLock { acknowledgements[generation].map { ($0, acknowledgedNames[generation] ?? []) } }
+      if let result {
+        guard result.0, Set(result.1) == Set(values.keys) else { throw RuntimeEnvironmentError.outputInvalid }
+        return
+      }
+      guard isRunning else { throw RuntimeEnvironmentError.sourceFailed }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    throw RuntimeEnvironmentError.sourceTimeout
+  }
+
   func terminate() async {
     guard process.isRunning else {
       closePipes()
@@ -366,6 +415,27 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
 
   private func appendOutput(_ data: Data, isError: Bool) {
     guard !data.isEmpty else {
+      return
+    }
+    if inputPipe != nil {
+      // A managed child can print arbitrary diagnostics. Retain only typed ACKs.
+      guard !isError else { return }
+      lock.withLock {
+        acknowledgementBuffer.append(data)
+        if acknowledgementBuffer.count > 1_048_576 { acknowledgementBuffer.removeAll(); return }
+        while let end = acknowledgementBuffer.firstIndex(of: 10) {
+          let line = acknowledgementBuffer.prefix(upTo: end); acknowledgementBuffer.removeSubrange(...end)
+          guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+            object["type"] as? String == "runtime-environment-ack",
+            let generation = object["generation"] as? UInt64,
+            let accepted = object["accepted"] as? Bool else { continue }
+          acknowledgements[generation] = accepted
+          acknowledgedNames[generation] = object["names"] as? [String] ?? []
+          if acknowledgements.count > 8, let first = acknowledgements.keys.min() {
+            acknowledgements.removeValue(forKey: first); acknowledgedNames.removeValue(forKey: first)
+          }
+        }
+      }
       return
     }
     lock.withLock {

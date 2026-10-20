@@ -112,6 +112,8 @@ export class RielaConfigurationClient {
       environmentFilePath: string
       environmentVariableUpdates: Record<string, string>
       environmentVariablesToClear: string[]
+      environmentResolution?: unknown
+      clearEnvironmentResolution?: boolean
       workflowVariables: Record<string, unknown>
     },
   ): Promise<ConfigurationRevision> {

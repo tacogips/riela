@@ -30,7 +30,7 @@ public struct WorkflowInstanceCreationInput: Decodable, Sendable {
 }
 
 public enum WorkflowInstanceAction: String, Decodable, Sendable {
-  case start, stop, restart, enableAtLaunch, disableAtLaunch
+  case start, stop, restart, enableAtLaunch, disableAtLaunch, reloadEnvironment
 
   public var startsRuntime: Bool { self == .start || self == .restart }
   public var stopsRuntime: Bool { self == .stop || self == .restart }
@@ -44,6 +44,7 @@ public enum WorkflowInstanceAction: String, Decodable, Sendable {
     case .stop: preference.active = false
     case .enableAtLaunch: preference.available = true
     case .disableAtLaunch: preference.available = false
+    case .reloadEnvironment: break
     }
     return preference
   }

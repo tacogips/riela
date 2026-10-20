@@ -23,6 +23,7 @@ enum RielaAppWorkflowEnvironmentRequirements {
       return []
     }
     var requirements: [RielaAppEnvRequirement] = []
+    appendExplicitRequirements(workflow.requiredEnvironment, into: &requirements)
     appendRequirements(from: workflow.nodes, workflowDirectory: workflowDirectory, into: &requirements)
     return requirements
   }
@@ -33,6 +34,8 @@ enum RielaAppWorkflowEnvironmentRequirements {
     into requirements: inout [RielaAppEnvRequirement]
   ) {
     for node in nodes {
+      appendExplicitRequirements(node.requiredEnvironment, into: &requirements)
+      appendRequirement(node.apiKeyEnvironment, into: &requirements)
       appendAddonRequirements(from: node.addon, into: &requirements)
       appendAgentRequirements(from: node.agentEnvironment, into: &requirements)
       if let nodeFile = node.nodeFile,
@@ -40,9 +43,17 @@ enum RielaAppWorkflowEnvironmentRequirements {
           WorkflowEnvironmentNodePayload.self,
           from: workflowDirectory.appendingPathComponent(nodeFile)
         ) {
+        appendExplicitRequirements(referenced.requiredEnvironment, into: &requirements)
+        appendRequirement(referenced.apiKeyEnvironment, into: &requirements)
         appendAddonRequirements(from: referenced.addon, into: &requirements)
         appendAgentRequirements(from: referenced.agentEnvironment, into: &requirements)
       }
+    }
+  }
+
+  private static func appendExplicitRequirements(_ names: [String]?, into requirements: inout [RielaAppEnvRequirement]) {
+    for name in names ?? [] {
+      appendRequirement(name, into: &requirements)
     }
   }
 
@@ -89,24 +100,31 @@ enum RielaAppWorkflowEnvironmentRequirements {
 
 private struct WorkflowEnvironmentDescriptor: Decodable {
   var nodes: [WorkflowEnvironmentNode]
+  var requiredEnvironment: [String]?
 
   private enum CodingKeys: String, CodingKey {
     case nodes
+    case requiredEnvironment
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     nodes = try container.decodeIfPresent([WorkflowEnvironmentNode].self, forKey: .nodes) ?? []
+    requiredEnvironment = try container.decodeIfPresent([String].self, forKey: .requiredEnvironment)
   }
 }
 
 private struct WorkflowEnvironmentNode: Decodable {
   var nodeFile: String?
+  var requiredEnvironment: [String]?
+  var apiKeyEnvironment: String?
   var addon: WorkflowEnvironmentAddon?
   var agentEnvironment: [String: WorkflowEnvironmentAgentBinding]?
 }
 
 private struct WorkflowEnvironmentNodePayload: Decodable {
+  var requiredEnvironment: [String]?
+  var apiKeyEnvironment: String?
   var addon: WorkflowEnvironmentAddon?
   var agentEnvironment: [String: WorkflowEnvironmentAgentBinding]?
 }

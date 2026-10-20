@@ -136,6 +136,8 @@ public struct RielaCLIApplication: Sendable {
         return await GatewayCommand().run(arguments)
       case let .setup(options):
         return await setupContainerCommand.run(options)
+      case let .environment(arguments):
+        return await EnvironmentCommand().run(arguments)
       case let .cache(arguments):
         return CacheCommandRunner().run(arguments)
       case let .memory(command):

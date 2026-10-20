@@ -189,7 +189,7 @@ extension RielaArgumentParser {
       workflowDefinitionDir: parsed.workflowDefinitionDir,
       workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
     )
-    return WorkflowRunOptions(
+    var options = WorkflowRunOptions(
       target: target,
       resolution: resolution,
       variables: parsed.variablesReference,
@@ -218,6 +218,8 @@ extension RielaArgumentParser {
       supervisorMode: parsed.supervisorMode,
       resumeSessionId: parsed.resumeSessionId
     )
+    options.runtimeEnvironmentFile = parsed.runtimeEnvironmentFile
+    return options
   }
 
   private func rejectRemoteResolutionOptions(_ parsed: ParsedWorkflowOptions, subcommand: String) throws {

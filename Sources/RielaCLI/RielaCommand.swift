@@ -46,6 +46,7 @@ public enum RielaCommand: Equatable, Sendable {
   case gateway([String])
   case memory(MemoryCommand)
   case cache([String])
+  case environment([String])
   case kaiba(CLICommandOptions)
   case instance(CLICommandOptions)
   case doctor(CLICommandOptions)
@@ -304,6 +305,7 @@ public struct CLICommandOptions: Equatable, Sendable {
 }
 
 public struct WorkflowRunOptions: Equatable, Sendable {
+  public var runtimeEnvironmentFile: String?
   public var target: String
   public var resolution: WorkflowResolutionOptions?
   public var variables: String?
@@ -361,8 +363,10 @@ public struct WorkflowRunOptions: Equatable, Sendable {
     authTokenEnv: String? = nil,
     fromRegistry: Bool = false,
     supervisorMode: Bool = false,
-    resumeSessionId: String? = nil
+    resumeSessionId: String? = nil,
+    runtimeEnvironmentFile: String? = nil
   ) {
+    self.runtimeEnvironmentFile = runtimeEnvironmentFile
     self.target = target
     self.resolution = resolution
     self.variables = variables
@@ -424,6 +428,8 @@ public struct RielaArgumentParser: CLIArgumentParsing {
       return .gateway(route.passthroughArguments)
     case let route as SetupRoute:
       return .setup(try parseSetup(route.passthroughArguments))
+    case let route as EnvironmentRoute:
+      return .environment(route.passthroughArguments)
     case let route as CacheRoute:
       return .cache(route.passthroughArguments)
     case let route as MemoryRoute:

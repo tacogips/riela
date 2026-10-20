@@ -149,6 +149,8 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public var store: any WorkflowRuntimeStore
   public var distributedExecutor: (any DistributedNodeExecuting)?
   public var adapter: any NodeAdapter
+  /// Execution-only snapshot; never serialized into requests or sessions.
+  public var runtimeEnvironment: [String: String]
   public var addonResolver: (any WorkflowAddonResolving)?
   public var attachmentProjector: any WorkflowAddonAttachmentProjecting
   public var stdioNodeExecutor: (any WorkflowStdioNodeExecuting)?
@@ -169,6 +171,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
   public init(
     store: (any WorkflowRuntimeStore)? = nil,
     adapter: any NodeAdapter = DeterministicLocalNodeAdapter(),
+    runtimeEnvironment: [String: String] = ProcessInfo.processInfo.environment,
     distributedExecutor: (any DistributedNodeExecuting)? = nil,
     addonResolver: (any WorkflowAddonResolving)? = nil,
     attachmentProjector: any WorkflowAddonAttachmentProjecting = InlineWorkflowAddonAttachmentProjector(),
@@ -188,6 +191,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let resolvedStore = store ?? InMemoryWorkflowRuntimeStore()
     self.store = resolvedStore
     self.adapter = adapter
+    self.runtimeEnvironment = runtimeEnvironment
     self.distributedExecutor = distributedExecutor
     self.addonResolver = addonResolver
     self.attachmentProjector = attachmentProjector
@@ -629,7 +633,8 @@ extension DeterministicWorkflowRunner {
     do {
       agentEnvironment = try step.placement == nil ? resolveAgentEnvironment(
         executionPayload.agentEnvironment,
-        variables: mergedVariables
+        variables: mergedVariables,
+        runtimeEnvironment: runtimeEnvironment
       ) : [:]
     } catch let error as AgentEnvironmentResolutionError {
       throw AdapterExecutionError(.policyBlocked, error.localizedDescription)

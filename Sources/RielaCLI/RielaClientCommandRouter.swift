@@ -15,6 +15,7 @@ struct RielaClientCommandRouter: ParsableCommand {
       KaibaRoute.self,
       MemoryRoute.self,
       CacheRoute.self,
+      EnvironmentRoute.self,
       InstanceRoute.self,
       DoctorRoute.self,
       GarbageCollectionRoute.self,
@@ -178,5 +179,10 @@ struct GatewayRoute: RielaClientPassthroughRoute {
 
 struct CacheRoute: RielaClientPassthroughRoute {
   static let configuration = passthroughRouteConfiguration("cache", abstract: "Manage temporary TTL/LRU retrieval caches.")
+  @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
+}
+
+struct EnvironmentRoute: RielaClientPassthroughRoute {
+  static let configuration = passthroughRouteConfiguration("environment", abstract: "Inspect or reload a resident instance environment.")
   @Argument(parsing: .captureForPassthrough) var passthroughArguments: [String] = []
 }

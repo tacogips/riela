@@ -336,6 +336,7 @@ public struct WorkflowInputFilter: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
+  public var requiredEnvironment: [String]?
   public var id: String
   public var nodeFile: String?
   public var nodeRef: WorkflowSharedNodeRef?
@@ -348,6 +349,7 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case id
+    case requiredEnvironment
     case nodeFile
     case nodeRef
     case addon
@@ -367,8 +369,10 @@ public struct WorkflowNodeRegistryRef: Codable, Equatable, Sendable {
     kind: WorkflowRegistryNodeKind? = nil,
     repeatPolicy: WorkflowNodeRepeatPolicy? = nil,
     inputFilters: [WorkflowInputFilter]? = nil,
-    memories: [WorkflowMemoryDeclaration]? = nil
+    memories: [WorkflowMemoryDeclaration]? = nil,
+    requiredEnvironment: [String]? = nil
   ) {
+    self.requiredEnvironment = requiredEnvironment
     self.id = id
     self.nodeFile = nodeFile
     self.nodeRef = nodeRef
@@ -499,6 +503,7 @@ public enum WorkflowStepFailurePolicy: String, Codable, Sendable {
 }
 
 public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
+  public var requiredEnvironment: [String]?
   public var workflowId: String
   public var description: String?
   public var defaults: WorkflowDefaults
@@ -522,8 +527,10 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     nodes: [WorkflowNodeRegistryRef],
     steps: [WorkflowStepRef]? = nil,
     loop: WorkflowLoopMetadata? = nil,
-    handover: WorkflowHandoverDeclaration? = nil
+    handover: WorkflowHandoverDeclaration? = nil,
+    requiredEnvironment: [String]? = nil
   ) {
+    self.requiredEnvironment = requiredEnvironment
     self.workflowId = workflowId
     self.description = description
     self.defaults = defaults
@@ -539,6 +546,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowNodeRef: Codable, Equatable, Sendable {
+  public var requiredEnvironment: [String]?
   public var id: String
   public var nodeFile: String?
   public var nodeRef: WorkflowSharedNodeRef?
@@ -551,6 +559,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
   public var memories: [WorkflowMemoryDeclaration]?
 
   enum CodingKeys: String, CodingKey {
+    case requiredEnvironment
     case id
     case nodeFile
     case nodeRef
@@ -573,8 +582,10 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
     execution: WorkflowNodeExecutionPolicy? = nil,
     repeatPolicy: WorkflowNodeRepeatPolicy? = nil,
     inputFilters: [WorkflowInputFilter]? = nil,
-    memories: [WorkflowMemoryDeclaration]? = nil
+    memories: [WorkflowMemoryDeclaration]? = nil,
+    requiredEnvironment: [String]? = nil
   ) {
+    self.requiredEnvironment = requiredEnvironment
     self.id = id
     self.nodeFile = nodeFile
     self.nodeRef = nodeRef
@@ -589,6 +600,7 @@ public struct WorkflowNodeRef: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowDefinition: Codable, Equatable, Sendable {
+  public var requiredEnvironment: [String]?
   public var workflowId: String
   public var description: String
   public var defaults: WorkflowDefaults
@@ -614,8 +626,10 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     steps: [WorkflowStepRef],
     nodes: [WorkflowNodeRef],
     loop: WorkflowLoopMetadata? = nil,
-    handover: WorkflowHandoverDeclaration? = nil
+    handover: WorkflowHandoverDeclaration? = nil,
+    requiredEnvironment: [String]? = nil
   ) {
+    self.requiredEnvironment = requiredEnvironment
     self.workflowId = workflowId
     self.description = description
     self.defaults = defaults

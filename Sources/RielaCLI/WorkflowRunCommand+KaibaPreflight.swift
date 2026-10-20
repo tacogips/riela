@@ -40,7 +40,8 @@ extension WorkflowRunCommand {
       instance: instance,
       nodes: bundle.workflow.nodes,
       workflow: bundle.workflow,
-      calleeResolver: calleeResolver
+      calleeResolver: calleeResolver,
+      requiredEnvironment: try await CLIRuntimeEnvironmentPreparation.required(bundle: bundle, resolution: resolution, resolver: resolver)
     )
     return PreparedWorkflowRunExecution(
       instance: instance,
@@ -124,13 +125,16 @@ extension WorkflowRunCommand {
     instance: EffectiveWorkflowInstance,
     nodes: [WorkflowNodeRef],
     workflow: WorkflowDefinition,
-    calleeResolver: any WorkflowCalleeResolving
+    calleeResolver: any WorkflowCalleeResolving,
+    requiredEnvironment: [String] = []
   ) async throws -> KaibaPreflightedRunContext {
     let workingDirectory = effectiveRunWorkingDirectory(options: options, instance: instance)
-    let environment = try effectiveRunEnvironment(
+    let base = try effectiveRunEnvironment(
       configuration: instance.configuration,
       workingDirectory: workingDirectory
     )
+    let environment = try await CLIRuntimeEnvironmentPreparation.prepare(
+      path: options.runtimeEnvironmentFile, required: requiredEnvironment, base: base, workingDirectory: workingDirectory)
     let snapshot = try await preflightKaibaNodes(
       nodes,
       environment: environment,

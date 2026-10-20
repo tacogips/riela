@@ -60,6 +60,7 @@ struct DefaultEventLiveServer: EventLiveServing {
   var webhookyStreamer: any WebhookyRecordStreaming
   var workflowRunner: any EventWorkflowRunning
   var telemetry: any RielaTelemetry
+  var runtimeEnvironment: EventRuntimeEnvironment?
 
   init(
     telegramAPI: any TelegramGatewayAPI = URLSessionTelegramGatewayAPI(),
@@ -83,6 +84,30 @@ struct DefaultEventLiveServer: EventLiveServing {
   }
 
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
+    if parsed.runtimeEnvironmentChannel && parsed.runtimeEnvironmentFile != nil {
+      throw CLIUsageError("environment_channel_cannot_load_sources")
+    }
+    let required = workflowRunner is CLIEventWorkflowRunner
+      ? try await eventRequiredEnvironment(eventRoot: eventRoot, target: target, parsed: parsed) : []
+    let prepared = try await CLIRuntimeEnvironmentPreparation.prepare(path: parsed.runtimeEnvironmentFile,
+      required: parsed.runtimeEnvironmentChannel ? [] : required, base: CLIRuntimeEnvironment.mergedProcessEnvironment(),
+      workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)
+    let runtime = EventRuntimeEnvironment(base: prepared, requiresBootstrap: parsed.runtimeEnvironmentChannel)
+    let channel = parsed.runtimeEnvironmentChannel ? RuntimeEnvironmentChannel(state: runtime) : nil
+    defer { channel?.stop() }
+    try await runtime.awaitInitial()
+    var server = self
+    server.runtimeEnvironment = runtime
+    let captured = try await runtime.capture()
+    if required.contains(where: { captured[$0]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false }) {
+      throw CLIUsageError("environment_required_missing")
+    }
+    return try await CLIRuntimeEnvironment.$captured.withValue(captured) {
+      try await server.servePrepared(eventRoot: eventRoot, target: target, parsed: parsed, output: output)
+    }
+  }
+
+  private func servePrepared(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
     _ = try EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
     let startedAt = Date()
     let config = try EventLiveConfig.load(eventRoot: eventRoot)

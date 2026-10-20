@@ -9,6 +9,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
   @Flag var structure = false
   @Option var host: String?
   @Flag var strictHost = false
+  @Option var runtimeEnvironmentFile: String?
   @Option var variables: String?
   @Option var variablesFile: String?
   @Option var nodePatch: String?
@@ -42,6 +43,7 @@ struct ParsedWorkflowOptions: ParsableArguments {
   var supervisorMode = false
 
   private static let runOptionNames: Set<String> = [
+    "--runtime-environment-file",
     "--variables",
     "--variables-file",
     "--instance",

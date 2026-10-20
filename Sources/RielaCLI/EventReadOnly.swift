@@ -25,10 +25,15 @@ struct EventReadOnlyDispatchBlocked: Error {}
 extension DefaultEventLiveServer {
   /// Every live workflow entry passes this boundary, including injected runners.
   func runEventWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
-    guard try !EventReadOnlyPolicy.isEnabled(
-      parsed: request.parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
-    ) else { throw EventReadOnlyDispatchBlocked() }
-    return try await workflowRunner.runWorkflow(request)
+    let captured = try await runtimeEnvironment?.capture() ?? CLIRuntimeEnvironment.mergedProcessEnvironment()
+    return try await CLIRuntimeEnvironment.$overrides.withValue(nil) {
+      try await CLIRuntimeEnvironment.$captured.withValue(captured) {
+        guard try !EventReadOnlyPolicy.isEnabled(parsed: request.parsed, environment: captured) else {
+          throw EventReadOnlyDispatchBlocked()
+        }
+        return try await workflowRunner.runWorkflow(request)
+      }
+    }
   }
 
   /// Persist evidence before advancing matched provider polling cursors. File

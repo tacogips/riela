@@ -95,7 +95,10 @@ public enum RielaWebAPIRouteTable {
           owner: "Sources/RielaApp/RielaAppConfiguredRunAPI.swift", ownerMarker: #"parts[4] == "runs""#),
     .init(method: "GET", path: "/api/v1/settings/workers", owner: desktopWorkerSettings),
     .init(method: "PUT", path: "/api/v1/settings/workers", owner: desktopWorkerSettings),
-    .init(method: "POST", path: "/api/v1/settings/worker-credentials", owner: desktopRequest)
+    .init(method: "GET", path: "/api/v1/settings/api-keys", owner: desktopRequest),
+    .init(method: "POST", path: "/api/v1/settings/api-keys", owner: desktopRequest),
+    .init(method: "PUT", path: "/api/v1/settings/api-keys", owner: desktopRequest),
+    .init(method: "DELETE", path: "/api/v1/settings/api-keys", owner: desktopRequest)
   ]
 
   public static let workflowEditor: [RielaWebAPIRoute] = [

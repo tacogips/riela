@@ -55,7 +55,7 @@ struct EnvironmentCommand {
         from: await fetch(URLRequest(url: url("/api/v1/bootstrap"))))
       guard bootstrap.profile == args.profile else { throw CLIUsageError("environment_profile_conflict") }
       let id = args.instance.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
-      let path = "/api/v1/instances/" + id
+      let path = "/api/v1/instances" + "/" + id
       if args.action == "reload" {
         var request = URLRequest(url: try url(path + "/actions"))
         request.httpMethod = "POST"

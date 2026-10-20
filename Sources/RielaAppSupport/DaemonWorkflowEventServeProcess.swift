@@ -8,7 +8,7 @@ public struct RielaAppDaemonEventServeCommand: Equatable, Sendable {
   public var arguments: [String]
   public var workingDirectory: String
   public var environment: [String: String]
-  public var runtimeEnvironmentGeneration: UInt64? = nil
+  public var runtimeEnvironmentGeneration: UInt64?
   public var runtimeEnvironmentNames: [String] = []
   public var runtimeEnvironmentValues: [String: String] = [:]
 

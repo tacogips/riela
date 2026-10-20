@@ -72,7 +72,7 @@ public struct WorkflowServeRuntimeConfiguration: Codable, Equatable, Sendable {
   public var runtimeEnvironmentGeneration: UInt64?
   public var runtimeEnvironmentNames: [String]?
   /// Execution-only; never encoded into serving/session/configuration records.
-  public var runtimeEnvironmentValues: [String: String]? = nil
+  public var runtimeEnvironmentValues: [String: String]?
 
   private enum CodingKeys: String, CodingKey {
     case workingDirectory, inheritedEnvironment, defaultVariables, nodePatch

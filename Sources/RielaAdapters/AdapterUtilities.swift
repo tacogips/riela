@@ -366,6 +366,13 @@ public func sensitiveAdapterEnvironmentValues(_ environment: [String: String]) -
 
 private func isSensitiveEnvironmentKey(_ key: String) -> Bool {
   let normalized = key.uppercased()
+  // OAuth aliases can contain complete client-secret JSON or consumer credentials
+  // without TOKEN/SECRET in their names. Match exact suffix families, not public
+  // metadata such as OAUTH_CLIENT_JSON_FORMAT or CONSUMER_KEY_COUNT.
+  if normalized == "OAUTH_CLIENT_JSON" || normalized.hasSuffix("_OAUTH_CLIENT_JSON")
+    || normalized == "CONSUMER_KEY" || normalized.hasSuffix("_CONSUMER_KEY") {
+    return true
+  }
   return [
     "API_KEY",
     "APIKEY",

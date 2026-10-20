@@ -45,12 +45,14 @@ public extension RielaWebWorkflowRequestHandler {
       var environment = context.environment
       environment["RIELA_API_KEY"] = ""
       runtime.launchTasks[job.id] = Task.detached {
-        await CLIRuntimeEnvironment.$overrides.withValue(environment) {
+        await CLIRuntimeEnvironment.$overrides.withValue(nil) {
+          await CLIRuntimeEnvironment.$captured.withValue(environment) {
           var command = WorkflowRunCommand(resolver: EditorPreparedBundleResolver(bundle: bundle), jsonlRecordWriter: job.append)
           command.configuredInstanceOverride = WorkflowInstanceDefinition(identity: identity, workflowId: source.workflowId,
             sourceIdentity: source.id, configuration: configuration)
           let result = await command.run(options)
           job.finish(result)
+          }
         }
       }
       return .json(status: 202, .object(job.snapshot))

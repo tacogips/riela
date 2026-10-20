@@ -1,3 +1,4 @@
+import { rielaFetch } from '../transport'
 import { instanceEditorSnapshot } from './instanceEditorState'
 export { instanceSelectionForProfile, instanceEditorSnapshot, instanceEditorIdentity } from './instanceEditorState'
 import { ActionButton } from '../components/ActionButton'
@@ -31,6 +32,7 @@ export function InstanceEditor(props: {
   const [workingDirectory, setWorkingDirectory] = createSignal(initialSnapshot.workingDirectory)
   const [environmentFilePath, setEnvironmentFilePath] = createSignal(initialSnapshot.environmentFilePath)
   const [environmentResolution, setEnvironmentResolution] = createSignal(JSON.stringify(initialInstance.environmentResolution ?? { required: [], sources: [] }, null, 2))
+  const [environmentStatus, setEnvironmentStatus] = createSignal<{ readiness: string; generation: number; names: string[]; missingNames: string[]; lastError?: string }>()
   const [environmentUpdates, setEnvironmentUpdates] = createSignal<Record<string, string>>({})
   const [environmentToClear, setEnvironmentToClear] = createSignal<string[]>([])
   const [newEnvironmentName, setNewEnvironmentName] = createSignal('')
@@ -141,6 +143,27 @@ export function InstanceEditor(props: {
     setEnvironmentToClear((current) => checked ? [...current, name] : current.filter((item) => item !== name))
   }
 
+  const loadEnvironmentStatus = async () => {
+    const response = await rielaFetch(`/api/v1/instances/${encodeURIComponent(props.instance().id)}/environment`, {
+      credentials: 'same-origin', headers: { 'X-Riela-Profile': props.profileName },
+    })
+    if (!response.ok) throw new Error(`Environment status unavailable (${response.status})`)
+    setEnvironmentStatus(await response.json())
+  }
+  const reloadEnvironment = async () => {
+    setSaving(true); setMessage(''); setSaveError(false)
+    try {
+      await api.mutate<{ revision?: number }>(`/api/v1/instances/${encodeURIComponent(props.instance().id)}/actions`, 'POST',
+        { action: 'reloadEnvironment', expectedProfile: props.profileName }, expectedRevision())
+      setMessage('Environment reloaded. Active configurations resume; existing runs retain their captured environment.')
+    } catch {
+      setSaveError(true); setMessage('Environment reload failed. The previous successful snapshot is retained. Unlock the loader and reload, or select Run after recovery.')
+    } finally {
+      await loadEnvironmentStatus().catch(() => undefined)
+      await props.onRefresh(); setSaving(false)
+    }
+  }
+
   const controlInstance = async (action: 'start' | 'stop' | 'restart' | 'enableAtLaunch' | 'disableAtLaunch') => {
     setSaving(true); setMessage(''); setSaveError(false)
     try {
@@ -168,6 +191,8 @@ export function InstanceEditor(props: {
           <ActionButton class="secondary" disabled={saving()} onClick={() => void controlInstance(props.instance().enabledAtLaunch ? 'disableAtLaunch' : 'enableAtLaunch')}>{props.instance().enabledAtLaunch ? 'Disable at launch' : 'Enable at launch'}</ActionButton>
         </div>
     </div>
+    <div class="save-row"><ActionButton class="secondary" disabled={saving()} onClick={() => void loadEnvironmentStatus().catch((error) => setMessage(errorMessage(error)))}>Environment status</ActionButton><ActionButton class="secondary" disabled={saving()} onClick={() => void reloadEnvironment()}>Reload environment</ActionButton></div>
+    <Show when={environmentStatus()}>{(value) => <div role="status">{value().readiness} · generation {value().generation} · names {value().names.join(', ')}<Show when={value().missingNames.length}> · missing {value().missingNames.join(', ')}</Show><Show when={value().lastError}> · {value().lastError}</Show></div>}</Show>
     <Show when={props.instance().requiredEnvironment.length > 0}><div class="requirements" aria-label="Required environment"><h3>Required environment</h3><For each={props.instance().requiredEnvironment}>{(requirement) => <div class="requirement-row"><span classList={{ 'presence-dot': true, present: requirement.present }} aria-hidden="true" /><div><strong>{requirement.name}</strong><span>{requirement.description ?? 'No description'} · {requirement.source}</span></div><span>{requirement.present ? 'Present' : 'Missing'}</span></div>}</For></div></Show>
     <label><span>Runtime environment loader descriptors (required names, command argv, json/env0, timeoutSeconds; never secret values)</span><textarea value={environmentResolution()} onInput={(event) => setEnvironmentResolution(event.currentTarget.value)} /></label>
     <div class="form-grid"><label><span>Working directory</span><input value={workingDirectory()} onInput={(event) => setWorkingDirectory(event.currentTarget.value)} /></label><label><span>Environment file</span><input value={environmentFilePath()} onInput={(event) => setEnvironmentFilePath(event.currentTarget.value)} /></label></div>

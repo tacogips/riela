@@ -776,17 +776,90 @@ public final class RielaAppDaemonWorkflowRuntime {
 
   private let eventSourceFactory: any WorkflowServeEventSourceFactory
   private let monitorIntervalNanoseconds: UInt64
+  private let environmentStore: RuntimeEnvironmentSnapshotStore
+  private var environmentStatuses: [RuntimeEnvironmentScope: RuntimeEnvironmentStatus] = [:]
   private var runningWorkflows: [String: RunningWorkflow] = [:]
 
   public init(
     eventSourceFactory: any WorkflowServeEventSourceFactory = RielaAppDaemonProcessEventSourceFactory(),
-    monitorIntervalNanoseconds: UInt64 = 2_000_000_000
+    monitorIntervalNanoseconds: UInt64 = 2_000_000_000,
+    environmentStore: RuntimeEnvironmentSnapshotStore = RuntimeEnvironmentSnapshotStore()
   ) {
     self.eventSourceFactory = eventSourceFactory
     self.monitorIntervalNanoseconds = monitorIntervalNanoseconds
+    self.environmentStore = environmentStore
   }
   public func snapshot(for identity: String) -> RuntimeSnapshot {
     runningWorkflows[identity]?.snapshot ?? RuntimeSnapshot(status: .stopped, detail: "Inactive")
+  }
+
+  public func prepareEnvironment(
+    for candidate: RielaAppDaemonWorkflowCandidate,
+    configuration: WorkflowServeRuntimeConfiguration
+  ) async throws -> RuntimeEnvironmentSnapshot {
+    let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? "default")
+    do {
+      let snapshot = try await environmentStore.prepare(
+        scope: scope, configuration: configuration.environmentResolution ?? RuntimeEnvironmentConfiguration(),
+        requiredNames: candidate.requiredEnvironment.map(\.name), baseEnvironment: configuration.inheritedEnvironment
+      )
+      environmentStatuses[scope] = await environmentStore.status(scope: scope)
+      return snapshot
+    } catch {
+      environmentStatuses[scope] = await environmentStore.status(scope: scope)
+      throw error
+    }
+  }
+
+  public func cachedEnvironmentStatus(identity: String, profile: String) -> RuntimeEnvironmentStatus {
+    guard let scope = try? environmentScope(identity: identity, profile: profile) else {
+      return RuntimeEnvironmentStatus(readiness: .failed, lastError: .invalidConfiguration)
+    }
+    return environmentStatuses[scope] ?? RuntimeEnvironmentStatus()
+  }
+
+  public func environmentStatus(identity: String, profile: String) async -> RuntimeEnvironmentStatus {
+    guard let scope = try? environmentScope(identity: identity, profile: profile) else {
+      return RuntimeEnvironmentStatus(readiness: .failed, lastError: .invalidConfiguration)
+    }
+    let status = await environmentStore.status(scope: scope)
+    environmentStatuses[scope] = status
+    return status
+  }
+
+  public func reloadEnvironment(
+    for candidate: RielaAppDaemonWorkflowCandidate,
+    configuration: WorkflowServeRuntimeConfiguration
+  ) async throws -> RuntimeEnvironmentStatus {
+    let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? "default")
+    let controller = runningWorkflows[candidate.id]?.controller
+    do {
+      let status = try await environmentStore.reload(
+        scope: scope, configuration: configuration.environmentResolution ?? RuntimeEnvironmentConfiguration(),
+        requiredNames: candidate.requiredEnvironment.map(\.name), baseEnvironment: configuration.inheritedEnvironment,
+        install: { snapshot in
+          try await controller?.updateRuntimeEnvironment(
+            generation: snapshot.generation, names: snapshot.names, values: snapshot.runtimeEnvironment()
+          )
+        }
+      )
+      environmentStatuses[scope] = status
+      runningWorkflows[candidate.id]?.configuration = configuration
+      return status
+    } catch {
+      environmentStatuses[scope] = await environmentStore.status(scope: scope)
+      throw error
+    }
+  }
+
+  private func environmentScope(identity: String, profile: String) throws -> RuntimeEnvironmentScope {
+    guard !identity.isEmpty, !profile.isEmpty else { throw RuntimeEnvironmentError.invalidConfiguration }
+    #if os(macOS)
+    if let profiled = RielaAppProfileInstanceIdentity(rawValue: identity), profiled.profileName.rawValue != profile {
+      throw RuntimeEnvironmentError.invalidConfiguration
+    }
+    #endif
+    return RuntimeEnvironmentScope(profile: profile, instanceIdentity: identity)
   }
 
   public func noteAPIEndpoint(noteRoot: String) -> String? {
@@ -888,10 +961,15 @@ public final class RielaAppDaemonWorkflowRuntime {
       monitorTask: monitorTask
     )
     do {
+      let environment = try await prepareEnvironment(for: candidate, configuration: configuration)
+      var preparedConfiguration = configuration
+      preparedConfiguration.runtimeEnvironmentValues = environment.runtimeEnvironment()
+      preparedConfiguration.runtimeEnvironmentGeneration = environment.generation
+      preparedConfiguration.runtimeEnvironmentNames = environment.names
       let state = try await controller.start(WorkflowServeStartRequest(
         selection: candidate.serveSelection,
         server: server,
-        configuration: configuration,
+        configuration: preparedConfiguration,
         sessionStoreRoot: sessionStoreRoot,
         eventRoot: candidate.eventRoot,
         startsEventSources: candidate.startsEventSources

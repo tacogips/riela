@@ -18,7 +18,10 @@ extension RielaApp {
       onStateChange: { [weak self] in self?.rebuildMenu() }
     )
     webServerSetupError = store.load().diagnostic
-
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await webServerController?.startIfRequested(by: launchOptions)
+    }
   }
 
   @objc func startWebServerFromMenu() {

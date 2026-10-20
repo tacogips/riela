@@ -72,6 +72,11 @@ final class RielaAppWebServerController {
     }
   }
 
+  func startIfRequested(by options: RielaAppLaunchOptions) async {
+    guard options.startsWebServer else { return }
+    await start()
+  }
+
   func start() async {
     switch state {
     case .starting, .running, .stopping:

@@ -1175,6 +1175,13 @@ stdin/stdout pipes. Opening the desktop window does not start an HTTP listener.
 Closing the window leaves the menu-bar app running; opening it again creates
 a new window. Repeated open actions focus the existing window.
 
+To explicitly start the app-owned loopback HTTP server when launching a new
+RielaApp process, pass `--start-web-server`. It uses the selected app root’s
+persisted web-server port (default `19091`) and the existing controller’s
+security and shutdown behavior. Without the flag, launch behavior is unchanged;
+opening the desktop or a saved enabled setting alone does not start HTTP.
+This flag does not register a service or send an action to an already running app.
+
 For development:
 
 ```bash

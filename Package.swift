@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.30"
+let rielaVersion = "0.2.31"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -27,7 +27,7 @@ let rielaInfoPlistLinkerSettings: [LinkerSetting] = [
 // Keep the private, macOS-only Notion package out of Linux dependency resolution.
 #if os(macOS)
 let notionPackageDependencies: [Package.Dependency] = [
-  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "cb55d9108dd797da4fa581bb07ea50c0bec69401")
+  .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "15e7cbf714ad4e667d9319ad80a1be3fbdb9579b")
 ]
 let notionTargetDependencies: [Target.Dependency] = [
   .product(name: "NotionGatewayCore", package: "notion-gateway", condition: .when(platforms: [.macOS]))

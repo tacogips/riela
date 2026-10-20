@@ -53,6 +53,16 @@ final class NotionGatewayAddonTests: XCTestCase {
   }
 
   #if os(macOS)
+  func testLinkedWriterValidatesPagePositionBeforeCredentialsOrNetwork() async throws {
+    let result = try await runNativeGatewayCLI(.init(gateway: .notion, role: "writer", arguments: [
+      "graphql", "--query", "mutation($position:JSON){createPage(parentId:\"00000000-0000-0000-0000-000000000001\",title:\"fixture\",position:$position)}",
+      "--variables", #"{"position":{"type":"invalid"}}"#
+    ]), environment: [:])
+    XCTAssertNotEqual(result.exitCode, 0)
+    XCTAssertTrue(result.stdout.contains("Invalid page insertion position"))
+    XCTAssertFalse(result.stdout.contains("AUTHENTICATION_REQUIRED"))
+  }
+
   func testLinkedReaderRejectsMutationWithoutCredentialsOrNetwork() async throws {
     do {
       _ = try await BuiltinWorkflowAddonResolver(environment: [:]).execute(
@@ -66,7 +76,8 @@ final class NotionGatewayAddonTests: XCTestCase {
     XCTAssertEqual(schema.exitCode, 0)
     XCTAssertFalse(schema.stdout.contains("createPage"))
     let writerSchema = try await runNativeGatewayCLI(.init(gateway: .notion, role: "writer", arguments: ["schema"]), environment: [:])
-    XCTAssertTrue(writerSchema.stdout.contains("createPage"))
+    let createPage = try XCTUnwrap(writerSchema.stdout.split(separator: "\n").first { $0.contains("createPage(") })
+    XCTAssertTrue(createPage.contains("position: JSON"))
     XCTAssertTrue(writerSchema.stdout.contains("createFileUpload"))
     XCTAssertTrue(writerSchema.stdout.contains("sendFileUpload"))
     XCTAssertTrue(writerSchema.stdout.contains("position: JSON"))

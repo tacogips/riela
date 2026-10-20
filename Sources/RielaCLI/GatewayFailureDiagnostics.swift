@@ -25,6 +25,15 @@ enum GatewayFailureDiagnostics {
     "client-not-enrolled", "insufficient-scope", "unsupported-authentication", "usage-capped", "unknown"
   ]
 
+  private static let gmailBodyReasons: Set<String> = [
+    "messageEnvelope", "bodyDescriptor", "externalBodyDescriptor", "externalBodyResponse", "treeLimit",
+    "filename", "mimeType", "partIdentity", "children", "missingData", "decodedSize", "invalidBase64", "headers",
+    "duplicateContentType", "headerValue", "mimeMismatch", "duplicateCharset", "charsetQuotes", "charsetValue"
+  ]
+  private static let gmailReadReasons: Set<String> = [
+    "timeout", "missingResponse", "cancelled", "dns", "connect", "connectionLost", "tls", "offline", "transport"
+  ]
+
   static func suffix(stdout: String, stderr: String = "") -> String {
     for text in [stderr, stdout] where text.utf8.count <= 65_536 {
       guard let response = try? JSONDecoder().decode(JSONObject.self, from: Data(text.utf8)) else { continue }
@@ -61,7 +70,34 @@ enum GatewayFailureDiagnostics {
     if let providerCode = boundedInteger(error: error, key: "providerErrorCode", range: 0...99_999) {
       fields.append("providerErrorCode=\(providerCode)")
     }
+    if code == "PROVIDER_API_ERROR", case let .string(message)? = error["message"] {
+      if let counts = gmailDecodedSizeCounts(message) {
+        fields += ["gmailBodyReason=decodedSize", "gmailDeclaredByteCount=\(counts.0)", "gmailDecodedByteCount=\(counts.1)"]
+      }
+      for (field, prefix, reasons) in [
+        ("gmailBodyReason", "Invalid message body response", gmailBodyReasons),
+        ("gmailReadReason", "Bounded Gmail read failed", gmailReadReasons)
+      ] {
+        for reason in reasons where message == "\(prefix) [\(field)=\(reason)]" {
+          fields.append("\(field)=\(reason)")
+        }
+      }
+    }
     return " (\(fields.joined(separator: ", ")))"
+  }
+
+  private static func gmailDecodedSizeCounts(_ message: String) -> (Int, Int)? {
+    let prefix = "Invalid message body response [gmailBodyReason=decodedSize declaredByteCount="
+    guard message.hasPrefix(prefix), message.hasSuffix("]") else { return nil }
+    let values = message.dropFirst(prefix.count).dropLast().components(separatedBy: " decodedByteCount=")
+    guard values.count == 2, let declared = gmailByteCount(values[0]), let decoded = gmailByteCount(values[1]) else { return nil }
+    return (declared, decoded)
+  }
+
+  private static func gmailByteCount(_ text: String) -> Int? {
+    guard (1...7).contains(text.utf8.count), text.utf8.allSatisfy({ (48...57).contains($0) }),
+          text == "0" || !text.hasPrefix("0"), let value = Int(text), value <= 8_388_608 else { return nil }
+    return value
   }
 
   private static func boundedInteger(error: JSONObject, key: String, range: ClosedRange<Int64>) -> Int64? {

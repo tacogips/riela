@@ -2,13 +2,26 @@
 import ServiceManagement
 
 @MainActor
-struct RielaLaunchAtLoginController {
+final class RielaLaunchAtLoginController {
+  typealias StatusReader = @Sendable () -> SMAppService.Status
+
+  private let readStatus: StatusReader
+  private(set) var status: SMAppService.Status?
+  private var refreshGeneration = 0
+
+  init(readStatus: @escaping StatusReader = { SMAppService.mainApp.status }) {
+    self.readStatus = readStatus
+  }
+
   var isEnabled: Bool {
-    service.status == .enabled
+    status == .enabled
   }
 
   var statusDescription: String {
-    switch service.status {
+    guard let status else {
+      return "Checking"
+    }
+    switch status {
     case .enabled:
       return "On"
     case .notRegistered:
@@ -23,42 +36,49 @@ struct RielaLaunchAtLoginController {
   }
 
   var menuSupplementaryStatusDescription: String? {
-    switch service.status {
-    case .enabled, .notRegistered:
-      nil
-    case .requiresApproval:
-      "Requires approval in System Settings"
-    case .notFound:
-      "Unavailable"
-    @unknown default:
-      "Unknown"
+    guard let status else {
+      return nil
     }
+    switch status {
+    case .enabled, .notRegistered:
+      return nil
+    case .requiresApproval, .notFound:
+      return statusDescription
+    @unknown default:
+      return statusDescription
+    }
+  }
+
+  @discardableResult
+  func refreshStatus() async -> Bool {
+    refreshGeneration += 1
+    let generation = refreshGeneration
+    let reader = readStatus
+    let refreshedStatus = await Task.detached(priority: .utility) {
+      reader()
+    }.value
+
+    guard generation == refreshGeneration, refreshedStatus != status else {
+      return false
+    }
+    status = refreshedStatus
+    return true
   }
 
   func setEnabled(_ enabled: Bool) throws {
+    let service = SMAppService.mainApp
+    let current = service.status
     if enabled {
-      try registerIfNeeded()
+      guard current != .enabled, current != .requiresApproval else {
+        return
+      }
+      try service.register()
     } else {
-      try unregisterIfNeeded()
+      guard current != .notRegistered, current != .notFound else {
+        return
+      }
+      try service.unregister()
     }
-  }
-
-  private var service: SMAppService {
-    SMAppService.mainApp
-  }
-
-  private func registerIfNeeded() throws {
-    guard service.status != .enabled, service.status != .requiresApproval else {
-      return
-    }
-    try service.register()
-  }
-
-  private func unregisterIfNeeded() throws {
-    guard service.status != .notRegistered, service.status != .notFound else {
-      return
-    }
-    try service.unregister()
   }
 }
 #endif

@@ -301,7 +301,7 @@ plain `|` separators; do not escape the pipes.
 V1: build and focused tests.
 
 ```sh
-arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela/tmp/menubar-fix-worktree && swift build --skip-update --build-tests && swift test --skip-update --skip-build --filter "RielaLaunchAtLoginControllerTests|RielaAppUXOnboardingTests|RielaAppAPIKeyTests"' > tmp/menubar-impl/v1-build-test.log 2>&1
+arch -arm64 /bin/zsh -lc 'cd /Users/taco/gits/tacogips/riela/tmp/menubar-fix-worktree && swift build --skip-update --build-tests && swift test --skip-update --skip-build --filter "RielaLaunchAtLoginControllerTests|RielaAppUXOnboardingControllerTests|RielaAppAPIKeyTests"' > tmp/menubar-impl/v1-build-test.log 2>&1
 ```
 
 - Must show exit 0.

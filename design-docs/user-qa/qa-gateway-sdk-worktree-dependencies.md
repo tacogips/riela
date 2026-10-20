@@ -59,9 +59,10 @@ not committed. The Google Documents tree check below exited 0 and found no SDK:
 git -C /Users/taco/gits/tacogips/google-documents-gateway ls-tree -r --name-only v0.3.1
 ```
 
-## Future dependency graph acceptance gate
+## Implementation dependency graph acceptance gate
 
-After design and plan acceptance, in a later implementation-authorized run, edit only the requested
+The effective workflow input authorizes implementation on
+`feat/remaining-impl-plans-20260927`. In plan 01, edit only the requested
 manifest dependencies and regenerate the lockfile without unrelated upgrades.
 Run in this supplied Riela worktree, recording full stdout/stderr and final status:
 
@@ -75,11 +76,12 @@ remote gateway identities at the selected exact versions and one unique kit
 identity/version 0.1.0 across the graph (shared references may repeat the same
 identity in tree JSON). Inspect Package.resolved URLs, versions and revisions;
 reject local path/mirror substitution and unrelated dependency changes. Neither
-command was run in Step 2: the feature manifest is intentionally unmodified,
-and such a graph would not validate the proposed dependency set.
+command was run during the earlier planning Step 2: the feature manifest was
+then unmodified, and such a graph would not have validated the proposed set.
 
-No other operator decision is pending. Independent Step 3 design review and
-later implementation-plan review remain required before document publication.
+No other operator decision is pending. The corrected design was accepted in
+the earlier planning workflow; current implementation progress is tracked in
+`impl-plans/progress/gateway-sdk-01.md`.
 
 ## Historical Step 3 review response — comm-000004
 
@@ -133,9 +135,20 @@ and `git ... show v<version>:Package.swift` checks, plus
 Public release identity is supplied by runtime input; no fresh network verification
 is claimed. Logs remain gitignored for downstream review handoff.
 
-D1 is addressed, with no unresolved operator decision. Independent design review
-is pending; its acceptance must precede implementation-plan authoring. Independent
-plan review is also required. Only accepted planning artifacts may later be
-committed and pushed on `feat/gateway-sdk-addons`; no merge to main or Swift
-implementation is authorized in this run. Future dependency graph/build/runtime
-gates above belong to the later implementation run and are not claimed as passed.
+D1 was addressed in the earlier planning run, with no unresolved operator
+decision. Its planning-only, old-branch, and deferred-implementation instructions
+are historical; the current effective workflow input supersedes them.
+
+## Current implementation handoff (2026-09-27)
+
+Implement and verify existing plans 01–05 on
+`feat/remaining-impl-plans-20260927`. Record complete logs and terminal exit
+codes under repository-root `tmp/remaining-impl-plans/gateway-sdk/`. After
+the plan 01 graph and lockfile gate, record a focused behavioral test with a
+positive selected count and zero failures before advancing to plans 02–05. After
+independent adversarial and integration reviews accept the combined work with
+no unresolved material findings, commit and non-force push to this same branch
+and provide a PR handoff against `main`. Final local HEAD must equal the live
+remote branch head. Do not merge main, alter other branches, release, or merge
+the PR. Session 1 recorded successful graph and lockfile checks; the focused
+behavioral test and subsequent implementation gates remain unverified here.

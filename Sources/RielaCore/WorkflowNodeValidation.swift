@@ -108,6 +108,16 @@ func validateNodeSource(
   }
 }
 
+func validateGatewayNodeAddon(
+  _ addon: WorkflowNodeAddonRef?,
+  path: String,
+  context: WorkflowValidationContext,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) {
+  guard let addon else { return }
+  diagnostics += validateGatewayAddon(addon, path: path, context: context)
+}
+
 func validateRawNodeSource(
   _ entry: [String: Any],
   path: String,

@@ -1,14 +1,29 @@
 # Operation-mode gateway SDK add-ons and schema discovery
 
-Status: revised for independent Step 3 review; historical dependency finding D1
-is resolved by the operator-approved Google Documents v0.3.3 decision. Design
-acceptance is pending; no implementation plan or Swift implementation is authored here.
+## Main integration checkpoint (2026-10-20)
+
+The accepted design and plans below are preserved as historical implementation
+inputs. Core validation and its existing tests are integrated as an explicit
+`DefaultWorkflowValidator(context:)` opt-in. The default validator retains its
+current behavior until operation execution, schema discovery, and catalog wiring
+are complete. Plans 03–05 remain unfinished; this merge does not declare them
+implemented. Historical progress logs describe the original worktree only.
+Current gateway dependency revisions are retained rather than restoring the old
+plan 01 pins or adding an unused GatewaySDKKit dependency.
+
+Status: accepted design baseline for plans 01–05 on
+`feat/remaining-impl-plans-20260927`. The prior implementation run left plan 01
+dependency and lockfile changes in the working tree, but its progress gate still
+requires a focused behavioral test with a positive test count. Historical
+dependency finding D1 is resolved by the operator-approved Google Documents
+v0.3.3 decision. This design does not claim implementation acceptance.
 The dependency decision is recorded in
 `design-docs/user-qa/qa-gateway-sdk-worktree-dependencies.md`
 
 Issue: `docs/briefs/gateway-sdk-addons-2026-09-04.md`
 
-Workflow: `codex-design-and-implement-review-loop-session-1`
+Workflow: `codex-design-and-implement-review-loop-session-5` (continuing the
+accepted design and preserving plan 01 work from session 1)
 
 Reference contract: `docs/briefs/gateway-sdk-2026-09-04.md`, especially sections 2 and 4
 
@@ -29,10 +44,9 @@ gateway request.
 
 This is one feature. It does not change container add-ons,
 `google-service-gateway`, unrelated Apple add-on families, unrelated package versions, or
-release state. This execution is planning-only; implementation and provider calls
-are not authorized. Step 2 authors design; independent design review and detailed
-implementation-plan authoring remain later workflow steps. It must not modify the GatewaySDKKit checkout, any gateway
-worktree, or the main Riela checkout.
+release state. The effective workflow input authorizes implementation and
+verification of the five existing plans on `feat/remaining-impl-plans-20260927`.
+Preserve the GatewaySDKKit checkout, gateway worktrees, and main Riela checkout.
 
 ## Dependency and platform boundary
 
@@ -344,18 +358,35 @@ is preserved. Workflow, prompt, script, or skill edits require refreshed
 `riela-package.json` digests; ordinary source, test, example, README, and this
 design document do not trigger that refresh.
 
-The effective workflow input supersedes the brief's historical no-push instruction.
-Only accepted design, QA, brief, implementation-plan and necessary index changes
-may be committed and pushed on `feat/gateway-sdk-addons`; main integration requires
-a later implementation run and its independent review; no merge to main is
-authorized in this planning-only run. Independent Step 3 design acceptance
-must precede actionable plan authoring, and the plan needs its own independent
-review before publication. Step 2 performs none of these publication actions. The review must explicitly check
+The effective workflow input supersedes the brief's historical no-push instruction
+and the earlier planning-only handoff. Implement plans 01–05 in dependency order,
+retain complete verification evidence, and obtain independent adversarial and
+integration acceptance with no unresolved material findings. Commit and
+non-force push accepted work to `feat/remaining-impl-plans-20260927`, then provide
+a PR handoff targeting `main`. Final local HEAD must equal the live remote branch
+head. Do not merge main, alter other branches, release, or merge the PR.
+The review must explicitly check
 the resolved SwiftPM graph, execution policy, error classification, provenance,
 static/no-network schema behavior, platform guards, validation injection, and
 preservation of unrelated add-ons.
 
 ## Verification contract
+
+Before plans 02–05, preserve the existing plan 01 `Package.swift` and
+`Package.resolved` changes and their recorded posthashes. The successful
+`swift package show-dependencies --format json` graph and lockfile checks do
+not complete its behavioral gate. Run a focused Swift test filter that compiles
+and exercises the changed gateway dependency integration, and record its actual
+positive selected test count, zero failures, complete stdout/stderr log, and
+terminal exit code in `impl-plans/progress/gateway-sdk-01.md`. Re-evaluate that
+gate from the evidence; a zero-test or incomplete run cannot pass.
+
+For each plan-specific focused filter and the final release build, aggregate
+Swift suite, strict SwiftLint, example runs, dependency graph, and
+`git diff --check`, retain the exact command, complete log path, final exit
+code, and observed assertions. Run verification in the foreground. Independent
+review must inspect operation construction, authorization boundaries, error
+classification, and payload provenance before integration acceptance.
 
 ```bash
 arch -arm64 /bin/zsh -lc 'swift build -c release'
@@ -440,9 +471,10 @@ intentionally diverges from the brief's invoke closure for Gmail catalog parity.
 The Google Documents buildArgv/runner split intentionally preserves the existing
 runner contract and does not adopt the facade's separate file/execution policies.
 
-Historical Step 3 feedback `comm-000004` rejected the previous design for D1.
-Current intake `comm-000002` supplies the corrected release decision. This
-revision addresses D1 using v0.3.3 evidence, preserves the historical v0.3.1
-finding in QA, and awaits a new independent Step 3 decision. No actionable
-implementation plan, Swift edits, package resolution, commit, or push occurs
-in this author node. No unresolved user decision remains.
+The earlier planning review rejected the previous design for D1. Intake
+`comm-000002` supplied the corrected release decision; the five implementation
+plans now exist. Historical Step 3 feedback `comm-000004` required a handoff
+correction because the old planning-only and branch instructions conflicted with
+the effective workflow input. Session 5 intake `comm-000020` now requires plan
+01 behavioral test evidence before later-plan work. No unresolved user decision
+remains.

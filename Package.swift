@@ -49,7 +49,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.12"),
-    .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "3baf8e41057098c5959853a82314460b11436da2"),
+    .package(url: "https://github.com/tacogips/notion-gateway.git", revision: "cb55d9108dd797da4fa581bb07ea50c0bec69401"),
     .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
     .package(path: "Packages/RielaMemory"),
     .package(
@@ -75,7 +75,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "185cba5396d8afa43919f735c9329eb477b17418" // v0.1.22; SDK has revision-pinned dependencies.
+      revision: "5b083463280efb6880270ab3b864b871dde1ca6f" // v0.1.23; SDK has revision-pinned dependencies.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",

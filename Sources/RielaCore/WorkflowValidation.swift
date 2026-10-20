@@ -33,7 +33,13 @@ public struct AuthoredWorkflowValidationResult: Equatable, Sendable {
 }
 
 public struct DefaultWorkflowValidator: WorkflowValidating {
-  public init() {}
+  /// Supplying a context opts into the staged Gateway SDK validation rules.
+  /// The default remains compatible until SDK execution is integrated.
+  public let context: WorkflowValidationContext?
+
+  public init(context: WorkflowValidationContext? = nil) {
+    self.context = context
+  }
 
   public func validate(_ workflow: WorkflowDefinition) -> [WorkflowValidationDiagnostic] {
     var diagnostics: [WorkflowValidationDiagnostic] = []
@@ -89,6 +95,10 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
     let workflowMemoryIds = Set((workflow.memories ?? []).map(\.id))
     let gateIds = Set(workflow.loop?.gates.map(\.id) ?? [])
     for (index, node) in workflow.nodeRegistry.enumerated() {
+      if let context {
+        validateGatewayNodeAddon(node.addon, path: "workflow.nodes[\(index)]", context: context,
+                                 diagnostics: &diagnostics)
+      }
       validateMemoryAddonDeclarations(
         node,
         path: "workflow.nodes[\(index)]",

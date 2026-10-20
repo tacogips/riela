@@ -38,6 +38,9 @@ extension RielaApp {
       },
       environment: { [self] instance in
         daemonEnvironment(for: instance.candidate, preference: instance.preference)
+      },
+      environmentStatus: { [self] identity in
+        daemonRuntime.cachedEnvironmentStatus(identity: profileRuntimeIdentity(profileName: daemonProfileName, localIdentity: identity), profile: daemonProfileName.rawValue)
       }
     )
   }

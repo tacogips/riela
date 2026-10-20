@@ -493,6 +493,7 @@ extension GraphQLContractProjector {
     workingDirectory: String
     environmentFilePath: String
     environmentResolution: JSONObject
+    environmentStatus: JSONObject
     environmentVariables: [ConsoleInstanceEnvironmentVariable!]!
     requiredEnvironment: [ConsoleInstanceRequiredEnvironment!]!
     workflowVariables: JSONObject!

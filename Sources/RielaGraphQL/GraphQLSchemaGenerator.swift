@@ -532,6 +532,8 @@ public enum GraphQLSchemaGenerator {
       .init(name: "enabledAtLaunch", type: "Boolean!"),
       .init(name: "workingDirectory", type: "String"),
       .init(name: "environmentFilePath", type: "String"),
+      .init(name: "environmentResolution", type: "JSONObject"),
+      .init(name: "environmentStatus", type: "JSONObject"),
       .init(name: "environmentVariables", type: "[ConsoleInstanceEnvironmentVariable!]!"),
       .init(name: "requiredEnvironment", type: "[ConsoleInstanceRequiredEnvironment!]!"),
       .init(name: "workflowVariables", type: "JSONObject!"),

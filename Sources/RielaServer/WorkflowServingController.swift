@@ -86,7 +86,7 @@ public actor WorkflowServingController {
   public func updateRuntimeEnvironment(generation: UInt64, names: [String], values: [String: String]) async throws {
     guard let current = activeGeneration else { return }
     for handle in current.eventSources {
-      try await handle.updateRuntimeEnvironment(generation: generation, names: names, values: values)
+      try await handle.updateRuntimeEnvironment(generation: generation, names: names, values: values.filter { names.contains($0.key) })
     }
   }
 

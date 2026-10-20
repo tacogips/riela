@@ -20,8 +20,7 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
       source.command.allSatisfy({ !$0.contains("\0") }),
       environment.allSatisfy({ isValidEnvironmentVariableName($0.key) && !$0.value.contains("\0") }) else { throw RuntimeEnvironmentError.invalidConfiguration }
     let executable: String
-    if first.hasPrefix("/") { executable = first }
-    else {
+    if first.hasPrefix("/") { executable = first } else {
       guard let path = (environment["PATH"] ?? "/usr/bin:/bin").split(separator: ":").map({ String($0) + "/" + first })
         .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { throw RuntimeEnvironmentError.sourceFailed }
       executable = path
@@ -93,8 +92,7 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
         if count > 0 {
           guard output.count + count <= limit else { throw RuntimeEnvironmentError.outputTooLarge }
           output.append(contentsOf: buffer.prefix(count))
-        } else if count == 0 { eof = true }
-        else if errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR { throw RuntimeEnvironmentError.sourceFailed }
+        } else if count == 0 { eof = true } else if errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR { throw RuntimeEnvironmentError.sourceFailed }
       }
       if !exited {
         var info = siginfo_t()

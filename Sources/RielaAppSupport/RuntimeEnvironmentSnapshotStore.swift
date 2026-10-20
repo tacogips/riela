@@ -170,8 +170,7 @@ enum RuntimeEnvironmentOutput {
       index += 1
       while index < bytes.count {
         let byte = bytes[index]; index += 1
-        if byte == 92 { guard index < bytes.count else { break }; index += 1 }
-        else if byte == 34 {
+        if byte == 92 { guard index < bytes.count else { break }; index += 1 } else if byte == 34 {
           guard let value = try? JSONDecoder().decode(String.self, from: Data(bytes[start..<index])) else { throw RuntimeEnvironmentError.outputInvalid }
           return value
         }

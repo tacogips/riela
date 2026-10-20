@@ -35,16 +35,20 @@ extension RielaApp {
         guard !terminationShutdownStarted, approved.profileName == daemonProfileName else {
           return .json(status: 409, .object(["error": .object(["code": .string("configuration_conflict")])]))
         }
+        let runtimeConfiguration = daemonRuntimeConfiguration(for: approved.candidate, preference: approved.preference)
+        let snapshot = try await daemonRuntime.prepareEnvironment(for: approved.candidate, configuration: runtimeConfiguration)
         let context = RielaWebWorkflowContext(
           profile: daemonProfileName, assistant: daemonState.assistant, sources: daemonWorkflowSources,
           workingDirectory: appHomeDirectory, appRoot: profileStore.appRootURL,
           sessionStoreRoot: daemonSessionStoreRoot(profileName: daemonProfileName),
           principalId: RielaAppWebRegistryAuthorizer.principalId,
-          environment: daemonEnvironment(for: approved.candidate, preference: approved.preference)
+          environment: snapshot.runtimeEnvironment()
         )
         return webWorkflowRuntime.handler(context: context).launchConfiguredWorkflow(
           identity: identity, source: approved.candidate, configuration: approved.preference.configuration, variables: input.variables
         )
+      } catch let error as RuntimeEnvironmentError {
+        return .json(status: 422, .object(["error": .object(["code": .string(error.rawValue)])]))
       } catch {
         return .json(status: 409, .object(["error": .object(["code": .string("configuration_conflict")])]))
       }

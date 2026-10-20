@@ -15,6 +15,13 @@ public actor RuntimeEnvironmentSnapshotStore {
   private var entries: [RuntimeEnvironmentScope: Entry] = [:]
   private var statuses: [RuntimeEnvironmentScope: RuntimeEnvironmentStatus] = [:]
   private var busy: Set<RuntimeEnvironmentScope> = []
+  private struct Preparation {
+    var id: UUID
+    var configuration: RuntimeEnvironmentConfiguration
+    var required: [String]
+    var task: Task<RuntimeEnvironmentSnapshot, Error>
+  }
+  private var preparations: [RuntimeEnvironmentScope: Preparation] = [:]
   private let runner: any RuntimeEnvironmentCommandRunning
   private let maxOutputBytes: Int
 
@@ -35,14 +42,51 @@ public actor RuntimeEnvironmentSnapshotStore {
                       requiredNames: [String], baseEnvironment: [String: String]) async throws -> RuntimeEnvironmentSnapshot {
     let required = Array(Set(configuration.required + requiredNames)).sorted()
     if let entry = entries[scope], entry.configuration == configuration, entry.required == required {
-      return entry.snapshot
+      return try rebase(scope: scope, baseEnvironment: baseEnvironment)
     }
-    _ = try await reload(scope: scope, configuration: configuration, requiredNames: requiredNames, baseEnvironment: baseEnvironment)
-    return try capture(scope: scope)
+    if let pending = preparations[scope], pending.configuration == configuration, pending.required == required {
+      _ = try await pending.task.value
+      try Task.checkCancellation()
+      return try rebase(scope: scope, baseEnvironment: baseEnvironment)
+    }
+    let id = UUID()
+    let task = Task {
+      _ = try await self.reload(scope: scope, configuration: configuration, requiredNames: requiredNames, baseEnvironment: baseEnvironment)
+      return try self.capture(scope: scope)
+    }
+    preparations[scope] = Preparation(id: id, configuration: configuration, required: required, task: task)
+    defer { if preparations[scope]?.id == id { preparations.removeValue(forKey: scope) } }
+    _ = try await task.value
+    try Task.checkCancellation()
+    return try rebase(scope: scope, baseEnvironment: baseEnvironment)
+  }
+
+  private func rebase(scope: RuntimeEnvironmentScope, baseEnvironment: [String: String]) throws -> RuntimeEnvironmentSnapshot {
+    guard var entry = entries[scope] else { throw RuntimeEnvironmentError.notPrepared }
+    var environment = baseEnvironment
+    let previous = entry.snapshot.runtimeEnvironment()
+    for name in entry.configuration.sources.flatMap(\.names) { environment[name] = previous[name] }
+    guard entry.required.allSatisfy({ !Self.empty(environment[$0]) }) else { throw RuntimeEnvironmentError.requiredMissing }
+    if previous != environment {
+      guard !busy.contains(scope) else { throw RuntimeEnvironmentError.sourceFailed }
+      entry.snapshot = RuntimeEnvironmentSnapshot(generation: entry.snapshot.generation + 1, names: entry.snapshot.names, environment: environment)
+      entries[scope] = entry
+      if var status = statuses[scope] {
+        status.generation = entry.snapshot.generation
+        status.configuredNames = status.names.filter { !Self.empty(environment[$0]) }
+        statuses[scope] = status
+      }
+    }
+    return entry.snapshot
+  }
+
+  private static func empty(_ value: String?) -> Bool {
+    value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
   }
 
   public func reload(scope: RuntimeEnvironmentScope, configuration: RuntimeEnvironmentConfiguration,
-                     requiredNames: [String], baseEnvironment: [String: String]) async throws -> RuntimeEnvironmentStatus {
+                     requiredNames: [String], baseEnvironment: [String: String],
+                     install: (@Sendable (RuntimeEnvironmentSnapshot) async throws -> Void)? = nil) async throws -> RuntimeEnvironmentStatus {
     guard !busy.contains(scope) else { throw RuntimeEnvironmentError.sourceFailed }
     busy.insert(scope)
     defer { busy.remove(scope) }
@@ -64,19 +108,22 @@ public actor RuntimeEnvironmentSnapshotStore {
           environment[name] = loaded[name]
         }
       }
-      let missing = required.filter { environment[$0]?.isEmpty != false }
+      let missing = required.filter { Self.empty(environment[$0]) }
       guard missing.isEmpty else { throw RuntimeEnvironmentError.requiredMissing }
       let snapshot = RuntimeEnvironmentSnapshot(generation: generation + 1, names: names, environment: environment)
+      // A parent may require its private child-pipe ACK before publication.
+      // Failure preserves the last successful snapshot without a partial swap.
+      if let install { try await install(snapshot) }
       entries[scope] = Entry(configuration: configuration, required: required, snapshot: snapshot)
-      statuses[scope] = RuntimeEnvironmentStatus(names: names, configuredNames: names.filter { environment[$0]?.isEmpty == false },
+      statuses[scope] = RuntimeEnvironmentStatus(names: names, configuredNames: names.filter { !Self.empty(environment[$0]) },
         sourceIDs: configuration.sources.map(\.id), generation: snapshot.generation, readiness: .ready)
       return statuses[scope]!
     } catch {
       let safe = error as? RuntimeEnvironmentError ?? .sourceFailed
       let previous = entries[scope]?.snapshot
       statuses[scope] = RuntimeEnvironmentStatus(names: names,
-        configuredNames: previous.map { snapshot in names.filter { snapshot.runtimeEnvironment()[$0]?.isEmpty == false } } ?? [],
-        missingNames: previous == nil ? required.filter { environment[$0]?.isEmpty != false } : [],
+        configuredNames: previous.map { snapshot in names.filter { !Self.empty(snapshot.runtimeEnvironment()[$0]) } } ?? [],
+        missingNames: previous == nil ? required.filter { Self.empty(environment[$0]) } : [],
         sourceIDs: configuration.sources.map(\.id), generation: generation,
         readiness: previous == nil ? .failed : .ready, lastError: safe)
       if error is CancellationError { throw CancellationError() }
@@ -123,8 +170,7 @@ enum RuntimeEnvironmentOutput {
       index += 1
       while index < bytes.count {
         let byte = bytes[index]; index += 1
-        if byte == 92 { guard index < bytes.count else { break }; index += 1 }
-        else if byte == 34 {
+        if byte == 92 { guard index < bytes.count else { break }; index += 1 } else if byte == 34 {
           guard let value = try? JSONDecoder().decode(String.self, from: Data(bytes[start..<index])) else { throw RuntimeEnvironmentError.outputInvalid }
           return value
         }

@@ -108,6 +108,7 @@ public struct WorkflowRunCommand: Sendable {
       let telemetry = makeTelemetry(environment: runEnvironment)
       let runner = DeterministicWorkflowRunner(
         store: durableRuntime.runtimeStore, adapter: adapter,
+        runtimeEnvironment: runEnvironment,
         distributedExecutor: try configuredDistributedExecutor(environment: runEnvironment),
         addonResolver: addonResolver,
         stdioNodeExecutor: stdioNodeExecutor,
@@ -438,6 +439,9 @@ public struct WorkflowRunCommand: Sendable {
   }
 
   private func rejectUnsupportedRunOptions(_ options: WorkflowRunOptions) throws {
+    if options.endpoint != nil && options.runtimeEnvironmentFile != nil {
+      throw CLIUsageError("--runtime-environment-file is local-only")
+    }
     if options.fromRegistry && isTemporaryWorkflowRunTarget(options.target, workingDirectory: options.workingDirectory) {
       throw CLIUsageError("temporary workflow JSON cannot be combined with --from-registry")
     }

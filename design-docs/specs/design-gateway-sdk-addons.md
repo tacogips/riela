@@ -1,5 +1,16 @@
 # Operation-mode gateway SDK add-ons and schema discovery
 
+## Main integration checkpoint (2026-10-20)
+
+The accepted design and plans below are preserved as historical implementation
+inputs. Core validation and its existing tests are integrated as an explicit
+`DefaultWorkflowValidator(context:)` opt-in. The default validator retains its
+current behavior until operation execution, schema discovery, and catalog wiring
+are complete. Plans 03–05 remain unfinished; this merge does not declare them
+implemented. Historical progress logs describe the original worktree only.
+Current gateway dependency revisions are retained rather than restoring the old
+plan 01 pins or adding an unused GatewaySDKKit dependency.
+
 Status: accepted design baseline for plans 01–05 on
 `feat/remaining-impl-plans-20260927`. The prior implementation run left plan 01
 dependency and lockfile changes in the working tree, but its progress gate still

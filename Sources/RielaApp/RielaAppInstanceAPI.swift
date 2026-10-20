@@ -83,7 +83,8 @@ extension RielaApp {
         }
         return environmentResponse(await daemonRuntime.environmentStatus(identity: runtimeIdentity, profile: selectedProfile.rawValue))
       } catch {
-        let status = await daemonRuntime.environmentStatus(identity: runtimeIdentity, profile: selectedProfile.rawValue)
+        var status = await daemonRuntime.environmentStatus(identity: runtimeIdentity, profile: selectedProfile.rawValue)
+        status.lastError = error as? RuntimeEnvironmentError ?? .sourceFailed
         return environmentResponse(status, status: 422)
       }
     }

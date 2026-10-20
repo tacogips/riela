@@ -1472,6 +1472,52 @@ confirms before using the file and only displays set/missing status, not values.
 ]
 ```
 
+Runtime environment loaders keep credentials in memory for the lifetime of the
+App instance. In its run configuration, set `environmentResolution` to a descriptor:
+
+```json
+{
+  "required": ["SERVICE_API_KEY"],
+  "sources": [{
+    "id": "credentials",
+    "names": ["SERVICE_API_KEY"],
+    "command": ["/path/to/credential-loader", "--json"],
+    "format": "json",
+    "timeoutSeconds": 30
+  }]
+}
+```
+
+The command returns a JSON object of environment names and string values, or
+NUL-separated `NAME=value` records when `format` is `env0`. Commands are argv
+arrays executed without a shell; only declared names are accepted from their
+output. Descriptors and required names are persisted; resolved values are not.
+Workflow and file-backed node definitions can also declare
+`"requiredEnvironment": ["SERVICE_API_KEY"]`. Missing required values or loader
+failures prevent execution and appear as safe errors in environment status.
+
+An instance loads once before its first execution. Later scheduled and manual
+runs reuse its in-memory snapshot, including when the credential store becomes
+locked. Use **Reload environment** in the App or target the App's HTTP server:
+
+```bash
+riela environment status --instance INSTANCE_ID --profile default --server http://127.0.0.1:8787
+riela environment reload --instance INSTANCE_ID --profile default --server http://127.0.0.1:8787
+```
+
+Status exposes names, missing names and generation, never values. A successful
+reload atomically supplies a new snapshot to future executions; already running
+executions keep their captured snapshot. A failed credential reload preserves
+the last successful snapshot. Changing managed names or loader descriptors on a
+running instance requires stopping and starting it. Restarting the App clears
+memory and requires the store to be readable again.
+
+Local one-shot CLI runs accept `--runtime-environment-file /path/to/descriptor.json`.
+Bare CLI resident processes can load the descriptor at startup too; the reload
+command above addresses the App owner and does not reload an unrelated standalone
+CLI process. Keep credentials out of descriptor files, default variables and
+command arguments.
+
 For manual verification, demos, or support reproduction without touching the
 normal user catalog, launch RielaApp with isolated roots:
 

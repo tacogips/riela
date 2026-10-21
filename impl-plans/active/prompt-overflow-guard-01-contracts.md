@@ -30,6 +30,9 @@ any git write command.
 - `Sources/RielaCore/WorkflowRawValidation.swift`
 - `Sources/RielaCore/RuntimeVariablesPromptView.swift`
 - `Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift`
+- `Sources/RielaCore/RuntimeStore.swift`
+- `Sources/RielaCore/RuntimeStorePublicationTransactions.swift`
+- `Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift`
 - `Tests/RielaCoreTests/PromptOverflowContractsTests.swift`
 - `Tests/RielaCoreTests/RuntimeVariablesPromptViewTests.swift`
 - `impl-plans/progress/pog-01-contracts.md`
@@ -331,3 +334,17 @@ Write all logs to `tmp/prompt-overflow/pog-01-contracts/`.
 - Record the sha256 before and after each edit in the progress log.
 - If a file's pre-edit hash differs from your last read, stop editing it and
   record the drift. Edit only your own `writePaths`.
+
+
+## Operator amendment (2026-10-22, rerun after session-475)
+
+Attempt 1 blocked on scope: per-step `failureKind` persistence needs the
+runtime store. writePaths now also include `Sources/RielaCore/RuntimeStore.swift`,
+`Sources/RielaCore/RuntimeStorePublicationTransactions.swift` and
+`Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift` (same change in
+the dispatch manifest). The acceptance criterion is unchanged: step and session
+records carry `promptTooLarge` for an overflow adapter error and
+`adapterFailure` for unrelated errors. The attempt-1 work is still in the
+working tree; reuse it, add the step-level field end to end (optional,
+decodes absent as nil), restore the runner assertion, then rerun every
+verification command and lint the changed Swift files.

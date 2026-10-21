@@ -149,6 +149,26 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+Scheduled workflow overlap policy
+([design](../design-docs/specs/design-scheduled-overlap-policy.md)):
+[`schedule-overlap-policy-01-contracts`](completed/schedule-overlap-policy-01-contracts.md),
+[`schedule-overlap-policy-02-serve-dispatch`](completed/schedule-overlap-policy-02-serve-dispatch.md),
+[`schedule-overlap-policy-03-inspection`](completed/schedule-overlap-policy-03-inspection.md),
+[`schedule-overlap-policy-04-routine-surfaces`](completed/schedule-overlap-policy-04-routine-surfaces.md),
+and [`schedule-overlap-policy-05-integration`](completed/schedule-overlap-policy-05-integration.md)
+were archived on 2026-10-22 after the session-474 integration review accepted
+the combined tree at `6a5ea0f3`. The combined build passed. The focused suites
+ran 60 and 153 tests (1 skipped by design) with 0 failures. The SDL hash was
+unchanged by regeneration, selected-file strict SwiftLint passed, and the S1-S4
+CLI smoke checks passed. Browser E2E was skipped because no browser-facing file
+changed. User-QA Q1 (cancelled runs are recorded as `failed` with
+`failureKind: cancelled`) is still open in
+[`qa-scheduled-overlap-policy.md`](../design-docs/user-qa/qa-scheduled-overlap-policy.md).
+The dispatch manifest stays at
+[`active/schedule-overlap-policy-20261021-session-471-dispatch.json`](active/schedule-overlap-policy-20261021-session-471-dispatch.json).
+Progress logs: [`progress/overlap-01-contracts.md`](progress/overlap-01-contracts.md)
+through [`progress/overlap-05-integration.md`](progress/overlap-05-integration.md).
+
 Issue [#117](https://github.com/tacogips/riela/issues/117):
 [`issue-117-installed-local-command`](completed/issue-117-installed-local-command.md)
 was archived after accepted implementation and integration reviews. The

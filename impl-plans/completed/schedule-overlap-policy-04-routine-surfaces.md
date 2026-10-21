@@ -1,7 +1,7 @@
 # Schedule Overlap Policy 04: Routine CLI and GraphQL Surfaces Implementation Plan
 
 **planId**: `overlap-04-routine-surfaces`
-**Status**: Ready for implementation (wave 2)
+**Status**: Completed 2026-10-22 (implemented in `3cd0c117`; accepted by the session-474 integration review)
 **Workflow Mode**: issue-resolution
 **Issue Reference**: none (no issueUrl or issueNumber). The intake came from
 workflowInput.requestedBehavior via comm-008602 and comm-008603.

@@ -766,13 +766,17 @@ bounded.
 
 Surfaces:
 
-- CLI: `riela routine create --name <n> --task <t> (--schedule "0 */30 * * * *" | --every 30m) --workflow routine-task-runner [--completion-criteria <c>] [--timezone Asia/Tokyo] [--deactivate-workflow-on-completion]`,
+- CLI: `riela routine create --name <n> --task <t> (--schedule "0 */30 * * * *" | --every 30m) --workflow routine-task-runner [--completion-criteria <c>] [--timezone Asia/Tokyo] [--deactivate-workflow-on-completion] [--overlap-policy <skip|cancelRunning|queue|concurrent>] [--max-queued-runs <n>] [--max-concurrent-runs <n>]`,
   plus `list`, `inspect <id>`, `complete <id> [--note ...]`, `enable <id>`,
-  `disable <id>`, and `delete <id>`.
+  `disable <id>`, `set-overlap-policy <id> (--overlap-policy <v> | --clear-overlap-policy) [--max-queued-runs <n>] [--max-concurrent-runs <n>]`,
+  and `delete <id>`. `inspect` prints `overlapPolicy=<v|inherit>`. A policy
+  change takes effect the next time `riela events serve` starts.
 - GraphQL (locally trusted hosts): `routines` / `routine` queries and
-  `createRoutine` / `completeRoutine` / `setRoutineStatus` / `deleteRoutine`
-  mutations, available through `riela graphql execute --query ...` and the
-  RielaApp web `/graphql` endpoint.
+  `createRoutine` / `completeRoutine` / `setRoutineStatus` / `deleteRoutine` /
+  `setRoutineOverlapPolicy` mutations (`Routine` and `CreateRoutineInput` carry
+  `overlapPolicy`, `maxQueuedRuns`, and `maxConcurrentRuns`), available
+  through `riela graphql execute --query ...` and the RielaApp web `/graphql`
+  endpoint.
 - Add-ons: `riela/routine-create`, `riela/routine-complete`,
   `riela/routine-get`, `riela/routine-list`, `riela/routine-update-status`,
   and `riela/routine-delete`, so workflows can manage routines themselves.
@@ -785,6 +789,50 @@ the workflow registry. Reference bundles: `examples/routine-task-runner` (the
 generic per-tick executor) and `examples/routine-chat-manager` (create a
 routine from a chat instruction like "check the release status every 30
 minutes and stop once v2.0 ships" and confirm in the conversation).
+
+### Overlapping cron fires
+
+`riela events serve` runs cron-fired workflows as tracked in-flight tasks, so a
+long run does not block the other sources in the same serve process. When a
+fire arrives while a run of the same binding is still in flight, the
+binding's overlap policy decides what happens:
+
+- `skip` (the default): the new fire starts no run. It is recorded with reason
+  `overlap-skip:<bindingId>:<runningSessionId>`.
+- `cancelRunning`: the in-flight run is cancelled through the runtime's normal
+  cancellation path. The new fire waits up to 30 seconds for that run to
+  settle and then starts. The cancelled session ends as `failed` with
+  `failureKind: cancelled`. If it does not settle within 30 seconds, the new
+  fire is not started and is recorded as `overlap-cancel-timeout`.
+- `queue`: the fire waits in an in-memory FIFO of at most `maxQueuedRuns`
+  entries (default `1`). A fire that finds the queue full is dropped. A
+  `--limit` run waits for queued fires to finish. A signal or error shutdown
+  discards them and records them as discarded.
+- `concurrent`: the fire starts at once, in parallel. If `maxConcurrentRuns`
+  is set and that many runs are already in flight, the fire is dropped.
+
+Set `overlapPolicy` (plus `maxQueuedRuns` for `queue` or `maxConcurrentRuns`
+for `concurrent`) on a cron binding, or on a routine with the flags above. To
+set a default for a workflow, put the same keys in a `triggerDefaults` object
+in its `workflow.json`. Manual runs ignore `triggerDefaults`. The policy
+resolves as binding, then workflow `triggerDefaults`, then `skip`, and is
+resolved once when serve starts. Existing configs that do not set it get
+`skip`. Before this change, missed ticks were merged into one later fire; set
+`"overlapPolicy": "queue"` to keep that catch-up behavior. Unknown values fail
+`riela events validate` (JSON `status: failed`) and `riela workflow validate`.
+
+Every outcome is recorded as a cron receipt. `riela events list` adds
+` reason=overlap-...` and ` binding=<id>` to each line, and `--status skipped`
+filters skipped fires. `serve-record.json` gains `overlapPolicies` and
+`lastIgnoredReason`. `riela workflow inspect` prints a `triggerDefaults:` line.
+A routine counts only runs that complete successfully. Skipped, dropped,
+cancelled and failed fires are not counted, and `lastRunAt` never moves
+backwards when concurrent runs finish out of order.
+
+Only cron sources apply an overlap policy; webhooky, file-change and chat
+sources still run their workflows inline. The policy applies within one serve
+process; `workflow.loop.concurrency` remains the cross-process guard. See
+[the overlap policy design](design-docs/specs/design-scheduled-overlap-policy.md).
 
 ## Document Conversion Add-On
 

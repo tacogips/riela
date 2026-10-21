@@ -1,7 +1,7 @@
 # Schedule Overlap Policy 02: Non-Blocking Cron Dispatch Implementation Plan
 
 **planId**: `overlap-02-serve-dispatch`
-**Status**: Ready for implementation (wave 2)
+**Status**: Completed 2026-10-22 (implemented in `cd109008`; accepted by the session-474 integration review)
 **Workflow Mode**: issue-resolution
 **Issue Reference**: none (no issueUrl or issueNumber). The intake came from
 workflowInput.requestedBehavior via comm-008602 and comm-008603.

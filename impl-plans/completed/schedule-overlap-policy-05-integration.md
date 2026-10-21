@@ -1,7 +1,7 @@
 # Schedule Overlap Policy 05: Integration Verification and Index Implementation Plan
 
 **planId**: `overlap-05-integration`
-**Status**: Ready for implementation (wave 3, serial reconciliation)
+**Status**: Completed 2026-10-22 (V1-V7 and S1-S4 passed on `6a5ea0f3`; accepted by the session-474 integration review, comm-008689)
 **Workflow Mode**: issue-resolution
 **Issue Reference**: none (no issueUrl or issueNumber). The intake came from
 workflowInput.requestedBehavior via comm-008602 and comm-008603.

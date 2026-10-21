@@ -86,11 +86,11 @@
       "design-docs/user-qa/qa-scheduled-overlap-policy.md",
       "design-docs/specs/event-listener-workflow-trigger/provider-source-types.md",
       "design-docs/routine-management.md",
-      "impl-plans/active/schedule-overlap-policy-01-contracts.md",
-      "impl-plans/active/schedule-overlap-policy-02-serve-dispatch.md",
-      "impl-plans/active/schedule-overlap-policy-03-inspection.md",
-      "impl-plans/active/schedule-overlap-policy-04-routine-surfaces.md",
-      "impl-plans/active/schedule-overlap-policy-05-integration.md"
+      "impl-plans/completed/schedule-overlap-policy-01-contracts.md",
+      "impl-plans/completed/schedule-overlap-policy-02-serve-dispatch.md",
+      "impl-plans/completed/schedule-overlap-policy-03-inspection.md",
+      "impl-plans/completed/schedule-overlap-policy-04-routine-surfaces.md",
+      "impl-plans/completed/schedule-overlap-policy-05-integration.md"
     ],
     "codexAgentReferences": [],
     "residualFindings": [
@@ -104,7 +104,7 @@
   "plans": [
     {
       "planId": "overlap-05-integration",
-      "planPath": "impl-plans/active/schedule-overlap-policy-05-integration.md",
+      "planPath": "impl-plans/completed/schedule-overlap-policy-05-integration.md",
       "dependsOn": [],
       "writePaths": [
         "impl-plans/README.md",
@@ -132,25 +132,25 @@
   "acceptedDependencies": [
     {
       "planId": "overlap-01-contracts",
-      "planPath": "impl-plans/active/schedule-overlap-policy-01-contracts.md",
+      "planPath": "impl-plans/completed/schedule-overlap-policy-01-contracts.md",
       "commit": "cd109008b4ac289f20e896edcdffe68608276748",
       "provides": "Policy enum, settings, resolver, binding/workflow triggerDefaults validation and RoutineStore field"
     },
     {
       "planId": "overlap-02-serve-dispatch",
-      "planPath": "impl-plans/active/schedule-overlap-policy-02-serve-dispatch.md",
+      "planPath": "impl-plans/completed/schedule-overlap-policy-02-serve-dispatch.md",
       "commit": "cd109008b4ac289f20e896edcdffe68608276748",
       "provides": "CronOverlapDispatcher tracked cron runs (skip/cancelRunning/queue/concurrent), dueTicks, non-blocking serve loop"
     },
     {
       "planId": "overlap-03-inspection",
-      "planPath": "impl-plans/active/schedule-overlap-policy-03-inspection.md",
+      "planPath": "impl-plans/completed/schedule-overlap-policy-03-inspection.md",
       "commit": "cd109008b4ac289f20e896edcdffe68608276748",
       "provides": "events validate/list and workflow inspect overlap policy visibility"
     },
     {
       "planId": "overlap-04-routine-surfaces",
-      "planPath": "impl-plans/active/schedule-overlap-policy-04-routine-surfaces.md",
+      "planPath": "impl-plans/completed/schedule-overlap-policy-04-routine-surfaces.md",
       "commit": "3cd0c117",
       "provides": "routine create/set-overlap-policy CLI, GraphQL EventOverlapPolicy + setRoutineOverlapPolicy, catalog row, regenerated SDL"
     }

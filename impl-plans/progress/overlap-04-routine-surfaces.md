@@ -1,6 +1,6 @@
 # Progress: overlap-04-routine-surfaces
 
-**Plan:** `impl-plans/active/schedule-overlap-policy-04-routine-surfaces.md`  
+**Plan:** `impl-plans/completed/schedule-overlap-policy-04-routine-surfaces.md`\
 **Mode:** issue-resolution  
 **Issue reference:** none (intake comm-008602/comm-008603; design comm-008607; accepted plan overlap-04-routine-surfaces depends on accepted overlap-01-contracts).  
 **Codex-agent references:** none.  

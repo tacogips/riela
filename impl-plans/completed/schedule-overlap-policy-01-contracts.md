@@ -1,7 +1,7 @@
 # Schedule Overlap Policy 01: Contracts Implementation Plan
 
 **planId**: `overlap-01-contracts`
-**Status**: Ready for implementation (wave 1)
+**Status**: Completed 2026-10-22 (implemented in `cd109008`; accepted by the session-474 integration review)
 **Workflow Mode**: issue-resolution
 **Issue Reference**: none (no issueUrl or issueNumber). The intake came from
 workflowInput.requestedBehavior via comm-008602 and comm-008603.

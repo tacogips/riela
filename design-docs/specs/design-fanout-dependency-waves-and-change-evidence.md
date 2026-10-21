@@ -81,7 +81,11 @@ observed bytes, SHA256 and mode in unique private files under workspace
 workers. Original evidence is never replaced by a later attempt.
 
 The join's `changeEvidence` contains artifactPaths, observations, hasDrift,
-requiresSemanticReview and observationBoundary. Compare observed states with the
+requiresSemanticReview and observationBoundary. Observations are aggregated
+per (branchId, selection, path) and capped inline. The join reports the total,
+inline and per-branch counts, a truncation flag, and `observationsPath`, which
+names the full list in the evidence directory. `hasDrift` is derived from the
+total count. See `design-agent-prompt-overflow-guard.md` Part A. Compare observed states with the
 stable final tree after every branch stops. Do not include source bytes in the
 joined output or diagnose hash drift as confirmed data loss. Keep source-bearing
 artifacts private and untracked.

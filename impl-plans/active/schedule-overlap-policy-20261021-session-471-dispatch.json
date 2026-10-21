@@ -99,54 +99,13 @@
     "resolvedFindings": [
       "opus-luna-design-and-implement-review-loop-session-471-step3-design-review-attempt-1-finding-1 (mid, resolved): design §6.5 places sessionStartedObserver outside the jsonlRecorder block (design-docs/specs/design-scheduled-overlap-policy.md:339-346, D13); implemented in Sources/RielaCLI/WorkflowRunCommand.swift:166-168 and wired via Sources/RielaCLI/EventLiveServe.swift:944 in accepted commit cd109008b4ac289f20e896edcdffe68608276748."
     ],
-    "continuation": "Rerun opus-luna-design-and-implement-review-loop-session-472 continues task schedule-overlap-policy-20261021-session-471; overlap-01..03 landed in cd109008b4ac289f20e896edcdffe68608276748 on top of originalHead; remaining plans overlap-04 and overlap-05."
+    "continuation": "Rerun opus-luna-design-and-implement-review-loop-session-473 continues task schedule-overlap-policy-20261021-session-471; overlap-01..03 landed in cd109008b4ac289f20e896edcdffe68608276748 and overlap-04 in 3cd0c117 on top of originalHead (CLI surface parity fix 42b81cd4); the only remaining plan is overlap-05-integration."
   },
   "plans": [
     {
-      "planId": "overlap-04-routine-surfaces",
-      "planPath": "impl-plans/active/schedule-overlap-policy-04-routine-surfaces.md",
-      "dependsOn": [
-        "overlap-01-contracts"
-      ],
-      "writePaths": [
-        "Sources/RielaWorkflowRegistry/RoutineService.swift",
-        "Sources/RielaWorkflowRegistry/RoutineGraphQLProvider.swift",
-        "Sources/RielaGraphQL/RoutineGraphQL.swift",
-        "Sources/RielaGraphQL/GraphQLSchemaGenerator.swift",
-        "Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift",
-        "Sources/RielaCore/SurfaceCatalog+RowsCLI.swift",
-        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
-        "Sources/RielaCLI/RoutineCommands.swift",
-        "Tests/RielaGraphQLTests/RoutineGraphQLTests.swift",
-        "Tests/RielaCLITests/RoutineCommandTests.swift",
-        "impl-plans/progress/overlap-04-routine-surfaces.md",
-        "tmp/schedule-overlap-policy-20261021-session-471/overlap-04-routine-surfaces"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "routine create accepts --overlap-policy, --max-queued-runs and --max-concurrent-runs. The new routine set-overlap-policy action supports --clear-overlap-policy. routine inspect shows the values.",
-        "RoutineService.setOverlapPolicy validates before persisting and rewrites the binding file while keeping enabled.",
-        "GraphQL: enum EventOverlapPolicy, the Routine fields, the CreateRoutineInput fields, and the setRoutineOverlapPolicy mutation with its executor case.",
-        "The SurfaceCatalog row routine.set-overlap-policy exists. The SDL is regenerated via the script, and SurfaceParity is green.",
-        "V1-V4 pass with positive test counts."
-      ],
-      "verification": [
-        "mkdir -p tmp/schedule-overlap-policy-20261021-session-471/overlap-04-routine-surfaces",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/schedule-overlap-policy-20261021-session-471/overlap-04-routine-surfaces/v1-build.log 2>&1",
-        "scripts/surface-parity/generate-sdl.sh > tmp/schedule-overlap-policy-20261021-session-471/overlap-04-routine-surfaces/v2-sdl.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter \"RoutineGraphQLTests|RoutineCommandTests|RoutineAddonTests|EventRoutineBindingTests|SurfaceParity\"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-04-routine-surfaces/v3-tests.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaWorkflowRegistry/RoutineService.swift Sources/RielaWorkflowRegistry/RoutineGraphQLProvider.swift Sources/RielaGraphQL/RoutineGraphQL.swift Sources/RielaGraphQL/GraphQLSchemaGenerator.swift Sources/RielaCore/SurfaceCatalog+RowsCLI.swift Sources/RielaCLI/RielaClientFamilyArguments.swift Sources/RielaCLI/RoutineCommands.swift Tests/RielaGraphQLTests/RoutineGraphQLTests.swift Tests/RielaCLITests/RoutineCommandTests.swift' > tmp/schedule-overlap-policy-20261021-session-471/overlap-04-routine-surfaces/v4-lint.log 2>&1"
-      ]
-    },
-    {
       "planId": "overlap-05-integration",
       "planPath": "impl-plans/active/schedule-overlap-policy-05-integration.md",
-      "dependsOn": [
-        "overlap-02-serve-dispatch",
-        "overlap-03-inspection",
-        "overlap-04-routine-surfaces"
-      ],
+      "dependsOn": [],
       "writePaths": [
         "impl-plans/README.md",
         "impl-plans/progress/overlap-05-integration.md",
@@ -188,6 +147,12 @@
       "planPath": "impl-plans/active/schedule-overlap-policy-03-inspection.md",
       "commit": "cd109008b4ac289f20e896edcdffe68608276748",
       "provides": "events validate/list and workflow inspect overlap policy visibility"
+    },
+    {
+      "planId": "overlap-04-routine-surfaces",
+      "planPath": "impl-plans/active/schedule-overlap-policy-04-routine-surfaces.md",
+      "commit": "3cd0c117",
+      "provides": "routine create/set-overlap-policy CLI, GraphQL EventOverlapPolicy + setRoutineOverlapPolicy, catalog row, regenerated SDL"
     }
   ]
 }

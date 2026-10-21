@@ -9,8 +9,12 @@ workflowExecutionId: `opus-luna-design-and-implement-review-loop-session-471`.
 **Design Reference**: `design-docs/specs/design-scheduled-overlap-policy.md`
 (accepted by Step 3, comm-008607): §5 (diagnostic texts), §14 (verification)
 and §12 (docs).
-**dependsOn**: `overlap-02-serve-dispatch`, `overlap-03-inspection`,
-`overlap-04-routine-surfaces`
+**dependsOn**: none remaining in this checkpoint. overlap-01 to overlap-04 are
+already accepted and committed: overlap-01/02/03 in `cd109008`, the
+pre-existing CLI surface parity fix in `42b81cd4`, and overlap-04 in `3cd0c117`
+(accepted by the session-472 integration review). They are listed under
+`acceptedDependencies` in the dispatch manifest, so this plan runs against the
+combined tree at HEAD.
 **Branch**: `feat/schedule-overlap-policy`. Make no commits, run no git write
 commands.
 **Progress log**: `impl-plans/progress/overlap-05-integration.md`

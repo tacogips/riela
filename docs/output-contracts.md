@@ -22,6 +22,9 @@ rejection. An undeclared `maxValidationAttempts` defaults to 2 for every node
 with an `output` block, including description-only contracts. A node without
 an `output` block gets one attempt and its full answer is always published as
 `{"text": ...}`; it is never interpreted opportunistically as an envelope.
+When every attempt is rejected, the session fails with failureKind
+`adapterFailure`, so `riela session resume <session-id> --retry-failed-step`
+can retry that step after the prompt or contract is fixed.
 
 Declare `output.jsonSchema` whenever a downstream add-on config/input template
 reads the payload (`{{field}}`, `{{input.field}}`, or

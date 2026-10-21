@@ -20,6 +20,8 @@ struct ParsedCacheArguments: ParsableArguments {
 }
 
 struct CacheCommandRunner {
+  static let operations = ["configure", "put", "get", "protect", "delete", "prune"]
+
   func run(_ arguments: [String]) -> CLICommandResult {
     if arguments.contains("--help") || arguments.contains("-h") {
       let help = ParsedCacheArguments.helpMessage().replacingOccurrences(of: "parsed_cache_arguments", with: "riela cache")

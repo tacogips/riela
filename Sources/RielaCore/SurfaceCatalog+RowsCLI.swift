@@ -69,7 +69,7 @@ private let graphQLClientDefaults = SurfaceRowDefaults(
 
 extension SurfaceCatalog {
   static let registryClientRows: [SurfaceOperation] =
-    packageRows + nodeRows + memoryRows + instanceRows + specialistRows
+    packageRows + nodeRows + memoryRows + cacheRows + instanceRows + specialistRows
       + localToolRows + eventRows + routineCLIRows + serveRows + graphQLClientRows + operatorRows
       + taskMutationRows + gatewayRows + environmentRows
 
@@ -255,6 +255,31 @@ extension SurfaceCatalog {
         cli: "memory \(name)",
         cliOptions: ["--workflow-id", "--payload-json", "--payload-file", "--record-id", "--all-workflows"]
       )
+    } + [
+      ("history", SurfaceOperation.Kind.query, ["--record-id", "--before-version", "--limit"]),
+      ("show-version", .query, ["--record-id", "--version"]),
+      ("restore-version", .mutation, ["--record-id", "--version", "--expected-head-version"]),
+      ("retire-history", .mutation, [
+        "--memory-root", "--record-id", "--workflow-id", "--node-id", "--tag",
+        "--expected-head-version", "--through-version", "--dry-run"
+      ])
+    ].map { name, kind, options in
+      surfaceRow(memoryDefaults, id: "memory.\(name)", family: "memory", kind: kind, cli: "memory \(name)",
+        cliOptions: options)
+    }
+  }
+
+  private static var cacheRows: [SurfaceOperation] {
+    [
+      ("configure", SurfaceOperation.Kind.mutation, ["--ttl-seconds", "--max-bytes"]),
+      ("put", .mutation, ["--scope", "--entries-file", "--key", "--fetched-at", "--payload-file"]),
+      ("get", .query, ["--scope", "--keys-file", "--key", "--max-output-bytes"]),
+      ("protect", .mutation, ["--scope", "--entries-file"]),
+      ("delete", .mutation, ["--scope", "--entries-file", "--key", "--expected-revision"]),
+      ("prune", .mutation, [])
+    ].map { name, kind, options in
+      surfaceRow(localToolDefaults, id: "cache.\(name)", family: "cache", kind: kind, cli: "cache \(name)",
+        cliOptions: ["--cache-root", "--output"] + options)
     }
   }
 

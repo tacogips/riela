@@ -72,6 +72,8 @@ public enum CLISurfaceEnumerator {
       return nested(["status", "reload"])
     case "memory":
       return nested(MemoryCommandKind.allRawValues)
+    case "cache":
+      return nested(CacheCommandRunner.operations)
     case "instance":
       return nested(InstanceClientSubcommand.allRawValues)
     case "specialist":
@@ -123,7 +125,7 @@ public enum CLISurfaceEnumerator {
 
   /// Routes `expand(route:)` knows how to walk into subcommands.
   static let expandedRoutes: Set<String> = ["environment",
-    "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "instance",
+    "workflow", "package", "node", "setup", "gateway", "kaiba", "memory", "cache", "instance",
     "specialist", "session", "loop", "task", "graphql", "hook", "events", "routine", "serve"
   ]
 
@@ -137,6 +139,7 @@ public enum CLISurfaceEnumerator {
       ParsedParityOptions.helpMessage(),
       ParsedWorkflowOptions.helpMessage(),
       ParsedMemoryOptions.helpMessage(),
+      ParsedCacheArguments.helpMessage(),
       ParsedRoutineOptions.helpMessage(),
       ParsedWorkflowManifestOptions.helpMessage(),
       ParsedWorkflowRegisterArguments.helpMessage(),

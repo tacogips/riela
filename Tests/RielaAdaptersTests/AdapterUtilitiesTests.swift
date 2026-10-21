@@ -417,6 +417,60 @@ final class AdapterUtilitiesTests: XCTestCase {
     }
   }
 
+  func testOutputContractEnvelopeNormalizesFlattenedWhenWithoutPayload() throws {
+    // Observed from a claude-code reviewer: routing flags mirrored into `when`,
+    // business fields left beside it instead of under `payload`.
+    let envelope = try normalizeOutputContractEnvelope(
+      [
+        "when": .object(["needs_revision": .bool(false), "plans_remaining": .bool(true)]),
+        "needs_revision": .bool(false),
+        "plans_remaining": .bool(true),
+        "accepted": .bool(true),
+        "loopGate": .object(["decision": .string("accepted")])
+      ],
+      source: "agent-gateway/claude-code"
+    )
+
+    XCTAssertTrue(envelope.usedEnvelope)
+    XCTAssertTrue(envelope.completionPassed)
+    XCTAssertEqual(envelope.when, ["needs_revision": false, "plans_remaining": true])
+    XCTAssertEqual(
+      envelope.payload,
+      [
+        "needs_revision": .bool(false),
+        "plans_remaining": .bool(true),
+        "accepted": .bool(true),
+        "loopGate": .object(["decision": .string("accepted")])
+      ]
+    )
+    XCTAssertEqual(envelope.routingDiagnostics.count, 1)
+
+    let flattenedWithCompletion = try normalizeOutputContractEnvelope(
+      ["completionPassed": .bool(false), "when": .object(["retry": .bool(true)]), "status": .string("x")],
+      source: "adapterOutput"
+    )
+    XCTAssertFalse(flattenedWithCompletion.completionPassed)
+    XCTAssertEqual(flattenedWithCompletion.payload, ["status": .string("x")])
+
+    let renormalized = try normalizeOutputContractEnvelope(
+      envelope.payload,
+      source: "adapterOutput",
+      defaults: (envelope.completionPassed, envelope.when)
+    )
+    XCTAssertFalse(renormalized.usedEnvelope)
+    XCTAssertEqual(renormalized.when, ["needs_revision": false, "plans_remaining": true])
+    XCTAssertEqual(renormalized.payload, envelope.payload)
+
+    XCTAssertThrowsError(
+      try normalizeOutputContractEnvelope(
+        ["when": .object(["accepted": .string("yes")]), "status": .string("ok")],
+        source: "adapterOutput"
+      )
+    ) { error in
+      XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidOutput)
+    }
+  }
+
   func testParseJSONCandidatePicksFencedJSONBlockAfterNonJSONFence() throws {
     let text = """
       I will continue thinking and providing output in English. Here is a snippet:

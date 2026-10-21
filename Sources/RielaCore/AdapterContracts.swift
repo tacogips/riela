@@ -354,8 +354,25 @@ public func normalizeOutputContractEnvelope(
     throw AdapterExecutionError(.invalidOutput, "\(source).when must be an object<boolean> when provided")
   }
 
-  guard let payloadValue = value["payload"], case let .object(payload) = payloadValue else {
-    throw AdapterExecutionError(.invalidOutput, "\(source).payload must be an object when when is provided")
+  let payload: JSONObject
+  var envelopeDiagnostics: [String] = []
+  if let payloadValue = value["payload"] {
+    guard case let .object(object) = payloadValue else {
+      throw AdapterExecutionError(.invalidOutput, "\(source).payload must be an object when when is provided")
+    }
+    payload = object
+  } else {
+    // Flattened routing envelope: a valid boolean `when` map with the business
+    // fields beside it instead of under `payload`. The intent is unambiguous,
+    // so treat the remaining top-level fields as the payload rather than
+    // rejecting the whole output; the output schema still validates them.
+    var flattened = value
+    flattened.removeValue(forKey: "when")
+    flattened.removeValue(forKey: "completionPassed")
+    payload = flattened
+    envelopeDiagnostics.append(
+      "\(source) returned `when` without `payload`; normalized the sibling top-level fields as the payload"
+    )
   }
 
   let completionPassed: Bool
@@ -375,7 +392,7 @@ public func normalizeOutputContractEnvelope(
     when: reconciled.when,
     payload: payload,
     usedEnvelope: true,
-    routingDiagnostics: reconciled.diagnostics
+    routingDiagnostics: envelopeDiagnostics + reconciled.diagnostics
   )
 }
 

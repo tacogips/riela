@@ -52,6 +52,14 @@ run**:
 - status `active` → run, then stamp `lastRunAt` / `runCount` back into the
   record.
 
+Overlap policy: a routine's binding can carry `overlapPolicy`,
+`maxQueuedRuns` and `maxConcurrentRuns` (see
+`design-docs/specs/design-scheduled-overlap-policy.md`). Queued and
+cancel-pending fires re-check the gate before they start. `runCount` and
+`lastRunAt` are updated once per successfully completed run. `lastRunAt` never
+moves backwards. Skipped, dropped, discarded, cancelled and failed fires are
+not counted.
+
 Completion (`riela routine complete`, the `completeRoutine` mutation, or the
 `riela/routine-complete` addon) does three things:
 
@@ -68,13 +76,15 @@ fields, so a paused routine can be resumed.
 
 ## Surfaces
 
-- **CLI** — `riela routine create|list|inspect|complete|enable|disable|delete`
+- **CLI** — `riela routine create|list|inspect|complete|enable|disable|delete|set-overlap-policy`
   (new top-level command family; `create` accepts `--name --task
   --schedule|--every --workflow [--completion-criteria] [--timezone]
   [--instruction] [--event-root] [--routine-store]
-  [--deactivate-workflow-on-completion]`).
+  [--deactivate-workflow-on-completion] [--overlap-policy]
+  [--max-queued-runs] [--max-concurrent-runs]`).
 - **GraphQL** — `routines(filter)` / `routine(routineId)` queries and
-  `createRoutine` / `completeRoutine` / `setRoutineStatus` / `deleteRoutine`
+  `createRoutine` / `completeRoutine` / `setRoutineStatus` / `deleteRoutine` /
+  `setRoutineOverlapPolicy`
   mutations, served by `RoutineGraphQLDocumentExecutor` (local-trust domain,
   same policy as configuration GraphQL) and wired into `riela graphql
   execute|document` and the RielaApp web `/graphql` fallback chain.

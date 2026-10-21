@@ -40,6 +40,16 @@ Scheduled cron behavior:
 - the cron adapter preserves existing config, binding, input mapping, dedupe,
   and event receipt behavior
 
+Overlapping fires: `riela events serve` runs cron-fired workflows as tracked
+in-flight tasks, so a long run never blocks the serve loop. When a fire
+overlaps an in-flight run of the same binding, the binding's effective
+`overlapPolicy` decides what happens: `skip` (the default), `cancelRunning`,
+`queue` or `concurrent`. The policy resolves binding > workflow
+`triggerDefaults` > `skip`. Missed ticks are coalesced only under the
+non-`concurrent` policies, and the coalesced count is recorded on the receipt.
+Every outcome is written as a cron receipt visible in `riela events list`.
+See `design-docs/specs/design-scheduled-overlap-policy.md`.
+
 ### Web-Hooky Stream
 
 `webhooky` subscribes to a [web-hooky](https://github.com/tacogips/web-hooky)

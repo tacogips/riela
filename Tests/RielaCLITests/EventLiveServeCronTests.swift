@@ -48,17 +48,17 @@ final class EventLiveServeCronTests: XCTestCase {
     XCTAssertFalse(nineAmTokyo.matches(date, calendar: utc))
   }
 
-  func testDueTickCoalescesMissedTicksIntoLatestMatch() {
+  func testDueTicksReturnsEveryBoundedMatchingSecond() {
     let source = CronScheduleSource(id: "tick", schedule: "*/30 * * * * *", timezone: "UTC")
     let base = Date(timeIntervalSince1970: 1_754_438_400)
     XCTAssertEqual(
-      source.dueTick(after: base.addingTimeInterval(-95), until: base),
-      base
+      source.dueTicks(after: base.addingTimeInterval(-95), until: base),
+      [base.addingTimeInterval(-90), base.addingTimeInterval(-60), base.addingTimeInterval(-30), base]
     )
-    XCTAssertNil(source.dueTick(after: base, until: base.addingTimeInterval(10)))
+    XCTAssertEqual(source.dueTicks(after: base, until: base.addingTimeInterval(10)), [])
     XCTAssertEqual(
-      source.dueTick(after: base, until: base.addingTimeInterval(31)),
-      base.addingTimeInterval(30)
+      source.dueTicks(after: base, until: base.addingTimeInterval(31)),
+      [base.addingTimeInterval(30)]
     )
   }
 
@@ -68,11 +68,15 @@ final class EventLiveServeCronTests: XCTestCase {
     let runner = FakeEventWorkflowRunner(replyText: "", replyAs: "")
     let server = DefaultEventLiveServer(workflowRunner: runner)
     let scheduled = Date(timeIntervalSince1970: 1_754_438_400)
+    let dispatcher = CronOverlapDispatcher(
+      server: server, eventRoot: eventRoot, parsed: try ParsedParityOptions(["--read-only"]),
+      policies: [:], clock: SystemEventServeClock(), cancelSettleTimeout: .seconds(30)
+    )
     let count = try await server.dispatchCronTick(
       source: CronScheduleSource(id: "cron-live", schedule: "* * * * * *", timezone: "UTC"),
       scheduledAt: scheduled, firedAt: scheduled.addingTimeInterval(1),
       config: try EventLiveConfig.load(eventRoot: eventRoot), eventRoot: eventRoot,
-      parsed: try ParsedParityOptions(["--read-only"])
+      parsed: try ParsedParityOptions(["--read-only"]), dispatcher: dispatcher
     )
     XCTAssertEqual(count, 1)
     let requests = await runner.requests
@@ -167,6 +171,11 @@ final class EventLiveServeCronTests: XCTestCase {
     let source = CronScheduleSource(id: "cron-live", schedule: "* * * * * *", timezone: "UTC")
     let parsed = try ParsedParityOptions([])
     let now = Date()
+    let dispatcher = CronOverlapDispatcher(
+      server: server, eventRoot: root, parsed: parsed,
+      policies: ["cron-to-workflow": EffectiveEventOverlapPolicy(policy: .skip, source: .default)],
+      clock: SystemEventServeClock(), cancelSettleTimeout: .seconds(30)
+    )
 
     let skipped = try await server.dispatchCronTick(
       source: source,
@@ -174,7 +183,7 @@ final class EventLiveServeCronTests: XCTestCase {
       firedAt: now,
       config: config,
       eventRoot: root,
-      parsed: parsed
+      parsed: parsed, dispatcher: dispatcher
     )
     XCTAssertEqual(skipped, 0)
     var requests = await workflowRunner.requests
@@ -188,9 +197,10 @@ final class EventLiveServeCronTests: XCTestCase {
       firedAt: now.addingTimeInterval(1),
       config: config,
       eventRoot: root,
-      parsed: parsed
+      parsed: parsed, dispatcher: dispatcher
     )
     XCTAssertEqual(dispatched, 1)
+    await dispatcher.drain()
     requests = await workflowRunner.requests
     XCTAssertEqual(requests.count, 1)
     XCTAssertEqual(try store.load(routineId: routine.routineId)?.runCount, 1)

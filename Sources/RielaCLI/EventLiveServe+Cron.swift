@@ -9,7 +9,10 @@ extension DefaultEventLiveServer {
     firedAt: Date,
     config: EventLiveConfig,
     eventRoot: URL,
-    parsed: ParsedParityOptions
+    parsed: ParsedParityOptions,
+    dispatcher: CronOverlapDispatcher,
+    isLatestDueTick: Bool = true,
+    coalescedTickCount: Int = 0
   ) async throws -> Int {
     let timeZone = source.resolvedTimeZone
     let envelope = ExternalEventEnvelope(
@@ -37,13 +40,16 @@ extension DefaultEventLiveServer {
     guard triggerResult.accepted else {
       return 0
     }
-    var dispatchedRun = false
+    var submitted = false
     for trigger in triggerResult.triggers {
       guard let workflowName = trigger.workflowName else {
         continue
       }
       let binding = config.bindings.first { $0.id == trigger.bindingId }
-      var routineGate: RoutineDispatchGate?
+      let policy = await dispatcher.effectivePolicy(bindingId: trigger.bindingId)
+      if policy.policy != .concurrent && !isLatestDueTick {
+        continue
+      }
       if let binding, let routineId = binding.routineId {
         let gate = routineDispatchGate(
           routineId: routineId,
@@ -59,43 +65,29 @@ extension DefaultEventLiveServer {
           )
           continue
         }
-        routineGate = gate
+        _ = gate
       }
-      do {
-        _ = try await runEventWorkflow(EventWorkflowRunRequest(
-          workflowName: workflowName,
-          runtimeVariables: trigger.runtimeVariables,
-          parsed: parsed
-        ))
-      } catch {
-        dispatchedRun = true
-        await recordWorkflowDispatchFailure(
-          eventRoot: eventRoot,
-          sourceKind: "cron",
-          sourceId: source.id,
-          workflowName: workflowName,
-          error: error
-        )
-        continue
-      }
-      dispatchedRun = true
-      if let routineGate {
-        _ = try? routineGate.store.recordRunCompletion(routineId: routineGate.routineId, at: firedAt)
-      }
-      try? writeServeRecord(
-        eventRoot: eventRoot,
-        status: "ready",
-        pollingTarget: source.id,
-        lastWorkflowName: workflowName
-      )
+      _ = await dispatcher.submit(CronOverlapFire(
+        bindingId: trigger.bindingId,
+        sourceId: source.id,
+        workflowName: workflowName,
+        runtimeVariables: trigger.runtimeVariables,
+        envelope: envelope,
+        scheduledAt: scheduledAt,
+        firedAt: firedAt,
+        routineId: binding?.routineId,
+        routineStoreRoot: binding?.routineStoreRoot,
+        coalescedTickCount: policy.policy == .concurrent ? 0 : coalescedTickCount
+      ))
+      submitted = true
     }
-    return dispatchedRun ? 1 : 0
+    return submitted ? 1 : 0
   }
 
   /// Routine status is checked in SQLite before every cron dispatch, so a
   /// completed or disabled routine stops firing without restarting the serve
   /// loop even though the event config itself is loaded only at startup.
-  private func routineDispatchGate(
+  func routineDispatchGate(
     routineId: String,
     storeRoot: String?,
     parsed: ParsedParityOptions
@@ -173,13 +165,10 @@ struct CronScheduleSource: Decodable, Equatable, Sendable {
     timezone.flatMap(TimeZone.init(identifier:)) ?? TimeZone(identifier: "UTC")!
   }
 
-  /// Returns the most recent schedule match in `(after, until]`, coalescing
-  /// ticks that were missed while a previous dispatch was still running into
-  /// one fire. The scan window is bounded so a long host sleep cannot replay
-  /// an unbounded backlog.
-  func dueTick(after: Date, until: Date) -> Date? {
+  /// Returns each matching second in `(after, until]`, within the bounded scan window.
+  func dueTicks(after: Date, until: Date) -> [Date] {
     guard let parsed = try? CronSchedule.parse(schedule) else {
-      return nil
+      return []
     }
     let timeZone = resolvedTimeZone
     var calendar = Calendar(identifier: .gregorian)
@@ -189,18 +178,17 @@ struct CronScheduleSource: Decodable, Equatable, Sendable {
       floor(until.timeIntervalSince1970) - Double(CronSchedule.maximumCatchUpSeconds)
     )
     let upperBound = floor(until.timeIntervalSince1970)
-    guard lowerBound <= upperBound else {
-      return nil
-    }
-    var second = upperBound
-    while second >= lowerBound {
+    guard lowerBound <= upperBound else { return [] }
+    var ticks: [Date] = []
+    var second = lowerBound
+    while second <= upperBound {
       let candidate = Date(timeIntervalSince1970: second)
       if parsed.matches(candidate, calendar: calendar) {
-        return candidate
+        ticks.append(candidate)
       }
-      second -= 1
+      second += 1
     }
-    return nil
+    return ticks
   }
 }
 

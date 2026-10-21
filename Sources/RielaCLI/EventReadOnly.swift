@@ -100,4 +100,9 @@ struct PersistedEventReceipt: Codable, Equatable, Sendable {
   var envelope: ExternalEventEnvelope
   var readOnlyTriggers: [EventDryRunTriggerSummary]?
   var readOnlyDiagnostics: [EventValidationDiagnostic]?
+  var bindingId: String?
+  var overlapPolicy: String?
+  var overlapPolicySource: String?
+  var cancelledSessionIds: [String]?
+  var coalescedTickCount: Int?
 }

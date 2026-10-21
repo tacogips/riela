@@ -261,6 +261,7 @@ public struct WorkflowInspectionSummary: Codable, Equatable, Sendable {
   public var runtimeCapabilityGaps: [WorkflowValidationDiagnostic]
   public var backendRequirements: [WorkflowBackendRequirement]
   public var loop: WorkflowLoopInspectionSummary?
+  public var triggerDefaults: EventOverlapSettings?
 }
 
 public struct NativeBundleAddonInspection: Codable, Equatable, Sendable {
@@ -778,7 +779,8 @@ public struct WorkflowInspectCommand: Sendable {
       runtimeReadinessDescriptors: readiness,
       runtimeCapabilityGaps: capabilityGaps,
       backendRequirements: backendRequirements,
-      loop: buildLoopInspection(workflow)
+      loop: buildLoopInspection(workflow),
+      triggerDefaults: workflow.triggerDefaults
     )
   }
 
@@ -893,6 +895,16 @@ public struct WorkflowInspectCommand: Sendable {
     }
     if let loop = summary.loop {
       lines.append(renderLoopText(loop))
+    }
+    if let triggerDefaults = summary.triggerDefaults {
+      var parts = ["triggerDefaults: overlapPolicy=\(triggerDefaults.overlapPolicy ?? "inherit")"]
+      if let maxQueuedRuns = triggerDefaults.maxQueuedRuns {
+        parts.append("maxQueuedRuns=\(maxQueuedRuns)")
+      }
+      if let maxConcurrentRuns = triggerDefaults.maxConcurrentRuns {
+        parts.append("maxConcurrentRuns=\(maxConcurrentRuns)")
+      }
+      lines.append(parts.joined(separator: " "))
     }
     if let packageName = summary.packageName {
       lines.append("package: \(packageName) \(summary.packageVersion ?? "") \(summary.packageDirectory ?? "")")

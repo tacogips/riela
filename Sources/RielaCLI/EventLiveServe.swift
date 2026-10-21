@@ -26,10 +26,15 @@ protocol EventWorkflowRunning: Sendable {
   func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult
 }
 
+protocol EventWorkflowTriggerDefaultsResolving: Sendable {
+  func triggerDefaults(workflowName: String, parsed: ParsedParityOptions) throws -> EventOverlapSettings?
+}
+
 struct EventWorkflowRunRequest: Sendable {
   var workflowName: String
   var runtimeVariables: JSONObject
   var parsed: ParsedParityOptions
+  var onSessionStarted: (@Sendable (String) -> Void)?
 }
 
 struct EventResolvedAttachmentInputs: Equatable, Sendable {
@@ -61,6 +66,11 @@ struct DefaultEventLiveServer: EventLiveServing {
   var workflowRunner: any EventWorkflowRunning
   var telemetry: any RielaTelemetry
   var runtimeEnvironment: EventRuntimeEnvironment?
+  var clock: any EventServeClock
+  var triggerDefaultsResolver: (any EventWorkflowTriggerDefaultsResolving)?
+  var cancelSettleTimeout: Duration
+
+  private static let serveRecordLock = NSLock()
 
   init(
     telegramAPI: any TelegramGatewayAPI = URLSessionTelegramGatewayAPI(),
@@ -69,7 +79,10 @@ struct DefaultEventLiveServer: EventLiveServing {
     matrixAPI: any MatrixGatewayAPI = URLSessionMatrixGatewayAPI(),
     webhookyStreamer: any WebhookyRecordStreaming = SDKWebhookyRecordStreamer(),
     workflowRunner: any EventWorkflowRunning = CLIEventWorkflowRunner(),
-    telemetry: (any RielaTelemetry)? = nil
+    telemetry: (any RielaTelemetry)? = nil,
+    clock: any EventServeClock = SystemEventServeClock(),
+    triggerDefaultsResolver: (any EventWorkflowTriggerDefaultsResolving)? = nil,
+    cancelSettleTimeout: Duration = .seconds(30)
   ) {
     self.telegramAPI = telegramAPI
     self.discordAPI = discordAPI
@@ -81,6 +94,9 @@ struct DefaultEventLiveServer: EventLiveServing {
       CLIRuntimeEnvironment.mergedProcessEnvironment(),
       surface: .eventsServe
     ))
+    self.clock = clock
+    self.triggerDefaultsResolver = triggerDefaultsResolver
+    self.cancelSettleTimeout = cancelSettleTimeout
   }
 
   func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
@@ -103,40 +119,29 @@ struct DefaultEventLiveServer: EventLiveServing {
       throw CLIUsageError("environment_required_missing")
     }
     return try await CLIRuntimeEnvironment.$captured.withValue(captured) {
-      try await server.servePrepared(eventRoot: eventRoot, target: target, parsed: parsed, output: output)
+      try await server.servePrepared(eventRoot: eventRoot, target: target, parsed: parsed)
     }
   }
 
-  private func servePrepared(eventRoot: URL, target: String?, parsed: ParsedParityOptions, output: WorkflowOutputFormat) async throws -> ScopedParityCommandResult {
-    _ = try EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
-    let startedAt = Date()
+  private func servePrepared(eventRoot: URL, target: String?, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
+    let startedAt = try serveStartedAt(parsed: parsed)
     let config = try EventLiveConfig.load(eventRoot: eventRoot)
     let enabledSources = config.enabledSources(target: target)
-    await telemetry.recordLog(RielaTelemetryLog(
-      name: "riela.events.serve.start",
-      attributes: [
-        "runtime.surface": "events-serve",
-        "event.source.count": String(enabledSources.count)
-      ]
-    ))
-    let unsupported = enabledSources
-      .filter { !$0.kind.supportsLiveEventServe }
-      .map { "\($0.id):\($0.kind.rawValue)" }
-      .joined(separator: ",")
-    guard unsupported.isEmpty else {
+    await recordServeStart(sourceCount: enabledSources.count)
+    let unsupported = unsupportedLiveSourceSummary(enabledSources)
+    if !unsupported.isEmpty {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: unsupported)
     }
-    let enabledSourceIds = Set(enabledSources.map(\.id))
-    let liveConfig = EventLiveConfig(
-      sources: enabledSources,
-      bindings: config.bindings.filter { enabledSourceIds.contains($0.sourceId) }
-    )
+    let liveConfig = filteredLiveConfig(config, sources: enabledSources)
 
     let telegramSources = try liveConfig.telegramSources(eventRoot: eventRoot)
     let discordSources = try liveConfig.discordSources(eventRoot: eventRoot)
     let slackSources = try liveConfig.slackSources(eventRoot: eventRoot)
     let matrixSources = try liveConfig.matrixSources(eventRoot: eventRoot)
     let cronSources = try liveConfig.cronSources(eventRoot: eventRoot)
+    let (overlapPolicies, overlapPolicyRecords) = try resolveCronOverlapPolicies(
+      bindings: liveConfig.bindings, cronSources: cronSources, parsed: parsed, eventRoot: eventRoot
+    )
     let webhookySources = try liveConfig.webhookySources(eventRoot: eventRoot)
     let fileChangeSources: [FileChangeWatchSource]
     do {
@@ -150,35 +155,20 @@ struct DefaultEventLiveServer: EventLiveServing {
       return liveUnavailable(eventRoot: eventRoot, actionTarget: target, unsupportedSources: enabledSources.map { "\($0.id):\($0.kind.rawValue)" }.joined(separator: ","))
     }
 
-    let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
-    do {
-      try telegramSources.forEach { try $0.validateEnvironment(environment: environment) }
-      try discordSources.forEach { try $0.validateEnvironment(environment: environment) }
-      try slackSources.forEach { try $0.validateEnvironment(environment: environment) }
-      try matrixSources.forEach { try $0.validateEnvironment(environment: environment) }
-      try webhookySources.forEach { try $0.validateEnvironment(environment: environment) }
-    } catch {
-      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
-      throw error
-    }
-    try writeServeRecord(eventRoot: eventRoot, status: "ready")
+    try validateLiveSourceEnvironments(
+      telegram: telegramSources, discord: discordSources, slack: slackSources,
+      matrix: matrixSources, webhooky: webhookySources, eventRoot: eventRoot
+    )
+    try writeServeRecord(eventRoot: eventRoot, status: "ready", overlapPolicies: overlapPolicyRecords)
     var processedEvents = 0
     let maximumEvents = parsed.limit
-    let serveStartedAt = Date()
+    let serveStartedAt = clock.now()
     var cronLastCheckedAt: [String: Date] = Dictionary(
       uniqueKeysWithValues: cronSources.map { ($0.id, serveStartedAt) }
     )
     // Startup snapshots so files that already exist never dispatch events;
     // only changes observed after listener start are announced.
-    let fileChangeStates: [String: FileChangeWatchState]
-    do {
-      fileChangeStates = Dictionary(uniqueKeysWithValues: try fileChangeSources.map {
-        ($0.id, try FileChangeWatchState(source: $0))
-      })
-    } catch {
-      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
-      throw error
-    }
+    let fileChangeStates = try makeFileChangeStates(fileChangeSources, eventRoot: eventRoot)
     let webhookyBuffer = WebhookyRecordBuffer()
     let webhookyTasks = startWebhookyStreams(
       sources: webhookySources,
@@ -189,7 +179,12 @@ struct DefaultEventLiveServer: EventLiveServing {
       webhookyTasks.forEach { $0.cancel() }
     }
     let webhookySourcesById = Dictionary(uniqueKeysWithValues: webhookySources.map { ($0.id, $0) })
-    repeat {
+    let dispatcher = CronOverlapDispatcher(
+      server: self, eventRoot: eventRoot, parsed: parsed, policies: overlapPolicies,
+      clock: clock, cancelSettleTimeout: cancelSettleTimeout
+    )
+    do {
+      repeat {
       for (sourceId, record) in await webhookyBuffer.drain() {
         guard let source = webhookySourcesById[sourceId] else {
           continue
@@ -208,34 +203,37 @@ struct DefaultEventLiveServer: EventLiveServing {
           )
         }
         if let maximumEvents, processedEvents >= maximumEvents {
+          try await drainHonoringCancellation(dispatcher)
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
       }
       for source in cronSources {
-        let now = Date()
+        let now = clock.now()
         let lastCheckedAt = cronLastCheckedAt[source.id] ?? now
         cronLastCheckedAt[source.id] = now
-        guard let scheduledAt = source.dueTick(after: lastCheckedAt, until: now) else {
+        let ticks = source.dueTicks(after: lastCheckedAt, until: now)
+        guard !ticks.isEmpty else {
           continue
         }
-        processedEvents += try await pollSourceSafely(
-          eventRoot: eventRoot,
-          sourceId: source.id,
-          sourceKind: "cron"
-        ) {
-          try await dispatchCronTick(
-            source: source,
-            scheduledAt: scheduledAt,
-            firedAt: now,
-            config: liveConfig,
+        for (index, scheduledAt) in ticks.enumerated() {
+          processedEvents += try await pollSourceSafely(
             eventRoot: eventRoot,
-            parsed: parsed
-          )
-        }
-        if let maximumEvents, processedEvents >= maximumEvents {
-          await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
-          return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+            sourceId: source.id,
+            sourceKind: "cron"
+          ) {
+            try await dispatchCronTick(
+              source: source, scheduledAt: scheduledAt, firedAt: now,
+              config: liveConfig, eventRoot: eventRoot, parsed: parsed,
+              dispatcher: dispatcher, isLatestDueTick: index == ticks.count - 1,
+              coalescedTickCount: ticks.count - 1
+            )
+          }
+          if let maximumEvents, processedEvents >= maximumEvents {
+            try await drainHonoringCancellation(dispatcher)
+            await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
+            return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+          }
         }
       }
       for source in fileChangeSources {
@@ -256,6 +254,7 @@ struct DefaultEventLiveServer: EventLiveServing {
           )
         }
         if let maximumEvents, processedEvents >= maximumEvents {
+          try await drainHonoringCancellation(dispatcher)
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
@@ -269,6 +268,7 @@ struct DefaultEventLiveServer: EventLiveServing {
           try await pollTelegramSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         }
         if let maximumEvents, processedEvents >= maximumEvents {
+          try await drainHonoringCancellation(dispatcher)
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
@@ -282,6 +282,7 @@ struct DefaultEventLiveServer: EventLiveServing {
           try await pollDiscordSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         }
         if let maximumEvents, processedEvents >= maximumEvents {
+          try await drainHonoringCancellation(dispatcher)
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
@@ -295,6 +296,7 @@ struct DefaultEventLiveServer: EventLiveServing {
           try await pollSlackSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         }
         if let maximumEvents, processedEvents >= maximumEvents {
+          try await drainHonoringCancellation(dispatcher)
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
@@ -308,6 +310,7 @@ struct DefaultEventLiveServer: EventLiveServing {
           try await pollMatrixSource(source, config: liveConfig, eventRoot: eventRoot, parsed: parsed)
         }
         if let maximumEvents, processedEvents >= maximumEvents {
+          try await drainHonoringCancellation(dispatcher)
           await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
           return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
         }
@@ -315,12 +318,120 @@ struct DefaultEventLiveServer: EventLiveServing {
       let noGatewaySourcesRemain = telegramSources.isEmpty && discordSources.isEmpty
         && slackSources.isEmpty && matrixSources.isEmpty
       if maximumEvents == nil || noGatewaySourcesRemain {
-        try await Task.sleep(nanoseconds: webhookySources.isEmpty ? 1_000_000_000 : 200_000_000)
+        try await clock.sleep(for: webhookySources.isEmpty ? .seconds(1) : .milliseconds(200))
       }
-    } while maximumEvents == nil || processedEvents < (maximumEvents ?? 0)
+      } while maximumEvents == nil || processedEvents < (maximumEvents ?? 0)
+
+      try await drainHonoringCancellation(dispatcher)
+    } catch {
+      await Task { await dispatcher.shutdownCancelling() }.value
+      throw error
+    }
 
     await recordEventsServeCompletion(startedAt: startedAt, processedEvents: processedEvents)
     return liveReady(eventRoot: eventRoot, actionTarget: target, processedEvents: processedEvents)
+  }
+
+}
+
+func drainHonoringCancellation(_ dispatcher: CronOverlapDispatcher) async throws {
+  await withTaskCancellationHandler {
+    await dispatcher.drain()
+  } onCancel: {
+    Task { await dispatcher.abandonDrain() }
+  }
+  try Task.checkCancellation()
+}
+
+extension DefaultEventLiveServer {
+  private func serveStartedAt(parsed: ParsedParityOptions) throws -> Date {
+    _ = try EventReadOnlyPolicy.isEnabled(parsed: parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment())
+    return clock.now()
+  }
+
+  private func filteredLiveConfig(_ config: EventLiveConfig, sources: [EventSourceContract]) -> EventLiveConfig {
+    let sourceIds = Set(sources.map(\.id))
+    return EventLiveConfig(sources: sources, bindings: config.bindings.filter { sourceIds.contains($0.sourceId) })
+  }
+
+  private func recordServeStart(sourceCount: Int) async {
+    await telemetry.recordLog(RielaTelemetryLog(
+      name: "riela.events.serve.start",
+      attributes: ["runtime.surface": "events-serve", "event.source.count": String(sourceCount)]
+    ))
+  }
+
+  private func unsupportedLiveSourceSummary(_ sources: [EventSourceContract]) -> String {
+    sources.filter { !$0.kind.supportsLiveEventServe }
+      .map { "\($0.id):\($0.kind.rawValue)" }
+      .joined(separator: ",")
+  }
+
+  private func resolveCronOverlapPolicies(
+    bindings: [EventBindingContract],
+    cronSources: [CronScheduleSource],
+    parsed: ParsedParityOptions,
+    eventRoot: URL
+  ) throws -> ([String: EffectiveEventOverlapPolicy], JSONObject) {
+    var policies: [String: EffectiveEventOverlapPolicy] = [:]
+    var records: JSONObject = [:]
+    let resolver = triggerDefaultsResolver
+      ?? (workflowRunner is CLIEventWorkflowRunner ? CLIWorkflowTriggerDefaultsResolver() : nil)
+    for binding in bindings where binding.enabled && cronSources.contains(where: { $0.id == binding.sourceId }) {
+      guard let workflowName = binding.workflowName else { continue }
+      var workflowDefaults: EventOverlapSettings?
+      var unresolved = false
+      if binding.overlapSettings?.overlapPolicy == nil, let resolver {
+        do {
+          workflowDefaults = try resolver.triggerDefaults(workflowName: workflowName, parsed: parsed)
+        } catch {
+          unresolved = true
+        }
+      }
+      let effective: EffectiveEventOverlapPolicy
+      do {
+        effective = try resolveEventOverlapPolicy(binding: binding.overlapSettings, workflow: workflowDefaults)
+      } catch {
+        let message = String(describing: error)
+        try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: message)
+        throw CLIUsageError(message)
+      }
+      policies[binding.id] = effective
+      var entry: JSONObject = ["policy": .string(effective.policy.rawValue), "source": .string(effective.source.rawValue)]
+      if let cap = effective.maxQueuedRuns { entry["maxQueuedRuns"] = .number(Double(cap)) }
+      if let cap = effective.maxConcurrentRuns { entry["maxConcurrentRuns"] = .number(Double(cap)) }
+      if unresolved { entry["diagnostic"] = .string("overlap_policy_workflow_unresolved") }
+      records[binding.id] = .object(entry)
+    }
+    return (policies, records)
+  }
+
+  private func validateLiveSourceEnvironments(
+    telegram: [TelegramGatewaySource], discord: [DiscordGatewaySource], slack: [SlackGatewaySource],
+    matrix: [MatrixGatewaySource], webhooky: [WebhookyStreamSource], eventRoot: URL
+  ) throws {
+    do {
+      let environment = CLIRuntimeEnvironment.mergedProcessEnvironment()
+      try telegram.forEach { try $0.validateEnvironment(environment: environment) }
+      try discord.forEach { try $0.validateEnvironment(environment: environment) }
+      try slack.forEach { try $0.validateEnvironment(environment: environment) }
+      try matrix.forEach { try $0.validateEnvironment(environment: environment) }
+      try webhooky.forEach { try $0.validateEnvironment(environment: environment) }
+    } catch {
+      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
+      throw error
+    }
+  }
+
+  private func makeFileChangeStates(
+    _ sources: [FileChangeWatchSource], eventRoot: URL
+  ) throws -> [String: FileChangeWatchState] {
+    do {
+      return Dictionary(uniqueKeysWithValues: try sources.map { ($0.id, try FileChangeWatchState(source: $0)) })
+    } catch {
+      try? writeServeRecord(eventRoot: eventRoot, status: "failed", detail: String(describing: error))
+      throw error
+    }
   }
 
   private func recordEventsServeCompletion(startedAt: Date, processedEvents: Int) async {
@@ -726,8 +837,11 @@ struct DefaultEventLiveServer: EventLiveServing {
     lastEnvelopeEventType: String? = nil,
     lastEnvelopeConversationId: String? = nil,
     lastDiagnosticCodes: String? = nil,
-    lastBindingIds: String? = nil
+    lastBindingIds: String? = nil,
+    overlapPolicies: JSONObject? = nil
   ) throws {
+    Self.serveRecordLock.lock()
+    defer { Self.serveRecordLock.unlock() }
     try FileManager.default.createDirectory(at: eventRoot, withIntermediateDirectories: true)
     let recordURL = eventRoot.appendingPathComponent("serve-record.json")
     var record: JSONObject = {
@@ -790,11 +904,27 @@ struct DefaultEventLiveServer: EventLiveServing {
     if let lastBindingIds {
       record["lastBindingIds"] = .string(lastBindingIds)
     }
+    if let overlapPolicies {
+      record["overlapPolicies"] = .object(overlapPolicies)
+    }
     try jsonString(record).write(
       to: recordURL,
       atomically: true,
       encoding: .utf8
     )
+  }
+}
+
+struct CLIWorkflowTriggerDefaultsResolver: EventWorkflowTriggerDefaultsResolving {
+  func triggerDefaults(workflowName: String, parsed: ParsedParityOptions) throws -> EventOverlapSettings? {
+    let workingDirectory = parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
+    let options = WorkflowResolutionOptions(
+      workflowName: workflowName,
+      scope: parsed.scope,
+      workflowDefinitionDir: parsed.workflowDefinitionDir,
+      workingDirectory: workingDirectory
+    )
+    return try WorkflowRunCommand().resolver.resolve(options).workflow.triggerDefaults
   }
 }
 
@@ -810,7 +940,9 @@ struct CLIEventWorkflowRunner: EventWorkflowRunning {
       parsed: request.parsed, environment: CLIRuntimeEnvironment.mergedProcessEnvironment()
     ) else { throw EventReadOnlyDispatchBlocked() }
     let workingDirectory = request.parsed.workingDirectory ?? FileManager.default.currentDirectoryPath
-    let result = await command.run(WorkflowRunOptions(
+    var observedCommand = command
+    observedCommand.sessionStartedObserver = request.onSessionStarted
+    let result = await observedCommand.run(WorkflowRunOptions(
       target: request.workflowName,
       resolution: WorkflowResolutionOptions(
         workflowName: request.workflowName,

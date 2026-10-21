@@ -94,6 +94,7 @@ public enum EventContractValidator {
       }
       validateChatSDKBindingCapabilities(binding, source: sourcesById[binding.sourceId], index: index, diagnostics: &diagnostics)
       validateMailboxBridge(binding, index: index, diagnostics: &diagnostics)
+      validateOverlapPolicy(binding: binding, source: sourcesById[binding.sourceId], index: index, diagnostics: &diagnostics)
     }
     return diagnostics
   }
@@ -173,6 +174,62 @@ public enum EventContractValidator {
       ))
     default:
       return
+    }
+  }
+
+  private static func validateOverlapPolicy(
+    binding: EventBindingContract,
+    source: EventSourceContract?,
+    index: Int,
+    diagnostics: inout [EventValidationDiagnostic]
+  ) {
+    let policy = binding.overlapPolicy
+    let basePath = "bindings[\(index)]"
+    if let policy, EventOverlapPolicy(rawValue: policy) == nil {
+      diagnostics.append(.init(
+        code: "INVALID_EVENT_OVERLAP_POLICY",
+        path: "\(basePath).overlapPolicy",
+        message: "overlapPolicy must be one of \(EventOverlapPolicy.allowedValuesText); got '\(policy)'"
+      ))
+    }
+    if policy != nil, let source, source.kind != .cron {
+      diagnostics.append(.init(
+        code: "INVALID_EVENT_OVERLAP_POLICY",
+        path: "\(basePath).overlapPolicy",
+        message: "overlapPolicy is only supported on bindings whose source kind is cron"
+      ))
+    }
+    if let maxQueuedRuns = binding.maxQueuedRuns {
+      if maxQueuedRuns < 1 {
+        diagnostics.append(.init(
+          code: "INVALID_EVENT_OVERLAP_POLICY",
+          path: "\(basePath).maxQueuedRuns",
+          message: "maxQueuedRuns must be an integer >= 1"
+        ))
+      }
+      if policy != EventOverlapPolicy.queue.rawValue {
+        diagnostics.append(.init(
+          code: "INVALID_EVENT_OVERLAP_POLICY",
+          path: "\(basePath).maxQueuedRuns",
+          message: "maxQueuedRuns requires overlapPolicy queue on the same binding"
+        ))
+      }
+    }
+    if let maxConcurrentRuns = binding.maxConcurrentRuns {
+      if maxConcurrentRuns < 1 {
+        diagnostics.append(.init(
+          code: "INVALID_EVENT_OVERLAP_POLICY",
+          path: "\(basePath).maxConcurrentRuns",
+          message: "maxConcurrentRuns must be an integer >= 1"
+        ))
+      }
+      if policy != EventOverlapPolicy.concurrent.rawValue {
+        diagnostics.append(.init(
+          code: "INVALID_EVENT_OVERLAP_POLICY",
+          path: "\(basePath).maxConcurrentRuns",
+          message: "maxConcurrentRuns requires overlapPolicy concurrent on the same binding"
+        ))
+      }
     }
   }
 

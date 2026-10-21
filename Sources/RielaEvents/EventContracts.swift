@@ -641,6 +641,9 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
   /// Root directory of the routine store to consult for `routineId`; the
   /// serve working directory's default store is used when absent.
   public var routineStoreRoot: String?
+  public var overlapPolicy: String?
+  public var maxQueuedRuns: Int?
+  public var maxConcurrentRuns: Int?
 
   private enum CodingKeys: String, CodingKey {
     case id
@@ -655,6 +658,9 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     case mailboxBridge
     case routineId
     case routineStoreRoot
+    case overlapPolicy
+    case maxQueuedRuns
+    case maxConcurrentRuns
   }
 
   public init(
@@ -669,7 +675,10 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     outputDestinations: [String]? = nil,
     mailboxBridge: EventMailboxBridgePolicy? = nil,
     routineId: String? = nil,
-    routineStoreRoot: String? = nil
+    routineStoreRoot: String? = nil,
+    overlapPolicy: String? = nil,
+    maxQueuedRuns: Int? = nil,
+    maxConcurrentRuns: Int? = nil
   ) {
     self.id = id
     self.enabled = enabled
@@ -683,6 +692,9 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     self.mailboxBridge = mailboxBridge
     self.routineId = routineId
     self.routineStoreRoot = routineStoreRoot
+    self.overlapPolicy = overlapPolicy
+    self.maxQueuedRuns = maxQueuedRuns
+    self.maxConcurrentRuns = maxConcurrentRuns
   }
 
   public init(from decoder: Decoder) throws {
@@ -699,6 +711,18 @@ public struct EventBindingContract: Codable, Equatable, Sendable {
     self.mailboxBridge = try container.decodeIfPresent(EventMailboxBridgePolicy.self, forKey: .mailboxBridge)
     self.routineId = try container.decodeIfPresent(String.self, forKey: .routineId)
     self.routineStoreRoot = try container.decodeIfPresent(String.self, forKey: .routineStoreRoot)
+    self.overlapPolicy = try container.decodeIfPresent(String.self, forKey: .overlapPolicy)
+    self.maxQueuedRuns = try container.decodeIfPresent(Int.self, forKey: .maxQueuedRuns)
+    self.maxConcurrentRuns = try container.decodeIfPresent(Int.self, forKey: .maxConcurrentRuns)
+  }
+
+  public var overlapSettings: EventOverlapSettings? {
+    guard overlapPolicy != nil || maxQueuedRuns != nil || maxConcurrentRuns != nil else { return nil }
+    return EventOverlapSettings(
+      overlapPolicy: overlapPolicy,
+      maxQueuedRuns: maxQueuedRuns,
+      maxConcurrentRuns: maxConcurrentRuns
+    )
   }
 }
 

@@ -42,6 +42,9 @@ public struct RoutineRecord: Codable, Equatable, Sendable {
   public var deactivateWorkflowOnCompletion: Bool
   /// Where the routine came from (chat provider, conversation, actor…).
   public var origin: JSONObject?
+  public var overlapPolicy: String?
+  public var maxQueuedRuns: Int?
+  public var maxConcurrentRuns: Int?
 
   public init(
     routineId: String,
@@ -63,7 +66,10 @@ public struct RoutineRecord: Codable, Equatable, Sendable {
     sourceId: String,
     bindingId: String,
     deactivateWorkflowOnCompletion: Bool = false,
-    origin: JSONObject? = nil
+    origin: JSONObject? = nil,
+    overlapPolicy: String? = nil,
+    maxQueuedRuns: Int? = nil,
+    maxConcurrentRuns: Int? = nil
   ) {
     self.routineId = routineId
     self.name = name
@@ -85,6 +91,9 @@ public struct RoutineRecord: Codable, Equatable, Sendable {
     self.bindingId = bindingId
     self.deactivateWorkflowOnCompletion = deactivateWorkflowOnCompletion
     self.origin = origin
+    self.overlapPolicy = overlapPolicy
+    self.maxQueuedRuns = maxQueuedRuns
+    self.maxConcurrentRuns = maxConcurrentRuns
   }
 }
 
@@ -252,7 +261,13 @@ public struct RoutineStore: Sendable {
   @discardableResult
   public func recordRunCompletion(routineId: String, at date: Date = Date()) throws -> RoutineRecord {
     try update(routineId: routineId) { record in
-      record.lastRunAt = Self.timestamp(date)
+      let newTimestamp = Self.timestamp(date)
+      if let existingTimestamp = record.lastRunAt,
+        let existingDate = Self.date(fromTimestamp: existingTimestamp), existingDate > date {
+        record.lastRunAt = existingTimestamp
+      } else {
+        record.lastRunAt = newTimestamp
+      }
       record.runCount += 1
     }
   }
@@ -274,6 +289,12 @@ public struct RoutineStore: Sendable {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: date)
+  }
+
+  private static func date(fromTimestamp timestamp: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: timestamp)
   }
 
   private func openWritable() throws -> SQLiteDatabase {

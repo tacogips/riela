@@ -515,6 +515,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
   public var steps: [WorkflowStepRef]?
   public var loop: WorkflowLoopMetadata?
   public var handover: WorkflowHandoverDeclaration?
+  public var triggerDefaults: EventOverlapSettings?
 
   public init(
     workflowId: String,
@@ -528,6 +529,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     steps: [WorkflowStepRef]? = nil,
     loop: WorkflowLoopMetadata? = nil,
     handover: WorkflowHandoverDeclaration? = nil,
+    triggerDefaults: EventOverlapSettings? = nil,
     requiredEnvironment: [String]? = nil
   ) {
     self.requiredEnvironment = requiredEnvironment
@@ -542,6 +544,7 @@ public struct AuthoredWorkflowJSON: Codable, Equatable, Sendable {
     self.steps = steps
     self.loop = loop
     self.handover = handover
+    self.triggerDefaults = triggerDefaults
   }
 }
 
@@ -613,6 +616,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
   public var nodes: [WorkflowNodeRef]
   public var loop: WorkflowLoopMetadata?
   public var handover: WorkflowHandoverDeclaration?
+  public var triggerDefaults: EventOverlapSettings?
 
   public init(
     workflowId: String,
@@ -627,6 +631,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     nodes: [WorkflowNodeRef],
     loop: WorkflowLoopMetadata? = nil,
     handover: WorkflowHandoverDeclaration? = nil,
+    triggerDefaults: EventOverlapSettings? = nil,
     requiredEnvironment: [String]? = nil
   ) {
     self.requiredEnvironment = requiredEnvironment
@@ -642,6 +647,7 @@ public struct WorkflowDefinition: Codable, Equatable, Sendable {
     self.nodes = nodes
     self.loop = loop
     self.handover = handover
+    self.triggerDefaults = triggerDefaults
   }
 }
 

@@ -612,7 +612,7 @@ fileprivate extension ScopedParityCommandRunner {
         command: action,
         target: options.target,
         status: diagnostics.isEmpty ? "ok" : "failed",
-        records: diagnostics.isEmpty ? ["eventRoot=\(root.path)", "receipts=\(receiptsRoot(eventRoot: root).path)"] : diagnostics.map { "\($0.path): \($0.message)" }
+        records: eventValidationRecords(config: config, diagnostics: diagnostics, eventRoot: root)
       )
     case "emit":
       guard let sourceId = options.target, let eventFile = parsed.eventFile else {
@@ -679,8 +679,10 @@ fileprivate extension ScopedParityCommandRunner {
           return true
         }
         .prefix(parsed.limit ?? Int.max)
-      let records = receipts.map { "receipt=\($0.receiptId) source=\($0.sourceId) status=\($0.status) workflowExecutionId=\($0.workflowExecutionId ?? "-")" }
-      return ScopedParityCommandResult(scope: "events", command: action, target: options.target, status: "ok", records: Array(records))
+      return ScopedParityCommandResult(
+        scope: "events", command: action, target: options.target, status: "ok",
+        records: receipts.map(eventListRecord)
+      )
     case "replay":
       guard let receiptId = options.target else {
         throw CLIUsageError("events replay requires <receipt-id>")
@@ -820,6 +822,37 @@ fileprivate extension ScopedParityCommandRunner {
 
   private func receiptsRoot(eventRoot: URL) -> URL {
     eventRoot.appendingPathComponent("receipts", isDirectory: true)
+  }
+
+  private func eventValidationRecords(
+    config: EventConfig?,
+    diagnostics: [EventValidationDiagnostic],
+    eventRoot: URL
+  ) -> [String] {
+    guard diagnostics.isEmpty else {
+      return diagnostics.map { "\($0.path): \($0.message)" }
+    }
+    var records = ["eventRoot=\(eventRoot.path)", "receipts=\(receiptsRoot(eventRoot: eventRoot).path)"]
+    guard let config else { return records }
+    records.append(contentsOf: config.bindings.compactMap { binding in
+      guard binding.enabled,
+            config.sources.first(where: { $0.id == binding.sourceId })?.kind == .cron else {
+        return nil
+      }
+      return "binding=\(binding.id) overlapPolicy=\(binding.overlapPolicy ?? "inherit")"
+    })
+    return records
+  }
+
+  private func eventListRecord(_ receipt: PersistedEventReceipt) -> String {
+    var record = "receipt=\(receipt.receiptId) source=\(receipt.sourceId) status=\(receipt.status) workflowExecutionId=\(receipt.workflowExecutionId ?? "-")"
+    if let reason = receipt.reason, !reason.isEmpty {
+      record += " reason=\(reason)"
+    }
+    if let bindingId = receipt.bindingId {
+      record += " binding=\(bindingId)"
+    }
+    return record
   }
 
   private func loadEventConfigIfPresent(eventRoot: URL) throws -> EventConfig? {

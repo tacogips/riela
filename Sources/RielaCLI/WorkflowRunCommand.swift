@@ -20,6 +20,7 @@ public struct WorkflowRunCommand: Sendable {
   var beforeTerminalPersistence: (@Sendable () throws -> Void)?
   var deferTerminalPersistence: (@Sendable () -> Bool)?
   var afterTerminalPersistence: (@Sendable () throws -> Void)?
+  var sessionStartedObserver: (@Sendable (String) -> Void)?
   var configuredInstanceOverride: WorkflowInstanceDefinition?
   var taskNodeAdapterOverride: (any NodeAdapter)?
   /// Projects loop evidence for required-gate enforcement; injectable so a
@@ -161,6 +162,9 @@ public struct WorkflowRunCommand: Sendable {
             recorder: jsonlRecorder,
             state: persistenceState
           )
+        }
+        if event.type == .sessionStarted && event.workflowId == persistenceBundle.workflow.workflowId {
+          sessionStartedObserver?(event.sessionId)
         }
         if let jsonlRecorder {
           await jsonlRecorder.append(event)

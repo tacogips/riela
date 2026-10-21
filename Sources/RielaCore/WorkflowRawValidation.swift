@@ -45,6 +45,7 @@ func validateRawAuthoredWorkflow(_ raw: [String: Any]) -> [WorkflowValidationDia
     diagnostics.append(error("workflow.defaults", "must be an object"))
   }
   validateRawMemoryDeclarations(raw["memories"], path: "workflow.memories", diagnostics: &diagnostics)
+  validateRawTriggerDefaults(raw["triggerDefaults"], diagnostics: &diagnostics)
 
   guard let nodeEntries = raw["nodes"] as? [Any] else {
     diagnostics.append(error("workflow.nodes", "must be an array"))

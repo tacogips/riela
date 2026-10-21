@@ -610,6 +610,7 @@ private func materializeWorkflowDefinition(from workflow: AuthoredWorkflowJSON) 
     nodes: runtimeNodes,
     loop: workflow.loop,
     handover: workflow.handover,
+    triggerDefaults: workflow.triggerDefaults,
     requiredEnvironment: workflow.requiredEnvironment
   )
 }

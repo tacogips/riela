@@ -30,6 +30,9 @@ public struct RoutineCreateRequest: Codable, Equatable, Sendable {
   public var routineStoreRoot: String?
   public var deactivateWorkflowOnCompletion: Bool?
   public var origin: JSONObject?
+  public var overlapPolicy: String?
+  public var maxQueuedRuns: Int?
+  public var maxConcurrentRuns: Int?
 
   public init(
     name: String,
@@ -43,7 +46,10 @@ public struct RoutineCreateRequest: Codable, Equatable, Sendable {
     eventRoot: String? = nil,
     routineStoreRoot: String? = nil,
     deactivateWorkflowOnCompletion: Bool? = nil,
-    origin: JSONObject? = nil
+    origin: JSONObject? = nil,
+    overlapPolicy: String? = nil,
+    maxQueuedRuns: Int? = nil,
+    maxConcurrentRuns: Int? = nil
   ) {
     self.name = name
     self.instruction = instruction
@@ -57,6 +63,9 @@ public struct RoutineCreateRequest: Codable, Equatable, Sendable {
     self.routineStoreRoot = routineStoreRoot
     self.deactivateWorkflowOnCompletion = deactivateWorkflowOnCompletion
     self.origin = origin
+    self.overlapPolicy = overlapPolicy
+    self.maxQueuedRuns = maxQueuedRuns
+    self.maxConcurrentRuns = maxConcurrentRuns
   }
 }
 
@@ -142,7 +151,10 @@ public struct RoutineService: Sendable {
       sourceId: sourceId,
       bindingId: bindingId,
       deactivateWorkflowOnCompletion: request.deactivateWorkflowOnCompletion ?? false,
-      origin: request.origin
+      origin: request.origin,
+      overlapPolicy: request.overlapPolicy,
+      maxQueuedRuns: request.maxQueuedRuns,
+      maxConcurrentRuns: request.maxConcurrentRuns
     )
 
     let binding = eventBinding(for: record, storeRoot: routineStore.rootDirectory)
@@ -258,6 +270,45 @@ public struct RoutineService: Sendable {
     return RoutineMutationResult(routine: record, diagnostics: diagnostics)
   }
 
+  public func setOverlapPolicy(
+    routineId: String,
+    overlapPolicy: String?,
+    maxQueuedRuns: Int?,
+    maxConcurrentRuns: Int?,
+    routineStoreRoot: String? = nil
+  ) throws -> RoutineMutationResult {
+    let routineStore = store(routineStoreRoot: routineStoreRoot)
+    guard var candidate = try routineStore.load(routineId: routineId) else {
+      throw RoutineServiceError("routine '\(routineId)' was not found")
+    }
+    candidate.overlapPolicy = overlapPolicy
+    candidate.maxQueuedRuns = overlapPolicy == nil ? nil : maxQueuedRuns
+    candidate.maxConcurrentRuns = overlapPolicy == nil ? nil : maxConcurrentRuns
+    let binding = eventBinding(for: candidate, storeRoot: routineStore.rootDirectory)
+    let diagnostics = EventContractValidator.validate(
+      sources: [EventSourceContract(id: candidate.sourceId, kind: .cron)],
+      bindings: [binding]
+    )
+    guard diagnostics.isEmpty else {
+      throw RoutineServiceError(
+        "routine event contract validation failed: "
+          + diagnostics.map { "\($0.path): \($0.message)" }.joined(separator: "; ")
+      )
+    }
+
+    let record = try routineStore.update(routineId: routineId) { record in
+      record.overlapPolicy = candidate.overlapPolicy
+      record.maxQueuedRuns = candidate.maxQueuedRuns
+      record.maxConcurrentRuns = candidate.maxConcurrentRuns
+    }
+    let updatedBinding = eventBinding(for: record, storeRoot: routineStore.rootDirectory)
+    try writeBindingFile(updatedBinding, record: record)
+    return RoutineMutationResult(
+      routine: record,
+      diagnostics: ["binding=\(bindingFileURL(for: record).path) overlapPolicy=\(record.overlapPolicy ?? "inherit")"]
+    )
+  }
+
   /// Deletes the routine record and removes its event source/binding files.
   public func delete(routineId: String, routineStoreRoot: String? = nil) throws -> RoutineMutationResult {
     let routineStore = store(routineStoreRoot: routineStoreRoot)
@@ -317,7 +368,10 @@ public struct RoutineService: Sendable {
         mirrorToHumanInput: false
       ),
       routineId: record.routineId,
-      routineStoreRoot: storeRoot
+      routineStoreRoot: storeRoot,
+      overlapPolicy: record.overlapPolicy,
+      maxQueuedRuns: record.maxQueuedRuns,
+      maxConcurrentRuns: record.maxConcurrentRuns
     )
   }
 

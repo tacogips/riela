@@ -133,6 +133,7 @@ enum RoutineClientAction: String, CaseIterable {
   case complete
   case enable
   case disable
+  case setOverlapPolicy = "set-overlap-policy"
   case delete
 }
 

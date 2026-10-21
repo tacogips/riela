@@ -11,6 +11,10 @@ struct ParsedRoutineOptions: ParsableArguments, Sendable {
   @Option var timezone: String?
   @Option var workflow: String?
   @Option(name: .customLong("completion-criteria")) var completionCriteria: String?
+  @Option(name: .customLong("overlap-policy")) var overlapPolicy: String?
+  @Option(name: .customLong("max-queued-runs")) var maxQueuedRuns: Int?
+  @Option(name: .customLong("max-concurrent-runs")) var maxConcurrentRuns: Int?
+  @Flag(name: .customLong("clear-overlap-policy")) var clearOverlapPolicy = false
   @Option var instruction: String?
   @Option var eventRoot: String?
   @Option(name: .customLong("routine-store")) var routineStore: String?
@@ -64,7 +68,10 @@ extension ScopedParityCommandRunner {
           completionCriteria: parsed.completionCriteria,
           eventRoot: parsed.eventRoot,
           routineStoreRoot: parsed.routineStore,
-          deactivateWorkflowOnCompletion: parsed.deactivateWorkflowOnCompletion
+          deactivateWorkflowOnCompletion: parsed.deactivateWorkflowOnCompletion,
+          overlapPolicy: parsed.overlapPolicy,
+          maxQueuedRuns: parsed.maxQueuedRuns,
+          maxConcurrentRuns: parsed.maxConcurrentRuns
         ))
         return routineCommandResult(
           action: action,
@@ -125,6 +132,31 @@ extension ScopedParityCommandRunner {
           target: routineId,
           records: [routineSummaryLine(result.routine)] + result.diagnostics
         )
+      case RoutineClientAction.setOverlapPolicy.rawValue:
+        guard let routineId = options.target else {
+          throw CLIUsageError("routine set-overlap-policy requires <routine-id>")
+        }
+        guard (parsed.overlapPolicy != nil) != parsed.clearOverlapPolicy else {
+          throw CLIUsageError(
+            "routine set-overlap-policy requires exactly one of --overlap-policy or --clear-overlap-policy"
+          )
+        }
+        let hasRunCap = parsed.maxQueuedRuns != nil || parsed.maxConcurrentRuns != nil
+        if parsed.clearOverlapPolicy && hasRunCap {
+          throw CLIUsageError("routine set-overlap-policy --clear-overlap-policy cannot be combined with a run cap")
+        }
+        let result = try service.setOverlapPolicy(
+          routineId: routineId,
+          overlapPolicy: parsed.clearOverlapPolicy ? nil : parsed.overlapPolicy,
+          maxQueuedRuns: parsed.clearOverlapPolicy ? nil : parsed.maxQueuedRuns,
+          maxConcurrentRuns: parsed.clearOverlapPolicy ? nil : parsed.maxConcurrentRuns,
+          routineStoreRoot: parsed.routineStore
+        )
+        return routineCommandResult(
+          action: action,
+          target: routineId,
+          records: [routineSummaryLine(result.routine)] + result.diagnostics
+        )
       case RoutineClientAction.delete.rawValue:
         guard let routineId = options.target else {
           throw CLIUsageError("routine delete requires <routine-id>")
@@ -137,7 +169,7 @@ extension ScopedParityCommandRunner {
         )
       default:
         throw CLIUsageError(
-          "unknown routine command '\(action)'; expected create, list, inspect, complete, enable, disable, or delete"
+          "unknown routine command '\(action)'; expected create, list, inspect, complete, enable, disable, set-overlap-policy, or delete"
         )
       }
     } catch let error as RoutineServiceError {
@@ -185,6 +217,13 @@ extension ScopedParityCommandRunner {
       "bindingId=\(record.bindingId)",
       "deactivateWorkflowOnCompletion=\(record.deactivateWorkflowOnCompletion)"
     ]
+    lines.append("overlapPolicy=\(record.overlapPolicy ?? "inherit")")
+    if let maxQueuedRuns = record.maxQueuedRuns {
+      lines.append("maxQueuedRuns=\(maxQueuedRuns)")
+    }
+    if let maxConcurrentRuns = record.maxConcurrentRuns {
+      lines.append("maxConcurrentRuns=\(maxConcurrentRuns)")
+    }
     if let instruction = record.instruction {
       lines.append("instruction=\(instruction)")
     }

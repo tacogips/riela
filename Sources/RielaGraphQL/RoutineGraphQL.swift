@@ -33,6 +33,13 @@ public enum GraphQLRoutineStatus: String, Codable, Equatable, Sendable {
   }
 }
 
+public enum GraphQLEventOverlapPolicy: String, Codable, Equatable, Sendable {
+  case skip
+  case cancelRunning
+  case queue
+  case concurrent
+}
+
 public struct GraphQLRoutine: Codable, Equatable, Sendable {
   public var routineId: String
   public var name: String
@@ -54,6 +61,9 @@ public struct GraphQLRoutine: Codable, Equatable, Sendable {
   public var bindingId: String
   public var deactivateWorkflowOnCompletion: Bool
   public var origin: JSONObject?
+  public var overlapPolicy: GraphQLEventOverlapPolicy?
+  public var maxQueuedRuns: Int?
+  public var maxConcurrentRuns: Int?
 
   public init(_ record: RoutineRecord) {
     self.routineId = record.routineId
@@ -76,6 +86,9 @@ public struct GraphQLRoutine: Codable, Equatable, Sendable {
     self.bindingId = record.bindingId
     self.deactivateWorkflowOnCompletion = record.deactivateWorkflowOnCompletion
     self.origin = record.origin
+    self.overlapPolicy = record.overlapPolicy.flatMap(GraphQLEventOverlapPolicy.init(rawValue:))
+    self.maxQueuedRuns = record.maxQueuedRuns
+    self.maxConcurrentRuns = record.maxConcurrentRuns
   }
 }
 
@@ -111,6 +124,9 @@ public struct GraphQLCreateRoutineInput: Codable, Equatable, Sendable {
   public var routineStoreRoot: String?
   public var deactivateWorkflowOnCompletion: Bool?
   public var origin: JSONObject?
+  public var overlapPolicy: GraphQLEventOverlapPolicy?
+  public var maxQueuedRuns: Int?
+  public var maxConcurrentRuns: Int?
 
   public init(
     name: String,
@@ -124,7 +140,10 @@ public struct GraphQLCreateRoutineInput: Codable, Equatable, Sendable {
     eventRoot: String? = nil,
     routineStoreRoot: String? = nil,
     deactivateWorkflowOnCompletion: Bool? = nil,
-    origin: JSONObject? = nil
+    origin: JSONObject? = nil,
+    overlapPolicy: GraphQLEventOverlapPolicy? = nil,
+    maxQueuedRuns: Int? = nil,
+    maxConcurrentRuns: Int? = nil
   ) {
     self.name = name
     self.instruction = instruction
@@ -138,6 +157,9 @@ public struct GraphQLCreateRoutineInput: Codable, Equatable, Sendable {
     self.routineStoreRoot = routineStoreRoot
     self.deactivateWorkflowOnCompletion = deactivateWorkflowOnCompletion
     self.origin = origin
+    self.overlapPolicy = overlapPolicy
+    self.maxQueuedRuns = maxQueuedRuns
+    self.maxConcurrentRuns = maxConcurrentRuns
   }
 }
 
@@ -161,6 +183,28 @@ public struct GraphQLSetRoutineStatusInput: Codable, Equatable, Sendable {
   public init(routineId: String, status: GraphQLRoutineStatus, routineStoreRoot: String? = nil) {
     self.routineId = routineId
     self.status = status
+    self.routineStoreRoot = routineStoreRoot
+  }
+}
+
+public struct GraphQLSetRoutineOverlapPolicyInput: Codable, Equatable, Sendable {
+  public var routineId: String
+  public var overlapPolicy: GraphQLEventOverlapPolicy?
+  public var maxQueuedRuns: Int?
+  public var maxConcurrentRuns: Int?
+  public var routineStoreRoot: String?
+
+  public init(
+    routineId: String,
+    overlapPolicy: GraphQLEventOverlapPolicy?,
+    maxQueuedRuns: Int? = nil,
+    maxConcurrentRuns: Int? = nil,
+    routineStoreRoot: String? = nil
+  ) {
+    self.routineId = routineId
+    self.overlapPolicy = overlapPolicy
+    self.maxQueuedRuns = maxQueuedRuns
+    self.maxConcurrentRuns = maxConcurrentRuns
     self.routineStoreRoot = routineStoreRoot
   }
 }
@@ -230,13 +274,14 @@ public protocol RoutineGraphQLProviding: Sendable {
   func createRoutine(input: GraphQLCreateRoutineInput) async throws -> GraphQLRoutineMutationPayload
   func completeRoutine(input: GraphQLCompleteRoutineInput) async throws -> GraphQLRoutineMutationPayload
   func setRoutineStatus(input: GraphQLSetRoutineStatusInput) async throws -> GraphQLRoutineMutationPayload
+  func setRoutineOverlapPolicy(input: GraphQLSetRoutineOverlapPolicyInput) async throws -> GraphQLRoutineMutationPayload
   func deleteRoutine(input: GraphQLDeleteRoutineInput) async throws -> GraphQLRoutineMutationPayload
 }
 
 public struct RoutineGraphQLDocumentExecutor: GraphQLDocumentExecuting {
   static let queryFields: Set<String> = ["routines", "routine"]
   static let mutationFields: Set<String> = [
-    "createRoutine", "completeRoutine", "setRoutineStatus", "deleteRoutine"
+    "createRoutine", "completeRoutine", "setRoutineStatus", "setRoutineOverlapPolicy", "deleteRoutine"
   ]
 
   public var provider: (any RoutineGraphQLProviding)?
@@ -334,6 +379,9 @@ public struct RoutineGraphQLDocumentExecutor: GraphQLDocumentExecuting {
     case "setRoutineStatus":
       let input: GraphQLSetRoutineStatusInput = try requiredRoutineInput("input", arguments: root.arguments)
       return try routineJSONValue(try await provider.setRoutineStatus(input: input))
+    case "setRoutineOverlapPolicy":
+      let input: GraphQLSetRoutineOverlapPolicyInput = try requiredRoutineInput("input", arguments: root.arguments)
+      return try routineJSONValue(try await provider.setRoutineOverlapPolicy(input: input))
     case "deleteRoutine":
       let input: GraphQLDeleteRoutineInput = try requiredRoutineInput("input", arguments: root.arguments)
       return try routineJSONValue(try await provider.deleteRoutine(input: input))
@@ -422,6 +470,7 @@ extension RoutineAwareGraphQLFallbackExecutor: GraphQLDocumentDomainPreflighting
 
 public let routineGraphQLSchemaTypes = """
 enum RoutineStatus { ACTIVE, DISABLED, COMPLETED }
+enum EventOverlapPolicy { skip, cancelRunning, queue, concurrent }
 type Routine {
   routineId: String!
   name: String!
@@ -443,6 +492,9 @@ type Routine {
   bindingId: String!
   deactivateWorkflowOnCompletion: Boolean!
   origin: JSONObject
+  overlapPolicy: EventOverlapPolicy
+  maxQueuedRuns: Int
+  maxConcurrentRuns: Int
 }
 type RoutineError { code: String!, message: String! }
 type RoutineListPayload { routines: [Routine!]!, errors: [RoutineError!]! }
@@ -467,9 +519,13 @@ input CreateRoutineInput {
   routineStoreRoot: String
   deactivateWorkflowOnCompletion: Boolean
   origin: JSONObject
+  overlapPolicy: EventOverlapPolicy
+  maxQueuedRuns: Int
+  maxConcurrentRuns: Int
 }
 input CompleteRoutineInput { routineId: String!, note: String, routineStoreRoot: String }
 input SetRoutineStatusInput { routineId: String!, status: RoutineStatus!, routineStoreRoot: String }
+input SetRoutineOverlapPolicyInput { routineId: String!, overlapPolicy: EventOverlapPolicy, maxQueuedRuns: Int, maxConcurrentRuns: Int, routineStoreRoot: String }
 input DeleteRoutineInput { routineId: String!, routineStoreRoot: String }
 """
 

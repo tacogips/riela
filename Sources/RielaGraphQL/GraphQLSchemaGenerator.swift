@@ -639,6 +639,7 @@ public enum GraphQLSchemaGenerator {
     "Mutation.retryCommunicationDelivery": .init(name: "retryCommunicationDelivery", arguments: "input: RetryCommunicationDeliveryInput!", type: "RetryCommunicationDeliveryPayload!"),
     "Mutation.sendManagerMessage": .init(name: "sendManagerMessage", arguments: "input: SendManagerMessageInput!", type: "SendManagerMessagePayload!"),
     "Mutation.setRoutineStatus": .init(name: "setRoutineStatus", arguments: "input: SetRoutineStatusInput!", type: "RoutineMutationPayload!"),
+    "Mutation.setRoutineOverlapPolicy": .init(name: "setRoutineOverlapPolicy", arguments: "input: SetRoutineOverlapPolicyInput!", type: "RoutineMutationPayload!"),
     "Mutation.stopSession": .init(name: "stopSession", arguments: "input: StopSessionInput!", type: "SessionMutationPayload!"),
     "Mutation.requestTaskHandover": .init(name: "requestTaskHandover", arguments: "input: RequestTaskHandoverInput!", type: "TaskHandoverMutationPayload!"),
     "Mutation.answerTask": .init(name: "answerTask", arguments: "input: AnswerTaskInput!", type: "TaskHandoverMutationPayload!"),

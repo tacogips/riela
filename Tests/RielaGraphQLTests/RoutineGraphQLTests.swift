@@ -3,7 +3,17 @@ import XCTest
 import RielaCore
 @testable import RielaGraphQL
 
+private actor RoutineOverlapInputRecorder {
+  private(set) var input: GraphQLSetRoutineOverlapPolicyInput?
+
+  func record(_ input: GraphQLSetRoutineOverlapPolicyInput) {
+    self.input = input
+  }
+}
+
 private struct StubRoutineProvider: RoutineGraphQLProviding {
+  let overlapPolicyInputs = RoutineOverlapInputRecorder()
+
   var record: RoutineRecord {
     RoutineRecord(
       routineId: "routine-a",
@@ -44,6 +54,13 @@ private struct StubRoutineProvider: RoutineGraphQLProviding {
     GraphQLRoutineMutationPayload(accepted: true, routine: GraphQLRoutine(record))
   }
 
+  func setRoutineOverlapPolicy(
+    input: GraphQLSetRoutineOverlapPolicyInput
+  ) async throws -> GraphQLRoutineMutationPayload {
+    await overlapPolicyInputs.record(input)
+    return GraphQLRoutineMutationPayload(accepted: true, routine: GraphQLRoutine(record))
+  }
+
   func deleteRoutine(input: GraphQLDeleteRoutineInput) async throws -> GraphQLRoutineMutationPayload {
     GraphQLRoutineMutationPayload(accepted: true)
   }
@@ -58,6 +75,9 @@ final class RoutineGraphQLTests: XCTestCase {
     XCTAssertTrue(schema.contains("createRoutine(input: CreateRoutineInput!): RoutineMutationPayload!"))
     XCTAssertTrue(schema.contains("completeRoutine(input: CompleteRoutineInput!): RoutineMutationPayload!"))
     XCTAssertTrue(schema.contains("setRoutineStatus(input: SetRoutineStatusInput!): RoutineMutationPayload!"))
+    XCTAssertTrue(schema.contains("setRoutineOverlapPolicy(input: SetRoutineOverlapPolicyInput!): RoutineMutationPayload!"))
+    XCTAssertTrue(schema.contains("enum EventOverlapPolicy { skip, cancelRunning, queue, concurrent }"))
+    XCTAssertTrue(schema.contains("overlapPolicy: EventOverlapPolicy"))
     XCTAssertTrue(schema.contains("deleteRoutine(input: DeleteRoutineInput!): RoutineMutationPayload!"))
     XCTAssertTrue(schema.contains("input CreateRoutineInput"))
   }
@@ -109,6 +129,30 @@ final class RoutineGraphQLTests: XCTestCase {
     }
     XCTAssertEqual(payload["accepted"], .bool(true))
     XCTAssertEqual(payload["diagnostics"], .array([.string("created")]))
+  }
+
+  func testSetRoutineOverlapPolicyMutationDecodesTypedInput() async throws {
+    let provider = StubRoutineProvider()
+    let executor = RoutineGraphQLDocumentExecutor(provider: provider)
+    let response = await executor.execute(GraphQLDocumentRequest(
+      query: """
+      mutation {
+        setRoutineOverlapPolicy(input: {routineId: "r", overlapPolicy: queue, maxQueuedRuns: 2}) {
+          accepted
+        }
+      }
+      """,
+      variables: [:],
+      operationName: nil,
+      environment: [:],
+      isLocallyTrusted: true
+    ))
+    XCTAssertTrue(response.handled)
+    XCTAssertNil(response.body["errors"])
+    let captured = await provider.overlapPolicyInputs.input
+    XCTAssertEqual(captured?.routineId, "r")
+    XCTAssertEqual(captured?.overlapPolicy, .queue)
+    XCTAssertEqual(captured?.maxQueuedRuns, 2)
   }
 
   func testRoutineDomainRefusesUntrustedRequests() async {

@@ -54,7 +54,10 @@ public struct FileRoutineGraphQLProvider: RoutineGraphQLProviding, Sendable {
         eventRoot: input.eventRoot,
         routineStoreRoot: input.routineStoreRoot,
         deactivateWorkflowOnCompletion: input.deactivateWorkflowOnCompletion,
-        origin: input.origin
+        origin: input.origin,
+        overlapPolicy: input.overlapPolicy?.rawValue,
+        maxQueuedRuns: input.maxQueuedRuns,
+        maxConcurrentRuns: input.maxConcurrentRuns
       )))
     }
   }
@@ -74,6 +77,20 @@ public struct FileRoutineGraphQLProvider: RoutineGraphQLProviding, Sendable {
       payload(try service.setStatus(
         routineId: input.routineId,
         status: input.status.routineStatus,
+        routineStoreRoot: input.routineStoreRoot
+      ))
+    }
+  }
+
+  public func setRoutineOverlapPolicy(
+    input: GraphQLSetRoutineOverlapPolicyInput
+  ) async throws -> GraphQLRoutineMutationPayload {
+    try mapServiceError {
+      payload(try service.setOverlapPolicy(
+        routineId: input.routineId,
+        overlapPolicy: input.overlapPolicy?.rawValue,
+        maxQueuedRuns: input.maxQueuedRuns,
+        maxConcurrentRuns: input.maxConcurrentRuns,
         routineStoreRoot: input.routineStoreRoot
       ))
     }

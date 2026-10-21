@@ -616,6 +616,7 @@ extension GraphQLContractProjector {
     createRoutine(input: CreateRoutineInput!): RoutineMutationPayload!
     completeRoutine(input: CompleteRoutineInput!): RoutineMutationPayload!
     setRoutineStatus(input: SetRoutineStatusInput!): RoutineMutationPayload!
+    setRoutineOverlapPolicy(input: SetRoutineOverlapPolicyInput!): RoutineMutationPayload!
     deleteRoutine(input: DeleteRoutineInput!): RoutineMutationPayload!
     sendManagerMessage(input: SendManagerMessageInput!): SendManagerMessagePayload!
     replayCommunication(input: ReplayCommunicationInput!): ReplayCommunicationPayload!

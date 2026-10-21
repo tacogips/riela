@@ -475,6 +475,14 @@ extension SurfaceCatalog {
       ),
       surfaceRow(
         routineDefaults,
+        id: "routine.set-overlap-policy",
+        family: "routine",
+        kind: .mutation,
+        cli: "routine set-overlap-policy",
+        graphql: graphQLMutation("setRoutineOverlapPolicy")
+      ),
+      surfaceRow(
+        routineDefaults,
         id: "routine.disable",
         family: "routine",
         kind: .mutation,

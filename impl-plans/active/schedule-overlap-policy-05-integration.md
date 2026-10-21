@@ -105,7 +105,7 @@ V1: arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/schedule-overlap-
 V2: arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter "EventOverlapPolicyTests|EventOverlapContractValidationTests|RoutineStoreTests|EventRoutineBindingTests|EventDryRunTests|WorkflowLoopValidationTests"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v2-core-events.log 2>&1
 V3: arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter "EventCronOverlapTests|EventLiveServe|EventReadOnlyPolicyTests|OverlapPolicyInspectionTests|RoutineCommandTests|RoutineGraphQLTests|RoutineAddonTests|SurfaceParity|WorkflowCommandLivePersistenceEventTests"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v3-cli-graphql.log 2>&1
 V4: git hash-object Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v4-sdl-hash-before.txt && scripts/surface-parity/generate-sdl.sh > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v4-sdl.log 2>&1 && git hash-object Sources/RielaGraphQL/GraphQLContractProjector+Schema.swift > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v4-sdl-hash-after.txt && cmp tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v4-sdl-hash-before.txt tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v4-sdl-hash-after.txt
-V5: arch -arm64 /bin/zsh -lc 'swiftlint lint --strict' > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v5-lint.log 2>&1
+V5: arch -arm64 /bin/zsh -lc 'git diff --name-only -z 3e6d4adf HEAD -- "*.swift" | xargs -0 swiftlint lint --strict' > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v5-lint.log 2>&1
 V6: smoke checks S1-S4 (logs: tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/s1.log … s4.log)
 V7: git diff --check > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v7-diff-check.log 2>&1
 ```
@@ -150,3 +150,11 @@ and `logPath`.
 - the README pre and post hashes;
 - a list of failures handed back to owning plans, empty if none;
 - residual notes. They must not start with a severity word.
+
+## Operator amendment (2026-10-22, before rerun session-473 → next)
+
+- V5 is now selected-file SwiftLint over every Swift file changed since `main` @ `3e6d4adf` (33 files, all from overlap-01..04 and the parity fix). The operator ran it on HEAD `a13864ed`: exit 0, no diagnostics.
+- Repo-wide `swiftlint lint --strict` exits 2 with 30 diagnostics. All of them are in files this feature does not touch (for example EventLiveServe+FileChange.swift, DeterministicWorkflowRunner+History.swift and Apple*AddonTests). They also exist on `main`. Record them as inherited baseline only; they do not gate this plan.
+- Do NOT create mirror/export trees (e.g. a `lint-baseline/` checkout) under `tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration`. The fanout source snapshot is capped at 512 entries, and the previous attempt failed at 513 because of one. Keep evidence to flat log/JSON files.
+- The uncommitted `impl-plans/README.md` index entry and `impl-plans/progress/overlap-05-integration.md` come from the previous attempt (S1-S4 smoke checks passed). Re-verify them and reuse them instead of starting over.
+

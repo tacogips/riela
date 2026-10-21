@@ -95,110 +95,19 @@
     "codexAgentReferences": [],
     "residualFindings": [
       "OVL-P05-SDL-DIFF (low, residual-accepted): overlap-05 V4 now uses the before/after git hash-object comparison instead of git diff --exit-code against HEAD."
-    ]
+    ],
+    "resolvedFindings": [
+      "opus-luna-design-and-implement-review-loop-session-471-step3-design-review-attempt-1-finding-1 (mid, resolved): design §6.5 places sessionStartedObserver outside the jsonlRecorder block (design-docs/specs/design-scheduled-overlap-policy.md:339-346, D13); implemented in Sources/RielaCLI/WorkflowRunCommand.swift:166-168 and wired via Sources/RielaCLI/EventLiveServe.swift:944 in accepted commit cd109008b4ac289f20e896edcdffe68608276748."
+    ],
+    "continuation": "Rerun opus-luna-design-and-implement-review-loop-session-472 continues task schedule-overlap-policy-20261021-session-471; overlap-01..03 landed in cd109008b4ac289f20e896edcdffe68608276748 on top of originalHead; remaining plans overlap-04 and overlap-05."
   },
   "plans": [
     {
-      "planId": "overlap-01-contracts",
-      "planPath": "impl-plans/active/schedule-overlap-policy-01-contracts.md",
-      "dependsOn": [],
-      "writePaths": [
-        "Sources/RielaCore/EventOverlapPolicy.swift",
-        "Sources/RielaCore/WorkflowTriggerDefaultsValidation.swift",
-        "Sources/RielaCore/WorkflowRawValidation.swift",
-        "Sources/RielaCore/WorkflowModel.swift",
-        "Sources/RielaCore/WorkflowValidation.swift",
-        "Sources/RielaCore/RoutineStore.swift",
-        "Sources/RielaEvents/EventContracts.swift",
-        "Sources/RielaEvents/EventContractValidator.swift",
-        "Sources/RielaCLI/EventReadOnly.swift",
-        "Tests/RielaCoreTests/EventOverlapPolicyTests.swift",
-        "Tests/RielaEventsTests/EventOverlapContractValidationTests.swift",
-        "impl-plans/progress/overlap-01-contracts.md",
-        "tmp/schedule-overlap-policy-20261021-session-471/overlap-01-contracts"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "The policy enum, settings and resolver are pinned in Sources/RielaCore/EventOverlapPolicy.swift.",
-        "workflow.triggerDefaults is decoded, carried onto WorkflowDefinition and raw-validated with the verbatim §5.2 messages.",
-        "EventBindingContract fields round-trip and are omitted when nil. EventContractValidator emits INVALID_EVENT_OVERLAP_POLICY with the verbatim §5.1 messages.",
-        "The RoutineRecord fields are added. recordRunCompletion keeps lastRunAt monotonic and counts atomically.",
-        "PersistedEventReceipt gains the optional bindingId, overlapPolicy, overlapPolicySource, cancelledSessionIds and coalescedTickCount fields.",
-        "V1-V3 pass with positive test counts."
-      ],
-      "verification": [
-        "mkdir -p tmp/schedule-overlap-policy-20261021-session-471/overlap-01-contracts",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/schedule-overlap-policy-20261021-session-471/overlap-01-contracts/v1-build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter \"EventOverlapPolicyTests|EventOverlapContractValidationTests|RoutineStoreTests|EventRoutineBindingTests|EventDryRunTests|WorkflowLoopValidationTests|EventLiveServeCronTests\"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-01-contracts/v2-tests.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCore/EventOverlapPolicy.swift Sources/RielaCore/WorkflowTriggerDefaultsValidation.swift Sources/RielaCore/WorkflowRawValidation.swift Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/WorkflowValidation.swift Sources/RielaCore/RoutineStore.swift Sources/RielaEvents/EventContracts.swift Sources/RielaEvents/EventContractValidator.swift Sources/RielaCLI/EventReadOnly.swift Tests/RielaCoreTests/EventOverlapPolicyTests.swift Tests/RielaEventsTests/EventOverlapContractValidationTests.swift' > tmp/schedule-overlap-policy-20261021-session-471/overlap-01-contracts/v3-lint.log 2>&1"
-      ]
-    },
-    {
-      "planId": "overlap-02-serve-dispatch",
-      "planPath": "impl-plans/active/schedule-overlap-policy-02-serve-dispatch.md",
-      "dependsOn": ["overlap-01-contracts"],
-      "writePaths": [
-        "Sources/RielaCLI/EventServeClock.swift",
-        "Sources/RielaCLI/EventCronOverlapDispatcher.swift",
-        "Sources/RielaCLI/EventLiveServe.swift",
-        "Sources/RielaCLI/EventLiveServe+Cron.swift",
-        "Sources/RielaCLI/WorkflowRunCommand.swift",
-        "Tests/RielaCLITests/EventCronOverlapTests.swift",
-        "Tests/RielaCLITests/EventLiveServeCronTests.swift",
-        "impl-plans/progress/overlap-02-serve-dispatch.md",
-        "tmp/schedule-overlap-policy-20261021-session-471/overlap-02-serve-dispatch"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "Cron runs are tracked tasks in CronOverlapDispatcher, keyed by bindingId, and the serve loop never awaits them except in drain or shutdown.",
-        "skip, concurrent (cap), queue (FIFO, overflow), cancelRunning (settle, timeout, superseded) and the routine re-check behave and record exactly as in design §6.4 and §7.",
-        "dueTicks replaces dueTick. concurrent submits every due tick; the other policies submit the latest due tick with coalescedTickCount.",
-        "--limit drains every accepted fire. Signal or error shutdown discards queued fires and cancels running ones.",
-        "sessionStartedObserver fires for .json output, outside the jsonlRecorder block. The real-runner test records a non-pending cancelled session id, failureKind cancelled, and no live pid.",
-        "Startup resolution is binding > workflow > skip, records overlapPolicies, and fails closed on an invalid binding value.",
-        "writeServeRecord is serialized with a lock.",
-        "V1-V4 pass with positive test counts, with no hang in the timeout, settle-before-timeout, superseded and shutdown-with-unsettled-run cases."
-      ],
-      "verification": [
-        "mkdir -p tmp/schedule-overlap-policy-20261021-session-471/overlap-02-serve-dispatch",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/schedule-overlap-policy-20261021-session-471/overlap-02-serve-dispatch/v1-build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter \"EventCronOverlapTests|EventLiveServeCronTests\"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-02-serve-dispatch/v2-overlap.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter \"EventLiveServeTests|EventLiveServeFileChangeTests|EventLiveServeWebhookyTests|EventLiveServeSlackTests|EventLiveServeMatrixTests|EventLiveServeIsolationTests|EventReadOnlyPolicyTests|WorkflowCommandLivePersistenceEventTests\"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-02-serve-dispatch/v3-regression.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCLI/EventServeClock.swift Sources/RielaCLI/EventCronOverlapDispatcher.swift Sources/RielaCLI/EventLiveServe.swift Sources/RielaCLI/EventLiveServe+Cron.swift Sources/RielaCLI/WorkflowRunCommand.swift Tests/RielaCLITests/EventCronOverlapTests.swift Tests/RielaCLITests/EventLiveServeCronTests.swift' > tmp/schedule-overlap-policy-20261021-session-471/overlap-02-serve-dispatch/v4-lint.log 2>&1"
-      ]
-    },
-    {
-      "planId": "overlap-03-inspection",
-      "planPath": "impl-plans/active/schedule-overlap-policy-03-inspection.md",
-      "dependsOn": ["overlap-01-contracts"],
-      "writePaths": [
-        "Sources/RielaCLI/ScopedParityCommands.swift",
-        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
-        "Tests/RielaCLITests/OverlapPolicyInspectionTests.swift",
-        "impl-plans/progress/overlap-03-inspection.md",
-        "tmp/schedule-overlap-policy-20261021-session-471/overlap-03-inspection"
-      ],
-      "sharedPaths": [],
-      "artifactRoots": [],
-      "acceptanceCriteria": [
-        "On success, events validate appends 'binding=<id> overlapPolicy=<v|inherit>' for each enabled cron binding.",
-        "events list appends ' reason=<r>' and ' binding=<id>' when present. Existing prefixes are unchanged.",
-        "workflow inspect JSON carries triggerDefaults, and the text output prints the triggerDefaults line.",
-        "V1-V3 pass with positive test counts."
-      ],
-      "verification": [
-        "mkdir -p tmp/schedule-overlap-policy-20261021-session-471/overlap-03-inspection",
-        "arch -arm64 /bin/zsh -lc 'swift build --build-tests' > tmp/schedule-overlap-policy-20261021-session-471/overlap-03-inspection/v1-build.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swift test --skip-build --filter \"OverlapPolicyInspectionTests|EventReadOnlyPolicyTests|WorkflowHostCapabilityTests|WorkflowInstalledAddonMetadataTests\"' > tmp/schedule-overlap-policy-20261021-session-471/overlap-03-inspection/v2-tests.log 2>&1",
-        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict Sources/RielaCLI/ScopedParityCommands.swift Sources/RielaCLI/WorkflowValidateInspectCommands.swift Tests/RielaCLITests/OverlapPolicyInspectionTests.swift' > tmp/schedule-overlap-policy-20261021-session-471/overlap-03-inspection/v3-lint.log 2>&1"
-      ]
-    },
-    {
       "planId": "overlap-04-routine-surfaces",
       "planPath": "impl-plans/active/schedule-overlap-policy-04-routine-surfaces.md",
-      "dependsOn": ["overlap-01-contracts"],
+      "dependsOn": [
+        "overlap-01-contracts"
+      ],
       "writePaths": [
         "Sources/RielaWorkflowRegistry/RoutineService.swift",
         "Sources/RielaWorkflowRegistry/RoutineGraphQLProvider.swift",
@@ -233,7 +142,11 @@
     {
       "planId": "overlap-05-integration",
       "planPath": "impl-plans/active/schedule-overlap-policy-05-integration.md",
-      "dependsOn": ["overlap-02-serve-dispatch", "overlap-03-inspection", "overlap-04-routine-surfaces"],
+      "dependsOn": [
+        "overlap-02-serve-dispatch",
+        "overlap-03-inspection",
+        "overlap-04-routine-surfaces"
+      ],
       "writePaths": [
         "impl-plans/README.md",
         "impl-plans/progress/overlap-05-integration.md",
@@ -255,6 +168,26 @@
         "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict' > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v5-lint.log 2>&1",
         "git diff --check > tmp/schedule-overlap-policy-20261021-session-471/overlap-05-integration/v7-diff-check.log 2>&1"
       ]
+    }
+  ],
+  "acceptedDependencies": [
+    {
+      "planId": "overlap-01-contracts",
+      "planPath": "impl-plans/active/schedule-overlap-policy-01-contracts.md",
+      "commit": "cd109008b4ac289f20e896edcdffe68608276748",
+      "provides": "Policy enum, settings, resolver, binding/workflow triggerDefaults validation and RoutineStore field"
+    },
+    {
+      "planId": "overlap-02-serve-dispatch",
+      "planPath": "impl-plans/active/schedule-overlap-policy-02-serve-dispatch.md",
+      "commit": "cd109008b4ac289f20e896edcdffe68608276748",
+      "provides": "CronOverlapDispatcher tracked cron runs (skip/cancelRunning/queue/concurrent), dueTicks, non-blocking serve loop"
+    },
+    {
+      "planId": "overlap-03-inspection",
+      "planPath": "impl-plans/active/schedule-overlap-policy-03-inspection.md",
+      "commit": "cd109008b4ac289f20e896edcdffe68608276748",
+      "provides": "events validate/list and workflow inspect overlap policy visibility"
     }
   ]
 }

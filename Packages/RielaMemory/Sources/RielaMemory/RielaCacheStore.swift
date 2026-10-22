@@ -45,7 +45,7 @@ public struct RielaCacheStore: Sendable {
     }
   }
 
-  public func put(cacheId: String, scope: String, entries: [CachePut]) throws -> CacheResult {
+  public func put(cacheId: String, scope: String, entries: [CachePut], retaining references: MemoryJSONValue? = nil) throws -> CacheResult {
     try validate(scope: scope, keys: entries.map(\.key))
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -83,6 +83,7 @@ public struct RielaCacheStore: Sendable {
         prepared.append((stored, fetched, String(decoding: data, as: UTF8.self), revision, bytes))
       }
       // Validation above precedes any eviction, even when a later batch item is invalid.
+      if let references { _ = try reconcileReferences(db, scope: scope, references: references) }
       let expired = try expire(db, now: now, policy: policy)
       var lookups: [CacheLookup] = []
       for (entry, fetched, payload, revision, bytes) in prepared {
@@ -199,6 +200,83 @@ public struct RielaCacheStore: Sendable {
     }
   }
 
+  /// Reconcile capacity protection with a committed reference snapshot. The caller
+  /// holds its metadata writer lock until this transaction completes. Unreferenced
+  /// artifacts become ordinary TTL/LRU cache entries; payloads are never deleted here.
+  public func reconcile(cacheId: String, scope: String, references: MemoryJSONValue) throws -> CacheResult {
+    try validate(scope: scope, keys: ["reference-snapshot"])
+    return try transaction(cacheId) { db, now in
+      let policy = try readPolicy(db)
+      let expired = try expire(db, now: now, policy: policy)
+      let lookups = try reconcileReferences(db, scope: scope, references: references)
+      return try result(db, policy: policy, expired: expired, results: lookups)
+    }
+  }
+
+  private func reconcileReferences(_ db: OpaquePointer, scope: String, references: MemoryJSONValue) throws -> [CacheLookup] {
+    let retained = try CacheReferenceSnapshot.collect(references)
+    let rows = try queryRows(db, sql: "SELECT key, revision, protected FROM cache_entries WHERE scope = ?",
+      bindings: [.text(scope)])
+    // Validate the entire snapshot before changing any protection. A stale revision
+    // must never release another producer's newer artifact.
+    for row in rows {
+      if let expected = retained[row.columns["key"]!], expected != row.columns["revision"] {
+        throw RielaCacheError.revisionConflict(row.columns["key"]!)
+      }
+    }
+    var results: [CacheLookup] = []
+    for row in rows {
+      let key = row.columns["key"]!
+      let desired = retained[key] != nil
+      guard desired != (row.columns["protected"] == "1") else { continue }
+      try execute(db, "UPDATE cache_entries SET protected = ? WHERE scope = ? AND key = ?",
+        bindings: [.int(desired ? 1 : 0), .text(scope), .text(key)])
+      results.append(.init(key: key, status: desired ? "protected" : "released"))
+    }
+    return results
+  }
+
+  /// Bounded maintenance of explicitly owned existing stores. Never creates a
+  /// missing cache or resets its configured policy. Foreign databases are skipped.
+  public func maintain(cacheIds: [String], maxDurationSeconds: Double = 120) throws -> CacheMaintenanceResult {
+    guard !cacheIds.isEmpty, cacheIds.count <= 1024, Set(cacheIds).count == cacheIds.count,
+      maxDurationSeconds.isFinite, maxDurationSeconds > 0, maxDurationSeconds <= 3600 else {
+      throw RielaCacheError.invalid("invalid cache maintenance bounds")
+    }
+    for id in cacheIds { _ = try databasePath(cacheId: id) }
+    var summary = CacheMaintenanceResult()
+    let started = ProcessInfo.processInfo.systemUptime
+    for id in cacheIds.sorted() {
+      let path = try databasePath(cacheId: id)
+      guard FileManager.default.fileExists(atPath: path) else { continue }
+      guard ProcessInfo.processInfo.systemUptime - started < maxDurationSeconds else {
+        summary.deferredCacheCount += 1; continue
+      }
+      do {
+        let attributes = try FileManager.default.attributesOfItem(atPath: path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+          (attributes[.referenceCount] as? NSNumber)?.intValue == 1 else { continue }
+        let response = try transaction(id, existingOnly: true) { db, now in
+          let policy = try readPolicy(db)
+          let expired = try expire(db, now: now, policy: policy)
+          return try result(db, policy: policy, expired: expired, evicted: evict(db, policy: policy))
+        }
+        summary.cacheCount += 1
+        summary.entryCount += response.stats.entryCount
+        summary.byteCount += response.stats.byteCount
+        summary.protectedByteCount += response.stats.protectedByteCount
+        summary.expiredEntryCount += response.stats.expiredCount
+        summary.evictedEntryCount += response.stats.evictedCount
+      } catch RielaCacheError.foreignDatabase {
+        continue
+      } catch {
+        summary.failedCacheCount += 1
+      }
+    }
+    summary.status = summary.failedCacheCount > 0 ? "failed" : summary.deferredCacheCount > 0 ? "deferred" : "ok"
+    return summary
+  }
+
   private func isProtected(_ db: OpaquePointer, scope: String, key: String) throws -> Bool {
     try queryRows(db, sql: "SELECT protected FROM cache_entries WHERE scope = ? AND key = ?",
       bindings: [.text(scope), .text(key)]).first?.columns["protected"] == "1"
@@ -212,12 +290,14 @@ public struct RielaCacheStore: Sendable {
     }
   }
 
-  private func transaction<T>(_ cacheId: String, body: (OpaquePointer, Int64) throws -> T) throws -> T {
+  private func transaction<T>(_ cacheId: String, existingOnly: Bool = false, body: (OpaquePointer, Int64) throws -> T) throws -> T {
     let path = try databasePath(cacheId: cacheId)
-    try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true,
-      attributes: [.posixPermissions: 0o700])
+    if !existingOnly {
+      try FileManager.default.createDirectory(atPath: rootDirectory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    }
     var handle: OpaquePointer?
-    guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK, let db = handle else {
+    guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE | (existingOnly ? 0 : SQLITE_OPEN_CREATE), nil) == SQLITE_OK, let db = handle else {
       if let handle { sqlite3_close(handle) }
       throw RielaMemoryError.openFailed("cache database could not be opened")
     }
@@ -225,7 +305,7 @@ public struct RielaCacheStore: Sendable {
     sqlite3_busy_timeout(db, 5_000)
     let application = try queryRows(db, sql: "PRAGMA application_id", bindings: []).first?.columns["application_id"]
     let tables = try queryRows(db, sql: "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table'", bindings: []).first?.columns["count"]
-    guard application == "1380533064" || (application == "0" && tables == "0") else { throw RielaCacheError.foreignDatabase }
+    guard application == "1380533064" || (!existingOnly && application == "0" && tables == "0") else { throw RielaCacheError.foreignDatabase }
     let schemaVersion = try queryRows(db, sql: "PRAGMA user_version", bindings: []).first?.columns["user_version"]
     guard schemaVersion == "0" || schemaVersion == "1" || schemaVersion == "2" else { throw RielaCacheError.foreignDatabase }
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)

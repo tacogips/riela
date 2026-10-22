@@ -1,6 +1,7 @@
 import Foundation
 import RielaCore
 import RielaMemory
+import RielaAddons
 import XCTest
 @testable import RielaCLI
 
@@ -54,6 +55,31 @@ final class CacheCommandTests: XCTestCase {
     let removed = try run("delete", ["--scope", "s", "--key", "post", "--expected-revision", saved.results[0].entry!.revision])
     XCTAssertEqual(removed.deletedCount, 1)
   }
+  func testBuiltinLifecycleAndMaintenanceUseNativeStore() throws {
+    let directory = root()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let resolver = BuiltinWorkflowAddonResolver(environment: [:])
+    func run(_ operation: BuiltinCacheAddon, _ extra: JSONObject) throws -> JSONObject {
+      let config: JSONObject = ["cacheId": .string("cache"), "cacheRoot": .string(directory.path), "scope": .string("s")]
+      let input = WorkflowAddonExecutionInput(workflowId: "workflow", stepId: "step", nodeId: "node",
+        addon: .init(name: operation.rawValue, config: config.merging(extra) { _, new in new }), resolvedInputPayload: [:])
+      return try resolver.executeCacheAddon(input, operation: operation).payload
+    }
+    _ = try run(.configure, ["maxBytes": .integer(1500)])
+    let entry: JSONObject = ["key": .string("old"), "fetchedAt": .string(ISO8601DateFormatter().string(from: Date())),
+      "payload": .string("checked"), "protectFromEviction": .bool(true)]
+    let saved = try run(.put, ["entries": .array([.object(entry)])])
+    XCTAssertThrowsError(try run(.reconcile, [:]))
+    let retained = try run(.reconcile, ["references": .object(saved)])
+    let decoded = try JSONDecoder().decode(CacheResult.self, from: JSONEncoder().encode(retained))
+    XCTAssertGreaterThan(decoded.stats.protectedByteCount, 0)
+    let released = try run(.reconcile, ["references": .array([])])
+    XCTAssertEqual(try JSONDecoder().decode(CacheResult.self, from: JSONEncoder().encode(released)).stats.protectedByteCount, 0)
+    let result = try run(.maintain, ["cacheIds": .array([.string("cache"), .string("missing")])])
+    XCTAssertEqual(result["cacheCount"], .integer(1))
+    XCTAssertTrue(RielaBuiltinAddonCatalog.supports(name: "riela/cache-reconcile", version: "1"))
+  }
+
   func testBuiltinCacheAddonRoundTripAndPolicyValidation() throws {
     let directory = root()
     defer { try? FileManager.default.removeItem(at: directory) }

@@ -127,3 +127,35 @@ Swift callers use `RielaCacheStore(rootDirectory:clock:)`, with an injectable
 clock for deterministic expiry tests. `configure`, `put`, `get`, `delete`, and
 `prune` execute inside SQLite transactions; monotonic access sequences resolve
 LRU order deterministically even when the clock does not advance.
+
+## Managed reference lifecycle (0.2.35)
+
+`riela/cache-reconcile` takes `cacheId`, `cacheRoot`, `scope` and `references`.
+The references are a committed metadata object/array containing nested `{key,
+revision}` cache references. Riela protects the referenced live revisions and
+releases capacity protection on other entries **in that scope only**. It does
+not delete payloads or extend their TTL or LRU timestamps. Missing/expired
+references remain missing; a changed live revision rejects the entire operation.
+Hold the metadata producer's exclusive lock through reconciliation. Do not pass
+an incomplete projection of a shared scope.
+
+`riela/cache-put` additionally accepts `retainedReferences`. Its reconciliation
+and new-entry admission share one SQLite transaction: capacity rejection or an
+invalid reference rolls everything back. New entries use their ordinary
+`protectFromEviction` setting. Commit the returned reference to metadata before
+the next transition. A crash before that commit leaves an unreferenced artifact
+that the next reconciliation releases. Existing `put` callers are unchanged.
+The CLI equivalent is `cache put ... --request-file -`, with a bounded JSON
+`{entries, retainedReferences}` request on stdin. `cache reconcile ...
+--references-file -` accepts the snapshot alone.
+
+`riela/cache-protect` exposes explicit revision-checked protection changes.
+`riela/cache-maintain` takes an explicit `cacheIds` array, `cacheRoot` and optional
+`maxDurationSeconds` (default 120). It prunes existing owned stores using their
+own policies, skips missing/foreign/link files, and returns finite aggregate
+counts without creating missing stores. No Python or shell node is needed.
+The CLI equivalent is `cache maintain maintenance --keys-file -`.
+
+See `examples/managed-cache-checkpoint` for a workflow made entirely of built-in
+nodes. Application-specific generation checks and publication acknowledgements
+remain with the publisher; TTL expiration is never a publication receipt.

@@ -95,3 +95,16 @@ func cacheTimestamp(_ milliseconds: Int64) -> String {
   formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
   return formatter.string(from: Date(timeIntervalSince1970: Double(milliseconds) / 1000))
 }
+
+public struct CacheMaintenanceResult: Codable, Equatable, Sendable {
+  public var status = "ok"
+  public var cacheCount = 0
+  public var failedCacheCount = 0
+  public var deferredCacheCount = 0
+  public var entryCount = 0
+  public var byteCount = 0
+  public var protectedByteCount = 0
+  public var expiredEntryCount = 0
+  public var evictedEntryCount = 0
+  public init() {}
+}

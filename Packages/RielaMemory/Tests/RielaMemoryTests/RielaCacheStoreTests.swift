@@ -69,6 +69,76 @@ final class RielaCacheStoreTests: XCTestCase {
     XCTAssertEqual(try queryRows(db, sql: "PRAGMA user_version", bindings: []).first?.columns["user_version"], "2")
   }
 
+  func testMaintenanceUsesOwnedExistingStoresAndPreservesPolicy() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    XCTAssertEqual(try store.maintain(cacheIds: ["missing"]).cacheCount, 0)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    _ = try store.configure(cacheId: "cache", policy: .init(ttlSeconds: 2, maxBytes: 2000))
+    _ = try store.put(cacheId: "cache", scope: "s", entries: [entry("old", clock)])
+    _ = try store.configure(cacheId: "unowned", policy: .init(ttlSeconds: 3600, maxBytes: 3000))
+    _ = try store.put(cacheId: "unowned", scope: "s", entries: [entry("kept", clock)])
+    clock.advance(3)
+    let foreign = root.appendingPathComponent("foreign.cache.sqlite")
+    var db: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(foreign.path, &db), SQLITE_OK); sqlite3_close(db)
+    let foreignBytes = try Data(contentsOf: foreign)
+    try FileManager.default.createSymbolicLink(atPath: root.appendingPathComponent("symlink.cache.sqlite").path,
+      withDestinationPath: root.appendingPathComponent("unowned.cache.sqlite").path)
+    try FileManager.default.linkItem(at: root.appendingPathComponent("unowned.cache.sqlite"),
+      to: root.appendingPathComponent("hardlink.cache.sqlite"))
+    let result = try store.maintain(cacheIds: ["cache", "missing", "foreign", "symlink", "hardlink"])
+    XCTAssertEqual(result.status, "ok"); XCTAssertEqual(result.cacheCount, 1)
+    XCTAssertEqual(result.expiredEntryCount, 1)
+    XCTAssertEqual(try Data(contentsOf: foreign), foreignBytes)
+    XCTAssertEqual(try store.get(cacheId: "unowned", scope: "s", keys: ["kept"]).stats.policy,
+      CachePolicy(ttlSeconds: 3600, maxBytes: 3000))
+    XCTAssertEqual(try store.prune(cacheId: "cache").stats.policy, CachePolicy(ttlSeconds: 2, maxBytes: 2000))
+  }
+
+  func testReferenceSnapshotReleasesSupersededArtifactsAndAtomicAdmissionSurvivesFullCache() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try store.configure(cacheId: "cache", policy: .init(ttlSeconds: 10, maxBytes: 1500))
+    var stale = entry("stale", clock); stale.protectFromEviction = true
+    var live = entry("live", clock); live.protectFromEviction = true
+    let first = try store.put(cacheId: "cache", scope: "s", entries: [stale, live])
+    let ref = first.results[1].entry!
+    let snapshot: MemoryJSONValue = .object(["active": .object(["ref": .object([
+      "key": .string(ref.key), "revision": .string(ref.revision)])])])
+    var next = entry("next", clock); next.protectFromEviction = true
+    XCTAssertThrowsError(try store.put(cacheId: "cache", scope: "s", entries: [next]))
+    let saved = try store.put(cacheId: "cache", scope: "s", entries: [next], retaining: snapshot)
+    XCTAssertEqual(saved.stats.evictedCount, 1)
+    XCTAssertEqual(try store.get(cacheId: "cache", scope: "s", keys: ["live", "next"]).results.map(\.status), ["hit", "hit"])
+    let before = try store.get(cacheId: "cache", scope: "s", keys: ["live"]).results[0].entry!
+    let cleared = try store.reconcile(cacheId: "cache", scope: "s", references: .object([:]))
+    XCTAssertEqual(cleared.stats.protectedByteCount, 0)
+    let after = try store.get(cacheId: "cache", scope: "s", keys: ["live"]).results[0].entry!
+    XCTAssertEqual(before.revision, after.revision)
+    XCTAssertEqual(before.fetchedAt, after.fetchedAt)
+    XCTAssertEqual(before.expiresAt, after.expiresAt)
+  }
+
+  func testReferenceSnapshotStaleRevisionRollsBackAdmissionAndDoesNotAffectOtherScopes() throws {
+    let (store, clock, root) = fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var value = entry("live", clock); value.protectFromEviction = true
+    let saved = try store.put(cacheId: "cache", scope: "other", entries: [value])
+    _ = try store.put(cacheId: "cache", scope: "s", entries: [value])
+    let stale: MemoryJSONValue = .object(["key": .string("live"), "revision": .string(String(repeating: "0", count: 64))])
+    XCTAssertThrowsError(try store.put(cacheId: "cache", scope: "s", entries: [entry("new", clock)], retaining: stale))
+    XCTAssertEqual(try store.get(cacheId: "cache", scope: "s", keys: ["new"]).results[0].status, "miss")
+    _ = try store.reconcile(cacheId: "cache", scope: "s", references: .array([]))
+    let other = try store.get(cacheId: "cache", scope: "other", keys: ["live"]).results[0].entry!
+    XCTAssertEqual(other.protectFromEviction, true)
+    XCTAssertEqual(other.revision, saved.results[0].entry!.revision)
+    for malformed in [MemoryJSONValue.null, .string("bad"), .object(["key": .string("live"), "revision": .string("bad")])] {
+      XCTAssertThrowsError(try store.reconcile(cacheId: "cache", scope: "other", references: malformed))
+    }
+    XCTAssertEqual(try store.get(cacheId: "cache", scope: "other", keys: ["live"]).results[0].entry!.protectFromEviction, true)
+  }
+
   func testCapacityProtectionAcrossScopesAndReleaseRetainsOriginalLRUAndTTL() throws {
     let (store, clock, root) = fixture()
     defer { try? FileManager.default.removeItem(at: root) }

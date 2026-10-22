@@ -130,6 +130,9 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/cache-get", version: "1"),
     .init(name: "riela/cache-delete", version: "1"),
     .init(name: "riela/cache-prune", version: "1"),
+    .init(name: "riela/cache-protect", version: "1"),
+    .init(name: "riela/cache-reconcile", version: "1"),
+    .init(name: "riela/cache-maintain", version: "1"),
 
     .init(name: "riela/kv-get", version: "1"),
     .init(name: "riela/kv-delete", version: "1"),

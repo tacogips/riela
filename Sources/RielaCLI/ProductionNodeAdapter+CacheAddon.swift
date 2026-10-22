@@ -9,6 +9,9 @@ enum BuiltinCacheAddon: String {
   case get = "riela/cache-get"
   case delete = "riela/cache-delete"
   case prune = "riela/cache-prune"
+  case protect = "riela/cache-protect"
+  case reconcile = "riela/cache-reconcile"
+  case maintain = "riela/cache-maintain"
 }
 
 extension BuiltinWorkflowAddonResolver {
@@ -44,8 +47,16 @@ extension BuiltinWorkflowAddonResolver {
     let scope = try text("scope", fallback: input.workflowId)
     let store = RielaCacheStore(rootDirectory: try text("cacheRoot",
       fallback: RielaCacheStore.defaultRootDirectory(workingDirectory: workingDirectory.path)))
+    if operation == .maintain {
+      let result = try store.maintain(cacheIds: decode([String].self, value("cacheIds")),
+        maxDurationSeconds: Double(integer("maxDurationSeconds", fallback: 120)))
+      let payload = try JSONDecoder().decode(JSONObject.self, from: JSONEncoder().encode(result))
+      return AdapterExecutionOutput(provider: "riela-builtin-addon", model: input.addon.name,
+        promptText: "", completionPassed: true, payload: payload)
+    }
     let response: CacheResult
     switch operation {
+    case .maintain: throw AdapterExecutionError(.invalidInput, "unreachable maintenance operation")
     case .configure:
       response = try store.configure(cacheId: cacheId, policy: CachePolicy(
         ttlSeconds: integer("ttlSeconds", fallback: 86_400), maxBytes: integer("maxBytes", fallback: 268_435_456)))
@@ -56,7 +67,13 @@ extension BuiltinWorkflowAddonResolver {
         guard let payload = value("payload") else { throw AdapterExecutionError(.invalidInput, "cache requires payload") }
         entries = [CachePut(key: try text("key"), fetchedAt: try text("fetchedAt"), payload: try memoryJSONValue(from: payload))]
       }
-      response = try store.put(cacheId: cacheId, scope: scope, entries: entries)
+      response = try store.put(cacheId: cacheId, scope: scope, entries: entries,
+        retaining: try value("retainedReferences").map { try memoryJSONValue(from: $0) })
+    case .protect:
+      response = try store.protect(cacheId: cacheId, scope: scope, entries: decode([CacheProtection].self, value("entries")))
+    case .reconcile:
+      guard let references = value("references") else { throw AdapterExecutionError(.invalidInput, "cache requires references") }
+      response = try store.reconcile(cacheId: cacheId, scope: scope, references: memoryJSONValue(from: references))
     case .get:
       let keys = try value("keys").map { try decode([String].self, $0) } ?? [text("key")]
       response = try store.get(cacheId: cacheId, scope: scope, keys: keys,

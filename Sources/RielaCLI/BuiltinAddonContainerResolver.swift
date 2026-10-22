@@ -52,6 +52,8 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
         .execute(input, context: context)
     }
     try sandbox?.validate()
+    let admission = try await SandboxExecutionAdmission.acquire(sandbox?.admission, environment: environment, deadline: context.deadline)
+    defer { withExtendedLifetime(admission) {} }
     guard sandbox?.ephemeralHome != true, sandbox?.credentialEnvironment.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "ephemeral HOME and credential files currently require a sandboxed agent node")
     }

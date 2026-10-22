@@ -160,6 +160,29 @@ final class EphemeralSandboxTests: XCTestCase {
     XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
   }
 
+  func testAdmissionRemainsHeldThroughOwnedContainerCancellationCleanup() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("ephemeral-admission-cleanup")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pool = root.appendingPathComponent("pool")
+    let runner = EphemeralFixtureRunner(failExec: true, pool: pool)
+    let adapter = SandboxingNodeAdapter(primary: EphemeralForbiddenHost(), environment: [
+      "RIELA_SANDBOX_WORKER_EXECUTABLE": workerPath, "RIELA_CONTAINER_RUNTIME": "docker", "TEST_POOL": pool.path
+    ], workingDirectory: root.path, runner: runner, directoryParent: root)
+    let policy = WorkflowExecutionAdmission(directoryEnvironment: "TEST_POOL", capacity: 1)
+    do {
+      _ = try await adapter.execute(.init(node: .init(id: "inspect", executionBackend: .codexAgent, model: "fixture",
+        sandbox: .init(backend: .container, ephemeralHome: true, admission: policy),
+        output: .init(jsonSchema: ["type": .string("object")])), promptText: "synthetic"), context: .init())
+      XCTFail("must cancel")
+    } catch { XCTAssertTrue(error is CancellationError) }
+    let observations = await runner.heldObservations
+    XCTAssertEqual(observations, 3, "lease must cover create, exec and rm")
+    let lease = try await SandboxExecutionAdmission.acquire(policy, environment: ["TEST_POOL": pool.path],
+      deadline: Date().addingTimeInterval(1))
+    XCTAssertNotNil(lease)
+    withExtendedLifetime(lease) {}
+  }
+
   private var workerPath: String {
     URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
       .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
@@ -169,9 +192,20 @@ final class EphemeralSandboxTests: XCTestCase {
 private actor EphemeralFixtureRunner: LocalProcessRunning {
   var calls: [(LocalProcessConfiguration, String?)] = []
   var failExec: Bool
-  init(failExec: Bool = false) { self.failExec = failExec }
+  var pool: URL?
+  var heldObservations = 0
+  init(failExec: Bool = false, pool: URL? = nil) { self.failExec = failExec; self.pool = pool }
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
     calls.append((configuration, stdin))
+    if let pool {
+      do {
+        _ = try await SandboxExecutionAdmission.acquire(.init(directoryEnvironment: "TEST_POOL", capacity: 1),
+          environment: ["TEST_POOL": pool.path], deadline: Date().addingTimeInterval(0.04))
+        XCTFail("container stage ran without holding admission")
+      } catch let error as AdapterExecutionError {
+        XCTAssertEqual(error.code, .timeout); heldObservations += 1
+      }
+    }
     if failExec, configuration.arguments.contains("exec") { throw CancellationError() }
     let record = SandboxNodeRecord(kind: .result, output: .init(provider: "fixture", model: "fixture", promptText: "",
       completionPassed: true, payload: ["status": .string("ok")]))

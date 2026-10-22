@@ -41,6 +41,28 @@ final class PrivateWorkflowTests: XCTestCase {
     XCTAssertTrue(calls.last?.0.arguments.contains("--force") == true)
   }
 
+  func testAdmissionWaitDoesNotLaunchPrivateWorkerAndCanProceedAfterRelease() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("private-workflow-admission")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pool = root.appendingPathComponent("pool")
+    let policy = WorkflowExecutionAdmission(directoryEnvironment: "MODEL_POOL", capacity: 1)
+    var held = try await SandboxExecutionAdmission.acquire(policy, environment: ["MODEL_POOL": pool.path], deadline: nil)
+    XCTAssertNotNil(held)
+    let runner = PrivateWorkflowFixtureRunner()
+    var controller = host(runner, root: root)
+    controller.environment["MODEL_POOL"] = pool.path
+    var request = input(); request.addon.sandbox?.admission = policy
+    do {
+      _ = try await controller.execute(request, context: .init(deadline: Date().addingTimeInterval(0.05)))
+      XCTFail("busy pool must not launch a container")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .timeout) }
+    let before = await runner.calls
+    XCTAssertTrue(before.isEmpty)
+    held = nil
+    let output = try await controller.execute(request, context: .init(deadline: Date().addingTimeInterval(5)))
+    XCTAssertEqual(output.payload, ["status": .string("ok")])
+  }
+
   func testControllerRejectsUnapprovedPayloadAndProviderEvents() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("private-workflow-output")
     defer { try? FileManager.default.removeItem(at: root) }

@@ -23,6 +23,9 @@ actor SandboxingNodeAdapter: NodeAdapter {
 
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     guard let options = input.node.sandbox else { return try await primary.execute(input, context: context) }
+    try options.validate()
+    let admission = try await SandboxExecutionAdmission.acquire(options.admission, environment: environment, deadline: context.deadline)
+    defer { withExtendedLifetime(admission) {} }
     if options.ephemeralHome, input.sessionPolicy?.mode == .reuse {
       throw AdapterExecutionError(.policyBlocked, "ephemeral sandbox cannot reuse a vendor session")
     }

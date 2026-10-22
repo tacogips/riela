@@ -32,6 +32,8 @@ struct PrivateWorkflowHost {
     let deadline = min(context.deadline ?? .distantFuture,
       Date().addingTimeInterval(TimeInterval(plan.timeoutSeconds ?? 600)))
     guard deadline > Date() else { throw AdapterExecutionError(.timeout, "private workflow deadline expired") }
+    let admission = try await SandboxExecutionAdmission.acquire(sandbox.admission, environment: environment, deadline: deadline)
+    defer { withExtendedLifetime(admission) {} }
     let request = PrivateWorkflowRequest(plan: plan, deadline: deadline,
       environment: projectedEnvironment, credentials: credentials)
     let bytes = try JSONEncoder().encode(request)

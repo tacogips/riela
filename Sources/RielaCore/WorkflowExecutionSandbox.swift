@@ -34,13 +34,15 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
   /// Runtime environment name -> relative HOME file. Values travel on stdin,
   /// never in authored JSON, process arguments, or host credential files.
   public var credentialEnvironment: [String: String]
+  /// Acquired on the host before launch; never forwarded into the guest.
+  public var admission: WorkflowExecutionAdmission?
 
   public init(backend: WorkflowSandboxBackend = .auto,
               networkPolicy: WorkflowAddonContainerNetworkPolicy = .denied,
               readPaths: [String] = [], writePaths: [String] = [], credentialPaths: [String] = [],
               environment: [String] = [], container: WorkflowAddonContainerExecution? = nil,
               credentials: [WorkflowSandboxCredential] = [], ephemeralHome: Bool = false,
-              credentialEnvironment: [String: String] = [:]) {
+              credentialEnvironment: [String: String] = [:], admission: WorkflowExecutionAdmission? = nil) {
     self.backend = backend
     self.networkPolicy = networkPolicy
     self.readPaths = readPaths
@@ -51,11 +53,12 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
     self.container = container
     self.ephemeralHome = ephemeralHome
     self.credentialEnvironment = credentialEnvironment
+    self.admission = admission
   }
 
   private enum CodingKeys: String, CodingKey {
     case backend, networkPolicy, readPaths, writePaths, credentialPaths, credentials, environment, container
-    case ephemeralHome, credentialEnvironment
+    case ephemeralHome, credentialEnvironment, admission
   }
 
   public init(from decoder: Decoder) throws {
@@ -70,10 +73,12 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
     container = try values.decodeIfPresent(WorkflowAddonContainerExecution.self, forKey: .container)
     ephemeralHome = try values.decodeIfPresent(Bool.self, forKey: .ephemeralHome) ?? false
     credentialEnvironment = try values.decodeIfPresent([String: String].self, forKey: .credentialEnvironment) ?? [:]
+    admission = try values.decodeIfPresent(WorkflowExecutionAdmission.self, forKey: .admission)
     try validate()
   }
 
   public func validate() throws {
+    try admission?.validate()
     for path in readPaths + writePaths + credentialPaths + credentials.map(\.source) {
       guard path.hasPrefix("/"), URL(fileURLWithPath: path).standardizedFileURL.path != "/",
             !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) else {

@@ -42,6 +42,8 @@ public struct NodeOutputContract: Codable, Equatable, Sendable {
   /// JSON pointer into this step's merged prompt variables. Resolved and
   /// validated before invoking the adapter, then used again at publication.
   public var jsonSchemaFrom: String?
+  /// Ask the Codex backend to enforce the resolved schema during generation.
+  public var nativeStructuredOutput: Bool?
   public var projection: WorkflowOutputProjection?
   public var deliverables: WorkflowDeliverableProjection?
 
@@ -51,12 +53,14 @@ public struct NodeOutputContract: Codable, Equatable, Sendable {
     maxValidationAttempts: Int? = nil,
     projection: WorkflowOutputProjection? = nil,
     deliverables: WorkflowDeliverableProjection? = nil,
-    jsonSchemaFrom: String? = nil
+    jsonSchemaFrom: String? = nil,
+    nativeStructuredOutput: Bool? = nil
   ) {
     self.description = description
     self.jsonSchema = jsonSchema
     self.maxValidationAttempts = maxValidationAttempts
     self.jsonSchemaFrom = jsonSchemaFrom
+    self.nativeStructuredOutput = nativeStructuredOutput
     self.projection = projection
     self.deliverables = deliverables
   }

@@ -2,6 +2,26 @@ import XCTest
 @testable import RielaCore
 
 final class RuntimeVariablesPromptingTests: XCTestCase {
+  func testExplicitTemplatesCanExcludeAutomaticVariableDumpAndStillResolveDynamicSchema() async throws {
+    let adapter = InputCapturingAdapter()
+    let node = AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "fixture", agentSandbox: .readOnly,
+      includeRuntimeVariablesInPrompt: false, promptTemplate: "selected={{runtimeVariables.selected}}",
+      output: .init(maxValidationAttempts: 1, jsonSchemaFrom: "/runtimeVariables/schema"))
+    let schema: JSONObject = ["type": .string("object")]
+    _ = try await DeterministicWorkflowRunner(adapter: adapter).run(.init(
+      workflow: runtimeVariablesWorkflow(workflowId: "explicit", nodeId: "worker", stepId: "worker"),
+      nodePayloads: ["worker": node], variables: ["selected": .string("wanted"),
+        "unrelated": .string("must-not-reach-prompt"), "schema": .object(schema)]))
+    let captured = await adapter.capturedInput()
+    let input = try XCTUnwrap(captured)
+    XCTAssertEqual(input.promptText, "selected=wanted")
+    XCTAssertFalse((input.systemPromptText ?? "").contains("must-not-reach-prompt"))
+    XCTAssertFalse((input.systemPromptText ?? "").contains("Runtime variables are available"))
+    XCTAssertTrue((input.systemPromptText ?? "").contains("Required output contract"))
+    XCTAssertEqual(input.node.output?.jsonSchema, schema)
+    let restored = try JSONDecoder().decode(AgentNodePayload.self, from: JSONEncoder().encode(node))
+    XCTAssertEqual(restored.includeRuntimeVariablesInPrompt, false)
+  }
   func testRequestVariablesAreExposedAsRuntimeVariablesInWorkerPromptContext() async throws {
     let adapter = InputCapturingAdapter()
     let workflow = runtimeVariablesWorkflow(

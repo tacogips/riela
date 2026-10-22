@@ -25,6 +25,8 @@ private final class GatewayStubExecutor: GatewayExecuting, @unchecked Sendable {
   private let failure: GatewayRPCError?
   private var capturedParams: GatewayExecuteParams?
   private var capturedEnvironment: [String: String] = [:]
+  private var capturedSchema: Data?
+  private var schemaMode: Int?
 
   init(
     steps: [Step] = [],
@@ -52,6 +54,12 @@ private final class GatewayStubExecutor: GatewayExecuting, @unchecked Sendable {
     _ params: GatewayExecuteParams, emit: @escaping GatewayEventEmitter
   ) async throws -> GatewayExecuteResult {
     lock.withLock { capturedParams = params }
+    if let index = params.arguments.firstIndex(of: "--output-schema"), index + 1 < params.arguments.count {
+      let path = params.arguments[index + 1]
+      let data = try Data(contentsOf: URL(fileURLWithPath: path))
+      let mode = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? Int
+      lock.withLock { capturedSchema = data; schemaMode = mode }
+    }
     if let failure { throw failure }
     for step in steps {
       switch step {
@@ -72,6 +80,45 @@ private final class GatewayStubExecutor: GatewayExecuting, @unchecked Sendable {
 
   func params() -> GatewayExecuteParams? { lock.withLock { capturedParams } }
   func environment() -> [String: String] { lock.withLock { capturedEnvironment } }
+  func schema() -> (Data?, Int?) { lock.withLock { (capturedSchema, schemaMode) } }
+}
+
+@Test func nativeStructuredSchemaReachesVendorAndIsRemovedOnSuccessOrFailure() async throws {
+  let schema: JSONObject = ["type": .string("object"), "properties": .object([
+    "id": .object(["type": .string("string"), "enum": .array([.string("finite-id")])])]),
+    "required": .array([.string("id")]), "additionalProperties": .bool(false)]
+  for fails in [false, true] {
+    let executor = GatewayStubExecutor(resultText: #"{"id":"finite-id"}"#,
+      failure: fails ? GatewayRPCError(code: -32603, message: "fixture failure") : nil)
+    let adapter = AgentGatewayNodeAdapter(executorFactory: executor.factory)
+    do {
+      _ = try await adapter.execute(.init(node: .init(id: "worker", executionBackend: .codexAgent,
+        model: "fixture", output: .init(jsonSchema: schema, nativeStructuredOutput: true)),
+        promptText: "fixture"), context: .init())
+      #expect(!fails)
+    } catch { #expect(fails) }
+    let args = vendorArguments(try #require(executor.params()))
+    let index = try #require(args.firstIndex(of: "--output-schema"))
+    #expect(try JSONDecoder().decode(JSONObject.self, from: #require(executor.schema().0)) == schema)
+    #expect(executor.schema().1 == 0o600)
+    #expect(!FileManager.default.fileExists(atPath: args[index + 1]))
+    #expect(!FileManager.default.fileExists(atPath: URL(fileURLWithPath: args[index + 1]).deletingLastPathComponent().path))
+  }
+}
+
+@Test func nativeStructuredSchemaRejectsUnsupportedBackendAndConflictingArguments() async throws {
+  for backend in [NodeExecutionBackend.codexAgent, .claudeCodeAgent] {
+    let executor = GatewayStubExecutor()
+    let node = AgentNodePayload(id: "worker", executionBackend: backend, model: "fixture",
+      agentToolPolicy: .init(codexArguments: ["--output-schema=external.json"]),
+      output: .init(jsonSchema: ["type": .string("object")], nativeStructuredOutput: true))
+    do {
+      _ = try await AgentGatewayNodeAdapter(executorFactory: executor.factory).execute(
+        .init(node: node, promptText: "fixture"), context: .init())
+      Issue.record("invalid native structured schema request reached vendor")
+    } catch let error as AdapterExecutionError { #expect(error.code == .invalidInput) }
+    #expect(executor.params() == nil)
+  }
 }
 
 private func vendorArguments(_ params: GatewayExecuteParams) -> [String] { params.arguments }

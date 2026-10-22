@@ -66,6 +66,7 @@ actor SandboxingNodeAdapter: NodeAdapter {
       previousVendorSessionId: previous?.vendorSessionId, supervisorMode: supervisorMode,
       ephemeralHome: options.ephemeralHome, credentials: credentials)
     if options.ephemeralHome { request.version = 2 }
+    if workerInput.node.output?.nativeStructuredOutput == true { request.version = 3 }
     let encoded = try JSONEncoder().encode(request)
     guard encoded.count <= BuiltinAddonContainerRequest.maximumRecordBytes, let stdin = String(data: encoded, encoding: .utf8) else {
       throw AdapterExecutionError(.invalidInput, "isolated node request exceeds the size limit")

@@ -44,9 +44,11 @@ enum SandboxNodeWorker {
   private static func execute(writer: SandboxNodeRecordWriter) async {
     do {
       let request = try readRequest()
-      let legacyVersion = request.version == 1 && request.ephemeralHome != true
-      let privateVersion = request.version == 2 && request.ephemeralHome == true
-      guard legacyVersion || privateVersion, request.input.node.sandbox == nil else {
+      let nativeSchema = request.input.node.output?.nativeStructuredOutput == true
+      let legacyVersion = request.version == 1 && request.ephemeralHome != true && !nativeSchema
+      let privateVersion = request.version == 2 && request.ephemeralHome == true && !nativeSchema
+      let structuredVersion = request.version == 3 && nativeSchema
+      guard legacyVersion || privateVersion || structuredVersion, request.input.node.sandbox == nil else {
         throw AdapterExecutionError(.invalidInput, "invalid isolated node worker request")
       }
       if request.ephemeralHome == true { _ = try privateContract(request.input.node.output) }

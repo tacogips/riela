@@ -132,7 +132,7 @@ extension DeterministicWorkflowRunner {
 
     let systemPromptText = (
       renderedSystemPromptTemplates + [
-      runtimeVariablesPrompt(variables: variables),
+      payload.includeRuntimeVariablesInPrompt == false ? nil : runtimeVariablesPrompt(variables: variables),
       priorReviewFeedbackPrompt(variables: variables),
       memoryGuidance(variables: variables),
       outputContractGuidance(payload.output)

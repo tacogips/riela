@@ -5,6 +5,23 @@ import XCTest
 @testable import RielaCLI
 
 final class EphemeralSandboxTests: XCTestCase {
+  func testNativeStructuredSchemaRequiresWorkerProtocolThree() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("native-schema-protocol")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = EphemeralFixtureRunner()
+    let adapter = SandboxingNodeAdapter(primary: EphemeralForbiddenHost(), environment: [
+      "RIELA_SANDBOX_WORKER_EXECUTABLE": workerPath, "RIELA_CONTAINER_RUNTIME": "docker"
+    ], workingDirectory: root.path, runner: runner, directoryParent: root)
+    let sandbox = WorkflowExecutionSandbox(backend: .container, networkPolicy: .denied,
+      container: .init(image: "fixture:local"), ephemeralHome: true)
+    _ = try await adapter.execute(.init(node: .init(id: "inspect", executionBackend: .codexAgent,
+      model: "fixture", sandbox: sandbox, output: .init(jsonSchema: ["type": .string("object")],
+        nativeStructuredOutput: true)), promptText: "synthetic"), context: .init())
+    let calls = await runner.calls
+    let request = try JSONDecoder().decode(SandboxNodeRequest.self, from: Data(try XCTUnwrap(calls[1].1).utf8))
+    XCTAssertEqual(request.version, 3)
+    XCTAssertEqual(request.input.node.output?.nativeStructuredOutput, true)
+  }
   func testActualContainerKeepsCredentialsAndModelStateInGuestTmpfs() async throws {
     let image = ProcessInfo.processInfo.environment["RIELA_EPHEMERAL_CONTAINER_IMAGE"]
     try XCTSkipUnless(image != nil, "opt-in native worker image required")

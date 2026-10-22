@@ -5,6 +5,14 @@ public func validateAgentNodePayload(
   path: String = "node"
 ) -> [WorkflowValidationDiagnostic] {
   var diagnostics: [WorkflowValidationDiagnostic] = []
+  if payload.output?.nativeStructuredOutput == true {
+    if payload.executionBackend != .codexAgent || payload.sessionPolicy?.mode == .reuse {
+      diagnostics.append(error("\(path).output.nativeStructuredOutput", "requires a fresh codex-agent node"))
+    }
+    if payload.output?.jsonSchema == nil && payload.output?.jsonSchemaFrom == nil {
+      diagnostics.append(error("\(path).output.nativeStructuredOutput", "requires jsonSchema or jsonSchemaFrom"))
+    }
+  }
   if let sandbox = payload.sandbox {
     do { try sandbox.validate() } catch {
       diagnostics.append(.init(severity: .error, path: "\(path).sandbox", message: "\(error)"))

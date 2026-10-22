@@ -87,16 +87,16 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
       providerName: providerName,
       baseURL: baseURL
     )
+    let vendorArguments = gatewayVendorArguments(vendor, input: input,
+      codexSupervisorModeEnabled: codexSupervisorModeEnabled)
+    let structuredOutput = try NativeStructuredOutputFile(input: input, vendor: vendor, arguments: vendorArguments)
+    defer { structuredOutput?.remove() }
     let defaults = GatewayAgentDefaults(
       vendor: vendor,
       model: model,
       systemPrompt: input.systemPromptText,
       executable: gatewayVendorExecutable(vendor, input: input, environment: environment),
-      arguments: gatewayVendorArguments(
-        vendor,
-        input: input,
-        codexSupervisorModeEnabled: codexSupervisorModeEnabled
-      ),
+      arguments: vendorArguments + (structuredOutput?.arguments ?? []),
       providerName: providerName,
       apiKeyEnvironment: input.node.provider?.apiKeyEnv ?? input.node.apiKeyEnvironment,
       baseURL: baseURL,

@@ -85,3 +85,25 @@ metadata stay in the guest. Failure messages contain only a finite error code
 and a fixed message. Private worker protocol v2 rejects older guest workers
 before starting a model. Version 0.2.36 was an unpublished draft and must not be
 used for this private boundary.
+
+
+## Explicit prompt inputs and native Codex schema (0.2.38)
+
+Set `includeRuntimeVariablesInPrompt: false` on an agent node to send only the
+rendered authored templates and normal contract/memory/review guidance. Templates,
+`jsonSchemaFrom`, tool arguments and internal runtime variables still resolve;
+the complete runtimeVariables object is no longer appended to the system prompt.
+The default preserves the existing automatic inclusion behavior. This is a prompt
+size control, not a controller-state redaction or input isolation boundary.
+
+Set `output.nativeStructuredOutput: true` with `jsonSchema` or `jsonSchemaFrom`
+to give a fresh Codex turn the exact resolved schema through `--output-schema`.
+Riela creates a private directory/file next to the vendor execution, removes it
+on every exit and still validates the final output normally. With ephemeral agent
+execution the schema lives in guest tmpfs. Other backends, session reuse and an
+additional authored `--output-schema` flag fail before vendor execution. No retry
+without the schema occurs. Use a schema supported by Codex's structured-output
+dialect; this option does not rewrite or relax the authored schema.
+
+Native structured output uses isolated worker protocol v3 so older guest workers
+reject the request before starting a model instead of ignoring the new option.

@@ -28,7 +28,7 @@ def add_crypto_dependency(root: Path, target: str, version: str) -> None:
 def local_package(root: Path, name: str) -> None:
     manifest = root / "Package.swift"
     pattern = (r'\.package\(\s*url: "https://github\.com/tacogips/'
-               + re.escape(name) + r'\.git",\s*revision: "[0-9a-f]{40}"\s*\)')
+               + re.escape(name) + r'\.git",\s*revision: "[0-9a-f]{40}"[ \t]*(?://[^\r\n]*)?\s*\)')
     source, count = re.subn(pattern, f'.package(path: "/{name}")', manifest.read_text())
     if count != 1:
         raise SystemExit(f"Expected exactly one pinned {name} dependency")
@@ -187,9 +187,11 @@ def prepare_riela(root: Path) -> None:
           condition: .when(platforms: [.macOS])""", """          package: "google-analytics-gateway",
           condition: .when(platforms: [.macOS, .linux])""")
     local_package(root, "gmail-gateway")
-    replace(root / "Package.swift",
-            '.product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS])),',
-            '.product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS, .linux])),')
+    # The pinned Gmail package is portable upstream; retain its unconditional
+    # product dependency rather than applying the former macOS-only adaptation.
+    manifest = (root / "Package.swift").read_text()
+    if manifest.count('.product(name: "GmailGatewayCore", package: "gmail-gateway"),') != 1:
+        raise SystemExit("Expected one portable Gmail SDK dependency")
 
 
 if __name__ == "__main__":

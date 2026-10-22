@@ -19,3 +19,13 @@ bridge; no actionable correctness issue remained.
 Release publication/local CLI update and a rebuilt real guest gate are next.
 ART native Gmail acquisition and the App source/guest cutover remain subsequent
 work; source compilation alone does not deploy either.
+
+The common worker-image source preparation now pins the same portable Gmail
+revision directly and preserves the unconditional product dependency. Its pinned
+package matcher accepts an inline revision comment while still requiring exactly
+one match. The actual prepared Riela manifest passes SwiftPM dump-package;
+Gmail, Analytics and Documents share GoogleGatewayAuth48e0112 and compatible
+GatewaySDKKit0.1.1, while adapted crypto4.5.2 satisfies Gmail's lower bound.
+Actual Opus5.5 found no actionable packaging issue. This build-tool correction
+does not alter the already-built0.2.44 runtime binary. A full common-image build
+is still a separate gate; it has not been claimed as executed here.

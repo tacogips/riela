@@ -12,13 +12,9 @@ RUN cc -I/anydoc-native/include /anydoc-smoke.c /anydoc-native/lib/libanydoc_ffi
     -lm -ldl -lpthread -o /anydoc-smoke && /anydoc-smoke
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS gmail-source
-RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /gmail-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
-    git fetch --depth 1 origin a7b0204e5869b3be8475fec8460b1881e54fb174 && git checkout --detach FETCH_HEAD
-COPY scripts/prepare-container-gateway-source.py /prepare.py
-COPY scripts/container-gateway-support /container-gateway-support
-RUN python3 /prepare.py gmail /gmail-gateway --crypto-version 4.5.2
+    git fetch --depth 1 origin 4ce54035694bbcbe88c33a4de3f5905677370b0e && git checkout --detach FETCH_HEAD
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS analytics-source
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*

@@ -4,6 +4,15 @@ import XCTest
 @testable import RielaCLI
 
 final class XGatewaySDKAddonTests: XCTestCase {
+  func testSharedSelectionPathsBuildNestedXFields() throws {
+    let document = try builtinGatewayXJSONDocument(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
+      addon: .init(name: "riela/x-gateway-reader", config: ["operation": .string("homeTimeline"),
+        "arguments": .object(["maxResults": .integer(25)]),
+        "selection": .array([.string("posts.id"), .string("posts.author.username"), .string("pageInfo.nextToken")])
+      ])))
+    XCTAssertEqual(document, "query { homeTimeline(maxResults: 25) { pageInfo { nextToken } posts { author { username } id } } }")
+  }
+
   func testJSONOperationEscapesArgumentsOnceAndPostprocessesTypedRows() async throws {
     let gateway = RecordingGatewayGraphQLRunner(response:
       #"{"data":{"homeTimeline":{"posts":[{"id":"1","author":{"username":"alice"},"text":"{{secret}}"}],"pageInfo":{"nextToken":"cursor-2"}}}}"#)
@@ -39,7 +48,8 @@ final class XGatewaySDKAddonTests: XCTestCase {
       valid.merging(["operation": .string("accountMe { id } } mutation {")]) { _, new in new },
       valid.merging(["select": .object(["id @skip(if:true)": .bool(true)])]) { _, new in new },
       valid.merging(["select": .object(["id": .string("code")])]) { _, new in new },
-      ["arguments": .object([:])]
+      ["arguments": .object([:])],
+      ["queryTemplate": .string("{ accountMe { id } }"), "selection": .array([.string("id")])]
     ]
     for config in invalid {
       let gateway = RecordingGatewayGraphQLRunner()

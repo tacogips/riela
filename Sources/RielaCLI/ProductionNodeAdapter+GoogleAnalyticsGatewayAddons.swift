@@ -1,4 +1,5 @@
 import Foundation
+import GatewaySDKKit
 #if canImport(GoogleAnalyticsGatewayCore)
 import GoogleAnalyticsGatewayAdmin
 import GoogleAnalyticsGatewayCore
@@ -65,6 +66,14 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
     "GOOGLE_ANALYTICS_GATEWAY_CONFIG"
   ]
 
+  private var operationCatalog: (() throws -> GatewaySchemaCatalog)? {
+    #if canImport(GoogleAnalyticsGatewayCore)
+    return { try GoogleAnalyticsGatewaySDK(role: role, definitions: capabilities).catalog }
+    #else
+    return nil
+    #endif
+  }
+
   var descriptor: LocalGatewayGraphQLDescriptor {
     LocalGatewayGraphQLDescriptor(
       providerName: "google-analytics-gateway",
@@ -72,6 +81,7 @@ enum BuiltinGoogleAnalyticsGatewayAddon: String {
       tier: tier,
       acceptsVariables: true,
       isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) },
+      catalog: operationCatalog,
       run: runner
     )
   }

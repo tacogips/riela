@@ -9,6 +9,34 @@ import XCTest
 /// executable on `PATH`. The gateway's own tests cover the runner.
 final class GoogleDocumentsGatewayAddonTests: XCTestCase {
   private static let valuesResponse = #"{"ok":true,"data":{"data":{"values":[["A1","B1"]]}}}"#
+  #if os(macOS)
+  func testJSONOperationBuildsTypedSheetArguments() async throws {
+    let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
+    let output = try await runDocuments(gateway: gateway, name: "riela/google-sheet-gateway-read", config: [
+      "operation": .string("values get"),
+      "arguments": .object(["spreadsheet-id": .string("{{workflowInput.id}}"), "range": .string("Sheet1!A1:B2")])
+    ], variables: ["workflowInput": .object(["id": .string("SHEET-{{literal}}")])])
+    let arguments = try XCTUnwrap(gateway.lastCall()?.arguments)
+    XCTAssertEqual(Array(arguments.prefix(2)), ["values", "get"])
+    XCTAssertTrue(arguments.contains { $0.contains("SHEET-{{literal}}") })
+    XCTAssertEqual(output.payload["command"], .string("values get"))
+  }
+
+  #endif
+
+  func testJSONOperationBlocksForbiddenAuthAndWrongTier() async throws {
+    for operation in ["auth login", "auth revoke", "values update"] {
+      let gateway = RecordingGoogleDocumentsGatewayRunner()
+      do {
+        _ = try await runDocuments(gateway: gateway, name: "riela/google-sheet-gateway-read", config: [
+          "operation": .string(operation), "arguments": .object([:])
+        ])
+        XCTFail("operation must fail before dispatch")
+      } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked) }
+      XCTAssertTrue(gateway.allCalls().isEmpty)
+    }
+  }
+
   func testSheetReadRendersCommandAndSortedEqualsBoundFlags() async throws {
     let gateway = RecordingGoogleDocumentsGatewayRunner(response: Self.valuesResponse)
 

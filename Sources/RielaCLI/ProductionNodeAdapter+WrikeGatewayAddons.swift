@@ -1,4 +1,5 @@
 import Foundation
+import GatewaySDKKit
 import RielaAddonSupport
 import RielaCore
 #if canImport(WrikeGatewayCore)
@@ -66,6 +67,14 @@ enum BuiltinWrikeGatewayAddon: String {
     "WRIKE_GATEWAY_OAUTH_CALLBACK_PORT"
   ]
 
+  private var operationCatalog: (() throws -> GatewaySchemaCatalog)? {
+    #if canImport(WrikeGatewayCore)
+    return { try WrikeGatewaySDK(role: role, definitions: capabilities).catalog }
+    #else
+    return nil
+    #endif
+  }
+
   var descriptor: LocalGatewayGraphQLDescriptor {
     LocalGatewayGraphQLDescriptor(
       providerName: "wrike-gateway",
@@ -73,6 +82,7 @@ enum BuiltinWrikeGatewayAddon: String {
       tier: tier,
       acceptsVariables: true,
       isAllowedEnvironmentTarget: { Self.allowedTargetEnvironmentNames.contains($0) },
+      catalog: operationCatalog,
       run: runner
     )
   }

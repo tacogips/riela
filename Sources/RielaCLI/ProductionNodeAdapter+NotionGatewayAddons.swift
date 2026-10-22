@@ -1,4 +1,5 @@
 import Foundation
+import GatewaySDKKit
 import RielaAddonSupport
 import RielaCore
 #if canImport(NotionGatewayCore)
@@ -12,10 +13,19 @@ enum BuiltinNotionGatewayAddon: String {
 
   var tier: String { self == .read ? "reader" : "writer" }
 
+  private var operationCatalog: (() throws -> GatewaySchemaCatalog)? {
+    #if canImport(NotionGatewayCore)
+    let role: NotionRole = self == .read ? .reader : .writer
+    return { NotionGatewaySDK(role: role).catalog }
+    #else
+    return nil
+    #endif
+  }
+
   var descriptor: LocalGatewayGraphQLDescriptor {
     LocalGatewayGraphQLDescriptor(
       providerName: "notion-gateway", payloadNamespaceKey: "notionGateway", tier: tier,
-      acceptsVariables: true, isAllowedEnvironmentTarget: { $0 == "NOTION_API_KEY" }, run: runner
+      acceptsVariables: true, isAllowedEnvironmentTarget: { $0 == "NOTION_API_KEY" }, catalog: operationCatalog, run: runner
     )
   }
 

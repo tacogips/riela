@@ -1,4 +1,5 @@
 import Foundation
+import GatewaySDKKit
 #if canImport(GmailGatewayCore)
 import GmailGatewayCore
 #endif
@@ -29,13 +30,13 @@ struct LocalGatewayGraphQLDescriptor {
   var payloadNamespaceKey: String
   /// Reported in the add-on payload so a run records which tier answered.
   var tier: String
-  /// Whether the gateway accepts GraphQL variables. gmail-gateway does not, so
-  /// values must be rendered into the document text and
-  /// `config.variablesTemplate` is refused.
+  /// Whether the legacy document mode accepts variablesTemplate. Gmail keeps
+  /// its CLI-compatible restriction; its SDK operation mode accepts variables.
   var acceptsVariables: Bool
   /// addon.env may only populate target names this predicate accepts, so the
   /// binding mechanism cannot inject arbitrary variables into the gateway.
   var isAllowedEnvironmentTarget: (String) -> Bool
+  var catalog: (() throws -> GatewaySchemaCatalog)? = nil
   var run: LocalGatewayGraphQLRunner
 }
 
@@ -73,18 +74,30 @@ struct LocalGatewayGraphQLEngine {
     if descriptor.providerName == "gmail-gateway" {
       childEnvironment.merge(try gatewayWriteRetryEnvironment(input, prefix: "GMAIL_GATEWAY_")) { _, configured in configured }
     }
-    let document = try documentOverride ?? renderedDocument(config: config, variables: variables, addonName: input.addon.name)
+    let document: String
     let variablesJSON: String?
-    if descriptor.acceptsVariables {
-      variablesJSON = try renderedVariablesJSON(config: config, variables: variables, addonName: input.addon.name)
-    } else {
-      guard config["variablesTemplate"] == nil else {
-        throw AdapterExecutionError(
-          .policyBlocked,
-          "\(input.addon.name) config.variablesTemplate is not supported; \(descriptor.providerName) rejects GraphQL variables, render values into config.queryTemplate instead"
-        )
+    if config["operation"] != nil && documentOverride == nil {
+      guard let catalog = descriptor.catalog else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) does not support JSON operations")
       }
-      variablesJSON = nil
+      let built = try BuiltinGatewayJSONRequest.document(
+        config: config, variables: variables, catalog: catalog(), addonName: input.addon.name
+      )
+      document = built.document
+      variablesJSON = String(decoding: try JSONEncoder().encode(built.variables), as: UTF8.self)
+    } else {
+      document = try documentOverride ?? renderedDocument(config: config, variables: variables, addonName: input.addon.name)
+      if descriptor.acceptsVariables {
+        variablesJSON = try renderedVariablesJSON(config: config, variables: variables, addonName: input.addon.name)
+      } else {
+        guard config["variablesTemplate"] == nil else {
+          throw AdapterExecutionError(
+            .policyBlocked,
+            "\(input.addon.name) config.variablesTemplate is not supported; use config.operation with config.arguments"
+          )
+        }
+        variablesJSON = nil
+      }
     }
     let gatewayEnvironment = sanitizedGatewayEnvironment(
       runtimeEnvironment: environment,

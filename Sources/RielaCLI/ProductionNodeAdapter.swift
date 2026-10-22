@@ -268,20 +268,21 @@ actor ScenarioWorkflowAddonResolver: WorkflowAddonResolving, WorkflowAddonFinali
     guard !sequence.isEmpty || !requiresScenarioResponse else {
       throw AdapterExecutionError(.invalidOutput, "mock scenario response sequence is empty for add-on node '\(input.nodeId)'")
     }
+    let postprocess = try BuiltinPostprocessPlan(input)
     let count = (counts[input.nodeId] ?? 0) + 1
     counts[input.nodeId] = count
     let response = sequence.isEmpty ? MockNodeResponse() : sequence[min(count - 1, sequence.count - 1)]
     if response.fail == true {
       throw AdapterExecutionError(.providerError, "scenario forced failure for add-on node '\(input.nodeId)'")
     }
-    return AdapterExecutionOutput(
+    return postprocess.apply(to: AdapterExecutionOutput(
       provider: response.provider ?? "scenario-mock",
       model: response.model ?? input.addon.name,
       promptText: response.promptText ?? "",
       completionPassed: response.completionPassed ?? true,
       when: response.when ?? ["always": true],
       payload: response.payload ?? [:]
-    )
+    ))
   }
 
   func consumedResponseCounts() -> [String: Int] { counts }
@@ -429,6 +430,12 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     try validateBuiltinWorkerInput(input)
+    let plan = try BuiltinPostprocessPlan(input)
+    let output = try await executeUnprocessed(plan.input, context: context)
+    return plan.apply(to: output)
+  }
+
+  private func executeUnprocessed(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     if input.addon.name == "riela/gemini-sdk-worker" {
       return try await executeGeminiSDKWorker(input, context: context)
     }

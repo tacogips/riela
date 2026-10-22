@@ -42,6 +42,12 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
   }
 
   func execute(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    let plan = try BuiltinPostprocessPlan(input)
+    let output = try await executeUnprocessed(plan.input, context: context)
+    return plan.apply(to: output)
+  }
+
+  private func executeUnprocessed(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     let sandbox = input.addon.sandbox
     guard sandbox == nil || input.addon.container == nil else {
       throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")

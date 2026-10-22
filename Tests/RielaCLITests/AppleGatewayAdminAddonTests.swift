@@ -4,6 +4,37 @@ import XCTest
 @testable import RielaCLI
 
 final class AppleGatewayAdminAddonTests: XCTestCase {
+  func testJSONSelectionCannotBeSuppliedByWorkflowData() throws {
+    let selections: [JSONValue] = [.string("{ {{fields}} }"), .array([.string("{{fields}}")])]
+    for selection in selections {
+      let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "read", nodeId: "read",
+        addon: .init(name: "riela/apple-gateway-graphql", config: [
+          "operation": .string("calendars"), "arguments": .object([:]), "selection": selection
+        ]), variables: ["fields": .string("id")])
+      let context = try AppleGatewayAdminContext(input: input, currentDirectory: URL(fileURLWithPath: "/"))
+      XCTAssertThrowsError(try context.arguments(for: .graphql)) { error in
+        XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked)
+      }
+    }
+  }
+
+  #if os(macOS)
+  func testJSONGraphQLUsesCatalogAndInputPrecedence() async throws {
+    let fake = try FakeAdminAppleGateway(mode: "graphql-success")
+    defer { fake.cleanup() }
+    _ = try await runAdminAddon("riela/apple-gateway-graphql", config: [
+      "binaryPath": .string(fake.executableURL.path),
+      "operation": .string("invalidConfigOperation"), "arguments": .object([:])
+    ], inputs: ["operation": .string("calendars"), "arguments": .object([:]),
+                "selection": .array([.string("id")])])
+    let arguments = try fake.arguments()
+    XCTAssertEqual(arguments.first, "graphql")
+    XCTAssertTrue(arguments.contains { $0.contains("calendars") })
+    XCTAssertTrue(arguments.contains("{}"))
+  }
+
+  #endif
+
   func testAdminAddonsSanitizeTheGatewayEnvironment() async throws {
     let gateway = try FakeAdminAppleGateway(mode: "permissions-status")
     defer { gateway.cleanup() }

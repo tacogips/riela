@@ -1,4 +1,5 @@
 import Foundation
+import GatewaySDKKit
 #if canImport(GmailGatewayCore)
 import GmailGatewayCore
 #endif
@@ -72,15 +73,24 @@ enum BuiltinGmailGatewayCLIAddon: String {
     }
   }
 
+  private var operationCatalog: (() throws -> GatewaySchemaCatalog)? {
+    #if canImport(GmailGatewayCore)
+    return { GmailGatewaySDK(mode: mode).catalog }
+    #else
+    return nil
+    #endif
+  }
+
   var descriptor: LocalGatewayGraphQLDescriptor {
     LocalGatewayGraphQLDescriptor(
       providerName: "gmail-gateway",
       payloadNamespaceKey: "gmailGateway",
       tier: tier,
-      // gmail-gateway rejects GraphQL variables; values render into the
-      // document text instead.
+      // Preserve the legacy CLI document contract. Operation mode uses
+      // typed variables through the async SDK.
       acceptsVariables: false,
       isAllowedEnvironmentTarget: { Self.isAllowedTargetEnvironmentName($0) },
+      catalog: operationCatalog,
       run: runner
     )
   }
@@ -88,9 +98,10 @@ enum BuiltinGmailGatewayCLIAddon: String {
   #if canImport(GmailGatewayCore)
   private var runner: LocalGatewayGraphQLRunner {
     let mode = mode
-    return { tier, document, _, environment in
+    return { tier, document, variablesJSON, environment in
+      let variables = try variablesJSON.map { try JSONDecoder().decode([String: GatewayJSONValue].self, from: Data($0.utf8)) } ?? [:]
       let result = await GmailGatewaySDK(mode: mode).execute(
-        document: document, variables: [:], environment: environment
+        document: document, variables: variables, environment: environment
       )
       guard !result.rawOutput.isEmpty else {
         throw AdapterExecutionError(

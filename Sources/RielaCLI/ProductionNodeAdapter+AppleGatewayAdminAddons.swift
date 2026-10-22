@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppleGatewayCore)
+import AppleGatewayCore
+#endif
 import RielaAddonSupport
 import RielaCore
 
@@ -174,6 +177,25 @@ struct AppleGatewayAdminContext {
       arguments += ["--config", configPath]
     }
     arguments.append("graphql")
+    if value(for: "operation") != nil {
+      #if canImport(AppleGatewayCore)
+      let effective = config.merging(renderedInputs) { _, input in input }
+      let raw = (input.addon.config ?? [:]).merging(input.addon.inputs ?? [:]) { _, input in input }
+      guard raw["operation"] == effective["operation"], raw["selection"] == effective["selection"],
+            ["query", "queryFile", "variables", "variablesFile"].allSatisfy({ effective[$0] == nil }) else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires a literal operation without legacy query fields")
+      }
+      let built = try BuiltinGatewayJSONRequest.document(
+        config: effective, variables: [:], catalog: AppleGatewaySDK(role: .full).catalog,
+        addonName: input.addon.name, argumentsAlreadyRendered: true
+      )
+      arguments += ["--query", built.document,
+                    "--variables", String(decoding: try JSONEncoder().encode(built.variables), as: UTF8.self)]
+      return arguments
+      #else
+      throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
+      #endif
+    }
     if let queryFile = stringValue("queryFile") {
       arguments += ["--query-file", queryFile]
     } else if let query = stringValue("query") {

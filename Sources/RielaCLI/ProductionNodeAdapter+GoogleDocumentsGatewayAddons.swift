@@ -1,4 +1,5 @@
 import Foundation
+import GatewaySDKKit
 #if canImport(GoogleDocumentsGatewayCore)
 import GoogleDocumentsGatewayCore
 #endif
@@ -160,12 +161,31 @@ private struct GoogleDocumentsGatewayAddonEngine {
       variables[name] = .string(value)
     }
     let childEnvironment = try resolvedChildEnvironment(input, operation: operation)
-    let commandTokens = try commandTokens(config: config, addonName: input.addon.name)
-    let arguments = commandTokens + (try renderedFlagArguments(
-      config: config,
-      variables: variables,
-      addonName: input.addon.name
-    ))
+    let arguments: [String]
+    let commandTokens: [String]
+    if config["operation"] != nil {
+      #if canImport(GoogleDocumentsGatewayCore)
+      let request = try BuiltinGatewayJSONRequest.request(
+        config: config, variables: variables, addonName: input.addon.name, commandOperation: true
+      )
+      guard !Self.forbiddenCommands.contains(request.operation), config["selection"] == nil else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) refuses interactive auth and command selections")
+      }
+      do {
+        arguments = try GoogleDocumentsGatewaySDK(role: operation.role).buildArgv(
+          operation: request.operation, variables: request.variables
+        )
+        commandTokens = request.operation.split(separator: " ").map(String.init)
+      } catch {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) JSON operation does not match its gateway tier catalog")
+      }
+      #else
+      throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) requires macOS")
+      #endif
+    } else {
+      commandTokens = try self.commandTokens(config: config, addonName: input.addon.name)
+      arguments = commandTokens + (try renderedFlagArguments(config: config, variables: variables, addonName: input.addon.name))
+    }
     let gatewayEnvironment = sanitizedGatewayEnvironment(
       runtimeEnvironment: environment,
       bindings: childEnvironment

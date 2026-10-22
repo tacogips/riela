@@ -18,13 +18,21 @@ final class PrivateWorkflowLiveTests: XCTestCase {
     let sentinel = root.appendingPathComponent("host-sentinel")
     try Data("host-only-canary".utf8).write(to: sentinel)
     let vendor = bundle.appendingPathComponent("codex-fixture")
+    let source = bundle.appendingPathComponent("source-fixture")
+    try """
+    #!/bin/sh
+    set -eu
+    [ "$X_GW_TOKEN" = synthetic-source-auth ]
+    [ "${UNRELATED_PRIVATE+x}" != x ]
+    cat >/dev/null
+    printf '%s\\n' '{"raw":"RAW_INTERMEDIATE_CANARY"}'
+    """.write(to: source, atomically: true, encoding: .utf8)
     try """
     #!/bin/sh
     set -eu
     if [ "${1:-}" = --version ]; then echo codex-fixture; exit 0; fi
     case "$HOME" in /tmp/riela-private-*/home) ;; *) exit 20 ;; esac
     [ "$(cat "$HOME/.vendor/auth.json")" = synthetic-model-auth ]
-    [ "$X_GW_TOKEN" = synthetic-source-auth ]
     [ "${UNRELATED_PRIVATE+x}" != x ]
     [ ! -e '\(sentinel.path)' ]
     grep -q 'NoNewPrivs:[[:space:]]*1' /proc/self/status
@@ -43,8 +51,7 @@ final class PrivateWorkflowLiveTests: XCTestCase {
     let graph: JSONObject = ["workflowId": .string("verified"), "description": .string("Synthetic private source to agent"),
       "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
       "entryStepId": .string("source"), "nodes": .array([
-        .object(["id": .string("source"), "addon": .object(["name": .string("riela/json-compose"),
-          "version": .string("1"), "config": .object(["payload": .object(["raw": .string("RAW_INTERMEDIATE_CANARY")])])])]),
+        .object(["id": .string("source"), "nodeFile": .string("source.json")]),
         .object(["id": .string("screen"), "nodeFile": .string("screen.json")])]), "steps": .array([
           .object(["id": .string("source"), "nodeId": .string("source"),
             "transitions": .array([.object(["toStepId": .string("screen")])])]),
@@ -52,17 +59,30 @@ final class PrivateWorkflowLiveTests: XCTestCase {
     let agent: JSONObject = ["id": .string("screen"), "executionBackend": .string("codex-agent"),
       "model": .string("fixture"), "agentSandbox": .string("read-only"),
       "variables": .object(["codexExecutable": .string(vendor.path)]),
-      "promptTemplate": .string("Inspect this synthetic source: {{input.raw}}"),
+      "promptTemplate": .string("Inspect this synthetic source: {{raw}}"),
       "includeRuntimeVariablesInPrompt": .bool(false),
       "output": .object(["jsonSchema": .object(schema), "maxValidationAttempts": .integer(1)])]
     try JSONEncoder().encode(graph).write(to: workflow.appendingPathComponent("workflow.json"))
     try JSONEncoder().encode(agent).write(to: workflow.appendingPathComponent("screen.json"))
+    let sourceNode: JSONObject = ["id": .string("source"), "nodeType": .string("command"), "variables": .object([:]),
+      "requiredEnvironment": .array([.string("X_GW_TOKEN")]),
+      "command": .object(["executable": .string("/bin/sh"), "arguments": .array([.string(source.path)])])]
+    try JSONEncoder().encode(sourceNode).write(to: workflow.appendingPathComponent("source.json"))
     let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
       .deletingLastPathComponent().appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
     let host = PrivateWorkflowHost(environment: [
       "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", "RIELA_SANDBOX_WORKER_EXECUTABLE": worker,
       "SOURCE_AUTH": "synthetic-source-auth", "MODEL_AUTH": "synthetic-model-auth", "UNRELATED_PRIVATE": "never-forward"
     ], workingDirectory: root, runner: FoundationLocalProcessRunner(), directoryParent: root)
+    let baseline = bundle.appendingPathComponent("baseline")
+    try FileManager.default.createDirectory(at: baseline, withIntermediateDirectories: false)
+    let baselineGraph: JSONObject = ["workflowId": .string("baseline"), "description": .string("Private builtin boundary probe"),
+      "defaults": .object(["nodeTimeoutMs": .integer(30000), "maxLoopIterations": .integer(1)]),
+      "entryStepId": .string("checked"), "nodes": .array([.object(["id": .string("checked"),
+        "addon": .object(["name": .string("riela/json-compose"), "version": .string("1"),
+          "config": .object(["payload": .object(["status": .string("ok")])])])])]),
+      "steps": .array([.object(["id": .string("checked"), "nodeId": .string("checked")])])]
+    try JSONEncoder().encode(baselineGraph).write(to: baseline.appendingPathComponent("workflow.json"))
     let input = WorkflowAddonExecutionInput(workflowId: "outer", stepId: "private", nodeId: "private",
       addon: .init(name: "riela/private-workflow", version: "1",
         config: ["workflowId": .string("verified"), "definitionRoot": .string(bundle.path), "outputSchema": .object(schema)],
@@ -70,6 +90,11 @@ final class PrivateWorkflowLiveTests: XCTestCase {
         sandbox: .init(backend: .container, networkPolicy: .denied, readPaths: [bundle.path],
           container: .init(image: image!, runtime: .appleContainer), ephemeralHome: true,
           credentialEnvironment: ["MODEL_AUTH": ".vendor/auth.json"])))
+    var baselineInput = input
+    baselineInput.addon.config?["workflowId"] = .string("baseline")
+    let baselineOutput = try await host.execute(baselineInput, context: .init(deadline: Date().addingTimeInterval(120)))
+    XCTAssertEqual(baselineOutput.payload, ["status": .string("ok")])
+    print("private builtin baseline passed")
     let output = try await host.execute(input, context: .init(deadline: Date().addingTimeInterval(120)))
     XCTAssertEqual(output.payload, ["status": .string("ok")])
     XCTAssertEqual(output.promptText, "")

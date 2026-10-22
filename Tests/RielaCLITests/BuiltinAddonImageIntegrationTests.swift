@@ -175,9 +175,17 @@ final class BuiltinAddonImageIntegrationTests: XCTestCase {
     try requireImage()
     let root = try makeRielaCLITestTemporaryDirectory("gmail-sdk-container")
     defer { try? FileManager.default.removeItem(at: root) }
-    let resolver = makeResolver(root)
+    let configRoot = root.appendingPathComponent("config", isDirectory: true)
+    try FileManager.default.createDirectory(at: configRoot, withIntermediateDirectories: true)
+    _ = try writeOfflineGmailSDKConfiguration(in: configRoot)
+    let environment = ["GMAIL_TEST_CONFIG": "/fixture/gmail.toml"]
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: BuiltinWorkflowAddonResolver(environment: environment, workingDirectory: root), environment: environment, workingDirectory: root)
     for name in ["riela/gmail-gateway-reader", "riela/gmail-gateway-draft", "riela/gmail-gateway-sender"] {
-      let output = try await resolver.execute(input(name, document: "query { accounts { id } }"),
+      var request = input(name, document: "query { accounts { id } }")
+      request.addon.env = ["GMAIL_GATEWAY_CONFIG": .object(["fromEnv": .string("GMAIL_TEST_CONFIG")])]
+      request.addon.container?.mounts = [.init(source: configRoot.path, target: "/fixture", readOnly: true)]
+      let output = try await resolver.execute(request,
         context: .init(deadline: Date().addingTimeInterval(300)))
       XCTAssertEqual(output.provider, "gmail-gateway")
       guard case let .object(data)? = output.payload["data"], case let .array(accounts)? = data["accounts"],

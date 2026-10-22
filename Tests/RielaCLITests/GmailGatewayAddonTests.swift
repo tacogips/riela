@@ -172,6 +172,23 @@ final class GmailGatewayAddonTests: XCTestCase {
     )
   }
 
+  func testRealAsyncSDKReturnsAccountsForEachPinnedTierWithoutCredentials() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("gmail-native-sdk")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let config = try writeOfflineGmailSDKConfiguration(in: root)
+    let resolver = BuiltinWorkflowAddonResolver(environment: ["GMAIL_TEST_CONFIG": config.path])
+    for name in ["riela/gmail-gateway-reader", "riela/gmail-gateway-draft", "riela/gmail-gateway-sender"] {
+      let output = try await resolver.execute(.init(workflowId: "gmail-offline", stepId: "accounts", nodeId: "accounts",
+        addon: .init(name: name, version: "1", config: ["queryTemplate": .string("{ accounts { id } }")],
+          env: ["GMAIL_GATEWAY_CONFIG": .object(["fromEnv": .string("GMAIL_TEST_CONFIG")])])),
+        context: .init(deadline: Date().addingTimeInterval(10)))
+      guard case let .object(data)? = output.payload["data"], case let .array(accounts)? = data["accounts"],
+        case let .object(account)? = accounts.first else { return XCTFail("missing real SDK account metadata") }
+      XCTAssertEqual(account["id"], .string("personal"))
+      XCTAssertEqual(gmailTier(output), String(name.dropFirst("riela/".count)))
+    }
+  }
+
   private func runGmail(
     gateway: RecordingGatewayGraphQLRunner,
     name: String,

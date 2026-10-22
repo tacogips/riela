@@ -281,6 +281,22 @@ Wrike reader/writer/admin roles and all three Gmail SDK modes have offline guest
 capability/credential tests. Build caches stay in the builder and are not copied
 into the runtime image.
 
+## Embedded Gmail SDK
+
+`riela/gmail-gateway-reader`, `riela/gmail-gateway-draft`, and
+`riela/gmail-gateway-sender` call the async Gmail SDK in process on macOS and
+Linux. Each name pins its own capability tier. The node does not spawn a Gmail
+CLI or block a Swift worker while awaiting the SDK.
+
+Supply an explicit `GMAIL_GATEWAY_CONFIG` through `addon.env`, for example
+`{"GMAIL_GATEWAY_CONFIG":{"fromEnv":"ART_GMAIL_CONFIG"}}`. The SDK reads only its
+supplied environment and rejects a missing configuration instead of consulting
+ambient user configuration. The file must exist at the path visible to the
+execution process. A container node needs an explicit read-only config mount;
+a private workflow can include the config in its image and project only the
+selected inline credential variables. Credential values stay out of workflow
+payloads. These SDK add-ons are separate from `riela/gmail-gateway-read` above.
+
 ## Native Apple dependency bridge
 
 Fixed Notes, Mail, Calendar, Reminder, Clock and Notification add-ons now select

@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.43"
+let rielaVersion = "0.2.44"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -88,7 +88,7 @@ let package = Package(
     ),
     .package(
       url: "https://github.com/tacogips/gmail-gateway.git",
-      revision: "5b083463280efb6880270ab3b864b871dde1ca6f" // v0.1.23; SDK has revision-pinned dependencies.
+      revision: "4ce54035694bbcbe88c33a4de3f5905677370b0e" // Linux SDK and atomic token-file portability.
     ),
     .package(
       url: "https://github.com/tacogips/google-analytics-gateway.git",
@@ -256,7 +256,7 @@ let package = Package(
         // Wrike's pinned source supports Darwin and Linux. Other gateway
         // dependencies still require platform-specific build adaptations.
         .product(name: "WrikeGatewayAdmin", package: "wrike-gateway"),
-        .product(name: "GmailGatewayCore", package: "gmail-gateway", condition: .when(platforms: [.macOS])),
+        .product(name: "GmailGatewayCore", package: "gmail-gateway"),
         .product(
           name: "GoogleAnalyticsGatewayAdmin",
           package: "google-analytics-gateway",

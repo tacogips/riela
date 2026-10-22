@@ -27,8 +27,9 @@ Riela's own `riela auth` passkey commands remain separate.
 | `google-drive` | reader, writer | `auth login`, `status`, `logout`, `revoke` |
 
 The list reports whether a gateway is linked on the current platform. Wrike and
-Google Service are available on Linux; the other currently linked native SDKs
-require macOS. Gmail/X workflow reader images remain available independently.
+Gmail, X and Google Service are available on Linux. Other native SDK availability
+is reported by `riela gateway list`. Dedicated Gmail/X workflow reader images
+remain available independently.
 
 For Gmail, register a shared Google OAuth client or configure a credential's
 client, then start the SDK's native browser authorization:

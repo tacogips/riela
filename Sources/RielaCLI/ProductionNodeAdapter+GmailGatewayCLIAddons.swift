@@ -5,7 +5,7 @@ import GmailGatewayCore
 import RielaAddonSupport
 import RielaCore
 
-/// Built-in add-ons that run the sibling gmail-gateway package's CLI surface
+/// Built-in add-ons that run the sibling gmail-gateway package's async SDK
 /// inside this process. The tier is a mode the gateway enforces (reader is
 /// read-only, draft turns sendMessage/replyMessage/forwardMessage into provider
 /// drafts, sender performs direct sends), and each add-on pins one mode, so the
@@ -89,23 +89,22 @@ enum BuiltinGmailGatewayCLIAddon: String {
   private var runner: LocalGatewayGraphQLRunner {
     let mode = mode
     return { tier, document, _, environment in
-      let result = GmailGatewayCLI(mode: mode).run(
-        arguments: ["graphql", "--query", document],
-        environment: environment
+      let result = await GmailGatewaySDK(mode: mode).execute(
+        document: document, variables: [:], environment: environment
       )
-      guard !result.stdout.isEmpty else {
+      guard !result.rawOutput.isEmpty else {
         throw AdapterExecutionError(
           .providerError,
-          "gmail-gateway \(tier) failed with exit code \(result.exitCode): \(appleGatewayCompactText(result.stderr))"
+          "gmail-gateway \(tier) returned an empty SDK envelope (exit code \(result.exitCode))"
         )
       }
-      return result.stdout
+      return result.rawOutput
     }
   }
   #else
   private var runner: LocalGatewayGraphQLRunner {
     { tier, _, _, _ in
-      throw AdapterExecutionError(.policyBlocked, "\(tier) requires macOS")
+      throw AdapterExecutionError(.policyBlocked, "\(tier) is unavailable in this build")
     }
   }
   #endif

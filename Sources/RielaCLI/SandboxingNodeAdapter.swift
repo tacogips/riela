@@ -144,7 +144,7 @@ private struct SandboxSessionBoundary: Equatable {
   var apiKeyEnvironment: String?
 }
 
-private final class SandboxNodeRecordCollector: @unchecked Sendable {
+final class SandboxNodeRecordCollector: @unchecked Sendable {
   private let lock = NSLock()
   private var terminal: SandboxNodeRecord?
   private var failure: AdapterExecutionError?

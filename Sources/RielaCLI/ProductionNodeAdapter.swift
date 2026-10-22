@@ -463,6 +463,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         context: context
       )
     }
+    if input.addon.name == "riela/private-workflow" {
+      throw AdapterExecutionError(.policyBlocked, "private-workflow requires an ephemeral container sandbox")
+    }
     if input.addon.name == "riela/x-gateway-reader" {
       return try await executeXGatewaySDKAddon(input, context: context)
     }

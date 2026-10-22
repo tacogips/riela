@@ -3,6 +3,10 @@ import Foundation
 public enum RielaCLIMain {
   public static func run() async {
     let arguments = Array(CommandLine.arguments.dropFirst())
+    if arguments == [PrivateWorkflowWorker.command] {
+      await PrivateWorkflowWorker.run()
+      return
+    }
     if arguments == [SandboxNodeWorker.command] {
       await SandboxNodeWorker.run()
       return

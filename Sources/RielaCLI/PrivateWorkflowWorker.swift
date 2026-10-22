@@ -1,0 +1,117 @@
+import CRielaPrivateWorker
+import Foundation
+import RielaCore
+#if os(Linux)
+import Glibc
+#endif
+
+enum PrivateWorkflowWorker {
+  static let command = "__riela-private-workflow-worker"
+
+  static func run() async {
+    let writer = SandboxNodeRecordWriter()
+    let operation = Task {
+      do {
+        // Check the boundary before reading any credential or private input.
+        try verifyGuest()
+        let request = try readRequest()
+        guard request.version == 1 else { throw PrivateWorkflowPlan.invalid() }
+        try request.plan.validate()
+        try PrivateWorkflowPlan.validateEnvironment(request.environment)
+        try SandboxNodeWorker.preparePrivateHome(credentials: request.credentials)
+        let home = URL(fileURLWithPath: ProcessInfo.processInfo.environment["HOME"] ?? "")
+        let root = home.deletingLastPathComponent()
+        #if os(Linux)
+        for (name, value) in request.environment { setenv(name, value, 1) }
+        setenv("RIELA_MEMORY_ROOT", root.appendingPathComponent("memory").path, 1)
+        #endif
+        let result = try await executeWorkflow(request, root: root)
+        writer.emit(.init(kind: .result, output: result))
+      } catch {
+        let code = (error as? AdapterExecutionError)?.code ?? .providerError
+        writer.emit(.init(kind: .failure, failure: .init(.init(code, "private workflow execution failed"))))
+      }
+    }
+    let cancellation = CLISignalCancellation { _ in operation.cancel() }
+    await operation.value
+    cancellation.cancel()
+  }
+
+  /// Embedded Riela owns dispatch/fanout, model execution and builtin calls.
+  /// Inner sessions/artifacts exist only under the guest's temporary root.
+  static func executeWorkflow(_ request: PrivateWorkflowRequest, root: URL) async throws -> AdapterExecutionOutput {
+    try request.plan.validate()
+    let milliseconds = Int(min(3600, request.deadline.timeIntervalSinceNow) * 1000)
+    guard milliseconds > 0 else { throw AdapterExecutionError(.timeout, "private workflow deadline expired") }
+    let work = root.appendingPathComponent("work")
+    for name in ["work", "sessions", "artifacts", "memory"] {
+      try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    }
+    let resolution = WorkflowResolutionOptions(workflowName: request.plan.workflowId,
+      workflowDefinitionDir: request.plan.definitionRoot, workingDirectory: work.path)
+    let result = await WorkflowRunCommand().runWithoutSpecialistMonitor(.init(target: request.plan.workflowId,
+      resolution: resolution, variables: try JSONValue.object(request.plan.variables).compactJSONString(), output: .json,
+      maxSteps: request.plan.maxSteps ?? 1000, maxConcurrency: request.plan.maxConcurrency ?? 4,
+      maxLoopIterations: 1000, timeoutMs: milliseconds, artifactRoot: root.appendingPathComponent("artifacts").path,
+      sessionStore: root.appendingPathComponent("sessions").path, workingDirectory: work.path))
+    guard result.exitCode == .success,
+          let bytes = result.stdout.data(using: .utf8), bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes,
+          case let .object(envelope)? = try? JSONDecoder().decode(JSONValue.self, from: bytes),
+          case let .object(payload)? = envelope["rootOutput"] else {
+      throw AdapterExecutionError(.providerError, "private inner workflow did not complete")
+    }
+    let output = AdapterExecutionOutput(provider: "riela-private-workflow", model: request.plan.workflowId,
+      promptText: "", completionPassed: true, payload: payload)
+    return try SandboxNodeWorker.privateOutput(output, contract: .init(jsonSchema: request.plan.outputSchema))
+  }
+
+  static func verifyGuest() throws {
+    #if os(Linux)
+    guard riela_private_worker_prepared() == 1 else { throw PrivateWorkflowPlan.invalid() }
+    let taskRoot = URL(fileURLWithPath: "/proc/self/task")
+    let status = try FileManager.default.contentsOfDirectory(at: taskRoot, includingPropertiesForKeys: nil)
+      .map { try String(contentsOf: $0.appendingPathComponent("status"), encoding: .utf8) }
+    let mounts = try String(contentsOfFile: "/proc/self/mountinfo", encoding: .utf8)
+    var stats = statvfs()
+    guard statvfs("/tmp", &stats) == 0 else { throw PrivateWorkflowPlan.invalid() }
+    let (bytes, overflow) = UInt64(stats.f_blocks).multipliedReportingOverflow(by: UInt64(stats.f_frsize))
+    guard !overflow else { throw PrivateWorkflowPlan.invalid() }
+    try verifyGuestMetadata(status: status, mounts: mounts, temporaryBytes: bytes)
+    #else
+    throw AdapterExecutionError(.policyBlocked, "private workflow worker requires a Linux container")
+    #endif
+  }
+
+  static func verifyGuestMetadata(status: [String], mounts: String, temporaryBytes: UInt64) throws {
+    guard !status.isEmpty, temporaryBytes > 0, temporaryBytes <= 256 * 1024 * 1024 else { throw PrivateWorkflowPlan.invalid() }
+    for text in status {
+      var fields: [String: String] = [:]
+      for line in text.split(separator: "\n") {
+        let pair = line.split(separator: ":", maxSplits: 1)
+        guard pair.count == 2, fields[String(pair[0])] == nil else { throw PrivateWorkflowPlan.invalid() }
+        fields[String(pair[0])] = pair[1].trimmingCharacters(in: .whitespaces)
+      }
+      guard fields["NoNewPrivs"] == "1", ["CapEff", "CapPrm", "CapBnd", "CapAmb"].allSatisfy({
+        fields[$0].flatMap { UInt64($0, radix: 16) } == 0
+      }) else { throw PrivateWorkflowPlan.invalid() }
+    }
+    let rows = mounts.split(separator: "\n").map { $0.split(separator: " ") }
+    let temporary = rows.first { $0.count > 6 && $0[4] == "/tmp" }
+    let root = rows.first { $0.count > 6 && $0[4] == "/" }
+    guard let temporary, let root, let separator = temporary.firstIndex(of: "-"), separator + 1 < temporary.count,
+          temporary[separator + 1] == "tmpfs", root[5].split(separator: ",").contains("ro"),
+          Set(["rw", "nosuid", "nodev", "noexec"]).isSubset(of: Set(temporary[5].split(separator: ",").map(String.init))) else {
+      throw PrivateWorkflowPlan.invalid()
+    }
+  }
+
+  private static func readRequest() throws -> PrivateWorkflowRequest {
+    var bytes = Data()
+    while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
+      bytes.append(chunk)
+      guard bytes.count <= BuiltinAddonContainerRequest.maximumRecordBytes else { throw PrivateWorkflowPlan.invalid() }
+    }
+    return try JSONDecoder().decode(PrivateWorkflowRequest.self, from: bytes)
+  }
+}

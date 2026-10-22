@@ -114,6 +114,7 @@ let package = Package(
         .linkedFramework("JavaScriptCore", .when(platforms: [.macOS]))
       ]
     ),
+    .target(name: "CRielaPrivateWorker"),
     .target(
       name: "RielaVersion",
       publicHeadersPath: "include",
@@ -243,6 +244,7 @@ let package = Package(
     .target(
       name: "RielaCLI",
       dependencies: [
+        "CRielaPrivateWorker",
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),

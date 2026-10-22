@@ -123,6 +123,10 @@ enum SandboxNodeWorker {
       guard credentials.isEmpty else { throw AdapterExecutionError(.policyBlocked, "runtime credentials require an ephemeral sandbox") }
       return
     }
+    try preparePrivateHome(credentials: credentials)
+  }
+
+  static func preparePrivateHome(credentials: [SandboxRuntimeCredential]) throws {
     let options = WorkflowExecutionSandbox(backend: .container, ephemeralHome: true,
       credentialEnvironment: Dictionary(uniqueKeysWithValues: credentials.enumerated().map { ("CREDENTIAL_\($0.offset)", $0.element.homePath) }))
     try options.validate()
@@ -168,7 +172,7 @@ enum SandboxNodeWorker {
   }
 }
 
-private final class SandboxNodeRecordWriter: @unchecked Sendable {
+final class SandboxNodeRecordWriter: @unchecked Sendable {
   private let lock = NSLock()
   private var firstFailure: AdapterExecutionError?
   var failure: AdapterExecutionError? { lock.withLock { firstFailure } }

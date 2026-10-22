@@ -11,7 +11,8 @@ struct EphemeralContainerNodeProcess: Sendable {
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?,
            outputEventHandler: @escaping @Sendable (LocalProcessOutputEvent) -> Void) async throws -> LocalProcessResult {
     let arguments = configuration.arguments
-    guard let runIndex = arguments.firstIndex(of: "run"), arguments.last == SandboxNodeWorker.command,
+    guard let runIndex = arguments.firstIndex(of: "run"), let workerCommand = arguments.last,
+          [SandboxNodeWorker.command, PrivateWorkflowWorker.command].contains(workerCommand),
           let entrypointIndex = arguments.firstIndex(of: "--entrypoint"), entrypointIndex + 1 < arguments.count - 2 else {
       throw AdapterExecutionError(.policyBlocked, "invalid ephemeral container invocation")
     }
@@ -35,7 +36,7 @@ struct EphemeralContainerNodeProcess: Sendable {
     initialize.arguments = prefix + ["run", "-d", "--name", name, "--cap-drop", "ALL"] + flags
       + [arguments[arguments.count - 2], lifetime]
     var execute = configuration
-    execute.arguments = prefix + ["exec", "-i", name, worker, SandboxNodeWorker.command]
+    execute.arguments = prefix + ["exec", "-i", name, worker, workerCommand]
     var remove = configuration
     remove.arguments = prefix + [runtime == "container" ? "delete" : "rm", "--force", name]
     let result: LocalProcessResult

@@ -75,6 +75,7 @@ public enum RielaBuiltinAddonCatalog {
   ]
 
   public static let workflowAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/private-workflow", version: "1"),
     .init(name: "riela/workflow-create-register-run", version: "1"),
     .init(name: "riela/chat-reply-worker", version: "1")
   ]

@@ -170,6 +170,10 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/google-service-gateway-write", version: "1")
   ]
 
+  public static let xGatewaySDKAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/x-gateway-reader", version: "1")
+  ]
+
   public static let gmailGatewayCLIAddons: [RielaAddonDescriptor] = [
     .init(name: "riela/gmail-gateway-reader", version: "1"),
     .init(name: "riela/gmail-gateway-draft", version: "1"),
@@ -226,6 +230,7 @@ public enum RielaBuiltinAddonCatalog {
     + routineAddons
     + wrikeGatewayAddons
     + googleServiceGatewayAddons
+    + xGatewaySDKAddons
     + gmailGatewayCLIAddons
     + googleAnalyticsGatewayAddons
     + googleDocumentsGatewayAddons

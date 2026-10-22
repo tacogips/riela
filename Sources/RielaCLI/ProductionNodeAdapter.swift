@@ -463,6 +463,9 @@ struct BuiltinWorkflowAddonResolver: WorkflowAddonResolving {
         context: context
       )
     }
+    if input.addon.name == "riela/x-gateway-reader" {
+      return try await executeXGatewaySDKAddon(input, context: context)
+    }
     if let gmailGatewayCLIAddon = BuiltinGmailGatewayCLIAddon(rawValue: input.addon.name) {
       return try await executeGmailGatewayCLIAddon(input, operation: gmailGatewayCLIAddon, context: context)
     }

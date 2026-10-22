@@ -4,7 +4,7 @@ import PackageDescription
 
 // Keep this value in sync with VERSION. It must be part of Package.swift because
 // SwiftPM's manifest cache does not track files read dynamically by the manifest.
-let rielaVersion = "0.2.38"
+let rielaVersion = "0.2.39"
 
 // The riela executables call apple-gateway as a linked library, and macOS
 // attaches TCC permission grants to the calling executable's own identity. The
@@ -247,7 +247,7 @@ let package = Package(
         .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
         .product(name: "GoogleGatewayAuth", package: "google-gateway-auth"),
-        .product(name: "XGatewayCore", package: "x-gateway", condition: .when(platforms: [.macOS])),
+        .product(name: "XGatewayCore", package: "x-gateway"),
         // Gateway add-ons run inside this process; riela spawns no `*-gateway`
         // executable. The cumulative tier products carry every tier module, and
         // each add-on stays pinned to one tier through its role descriptor.

@@ -48,6 +48,9 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     }
     guard sandbox != nil || input.addon.container != nil else { return try await primary.execute(input, context: context) }
     try sandbox?.validate()
+    guard sandbox?.ephemeralHome != true, sandbox?.credentialEnvironment.isEmpty != false else {
+      throw AdapterExecutionError(.policyBlocked, "ephemeral HOME and credential files currently require a sandboxed agent node")
+    }
     let settings = try sandbox.map(builtinSandboxContainerSettings) ?? input.addon.container ?? .init()
     try settings.validate()
     guard input.addon.name.hasPrefix("riela/") || input.addon.name.hasPrefix("kaiba/") else {

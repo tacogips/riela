@@ -8,6 +8,13 @@ struct SandboxNodeRequest: Codable, Sendable {
   var deadline: Date?
   var previousVendorSessionId: String?
   var supervisorMode: Bool
+  var ephemeralHome: Bool?
+  var credentials: [SandboxRuntimeCredential]?
+}
+
+struct SandboxRuntimeCredential: Codable, Sendable {
+  var homePath: String
+  var value: String
 }
 
 struct SandboxNodeRecord: Codable, Sendable {
@@ -40,6 +47,7 @@ enum SandboxNodeWorker {
       guard request.version == 1, request.input.node.sandbox == nil else {
         throw AdapterExecutionError(.invalidInput, "invalid isolated node worker request")
       }
+      try prepareEphemeralHome(request)
       let sessionStore = AgentGatewaySessionStore()
       if let previous = request.previousVendorSessionId,
          request.input.sessionPolicy?.mode == .reuse, let key = sessionKey(request.input, inheriting: true) {
@@ -65,6 +73,38 @@ enum SandboxNodeWorker {
     } catch {
       writer.emit(.init(kind: .failure, failure: .init((error as? AdapterExecutionError)
         ?? .init(.invalidInput, "invalid isolated node worker input"))))
+    }
+  }
+
+  /// Called only inside the selected container. No credential is materialized
+  /// in the controller's HOME/session/artifact directories.
+  private static func prepareEphemeralHome(_ request: SandboxNodeRequest) throws {
+    let credentials = request.credentials ?? []
+    guard request.ephemeralHome == true else {
+      guard credentials.isEmpty else { throw AdapterExecutionError(.policyBlocked, "runtime credentials require an ephemeral sandbox") }
+      return
+    }
+    let options = WorkflowExecutionSandbox(backend: .container, ephemeralHome: true,
+      credentialEnvironment: Dictionary(uniqueKeysWithValues: credentials.enumerated().map { ("CREDENTIAL_\($0.offset)", $0.element.homePath) }))
+    try options.validate()
+    guard let path = ProcessInfo.processInfo.environment["HOME"],
+          path.hasPrefix("/tmp/riela-private-"), URL(fileURLWithPath: path).lastPathComponent == "home",
+          URL(fileURLWithPath: path).standardizedFileURL.path == path else {
+      throw AdapterExecutionError(.policyBlocked, "ephemeral sandbox HOME is invalid")
+    }
+    let home = URL(fileURLWithPath: path)
+    let root = home.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+    for credential in credentials {
+      guard !credential.value.isEmpty, credential.value.utf8.count <= 1_000_000 else {
+        throw AdapterExecutionError(.policyBlocked, "ephemeral sandbox credential is invalid")
+      }
+      let destination = home.appendingPathComponent(credential.homePath)
+      try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+      try Data(credential.value.utf8).write(to: destination, options: .withoutOverwriting)
+      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
     }
   }
 

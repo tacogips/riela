@@ -23,6 +23,9 @@ actor SandboxingNodeAdapter: NodeAdapter {
 
   func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
     guard let options = input.node.sandbox else { return try await primary.execute(input, context: context) }
+    if options.ephemeralHome, input.sessionPolicy?.mode == .reuse {
+      throw AdapterExecutionError(.policyBlocked, "ephemeral sandbox cannot reuse a vendor session")
+    }
     let backend = try resolveNodeExecutionBackend(input.node)
     guard [.codexAgent, .claudeCodeAgent, .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK,
       .officialGeminiSDK, .officialCursorSDK].contains(backend) else {
@@ -45,15 +48,27 @@ actor SandboxingNodeAdapter: NodeAdapter {
     var workerInput = input
     workerInput.node.sandbox = nil
     workerInput.node.executionBackend = backend
+    if options.ephemeralHome { workerInput.node.workingDirectory = "/tmp" }
+    var credentials: [SandboxRuntimeCredential] = []
+    for name in options.credentialEnvironment.keys.sorted() {
+      guard input.agentEnvironment[name] == nil else {
+        throw AdapterExecutionError(.policyBlocked, "file credentials must not also be passed as agent environment bindings")
+      }
+      guard let value = environment[name], !value.isEmpty, value.utf8.count <= 1_000_000 else {
+        throw AdapterExecutionError(.policyBlocked, "selected sandbox runtime credential is unavailable or oversized")
+      }
+      credentials.append(.init(homePath: options.credentialEnvironment[name]!, value: value))
+    }
     let request = SandboxNodeRequest(input: workerInput, deadline: context.deadline,
-      previousVendorSessionId: previous?.vendorSessionId, supervisorMode: supervisorMode)
+      previousVendorSessionId: previous?.vendorSessionId, supervisorMode: supervisorMode,
+      ephemeralHome: options.ephemeralHome, credentials: credentials)
     let encoded = try JSONEncoder().encode(request)
     guard encoded.count <= BuiltinAddonContainerRequest.maximumRecordBytes, let stdin = String(data: encoded, encoding: .utf8) else {
       throw AdapterExecutionError(.invalidInput, "isolated node request exceeds the size limit")
     }
     let configuration = try launcher.process(executable: executable, arguments: [SandboxNodeWorker.command], workspace: workspace,
       options: launcher.workerOptions(options, executable: executable), directory: directory,
-      explicitEnvironment: input.agentEnvironment, containerExecutable: "/opt/riela/riela",
+      explicitEnvironment: options.ephemeralHome ? [:] : input.agentEnvironment, containerExecutable: "/opt/riela/riela",
       homeDirectory: sessionDirectory.root.appendingPathComponent("home"))
     let records = SandboxNodeRecordCollector()
     let stream = AsyncStream<AdapterBackendEvent>.makeStream()
@@ -62,7 +77,13 @@ actor SandboxingNodeAdapter: NodeAdapter {
     }
     let result: LocalProcessResult
     do {
-      if let streamingRunner = runner as? any LocalProcessEventStreaming {
+      if options.ephemeralHome {
+        result = try await EphemeralContainerNodeProcess(runner: runner).run(
+          configuration: configuration, stdin: stdin + "\n", deadline: context.deadline) { event in
+            guard event.stream == .stdout else { return }
+            if let record = records.accept(event.line) { stream.continuation.yield(record) }
+          }
+      } else if let streamingRunner = runner as? any LocalProcessEventStreaming {
         result = try await streamingRunner.run(configuration: configuration, stdin: stdin + "\n", deadline: context.deadline) { event in
           guard event.stream == .stdout else { return }
           if let record = records.accept(event.line) { stream.continuation.yield(record) }

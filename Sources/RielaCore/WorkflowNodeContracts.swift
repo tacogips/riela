@@ -39,6 +39,9 @@ public struct NodeOutputContract: Codable, Equatable, Sendable {
   public var description: String?
   public var jsonSchema: JSONObject?
   public var maxValidationAttempts: Int?
+  /// JSON pointer into this step's merged prompt variables. Resolved and
+  /// validated before invoking the adapter, then used again at publication.
+  public var jsonSchemaFrom: String?
   public var projection: WorkflowOutputProjection?
   public var deliverables: WorkflowDeliverableProjection?
 
@@ -47,11 +50,13 @@ public struct NodeOutputContract: Codable, Equatable, Sendable {
     jsonSchema: JSONObject? = nil,
     maxValidationAttempts: Int? = nil,
     projection: WorkflowOutputProjection? = nil,
-    deliverables: WorkflowDeliverableProjection? = nil
+    deliverables: WorkflowDeliverableProjection? = nil,
+    jsonSchemaFrom: String? = nil
   ) {
     self.description = description
     self.jsonSchema = jsonSchema
     self.maxValidationAttempts = maxValidationAttempts
+    self.jsonSchemaFrom = jsonSchemaFrom
     self.projection = projection
     self.deliverables = deliverables
   }

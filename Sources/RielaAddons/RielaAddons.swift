@@ -112,6 +112,11 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/time-signal", version: "1")
   ]
 
+  public static let dataAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/json-compose", version: "1"),
+    .init(name: "riela/array-batch", version: "1")
+  ]
+
   // Legacy property name retained for source compatibility. These gateways
   // execute their reader surface in a container and fail if execution fails.
   public static let deferredContainerGatewayAddons: [RielaAddonDescriptor] = [
@@ -213,6 +218,7 @@ public enum RielaBuiltinAddonCatalog {
     + digestAddons
     + workerAddons
     + timeAddons
+    + dataAddons
     + deferredContainerGatewayAddons
     + documentAddons
     + keyValueStoreAddons

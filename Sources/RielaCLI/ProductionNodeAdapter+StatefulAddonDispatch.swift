@@ -4,6 +4,9 @@ extension BuiltinWorkflowAddonResolver {
   func executeStatefulAddonIfSupported(
     _ input: WorkflowAddonExecutionInput
   ) async throws -> AdapterExecutionOutput? {
+    if let dataAddon = BuiltinDataAddon(rawValue: input.addon.name) {
+      return try executeDataAddon(input, operation: dataAddon)
+    }
     if input.addon.name == "riela/x-digest" {
       return try executeXDigest(input)
     }

@@ -146,6 +146,9 @@ public struct DefaultWorkflowValidator: WorkflowValidating {
       guard let payload = nodePayloads[nodeId] else { continue }
       diagnostics += validateAgentNodePayload(payload, path: "workflow.nodes.\(nodeId)")
       validateAgentSandbox(payload, nodeId: nodeId, diagnostics: &diagnostics)
+      if let pointer = payload.output?.jsonSchemaFrom, !validOutputSchemaPointer(pointer) {
+        diagnostics.append(error("workflow.nodes.\(nodeId).output.jsonSchemaFrom", "must be a nonempty JSON pointer"))
+      }
       if let schema = payload.output?.jsonSchema,
          let reason = DefaultWorkflowOutputValidator().validateContractSchema(schema) {
         diagnostics.append(error("workflow.nodes.\(nodeId).output.jsonSchema", reason))

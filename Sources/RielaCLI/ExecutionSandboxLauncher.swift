@@ -109,9 +109,9 @@ struct ExecutionSandboxLauncher: Sendable {
           let workspace = configuration.workingDirectoryURL else {
       throw AdapterExecutionError(.policyBlocked, "selected container sandbox runtime is unavailable")
     }
-    var mounts = [ContainerRuntimeMount(source: workspace.path, target: workspace.path, readOnly: false),
+    var mounts = options.ephemeralHome ? [] : [ContainerRuntimeMount(source: workspace.path, target: workspace.path, readOnly: false),
       .init(source: directory.root.path, target: directory.root.path, readOnly: false)]
-    if home.path != directory.root.appendingPathComponent("home").path {
+    if !options.ephemeralHome, home.path != directory.root.appendingPathComponent("home").path {
       mounts.append(.init(source: home.path, target: home.path, readOnly: false))
     }
     mounts += options.readPaths.map { .init(source: $0, target: $0, readOnly: true) }
@@ -140,14 +140,16 @@ struct ExecutionSandboxLauncher: Sendable {
       }
     }
     var childEnvironment = configuration.environment
-    childEnvironment["HOME"] = home.path
-    childEnvironment["TMPDIR"] = directory.root.appendingPathComponent("tmp").path
+    childEnvironment["HOME"] = options.ephemeralHome ? "/tmp/riela-private-\(UUID().uuidString)/home" : home.path
+    childEnvironment["TMPDIR"] = options.ephemeralHome ? "/tmp" : directory.root.appendingPathComponent("tmp").path
     let arguments = driver.runArguments(image: settings.image, options: .init(environment: childEnvironment, mounts: mounts,
-      entrypoint: executable, workingDirectory: workspace.path, networkAllowed: options.networkPolicy == .egressAllowed,
-      readOnlyRootFilesystem: true)) + configuration.arguments
+      entrypoint: executable, workingDirectory: options.ephemeralHome ? "/tmp" : workspace.path,
+      networkAllowed: options.networkPolicy == .egressAllowed,
+      readOnlyRootFilesystem: true, disablePersistentLogs: options.ephemeralHome)) + configuration.arguments
+    let runtimeEnvironment = environment.filter { options.credentialEnvironment[$0.key] == nil }
     return .init(executableURL: URL(fileURLWithPath: driver.executable.hasPrefix("/") ? driver.executable : "/usr/bin/env"),
       arguments: driver.executable.hasPrefix("/") ? arguments : [driver.executable] + arguments,
-      environment: environment, workingDirectoryURL: workspace, inheritEnvironment: false)
+      environment: runtimeEnvironment, workingDirectoryURL: workspace, inheritEnvironment: false)
   }
 
   private static func overlaps(_ left: String, _ right: String) -> Bool {

@@ -29,12 +29,18 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
   public var credentials: [WorkflowSandboxCredential]
   public var environment: [String]
   public var container: WorkflowAddonContainerExecution?
+  /// Guest-only tmpfs HOME/workspace; no writable host shares or session reuse.
+  public var ephemeralHome: Bool
+  /// Runtime environment name -> relative HOME file. Values travel on stdin,
+  /// never in authored JSON, process arguments, or host credential files.
+  public var credentialEnvironment: [String: String]
 
   public init(backend: WorkflowSandboxBackend = .auto,
               networkPolicy: WorkflowAddonContainerNetworkPolicy = .denied,
               readPaths: [String] = [], writePaths: [String] = [], credentialPaths: [String] = [],
               environment: [String] = [], container: WorkflowAddonContainerExecution? = nil,
-              credentials: [WorkflowSandboxCredential] = []) {
+              credentials: [WorkflowSandboxCredential] = [], ephemeralHome: Bool = false,
+              credentialEnvironment: [String: String] = [:]) {
     self.backend = backend
     self.networkPolicy = networkPolicy
     self.readPaths = readPaths
@@ -43,10 +49,13 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
     self.credentials = credentials
     self.environment = environment
     self.container = container
+    self.ephemeralHome = ephemeralHome
+    self.credentialEnvironment = credentialEnvironment
   }
 
   private enum CodingKeys: String, CodingKey {
     case backend, networkPolicy, readPaths, writePaths, credentialPaths, credentials, environment, container
+    case ephemeralHome, credentialEnvironment
   }
 
   public init(from decoder: Decoder) throws {
@@ -59,6 +68,8 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
     credentials = try values.decodeIfPresent([WorkflowSandboxCredential].self, forKey: .credentials) ?? []
     environment = try values.decodeIfPresent([String].self, forKey: .environment) ?? []
     container = try values.decodeIfPresent(WorkflowAddonContainerExecution.self, forKey: .container)
+    ephemeralHome = try values.decodeIfPresent(Bool.self, forKey: .ephemeralHome) ?? false
+    credentialEnvironment = try values.decodeIfPresent([String: String].self, forKey: .credentialEnvironment) ?? [:]
     try validate()
   }
 
@@ -70,8 +81,7 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
       }
     }
     var targets: [String] = []
-    for credential in credentials {
-      let target = credential.homePath
+    for target in credentials.map(\.homePath) + credentialEnvironment.values.sorted() {
       let components = target.split(separator: "/", omittingEmptySubsequences: false)
       guard !target.hasPrefix("/"), !components.isEmpty,
             components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
@@ -80,6 +90,18 @@ public struct WorkflowExecutionSandbox: Codable, Equatable, Sendable {
         throw AdapterExecutionError(.policyBlocked, "sandbox credential HOME paths must be distinct, non-overlapping relative paths")
       }
       targets.append(target)
+    }
+    if ephemeralHome {
+      guard backend == .container, credentials.isEmpty, credentialPaths.isEmpty,
+            writePaths.isEmpty, (container?.mounts ?? []).allSatisfy(\.readOnly) else {
+        throw AdapterExecutionError(.policyBlocked, "ephemeral HOME requires a container without writable host shares or file credentials")
+      }
+    }
+    for name in credentialEnvironment.keys {
+      guard ephemeralHome, isValidEnvironmentVariableName(name), !environment.contains(name),
+            !Self.reservedEnvironment.contains(name), !name.hasPrefix("LD_"), !name.hasPrefix("DYLD_") else {
+        throw AdapterExecutionError(.policyBlocked, "credential environment requires an ephemeral container and a valid runtime environment name")
+      }
     }
     for name in environment {
       guard isValidEnvironmentVariableName(name), !Self.reservedEnvironment.contains(name),

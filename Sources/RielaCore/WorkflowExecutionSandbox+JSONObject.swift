@@ -11,6 +11,8 @@ extension WorkflowExecutionSandbox {
       "environment": .array(environment.map(JSONValue.string)),
       "credentials": .array(credentials.map { .object(["source": .string($0.source), "homePath": .string($0.homePath)]) })
     ]
+    if ephemeralHome { object["ephemeralHome"] = .bool(true) }
+    if !credentialEnvironment.isEmpty { object["credentialEnvironment"] = .object(credentialEnvironment.mapValues(JSONValue.string)) }
     if let container {
       object["container"] = .object([
         "image": .string(container.image), "runtime": .string(container.runtime.rawValue),

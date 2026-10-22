@@ -618,6 +618,8 @@ extension DeterministicWorkflowRunner {
       requestVariables: request.variables,
       resolvedInputPayload: resolvedInput.payload
     )
+    executionPayload.output = try resolveNodeOutputContract(executionPayload.output, variables: mergedVariables)
+    executionPayload.agentToolPolicy = try resolveAgentToolPolicy(executionPayload.agentToolPolicy, variables: mergedVariables)
     let prompts = try composedPromptsWithFinalizationEvidence(
       workflow: request.workflow,
       step: step,
@@ -657,11 +659,13 @@ extension DeterministicWorkflowRunner {
       mergedVariables: mergedVariables,
       agentEnvironment: agentEnvironment
     )
+    var publicationPayload = basePayload
+    publicationPayload.output = executionPayload.output
     return try await executeAndPublish(
       adapterInput: adapterInput,
       sessionId: session.sessionId,
       step: step,
-      basePayload: basePayload,
+      basePayload: publicationPayload,
       transitions: transitions,
       request: request,
       executionIndex: executionIndex

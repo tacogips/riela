@@ -15,6 +15,9 @@ final class EphemeralSandboxTests: XCTestCase {
     let sentinel = root.appendingPathComponent("unshared-host")
     try "host-sentinel".write(to: sentinel, atomically: true, encoding: .utf8)
     let fixture = tools.appendingPathComponent("codex-fixture")
+    let message = JSONValue.object(["type": .string("item.completed"), "item": .object([
+      "type": .string("agent_message"), "text": .string(#"{"text":"isolated ephemeral fixture"}"#)])])
+    let event = String(decoding: try JSONEncoder().encode(message), as: UTF8.self)
     try """
     #!/bin/sh
     set -eu
@@ -27,7 +30,7 @@ final class EphemeralSandboxTests: XCTestCase {
     cat >/dev/null
     printf '%s\\n' \
       '{"type":"thread.started","thread_id":"ephemeral-fixture"}' \
-      '{"type":"item.completed","item":{"type":"agent_message","text":"isolated ephemeral fixture"}}' \
+      '\(event)' \
       '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
     """.write(to: fixture, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.path)
@@ -43,6 +46,8 @@ final class EphemeralSandboxTests: XCTestCase {
       variables: ["codexExecutable": .string(fixture.path)], output: .init(jsonSchema: ["type": .string("object")])), promptText: "synthetic public input",
       agentEnvironment: ["FIXTURE_HOST_SENTINEL": sentinel.path]), context: .init(deadline: Date().addingTimeInterval(120)))
     XCTAssertEqual(output.payload["text"], .string("isolated ephemeral fixture"))
+    XCTAssertEqual(output.promptText, "")
+    XCTAssertEqual(output.usage?.providerRaw, [:])
     XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "host-sentinel")
     XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: root.path)), ["tools", "unshared-host"])
   }

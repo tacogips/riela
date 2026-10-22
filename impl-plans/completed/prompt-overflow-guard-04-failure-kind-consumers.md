@@ -1,6 +1,9 @@
 # Prompt Overflow Guard 04: Preserve Recovery for `promptTooLarge`
 
 **planId**: `pog-04-failure-kind-consumers`
+**Status**: Completed 2026-10-22 (accepted by the session-479 integration
+review, comm-008796; uncommitted on `feat/agent-prompt-overflow-guard` above
+checkpoint `34223697`)
 **Wave**: 2
 **dependsOn**: `pog-01-contracts`
 **Workflow Mode**: issue-resolution
@@ -12,7 +15,7 @@ Part D, "Consumers of `failureKind`". This plan resolves review finding F1.
 command.
 **Progress log**: `impl-plans/progress/pog-04-failure-kind-consumers.md`
 **Evidence dir**: `tmp/prompt-overflow/pog-04-failure-kind-consumers/`
-**planPath**: `impl-plans/active/prompt-overflow-guard-04-failure-kind-consumers.md`
+**planPath**: `impl-plans/completed/prompt-overflow-guard-04-failure-kind-consumers.md`
 
 **writePaths**:
 

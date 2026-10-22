@@ -80,11 +80,11 @@
     "sourcePaths": [
       "design-docs/specs/design-agent-prompt-overflow-guard.md",
       "design-docs/specs/design-fanout-dependency-waves-and-change-evidence.md",
-      "impl-plans/active/prompt-overflow-guard-01-contracts.md",
-      "impl-plans/active/prompt-overflow-guard-02-fanout-observations.md",
-      "impl-plans/active/prompt-overflow-guard-03-prompt-guard.md",
-      "impl-plans/active/prompt-overflow-guard-04-failure-kind-consumers.md",
-      "impl-plans/active/prompt-overflow-guard-05-integration.md",
+      "impl-plans/completed/prompt-overflow-guard-01-contracts.md",
+      "impl-plans/completed/prompt-overflow-guard-02-fanout-observations.md",
+      "impl-plans/completed/prompt-overflow-guard-03-prompt-guard.md",
+      "impl-plans/completed/prompt-overflow-guard-04-failure-kind-consumers.md",
+      "impl-plans/completed/prompt-overflow-guard-05-integration.md",
       "Sources/RielaCore/WorkflowFanoutChangeEvidence.swift",
       "Sources/RielaCore/DeterministicWorkflowRunner+Prompting.swift",
       "Sources/RielaCore/DeterministicWorkflowRunner+AdapterPublication.swift",
@@ -110,7 +110,7 @@
   "plans": [
     {
       "planId": "pog-01-contracts",
-      "planPath": "impl-plans/active/prompt-overflow-guard-01-contracts.md",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-01-contracts.md",
       "dependsOn": [],
       "writePaths": [
         "Sources/RielaCore/RuntimeSession.swift",
@@ -153,7 +153,7 @@
     },
     {
       "planId": "pog-02-fanout-observations",
-      "planPath": "impl-plans/active/prompt-overflow-guard-02-fanout-observations.md",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-02-fanout-observations.md",
       "dependsOn": [
         "pog-01-contracts"
       ],
@@ -185,7 +185,7 @@
     },
     {
       "planId": "pog-03-prompt-guard",
-      "planPath": "impl-plans/active/prompt-overflow-guard-03-prompt-guard.md",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-03-prompt-guard.md",
       "dependsOn": [
         "pog-01-contracts"
       ],
@@ -216,7 +216,7 @@
     },
     {
       "planId": "pog-04-failure-kind-consumers",
-      "planPath": "impl-plans/active/prompt-overflow-guard-04-failure-kind-consumers.md",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-04-failure-kind-consumers.md",
       "dependsOn": [
         "pog-01-contracts"
       ],
@@ -251,7 +251,7 @@
     },
     {
       "planId": "pog-05-integration",
-      "planPath": "impl-plans/active/prompt-overflow-guard-05-integration.md",
+      "planPath": "impl-plans/completed/prompt-overflow-guard-05-integration.md",
       "dependsOn": [
         "pog-02-fanout-observations",
         "pog-03-prompt-guard",

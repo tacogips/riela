@@ -50,6 +50,25 @@ final class FanoutArtifactEvidenceRunnerTests: XCTestCase {
                    ArtifactFanoutAdapter.cacheEntries, "installation output is preserved")
   }
 
+  func testRunnerPassesConfiguredObservationInlineLimitToJoin() async throws {
+    let root = try scratch()
+    try Data("# docs".utf8).write(to: root.appendingPathComponent("README.md"))
+    let adapter = ArtifactFanoutAdapter(root: root, items: artifactItems(classified: true))
+    let runner = DeterministicWorkflowRunner(store: InMemoryWorkflowRuntimeStore(), adapter: adapter, fanoutWorkspaceRoot: root)
+    let result = try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: artifactFanoutWorkflow(failurePolicy: .collectPartial, classifyArtifacts: true, observationInlineLimit: 1),
+      nodePayloads: artifactPayloads()
+    ))
+
+    XCTAssertEqual(result.status, .completed)
+    let capturedJoin = await adapter.capturedJoin()
+    let join = try XCTUnwrap(capturedJoin)
+    guard case let .object(evidence)? = join["changeEvidence"] else { return XCTFail("missing changeEvidence") }
+    XCTAssertEqual(fanoutJSONPointer(.object(evidence), "/limits/observationInline"), .integer(1))
+    XCTAssertEqual(evidence["inlineObservationCount"], .integer(1))
+    XCTAssertEqual(evidence["observationsTruncated"], .bool(true))
+  }
+
   func testUnclassifiedGrowthFailsTheBranchWithStructuredDiagnosticsAndKeepsSiblingEvidence() async throws {
     let root = try scratch()
     try Data("# docs".utf8).write(to: root.appendingPathComponent("README.md"))
@@ -214,7 +233,8 @@ final class FanoutArtifactEvidenceRunnerTests: XCTestCase {
   private func assertObservation(_ evidence: JSONObject, branch: String, path: String, selection: String, reason: String,
                                  file: StaticString = #filePath, line: UInt = #line) {
     XCTAssertTrue(observations(evidence).contains {
-      $0["branchId"] == .string(branch) && $0["path"] == .string(path) && $0["selection"] == .string(selection) && $0["reason"] == .string(reason)
+      let reasonMatches = $0["reason"] == .string(reason) || fanoutStringsFromTest($0["reasons"]).contains(reason)
+      return $0["branchId"] == .string(branch) && $0["path"] == .string(path) && $0["selection"] == .string(selection) && reasonMatches
     }, "missing \(branch):\(path):\(selection):\(reason)", file: file, line: line)
   }
 
@@ -298,7 +318,11 @@ private actor ArtifactFanoutAdapter: NodeAdapter {
   }
 }
 
-private func artifactFanoutWorkflow(failurePolicy: WorkflowFanoutFailurePolicy, classifyArtifacts: Bool) -> WorkflowDefinition {
+private func artifactFanoutWorkflow(
+  failurePolicy: WorkflowFanoutFailurePolicy,
+  classifyArtifacts: Bool,
+  observationInlineLimit: Int? = nil
+) -> WorkflowDefinition {
   WorkflowDefinition(
     workflowId: "fanout-artifact-evidence",
     defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
@@ -328,7 +352,8 @@ private func artifactFanoutWorkflow(failurePolicy: WorkflowFanoutFailurePolicy, 
               dependencies: WorkflowFanoutDependencies(branchIdFrom: "/planId", dependsOnFrom: "/dependsOn"),
               changeTracking: WorkflowFanoutChangeTracking(
                 pathsFrom: "/trackedPaths",
-                artifactRootsFrom: classifyArtifacts ? "/artifactRoots" : nil
+                artifactRootsFrom: classifyArtifacts ? "/artifactRoots" : nil,
+                observationInlineLimit: observationInlineLimit
               )
             )
           )
@@ -345,6 +370,14 @@ private func artifactFanoutWorkflow(failurePolicy: WorkflowFanoutFailurePolicy, 
       WorkflowNodeRef(id: "join-node", nodeFile: "nodes/join.json")
     ]
   )
+}
+
+private func fanoutStringsFromTest(_ value: JSONValue?) -> [String] {
+  guard case let .array(values)? = value else { return [] }
+  return values.compactMap { item in
+    guard case let .string(value) = item else { return nil }
+    return value
+  }
 }
 
 private func artifactPayloads() -> [String: AgentNodePayload] {

@@ -1,6 +1,9 @@
 # Prompt Overflow Guard 05: Integration Tests, Mock Run and Documentation
 
 **planId**: `pog-05-integration`
+**Status**: Completed 2026-10-22 (accepted by the session-479 integration
+review, comm-008796; uncommitted on `feat/agent-prompt-overflow-guard` above
+checkpoint `34223697`)
 **Wave**: 3
 **dependsOn**: `pog-02-fanout-observations`, `pog-03-prompt-guard`,
 `pog-04-failure-kind-consumers`
@@ -13,7 +16,7 @@ Documentation, Verification and Rollout sections.
 command.
 **Progress log**: `impl-plans/progress/pog-05-integration.md`
 **Evidence dir**: `tmp/prompt-overflow/pog-05-integration/`
-**planPath**: `impl-plans/active/prompt-overflow-guard-05-integration.md`
+**planPath**: `impl-plans/completed/prompt-overflow-guard-05-integration.md`
 
 **writePaths**:
 

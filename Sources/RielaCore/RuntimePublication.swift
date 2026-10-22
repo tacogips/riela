@@ -345,7 +345,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
           status: .failed,
           adapterOutput: adapterOutputMetadata,
           failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)",
-          failureKind: .adapterFailure,
+          failureKind: adapterFailureKind(adapterFailure),
           usage: adapterUsage,
           failsSession: !request.routesAdapterFailureAsAdvisory
         )
@@ -365,7 +365,7 @@ public struct InMemoryWorkflowOutputPublisher: WorkflowOutputPublishing {
             status: .failed,
             adapterOutput: adapterOutputMetadata,
             failureReason: "\(adapterFailure.code.rawValue): \(adapterFailure.message)",
-            failureKind: .adapterFailure,
+            failureKind: adapterFailureKind(adapterFailure),
             usage: adapterUsage,
             currentStepId: nextStepId(from: advisoryTransitions),
             failsSession: false

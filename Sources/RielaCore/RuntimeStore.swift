@@ -543,6 +543,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     execution.acceptedOutput = input.acceptedOutput
     execution.adapterOutput = input.adapterOutput ?? execution.adapterOutput
     execution.failureReason = input.failureReason
+    execution.failureKind = input.failureKind
     execution.usage = input.usage ?? execution.usage
     execution.pendingRoutePublication = input.pendingRoutePublication
     execution.updatedAt = date

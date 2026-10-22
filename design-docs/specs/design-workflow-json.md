@@ -177,6 +177,9 @@ Optional:
 - `defaults.containerRuntime` (defaults to the runtime container runner default when omitted)
 - `defaults.selfImprove` (dedicated retrospective self-improve defaults; see
   below)
+- `defaults.agentPromptMaxBytes` (positive integer; workflow-wide agent prompt
+  byte budget, 400,000 when omitted; see
+  [design-agent-prompt-overflow-guard.md](./design-agent-prompt-overflow-guard.md))
 
 Validation rules:
 
@@ -907,6 +910,9 @@ Optional:
 - `argumentBindings`
 - `templateEngine`
 - `timeoutMs`
+- `promptMaxBytes` (positive integer; per-node agent prompt byte budget that
+  overrides `defaults.agentPromptMaxBytes`; see
+  [design-agent-prompt-overflow-guard.md](./design-agent-prompt-overflow-guard.md))
 - `output`
 
 Important rules:

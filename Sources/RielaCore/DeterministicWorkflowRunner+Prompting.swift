@@ -155,11 +155,13 @@ extension DeterministicWorkflowRunner {
     guard case let .object(runtimeVariables)? = variables["runtimeVariables"], !runtimeVariables.isEmpty else {
       return nil
     }
-    guard let rendered = try? JSONValue.object(runtimeVariables).compactJSONString() else {
+    let promptView = deduplicatedRuntimeVariablesView(runtimeVariables)
+    guard let rendered = try? JSONValue.object(promptView).compactJSONString() else {
       return nil
     }
     return """
     Runtime variables are available under `runtimeVariables`. Use this JSON as the authoritative runtimeVariables object:
+    `$rielaElidedKeys` lists message payload keys whose values equal the top-level runtimeVariables entry of the same name; `$rielaSameAs` points to an identical payload elsewhere in this object.
     \(rendered)
     """
   }

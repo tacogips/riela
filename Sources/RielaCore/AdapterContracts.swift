@@ -14,17 +14,20 @@ public struct AdapterExecutionError: Error, Equatable, Sendable {
   public var message: String
   public var isRetryable: Bool?
   public var retryAfter: Duration?
+  public var failureKind: WorkflowSessionFailureKind?
 
   public init(
     _ code: AdapterExecutionErrorCode,
     _ message: String,
     isRetryable: Bool? = nil,
-    retryAfter: Duration? = nil
+    retryAfter: Duration? = nil,
+    failureKind: WorkflowSessionFailureKind? = nil
   ) {
     self.code = code
     self.message = message
     self.isRetryable = isRetryable
     self.retryAfter = retryAfter
+    self.failureKind = failureKind
   }
 }
 

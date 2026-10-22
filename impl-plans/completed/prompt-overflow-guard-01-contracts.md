@@ -1,6 +1,9 @@
 # Prompt Overflow Guard 01: Contracts, Classification and Single-Copy Rendering
 
 **planId**: `pog-01-contracts`
+**Status**: Completed 2026-10-22 (accepted by the session-479 integration
+review, comm-008796; uncommitted on `feat/agent-prompt-overflow-guard` above
+checkpoint `34223697`)
 **Wave**: 1
 **dependsOn**: none
 **Workflow Mode**: issue-resolution
@@ -14,7 +17,7 @@ hint), Configuration summary.
 any git write command.
 **Progress log**: `impl-plans/progress/pog-01-contracts.md`
 **Evidence dir**: `tmp/prompt-overflow/pog-01-contracts/`
-**planPath**: `impl-plans/active/prompt-overflow-guard-01-contracts.md`
+**planPath**: `impl-plans/completed/prompt-overflow-guard-01-contracts.md`
 
 **writePaths**:
 

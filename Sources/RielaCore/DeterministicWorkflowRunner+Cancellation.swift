@@ -117,7 +117,7 @@ extension DeterministicWorkflowRunner {
       case .timeout:
         return .nodeTimeout
       case .providerError, .invalidInput, .invalidOutput, .templateResolutionFailed:
-        return .adapterFailure
+        return adapterFailureKind(adapterError)
       }
     }
     return .internalFailure

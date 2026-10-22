@@ -1,6 +1,9 @@
 # Prompt Overflow Guard 03: Pre-Invocation Prompt-Size Guard and Spill
 
 **planId**: `pog-03-prompt-guard`
+**Status**: Completed 2026-10-22 (accepted by the session-479 integration
+review, comm-008796, after the IR-POG03-LINUX-IMPORT repairs; uncommitted on
+`feat/agent-prompt-overflow-guard` above checkpoint `34223697`)
 **Wave**: 2
 **dependsOn**: `pog-01-contracts`
 **Workflow Mode**: issue-resolution
@@ -12,7 +15,7 @@ Part C, plus Part D "Guard rejection".
 command.
 **Progress log**: `impl-plans/progress/pog-03-prompt-guard.md`
 **Evidence dir**: `tmp/prompt-overflow/pog-03-prompt-guard/`
-**planPath**: `impl-plans/active/prompt-overflow-guard-03-prompt-guard.md`
+**planPath**: `impl-plans/completed/prompt-overflow-guard-03-prompt-guard.md`
 
 **writePaths**:
 

@@ -5,6 +5,9 @@ public func validateAgentNodePayload(
   path: String = "node"
 ) -> [WorkflowValidationDiagnostic] {
   var diagnostics: [WorkflowValidationDiagnostic] = []
+  if let promptMaxBytes = payload.promptMaxBytes, promptMaxBytes <= 0 {
+    diagnostics.append(error("\(path).promptMaxBytes", "must be a positive integer"))
+  }
   if let sandbox = payload.sandbox {
     do { try sandbox.validate() } catch {
       diagnostics.append(.init(severity: .error, path: "\(path).sandbox", message: "\(error)"))

@@ -540,8 +540,17 @@ final class WorkflowFanoutMapReduceTests: XCTestCase {
     guard case let .array(observations)? = reduced["observations"] else { return XCTFail("missing observations", file: file, line: line) }
     XCTAssertTrue(observations.contains { value in
       guard case let .object(item) = value else { return false }
-      return item["branchId"] == .string(branch) && item["path"] == .string(path) && item["reason"] == .string(reason)
+      let matchesReason = item["reason"] == .string(reason) || fanoutStringsFromTest(item["reasons"]).contains(reason)
+      return item["branchId"] == .string(branch) && item["path"] == .string(path) && matchesReason
     }, "missing \(branch):\(path):\(reason)", file: file, line: line)
+  }
+
+  private func fanoutStringsFromTest(_ value: JSONValue?) -> [String] {
+    guard case let .array(values)? = value else { return [] }
+    return values.compactMap { item in
+      guard case let .string(value) = item else { return nil }
+      return value
+    }
   }
 
   private func assertCaptureRejected(_ evidence: WorkflowFanoutChangeEvidence, paths: [String], artifactRoots: [String] = [],

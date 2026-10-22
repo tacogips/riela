@@ -1,6 +1,9 @@
 # Prompt Overflow Guard 02: Bounded Fanout Change-Evidence Observations
 
 **planId**: `pog-02-fanout-observations`
+**Status**: Completed 2026-10-22 (accepted by the session-479 integration
+review, comm-008796; uncommitted on `feat/agent-prompt-overflow-guard` above
+checkpoint `34223697`)
 **Wave**: 2
 **dependsOn**: `pog-01-contracts`
 **Workflow Mode**: issue-resolution
@@ -13,7 +16,7 @@ Part A. Also the amended join-field paragraph in
 command.
 **Progress log**: `impl-plans/progress/pog-02-fanout-observations.md`
 **Evidence dir**: `tmp/prompt-overflow/pog-02-fanout-observations/`
-**planPath**: `impl-plans/active/prompt-overflow-guard-02-fanout-observations.md`
+**planPath**: `impl-plans/completed/prompt-overflow-guard-02-fanout-observations.md`
 
 **writePaths**:
 

@@ -98,7 +98,7 @@ public enum DeterministicDirector {
     if let attempt = input.latestAttempt, attempt.outcome?.sessionStatus == .failed {
       let kind = attempt.outcome?.failureKind
       let rules = input.task.director.deterministic
-      let rerunnable = (kind == .adapterFailure && rules.rerunOnAdapterFailure)
+      let rerunnable = ((kind == .adapterFailure || kind == .promptTooLarge) && rules.rerunOnAdapterFailure)
         || (kind == .nodeTimeout && rules.rerunOnNodeTimeout)
       if rerunnable, hasAttemptBudget(input), let evidenceId = input.attemptFailureEvidenceId {
         return DirectorResolution(

@@ -60,13 +60,14 @@ extension DeterministicWorkflowRunner {
     )
     let canResumeBudgetFailure = existing.status == .failed && existing.failureKind == .maxStepsExceeded
     let failedExecution = existing.executions.last
-    let retryableFailureKind = existing.failureKind == .adapterFailure || existing.failureKind == .policyBlocked
+    let retryableFailureKind = existing.failureKind == .adapterFailure
+      || existing.failureKind == .promptTooLarge || existing.failureKind == .policyBlocked
     let canRetryFailedStep = existing.status == .failed && retryableFailureKind
       && failedExecution?.status == .failed && failedExecution?.stepId == existing.currentStepId
       && failedExecution?.acceptedOutput == nil && failedExecution?.pendingRoutePublication == nil
     if request.retryFailedStep && !canRetryFailedStep {
       throw DeterministicWorkflowRunnerError.resumeValidation(
-        "--retry-failed-step requires an adapter-failed or policy-blocked current step with no accepted output"
+        "--retry-failed-step requires an adapter-failed, prompt-too-large or policy-blocked current step with no accepted output"
       )
     }
     if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure && !request.retryFailedStep) {

@@ -8,11 +8,16 @@ extension DeterministicWorkflowRunner {
     basePayload: AgentNodePayload,
     transitions: [WorkflowStepTransition],
     request: DeterministicWorkflowRunRequest,
-    executionIndex: Int
+    executionIndex: Int,
+    promptGuard: AgentPromptGuardOutcome? = nil
   ) async throws -> WorkflowPublicationResult {
     let maxAttempts = maxValidationAttempts(from: basePayload.output)
     var lastValidationError: Error?
     for attempt in 1...maxAttempts {
+      var inputSnapshot = try historyInvocationSnapshot(adapterInput, request: request, step: step, payload: basePayload)
+      if let evidence = promptGuard?.evidence {
+        inputSnapshot["promptCompaction"] = .object(evidence)
+      }
       let startedExecution = try await recordStepStartedExecution(
         workflowId: request.workflow.workflowId,
         sessionId: sessionId,
@@ -24,11 +29,21 @@ extension DeterministicWorkflowRunner {
           configuredWorkingDirectory: basePayload.workingDirectory,
           workspaceRoot: fanoutWorkspaceRoot
         ),
-        inputSnapshot: try historyInvocationSnapshot(adapterInput, request: request, step: step, payload: basePayload),
+        inputSnapshot: inputSnapshot,
         effectiveStepBudget: request.effectiveStepBudget,
         handler: request.eventHandler
       )
       let execution = startedExecution.execution
+      if let rejection = promptGuard?.rejection {
+        return try await publishAdapterFailure(
+          rejection,
+          sessionId: sessionId,
+          step: step,
+          attempt: attempt,
+          backend: basePayload.executionBackend,
+          transitions: transitions
+        )
+      }
       var attemptInput = adapterInput
       attemptInput.executionIndex = executionIndex
       attemptInput.output = basePayload.output == nil

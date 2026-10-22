@@ -52,8 +52,6 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
         .execute(input, context: context)
     }
     try sandbox?.validate()
-    let admission = try await SandboxExecutionAdmission.acquire(sandbox?.admission, environment: environment, deadline: context.deadline)
-    defer { withExtendedLifetime(admission) {} }
     guard sandbox?.ephemeralHome != true, sandbox?.credentialEnvironment.isEmpty != false else {
       throw AdapterExecutionError(.policyBlocked, "ephemeral HOME and credential files currently require a sandboxed agent node")
     }
@@ -63,6 +61,8 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       throw AdapterExecutionError(.policyBlocked, "addon.container currently requires a built-in add-on")
     }
     if let gateway = ContainerGatewayAddon(rawValue: input.addon.name) {
+      let admission = try await SandboxExecutionAdmission.acquire(sandbox?.admission, environment: environment, deadline: context.deadline)
+      defer { withExtendedLifetime(admission) {} }
       if let sandbox {
         guard sandbox.backend == .container, sandbox.credentials.isEmpty else {
           throw AdapterExecutionError(.policyBlocked, "legacy gateway reader images require container isolation; use the SDK add-on or sandbox run with a host reader for native isolation")
@@ -136,7 +136,9 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
     let stateComponent = try sandbox.map { selection in
-      var scope = try encoder.encode(selection)
+      var stateSelection = selection
+      stateSelection.admission = nil // Scheduling must not relocate persistent worker state.
+      var scope = try encoder.encode(stateSelection)
       scope.append(try encoder.encode(transportBindings))
       scope.append(Data((input.addon.name + "/" + (input.executionIdentity?.workflowExecutionId ?? input.workflowId)).utf8))
       return sha256(scope)
@@ -188,6 +190,9 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     try validateControlIsolation(settings: invocation.settings)
     if let sandbox = invocation.sandbox { try validateSandboxControlIsolation(sandbox) }
     try request.validate()
+    let admission = try await SandboxExecutionAdmission.acquire(invocation.sandbox?.admission,
+      environment: environment, deadline: request.deadline)
+    defer { withExtendedLifetime(admission) {} }
     var wireRequest = request
     let nativeBridge: NativeAppleAddonBridge?
     if let input = request.input, AppleGatewayContainerCapability(addonName: input.addon.name).isSupported {

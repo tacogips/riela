@@ -7,6 +7,52 @@ import XCTest
 @testable import RielaCLI
 
 final class BuiltinAddonContainerResolverTests: XCTestCase {
+  func testSandboxFinalizationRetainsAdmissionForExecuteAcknowledgeAndTerminal() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("addon-finalization-admission")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pool = root.appendingPathComponent("pool")
+    let token = WorkflowAddonFinalizationToken(value: "synthetic-resource-token")
+    let output = AdapterExecutionOutput(provider: "fixture", model: "fixture", promptText: "", completionPassed: true,
+      payload: [:], runtimeFinalizationToken: token)
+    let runner = BuiltinContainerRecordingRunner(output: output, pool: pool)
+    let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker", "TEST_POOL": pool.path,
+        "RIELA_SANDBOX_WORKER_EXECUTABLE": worker], workingDirectory: root, runner: runner)
+    let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "commit", nodeId: "commit",
+      addon: .init(name: "riela/git-commit", version: "1", sandbox: .init(backend: .container,
+        admission: .init(directoryEnvironment: "TEST_POOL", capacity: 1))),
+      executionIdentity: .init(workflowExecutionId: "admitted-session", stepExecutionId: "admitted-step",
+        operationExecutionId: "admitted-step", attempt: 1))
+    _ = try await resolver.execute(input, context: .init())
+    try await resolver.acknowledgeAcceptedFinalization(token)
+    try await resolver.recordTerminalFinalization(workflowExecutionId: "admitted-session", stepExecutionIds: ["admitted-step"])
+    let requests = await runner.requests
+    XCTAssertEqual(requests.map(\.operation), [.execute, .acknowledge, .terminal])
+    let observations = await runner.heldObservations
+    XCTAssertEqual(observations, 3)
+  }
+
+  func testAdmissionWaitPolicyDoesNotRelocateSandboxWorkerState() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("addon-admission-state")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = BuiltinContainerRecordingRunner(output: testOutput())
+    let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker", "TEST_POOL": root.appendingPathComponent("pool").path,
+        "RIELA_SANDBOX_WORKER_EXECUTABLE": worker], workingDirectory: root, runner: runner)
+    for seconds in [1, 2] {
+      _ = try await resolver.execute(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
+        addon: .init(name: "riela/time-signal", version: "1", sandbox: .init(backend: .container,
+          admission: .init(directoryEnvironment: "TEST_POOL", capacity: 1, waitTimeoutSeconds: seconds)))), context: .init())
+    }
+    let configurations = await runner.configurations
+    let states = configurations.map { $0.arguments.filter { $0.hasPrefix("RIELA_ADDON_STATE_DIR=") } }
+    XCTAssertEqual(states.count, 2); XCTAssertFalse(states[0].isEmpty); XCTAssertEqual(states[0], states[1])
+  }
+
   func testHostControlDirectoryCannotBeExposedByWorkspaceOrExplicitMount() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("container-control-isolation")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -330,12 +376,21 @@ private actor BuiltinContainerRecordingRunner: LocalProcessRunning {
   var requests: [BuiltinAddonContainerRequest] = []
   var configurations: [LocalProcessConfiguration] = []
   let output: AdapterExecutionOutput
+  let pool: URL?
+  var heldObservations = 0
 
-  init(output: AdapterExecutionOutput) { self.output = output }
+  init(output: AdapterExecutionOutput, pool: URL? = nil) { self.output = output; self.pool = pool }
 
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
     let request = try JSONDecoder().decode(BuiltinAddonContainerRequest.self, from: Data(stdin.utf8))
     try request.validate()
+    if let pool {
+      do {
+        _ = try await SandboxExecutionAdmission.acquire(.init(directoryEnvironment: "TEST_POOL", capacity: 1),
+          environment: ["TEST_POOL": pool.path], deadline: Date().addingTimeInterval(0.04))
+        XCTFail("addon worker ran outside declared admission")
+      } catch let error as AdapterExecutionError { XCTAssertEqual(error.code, .timeout); heldObservations += 1 }
+    }
     requests.append(request)
     configurations.append(configuration)
     let reply = BuiltinAddonContainerReply(output: request.operation == .execute ? output : nil)

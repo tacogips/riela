@@ -37,12 +37,20 @@ final class SandboxExecutionAdmission: @unchecked Sendable {
     while true {
       try Task.checkCancellation()
       guard Date() < limit else { throw AdapterExecutionError(.timeout, "sandbox admission deadline reached") }
+      try requireExecutionTime(policy, deadline: deadline)
       if let lease = try attempt(policy, directory: directory) {
         try Task.checkCancellation()
         guard Date() < limit else { throw AdapterExecutionError(.timeout, "sandbox admission deadline reached") }
+        try requireExecutionTime(policy, deadline: deadline)
         return lease
       }
       try await Task.sleep(for: .milliseconds(25))
+    }
+  }
+
+  private static func requireExecutionTime(_ policy: WorkflowExecutionAdmission, deadline: Date?) throws {
+    if let deadline, deadline.timeIntervalSinceNow < Double(policy.minimumRemainingSeconds) {
+      throw AdapterExecutionError(.timeout, "sandbox admission has insufficient execution time remaining")
     }
   }
 

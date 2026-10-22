@@ -16,10 +16,12 @@ final class SandboxExecutionAdmissionTests: XCTestCase {
       from: Data(#"{"directoryEnvironment":"MODEL_POOL","capacity":4}"#.utf8))
     XCTAssertEqual(decoded.weight, 1)
     XCTAssertEqual(decoded.waitTimeoutSeconds, 600)
+    XCTAssertEqual(decoded.minimumRemainingSeconds, 0)
     for policy in [WorkflowExecutionAdmission(directoryEnvironment: "bad-name", capacity: 4),
       .init(directoryEnvironment: variable, capacity: 0), .init(directoryEnvironment: variable, capacity: 65),
       .init(directoryEnvironment: variable, capacity: 4, weight: 5),
-      .init(directoryEnvironment: variable, capacity: 4, waitTimeoutSeconds: 0)] {
+      .init(directoryEnvironment: variable, capacity: 4, waitTimeoutSeconds: 0),
+      .init(directoryEnvironment: variable, capacity: 4, minimumRemainingSeconds: -1)] {
       XCTAssertThrowsError(try policy.validate())
     }
     do {

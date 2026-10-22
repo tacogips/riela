@@ -183,6 +183,24 @@ final class EphemeralSandboxTests: XCTestCase {
     withExtendedLifetime(lease) {}
   }
 
+  func testAdmissionRejectsInsufficientExecutionTimeBeforeStartingContainer() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("ephemeral-admission-reserve")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = EphemeralFixtureRunner()
+    let adapter = SandboxingNodeAdapter(primary: EphemeralForbiddenHost(), environment: ["TEST_POOL": root.path],
+      workingDirectory: root.path, runner: runner, directoryParent: root)
+    let policy = WorkflowExecutionAdmission(directoryEnvironment: "TEST_POOL", capacity: 4, minimumRemainingSeconds: 2)
+    do {
+      _ = try await adapter.execute(.init(node: .init(id: "inspect", executionBackend: .codexAgent, model: "fixture",
+        sandbox: .init(backend: .container, ephemeralHome: true, admission: policy),
+        output: .init(jsonSchema: ["type": .string("object")])), promptText: "synthetic"),
+        context: .init(deadline: Date().addingTimeInterval(0.2)))
+      XCTFail("insufficient startup budget must not launch a container")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .timeout) }
+    let calls = await runner.calls
+    XCTAssertTrue(calls.isEmpty)
+  }
+
   private var workerPath: String {
     URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
       .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path

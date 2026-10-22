@@ -24,12 +24,25 @@ defaults to 600. Capacity is 1–64, weight is 1–capacity and the wait bound i
 1–3600 seconds. Every participant must declare the same capacity; a mismatch is
 rejected. Different pools require different directories.
 
+Since 0.2.41, `minimumRemainingSeconds` (default 0, range 0–3600) reserves a
+minimum execution window in the existing node deadline. Admission refuses to
+launch when that window is unavailable, both before waiting and immediately
+after acquiring capacity. It does not extend the node deadline or guarantee a
+full model turn. For example, a brief can wait at most 5 seconds and require
+30 seconds remaining with `waitTimeoutSeconds: 5` and
+`minimumRemainingSeconds: 30`.
+
 Admission acquires all requested slots before container launch and retains them
 through output validation and owned container cleanup, including cancellation.
 Waiting counts against the existing node deadline and never extends it. A full
 pool waits asynchronously; deadline expiry returns a timeout without launching
 work. Cancellation releases any partially acquired capacity. Kernel file locks
 release on process exit; do not delete or replace pool files during live work.
+
+Builtin add-on acknowledgment and terminal workers use the same persisted
+admission policy as execution. Scheduling settings are excluded from the
+sandbox worker-state directory identity; tuning admission does not relocate
+that persistent state.
 
 The `riela/private-workflow` add-on can declare this policy on its outer sandbox
 to reserve capacity for the whole private graph. Inner nodes do not inherit the

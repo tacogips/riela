@@ -279,9 +279,10 @@ bundled catalog, and an already selected live model remains usable after it is
 saved.
 
 RielaApp is a resident workflow process; its HTTP listener is optional and is
-disabled by default. **Open Riela...** opens the Tauri dashboard through native
-IPC. **Start Web Server** starts the loopback listener explicitly; stopping that
-listener does not stop RielaApp or its workflow instances.
+disabled by default. **Open Console...** opens the Tauri dashboard through native
+IPC. **Start server** in the console's Settings → Web Config server starts the
+loopback listener explicitly; stopping that listener does not stop RielaApp or
+its workflow instances.
 This is intentionally different from bare `riela serve`, whose process exists
 to host an HTTP server and stays alive until SIGINT or SIGTERM. All other
 `riela` commands remain one-shot and read or update their configuration files
@@ -1222,7 +1223,7 @@ riela --version
 
 ## Desktop window
 
-Choose **Open Riela...** from the menu bar to open the shared dashboard in
+Choose **Open Console...** from the menu bar to open the shared dashboard in
 Tauri. In the desktop header, **Connection** selects **Local** (the default,
 no login or HTTP listener required) or **Web mode**. Web mode accepts a remote
 Riela server origin such as `https://riela.example` and uses Passkey sign-in
@@ -1272,9 +1273,10 @@ The Cask builder includes the same helper and signs it before the parent app.
 Install the matching Rust targets before building both macOS architectures:
 `mise exec -- rustup target add aarch64-apple-darwin x86_64-apple-darwin`.
 
-The explicit **Start Web Server** and **Open in Browser** menu actions remain
-available. A saved server preference does not automatically open a listening
-port when the menu-bar app starts.
+The explicit **Start server**, **Stop server** and **Open in browser** actions
+live in the console's Settings → Web Config server (local desktop only). A saved
+server preference does not automatically open a listening port when the
+menu-bar app starts.
 
 ## Browser server development
 
@@ -1299,9 +1301,10 @@ CLI and manager GraphQL requests retain the existing authenticated route.
 
 Settings supports persisted profiles, assistant preferences, native appearance,
 workflow directories, instance environment settings and event-source registration.
-RielaApp's **Settings...**, **Worker Controller Settings...**, and **ワークフロー...**
-menu items open the Tauri dashboard. Worker controller configuration is edited
-in Settings, including authorized workers and save/restart; there is no separate
+The RielaApp menu-bar menu keeps only app-level items (**Open Console...**,
+**Launch on Login**, About, Quit); everything else is done in the console.
+Worker controller configuration is edited in Settings, including authorized
+workers, start/stop, live worker status and save/restart; there is no separate
 Swift settings window. The desktop uses native IPC and does not require starting
 the optional HTTP server.
 Sources refresh after configuration changes. Profile and revision conflicts reject

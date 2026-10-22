@@ -1,12 +1,12 @@
 import { ActionButton } from '../components/ActionButton'
 import { For, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js'
-import { APIError } from '../api'
 import { configurationClient } from '../config/client'
 import { ErrorBanner, LoadingState, MutationMessage, PageHeader } from '../components/Primitives'
 import '../settings-extra.css'
 import { WorkerSettings } from './WorkerSettings'
 import { APIKeySettings } from './APIKeySettings'
-import { isDesktop, desktopServerOrigin } from '../transport'
+import { isDesktop, desktopServerOrigin, rielaFetch } from '../transport'
+import { APIError, api } from '../api'
 
 type SettingsSection = 'profiles' | 'storage' | 'assistant' | 'appearance' | 'server'
 
@@ -94,7 +94,25 @@ export function SettingsView(props: { profileKey: string; profileName: string; s
       if (!current) throw new Error('Configuration is still loading.')
       await configurationClient.updateHTTPServer(current, port)
       setPortConfirmation(''); await refetch(); props.onHostChange()
-    }, props.serverHosted ? 'Server port saved. Restart riela serve to apply it; an explicit --port overrides this setting.' : 'Server port saved. Restart from the Riela menu to apply it.')
+    }, props.serverHosted ? 'Server port saved. Restart riela serve to apply it; an explicit --port overrides this setting.' : 'Server port saved. Stop and start the server to apply it.')
+  }
+  // Start/stop/open replace the old menu-bar items; only the local desktop owns
+  // the listener, so a page served by that listener never stops itself.
+  const controlsLocalServer = () => !props.serverHosted && isDesktop() && !desktopServerOrigin()
+  const setServerRunning = async (isEnabled: boolean) => {
+    await runMutation('server', async () => {
+      const current = configuration()
+      if (!current) throw new Error('Configuration is still loading.')
+      await configurationClient.setHTTPServerEnabled(current, isEnabled)
+      await refetch()
+    }, isEnabled ? 'Server started.' : 'Server stopped.')
+  }
+  const openServerInBrowser = async () => {
+    await runMutation('server', async () => {
+      const response = await rielaFetch('/api/v1/settings/server/open', { method: 'POST', headers: api.noteHeaders() })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.message ?? 'Cannot open the server in a browser.')
+    }, 'Opened in browser.')
   }
   const saveWorkflowStorage = async (directory: string) => {
     await runMutation('storage', async () => {
@@ -153,7 +171,10 @@ export function SettingsView(props: { profileKey: string; profileName: string; s
         <div class="save-row">{SectionMessage('appearance')}</div>
       </div>}</Show>
 
-      <Show when={configuration()?.server}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveServer(event.currentTarget) }}><div class="section-title"><div><h2>Web Config server</h2></div><span class={`status-chip ${value().state}`}>{value().state}</span></div><div class="form-grid"><label><span>Configured port</span><input name="port" type="number" min="1" max="65535" value={value().configuredPort} /></label><label><span>Bound endpoint</span><input disabled value={props.serverHosted ? location.host : value().boundPort ? `127.0.0.1:${value().boundPort}` : 'Not running'} /></label></div><div class="confirmation-box"><strong>Type CHANGE PORT to save a different port.</strong><label><span>Port-change confirmation</span><input value={portConfirmation()} onInput={(event) => setPortConfirmation(event.currentTarget.value)} placeholder="CHANGE PORT" /></label></div><Show when={value().restartRequired}><p class="restart-notice">{props.serverHosted ? 'Restart riela serve to apply the saved port.' : 'Restart required from the Riela menu-bar app.'}</p></Show><div class="save-row">{SectionMessage('server')}<ActionButton disabled={saving() === 'server'}>{saving() === 'server' ? 'Saving…' : 'Save server'}</ActionButton></div></form>}</Show>
+      <Show when={configuration()?.server}>{(value) => <form class="panel settings-panel" onSubmit={(event) => { event.preventDefault(); void saveServer(event.currentTarget) }}><div class="section-title"><div><h2>Web Config server</h2></div><span class={`status-chip ${value().state}`}>{value().state}</span></div><div class="form-grid"><label><span>Configured port</span><input name="port" type="number" min="1" max="65535" value={value().configuredPort} /></label><label><span>Bound endpoint</span><input disabled value={props.serverHosted ? location.host : value().boundPort ? `127.0.0.1:${value().boundPort}` : 'Not running'} /></label></div><div class="confirmation-box"><strong>Type CHANGE PORT to save a different port.</strong><label><span>Port-change confirmation</span><input value={portConfirmation()} onInput={(event) => setPortConfirmation(event.currentTarget.value)} placeholder="CHANGE PORT" /></label></div><Show when={value().restartRequired}><p class="restart-notice">{props.serverHosted ? 'Restart riela serve to apply the saved port.' : 'Stop and start the server to apply the saved port.'}</p></Show><div class="save-row">{SectionMessage('server')}<Show when={controlsLocalServer()}>{(() => {
+        const running = () => value().boundPort !== null || value().state === 'starting'
+        return <><Show when={value().boundPort !== null}><ActionButton type="button" class="secondary" disabled={saving() === 'server'} onClick={() => void openServerInBrowser()}>Open in browser</ActionButton></Show><ActionButton type="button" class="secondary" disabled={saving() === 'server' || value().state === 'stopping'} onClick={() => void setServerRunning(!running())}>{running() ? 'Stop server' : 'Start server'}</ActionButton></>
+      })()}</Show><ActionButton disabled={saving() === 'server'}>{saving() === 'server' ? 'Saving…' : 'Save server'}</ActionButton></div></form>}</Show>
     </div>
   </section>
 }

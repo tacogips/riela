@@ -1,16 +1,25 @@
 import { ActionButton } from '../components/ActionButton'
-import { Index, Show, createEffect, createResource, createSignal } from 'solid-js'
+import { For, Index, Show, createEffect, createResource, createSignal } from 'solid-js'
 import { api } from '../api'
 import { rielaFetch } from '../transport'
 import { ErrorBanner } from '../components/Primitives'
 
 interface Worker { id: string; groups: string[]; maxCapacity: number }
 interface Controller { host: string; port: number; storePath: string; workers: Worker[] }
+interface WorkerStatus { id: string; connected: boolean; online?: boolean; running?: number; capacity?: number; groups?: string[] }
 interface Snapshot {
   profile: string
   configuration: Controller
   savedConfiguration: Controller | null
   status: string
+  running: boolean
+  workers: WorkerStatus[]
+}
+
+function workerStatusLabel(worker: WorkerStatus): string {
+  if (!worker.connected) return 'Not connected'
+  const groups = worker.groups?.length ? ` · ${worker.groups.join(', ')}` : ''
+  return `${worker.online ? 'Online' : 'Offline'} · ${worker.running ?? 0}/${worker.capacity ?? 0} running${groups}`
 }
 
 async function loadSettings(): Promise<Snapshot> {
@@ -30,6 +39,16 @@ export function WorkerSettings(props: { profileKey: string }) {
   const updateWorker = (index: number, update: Partial<Worker>) => setDraft((value) => value && ({
     ...value, workers: value.workers.map((worker, position) => position === index ? { ...worker, ...update } : worker),
   }))
+  const toggleController = async (action: 'start' | 'stop') => {
+    setSaving(true); setMessage(''); setFailed(false)
+    try {
+      const response = await rielaFetch(`/api/v1/settings/workers/${action}`, { method: 'POST', headers: api.noteHeaders() })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.message ?? `Cannot ${action} the worker controller.`)
+      setMessage(result.message); await refetch()
+    } catch (error) { setFailed(true); setMessage(error instanceof Error ? error.message : String(error)) }
+    finally { setSaving(false) }
+  }
   const save = async () => {
     const current = snapshot(), configuration = draft()
     if (!current || !configuration) return
@@ -46,10 +65,15 @@ export function WorkerSettings(props: { profileKey: string }) {
     finally { setSaving(false) }
   }
   return <section class="panel settings-panel">
-    <div class="section-title"><div><h2>Worker Controller</h2></div><ActionButton class="secondary" disabled={saving()} onClick={() => void refetch()}>Refresh workers</ActionButton></div>
+    <div class="section-title"><div><h2>Worker Controller</h2></div><div class="refresh-actions">
+      <Show when={snapshot()}>{(value) => <ActionButton class="secondary" disabled={saving()} onClick={() => void toggleController(value().running ? 'stop' : 'start')}>{value().running ? 'Stop controller' : 'Start controller'}</ActionButton>}</Show>
+      <ActionButton class="secondary" disabled={saving()} onClick={() => void refetch()}>Refresh workers</ActionButton>
+    </div></div>
     <Show when={snapshot.error}><ErrorBanner message={String(snapshot.error)} /></Show>
     <Show when={draft()}>{(value) => <form onSubmit={(event) => { event.preventDefault(); void save() }}>
       <p role="status">{snapshot()?.status}</p>
+      <Show when={snapshot()?.workers.length}><div class="requirements"><For each={snapshot()?.workers}>{(worker) =>
+        <div class="requirement-row"><div><strong>{worker.id}</strong><span>{workerStatusLabel(worker)}</span></div></div>}</For></div></Show>
       <fieldset disabled={saving()} class="worker-settings-fields">
         <div class="form-grid">
           <label><span>Listen address</span><input required value={value().host} onInput={(event) => setDraft({ ...value(), host: event.currentTarget.value })} /></label>

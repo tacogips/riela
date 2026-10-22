@@ -118,6 +118,31 @@ final class DistributedControllerSettingsTests: XCTestCase {
     await app.stopDistributedController()
   }
 
+  func testWorkerSettingsAPIStartsStopsAndReportsWorkers() async throws {
+    let root = try scratch()
+    let app = RielaApp()
+    addTeardownBlock { @MainActor in await app.stopDistributedController() }
+    app.profileStore = RielaAppProfileStore(appRootURL: root)
+    let url = app.distributedControllerConfigurationURL
+    guard url.path.hasPrefix(root.path) else { throw XCTSkip("Controller environment override is active") }
+    let wrongMethod = await app.workerSettingsResponse(for: .init(method: "GET", path: "/api/v1/settings/workers/start"))
+    XCTAssertEqual(wrongMethod?.status, 405)
+    let unconfigured = await app.workerSettingsResponse(for: .init(method: "POST", path: "/api/v1/settings/workers/start"))
+    XCTAssertEqual(unconfigured?.status, 409)
+    _ = try writeProfile(config: try await availableConfiguration(), url: url, app: app)
+    let started = await app.workerSettingsResponse(for: .init(method: "POST", path: "/api/v1/settings/workers/start"))
+    XCTAssertEqual(started?.status, 200)
+    XCTAssertNotNil(app.distributedController)
+    let read = await app.workerSettingsResponse(for: .init(method: "GET", path: "/api/v1/settings/workers"))
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(read?.body)) as? [String: Any])
+    XCTAssertEqual(body["running"] as? Bool, true)
+    let workers = try XCTUnwrap(body["workers"] as? [[String: Any]])
+    XCTAssertEqual(workers.first?["connected"] as? Bool, false)
+    let stopped = await app.workerSettingsResponse(for: .init(method: "POST", path: "/api/v1/settings/workers/stop"))
+    XCTAssertEqual(stopped?.status, 200)
+    XCTAssertNil(app.distributedController)
+  }
+
   func testSaveAndProfileSwitchWaitForSuspendedControllerTransition() async throws {
     let root = try scratch()
     let app = RielaApp()

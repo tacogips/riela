@@ -72,6 +72,17 @@ export class RielaConfigurationClient {
     )
   }
 
+  async setHTTPServerEnabled(current: RielaConfiguration, isEnabled: boolean): Promise<RielaConfiguration> {
+    return this.mutate(
+      `mutation WebUpdateHTTPServerConfiguration($input: UpdateHTTPServerConfigurationInput!) {
+        updateHTTPServerConfiguration(input: $input) { ${configurationFields} }
+      }`,
+      { input: { expectedRevision: current.revision, isEnabled } },
+      'WebUpdateHTTPServerConfiguration',
+      'updateHTTPServerConfiguration',
+    )
+  }
+
   async updateWorkflowStorage(current: RielaConfiguration, directory: string): Promise<RielaConfiguration> {
     return this.mutate(
       `mutation WebUpdateWorkflowStorageConfiguration($input: UpdateWorkflowStorageConfigurationInput!) {

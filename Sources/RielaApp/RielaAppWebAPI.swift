@@ -11,6 +11,7 @@ extension RielaApp {
     if let response = await webConfiguredRunResponse(for: request) { return response }
     if let response = await webInstanceResponse(for: request) { return response }
     if let response = await workerSettingsResponse(for: request) { return response }
+    if request.path == "/api/v1/settings/server/open" { return webServerOpenResponse(for: request) }
     if let response = await webWorkflowHandler.response(for: request) { return response }
     return RielaWebAPIProjection(
       profile: daemonProfileName,
@@ -57,6 +58,16 @@ extension RielaApp {
       sessionStoreRoot: daemonSessionStoreRoot(profileName: daemonProfileName),
       principalId: RielaAppWebRegistryAuthorizer.principalId, environment: environment
     ))
+  }
+
+  /// Opens the app-hosted web server in the default browser (replaces the menu's Open in Browser).
+  private func webServerOpenResponse(for request: RielaHTTPRequest) -> RielaHTTPResponse {
+    guard request.method == "POST" else { return .text(status: 405, "Method not allowed") }
+    guard let controller = webServerController, controller.endpointURL != nil else {
+      return .json(status: 409, .object(["message": .string("Start the web server first.")]))
+    }
+    controller.openInBrowser()
+    return .json(status: 200, .object(["message": .string("Opened in browser.")]))
   }
 
   private func webServerSettingsJSON() -> JSONObject {

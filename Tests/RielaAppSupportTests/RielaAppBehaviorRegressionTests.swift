@@ -444,9 +444,14 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     app.rebuildMenu()
 
     let menu = app.statusItem.menu
-    XCTAssertEqual(menu?.items.first?.title, "Open Riela...")
+    XCTAssertEqual(menu?.items.first?.title, "Open Console...")
     XCTAssertEqual(menu?.items.first?.target as? RielaApp, app)
     XCTAssertTrue(menu?.items.contains { $0.title == "Launch on Login" } == true)
+    let consoleOwnedTitles = [
+      "Settings...", "Workflows...", "Start Worker Controller", "Stop Worker Controller",
+      "Worker Controller Settings...", "Worker Status...", "Start Web Server", "Stop Web Server", "Open in Browser"
+    ]
+    XCTAssertFalse(menu?.items.contains { consoleOwnedTitles.contains($0.title) } == true)
     let aboutItem = try XCTUnwrap(menu?.items.first { $0.title == "About Riela" })
     XCTAssertEqual(aboutItem.target as? RielaApp, app)
     XCTAssertFalse(menu?.items.contains { $0.title.hasPrefix("Status:") } == true)

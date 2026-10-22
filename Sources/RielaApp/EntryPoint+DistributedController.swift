@@ -127,14 +127,6 @@ extension RielaApp {
     }
   }
 
-  @objc func startDistributedControllerFromMenu() {
-    Task { await startDistributedController() }
-  }
-
-  @objc func stopDistributedControllerFromMenu() {
-    Task { await stopDistributedController() }
-  }
-
   @objc func showDistributedWorkerStatus() {
     Task {
       guard let host = distributedController else { return }

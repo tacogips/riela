@@ -53,8 +53,8 @@ Local `riela workflow run`, `session resume` and `session rerun` processes use
 the same `RIELA_CONTROLLER_CONFIG` to access the process-locked queue.
 
 For RielaApp, place `controller.json` in the active profile directory, normally
-`~/.riela/rielaapp/profiles/default/`. The menu's
-**Worker Controller Settings...** opens local desktop Settings to edit the listen
+`~/.riela/rielaapp/profiles/default/`. The console's (**Open Console...**)
+Settings → Worker Controller panel edits the listen
 address, port, queue storage, worker IDs, groups and capacities. Keys are issued
 and revoked separately in **API Keys**; `controller.env` is no longer used.
 **Save and restart controller** persists the settings and restarts the listener after
@@ -62,8 +62,9 @@ queued/running jobs have finished or been cancelled. This check also applies whi
 is stopped. Saving is atomic with respect to local queue submissions. Processes
 that loaded a superseded configuration must reload it before submitting work.
 The app starts a
-configured controller automatically; **Start Worker Controller** and **Stop
-Worker Controller** control it independently of the web server. No separate
+configured controller automatically; **Start controller** and **Stop
+controller** in the same Settings panel control it independently of the web
+server, and the panel lists each configured worker's connection status. No separate
 `riela serve` process or web assets are required for the worker listener.
 `RIELA_CONTROLLER_CONFIG` overrides the profile configuration location.
 Profile switches stop the previous listener and use the new profile's worker
@@ -74,12 +75,13 @@ the default loopback listen address to an appropriate reachable interface (for
 example, `0.0.0.0` to listen on all IPv4 interfaces). The debug executable's
 `--open-worker-settings` option opens Tauri Settings on launch.
 
-The app's **Worker Status...** menu shows configured worker IDs, their groups,
-online/offline state and active job counts. On the controller machine, use
+The console's Settings → Worker Controller panel shows configured worker IDs,
+their groups, online/offline state and active job counts (**Refresh workers**
+reloads it). On the controller machine, use
 `riela worker status --config /absolute/path/controller.json` for JSON status.
 Workers become offline after 30 seconds without a claim or lease renewal.
 Status output contains no bearer token or incarnation/lease credentials.
-The debug executable's `--open-worker-status` option opens the same status
+The debug executable's `--open-worker-status` option opens a native status
 dialog after starting the configured controller.
 
 ## Worker configuration

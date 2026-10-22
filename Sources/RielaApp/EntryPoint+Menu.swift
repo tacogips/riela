@@ -18,10 +18,10 @@ extension RielaApp: NSMenuDelegate {
       statusMenuNeedsRebuild = true
       return
     }
+    // Everything the console Settings can do (workflows, worker controller,
+    // web server) lives there; the menu keeps only app-level actions.
     let menu = NSMenu()
-    menu.addItem(menuItem("Open Riela...", action: #selector(openDesktopFromMenu)))
-    menu.addItem(menuItem("Settings...", action: #selector(openSettingsFromMenu)))
-    menu.addItem(menuItem("Workflows...", action: #selector(openDaemonInstances)))
+    menu.addItem(menuItem("Open Console...", action: #selector(openDesktopFromMenu)))
     let launchAtLoginItem = menuItem("Launch on Login", action: #selector(toggleLaunchAtLogin))
     launchAtLoginItem.state = launchAtLogin.isEnabled ? .on : .off
     menu.addItem(launchAtLoginItem)
@@ -29,42 +29,14 @@ extension RielaApp: NSMenuDelegate {
       menu.addItem(supplementaryMenuItem(launchAtLoginDetail))
     }
     menu.addItem(.separator())
-    menu.addItem(menuItem("Start Worker Controller", action: #selector(startDistributedControllerFromMenu), enabled: distributedController == nil))
-    menu.addItem(menuItem("Stop Worker Controller", action: #selector(stopDistributedControllerFromMenu), enabled: distributedController != nil))
-    menu.addItem(menuItem("Worker Controller Settings...", action: #selector(showDistributedControllerSettings)))
-    menu.addItem(menuItem("Worker Status...", action: #selector(showDistributedWorkerStatus), enabled: distributedController != nil))
-    menu.addItem(supplementaryMenuItem(distributedControllerStatus))
-    menu.addItem(.separator())
-    let webState = webServerController?.state ?? .stopped
-    let startWebServerItem = menuItem(
-      "Start Web Server",
-      action: #selector(startWebServerFromMenu),
-      enabled: webState == .stopped || webState.label == "failed"
-    )
-    let stopWebServerItem = menuItem(
-      "Stop Web Server",
-      action: #selector(stopWebServerFromMenu),
-      enabled: webState.boundPort != nil || webState.label == "starting"
-    )
-    let openWebServerItem = menuItem(
-      "Open in Browser",
-      action: #selector(openWebServerFromMenu),
-      enabled: webServerController?.endpointURL != nil
-    )
-    menu.addItem(startWebServerItem)
-    menu.addItem(stopWebServerItem)
-    menu.addItem(openWebServerItem)
-    if let webServerController {
-      menu.addItem(supplementaryMenuItem(webServerController.statusDescription))
-    } else {
-      menu.addItem(supplementaryMenuItem(webServerSetupError ?? "Web Server: Unavailable"))
-    }
-    menu.addItem(.separator())
     menu.addItem(supplementaryMenuItem(
       rielaAppMetadataText(["Run configurations \(daemonSummary())", "Profile \(daemonProfileName.rawValue)"])
     ))
     for line in failedDaemonInstanceMenuLines() {
       menu.addItem(supplementaryMenuItem(line))
+    }
+    if let webServerSetupError {
+      menu.addItem(supplementaryMenuItem(webServerSetupError))
     }
     menu.addItem(.separator())
     menu.addItem(menuItem("About Riela", action: #selector(showAboutPanel)))

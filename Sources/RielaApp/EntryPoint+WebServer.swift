@@ -24,24 +24,8 @@ extension RielaApp {
     }
   }
 
-  @objc func startWebServerFromMenu() {
-    Task { @MainActor [weak self] in
-      await self?.webServerController?.start()
-    }
-  }
-
-  @objc func stopWebServerFromMenu() {
-    Task { @MainActor [weak self] in
-      await self?.webServerController?.stop(explicit: true)
-    }
-  }
-
-  @objc func openWebServerFromMenu() {
-    webServerController?.openInBrowser()
-  }
-
   @objc func openDesktopFromMenu() {
-    openWebUI(context: "Riela")
+    openWebUI(context: "Console")
   }
 
   @objc func openSettingsFromMenu() {

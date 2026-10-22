@@ -348,3 +348,16 @@ records carry `promptTooLarge` for an overflow adapter error and
 working tree; reuse it, add the step-level field end to end (optional,
 decodes absent as nil), restore the runner assertion, then rerun every
 verification command and lint the changed Swift files.
+
+## Operator amendment 2 (2026-10-22, rerun after session-478)
+
+Attempt 2 was blocked only by workflow bookkeeping: the progress gate treats
+every `findings`/`risks` entry with severity critical/high/mid/medium as an
+unresolved blocker regardless of `status`. The session-475 step3 design
+finding on failureKind consumers is owned by `pog-04-failure-kind-consumers`
+(see that plan), not by this plan. Do NOT list it, or any other finding owned
+by another plan, in `findings`, `risks` or `authorSelfCheck`; mention it only
+in prose in the progress log. Report resolved self-check items without a
+severity of critical/high/mid/medium (use `severity: "fixed"` or omit them),
+and never start a risk string with a severity word. The attempt-2 work is in
+the working tree; reuse it and rerun the verification.

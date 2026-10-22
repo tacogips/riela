@@ -22,10 +22,10 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
         "RIELA_SANDBOX_WORKER_EXECUTABLE": worker], workingDirectory: root, runner: runner)
     let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "commit", nodeId: "commit",
       addon: .init(name: "riela/git-commit", version: "1", sandbox: .init(backend: .container,
-        admission: .init(directoryEnvironment: "TEST_POOL", capacity: 1))),
+        admission: .init(directoryEnvironment: "TEST_POOL", capacity: 1, minimumRemainingSeconds: 90))),
       executionIdentity: .init(workflowExecutionId: "admitted-session", stepExecutionId: "admitted-step",
         operationExecutionId: "admitted-step", attempt: 1))
-    _ = try await resolver.execute(input, context: .init())
+    _ = try await resolver.execute(input, context: .init(deadline: Date().addingTimeInterval(120)))
     try await resolver.acknowledgeAcceptedFinalization(token)
     try await resolver.recordTerminalFinalization(workflowExecutionId: "admitted-session", stepExecutionIds: ["admitted-step"])
     let requests = await runner.requests

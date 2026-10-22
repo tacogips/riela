@@ -40,7 +40,9 @@ work. Cancellation releases any partially acquired capacity. Kernel file locks
 release on process exit; do not delete or replace pool files during live work.
 
 Builtin add-on acknowledgment and terminal workers use the same persisted
-admission policy as execution. Scheduling settings are excluded from the
+pool, weight and wait bound as execution, within their own finalization
+deadline. Since 0.2.42, these control operations do not apply the execution
+startup reserve (`minimumRemainingSeconds`). Scheduling settings are excluded from the
 sandbox worker-state directory identity; tuning admission does not relocate
 that persistent state.
 

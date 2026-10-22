@@ -190,7 +190,11 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
     try validateControlIsolation(settings: invocation.settings)
     if let sandbox = invocation.sandbox { try validateSandboxControlIsolation(sandbox) }
     try request.validate()
-    let admission = try await SandboxExecutionAdmission.acquire(invocation.sandbox?.admission,
+    var policy = invocation.sandbox?.admission
+    // The startup reserve belongs to execution. Control workers retain the
+    // same pool and wait bound within their own fixed finalization deadline.
+    if request.operation != .execute { policy?.minimumRemainingSeconds = 0 }
+    let admission = try await SandboxExecutionAdmission.acquire(policy,
       environment: environment, deadline: request.deadline)
     defer { withExtendedLifetime(admission) {} }
     var wireRequest = request

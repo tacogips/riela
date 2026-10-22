@@ -5,6 +5,7 @@ import RielaCore
 enum BuiltinDataAddon: String {
   case compose = "riela/json-compose"
   case batch = "riela/array-batch"
+  case transform = "riela/json-transform"
 }
 
 extension BuiltinWorkflowAddonResolver {
@@ -20,6 +21,12 @@ extension BuiltinWorkflowAddonResolver {
     }
     let payload: JSONObject
     switch operation {
+    case .transform:
+      guard Set(config.keys).isSubset(of: ["input", "steps", "jsonSchema"]),
+            let value = config["input"], let steps = config["steps"] else {
+        throw AdapterExecutionError(.invalidInput, "json-transform requires input and steps")
+      }
+      payload = ["value": try JSONDataTransform.run(value, steps: steps)]
     case .compose:
       guard Set(config.keys).isSubset(of: ["payload", "jsonSchema"]),
             case let .object(value)? = config["payload"] else {

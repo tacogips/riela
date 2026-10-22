@@ -62,7 +62,7 @@ let package = Package(
     .executable(name: "RielaApp", targets: ["RielaApp"])
   ],
   dependencies: [
-    .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.12"),
+    .package(url: "https://github.com/tacogips/x-gateway.git", exact: "0.1.15"),
     .package(url: "https://github.com/tacogips/google-gateway-auth.git", revision: "48e0112fb5eb057cf012194cfffaa2581ba29d76"),
     .package(path: "Packages/RielaMemory"),
     .package(

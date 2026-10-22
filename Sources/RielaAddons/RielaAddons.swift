@@ -113,6 +113,7 @@ public enum RielaBuiltinAddonCatalog {
   ]
 
   public static let dataAddons: [RielaAddonDescriptor] = [
+    .init(name: "riela/json-transform", version: "1"),
     .init(name: "riela/json-compose", version: "1"),
     .init(name: "riela/array-batch", version: "1")
   ]

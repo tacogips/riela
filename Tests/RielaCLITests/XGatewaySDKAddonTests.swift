@@ -4,6 +4,55 @@ import XCTest
 @testable import RielaCLI
 
 final class XGatewaySDKAddonTests: XCTestCase {
+  func testJSONOperationEscapesArgumentsOnceAndPostprocessesTypedRows() async throws {
+    let gateway = RecordingGatewayGraphQLRunner(response:
+      #"{"data":{"homeTimeline":{"posts":[{"id":"1","author":{"username":"alice"},"text":"{{secret}}"}],"pageInfo":{"nextToken":"cursor-2"}}}}"#)
+    let cursor = "\" }) { deletePost } # {{secret}}"
+    let output = try await BuiltinWorkflowAddonResolver(environment: [:], localGatewayGraphQLRunner: gateway.runner)
+      .execute(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
+        addon: .init(name: "riela/x-gateway-reader", version: "1", config: [
+          "operation": .string("homeTimeline"),
+          "arguments": .object(["maxResults": .integer(25), "paginationToken": .string("{{input.cursor}}")]),
+          "select": .object(["posts": .object(["id": .bool(true), "text": .bool(true),
+            "author": .object(["username": .bool(true)])]), "pageInfo": .object(["nextToken": .bool(true)])]),
+          "postprocess": .array([.object(["pick": .string("/data/homeTimeline/posts")]),
+            .object(["map": .object(["id": .string("/id"), "speaker": .string("/author/username"),
+              "text": .string("/text")])])])]),
+        variables: ["secret": .string("must-not-expand")], resolvedInputPayload: ["cursor": .string(cursor)]),
+        context: .init())
+    let document = try XCTUnwrap(gateway.lastCall()?.document)
+    XCTAssertTrue(document.contains(try JSONValue.string(cursor).compactJSONString()))
+    XCTAssertTrue(document.contains("maxResults: 25"))
+    XCTAssertFalse(document.contains("must-not-expand"))
+    XCTAssertEqual(output.payload["processed"], .array([.object([
+      "id": .string("1"), "speaker": .string("alice"), "text": .string("{{secret}}")])]))
+    guard case let .object(data)? = output.payload["data"], case let .object(page)? = data["homeTimeline"] else {
+      return XCTFail("pagination metadata must remain available")
+    }
+    XCTAssertEqual(page["pageInfo"], .object(["nextToken": .string("cursor-2")]))
+  }
+
+  func testJSONOperationRejectsAmbiguousOrExecutableNamesBeforeProvider() async throws {
+    let valid: JSONObject = ["operation": .string("accountMe"), "select": .object(["id": .bool(true)])]
+    let invalid: [JSONObject] = [
+      valid.merging(["queryTemplate": .string("query { accountMe { id } }")]) { _, new in new },
+      valid.merging(["operation": .string("accountMe { id } } mutation {")]) { _, new in new },
+      valid.merging(["select": .object(["id @skip(if:true)": .bool(true)])]) { _, new in new },
+      valid.merging(["select": .object(["id": .string("code")])]) { _, new in new },
+      ["arguments": .object([:])]
+    ]
+    for config in invalid {
+      let gateway = RecordingGatewayGraphQLRunner()
+      do {
+        _ = try await BuiltinWorkflowAddonResolver(environment: [:], localGatewayGraphQLRunner: gateway.runner)
+          .execute(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
+            addon: .init(name: "riela/x-gateway-reader", config: config)), context: .init())
+        XCTFail("invalid JSON mode accepted")
+      } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+      XCTAssertNil(gateway.lastCall())
+    }
+  }
+
   func testEmbeddedReaderUsesOnlyBoundCredentialsAndReturnsGraphQLData() async throws {
     let gateway = RecordingGatewayGraphQLRunner(response: #"{"data":{"accountMe":{"id":"42"}}}"#)
     let output = try await BuiltinWorkflowAddonResolver(environment: [

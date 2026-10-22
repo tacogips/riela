@@ -59,7 +59,8 @@ struct LocalGatewayGraphQLEngine {
 
   func execute(
     _ input: WorkflowAddonExecutionInput,
-    context: AdapterExecutionContext
+    context: AdapterExecutionContext,
+    documentOverride: String? = nil
   ) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
@@ -72,7 +73,7 @@ struct LocalGatewayGraphQLEngine {
     if descriptor.providerName == "gmail-gateway" {
       childEnvironment.merge(try gatewayWriteRetryEnvironment(input, prefix: "GMAIL_GATEWAY_")) { _, configured in configured }
     }
-    let document = try renderedDocument(config: config, variables: variables, addonName: input.addon.name)
+    let document = try documentOverride ?? renderedDocument(config: config, variables: variables, addonName: input.addon.name)
     let variablesJSON: String?
     if descriptor.acceptsVariables {
       variablesJSON = try renderedVariablesJSON(config: config, variables: variables, addonName: input.addon.name)

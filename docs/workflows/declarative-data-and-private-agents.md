@@ -1,4 +1,4 @@
-# Declarative data and private agent steps (0.2.36)
+# Declarative data and private agent steps (0.2.37)
 
 Use workflow nodes for data wiring, fanout, model execution and contracts. A
 Python/CLI wrapper is not required for these operations.
@@ -77,3 +77,11 @@ This is an agent execution boundary. It does not make arbitrary input already
 stored by a caller disappear, nor does it run an entire private collection graph
 inside the guest. Workflows which prohibit raw acquisition data in controller
 state must retain that boundary until the whole private graph is migrated.
+
+Ephemeral agents require an explicit output JSON schema. The guest validates the
+final payload before it leaves the container; the controller validates it again
+before publication. Provider/tool events, echoed prompts and raw provider usage
+metadata stay in the guest. Failure messages contain only a finite error code
+and a fixed message. Private worker protocol v2 rejects older guest workers
+before starting a model. Version 0.2.36 was an unpublished draft and must not be
+used for this private boundary.

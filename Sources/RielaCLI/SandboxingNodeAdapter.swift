@@ -26,6 +26,9 @@ actor SandboxingNodeAdapter: NodeAdapter {
     if options.ephemeralHome, input.sessionPolicy?.mode == .reuse {
       throw AdapterExecutionError(.policyBlocked, "ephemeral sandbox cannot reuse a vendor session")
     }
+    if options.ephemeralHome, input.node.output?.jsonSchema == nil {
+      throw AdapterExecutionError(.policyBlocked, "ephemeral agents require an explicit resolved output schema")
+    }
     let backend = try resolveNodeExecutionBackend(input.node)
     guard [.codexAgent, .claudeCodeAgent, .cursorCliAgent, .officialOpenAISDK, .officialAnthropicSDK,
       .officialGeminiSDK, .officialCursorSDK].contains(backend) else {
@@ -59,9 +62,10 @@ actor SandboxingNodeAdapter: NodeAdapter {
       }
       credentials.append(.init(homePath: options.credentialEnvironment[name]!, value: value))
     }
-    let request = SandboxNodeRequest(input: workerInput, deadline: context.deadline,
+    var request = SandboxNodeRequest(input: workerInput, deadline: context.deadline,
       previousVendorSessionId: previous?.vendorSessionId, supervisorMode: supervisorMode,
       ephemeralHome: options.ephemeralHome, credentials: credentials)
+    if options.ephemeralHome { request.version = 2 }
     let encoded = try JSONEncoder().encode(request)
     guard encoded.count <= BuiltinAddonContainerRequest.maximumRecordBytes, let stdin = String(data: encoded, encoding: .utf8) else {
       throw AdapterExecutionError(.invalidInput, "isolated node request exceeds the size limit")
@@ -70,7 +74,7 @@ actor SandboxingNodeAdapter: NodeAdapter {
       options: launcher.workerOptions(options, executable: executable), directory: directory,
       explicitEnvironment: options.ephemeralHome ? [:] : input.agentEnvironment, containerExecutable: "/opt/riela/riela",
       homeDirectory: sessionDirectory.root.appendingPathComponent("home"))
-    let records = SandboxNodeRecordCollector()
+    let records = SandboxNodeRecordCollector(privateOutput: options.ephemeralHome)
     let stream = AsyncStream<AdapterBackendEvent>.makeStream()
     let eventConsumer = Task {
       for await event in stream.stream { await context.backendEventHandler?(event) }
@@ -143,6 +147,9 @@ private final class SandboxNodeRecordCollector: @unchecked Sendable {
   private let lock = NSLock()
   private var terminal: SandboxNodeRecord?
   private var failure: AdapterExecutionError?
+  private let privateOutput: Bool
+
+  init(privateOutput: Bool = false) { self.privateOutput = privateOutput }
 
   func accept(_ line: String) -> AdapterBackendEvent? {
     lock.withLock {
@@ -154,6 +161,7 @@ private final class SandboxNodeRecordCollector: @unchecked Sendable {
         guard record.version == 1 else { throw invalid() }
         switch record.kind {
         case .event:
+          guard !privateOutput else { throw invalid() }
           guard let event = record.event, record.output == nil, record.failure == nil, record.vendorSessionId == nil else { throw invalid() }
           return event
         case .result:

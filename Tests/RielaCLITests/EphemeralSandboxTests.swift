@@ -40,7 +40,7 @@ final class EphemeralSandboxTests: XCTestCase {
       credentialEnvironment: ["VENDOR_AUTH_JSON": ".vendor/auth.json"])
     let output = try await adapter.execute(.init(node: .init(id: "edit", executionBackend: .codexAgent,
       model: "fixture", sandbox: options, agentSandbox: .readOnly,
-      variables: ["codexExecutable": .string(fixture.path)]), promptText: "synthetic public input",
+      variables: ["codexExecutable": .string(fixture.path)], output: .init(jsonSchema: ["type": .string("object")])), promptText: "synthetic public input",
       agentEnvironment: ["FIXTURE_HOST_SENTINEL": sentinel.path]), context: .init(deadline: Date().addingTimeInterval(120)))
     XCTAssertEqual(output.payload["text"], .string("isolated ephemeral fixture"))
     XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "host-sentinel")
@@ -59,7 +59,7 @@ final class EphemeralSandboxTests: XCTestCase {
       container: .init(image: "fixture:local"), ephemeralHome: true,
       credentialEnvironment: ["VENDOR_AUTH_JSON": ".vendor/auth.json"])
     let output = try await adapter.execute(.init(node: .init(id: "edit", executionBackend: .codexAgent,
-      model: "fixture", sandbox: sandbox), promptText: "inspected input"), context: .init())
+      model: "fixture", sandbox: sandbox, output: .init(jsonSchema: ["type": .string("object")])), promptText: "inspected input"), context: .init())
     XCTAssertEqual(output.payload["status"], .string("ok"))
     let calls = await runner.calls
     XCTAssertEqual(calls.count, 3)
@@ -75,6 +75,7 @@ final class EphemeralSandboxTests: XCTestCase {
     XCTAssertFalse(call.0.arguments.contains("-v"))
     XCTAssertFalse(call.0.arguments.contains("--mount"))
     let request = try JSONDecoder().decode(SandboxNodeRequest.self, from: Data(try XCTUnwrap(call.1).utf8))
+    XCTAssertEqual(request.version, 2)
     XCTAssertEqual(request.credentials?.count, 1)
     XCTAssertEqual(request.credentials?.first?.homePath, ".vendor/auth.json")
     XCTAssertEqual(request.credentials?.first?.value, "synthetic-private-credential")
@@ -107,7 +108,7 @@ final class EphemeralSandboxTests: XCTestCase {
     let options = WorkflowExecutionSandbox(backend: .container, ephemeralHome: true, credentialEnvironment: ["AUTH": ".vendor/auth"])
     for policy: WorkflowStepSessionPolicy? in [nil, .init(mode: .reuse)] {
       do {
-        _ = try await adapter.execute(.init(node: .init(id: "edit", executionBackend: .codexAgent, model: "fixture", sandbox: options),
+        _ = try await adapter.execute(.init(node: .init(id: "edit", executionBackend: .codexAgent, model: "fixture", sandbox: options, output: .init(jsonSchema: ["type": .string("object")])),
           promptText: "fixture", sessionPolicy: policy), context: .init())
         XCTFail("Unavailable credential or session reuse must not start a container")
       } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked) }
@@ -125,7 +126,7 @@ final class EphemeralSandboxTests: XCTestCase {
     ], workingDirectory: root.path, runner: runner, directoryParent: root)
     do {
       _ = try await adapter.execute(.init(node: .init(id: "edit", executionBackend: .codexAgent,
-        model: "fixture", sandbox: .init(backend: .container, ephemeralHome: true)), promptText: "fixture"), context: .init())
+        model: "fixture", sandbox: .init(backend: .container, ephemeralHome: true), output: .init(jsonSchema: ["type": .string("object")])), promptText: "fixture"), context: .init())
       XCTFail("cancelled worker must fail")
     } catch { XCTAssertTrue(error is CancellationError) }
     let calls = await runner.calls

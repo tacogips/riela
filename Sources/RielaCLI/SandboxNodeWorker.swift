@@ -44,9 +44,12 @@ enum SandboxNodeWorker {
   private static func execute(writer: SandboxNodeRecordWriter) async {
     do {
       let request = try readRequest()
-      guard request.version == 1, request.input.node.sandbox == nil else {
+      let legacyVersion = request.version == 1 && request.ephemeralHome != true
+      let privateVersion = request.version == 2 && request.ephemeralHome == true
+      guard legacyVersion || privateVersion, request.input.node.sandbox == nil else {
         throw AdapterExecutionError(.invalidInput, "invalid isolated node worker request")
       }
+      if request.ephemeralHome == true { _ = try privateContract(request.input.node.output) }
       try prepareEphemeralHome(request)
       let sessionStore = AgentGatewaySessionStore()
       if let previous = request.previousVendorSessionId,
@@ -58,22 +61,56 @@ enum SandboxNodeWorker {
         defaultWorkingDirectory: FileManager.default.currentDirectoryPath, sessionStore: sessionStore)
       let output: AdapterExecutionOutput
       do {
-        output = try await adapter.execute(request.input, context: .init(deadline: request.deadline, backendEventHandler: { event in
+        let streamingHandler: AdapterBackendEventHandler = { event in
           writer.emit(.init(kind: .event, event: event))
-        }))
+        }
+        let result = try await adapter.execute(request.input, context: .init(deadline: request.deadline,
+          backendEventHandler: request.ephemeralHome == true ? nil : streamingHandler))
+        output = request.ephemeralHome == true ? try privateOutput(result, contract: request.input.node.output) : result
         if let failure = writer.failure { throw failure }
       } catch {
-        let failure = (error as? AdapterExecutionError) ?? .init(.providerError, "isolated node worker execution failed")
+        let failure = request.ephemeralHome == true ? privateFailure(error)
+          : (error as? AdapterExecutionError) ?? .init(.providerError, "isolated node worker execution failed")
         writer.emit(.init(kind: .failure, failure: .init(failure),
-          vendorSessionId: sessionKey(request.input).flatMap(sessionStore.sessionId(for:))))
+          vendorSessionId: request.ephemeralHome == true ? nil : sessionKey(request.input).flatMap(sessionStore.sessionId(for:))))
         return
       }
       writer.emit(.init(kind: .result, output: output,
-        vendorSessionId: sessionKey(request.input).flatMap(sessionStore.sessionId(for:))))
+        vendorSessionId: request.ephemeralHome == true ? nil : sessionKey(request.input).flatMap(sessionStore.sessionId(for:))))
     } catch {
       writer.emit(.init(kind: .failure, failure: .init((error as? AdapterExecutionError)
         ?? .init(.invalidInput, "invalid isolated node worker input"))))
     }
+  }
+
+  static func privateOutput(_ output: AdapterExecutionOutput, contract: NodeOutputContract?) throws -> AdapterExecutionOutput {
+    let schema = try privateContract(contract)
+    let accepted = try DefaultWorkflowOutputValidator().validate(
+      .init(source: .adapterOutput, payload: output.payload, completionPassed: output.completionPassed),
+      contract: .init(schema: schema, requiredObject: true))
+    guard accepted.status == .accepted else {
+      throw AdapterExecutionError(.invalidOutput, "ephemeral agent output contract rejected")
+    }
+    var result = output
+    result.promptText = ""
+    result.usage = output.usage.map { .init(inputTokens: $0.inputTokens, outputTokens: $0.outputTokens,
+      totalTokens: $0.totalTokens, cacheReadInputTokens: $0.cacheReadInputTokens,
+      cacheCreationInputTokens: $0.cacheCreationInputTokens) }
+    return result
+  }
+
+  static func privateContract(_ contract: NodeOutputContract?) throws -> JSONObject {
+    guard let schema = contract?.jsonSchema,
+          DefaultWorkflowOutputValidator().validateContractSchema(schema) == nil else {
+      throw AdapterExecutionError(.policyBlocked, "ephemeral agent requires a supported resolved output schema")
+    }
+    return schema
+  }
+
+  static func privateFailure(_ error: Error) -> AdapterExecutionError {
+    let source = error as? AdapterExecutionError
+    return .init(source?.code ?? .providerError, "ephemeral agent execution failed",
+      isRetryable: source?.isRetryable, retryAfter: source?.retryAfter)
   }
 
   /// Called only inside the selected container. No credential is materialized

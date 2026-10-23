@@ -1,6 +1,6 @@
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
-ARG GATEWAY_REVISION=fd56e5413b0eb2b5b91078046f5eb3abe8086956
+ARG GATEWAY_REVISION=65da95b31fc825a2db02d4130b9814707f4bfe7f
 WORKDIR /src
 RUN git init . && git remote add origin https://github.com/tacogips/x-gateway.git && \
     git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD

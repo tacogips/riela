@@ -19,7 +19,7 @@ enum GatewayFailureDiagnostics {
   ]
   private static let providerProblems: Set<String> = [
     "client-forbidden", "not-authorized-for-resource", "unsupported-authentication", "insufficient-scope",
-    "usage-capped", "rate-limit-exceeded", "invalid-request", "resource-not-found", "unknown"
+    "usage-capped", "spend-cap-reached", "rate-limit-exceeded", "invalid-request", "resource-not-found", "unknown"
   ]
   private static let providerReasons: Set<String> = [
     "client-not-enrolled", "insufficient-scope", "unsupported-authentication", "usage-capped", "unknown"

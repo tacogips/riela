@@ -21,6 +21,12 @@ final class GatewayRetryDiagnosticsTests: XCTestCase {
     }
   }
 
+  func testMonthlySpendCapTypeSurvivesWithoutProviderText() {
+    let error = #"{"error":{"code":"PERMISSION_DENIED","httpStatus":403,"providerProblem":"spend-cap-reached","details":"PRIVATE"}}"#
+    XCTAssertEqual(GatewayFailureDiagnostics.suffix(stdout: error),
+      " (code=PERMISSION_DENIED, httpStatus=403, providerProblem=spend-cap-reached)")
+  }
+
   func testArbitraryRetryFieldsAreRejected() {
     for value in ["true", "-1", "6000001", "1.5", #""PRIVATE""#, "{}", "[]"] {
       let error = "{\"error\":{\"code\":\"RATE_LIMITED\",\"requestAttempts\":\(value),\"retryAttempts\":\(value),\"backoffMs\":\(value),\"retryStopReason\":\(value)}}"

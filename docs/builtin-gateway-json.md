@@ -134,3 +134,11 @@ reported no blocker. macOS arm64 archive SHA256:
 Homebrew upgrade/test and both Linux release builds passed. The follow-up
 image-builder adaptation on main recognizes the already portable upstream X
 source without rewriting it; the release's Swift source remains identical.
+
+
+0.2.48 adds the finite provider problem `spend-cap-reached` (X SDK0.1.18).
+X can return this billing-limit condition as HTTP403 with a valid user token,
+while accountMe continues succeeding. Preserve it separately from unknown
+permission errors; HTTP403 remains non-retryable, and no billing settings or
+retry policy are changed. Verified against the provider's structured response,
+then covered by SDK host/type tests and Riela/consumer masking tests.

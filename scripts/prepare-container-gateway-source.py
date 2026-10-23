@@ -37,12 +37,15 @@ def local_package(root: Path, name: str) -> None:
 
 def prepare_x(root: Path) -> None:
     executor = root / "Sources/XGatewayCore/XGatewayLiveExecutor.swift"
-    replace(executor, "import Foundation\n",
-            "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
     text = executor.read_text()
-    if text.count("URLResponse()") != 4:
-        raise SystemExit("Expected exactly four URLResponse adaptations")
-    text = text.replace("URLResponse()", 'URLResponse(url: URL(fileURLWithPath: "/"), mimeType: nil, expectedContentLength: 0, textEncodingName: nil)')
+    portable_import = "#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n"
+    portable_response = 'URLResponse(url: url, mimeType: nil, expectedContentLength: 0, textEncodingName: nil)'
+    if text.count(portable_import) == 1 and text.count(portable_response) == 4 and "URLResponse()" not in text:
+        return  # x-gateway >= 0.1.14 is portable upstream; do not rewrite it.
+    if text.count("URLResponse()") != 4 or "import FoundationNetworking" in text:
+        raise SystemExit("Expected legacy or upstream-portable X URLResponse anchors")
+    replace(executor, "import Foundation\n", "import Foundation\n" + portable_import)
+    text = executor.read_text().replace("URLResponse()", 'URLResponse(url: URL(fileURLWithPath: "/"), mimeType: nil, expectedContentLength: 0, textEncodingName: nil)')
     executor.write_text(text)
 
 

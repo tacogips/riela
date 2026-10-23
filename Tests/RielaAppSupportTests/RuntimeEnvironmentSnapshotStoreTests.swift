@@ -139,6 +139,13 @@ final class RuntimeEnvironmentSnapshotStoreTests: XCTestCase {
       XCTAssertEqual(error as? RuntimeEnvironmentError, .outputTooLarge) }
   }
 
+  func testInheritedNonPortableEnvironmentNamesDoNotFailSources() async throws {
+    let source = RuntimeEnvironmentCommandSource(id: "printf", names: ["TOKEN"], command: ["/usr/bin/printf", "%s", "{}"])
+    let data = try await RuntimeEnvironmentProcessRunner().run(source: source,
+      baseEnvironment: ["PATH": "/usr/bin:/bin", "BASH_FUNC_which%%": "() {  true\n}"], maxOutputBytes: 128)
+    XCTAssertEqual(String(bytes: data, encoding: .utf8), "{}")
+  }
+
   func testRealProcessTimeoutOutputBoundAndNonzeroErrorsAreSafe() async throws {
     let runner = RuntimeEnvironmentProcessRunner()
     struct FailureCase {

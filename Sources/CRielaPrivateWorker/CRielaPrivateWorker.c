@@ -16,7 +16,7 @@ static void prepare_private_worker(int argc, char **argv, char **environment) {
     if (argc != 2 || strcmp(argv[1], "__riela-private-workflow-worker") != 0) {
         return;
     }
-    const struct rlimit processes = {256, 256};
+    const struct rlimit processes = {1024, 1024};
     const struct rlimit core = {0, 0};
     if (getuid() == 0 || getgid() == 0 || getuid() != geteuid() || getgid() != getegid()
         || prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0

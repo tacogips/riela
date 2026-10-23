@@ -797,7 +797,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     for candidate: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowServeRuntimeConfiguration
   ) async throws -> RuntimeEnvironmentSnapshot {
-    let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? "default")
+    let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? defaultEnvironmentProfile(identity: candidate.id))
     do {
       let snapshot = try await environmentStore.prepare(
         scope: scope, configuration: configuration.environmentResolution ?? RuntimeEnvironmentConfiguration(),
@@ -831,7 +831,7 @@ public final class RielaAppDaemonWorkflowRuntime {
     for candidate: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowServeRuntimeConfiguration
   ) async throws -> RuntimeEnvironmentStatus {
-    let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? "default")
+    let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? defaultEnvironmentProfile(identity: candidate.id))
     let running = runningWorkflows[candidate.id]
     let requiresChannel = configuration.environmentResolution != nil || !candidate.requiredEnvironment.isEmpty
     let hasChannel = running.map {
@@ -859,6 +859,14 @@ public final class RielaAppDaemonWorkflowRuntime {
       environmentStatuses[scope] = await environmentStore.status(scope: scope)
       throw error
     }
+  }
+
+  /// An unspecified profile means the instance's own profile, never a mismatch.
+  private func defaultEnvironmentProfile(identity: String) -> String {
+    #if os(macOS)
+    if let profiled = RielaAppProfileInstanceIdentity(rawValue: identity) { return profiled.profileName.rawValue }
+    #endif
+    return "default"
   }
 
   private func environmentScope(identity: String, profile: String) throws -> RuntimeEnvironmentScope {

@@ -1,12 +1,8 @@
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
-RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
-ARG GATEWAY_REVISION=5b083463280efb6880270ab3b864b871dde1ca6f
+ARG GATEWAY_REVISION=4ce54035694bbcbe88c33a4de3f5905677370b0e
 WORKDIR /src
 RUN git init . && git remote add origin https://github.com/tacogips/gmail-gateway.git && \
     git fetch --depth 1 origin "$GATEWAY_REVISION" && git checkout --detach FETCH_HEAD
-COPY prepare-container-gateway-source.py /prepare.py
-COPY container-gateway-support /container-gateway-support
-RUN python3 /prepare.py gmail /src
 RUN swift build -c release --product gmail-gateway-reader --jobs 4 && \
     swift build -c release --product gmail-gateway-draft --jobs 4 && \
     swift build -c release --product gmail-gateway-sender --jobs 4

@@ -332,6 +332,33 @@ extension SurfaceCatalog {
       ),
       surfaceRow(
         webPlatformDefaults,
+        id: "web-settings.workers-start",
+        family: "web-settings",
+        kind: .mutation,
+        graphqlState: SurfaceExclusion.localProcess("distributed controller lifecycle"),
+        web: webRoute("POST", "/api/v1/settings/workers/start"),
+        desktop: .implemented
+      ),
+      surfaceRow(
+        webPlatformDefaults,
+        id: "web-settings.workers-stop",
+        family: "web-settings",
+        kind: .mutation,
+        graphqlState: SurfaceExclusion.localProcess("distributed controller lifecycle"),
+        web: webRoute("POST", "/api/v1/settings/workers/stop"),
+        desktop: .implemented
+      ),
+      surfaceRow(
+        webPlatformDefaults,
+        id: "web-settings.server-open",
+        family: "web-settings",
+        kind: .mutation,
+        graphqlState: SurfaceExclusion.localProcess("desktop browser launch"),
+        web: webRoute("POST", "/api/v1/settings/server/open"),
+        desktop: .implemented
+      ),
+      surfaceRow(
+        webPlatformDefaults,
         id: "web-settings.api-keys-read",
         family: "web-settings",
         kind: .query,

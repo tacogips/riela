@@ -110,7 +110,8 @@ public struct NodeCommandRunner: Sendable {
     } ?? [:]
     let addon = try nodeRunAddon(target: target, variables: variables, parsed: parsed, workingDirectory: workingDirectory)
     let environment = try await CLIRuntimeEnvironmentPreparation.prepare(path: parsed.runtimeEnvironmentFile,
-      required: WorkflowEnvironmentRequirements.addonNames(addon.env), base: inheritedEnvironment, workingDirectory: workingDirectory)
+      required: parsed.mockScenarioPath == nil ? WorkflowEnvironmentRequirements.addonNames(addon.env) : [],
+      base: inheritedEnvironment, workingDirectory: workingDirectory)
     let kaibaSnapshot: KaibaExecutionSnapshot?
     if parsed.mockScenarioPath == nil {
       do {

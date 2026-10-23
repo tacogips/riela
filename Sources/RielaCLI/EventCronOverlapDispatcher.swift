@@ -104,20 +104,27 @@ actor CronOverlapDispatcher {
       writeReceipt(fire, receiptId: makeReceiptId(fire), status: "queued", policy: policy, reason: reason)
       return .queued(position: position)
     case .cancelRunning:
-      if let pending = scope.pendingAfterCancel {
-        _ = recordNonStart(pending, policy: policy, status: "skipped", reason: "overlap-superseded:\(fire.bindingId)")
+      let superseded = scope.pendingAfterCancel
+      if let superseded {
+        _ = recordNonStart(superseded, policy: policy, status: "skipped", reason: "overlap-superseded:\(fire.bindingId)")
       }
       for index in scope.running.indices {
         scope.running[index].cancelRequested = true
         scope.running[index].task.cancel()
       }
       scope.pendingAfterCancel = fire
-      scope.settleGeneration += 1
-      let generation = scope.settleGeneration
       scopes[fire.bindingId] = scope
-      Task { [clock, cancelSettleTimeout, weak self] in
-        try? await clock.sleep(for: cancelSettleTimeout)
-        await self?.settleTimedOut(bindingId: fire.bindingId, generation: generation)
+      writeReceipt(fire, receiptId: makeReceiptId(fire), status: "queued", policy: policy,
+                   reason: "overlap-cancel-pending:\(fire.bindingId)")
+      // A superseding fire inherits the running settle bound instead of restarting it.
+      if superseded == nil {
+        scope.settleGeneration += 1
+        let generation = scope.settleGeneration
+        scopes[fire.bindingId] = scope
+        Task { [clock, cancelSettleTimeout, weak self] in
+          try? await clock.sleep(for: cancelSettleTimeout)
+          await self?.settleTimedOut(bindingId: fire.bindingId, generation: generation)
+        }
       }
       return .cancelPending
     }
@@ -237,12 +244,16 @@ actor CronOverlapDispatcher {
       updateReceipt(receiptId, status: "cancelled", reason: "overlap-cancelled:\(bindingId):\(scope.pendingAfterCancel.map { makeReceiptId($0) } ?? "pending")")
     } else {
       updateReceipt(receiptId, status: "failed", reason: error)
+    }
+    // Advance before any suspension so a reentrant submit cannot overtake the FIFO
+    // queue; record the failure before waking drain so serve reports it.
+    await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
+    if result == nil, !handle.cancelRequested {
       await server.recordWorkflowDispatchFailure(
         eventRoot: eventRoot, sourceKind: "cron", sourceId: handle.fire.sourceId,
         workflowName: handle.fire.workflowName, error: CLIUsageError(error ?? "cron workflow failed")
       )
     }
-    await advanceDeferred(bindingId: bindingId, policy: policy, cancelledSessionIds: cancelledSessionIds)
     resumeDrainWaitersIfNeeded()
     if !hasRunning { resumeShutdownWaiter() }
   }
@@ -300,10 +311,10 @@ actor CronOverlapDispatcher {
   }
 
   private func recordSessionStarted(receiptId: String, sessionId: String, bindingId: String) {
+    updateReceipt(receiptId, workflowExecutionId: sessionId)
     guard var scope = scopes[bindingId], let index = scope.running.firstIndex(where: { $0.receiptId == receiptId }) else { return }
     scope.running[index].sessionId = sessionId
     scopes[bindingId] = scope
-    updateReceipt(receiptId, workflowExecutionId: sessionId)
   }
 
   private func recordNonStart(

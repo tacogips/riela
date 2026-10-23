@@ -24,21 +24,13 @@ struct XGatewayUserCacheExchange: Sendable {
       ?? URL(fileURLWithPath: home).appendingPathComponent(".riela/cache").path
     self.clock = clock
     store = RielaCacheStore(rootDirectory: root, clock: clock)
-    _ = try store.configure(cacheId: Self.cacheId, policy: Self.policy)
+    // An unavailable store degrades to an empty exchange; consume() reports it.
+    _ = try? store.configure(cacheId: Self.cacheId, policy: Self.policy)
   }
 
   func bindings() throws -> [String: String] {
-    let keys = try store.keys(cacheId: Self.cacheId, scope: Self.scope)
-    var rows: [JSONValue] = []
-    for offset in stride(from: 0, to: keys.count, by: 1024) {
-      let batch = Array(keys[offset..<min(offset + 1024, keys.count)])
-      let result = try store.get(cacheId: Self.cacheId, scope: Self.scope, keys: batch, maxOutputBytes: 8_000_000, touch: false)
-      rows += result.results.compactMap { $0.entry?.payload }.map { jsonValue(from: $0) }
-    }
-    let json = try JSONValue.array(rows).compactJSONString()
-    guard json.utf8.count <= 800_000 else {
-      throw AdapterExecutionError(.invalidInput, "X user cache exceeds its private transport budget")
-    }
+    var json = try JSONValue.array(cachedRows()).compactJSONString()
+    if json.utf8.count > 800_000 { json = "[]" }
     // The SDK exchange uses bounded in-memory parts; Linux limits individual
     // environment values to about 128 KiB. Nothing here contains credentials.
     let scalars = json.unicodeScalars
@@ -51,6 +43,22 @@ struct XGatewayUserCacheExchange: Sendable {
     var bindings = ["X_GW_USER_MEMORY_PARTS": String(parts.count)]
     for (index, part) in parts.enumerated() { bindings["X_GW_USER_MEMORY_JSON_\(index)"] = part }
     return bindings
+  }
+
+  /// Optional cache reads must not fail a paid post read; misses are refetched.
+  private func cachedRows() -> [JSONValue] {
+    do {
+      let keys = try store.keys(cacheId: Self.cacheId, scope: Self.scope)
+      var rows: [JSONValue] = []
+      for offset in stride(from: 0, to: keys.count, by: 1024) {
+        let batch = Array(keys[offset..<min(offset + 1024, keys.count)])
+        let result = try store.get(cacheId: Self.cacheId, scope: Self.scope, keys: batch, maxOutputBytes: 8_000_000, touch: false)
+        rows += result.results.compactMap { $0.entry?.payload }.map { jsonValue(from: $0) }
+      }
+      return rows
+    } catch {
+      return []
+    }
   }
 
   func consume(_ stdout: String) throws -> String {

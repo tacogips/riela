@@ -5,7 +5,8 @@ import XCTest
 final class WorkflowSandboxInstanceTests: XCTestCase {
   func testInstanceSandboxRoundTripPrecedenceAndAgentProjection() throws {
     let options = WorkflowExecutionSandbox(backend: .container, container: .init(image: "fixture:worker"),
-      credentials: [.init(source: "/private/auth", homePath: ".vendor/auth")])
+      credentials: [.init(source: "/private/auth", homePath: ".vendor/auth")],
+      admission: .init(directoryEnvironment: "RIELA_POOL", capacity: 4, weight: 2, minimumRemainingSeconds: 30))
     let patch = WorkflowInstanceNodePatch(sandbox: options)
     XCTAssertFalse(patch.isEmpty)
     XCTAssertEqual(try WorkflowInstanceNodePatch(jsonObject: patch.jsonObject, nodeId: "worker"), patch)

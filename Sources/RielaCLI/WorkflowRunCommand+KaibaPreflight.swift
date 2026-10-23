@@ -133,8 +133,10 @@ extension WorkflowRunCommand {
       configuration: instance.configuration,
       workingDirectory: workingDirectory
     )
+    // Mock scenarios never reach real providers, so credentials stay optional there.
     let environment = try await CLIRuntimeEnvironmentPreparation.prepare(
-      path: options.runtimeEnvironmentFile, required: requiredEnvironment, base: base, workingDirectory: workingDirectory)
+      path: options.runtimeEnvironmentFile, required: options.mockScenarioPath == nil ? requiredEnvironment : [],
+      base: base, workingDirectory: workingDirectory)
     let snapshot = try await preflightKaibaNodes(
       nodes,
       environment: environment,

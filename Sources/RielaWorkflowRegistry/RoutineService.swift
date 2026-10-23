@@ -281,9 +281,12 @@ public struct RoutineService: Sendable {
     guard var candidate = try routineStore.load(routineId: routineId) else {
       throw RoutineServiceError("routine '\(routineId)' was not found")
     }
+    if overlapPolicy == nil, maxQueuedRuns != nil || maxConcurrentRuns != nil {
+      throw RoutineServiceError("clearing the routine overlap policy cannot be combined with a run cap")
+    }
     candidate.overlapPolicy = overlapPolicy
-    candidate.maxQueuedRuns = overlapPolicy == nil ? nil : maxQueuedRuns
-    candidate.maxConcurrentRuns = overlapPolicy == nil ? nil : maxConcurrentRuns
+    candidate.maxQueuedRuns = maxQueuedRuns
+    candidate.maxConcurrentRuns = maxConcurrentRuns
     let binding = eventBinding(for: candidate, storeRoot: routineStore.rootDirectory)
     let diagnostics = EventContractValidator.validate(
       sources: [EventSourceContract(id: candidate.sourceId, kind: .cron)],

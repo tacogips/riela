@@ -25,6 +25,17 @@ final class EventOverlapPolicyTests: XCTestCase {
     )
   }
 
+  func testResolutionRejectsNonPositiveRunCaps() {
+    XCTAssertThrowsError(try resolveEventOverlapPolicy(
+      binding: EventOverlapSettings(overlapPolicy: "concurrent", maxConcurrentRuns: 0), workflow: nil
+    )) { error in
+      XCTAssertEqual(error as? EventOverlapPolicyError, EventOverlapPolicyError("maxConcurrentRuns must be an integer >= 1; got 0"))
+    }
+    XCTAssertThrowsError(try resolveEventOverlapPolicy(
+      binding: nil, workflow: EventOverlapSettings(overlapPolicy: "queue", maxQueuedRuns: -1)
+    ))
+  }
+
   func testResolutionRejectsUnknownPolicyWithExactMessage() {
     XCTAssertThrowsError(try resolveEventOverlapPolicy(binding: EventOverlapSettings(overlapPolicy: "bogus"), workflow: nil)) { error in
       XCTAssertEqual(

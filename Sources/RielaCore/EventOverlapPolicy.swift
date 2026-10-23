@@ -80,6 +80,11 @@ public func resolveEventOverlapPolicy(
       "overlapPolicy must be one of \(EventOverlapPolicy.allowedValuesText); got '\(rawPolicy)'"
     )
   }
+  for (name, cap) in [("maxQueuedRuns", winner.maxQueuedRuns), ("maxConcurrentRuns", winner.maxConcurrentRuns)] {
+    if let cap, cap < 1 {
+      throw EventOverlapPolicyError("\(name) must be an integer >= 1; got \(cap)")
+    }
+  }
   return EffectiveEventOverlapPolicy(
     policy: policy,
     source: source,

@@ -148,6 +148,7 @@ final class EventCronOverlapTests: XCTestCase {
     for index in 1...3 { await waitForSession(concurrent, expected: "session-\(index)") }
     let concurrentRequests = await runner.requestCount
     XCTAssertEqual(concurrentRequests, 3)
+    await waitForRunnerWaiters(runner, expected: 3)
     for index in 0..<3 { await runner.release(index: index) }
     await concurrent.drain()
     let concurrentReceipts = try receiptFiles(root: root).map(decodeReceipt)
@@ -399,10 +400,13 @@ final class EventCronOverlapTests: XCTestCase {
     await waitForSession(dispatcher)
     _ = await dispatcher.submit(fire(eventId: "timeout-2"))
     await waitForClock(clock)
-    clock.advance(by: .seconds(30))
-    await waitForReceipt(root: root, eventId: "timeout-2")
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
+    let awaiting = try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: receiptURL(root: root, eventId: "timeout-2")))
+    XCTAssertEqual(awaiting.status, "queued")
+    XCTAssertEqual(awaiting.reason, "overlap-cancel-pending:binding")
+    clock.advance(by: .seconds(30))
+    await waitForReceipt(root: root, eventId: "timeout-2", status: "skipped")
     let pending = try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: receiptURL(root: root, eventId: "timeout-2")))
     XCTAssertEqual(pending.status, "skipped")
     XCTAssertEqual(pending.reason, "overlap-cancel-timeout:binding:session-1")
@@ -414,7 +418,7 @@ final class EventCronOverlapTests: XCTestCase {
     XCTAssertEqual(requestsAfterRelease, 1)
   }
 
-  func testCancelRunningSupersedesPendingFireAndIgnoresStaleTimeout() async throws {
+  func testCancelRunningSupersedesPendingFireWithinOriginalSettleBound() async throws {
     let root = try temporaryRoot("superseded")
     defer { try? FileManager.default.removeItem(at: root) }
     let clock = ManualEventServeClock()
@@ -429,9 +433,10 @@ final class EventCronOverlapTests: XCTestCase {
     await waitForSession(dispatcher)
     _ = await dispatcher.submit(fire(eventId: "superseded-2"))
     _ = await dispatcher.submit(fire(eventId: "superseded-3"))
-    await waitForClock(clock, expected: 2)
+    await waitForClock(clock)
+    XCTAssertEqual(clock.waiterCount, 1)
     clock.advance(by: .seconds(30))
-    await waitForReceipt(root: root, eventId: "superseded-3")
+    await waitForReceipt(root: root, eventId: "superseded-3", status: "skipped")
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     let superseded = try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: receiptURL(root: root, eventId: "superseded-2")))
@@ -498,7 +503,7 @@ final class EventCronOverlapTests: XCTestCase {
     let root = try temporaryRoot("shutdown-pending")
     defer { try? FileManager.default.removeItem(at: root) }
     let clock = ManualEventServeClock()
-    let runner = BlockingCronRunner()
+    let runner = BlockingCronRunner(ignoresCancellation: true)
     let dispatcher = CronOverlapDispatcher(
       server: DefaultEventLiveServer(workflowRunner: runner), eventRoot: root,
       parsed: try ParsedParityOptions([]),
@@ -512,8 +517,10 @@ final class EventCronOverlapTests: XCTestCase {
     XCTAssertEqual(pendingOutcome, .cancelPending)
     await waitForClock(clock)
     XCTAssertGreaterThanOrEqual(clock.waiterCount, 1)
-    await dispatcher.shutdownCancelling()
+    let shutdown = Task { await dispatcher.shutdownCancelling() }
+    await waitForClock(clock, expected: 2)
     clock.advance(by: .seconds(30))
+    await shutdown.value
 
     let discarded = try decodeReceipt(url: receiptURL(root: root, eventId: "sp-2"))
     XCTAssertEqual(discarded.status, "discarded")
@@ -746,16 +753,24 @@ final class EventCronOverlapTests: XCTestCase {
     return root
   }
 
+  // Advancing before a sleeper registers would strand it, so wait on real time
+  // once yielding alone has not let a detached sleeper reach the clock.
   private func waitForClock(_ clock: ManualEventServeClock, expected: Int = 1) async {
-    for _ in 0..<500 {
+    for attempt in 0..<3_000 {
       if clock.waiterCount >= expected { return }
-      await Task.yield()
+      if attempt < 500 { await Task.yield() } else { try? await Task.sleep(nanoseconds: 2_000_000) }
     }
+    XCTFail("clock did not register \(expected) sleeper(s)")
   }
 
-  private func waitForReceipt(root: URL, eventId: String) async {
+  private func waitForReceipt(root: URL, eventId: String, status: String? = nil) async {
+    let url = receiptURL(root: root, eventId: eventId)
     for _ in 0..<500 {
-      if FileManager.default.fileExists(atPath: receiptURL(root: root, eventId: eventId).path) { return }
+      if let status {
+        if (try? decodeReceipt(url: url))?.status == status { return }
+      } else if FileManager.default.fileExists(atPath: url.path) {
+        return
+      }
       await Task.yield()
     }
   }
@@ -839,20 +854,36 @@ private actor BlockingCronRunner: EventWorkflowRunning {
     request.onSessionStarted?("session-\(index + 1)")
     if ignoresCancellation {
       return try await withCheckedThrowingContinuation { continuation in
-        continuations[index] = continuation
+        install(continuation, index: index)
       }
     }
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
-        continuations[index] = continuation
+        install(continuation, index: index)
       }
     } onCancel: {
       Task { await self.cancel(index: index) }
     }
   }
 
+  // The session id is published before the continuation exists; a release
+  // that wins that race must still complete the run.
+  private var earlyReleases: Set<Int> = []
+
+  private func install(_ continuation: CheckedContinuation<WorkflowRunResult, Error>, index: Int) {
+    if earlyReleases.remove(index) != nil {
+      continuation.resume(returning: result())
+    } else {
+      continuations[index] = continuation
+    }
+  }
+
   func release(index: Int) {
-    continuations.removeValue(forKey: index)?.resume(returning: result())
+    if let continuation = continuations.removeValue(forKey: index) {
+      continuation.resume(returning: result())
+    } else if index < nextIndex {
+      earlyReleases.insert(index)
+    }
   }
 
   func fail(index: Int) {

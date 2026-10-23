@@ -401,8 +401,10 @@ final class RielaAppBehaviorRegressionTests: XCTestCase {
     await runtime.start(defaultInstance.runtimeCandidate, configuration: WorkflowServeRuntimeConfiguration())
     await runtime.start(workInstance.runtimeCandidate, configuration: WorkflowServeRuntimeConfiguration())
 
-    XCTAssertEqual(runtime.snapshot(for: defaultInstance.id).status, .running)
-    XCTAssertEqual(runtime.snapshot(for: workInstance.id).status, .running)
+    XCTAssertEqual(runtime.snapshot(for: defaultInstance.id).status, .running,
+                   runtime.snapshot(for: defaultInstance.id).detail ?? "")
+    XCTAssertEqual(runtime.snapshot(for: workInstance.id).status, .running,
+                   runtime.snapshot(for: workInstance.id).detail ?? "")
 
     await runtime.stopAll()
     XCTAssertEqual(runtime.snapshot(for: defaultInstance.id).status, .stopped)

@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 import RielaCore
 import RielaObservability
 import RielaServer
@@ -105,7 +110,17 @@ public struct RielaAppDaemonProcessEventSourceFactory: WorkflowServeEventSourceF
         try await process.updateRuntimeEnvironment(generation: generation, names: command.runtimeEnvironmentNames,
           values: command.runtimeEnvironmentValues.filter { command.runtimeEnvironmentNames.contains($0.key) })
       } catch {
+        let exited = !process.isRunning
         await process.terminate()
+        // A child that died before acknowledging (missing or incompatible riela)
+        // is a startup failure, not an environment preparation failure.
+        if exited {
+          throw WorkflowServeError.startupFailed(WorkflowServeDiagnostics(
+            code: "event_source_process_exited",
+            message: earlyExitMessage(process: process),
+            selection: request.selection
+          ))
+        }
         throw RuntimeEnvironmentError.notPrepared
       }
     }
@@ -287,7 +302,10 @@ public struct DefaultEventServeProcessLauncher: RielaAppDaemonEventServeProcessL
     process.currentDirectoryURL = URL(fileURLWithPath: command.workingDirectory, isDirectory: true)
     process.environment = command.environment.filter { command.runtimeEnvironmentGeneration == nil || !command.runtimeEnvironmentNames.contains($0.key) }
     let input = command.runtimeEnvironmentGeneration == nil ? nil : Pipe()
-    if let input { process.standardInput = input }
+    if let input {
+      process.standardInput = input
+      disableSigpipe(input.fileHandleForWriting.fileDescriptor)
+    }
     let output = Pipe()
     let error = Pipe()
     process.standardOutput = output
@@ -396,7 +414,7 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     guard let inputPipe, isRunning, Set(values.keys).isSubset(of: Set(names)) else { throw RuntimeEnvironmentError.notPrepared }
     let frame: [String: Any] = ["generation": generation, "managedNames": names, "values": values]
     var data = try JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys]); data.append(10)
-    try inputPipe.fileHandleForWriting.write(contentsOf: data)
+    do { try inputPipe.fileHandleForWriting.write(contentsOf: data) } catch { throw RuntimeEnvironmentError.sourceFailed }
     for _ in 0..<500 {
       let result = lock.withLock { acknowledgements[generation].map { ($0, acknowledgedNames[generation] ?? []) } }
       if let result {
@@ -410,6 +428,8 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
   }
 
   func terminate() async {
+    // EOF releases a managed child still waiting for its first frame.
+    try? inputPipe?.fileHandleForWriting.close()
     guard process.isRunning else {
       closePipes()
       return
@@ -480,4 +500,13 @@ private final class FoundationEventServeProcessHandle: RielaAppDaemonEventServeP
     outputPipe.fileHandleForReading.readabilityHandler = nil
     errorPipe.fileHandleForReading.readabilityHandler = nil
   }
+}
+
+/// A child that exits before reading its frame must fail the write, not kill the app.
+private func disableSigpipe(_ fileDescriptor: Int32) {
+  #if canImport(Darwin)
+  _ = fcntl(fileDescriptor, F_SETNOSIGPIPE, 1)
+  #else
+  _ = signal(SIGPIPE, SIG_IGN)
+  #endif
 }

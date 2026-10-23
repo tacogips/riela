@@ -94,10 +94,22 @@ final class XGatewayUserCacheExchangeTests: XCTestCase {
     let database = try memory.store.databasePath(cacheId: XGatewayUserCacheExchange.cacheId)
     try FileManager.default.removeItem(atPath: database)
     try FileManager.default.createDirectory(atPath: database, withIntermediateDirectories: false)
+    XCTAssertEqual(try snapshot(memory), "[]")
     let output = try memory.consume(response(id: "1"))
     XCTAssertTrue(output.contains("accountMe"))
     XCTAssertTrue(output.contains("write-unavailable"))
     XCTAssertFalse(output.contains(root.path))
+  }
+
+  func testUnavailableCacheRootDegradesToEmptyExchange() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: file) }
+    try Data("not a directory".utf8).write(to: file)
+    let memory = try exchange(file)
+    XCTAssertEqual(try snapshot(memory), "[]")
+    let output = try memory.consume(response(id: "1"))
+    XCTAssertTrue(output.contains("accountMe"))
+    XCTAssertTrue(output.contains("write-unavailable"))
   }
 
   func testSnapshotDoesNotChangeLRUButReturnedAuthorsDo() throws {

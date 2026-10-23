@@ -302,6 +302,12 @@ final class RoutineCommandTests: XCTestCase {
     ))
     XCTAssertEqual(clearWithCap.exitCode, .failure)
     XCTAssertTrue(clearWithCap.stderr.contains("cannot be combined with a run cap"), clearWithCap.stderr)
+    XCTAssertThrowsError(try RoutineService(workingDirectory: workingDirectory.path, environment: [:]).setOverlapPolicy(
+      routineId: record.routineId, overlapPolicy: nil, maxQueuedRuns: 2, maxConcurrentRuns: nil,
+      routineStoreRoot: routineStore.path
+    )) { error in
+      XCTAssertTrue(String(describing: error).contains("cannot be combined with a run cap"), String(describing: error))
+    }
   }
 
   func testGraphQLExecutePreservesWorkflowAndRoutineRoots() async throws {

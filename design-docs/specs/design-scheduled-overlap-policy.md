@@ -310,8 +310,11 @@ Transitions:
 - **cancelRunning:** set `cancelRequested` on every running handle and call
   `task.cancel()`. Store the fire as `pendingAfterCancel`. If a pending fire
   already exists, the newer fire replaces it (last wins) and the replaced fire
-  is recorded `skipped` with `overlap-superseded:<bindingId>`. A settle waiter
-  then races "all cancelled handles reached terminal" against
+  is recorded `skipped` with `overlap-superseded:<bindingId>`. The pending fire
+  is recorded `queued` with `overlap-cancel-pending:<bindingId>` until it
+  settles. A settle waiter, started when the first fire of a cancel wave
+  becomes pending and shared by any superseding fire so the bound is not
+  restarted, races "all cancelled handles reached terminal" against
   `clock.sleep(cancelSettleTimeout)`:
   - settled: start the pending fire. Its receipt carries
     `cancelledSessionIds` and reason
@@ -454,6 +457,7 @@ All reasons have the form `overlap-<kind>:<bindingId>[:<detail>]`:
 | `overlap-cancel-running:<bindingId>:<cancelledSessionId\|pending>` | new run started after cancelling |
 | `overlap-cancelled:<bindingId>:<supersedingReceiptId>` | run that was cancelled |
 | `overlap-cancel-timeout:<bindingId>:<sessionId\|pending>` | settle bound exceeded; new fire not started |
+| `overlap-cancel-pending:<bindingId>` | `cancelRunning` fire recorded `queued` while cancelled runs settle |
 | `overlap-superseded:<bindingId>` | `cancelRunning` pending fire replaced by a newer fire |
 | `overlap-shutdown-discarded:<bindingId>` | queued or pending fire discarded on signal or error shutdown |
 

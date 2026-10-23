@@ -13,6 +13,14 @@ extension WorkflowExecutionSandbox {
     ]
     if ephemeralHome { object["ephemeralHome"] = .bool(true) }
     if !credentialEnvironment.isEmpty { object["credentialEnvironment"] = .object(credentialEnvironment.mapValues(JSONValue.string)) }
+    if let admission {
+      object["admission"] = .object([
+        "directoryEnvironment": .string(admission.directoryEnvironment),
+        "capacity": .integer(Int64(admission.capacity)), "weight": .integer(Int64(admission.weight)),
+        "waitTimeoutSeconds": .integer(Int64(admission.waitTimeoutSeconds)),
+        "minimumRemainingSeconds": .integer(Int64(admission.minimumRemainingSeconds))
+      ])
+    }
     if let container {
       object["container"] = .object([
         "image": .string(container.image), "runtime": .string(container.runtime.rawValue),

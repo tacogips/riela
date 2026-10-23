@@ -15,10 +15,12 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
   }
 
   private static func capture(_ source: RuntimeEnvironmentCommandSource, environment: [String: String], limit: Int) throws -> Data {
+    // Inherited entries such as exported shell functions (BASH_FUNC_x%%) are not
+    // portable names; drop them instead of failing every configured source.
+    let environment = environment.filter { isValidEnvironmentVariableName($0.key) && !$0.value.contains("\0") }
     guard let first = source.command.first, !first.isEmpty, limit > 0,
       source.timeoutSeconds.isFinite, source.timeoutSeconds > 0,
-      source.command.allSatisfy({ !$0.contains("\0") }),
-      environment.allSatisfy({ isValidEnvironmentVariableName($0.key) && !$0.value.contains("\0") }) else { throw RuntimeEnvironmentError.invalidConfiguration }
+      source.command.allSatisfy({ !$0.contains("\0") }) else { throw RuntimeEnvironmentError.invalidConfiguration }
     let executable: String
     if first.hasPrefix("/") { executable = first } else {
       guard let path = (environment["PATH"] ?? "/usr/bin:/bin").split(separator: ":").map({ String($0) + "/" + first })
@@ -26,9 +28,14 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
       executable = path
     }
     var descriptors: [Int32] = [-1, -1]
+    // Linux lacks POSIX_SPAWN_CLOEXEC_DEFAULT; keep concurrent spawns from inheriting the write end.
+    #if os(Linux)
+    guard pipe2(&descriptors, O_CLOEXEC) == 0 else { throw RuntimeEnvironmentError.sourceFailed }
+    #else
     guard pipe(&descriptors) == 0 else { throw RuntimeEnvironmentError.sourceFailed }
+    #endif
     defer { close(descriptors[0]); if descriptors[1] >= 0 { close(descriptors[1]) } }
-    let null = open("/dev/null", O_RDWR)
+    let null = open("/dev/null", O_RDWR | O_CLOEXEC)
     guard null >= 0 else { throw RuntimeEnvironmentError.sourceFailed }
     defer { close(null) }
     #if canImport(Glibc)

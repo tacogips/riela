@@ -124,3 +124,13 @@ The embedded reader still sets `--retry 0`; a retryable failure therefore report
 `retry-disabled`. Retry ownership is unchanged by this observability patch.
 Apple Container initialization failures identify their stage and exit status
 without forwarding runtime stderr or claiming an HTTP request occurred.
+
+0.2.47 verification: 19 focused CLI/container/JSON tests passed (one opt-in test
+skipped); actual native CLI and Apple Container denied-network preflight failures
+also retained AUTH_MISSING, requestAttempts0, and not-started through the consumer
+parser. X SDK56tests and smoke checks passed; actual Opus5.5 medium review/closure
+reported no blocker. macOS arm64 archive SHA256:
+`8e88974e705e24baa40bfb332b42ea4e0118b394cc47df22592ba92054c580f2`.
+Homebrew upgrade/test and both Linux release builds passed. The follow-up
+image-builder adaptation on main recognizes the already portable upstream X
+source without rewriting it; the release's Swift source remains identical.

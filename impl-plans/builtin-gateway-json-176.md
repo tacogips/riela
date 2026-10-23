@@ -163,3 +163,27 @@ and operation names. The final 34-test suite passes with zero skips, SwiftLint
 reports no warnings, and the no-script example again completes through the
 actual workflow runner with its credential-free mock. This completes this
 legacy/Kaiba source chunk, not release, ART migration or deployment acceptance.
+
+## Released foundation (0.2.45; ART migration still incomplete)
+
+Tag v0.2.45 is immutable at 40639ca85d86a5421f8b4c4ad576bdd292428863.
+All six macOS arm64 / Linux arm64 / Linux x64 archive and checksum assets are
+published. Linux release run 39878893182 and amd64 CI 39878863106 succeeded.
+The local Homebrew formula was updated, installed CLI reports 0.2.45, and
+`brew test tacogips/tap/riela` passes. The installed binary completes the
+no-script gateway example against credential-free account metadata, retaining
+original data and producing typed processed IDs.
+
+The release-matched macOS host and downloaded Linux arm64 guest also complete
+the example through the actual container worker, using read-only fixture/runtime
+mounts and denied networking. No credential material or provider service is
+used. This is a real guest transport/SDK/postprocess gate, not ART acquisition.
+Proofs are under tmp/gmail-linux/release-045-proof.json and release-045-private/.
+The initial moved compiler cache failed on stale absolute module paths; only
+its inactive generated compilation tree was removed before the successful build.
+Published 0.2.44 archives and persistent ART data were preserved.
+
+ART remains pinned to CLI 0.2.33 and its previous production graph. Shared JSON
+release/install is complete; Core validation/discovery reconciliation, the full
+ART Python migration, private image/config adoption and actual App cutover are
+not complete. Issue #176 remains open.

@@ -1,8 +1,7 @@
 # Built-in gateway JSON requests
 
-This describes the current source implementation for issue #176. It is newer
-than published Riela 0.2.44. The complete ART migration and production cutover
-remain unfinished.
+Available in Riela 0.2.45, tracked by issue #176. The complete ART migration,
+validation/catalog reconciliation and production cutover remain unfinished.
 
 Gateway nodes can receive typed JSON and shape their results without a Python,
 shell or JavaScript helper. The workflow still owns pagination, retries,

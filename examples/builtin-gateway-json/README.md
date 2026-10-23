@@ -1,6 +1,6 @@
 # Gateway JSON without a helper script
 
-Requires the issue #176 source changes, newer than published 0.2.44.
+Requires Riela 0.2.45 or later.
 
 From the repository root:
 

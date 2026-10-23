@@ -53,6 +53,7 @@ actor BuiltinAddonContainerResolver: WorkflowAddonResolving, WorkflowAddonFinali
       throw AdapterExecutionError(.policyBlocked, "addon.sandbox and addon.container cannot be combined")
     }
     guard sandbox != nil || input.addon.container != nil else { return try await primary.execute(input, context: context) }
+    let input = try prepareAppleGatewayContainerOperation(input, workingDirectory: workingDirectory)
     if input.addon.name == "riela/private-workflow" {
       return try await PrivateWorkflowHost(environment: environment, workingDirectory: workingDirectory, runner: runner)
         .execute(input, context: context)

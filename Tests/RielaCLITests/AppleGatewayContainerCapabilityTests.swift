@@ -4,6 +4,58 @@ import XCTest
 @testable import RielaCLI
 
 final class AppleGatewayContainerCapabilityTests: XCTestCase {
+  #if os(macOS)
+  func testHostPreparesOperationForGuestWithoutReexpandingArgumentData() throws {
+    let root = URL(fileURLWithPath: "/tmp/fixture")
+    let source = "event-{{privateValue}}"
+    let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "read", nodeId: "read",
+      addon: .init(name: "riela/apple-gateway-graphql", config: [
+        "operation": .string("event"), "arguments": .object(["eventId": .string("{{input.id}}")]),
+        "selection": .array([.string("id")]), "configPath": .string("/tmp/fixture/config-{{input.config}}"),
+        "writeRetry": .object(["initialWaitSeconds": .integer(7), "maxRetries": .string("{{input.retries}}")])
+      ]), variables: ["privateValue": .string("must-not-expand")],
+      resolvedInputPayload: ["id": .string(source), "config": .string("{{literal}}"), "retries": .integer(0)])
+    let expected = try AppleGatewayAdminContext(input: input, currentDirectory: root).arguments(for: .graphql)
+    let prepared = try prepareAppleGatewayContainerOperation(input, workingDirectory: root)
+    XCTAssertNil(prepared.addon.config?["operation"])
+    XCTAssertNil(prepared.addon.inputs?["operation"])
+    let guestArguments = try AppleGatewayAdminContext(input: prepared, currentDirectory: root).arguments(for: .graphql)
+    XCTAssertEqual(guestArguments, expected)
+    XCTAssertEqual(try gatewayWriteRetryEnvironment(prepared, prefix: "APPLE_GATEWAY_"),
+                   try gatewayWriteRetryEnvironment(input, prefix: "APPLE_GATEWAY_"))
+    XCTAssertTrue(guestArguments.contains { $0.contains(source) })
+    XCTAssertFalse(guestArguments.contains { $0.contains("must-not-expand") })
+    let capability = try AppleGatewayContainerCapability(input: prepared, workingDirectory: root, mounts: [])
+    try capability.validate(arguments: guestArguments)
+    var changed = guestArguments
+    changed[changed.count - 1] = #"{"eventId":"different"}"#
+    XCTAssertThrowsError(try capability.validate(arguments: changed))
+  }
+
+  func testConfigPathNamedLikeAnOptionDoesNotChangePreparedDocument() throws {
+    let input = WorkflowAddonExecutionInput(workflowId: "fixture", stepId: "read", nodeId: "read",
+      addon: .init(name: "riela/apple-gateway-graphql", config: [
+        "operation": .string("calendars"), "arguments": .object([:]), "configPath": .string("--query")]))
+    let root = URL(fileURLWithPath: "/tmp/fixture")
+    let expected = try AppleGatewayAdminContext(input: input, currentDirectory: root).arguments(for: .graphql)
+    let prepared = try prepareAppleGatewayContainerOperation(input, workingDirectory: root)
+    XCTAssertEqual(try AppleGatewayAdminContext(input: prepared, currentDirectory: root).arguments(for: .graphql), expected)
+  }
+
+  func testContainerOperationPreservesEnvironmentAndBinaryRestrictions() {
+    for addon in [
+      WorkflowNodeAddonRef(name: "riela/apple-gateway-graphql", config: [
+        "operation": .string("calendars"), "arguments": .object([:]), "binaryPath": .string("/bin/true")]),
+      WorkflowNodeAddonRef(name: "riela/apple-gateway-graphql", config: [
+        "operation": .string("calendars"), "arguments": .object([:])], env: ["TOKEN": .string("untrusted")])
+    ] {
+      XCTAssertThrowsError(try prepareAppleGatewayContainerOperation(
+        .init(workflowId: "fixture", stepId: "read", nodeId: "read", addon: addon),
+        workingDirectory: URL(fileURLWithPath: "/tmp/fixture")))
+    }
+  }
+  #endif
+
   func testMailReadGrantsIncludeRequiredPermissionAndMailboxQueries() throws {
     let list = AppleGatewayContainerCapability(addonName: "riela/apple-mail-list")
     try list.validate(arguments: ["graphql", "--query", "query { permissions { mailFullDiskAccess } mailAccounts { id } mailboxes { id } mailMessages { totalCount } }"])

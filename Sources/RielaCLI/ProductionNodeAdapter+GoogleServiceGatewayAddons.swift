@@ -97,6 +97,15 @@ extension BuiltinWorkflowAddonResolver {
 private struct GoogleServiceGatewayAddonEngine {
   private static let accessTokenEnvironmentName = "GOOGLE_SERVICE_GATEWAY_ACCESS_TOKEN"
 
+  private static let operationArguments: [String: Set<String>] = [
+    "services.list": ["project", "state", "pageSize", "pageToken", "allPages"],
+    "services.get": ["project", "service"],
+    "operations.get": ["operationName"],
+    "services.enable": ["project", "service", "wait", "timeoutSeconds", "pollIntervalSeconds"],
+    "services.disable": ["project", "service", "disableDependentServices", "checkUsage", "wait", "timeoutSeconds", "pollIntervalSeconds"],
+    "services.batchEnable": ["project", "services", "wait", "timeoutSeconds", "pollIntervalSeconds"]
+  ]
+
   var environment: [String: String]
   var clientFactory: GoogleServiceGatewayAddonClientFactory
 
@@ -116,8 +125,21 @@ private struct GoogleServiceGatewayAddonEngine {
       throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.operation is required")
     }
     try validate(operation: operation, capability: capability, addonName: input.addon.name)
+    let variables = try addonVariables(for: input)
+    let values: GatewayAddonValues
+    if config["arguments"] != nil {
+      guard Set(config.keys).isSubset(of: ["operation", "arguments"]), input.addon.inputs?.isEmpty != false else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) arguments cannot be combined with flat configuration or selection")
+      }
+      let arguments = try BuiltinGatewayJSONRequest.renderedArguments(config: config, variables: variables, addonName: input.addon.name)
+      guard Set(arguments.keys).isSubset(of: Self.operationArguments[operation] ?? []) else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) contains arguments outside its operation")
+      }
+      values = GatewayAddonValues(config: arguments, variables: [:])
+    } else {
+      values = GatewayAddonValues(config: config, variables: variables)
+    }
     let token = try accessToken(from: input)
-    let values = GatewayAddonValues(config: config, variables: try addonVariables(for: input))
     let client = clientFactory(token)
     let result = try await invoke(
       operation: operation,

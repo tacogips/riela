@@ -4,6 +4,41 @@ import XCTest
 @testable import RielaCLI
 
 final class AppleMailContainerIntegrationTests: XCTestCase {
+  func testHostBuiltJSONOperationAndPostprocessPassThroughRealLinuxGuest() async throws {
+    try requireImage()
+    let root = try makeRielaCLITestTemporaryDirectory("apple-json-operation-guest")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = "event-{{mustRemainLiteral}}"
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: BuiltinWorkflowAddonResolver(environment: [:], workingDirectory: root), environment: [:], workingDirectory: root,
+      nativeAppleGatewayRunner: { arguments, environment, _ in
+        XCTAssertEqual(arguments.first, "graphql")
+        XCTAssertEqual(environment["APPLE_GATEWAY_WRITE_RETRY_INITIAL_WAIT_SECONDS"], "7")
+        XCTAssertEqual(environment["APPLE_GATEWAY_WRITE_RETRY_MAX_RETRIES"], "0")
+        let index = try XCTUnwrap(arguments.firstIndex(of: "--variables"))
+        let variables = try JSONDecoder().decode(JSONObject.self, from: Data(arguments[index + 1].utf8))
+        XCTAssertEqual(variables["eventId"], .string(source))
+        return .init(stdout: try mailContainerJSON(["data": .object([
+          "event": .object(["id": .string(source)])])]), stderr: "")
+      })
+    var request = input("riela/apple-gateway-graphql", config: [
+      "operation": .string("event"), "arguments": .object(["eventId": .string("{{input.id}}")]),
+      "selection": .array([.string("id")]),
+      "writeRetry": .object(["initialWaitSeconds": .integer(7), "maxRetries": .integer(0)]),
+      "postprocess": .array([.object(["pick": .string("/appleGateway/data/event/id")])])
+    ])
+    if let mounts = ProcessInfo.processInfo.environment["RIELA_TEST_BUILTIN_MOUNTS"] {
+      request.addon.container?.mounts = try JSONDecoder().decode([WorkflowAddonContainerMount].self, from: Data(mounts.utf8))
+    }
+    request.resolvedInputPayload = ["id": .string(source)]
+    request.variables = ["mustRemainLiteral": .string("must-not-expand")]
+    let output = try await NativeAddonPinnedDirectory.StagingContext.$root.withValue(root.deletingLastPathComponent()) {
+      try await resolver.execute(request, context: .init(deadline: Date().addingTimeInterval(120)))
+    }
+    XCTAssertEqual(output.payload["processed"], .string(source))
+    XCTAssertEqual(output.when["postprocessPassed"], true)
+  }
+
   func testRealNativeFileStoreFailureDoesNotBecomeSuccessfulDownload() async throws {
     try requireImage()
     let root = try makeRielaCLITestTemporaryDirectory("native-file-store-error")

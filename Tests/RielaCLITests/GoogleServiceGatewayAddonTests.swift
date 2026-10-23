@@ -5,6 +5,54 @@ import XCTest
 @testable import RielaCLI
 
 final class GoogleServiceGatewayAddonTests: XCTestCase {
+  func testNestedArgumentsRejectExplicitAddonInputsBeforeCreatingClient() async throws {
+    let tokens = LockedStrings()
+    do {
+      _ = try await runAddon(name: "riela/google-service-gateway-read", config: [
+        "operation": .string("services.get"),
+        "arguments": .object(["project": .string("explicit"), "service": .string("calendar")])
+      ], inputs: ["project": .string("mixed-input")], clientFactory: { token in
+        tokens.append(token)
+        return RecordingGoogleServiceGatewayClient()
+      })
+      XCTFail("mixed inputs must be rejected")
+    } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked) }
+    XCTAssertTrue(tokens.values.isEmpty)
+  }
+
+  func testNestedJSONArgumentsRenderOnceAndPostprocessWithoutFlatOverrides() async throws {
+    let client = RecordingGoogleServiceGatewayClient()
+    let output = try await runAddon(name: "riela/google-service-gateway-read", config: [
+      "operation": .string("services.get"),
+      "arguments": .object(["project": .string("{{input.project}}"), "service": .string("calendar")]),
+      "postprocess": .array([.object(["pick": .string("/data/kind")])])
+    ], variables: ["project": .string("unrelated-flat-value"), "literal": .string("must-not-expand")],
+      resolvedInputPayload: ["project": .string("project-{{literal}}")],
+      environment: ["RIELA_GOOGLE_TOKEN": "synthetic-token"], clientFactory: { _ in client })
+    let calls = await client.calls()
+    XCTAssertEqual(calls, [.getService("project-{{literal}}", "calendar")])
+    XCTAssertEqual(output.payload["processed"], .string("get"))
+    XCTAssertEqual(output.when["postprocessPassed"], true)
+  }
+
+  func testNestedArgumentsRejectMixedUnknownAndWrongTierBeforeCreatingClient() async throws {
+    let configs: [JSONObject] = [
+      ["operation": .string("services.get"), "arguments": .object([:]), "project": .string("mixed")],
+      ["operation": .string("services.get"), "arguments": .object(["unknown": .string("private")])],
+      ["operation": .string("services.get"), "arguments": .array([])],
+      ["operation": .string("services.enable"), "arguments": .object([:])]
+    ]
+    for config in configs {
+      let tokens = LockedStrings()
+      await assertFailure(name: "riela/google-service-gateway-read", config: config,
+        code: .policyBlocked, messageContains: "riela/google-service-gateway-read", clientFactory: { token in
+          tokens.append(token)
+          return RecordingGoogleServiceGatewayClient()
+        })
+      XCTAssertTrue(tokens.values.isEmpty)
+    }
+  }
+
   func testReadAddonUsesExplicitTokenBindingAndResolvedInputs() async throws {
     let client = RecordingGoogleServiceGatewayClient()
     let tokens = LockedStrings()

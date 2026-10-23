@@ -50,11 +50,8 @@ replays a successful write. Invalid instruction syntax fails before the effect.
 
 - Complete behavioral coverage of typed requests for every affected gateway,
   legacy container gateways and already structured product-specific nodes.
-- Prepare Apple operation requests on the macOS host for Linux private workers;
-  the current Apple operation builder requires the macOS SDK and cannot yet run
-  in a Linux guest. Legacy Apple query bridging is unchanged.
 - Reconcile Core validation/catalog discovery with all runtime modes and aliases.
-- Verify Google Service and Kaiba inputs use the common contract where needed;
+- Verify Kaiba inputs use the common contract where needed;
   preserve fixed operations of product-specific Apple nodes.
 - Complete the provider matrix, workflow examples and user-facing reference.
 - Run the requested actual Claude Opus review; resolve actionable findings.
@@ -83,3 +80,33 @@ also for X reads; downstream workflows must branch before using `processed`.
 Riela 0.2.44 is published and locally installed. These newer changes are not
 part of that release. ART's configured production CLI remains 0.2.33 until a
 verified cutover; changing the global executable does not update that pin.
+
+## Host preparation and Google Service checkpoint
+
+Apple container requests are compiled against the macOS host catalog before
+dispatch. A runtime-selected variable namespace carries the built document,
+variables and config path through exact placeholders; source template syntax is
+never expanded again. Existing host capability capture still authorizes only
+the exact resulting argv, with workspace/mount restrictions and no addon.env or
+binary override. No wire protocol or portable Apple catalog copy is added.
+
+Focused Apple/container/postprocess tests passed 39 cases. An opt-in real Linux
+guest test passed using the existing ART image with the published 0.2.44 Linux
+runtime and standard worker wrapper mounted read-only. Its native provider is a
+fixture: the test proves real guest transport and host capability enforcement,
+without contacting Apple services or requesting permissions. The initial image
+alone lacked the required worker entrypoint; the mounted-runtime test is the
+successful evidence, not that failed attempt.
+
+Google Service now accepts literal `operation` plus typed `arguments`, rendered
+through the shared bounded helper. An explicit argument object excludes flat
+overrides and refuses unknown operation arguments before constructing a client.
+Its existing flat mode remains supported. Google Service/shared request/Apple
+capability focused tests passed 21 cases. The final expanded suite passed 50 cases. Actual Claude Opus 5.5 review
+and fixes-only follow-up found no remaining actionable issue. Retry policy is
+resolved before host preparation and retained as bounded literal metadata; the
+real guest test also verifies zero retries reaches the native provider fixture.
+Optional config paths are parsed by fixed argv layout, avoiding values that
+look like flag names. Nested Google Service arguments refuse explicit addon
+inputs as well as flat config overrides. Full matrix and deployment acceptance
+remain outstanding.

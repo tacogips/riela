@@ -22,7 +22,7 @@ final class RielaAppWebRegistryProviderTests: XCTestCase {
     ))
     let dispatch = try XCTUnwrap(router.range(of: "app.webGraphQLResponse(for: request)"))
     XCTAssertLessThan(rejection.lowerBound, dispatch.lowerBound)
-    let profileGate = try XCTUnwrap(graphQL.range(of: "guard request.headers[\"x-riela-profile\"]"))
+    let profileGate = try XCTUnwrap(graphQL.range(of: "guard machineClient || request.headers[\"x-riela-profile\"]"))
     let provider = try XCTUnwrap(graphQL.range(of: "WorkflowExecutionProvider("))
     XCTAssertLessThan(profileGate.lowerBound, provider.lowerBound)
     XCTAssertTrue(graphQL.contains("daemonSessionStoreRoot(profileName: daemonProfileName)"))

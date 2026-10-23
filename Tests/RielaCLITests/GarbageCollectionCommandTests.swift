@@ -19,7 +19,9 @@ final class GarbageCollectionCommandTests: XCTestCase {
     )
 
     XCTAssertEqual(result.exitCode, .success, result.stderr)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: log.path))
+    // Runtime logs are retained by gc; scoped session prune owns payload retention.
+    XCTAssertTrue(FileManager.default.fileExists(atPath: log.path))
+    XCTAssertTrue(result.stdout.contains("logs preserved"), result.stdout)
     XCTAssertTrue(result.stdout.contains(#""enabled":true"#), result.stdout)
   }
 

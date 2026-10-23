@@ -35,7 +35,7 @@ struct AppleContainerGatewayProcess: Sendable {
     do {
       let started = try await runner.run(configuration: configuration(start), stdin: "", deadline: effectiveDeadline)
       guard started.terminationStatus == 0 else {
-        throw AdapterExecutionError(.providerError, "Apple Container gateway initialization failed")
+        throw AdapterExecutionError(.providerError, "Apple Container gateway initialization failed (gatewayStage=container-initialization, containerExitCode=\(started.terminationStatus))")
       }
       var execute = ["exec", "-i"]
       execute += [name, "/usr/local/bin/riela-gateway-guard", gateway.entrypoint]

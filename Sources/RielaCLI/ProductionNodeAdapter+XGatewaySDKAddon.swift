@@ -44,7 +44,8 @@ func xGatewayReaderQuery(document: String, environment: [String: String], deadli
         envelope["ok"] == .bool(true), case let .object(graphQL)? = envelope["data"] else {
     // Provider diagnostics may contain private source data; the worker keeps
     // them out of the enclosing workflow's error/result channel.
-    throw AdapterExecutionError(.providerError, "X reader SDK query failed")
+    throw AdapterExecutionError(.providerError, "X reader SDK query failed"
+      + GatewayFailureDiagnostics.suffix(stdout: result.stdout, stderr: result.stderr))
   }
   return try JSONValue.object(graphQL).compactJSONString()
 }

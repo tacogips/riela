@@ -109,3 +109,18 @@ retains explicit write-retry metadata and its existing workspace/mount rules.
 
 An executable single-node example with a credential-free mock scenario lives
 in [`examples/builtin-gateway-json`](../examples/builtin-gateway-json/README.md).
+
+
+## X retry failure diagnostics (0.2.47)
+
+The embedded X reader and legacy container reader retain only allowlisted machine
+error fields in Riela's failure reason. X gateway 0.1.17 reports the failed HTTP
+request's `requestAttempts` (0–11), `retryAttempts` (0–10), cumulative `backoffMs`
+(0–6000000), `retryable`, and closed `retryStopReason`, plus HTTP/provider codes.
+These are failed-request diagnostics, not total GraphQL-operation or billing
+counts. Preflight authorization failures explicitly report `not-started` / zero;
+uninstrumented errors omit evidence. Raw provider details remain inside the reader.
+The embedded reader still sets `--retry 0`; a retryable failure therefore reports
+`retry-disabled`. Retry ownership is unchanged by this observability patch.
+Apple Container initialization failures identify their stage and exit status
+without forwarding runtime stderr or claiming an HTTP request occurred.

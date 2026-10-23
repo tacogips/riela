@@ -70,6 +70,14 @@ enum GatewayFailureDiagnostics {
     if let providerCode = boundedInteger(error: error, key: "providerErrorCode", range: 0...99_999) {
       fields.append("providerErrorCode=\(providerCode)")
     }
+    if case let .bool(retryable)? = error["retryable"] { fields.append("retryable=\(retryable)") }
+    for (key, bound) in [("requestAttempts", Int64(11)), ("retryAttempts", Int64(10)), ("backoffMs", Int64(6_000_000))] {
+      if case let .integer(value)? = error[key], (0...bound).contains(value) { fields.append("\(key)=\(value)") }
+    }
+    let retryReasons: Set<String> = ["not-started", "non-retryable", "retry-disabled", "retry-exhausted", "method-not-retryable"]
+    if case let .string(reason)? = error["retryStopReason"], retryReasons.contains(reason) {
+      fields.append("retryStopReason=\(reason)")
+    }
     if code == "PROVIDER_API_ERROR", case let .string(message)? = error["message"] {
       if let counts = gmailDecodedSizeCounts(message) {
         fields += ["gmailBodyReason=decodedSize", "gmailDeclaredByteCount=\(counts.0)", "gmailDecodedByteCount=\(counts.1)"]

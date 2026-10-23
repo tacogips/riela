@@ -247,7 +247,8 @@ private func validateAgentOutputDependencies(
     return label != "always"
   }) {
     guard let payload = nodePayloads[step.nodeId],
-      isAgentNode(payload), payload.output?.jsonSchema == nil else { continue }
+          isAgentNode(payload), payload.output?.jsonSchema == nil,
+          payload.output?.jsonSchemaFrom == nil else { continue }
     diagnostics.append(error(
       "workflow.nodes.\(step.nodeId).output.jsonSchema",
       "agent node '\(step.nodeId)' drives conditional transition labels from step '\(step.id)' and must declare output.jsonSchema"
@@ -260,6 +261,9 @@ private func validateAgentOutputDependencies(
       ($0.consumerStepId, $0.path) < ($1.consumerStepId, $1.path)
     }
     guard let schema = payload.output?.jsonSchema else {
+      // A request-bound schema is resolved and enforced before the adapter
+      // runs. Its properties cannot be inspected during static validation.
+      if payload.output?.jsonSchemaFrom != nil { continue }
       for dependency in dependencies {
         diagnostics.append(error(
           "workflow.nodes.\(producerNodeId).output.jsonSchema",

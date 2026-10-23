@@ -89,6 +89,31 @@ final class AgentNodeOutputContractValidationTests: XCTestCase {
     })
   }
 
+  func testRequestBoundSchemaAllowsDownstreamPayloadReferences() {
+    let workflow = relayedWorkflow(reference: "{{input.commitMessage}}")
+    let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: [
+      "agent": compliantAgent(output: .init(jsonSchemaFrom: "/runtimeVariables/result_schema"))
+    ])
+    XCTAssertFalse(diagnostics.contains { $0.path.contains("output.jsonSchema") })
+    let invalid = DefaultWorkflowValidator().validate(workflow, nodePayloads: [
+      "agent": compliantAgent(output: .init(jsonSchemaFrom: "invalid-pointer"))
+    ])
+    XCTAssertTrue(invalid.contains { $0.path.hasSuffix("jsonSchemaFrom") && $0.severity == .error })
+  }
+
+  func testRequestBoundSchemaAllowsConditionalAgentTransitions() {
+    let workflow = baseWorkflow(
+      registry: [WorkflowNodeRegistryRef(id: "agent", nodeFile: "nodes/agent.json")],
+      steps: [WorkflowStepRef(id: "only", nodeId: "agent", transitions: [
+        WorkflowStepTransition(toStepId: "only", label: "accepted")
+      ])]
+    )
+    let diagnostics = DefaultWorkflowValidator().validate(workflow, nodePayloads: [
+      "agent": compliantAgent(output: .init(jsonSchemaFrom: "/runtimeVariables/result_schema"))
+    ])
+    XCTAssertFalse(diagnostics.contains { $0.message.contains("must declare output.jsonSchema") })
+  }
+
   func testAgentVariablesDoNotExcludeBareAddonPayloadReferences() {
     let workflow = relayedWorkflow(reference: "{{teamName}}")
     let producer = AgentNodePayload(

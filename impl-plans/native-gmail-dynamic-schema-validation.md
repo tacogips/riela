@@ -24,7 +24,28 @@ Validation:
 - Actual Opus 5.5 medium review found no blocker; proof is in
   tmp/claude-opus55-review/native-gmail-dynamic-schema-proof.json.
 
-Focused arm64 debug tests: 14 passed, no skips. Patch version is 0.2.46;
-release/install and release-matched Linux acquisition image remain pending,
-followed by the actual private source plan/resume/checkpoint gate.
+Focused arm64 debug tests: 14 passed, no skips.
+
+Release/install evidence (2026-10-23):
+
+- v0.2.46 is published at immutable source
+  `0c991521228cd8e7aa38a6c58f094cc875ee7e62`, with all three architecture
+  archives and SHA256 sidecars. Linux arm64/x64 release run `39890493986`
+  and main amd64 CI `39890460797` completed successfully at that same source.
+- macOS archive SHA256 is
+  `8ed6e0d3837c4270ee51c1fc2cab369c99dd4467bcc00b4cf5f668b25ebce7d2`.
+  Downloaded Linux arm64 and x64 archives match their published sidecars.
+- Homebrew tap commit `1256957` updates the formula. The local installation
+  reports 0.2.46, `brew test tacogips/tap/riela` passes, and the installed
+  executable SHA256 matches the tested release executable exactly.
+- ART's release-matched `art-native-agents:0.2.46-acquisition` image passes
+  all 14 Gmail acquisition tests without skips. The actual private guest
+  runs with network denied and only gateway/model leaves replaced by offline
+  fixtures. Source plan/resume commits one checked record through native-backed
+  checkpoint storage; rejected raw content and synthetic credentials do not
+  appear in host session/artifact files. Evidence is under ART's
+  `.runtime/art-verification/native-gmail-private-046-tests.log` and
+  `native-gmail-private-proof.json`.
+
 No App migration or live provider verification is claimed by this runtime fix.
+ART's remaining Python orchestration and production cutover remain in scope.

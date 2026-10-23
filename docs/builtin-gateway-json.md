@@ -13,6 +13,7 @@ concurrency and per-item failure handling.
 | --- | --- | --- | --- |
 | `riela/x-gateway-reader` | literal `operation`, object `arguments` | required field-path `selection`, or compatibility nested `select` | linked read-only SDK; host or private worker |
 | `riela/x-gateway-read` | same X JSON contract | same X fields | existing reader container and explicit environment framing |
+
 | `riela/gmail-gateway-reader`, `-draft`, `-sender` | literal `operation`, object `arguments` | optional field paths, literal selection set, or catalog default | fixed-mode async SDK; host or Linux worker |
 | `riela/gmail-gateway-read` | same reader JSON contract | same reader selections | existing reader container; validated typed values become document literals |
 | `riela/wrike-gateway-read`, `-write`, `-admin` | literal `operation`, object `arguments` | optional fields, literal selection set, or catalog default | fixed-tier linked gateway |
@@ -24,6 +25,17 @@ concurrency and per-item failure handling.
 | Apple Notes, Mail, Calendar, Reminders, notifications and clock product nodes | operation fixed by add-on name; existing JSON `config`/`inputs` | fixed SDK query and output projection | existing native boundary and scoped host bridge |
 | named `kaiba/*` nodes | operation fixed by add-on name; object `arguments` | existing typed result projection | preflight-captured HTTP client; host or worker |
 | Kaiba GraphQL compatibility nodes | `arguments` containing `query` and optional `variables` | authored GraphQL document | same preflight-captured HTTP client |
+
+Both X readers support `config.userCache: true` (default: disabled). The built-in
+owns the separate `x-gateway-users` cache namespace and its policy: 30 days,
+512 KiB, TTL and LRU pruning. It stores only public `{id, username, name}` metadata;
+article bodies and credentials never enter this namespace. Reads restore known
+authors locally and batch only missing or expired IDs into X user lookups.
+Reading a cached author does not renew its TTL. No workflow memory/cache nodes
+or Python lookup script are needed. Runtime `RIELA_CACHE_ROOT` can select the
+common cache root; otherwise the current user's `.riela/cache` is used, so a
+workflow checkout change does not reset the cache. A private ephemeral guest
+still needs durable runtime cache storage to reuse it across guest executions.
 
 The matrix describes execution support. Core catalog discovery and validation
 reconciliation are still acceptance work; structural workflow validation alone

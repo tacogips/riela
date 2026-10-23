@@ -12,11 +12,14 @@ extension BuiltinWorkflowAddonResolver {
   ) async throws -> AdapterExecutionOutput {
     let deadline = context.deadline
     let document = try builtinGatewayXJSONDocument(input)
+    let userCache = try XGatewayUserCacheExchange(input: input, workingDirectory: workingDirectory, environment: environment)
     let descriptor = LocalGatewayGraphQLDescriptor(providerName: "x-gateway", payloadNamespaceKey: "xGateway",
       tier: "x-gateway-reader", acceptsVariables: false,
       isAllowedEnvironmentTarget: { xGatewayReaderEnvironment.contains($0) },
       run: { _, document, _, environment in
-        try xGatewayReaderQuery(document: document, environment: environment, deadline: deadline)
+        let bindings = try userCache?.bindings() ?? [:]
+        return try xGatewayReaderQuery(document: document, environment: environment.merging(bindings) { _, memory in memory },
+          deadline: deadline, userCache: userCache)
       })
     return try await LocalGatewayGraphQLEngine(environment: environment, descriptor: descriptor,
       runnerOverride: localGatewayGraphQLRunner).execute(input, context: context, documentOverride: document)
@@ -28,7 +31,8 @@ private let xGatewayReaderEnvironment: Set<String> = [
   "X_GW_ACCESS_TOKEN", "X_GW_ACCESS_TOKEN_SECRET"
 ]
 
-func xGatewayReaderQuery(document: String, environment: [String: String], deadline: Date?) throws -> String {
+func xGatewayReaderQuery(document: String, environment: [String: String], deadline: Date?,
+                         userCache: XGatewayUserCacheExchange? = nil) throws -> String {
   guard (try? XGatewayCLI.classifyGraphQLOperation(document)) == .query else {
     throw AdapterExecutionError(.policyBlocked, "X reader requires a query operation")
   }
@@ -39,7 +43,8 @@ func xGatewayReaderQuery(document: String, environment: [String: String], deadli
   let result = XGatewayCLI(commandName: "x-gateway-reader", surface: .read).run(
     arguments: ["graphql", "query", document, "--json", "--retry", "0", "--timeout-ms", String(milliseconds)],
     environment: environment)
-  guard result.exitCode == 0, let data = result.stdout.data(using: .utf8),
+  let stdout = try result.exitCode == 0 ? (userCache?.consume(result.stdout) ?? result.stdout) : result.stdout
+  guard result.exitCode == 0, let data = stdout.data(using: .utf8),
         case let .object(envelope)? = try? JSONDecoder().decode(JSONValue.self, from: data),
         envelope["ok"] == .bool(true), case let .object(graphQL)? = envelope["data"] else {
     // Provider diagnostics may contain private source data; the worker keeps

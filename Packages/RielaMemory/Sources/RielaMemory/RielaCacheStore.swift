@@ -45,13 +45,28 @@ public struct RielaCacheStore: Sendable {
     }
   }
 
-  public func put(cacheId: String, scope: String, entries: [CachePut], retaining references: MemoryJSONValue? = nil) throws -> CacheResult {
+  /// Enumerate a bounded cache namespace after TTL pruning. This is metadata
+  /// only; callers fetch payloads through the normal budgeted get boundary.
+  public func keys(cacheId: String, scope: String, limit: Int = 10_000) throws -> [String] {
+    try validate(scope: scope, keys: ["namespace-enumeration"])
+    guard (1...10_000).contains(limit) else { throw RielaCacheError.invalid("invalid cache key limit") }
+    return try transaction(cacheId) { db, now in
+      let policy = try readPolicy(db)
+      _ = try expire(db, now: now, policy: policy)
+      return try queryRows(db, sql: "SELECT key FROM cache_entries WHERE scope = ? ORDER BY access_seq DESC LIMIT ?",
+        bindings: [.text(scope), .int(limit)]).compactMap { $0.columns["key"] }
+    }
+  }
+
+  public func put(cacheId: String, scope: String, entries: [CachePut], retaining references: MemoryJSONValue? = nil,
+                  skipNewerEntries: Bool = false) throws -> CacheResult {
     try validate(scope: scope, keys: entries.map(\.key))
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return try transaction(cacheId) { db, now in
       let policy = try readPolicy(db)
       var prepared: [(CachePut, Int64, String, String, Int)] = []
+      var skipped: [CacheLookup] = []
       var total = 0
       for entry in entries {
         guard let date = cacheDate(entry.fetchedAt) else { throw RielaCacheError.invalid("invalid fetchedAt") }
@@ -64,6 +79,7 @@ public struct RielaCacheStore: Sendable {
         let existing = try queryRows(db, sql: "SELECT fetched_ms FROM cache_entries WHERE scope = ? AND key = ?",
           bindings: [.text(scope), .text(entry.key)]).first
         if let timestamp = existing?.columns["fetched_ms"].flatMap(Int64.init), timestamp > fetched {
+          if skipNewerEntries { skipped.append(.init(key: entry.key, status: "skipped", reason: "newerEntry")); continue }
           throw RielaCacheError.invalid("put cannot replace a newer fetchedAt: \(entry.key)")
         }
         let data = try encoder.encode(entry.payload)
@@ -85,7 +101,7 @@ public struct RielaCacheStore: Sendable {
       // Validation above precedes any eviction, even when a later batch item is invalid.
       if let references { _ = try reconcileReferences(db, scope: scope, references: references) }
       let expired = try expire(db, now: now, policy: policy)
-      var lookups: [CacheLookup] = []
+      var lookups: [CacheLookup] = skipped
       for (entry, fetched, payload, revision, bytes) in prepared {
         let sequence = try nextSequence(db)
         try execute(db, """
@@ -115,7 +131,8 @@ public struct RielaCacheStore: Sendable {
     }
   }
 
-  public func get(cacheId: String, scope: String, keys: [String], maxOutputBytes: Int = maximumFrameBytes) throws -> CacheResult {
+  public func get(cacheId: String, scope: String, keys: [String], maxOutputBytes: Int = maximumFrameBytes,
+                  touch: Bool = true) throws -> CacheResult {
     try validate(scope: scope, keys: keys)
     guard (1...Self.maximumFrameBytes).contains(maxOutputBytes) else { throw RielaCacheError.invalid("invalid output budget") }
     return try transaction(cacheId) { db, now in
@@ -140,8 +157,10 @@ public struct RielaCacheStore: Sendable {
           expiresAt: cacheTimestamp(fetched + Int64(policy.ttlSeconds) * 1000), payload: payload,
           byteCount: Int(metadata.columns["byte_count"] ?? "") ?? 0,
           protectFromEviction: try isProtected(db, scope: scope, key: key))))
-        try execute(db, "UPDATE cache_entries SET access_seq = ? WHERE scope = ? AND key = ?",
-          bindings: [.int64(nextSequence(db)), .text(scope), .text(key)])
+        if touch {
+          try execute(db, "UPDATE cache_entries SET access_seq = ? WHERE scope = ? AND key = ?",
+            bindings: [.int64(nextSequence(db)), .text(scope), .text(key)])
+        }
       }
       let expired = try expire(db, now: now, policy: policy)
       let response = try result(db, policy: policy, expired: expired, results: results)

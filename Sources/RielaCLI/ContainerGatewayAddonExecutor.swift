@@ -106,7 +106,9 @@ struct ContainerGatewayAddonExecutor {
         throw AdapterExecutionError(.policyBlocked, "gateway addon.env targets must use X_GW_ or GMAIL_GATEWAY_ uppercase names")
       }
     }
+    let userCache = try gateway == .xRead ? XGatewayUserCacheExchange(input: input, workingDirectory: workingDirectory, environment: environment) : nil
     let gatewayEnvironment = try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment)
+      .merging(userCache?.bindings() ?? [:]) { _, memory in memory }
     let result: LocalProcessResult
     if driver.kind == .appleContainer {
       result = try await AppleContainerGatewayProcess(executable: driver.executable, environment: runtimeProcessEnvironment,
@@ -142,8 +144,9 @@ struct ContainerGatewayAddonExecutor {
         + GatewayFailureDiagnostics.suffix(stdout: result.stdout, stderr: result.stderr))
     }
     let response: JSONObject
+    let stdout = try userCache?.consume(result.stdout) ?? result.stdout
     do {
-      response = try JSONDecoder().decode(JSONObject.self, from: Data(result.stdout.utf8))
+      response = try JSONDecoder().decode(JSONObject.self, from: Data(stdout.utf8))
     } catch {
       throw AdapterExecutionError(.invalidOutput, "\(input.addon.name) container must return one JSON object")
     }

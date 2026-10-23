@@ -28,13 +28,10 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
       executable = path
     }
     var descriptors: [Int32] = [-1, -1]
-    // Linux lacks POSIX_SPAWN_CLOEXEC_DEFAULT; keep concurrent spawns from inheriting the write end.
-    #if os(Linux)
-    guard pipe2(&descriptors, O_CLOEXEC) == 0 else { throw RuntimeEnvironmentError.sourceFailed }
-    #else
     guard pipe(&descriptors) == 0 else { throw RuntimeEnvironmentError.sourceFailed }
-    #endif
     defer { close(descriptors[0]); if descriptors[1] >= 0 { close(descriptors[1]) } }
+    // Linux lacks POSIX_SPAWN_CLOEXEC_DEFAULT; keep concurrent spawns from inheriting the write end.
+    for descriptor in descriptors { _ = fcntl(descriptor, F_SETFD, FD_CLOEXEC) }
     let null = open("/dev/null", O_RDWR | O_CLOEXEC)
     guard null >= 0 else { throw RuntimeEnvironmentError.sourceFailed }
     defer { close(null) }

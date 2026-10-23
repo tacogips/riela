@@ -55,8 +55,9 @@ private func remoteGraphQLVariables(_ inputs: KaibaAddonInputs) throws -> RielaC
   guard let rawVariables = inputs.value("variables") else {
     return [:]
   }
-  let rendered = try renderAddonConfig(rawVariables, variables: inputs.variables)
-  guard case let .object(variables) = rendered else {
+  // Config and addon.inputs already rendered once in KaibaAddonInputs.
+  // Source values containing template syntax must remain literal variables.
+  guard case let .object(variables) = rawVariables else {
     throw noteAddonInvalidInput("\(inputs.addonName) variables must be an object")
   }
   return variables

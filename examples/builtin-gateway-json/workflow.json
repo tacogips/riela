@@ -1,0 +1,48 @@
+{
+  "workflowId": "builtin-gateway-json",
+  "description": "Read configured Gmail account metadata and project IDs using built-in JSON input and finite postprocess; no scripts.",
+  "defaults": {
+    "maxLoopIterations": 1,
+    "nodeTimeoutMs": 30000
+  },
+  "entryStepId": "accounts",
+  "nodes": [
+    {
+      "id": "accounts",
+      "addon": {
+        "name": "riela/gmail-gateway-reader",
+        "version": "1",
+        "env": {
+          "GMAIL_GATEWAY_CONFIG": {
+            "fromEnv": "GMAIL_GATEWAY_CONFIG",
+            "required": false
+          }
+        },
+        "config": {
+          "operation": "accounts",
+          "arguments": {},
+          "selection": [
+            "id"
+          ],
+          "postprocess": [
+            {
+              "pick": "/data/accounts"
+            },
+            {
+              "map": {
+                "id": "/id"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "accounts",
+      "nodeId": "accounts",
+      "role": "worker"
+    }
+  ]
+}

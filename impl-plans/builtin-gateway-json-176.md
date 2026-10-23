@@ -51,7 +51,7 @@ replays a successful write. Invalid instruction syntax fails before the effect.
 - Complete behavioral coverage of typed requests for every affected gateway,
   legacy container gateways and already structured product-specific nodes.
 - Reconcile Core validation/catalog discovery with all runtime modes and aliases.
-- Verify Kaiba inputs use the common contract where needed;
+- Reconcile named operations and compatibility surfaces in the final matrix;
   preserve fixed operations of product-specific Apple nodes.
 - Complete the provider matrix, workflow examples and user-facing reference.
 - Run the requested actual Claude Opus review; resolve actionable findings.
@@ -110,3 +110,56 @@ Optional config paths are parsed by fixed argv layout, avoiding values that
 look like flag names. Nested Google Service arguments refuse explicit addon
 inputs as well as flat config overrides. Full matrix and deployment acceptance
 remain outstanding.
+
+## Legacy reader and Kaiba checkpoint
+
+Legacy `riela/x-gateway-read` and `riela/gmail-gateway-read` now accept JSON
+operation inputs before starting their runtime. X shares the embedded reader's
+bounded codec. Gmail builds against its reader catalog and serializes the
+validated AST without variable declarations for older reader CLIs. Substitution
+uses declared types, including nested input objects, lists and enums; source
+strings are JSON-escaped literals. The resulting document is validated again,
+and mutations, multiple operations and oversized documents fail before launch.
+Existing image, environment framing and read-only runtime restrictions remain.
+
+Kaiba named add-ons accept `config.arguments`; their add-on name already fixes
+the operation. They use the same bounded renderer moved to RielaAddonSupport.
+Nested arguments exclude flat config/input overrides and cannot select an
+endpoint, authentication or a different captured instance. Instance selection
+stays in top-level `kaibaInstanceId` and the preflight snapshot. GraphQL
+compatibility add-ons still accept an explicit document as data; they no longer
+template already-rendered variables a second time in either input mode.
+
+Legacy/shared focused tests passed 21 cases (one existing live-container test
+skipped). Kaiba/legacy/shared focused tests passed 19 cases with no skips. Tests
+cover reader-only execution, enum and source-text round trips, pre-launch
+rejection, named Kaiba HTTP request variables, connection restrictions and
+literal GraphQL variables. An attempted credential-free metadata check against
+the existing legacy Gmail image returned AUTH_REQUIRED with networking denied;
+it is not a passing legacy SDK integration gate. Published 0.2.44 SDK metadata
+and variable binding evidence above is a separate, successful check.
+
+The no-script example `examples/builtin-gateway-json` validates successfully and
+its one-node mock workflow completed with typed account IDs in `processed` and
+the original data retained. Its runtime/session proof lives under
+`tmp/gmail-linux/gateway-json-example/`. The provider/input/isolation matrix and
+finite instruction reference are in `docs/builtin-gateway-json.md`.
+
+The final regression suite passed 34 cases with no skips, including captured
+legacy launch argv, oversized UTF-8 document rejection before runtime launch,
+duplicate variable definitions, unsupported catalog `select`, Kaiba literal
+GraphQL structure and explicit-input conflicts. An end-to-end common resolver
+test combines nested Kaiba arguments with postprocessing: exactly one injected
+SDK HTTP request executes, source template text remains literal, and the
+original cursor remains available. This fixture does not contact a Kaiba server.
+Legacy JSON argv documents are capped at 120,000 bytes; nested Kaiba document
+and operation names remain authored literals, with dynamic data in variables.
+
+Actual Claude Opus 5.5 fixes-only follow-up found no additional implementation
+bug. Its test-strength suggestions were applied without runtime changes: the
+legacy argv gate now proves accepted 119 KB/rejected 121 KB inputs and the X
+cap-specific error; Kaiba templates render otherwise plausible valid documents
+and operation names. The final 34-test suite passes with zero skips, SwiftLint
+reports no warnings, and the no-script example again completes through the
+actual workflow runner with its credential-free mock. This completes this
+legacy/Kaiba source chunk, not release, ART migration or deployment acceptance.

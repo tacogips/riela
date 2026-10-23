@@ -54,10 +54,31 @@ struct ContainerGatewayAddonExecutor {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version")
     }
     let config = input.addon.config ?? [:]
-    guard let template = nonEmptyString(config["queryTemplate"]) else {
-      throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.queryTemplate is required")
+    let document: String
+    if config["operation"] != nil {
+      if gateway == .xRead {
+        guard let built = try builtinGatewayXJSONDocument(input) else {
+          throw AdapterExecutionError(.policyBlocked, "X JSON operation is missing")
+        }
+        document = built
+      } else {
+        guard let catalog = try BuiltinGmailGatewayCLIAddon.reader.descriptor.catalog?() else {
+          throw AdapterExecutionError(.policyBlocked, "Gmail reader catalog is unavailable")
+        }
+        let built = try BuiltinGatewayJSONRequest.document(config: config, variables: addonVariables(for: input),
+          catalog: catalog, addonName: input.addon.name)
+        document = try BuiltinGatewayJSONRequest.inlineReaderDocument(built, catalog: catalog)
+      }
+    } else {
+      guard config["arguments"] == nil, config["selection"] == nil, config["select"] == nil,
+            let template = nonEmptyString(config["queryTemplate"]) else {
+        throw AdapterExecutionError(.policyBlocked, "\(input.addon.name) config.queryTemplate is required; JSON arguments require operation")
+      }
+      document = renderPromptTemplate(template, variables: try addonVariables(for: input))
     }
-    let document = renderPromptTemplate(template, variables: try addonVariables(for: input))
+    if config["operation"] != nil, document.utf8.count > 120_000 {
+      throw AdapterExecutionError(.policyBlocked, "gateway JSON document exceeds the legacy container argument limit")
+    }
     let driver = try runtimeDriver(config: config)
     if let value = config["image"], nonEmptyString(value) == nil {
       throw AdapterExecutionError(.policyBlocked, "config.image must be a non-empty string")

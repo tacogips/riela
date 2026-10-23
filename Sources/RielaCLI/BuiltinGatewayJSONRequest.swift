@@ -37,7 +37,7 @@ enum BuiltinGatewayJSONRequest {
           operation.range(of: namePattern, options: .regularExpression) != nil,
           !operation.contains("{{"),
           config["queryTemplate"] == nil, config["variablesTemplate"] == nil,
-          config["command"] == nil, config["argsTemplate"] == nil else {
+          config["command"] == nil, config["argsTemplate"] == nil, config["select"] == nil else {
       throw AdapterExecutionError(.policyBlocked, "\(addonName) requires one literal operation without legacy query or command fields")
     }
     let rendered = try renderedArguments(config: config, variables: variables, addonName: addonName,
@@ -73,15 +73,7 @@ enum BuiltinGatewayJSONRequest {
   static func renderedArguments(
     config: JSONObject, variables: JSONObject, addonName: String, alreadyRendered: Bool = false
   ) throws -> JSONObject {
-    guard case let .object(arguments) = config["arguments"] ?? .object([:]) else {
-      throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments must be an object")
-    }
-    let rendered = try alreadyRendered ? JSONValue.object(arguments) : renderAddonConfig(.object(arguments), variables: variables)
-    let encoded = try JSONEncoder().encode(rendered)
-    guard encoded.count <= 8 * 1_024 * 1_024, case let .object(values) = rendered else {
-      throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments exceed the JSON size limit")
-    }
-    return values
+    try renderGatewayJSONArguments(config["arguments"], variables: variables, addonName: addonName, alreadyRendered: alreadyRendered)
   }
 
 }

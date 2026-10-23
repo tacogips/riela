@@ -16,12 +16,35 @@ struct KaibaAddonInputs {
 
   init(input: WorkflowAddonExecutionInput, environment: [String: String]) throws {
     addonName = input.addon.name
-    variables = try addonVariables(for: input)
+    let templateVariables = try addonVariables(for: input)
     let rawConfig = input.addon.config ?? [:]
-    guard case let .object(renderedConfig) = try renderAddonConfig(.object(rawConfig), variables: variables) else {
-      throw noteAddonInvalidInput("\(input.addon.name) config must be an object")
+    if rawConfig["arguments"] != nil {
+      guard Set(rawConfig.keys).isSubset(of: ["arguments", "kaibaInstanceId"]), input.addon.inputs?.isEmpty != false else {
+        throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments cannot be combined with flat config or addon.inputs")
+      }
+      let arguments = try renderGatewayJSONArguments(rawConfig["arguments"], variables: templateVariables, addonName: addonName)
+      guard Set(arguments.keys).isDisjoint(with: ["kaibaInstanceId", "endpoint", "apiKey", "apiKeyEnv", "allowUnauthenticated", "mode", "backend"]) else {
+        throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments cannot change the captured Kaiba connection")
+      }
+      if input.addon.name == "kaiba/note-graphql-document" || input.addon.name == "kaiba/note-graphql-remote" {
+        guard case let .object(rawArguments)? = rawConfig["arguments"] else {
+          throw AdapterExecutionError(.policyBlocked, "\(addonName) arguments must be an object")
+        }
+        for key in ["query", "document", "operationName"] where rawArguments[key] != nil {
+          guard case .string? = rawArguments[key], rawArguments[key] == arguments[key] else {
+            throw AdapterExecutionError(.policyBlocked, "\(addonName) GraphQL document and operation name must remain literal; use variables for data")
+          }
+        }
+      }
+      config = arguments
+      variables = [:]
+    } else {
+      guard case let .object(renderedConfig) = try renderAddonConfig(.object(rawConfig), variables: templateVariables) else {
+        throw noteAddonInvalidInput("\(input.addon.name) config must be an object")
+      }
+      config = renderedConfig
+      variables = templateVariables
     }
-    config = renderedConfig
     self.environment = environment
   }
 

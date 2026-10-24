@@ -4,7 +4,7 @@
 **planId**: ISW2-74d-brain-loop-example
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, section "Example"
-**dependsOn**: ISW2-74c-dynamic-workflow-dispatch (wave 4)
+**dependsOn**: ISW2-74c-dynamic-workflow-dispatch (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-74d-brain-loop-example.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-74d/
 
@@ -94,3 +94,5 @@ Per-edit fresh read, with pre/post hash snapshots under `tmp/issue-sweep-2-20261
 - [ ] The example directory contains all 6 files.
 - [ ] Verification 1-5 pass, with logs.
 - [ ] The progress log records the two child session ids and both digests.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

@@ -4,10 +4,7 @@
 **planId**: ISW2-74b-dynamic-workflow-contract
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" (shared materializer) and "Session lineage and provenance"
-**dependsOn**:
-- ISW2-74a-dynamic-workflow-policy (types)
-- ISW2-27a-cancelled-status (shared `RuntimeSession.swift`)
-- ISW2-32-recovery-hydration (shared `WorkflowRunCommand.swift`)
+**dependsOn**: ISW2-74a-dynamic-workflow-policy, ISW2-27a-cancelled-status, ISW2-32-recovery-hydration, ISW2-27c-session-reconcile (serial operator amendment)
 
 Wave 2.
 
@@ -113,3 +110,5 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 - [ ] `grep -n "private struct TemporaryWorkflowPayload" Sources/RielaCLI/WorkflowRunCommand.swift` → empty.
 - [ ] `grep -n "dynamicWorkflow" Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/WorkflowValidation.swift` → matches.
 - [ ] Verification 1-4 pass, with logs.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

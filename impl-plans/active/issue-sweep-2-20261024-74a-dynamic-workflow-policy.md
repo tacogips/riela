@@ -4,7 +4,7 @@
 **planId**: ISW2-74a-dynamic-workflow-policy
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" and "Privilege and bounds" (rules 1-5, 9 and 10)
-**dependsOn**: none (wave 1; this plan only adds a new file)
+**dependsOn**: ISW2-27b-gateway-cancellation (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-74a/
 
@@ -186,3 +186,5 @@ Both files are new, so no drift is expected. Still save a post-hash under `tmp/i
 
 - [ ] All public names match the Contract block exactly.
 - [ ] Every listed test passes, and verification 1-3 pass, with logs.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

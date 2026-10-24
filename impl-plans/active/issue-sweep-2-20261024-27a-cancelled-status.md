@@ -4,7 +4,7 @@
 **planId**: ISW2-27a-cancelled-status
 **Issue**: https://github.com/tacogips/riela/issues/27 (P1)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)", subsection "P1 contract", items 1-8
-**dependsOn**: none (wave 1)
+**dependsOn**: none (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-27a-cancelled-status.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-27a/
 
@@ -27,6 +27,8 @@ Graceful cancellation (SIGINT/SIGTERM, task cancellation, operator move) is pers
 
 Sources:
 
+- `Sources/RielaCLI/TaskDispatch+Handover.swift`
+- `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift`
 - `Sources/RielaCore/RuntimeSession.swift`
 - `Sources/RielaCore/RuntimeStore.swift`
 - `Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift`
@@ -184,3 +186,5 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 - [ ] Both enums have `cancelled` and tolerant decode.
 - [ ] Verification 1-6 pass, with logs recorded in the progress log.
 - [ ] The progress log lists every test file whose assertions changed, and the reason.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

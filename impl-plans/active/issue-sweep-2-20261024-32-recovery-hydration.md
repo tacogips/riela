@@ -4,7 +4,7 @@
 **planId**: ISW2-32-recovery-hydration
 **Issue**: https://github.com/tacogips/riela/issues/32
 **Design Reference**: design-docs/specs/design-cli-session-store-decode-resilience.md, section "Recovery hydration scope (issue #32, 2026-10-24)", Contract 1-6
-**dependsOn**: none (wave 1)
+**dependsOn**: ISW2-27a-cancelled-status (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-32-recovery-hydration.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-32/
 
@@ -146,3 +146,5 @@ If the build fails in a file outside the write ownership, a wave-1 sibling (ISW2
 - [ ] `hydrateSessions:` no longer appears in `Sources/` (`grep -rn "hydrateSessions" Sources` is empty).
 - [ ] Verification 1-5 pass, with logs.
 - [ ] The progress log records the root-cause summary, measured seeding times (family against legacy whole-store, if measured once), and every verification record.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

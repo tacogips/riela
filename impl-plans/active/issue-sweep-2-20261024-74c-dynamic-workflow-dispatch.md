@@ -4,7 +4,7 @@
 **planId**: ISW2-74c-dynamic-workflow-dispatch
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Runtime data flow", "Result message", "Session lineage and provenance", "Privilege and bounds" (rules 6-8 plus stamping), "Failure, timeout and cancellation", "Mock scenarios", "Resume and rerun" and "Session scope"
-**dependsOn**: ISW2-74b-dynamic-workflow-contract, ISW2-74a-dynamic-workflow-policy, ISW2-27a-cancelled-status (wave 3)
+**dependsOn**: ISW2-74b-dynamic-workflow-contract, ISW2-74a-dynamic-workflow-policy, ISW2-27a-cancelled-status (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-74c/
 
@@ -174,3 +174,5 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 
 - [ ] All listed tests pass, and verification 1-4 pass, with logs.
 - [ ] `grep -rn "dynamic-workflow" Sources/RielaCore` shows the branch id in the dispatch, the hook and the recovery code.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

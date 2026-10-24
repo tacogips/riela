@@ -4,7 +4,7 @@
 **planId**: ISW2-27b-gateway-cancellation
 **Issue**: https://github.com/tacogips/riela/issues/27 (P2)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)", subsection "P2 contract"
-**dependsOn**: none (wave 1)
+**dependsOn**: ISW2-32-recovery-hydration (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-27b-gateway-cancellation.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-27b/
 
@@ -73,3 +73,5 @@ Per-edit fresh read, with pre/post hash snapshots under `tmp/issue-sweep-2-20261
 - [ ] All three gaps are closed.
 - [ ] The 5 tests pass and verification 1-3 pass, with logs.
 - [ ] The progress log states that no CLI-agent auth preflight exists anymore, with evidence: `grep -rn "authentication is unavailable" Sources` returns empty.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

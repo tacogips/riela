@@ -4,7 +4,7 @@
 **planId**: ISW2-27c-session-reconcile
 **Issue**: https://github.com/tacogips/riela/issues/27 (P4, plus CLI resume parity and docs)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)": the P4 contract, and P1 items 6-7
-**dependsOn**: ISW2-32-recovery-hydration (shared `SessionCommands.swift`), ISW2-27a-cancelled-status (needs `.cancelled`) — wave 2
+**dependsOn**: ISW2-32-recovery-hydration, ISW2-27a-cancelled-status, ISW2-74a-dynamic-workflow-policy (serial operator amendment)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-27c-session-reconcile.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-27c/
 
@@ -148,3 +148,5 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 - [ ] `riela session reconcile` exists, defaults to a dry run, and `--apply` marks only lock-free running sessions `cancelled`.
 - [ ] Verification 1-4 pass, with logs.
 - [ ] The docs file exists, and the progress log records the verification evidence.
+
+> Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.

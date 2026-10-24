@@ -146,3 +146,35 @@ interruption before delivery, recovery evaluates the original route and dependen
 wave, then reconstructs the zero-selected join from the accepted source without
 re-running the provider. Untaken conditional routes are not reconstructed. These additions require the
 updated runtime in both the host and any private guest.
+
+`array-batch.bindItems: true` requires `uniqueBy`. It emits a native `receipt`
+containing the identity key, canonical digest of each original batch and the
+caller context. Context is carried once inside the receipt. Set the fanout's
+`contextFrom` to `/receipt`, then use `riela/array-gather` at the join:
+
+```json
+{
+  "name": "riela/array-gather",
+  "version": "1",
+  "config": {
+    "join": "{{input.fanoutJoin}}",
+    "groupId": "record-inspection",
+    "selectedIdsFrom": "/safe_ids"
+  }
+}
+```
+
+Gather requires a complete join of the expected group. It checks batch count,
+unique/contiguous branch indices, terminal success and exact original batch
+versions before selecting IDs. Unknown and cross-batch IDs fail; repeated
+selected IDs are harmless and never duplicate records. Results preserve source
+order, regardless of worker completion order. No worker-supplied replacement
+item is returned. Omit `selectedIdsFrom` to gather all original items.
+
+The result is `{items, itemCount, selectedCount, context}`. Empty input returns
+zero items and its original context without invoking workers or waiting for a
+minimum count. Failed/missing/modified branches cannot advance the joined
+checkpoint. The join is bounded to 16 MB including runtime metadata, at most
+10,000 branches/items, and the assembled output to 8 MB. The receipt is runtime
+binding metadata, not a signature for arbitrary caller-supplied JSON: preserve
+it on the trusted fanout context path, outside worker/model output.

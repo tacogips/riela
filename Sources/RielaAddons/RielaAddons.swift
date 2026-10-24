@@ -126,7 +126,8 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/web-collect", version: "1"),
     .init(name: "riela/json-transform", version: "1"),
     .init(name: "riela/json-compose", version: "1"),
-    .init(name: "riela/array-batch", version: "1")
+    .init(name: "riela/array-batch", version: "1"),
+    .init(name: "riela/array-gather", version: "1")
   ]
 
   // Legacy property name retained for source compatibility. These gateways

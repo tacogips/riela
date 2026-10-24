@@ -5,6 +5,7 @@ import RielaCore
 enum BuiltinDataAddon: String, CaseIterable, Sendable {
   case compose = "riela/json-compose"
   case batch = "riela/array-batch"
+  case gather = "riela/array-gather"
   case transform = "riela/json-transform"
 }
 
@@ -48,8 +49,10 @@ extension BuiltinWorkflowAddonResolver {
         throw AdapterExecutionError(.invalidInput, "json-compose requires an object payload")
       }
       payload = value
+    case .gather:
+      payload = try ArrayBatchReceipt.gather(config)
     case .batch:
-      guard Set(config.keys).isSubset(of: ["items", "size", "minItems", "maxItems", "uniqueBy", "jsonSchema", "context", "maxBatchBytes"]),
+      guard Set(config.keys).isSubset(of: ["items", "size", "minItems", "maxItems", "uniqueBy", "jsonSchema", "context", "maxBatchBytes", "bindItems"]),
             case let .array(items)? = config["items"] else {
         throw AdapterExecutionError(.invalidInput, "array-batch requires items")
       }
@@ -63,10 +66,10 @@ extension BuiltinWorkflowAddonResolver {
         guard case let .string(key) = field, !key.isEmpty, key.utf8.count <= 256 else {
           throw AdapterExecutionError(.invalidInput, "array-batch uniqueBy must name an object field")
         }
-        var seen = Set<String>()
+        var seen = Set<Data>()
         for item in items {
           guard case let .object(object) = item, let identity = object[key],
-                case let .string(text) = identity, !text.isEmpty, seen.insert(text).inserted else {
+                case let .string(text) = identity, !text.isEmpty, seen.insert(Data(text.utf8)).inserted else {
             throw AdapterExecutionError(.invalidInput, "array-batch identities must be distinct nonempty strings")
           }
         }
@@ -74,7 +77,18 @@ extension BuiltinWorkflowAddonResolver {
       let batches = try dataBatches(items, size: size, maximumBytes: config["maxBatchBytes"])
       var result: JSONObject = ["items": .array(batches), "itemCount": .integer(Int64(items.count)),
                                "batchCount": .integer(Int64(batches.count))]
-      if let context = config["context"] { result["context"] = context }
+      let bind: Bool
+      switch config["bindItems"] {
+      case nil: bind = false
+      case let .bool(value)?: bind = value
+      default: throw AdapterExecutionError(.invalidInput, "array-batch bindItems must be boolean")
+      }
+      if bind {
+        guard case let .string(identityKey)? = config["uniqueBy"] else {
+          throw AdapterExecutionError(.invalidInput, "array-batch bindItems requires uniqueBy")
+        }
+        result["receipt"] = try ArrayBatchReceipt.seal(batches, identityKey: identityKey, context: config["context"] ?? .null)
+      } else if let context = config["context"] { result["context"] = context }
       payload = result
     }
     guard try JSONEncoder().encode(payload).count <= 8_000_000 else {

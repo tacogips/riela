@@ -7,6 +7,7 @@ import RielaCore
 enum JSONDataTransform {
   fileprivate enum Operation: Sendable {
     case pick(JSONValue)
+    case project(JSONDataProjection)
     case map(JSONObject)
     case filter(path: JSONValue, equals: JSONValue)
     case unique(JSONValue)
@@ -30,6 +31,8 @@ enum JSONDataTransform {
         if case let .pick(pointer) = operation {
           guard let found = try lookup(value, pointer: pointer) else { throw invalid() }
           value = found
+        } else if case let .project(plan) = operation {
+          value = try plan.run(value)
         } else {
           guard case let .array(items) = value, items.count <= 10_000 else { throw invalid() }
           value = .array(try apply(operation, items: items))
@@ -57,6 +60,7 @@ enum JSONDataTransform {
       case "pick":
         _ = try lookup(.null, pointer: argument)
         return .pick(argument)
+      case "project": return .project(try JSONDataProjection(argument))
       case "map":
         guard case let .object(fields) = argument, fields.count <= 256 else { throw invalid() }
         for source in fields.values { _ = try mapped(.null, source: source) }
@@ -93,7 +97,7 @@ enum JSONDataTransform {
         }
       }
     case let .take(count): return Array(items.prefix(count))
-    case .pick: throw invalid()
+    case .pick, .project: throw invalid()
     }
   }
 

@@ -70,7 +70,7 @@ extension BuiltinWorkflowAddonResolver {
     } catch { throw cacheReadSetInvalid() }
   }
 
-  private func cacheReadExchange(_ value: JSONValue, workflowId: String) throws -> RielaCacheExchange {
+  func cacheReadExchange(_ value: JSONValue, workflowId: String) throws -> RielaCacheExchange {
     guard case let .object(storage) = value,
       Set(storage.keys).isSubset(of: ["cacheId", "scope", "cacheRoot", "ttlSeconds", "maxBytes", "capacityProtection"]),
       case let .string(cache)? = storage["cacheId"], !cache.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -98,7 +98,7 @@ private func cacheReadSetInvalid() -> AdapterExecutionError {
   .init(.invalidInput, "invalid cache-exchange read-set request or readback")
 }
 
-private func cacheReadPolicyKey(_ path: String) throws -> String {
+func cacheReadPolicyKey(_ path: String) throws -> String {
   let canonical = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
   guard FileManager.default.fileExists(atPath: canonical) else { return "path:" + canonical }
   let attributes = try FileManager.default.attributesOfItem(atPath: canonical)

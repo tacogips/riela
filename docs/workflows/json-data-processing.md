@@ -178,3 +178,31 @@ checkpoint. The join is bounded to 16 MB including runtime metadata, at most
 10,000 branches/items, and the assembled output to 8 MB. The receipt is runtime
 binding metadata, not a signature for arbitrary caller-supplied JSON: preserve
 it on the trusted fanout context path, outside worker/model output.
+
+
+## Project nested metadata without copying private or historical fields
+
+The `project` operation is also available to gateway `postprocess` pipelines.
+It starts from an object and keeps only explicitly named fields:
+
+```json
+{"project": {
+  "cursor": "/cursor",
+  "groups": {"from": "/groups", "mapValues": {
+    "source": "/source",
+    "hasItems": {"nonEmpty": "/items"},
+    "status": {"from": "/summary", "fields": {"complete": "/complete"}}
+  }}
+}}
+```
+
+A string selector is a JSON Pointer. Missing selected fields are omitted;
+explicit nulls stay null. `fields` projects one nested object; `mapValues`
+projects each object in a dictionary while retaining its keys. `nonEmpty`
+returns a boolean for arrays/objects (missing/null gives false); scalar inputs
+are refused. Unknown selectors, expressions, malformed pointers and extra keys
+are rejected before processing data. Template-looking source strings remain
+literal. Declaration depth is at most 16, with at most 256 fields per level;
+a dictionary has at most 10,000 entries and projection visits at most 100,000
+objects and selected fields. Standard intermediate/final JSON byte bounds remain in force.
+Projection shapes data; it does not prove source completeness or publication.

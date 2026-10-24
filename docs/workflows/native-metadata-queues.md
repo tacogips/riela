@@ -144,3 +144,68 @@ against the persisted cursor. This reserves attempts, not exclusive ownership:
 wrapping or a process failure can cause repeated fetches. An interruption after
 commit can lose the returned selection, but leaves the items unacknowledged and
 eligible on a later turn. Publication requires its own exact-version receipt.
+
+## Synchronize a snapshot's cache retention set
+
+`snapshot-scan.cacheReconciliation` optionally reads each explicitly named
+snapshot and synchronizes its cache protection under the same file lease used
+by writers. It replaces a script's lock → snapshot read → cache reconciliation
+loop. It does not fetch bodies, modify a snapshot, publish, or acknowledge work.
+Only exact `storage.memoryIds` are accepted; prefix enumeration is refused.
+
+```json
+{
+  "storage": {"memoryIds": ["day-ready"], "workflowId": "news", "nodeId": "ready"},
+  "valueFrom": "/state",
+  "cacheReconciliation": {
+    "lockDirectory": "state",
+    "bindings": {
+      "day-ready": {
+        "lockName": "ready.lock",
+        "cache": {"cacheId": "checked-artifacts", "scope": "day-one", "capacityProtection": true},
+        "scopeFrom": "/state/date",
+        "referencesFrom": "/state",
+        "initialValue": {"state": {"date": "day-one", "entries": {}}, "records": []}
+      }
+    }
+  }
+}
+```
+
+The binding keys must exactly match the selected memory IDs. Each lease has a
+unique safe leaf filename. Cache storage accepts the same policy/root fields as
+`cache-exchange.read-set`; aliased stores cannot declare different byte/TTL or
+protection policies, and the same physical cache scope cannot be bound twice.
+The pointer `scopeFrom` must equal the configured cache scope by exact UTF-8
+bytes. A legacy empty object at `referencesFrom` may omit this field; it retains
+nothing in the explicitly declared cache scope. Other absent/mismatched scope
+values fail without reconciling that journal. Reference validation and revision
+conflicts follow the normal native reconciliation rules.
+
+`initialValue` is used only for a missing snapshot; it must pass `valueSchema`
+and the scope checks before any journal lock or cache is opened. Such snapshots
+produce a row with `head: null` and the projected initial value, without creating
+a memory database. Existing snapshots remain unchanged, including empty legacy
+values. Reconciliation uses the full declared reference pointer before selection
+filters or caller source filters, so unselected pending artifacts stay protected.
+
+Writers must use the declared exclusive flock across their cache writes and
+snapshot commit. The scan waits at most five seconds per lease, clipped to the
+node deadline, observes cancellation while waiting, refuses symlink/hardlinked
+lock leaves, and holds the lease across reading, validation and reconciliation.
+It processes one journal at a time; this is not an atomic transaction over all
+journals. An error in a later journal may follow completed maintenance of an
+earlier journal. Missing/expired cache bodies remain missing and never become a
+publication receipt. Cache policy changes can expire/evict entries normally.
+
+
+`valueProjection` optionally applies a declarative object projection to
+`valueFrom` after raw `valueSchema` validation. It uses the `json-transform`
+`project` selectors (`fields`, `mapValues`, `nonEmpty`); it cannot be combined
+with `presence`. Cache reconciliation still uses the complete raw
+`referencesFrom`, regardless of the projected fields or subsequent filters.
+Use this to return compact candidate metadata while keeping historical receipts,
+full reference trees and unused generations within the store. The aggregate
+projected result retains the scan's 7,990,000-byte bound; input snapshots can
+still be up to the configured per-head limit. Oversized *selected metadata*
+is refused explicitly rather than truncated or acknowledged.

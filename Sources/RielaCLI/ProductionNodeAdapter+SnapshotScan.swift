@@ -11,7 +11,7 @@ extension BuiltinWorkflowAddonResolver {
   func executeSnapshotScan(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
-      Set(config.keys).isSubset(of: ["storage", "valueFrom", "whereAny", "sortBy", "maxDatabases", "maxPayloadBytes", "presence", "valueSchema"]),
+      Set(config.keys).isSubset(of: ["storage", "valueFrom", "whereAny", "sortBy", "maxDatabases", "maxPayloadBytes", "presence", "valueSchema", "cacheReconciliation", "valueProjection"]),
       case let .object(storage)? = config["storage"],
       Set(storage.keys).isSubset(of: ["memoryPrefix", "memoryIds", "workflowId", "nodeId", "tag", "memoryRoot"]),
       case let .integer(maximum) = config["maxDatabases"] ?? .integer(4096), (1...4096).contains(maximum),
@@ -62,16 +62,28 @@ extension BuiltinWorkflowAddonResolver {
       try checkSnapshotWork(context); try preflightSnapshotFiles(path)
       if let identity = try snapshotDatabaseIdentity(path), !files.insert(identity).inserted { throw snapshotScanInvalid() }
     }
+    let reconciliation: SnapshotCacheReconciliation?
+    if let raw = config["cacheReconciliation"] {
+      guard storage["memoryIds"] != nil else { throw snapshotScanInvalid() }
+      reconciliation = try .init(raw, memoryIds: Set(paths.map { $0.deletingPathExtension().lastPathComponent }), resolver: self, workflowId: input.workflowId)
+      for binding in reconciliation!.bindings.values { _ = try selection.project(binding.initialValue) }
+    } else { reconciliation = nil }
     var rows: [SnapshotScanRow] = [], bytes = 2
     for path in paths.sorted(by: { Data($0.lastPathComponent.utf8).lexicographicallyPrecedes(Data($1.lastPathComponent.utf8)) }) {
       try checkSnapshotWork(context)
       let memory = path.deletingPathExtension().lastPathComponent
-      guard let snapshot = try store.loadSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag, maxPayloadBytes: Int(limit)) else { continue }
-      let raw = jsonValue(from: snapshot.record.payload)
-      let value = try selection.project(raw)
+      func read(_ binding: SnapshotCacheReconciliation.Binding?) throws -> (MemorySnapshot?, JSONValue)? {
+        let snapshot = try store.loadSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag, maxPayloadBytes: Int(limit))
+        guard let raw = snapshot.map({ jsonValue(from: $0.record.payload) }) ?? binding?.initialValue else { return nil }
+        let selected = try selection.project(raw)
+        if let binding { try SnapshotCacheReconciliation.reconcile(raw, binding: binding, context: context) }
+        return (snapshot, selected)
+      }
+      let result = try reconciliation.map { try $0.read(memoryId: memory, context: context) { try read($0) } } ?? read(nil)
+      guard let (snapshot, value) = result else { continue }
       guard try selection.accepts(value) else { continue }
-      let row: JSONValue = .object(["memoryId": .string(memory), "head": .object(["recordId": .integer(snapshot.head.recordId),
-        "version": .integer(snapshot.head.version), "scope": .string(snapshot.head.scope)]), "value": value])
+      let row: JSONValue = .object(["memoryId": .string(memory), "head": snapshot.map { .object(["recordId": .integer($0.head.recordId),
+        "version": .integer($0.head.version), "scope": .string($0.head.scope)]) } ?? .null, "value": value])
       bytes += try JSONEncoder().encode(row).count + 1
       guard bytes <= 7_990_000 else { throw snapshotScanInvalid() }
       rows.append(.init(value: row, keys: try selection.keys(value), index: rows.count))
@@ -97,13 +109,15 @@ private struct SnapshotScanSelection {
   var sort: [JSONObject]
   var presence: JSONObject?
   var schema: JSONObject?
+  var projection: JSONDataProjection?
   init(_ config: JSONObject) throws {
+    if let raw = config["valueProjection"] { projection = try JSONDataProjection(raw) }
     if let raw = config["valueSchema"] {
       guard case let .object(value) = raw, DefaultWorkflowOutputValidator().validateContractSchema(value) == nil else { throw snapshotScanInvalid() }
       schema = value
     }
     if let raw = config["presence"] {
-      guard case let .object(fields) = raw, !fields.isEmpty, fields.count <= 64, config["valueFrom"] == nil,
+      guard case let .object(fields) = raw, !fields.isEmpty, fields.count <= 64, config["valueFrom"] == nil, config["valueProjection"] == nil,
         fields.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 }) else { throw snapshotScanInvalid() }
       for path in fields.values { _ = try JSONDataTransform.lookup(.null, pointer: path) }
       presence = fields
@@ -146,7 +160,7 @@ private struct SnapshotScanSelection {
       })
     }
     guard let value = try JSONDataTransform.lookup(raw, pointer: pointer) else { throw snapshotScanInvalid() }
-    return value
+    return try projection?.run(value) ?? value
   }
   func accepts(_ value: JSONValue) throws -> Bool {
     var matched = conditions.isEmpty

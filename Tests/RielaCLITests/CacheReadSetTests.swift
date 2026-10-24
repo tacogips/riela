@@ -47,11 +47,16 @@ final class CacheReadSetTests: XCTestCase {
   func testDisposablePolicyReleasesLegacyProtectionBeforeShrinkingLRU() async throws {
     let root = scratch(); defer { try? FileManager.default.removeItem(at: root) }
     let store = RielaCacheStore(rootDirectory: root.path)
-    let protected = try RielaCacheExchange(store: store, cacheId: "bodies", scope: "account", capacityProtection: true)
-    let time = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-5))
-    let refs = try protected.put(["old", "recent", "new"].map {
-      .init(key: $0, fetchedAt: time, payload: .string("checked"), protectFromEviction: true)
-    })
+    let base = Date().addingTimeInterval(-30)
+    let time = ISO8601DateFormatter().string(from: base.addingTimeInterval(-5))
+    var refs: [String: CacheBodyReference] = [:]
+    // Distinct access times prove LRU order without relying on millisecond ties.
+    for (index, key) in ["old", "recent", "new"].enumerated() {
+      let instant = base.addingTimeInterval(Double(index))
+      let datedStore = RielaCacheStore(rootDirectory: root.path, clock: { instant })
+      let protected = try RielaCacheExchange(store: datedStore, cacheId: "bodies", scope: "account", capacityProtection: true)
+      refs.merge(try protected.put([.init(key: key, fetchedAt: time, payload: .string("checked"), protectFromEviction: true)])) { _, new in new }
+    }
     guard case var .object(disposable) = storage(root, "bodies") else { return XCTFail("fixture") }
     var retained = disposable; retained["capacityProtection"] = .bool(true)
     _ = try await run(["action": .string("read-set"), "stores": .object(["staging": .object(retained)]),

@@ -12,6 +12,7 @@ enum SessionExecutionLockError: Error, CustomStringConvertible, Equatable {
   case unavailable(String)
   case alreadyRunning(String)
   case retiredSession(String)
+  case messagesRetired(String)
 
   var description: String {
     switch self {
@@ -23,6 +24,8 @@ enum SessionExecutionLockError: Error, CustomStringConvertible, Equatable {
       "session '\(sessionId)' is already owned by another live execution"
     case let .retiredSession(sessionId):
       "session '\(sessionId)' payloads have expired under terminal retention"
+    case let .messagesRetired(sessionId):
+      "session '\(sessionId)' workflow messages expired under retention"
     }
   }
 }
@@ -32,16 +35,18 @@ enum SessionExecutionLockError: Error, CustomStringConvertible, Equatable {
 final class SessionExecutionLockRegistry: @unchecked Sendable {
   private let lockRoot: URL
   private let databasePath: String
+  private let beforeLockVerify: () -> Void
   private let mutex = NSLock()
   private var heldLocks: [String: SessionExecutionLock] = [:]
 
-  init(sessionStoreRoot: String) {
+  init(sessionStoreRoot: String, beforeVerify: @escaping () -> Void = {}) {
     databasePath = CLIWorkflowSessionStore.defaultDatabasePath(rootDirectory: sessionStoreRoot)
     lockRoot = URL(fileURLWithPath: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot), isDirectory: true)
       .appendingPathComponent("execution-locks", isDirectory: true)
+    beforeLockVerify = beforeVerify
   }
 
-  func acquire(sessionId: String, allowRetired: Bool = false) throws {
+  func acquire(sessionId: String, allowRetired: Bool = false, allowMessagesRetired: Bool = false) throws {
     guard sessionId.range(of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#, options: .regularExpression) != nil else {
       throw SessionExecutionLockError.invalidSessionId(sessionId)
     }
@@ -52,7 +57,8 @@ final class SessionExecutionLockRegistry: @unchecked Sendable {
     }
     let acquired = try SessionExecutionLock(
       url: lockRoot.appendingPathComponent(sessionId).appendingPathExtension("lock"),
-      sessionId: sessionId
+      sessionId: sessionId,
+      beforeVerify: beforeLockVerify
     )
     if !allowRetired, FileManager.default.fileExists(atPath: databasePath) {
       let db = try SQLiteDatabase.open(path: databasePath, mode: .strictReadOnly, options: .readOnlyDefault)
@@ -60,6 +66,11 @@ final class SessionExecutionLockRegistry: @unchecked Sendable {
          try !db.query("SELECT 1 FROM session_retention_tombstones WHERE session_id=? LIMIT 1",
           bindings: [.text(sessionId)]).isEmpty {
         throw SessionExecutionLockError.retiredSession(sessionId)
+      }
+      if !allowMessagesRetired, try db.tableExists("session_message_retention_tombstones"),
+         try !db.query("SELECT 1 FROM session_message_retention_tombstones WHERE session_id=? LIMIT 1",
+          bindings: [.text(sessionId)]).isEmpty {
+        throw SessionExecutionLockError.messagesRetired(sessionId)
       }
     }
     heldLocks[sessionId] = acquired
@@ -79,6 +90,87 @@ final class SessionExecutionLockRegistry: @unchecked Sendable {
     defer { mutex.unlock() }
     return heldLocks[sessionId] != nil
   }
+
+  func sessionMessagesRetired(sessionId: String) throws -> Bool {
+    guard FileManager.default.fileExists(atPath: databasePath) else { return false }
+    let db = try SQLiteDatabase.open(path: databasePath, mode: .strictReadOnly, options: .readOnlyDefault)
+    guard try db.tableExists("session_message_retention_tombstones") else { return false }
+    return try !db.query("SELECT 1 FROM session_message_retention_tombstones WHERE session_id=? LIMIT 1",
+      bindings: [.text(sessionId)]).isEmpty
+  }
+
+  struct OrphanLockRemovalResult: Codable, Equatable, Sendable {
+    var selectedCount: Int
+    var removedCount: Int
+    var skippedBusy: Int
+  }
+
+  func removeOrphanLocks(
+    limit: Int = 2000,
+    dryRun: Bool,
+    sessionExists: @escaping (String) throws -> Bool
+  ) -> OrphanLockRemovalResult {
+    guard limit > 0,
+          let entries = try? FileManager.default.contentsOfDirectory(
+            at: lockRoot,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+          ) else {
+      return .init(selectedCount: 0, removedCount: 0, skippedBusy: 0)
+    }
+    let candidates = Array(entries.sorted { $0.lastPathComponent < $1.lastPathComponent }.lazy.compactMap { url -> (String, URL)? in
+      let filename = url.lastPathComponent
+      guard filename.hasSuffix(".lock") else { return nil }
+      let sessionId = String(filename.dropLast(".lock".count))
+      guard sessionId.range(of: #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#, options: .regularExpression) != nil else {
+        return nil
+      }
+      var info = stat()
+      guard lstat(url.path, &info) == 0, (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG),
+            !self.isHeld(sessionId), (try? sessionExists(sessionId)) == false else { return nil }
+      return (sessionId, url)
+    }.prefix(limit))
+    var result = OrphanLockRemovalResult(selectedCount: candidates.count, removedCount: 0, skippedBusy: 0)
+    guard !dryRun else { return result }
+    for (sessionId, url) in candidates {
+      let descriptor = open(url.path, O_RDWR | O_CLOEXEC)
+      guard descriptor >= 0 else { continue }
+      defer { close(descriptor) }
+      var locked = false
+      while true {
+        if flock(descriptor, LOCK_EX | LOCK_NB) == 0 {
+          locked = true
+          break
+        }
+        if errno == EINTR { continue }
+        if errno == EWOULDBLOCK || errno == EAGAIN { result.skippedBusy += 1 }
+        break
+      }
+      guard locked else { continue }
+      guard (try? sessionExists(sessionId)) == false else {
+        _ = flock(descriptor, LOCK_UN)
+        continue
+      }
+      var descriptorInfo = stat()
+      var pathInfo = stat()
+      guard fstat(descriptor, &descriptorInfo) == 0, lstat(url.path, &pathInfo) == 0,
+            descriptorInfo.st_dev == pathInfo.st_dev, descriptorInfo.st_ino == pathInfo.st_ino,
+            unlink(url.path) == 0 else {
+        _ = flock(descriptor, LOCK_UN)
+        continue
+      }
+      _ = flock(descriptor, LOCK_UN)
+      result.removedCount += 1
+    }
+    return result
+  }
+
+  private func isHeld(_ sessionId: String) -> Bool {
+    mutex.lock()
+    defer { mutex.unlock() }
+    return heldLocks[sessionId] != nil
+  }
+
 }
 
 func makeSessionExecutionAdmission(
@@ -132,6 +224,9 @@ final class LockReservingWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerating
       } catch SessionExecutionLockError.retiredSession {
         lastContended = candidate
         continue
+      } catch SessionExecutionLockError.messagesRetired {
+        lastContended = candidate
+        continue
       }
       // A finished run can persist this id between our store scan and the
       // lock acquisition; its lock is gone but the record exists.
@@ -172,7 +267,7 @@ final class LockReservingWorkflowRuntimeIDGenerator: WorkflowRuntimeIDGenerating
 private final class SessionExecutionLock {
   private let descriptor: Int32
 
-  init(url: URL, sessionId: String) throws {
+  init(url: URL, sessionId: String, beforeVerify: () -> Void = {}) throws {
     do {
       try FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(),
@@ -181,22 +276,42 @@ private final class SessionExecutionLock {
     } catch {
       throw SessionExecutionLockError.unavailable(error.localizedDescription)
     }
-    let openedDescriptor = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
-    guard openedDescriptor >= 0 else {
-      throw SessionExecutionLockError.unavailable(String(cString: strerror(errno)))
-    }
-    while flock(openedDescriptor, LOCK_EX | LOCK_NB) != 0 {
-      if errno == EINTR {
-        continue
+    for _ in 0..<8 {
+      let openedDescriptor = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+      guard openedDescriptor >= 0 else {
+        throw SessionExecutionLockError.unavailable(String(cString: strerror(errno)))
       }
-      let lockError = errno
+      while flock(openedDescriptor, LOCK_EX | LOCK_NB) != 0 {
+        if errno == EINTR { continue }
+        let lockError = errno
+        close(openedDescriptor)
+        if lockError == EWOULDBLOCK || lockError == EAGAIN {
+          throw SessionExecutionLockError.alreadyRunning(sessionId)
+        }
+        throw SessionExecutionLockError.unavailable(String(cString: strerror(lockError)))
+      }
+      beforeVerify()
+      var descriptorInfo = stat()
+      var pathInfo = stat()
+      guard fstat(openedDescriptor, &descriptorInfo) == 0 else {
+        let verificationError = errno
+        _ = flock(openedDescriptor, LOCK_UN)
+        close(openedDescriptor)
+        throw SessionExecutionLockError.unavailable(String(cString: strerror(verificationError)))
+      }
+      let pathResult = stat(url.path, &pathInfo)
+      if pathResult == 0, descriptorInfo.st_dev == pathInfo.st_dev, descriptorInfo.st_ino == pathInfo.st_ino {
+        descriptor = openedDescriptor
+        return
+      }
+      let verificationError = errno
+      _ = flock(openedDescriptor, LOCK_UN)
       close(openedDescriptor)
-      if lockError == EWOULDBLOCK || lockError == EAGAIN {
-        throw SessionExecutionLockError.alreadyRunning(sessionId)
+      if pathResult != 0, verificationError != ENOENT {
+        throw SessionExecutionLockError.unavailable(String(cString: strerror(verificationError)))
       }
-      throw SessionExecutionLockError.unavailable(String(cString: strerror(lockError)))
     }
-    descriptor = openedDescriptor
+    throw SessionExecutionLockError.unavailable("lock file replaced concurrently")
   }
 
   deinit {

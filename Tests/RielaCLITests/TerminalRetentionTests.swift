@@ -54,7 +54,7 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot)
+    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot!)
     try memory.save(memoryId: "mixed", workflowId: "news", payload: .object([
       "source": .string("riela-node-manager"), "direction": .string("outbox"),
       "workflowId": .string("news"), "sessionId": .string("old"), "output": .string("temporary body")]))
@@ -161,7 +161,7 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("referenced", db: db); try insert("artifact", db: db)
-    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot)
+    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot!)
     let journal = try memory.save(memoryId: "mixed", workflowId: "news", payload: .object([
       "source": .string("riela-node-manager"), "direction": .string("outbox"),
       "workflowId": .string("news"), "sessionId": .string("referenced"), "output": .string("body")]))
@@ -181,7 +181,7 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot)
+    let memory = RielaMemoryStore(rootDirectory: paths.memoryRoot!)
     let journal = try memory.save(memoryId: "mixed", workflowId: "news", payload: .object([
       "source": .string("riela-node-manager"), "direction": .string("outbox"),
       "workflowId": .string("news"), "sessionId": .string("old"), "output": .string("body")]))
@@ -314,14 +314,14 @@ final class TerminalRetentionTests: XCTestCase {
   func testArtifactCleanupCheckpointAndZeroFamilyRetryReclaimsWithoutDeletingRunningRows() throws {
     let f = try fixture()
     defer { try? FileManager.default.removeItem(at: f.root) }
-    let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: f.paths.artifactRoot)
+    let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: try XCTUnwrap(f.paths.artifactRoot))
     try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
     let artifact = try SQLiteDatabase.open(path: path)
     try artifact.execute("CREATE TABLE workflow_messages(workflow_execution_id TEXT,payload_json BLOB,artifact_refs_json BLOB)")
     let sentinel = "private-synthetic-deleted-marker-" + String(repeating: "z", count: 200_000)
     try artifact.execute("INSERT INTO workflow_messages VALUES('done',?, '[]')", bindings: [.text(sentinel)])
     try artifact.execute("INSERT INTO workflow_messages VALUES('running','preserve-running','[]')")
-    try TerminalRetentionSecondary.clean(ids: ["done"], workflows: ["done": "news"], paths: f.paths)
+    _ = try TerminalRetentionSecondary.clean(ids: ["done"], workflows: ["done": "news"], paths: f.paths, mode: .manual)
     // Simulated interruption after per-family cleanup, before final compaction.
     XCTAssertFalse(try Data(contentsOf: URL(fileURLWithPath: path)).contains(Data("private-synthetic-deleted-marker-".utf8)))
     let before = Int(try artifact.query("PRAGMA page_count").first?["page_count"] ?? "0") ?? 0
@@ -334,12 +334,12 @@ final class TerminalRetentionTests: XCTestCase {
   func testFinalArtifactReclaimRechecksSymlink() throws {
     let f = try fixture()
     defer { try? FileManager.default.removeItem(at: f.root) }
-    let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: f.paths.artifactRoot)
+    let path = SQLiteWorkflowMessageLog.defaultDatabasePath(rootDirectory: try XCTUnwrap(f.paths.artifactRoot))
     try FileManager.default.createDirectory(atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path, withIntermediateDirectories: true)
     let foreign = f.root.appendingPathComponent("foreign")
     try Data("unchanged".utf8).write(to: foreign)
     try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: foreign.path)
-    XCTAssertThrowsError(try TerminalRetentionSecondary.reclaimArtifacts(f.paths))
+    XCTAssertThrowsError(try TerminalRetentionSecondary.reclaimArtifacts(f.paths, mode: .manual, reclaimer: RetentionSQLiteReclaimer()))
     XCTAssertEqual(try Data(contentsOf: foreign), Data("unchanged".utf8))
   }
 
@@ -453,8 +453,8 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    let arguments = ["--session-store", paths.sessionRoot, "--artifact-root", paths.artifactRoot,
-      "--memory-root", paths.memoryRoot, "--workflow-id", "news", "--dry-run"]
+    let arguments = ["--session-store", paths.sessionRoot, "--artifact-root", paths.artifactRoot!,
+      "--memory-root", paths.memoryRoot!, "--workflow-id", "news", "--dry-run"]
     XCTAssertEqual(runner.run(arguments + ["--retention-hours", "0"]).exitCode, .failure)
     XCTAssertFalse(try db.tableExists("session_retention_tombstones"))
   }
@@ -479,12 +479,12 @@ final class TerminalRetentionTests: XCTestCase {
     let root = fixture.root, paths = fixture.paths, db = fixture.db
     defer { try? FileManager.default.removeItem(at: root) }
     try insert("old", db: db)
-    try FileManager.default.createDirectory(atPath: paths.artifactRoot, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(atPath: URL(fileURLWithPath: paths.artifactRoot).appendingPathComponent("old").path,
+    try FileManager.default.createDirectory(atPath: paths.artifactRoot!, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(atPath: URL(fileURLWithPath: paths.artifactRoot!).appendingPathComponent("old").path,
       withDestinationPath: root.path)
     XCTAssertThrowsError(try execute(paths))
     XCTAssertEqual(try db.query("SELECT * FROM workflow_runtime_snapshots").count, 1)
     XCTAssertThrowsError(try TerminalRetentionPaths(sessionRoot: paths.sessionRoot,
-      artifactRoot: paths.sessionRoot + "/artifacts", memoryRoot: paths.memoryRoot))
+      artifactRoot: paths.sessionRoot + "/artifacts", memoryRoot: paths.memoryRoot!))
   }
 }

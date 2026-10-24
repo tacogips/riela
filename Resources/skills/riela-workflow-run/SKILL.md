@@ -132,3 +132,23 @@ accept `--output json`.
 - `task reconcile` requires `--expired-leases`; it also accepts `--dry-run` and `--sink`.
 - `task serve --takeover` accepts `--poll-interval-ms` (default `5000`), `--once`, `--endpoint`, `--traits`, and the same auth-token and manager-session options.
 - `session handover` accepts `--task`, `--sink`, `--principal`, and `--reason` (default `operator handover`).
+
+## Disk retention
+
+Configure independent `retention.results`, `retention.messages` and
+`retention.logs` policies in `~/.riela/config.json`. To keep results and
+messages forever while limiting logs to 14 days and 1GB:
+
+```json
+{
+  "retention": {
+    "results": { "keepForever": true },
+    "messages": { "keepForever": true },
+    "logs": { "maxAgeDays": 14, "maxTotalBytes": "1GB" }
+  }
+}
+```
+
+Preview the policy with `riela gc --dry-run --output json`. See the
+[Runtime Data Retention guide](../../../README.md#runtime-data-retention) for
+automatic cleanup, configuration precedence and manual overrides.

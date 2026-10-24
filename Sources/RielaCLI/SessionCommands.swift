@@ -411,6 +411,10 @@ public struct SessionRerunCommand: Sendable {
         scope: options.scope,
         workingDirectory: options.workingDirectory
       )
+      if try SessionExecutionLockRegistry(sessionStoreRoot: loaded.storeRoot)
+        .sessionMessagesRetired(sessionId: options.sessionId) {
+        throw SessionExecutionLockError.messagesRetired(options.sessionId)
+      }
       let persisted = loaded.record
       let storeRoot = CLIWorkflowSessionResolution.saveStoreRoot(
         sessionStore: options.sessionStore,
@@ -669,6 +673,10 @@ public struct SessionResumeCommand: Sendable {
         scope: options.scope,
         workingDirectory: options.workingDirectory
       )
+      if try SessionExecutionLockRegistry(sessionStoreRoot: loaded.storeRoot)
+        .sessionMessagesRetired(sessionId: options.sessionId) {
+        throw SessionExecutionLockError.messagesRetired(options.sessionId)
+      }
       let persisted = loaded.record
       if blocksResume(persisted.session) && !options.retryFailedStep {
         return await resumeFailure(

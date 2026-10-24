@@ -30,7 +30,7 @@ enum TerminalRetentionMetadata {
         FROM \(TerminalRetentionIndexes.source("workflow_messages", in: db)) GROUP BY workflow_execution_id
         """) {
         guard let id = row["id"], var session = sessions[id], let bytes = row["bytes"].flatMap(Int64.init) else { continue }
-        session.payloadBytes = try adding(session.payloadBytes, bytes)
+        session.messageBytes = try adding(session.messageBytes, bytes)
         sessions[id] = session
       }
     }

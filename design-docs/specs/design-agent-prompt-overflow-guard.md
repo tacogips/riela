@@ -244,6 +244,12 @@ The algorithm is deterministic, with no clocks or UUIDs:
 - Stub shape:
   `{"$rielaSpilled": true, "pointer": "/k/...", "path": "<absolute path>", "bytes": N, "sha256": "<hex>", "preview": "<first 256 characters of the compact JSON>"}`.
 - File: `<resolvedBackendWorkingDirectory>/tmp/riela-prompt-spill/<sessionId>/<stepId>/<sha256>.json`.
+- Ownership: these are caller-owned working files, outside session retention.
+  Operators must apply their working-directory cleanup policy to these copies;
+  `inputSnapshot.promptCompaction.spills` records their paths.
+- Spill eligibility requires a local CLI backend, no OS sandbox or distributed
+  placement, and no custom tool arguments. Other nodes fail `promptTooLarge`
+  over budget without writing an inaccessible host-file reference.
   It contains the exact compact JSON bytes that were hashed.
   - The working directory is the agent's own directory, so the agent can read
     the file. When a node has no backend, the same fallback as

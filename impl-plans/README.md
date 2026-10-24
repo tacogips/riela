@@ -53,6 +53,22 @@ wh-00 baseline. The dispatch manifest `active/work-handover-dispatch.json`
 stays active until the dispatch run closes. The final commit and push remain
 workflow steps.
 
+Automatic retention (2026-10-19) is implemented and accepted on
+`feat/automatic-retention`. The plan index is archived at
+[`completed/automatic-retention.md`](completed/automatic-retention.md), and its
+child plans `ar-01` … `ar-09` are archived under
+`completed/automatic-retention-0*.md`. A `retention` policy in
+`~/.riela/config.json` replaces `gc.retentionDays`. It has independent
+results, messages and logs categories with `keepForever`, age limits and byte
+caps. Automatic passes are throttled and single-flight. They run after workflow
+run/resume/rerun/continue, inside `riela events serve` and `riela serve`, and in
+RielaApp. Reclamation uses incremental vacuum, and `riela gc` is now the manual
+front door. The user guide is in the README section
+[Runtime Data Retention](../README.md#runtime-data-retention). The
+[progress logs](progress/) `ar-01` … `ar-09` record focused verification and
+review. The dispatch manifest `active/automatic-retention-dispatch.json` stays
+active until the dispatch run closes. The final commit remains a workflow step.
+
 ## Active Plans
 
 Issue [#116](https://github.com/tacogips/riela/issues/116):

@@ -648,6 +648,10 @@ extension DeterministicWorkflowRunner {
       variables: mergedVariables,
       session: session
     )
+    if let providerError = validateAgentNodePayload(executionPayload, path: "nodes.\(step.nodeId)")
+      .first(where: { $0.severity == .error }) {
+      throw AdapterExecutionError(.invalidInput, "\(providerError.path): \(providerError.message)")
+    }
     let promptGuard = try guardAgentPrompt(
       workflow: request.workflow,
       step: step,
@@ -657,10 +661,6 @@ extension DeterministicWorkflowRunner {
       resolvedInputPayload: resolvedInput.payload,
       prompts: prompts
     )
-    if let providerError = validateAgentNodePayload(executionPayload, path: "nodes.\(step.nodeId)")
-      .first(where: { $0.severity == .error }) {
-      throw AdapterExecutionError(.invalidInput, "\(providerError.path): \(providerError.message)")
-    }
     let agentEnvironment: [String: String]
     do {
       agentEnvironment = try step.placement == nil ? resolveAgentEnvironment(

@@ -104,6 +104,25 @@ struct ServeHTTPCommand: Sendable {
     }
     onReady(rendered.stdout.hasSuffix("\n") ? rendered.stdout : rendered.stdout + "\n")
 
+    let retentionRequest = RielaRetentionRequest(
+      trigger: .automatic,
+      homeDirectory: URL(
+        fileURLWithPath: CLIRuntimeEnvironment.homeDirectory(environment: environment),
+        isDirectory: true
+      ),
+      projectDirectory: URL(fileURLWithPath: workingDirectory, isDirectory: true),
+      explicitSessionStore: parsed.sessionStore,
+      environment: environment,
+      scope: .all
+    )
+    let retentionScheduler = RielaRetentionScheduler(runImmediately: false) {
+      for warning in AutomaticRetentionHook.runAutomaticPass(retentionRequest) {
+        FileHandle.standardError.write(Data((warning + "\n").utf8))
+      }
+    }
+    retentionScheduler.start()
+    defer { retentionScheduler.stop() }
+
     do {
       try await Task.sleep(nanoseconds: .max)
     } catch is CancellationError {

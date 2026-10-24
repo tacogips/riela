@@ -83,6 +83,22 @@ final class AgentPromptGuardTests: XCTestCase {
     XCTAssertEqual(compaction["outcome"], JSONValue.string("overBudget"))
   }
 
+  func testInvalidPromptBudgetIsRejectedBeforeCreatingSpillFiles() async throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("tmp/prompt-overflow/invalid-budget-" + UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let adapter = PromptGuardCapturingAdapter()
+    let runner = DeterministicWorkflowRunner(adapter: adapter, fanoutWorkspaceRoot: root)
+    let payload = AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "test", promptMaxBytes: -1)
+    await XCTAssertThrowsErrorAsync(try await runner.run(DeterministicWorkflowRunRequest(
+      workflow: workflow(), nodePayloads: ["worker": payload],
+      variables: ["huge": .string(String(repeating: "x", count: 6_000))]
+    )))
+    let captured = await adapter.input()
+    XCTAssertNil(captured)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("tmp/riela-prompt-spill").path))
+  }
+
   func testBudgetPrecedence() throws {
     let runner = DeterministicWorkflowRunner(adapter: PromptGuardCapturingAdapter())
     var workflow = workflow()
@@ -165,6 +181,39 @@ final class AgentPromptGuardTests: XCTestCase {
       return XCTFail("expected unplaced control spill evidence")
     }
     XCTAssertFalse(unplacedSpills.isEmpty)
+  }
+
+  func testOverBudgetWithoutGuaranteedFileAccessRejectsWithoutSpills() throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("tmp/prompt-overflow/no-file-access-" + UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = DeterministicWorkflowRunner(adapter: PromptGuardCapturingAdapter(), fanoutWorkspaceRoot: root)
+    let workflow = workflow()
+    let step = WorkflowStepRef(id: "worker-step", nodeId: "worker", role: .worker)
+    let date = Date(timeIntervalSince1970: 0)
+    let session = WorkflowSession(workflowId: workflow.workflowId, sessionId: "isolated-session",
+      entryStepId: step.id, createdAt: date, updatedAt: date)
+    let values: JSONObject = ["huge": .string(String(repeating: "x", count: 6_000))]
+    var local = AgentNodePayload(id: "worker", executionBackend: .codexAgent, model: "test", promptMaxBytes: 2_000)
+    var isolated = local
+    isolated.sandbox = WorkflowExecutionSandbox(backend: .seatbelt)
+    var restricted = local
+    restricted.agentToolPolicy = AgentToolPolicy(mode: .backendArguments, codexArguments: ["-c", "tools=[]"])
+    var sdk = local
+    sdk.executionBackend = .officialOpenAISDK
+    local.executionBackend = nil
+    for payload in [isolated, restricted, sdk, local] {
+      let request = DeterministicWorkflowRunRequest(workflow: workflow, nodePayloads: ["worker": payload], variables: values)
+      let variables = runner.promptVariables(workflow: workflow, step: step, payload: payload,
+        requestVariables: values, resolvedInputPayload: [:])
+      let prompts = try runner.composedPromptsWithFinalizationEvidence(
+        workflow: workflow, step: step, payload: payload, variables: variables, session: session)
+      let result = try runner.guardAgentPrompt(workflow: workflow, step: step, payload: payload,
+        request: request, session: session, resolvedInputPayload: [:], prompts: prompts)
+      XCTAssertEqual(result.rejection?.failureKind, .promptTooLarge)
+      XCTAssertEqual(result.evidence?["spills"], .array([]))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("tmp/riela-prompt-spill").path))
+    }
   }
 
   func testMismatchedExistingSpillFileRecordsOneFailedExecutionWithoutAdapterInvocation() async throws {
@@ -308,6 +357,65 @@ final class AgentPromptGuardTests: XCTestCase {
       return XCTFail("expected latest alias spill evidence")
     }
     XCTAssertEqual(firstSpill["pointer"], .string("/_rielaInput/messages/0/payload/huge"))
+    guard case let .array(repeatedSpills)? = repeatedResult.evidence?["spills"],
+          case let .object(repeatedSpill)? = repeatedSpills.first else {
+      return XCTFail("expected deterministic repeated spill evidence")
+    }
+    XCTAssertEqual(firstSpill["path"], repeatedSpill["path"])
+  }
+
+  func testWholePayloadSpillUpdatesLatestMessageAlias() throws {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent("tmp/prompt-overflow/pog-03-prompt-guard/whole-latest-alias-test", isDirectory: true)
+    try? FileManager.default.removeItem(at: root)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = DeterministicWorkflowRunner(adapter: PromptGuardCapturingAdapter(), fanoutWorkspaceRoot: root)
+    let workflow = workflow()
+    var payload = AgentNodePayload(
+      id: "worker", executionBackend: .codexAgent, model: "test", agentSandbox: .readOnly,
+      includeRuntimeVariablesInPrompt: false, promptTemplate: "{{_rielaInput.latest.payload}}"
+    )
+    let step = WorkflowStepRef(id: "worker-step", nodeId: "worker", role: .worker)
+    let sessionDate = Date(timeIntervalSince1970: 0)
+    let session = WorkflowSession(
+      workflowId: workflow.workflowId, sessionId: "latest-alias-session", entryStepId: step.id,
+      createdAt: sessionDate, updatedAt: sessionDate
+    )
+    let original = JSONValue.object(Dictionary(uniqueKeysWithValues: (0..<20).map { ("key\($0)", JSONValue.string(String(repeating: "x", count: 3_000))) }))
+    let resolved: JSONObject = ["_rielaInput": .object([
+      "messages": .array([.object(["payload": original])]),
+      "latest": .object(["payload": original])
+    ])]
+    let variables = runner.promptVariables(
+      workflow: workflow, step: step, payload: payload,
+      requestVariables: [:], resolvedInputPayload: resolved
+    )
+    let prompts = try runner.composedPromptsWithFinalizationEvidence(
+      workflow: workflow, step: step, payload: payload, variables: variables, session: session
+    )
+    let measuredBytes = (prompts.systemPromptText ?? "").utf8.count + max(prompts.promptText.utf8.count, prompts.resumedPromptText.utf8.count)
+    payload.promptMaxBytes = measuredBytes - 58_000
+    let request = DeterministicWorkflowRunRequest(workflow: workflow, nodePayloads: ["worker": payload])
+    let result = try runner.guardAgentPrompt(
+      workflow: workflow, step: step, payload: payload, request: request,
+      session: session, resolvedInputPayload: resolved, prompts: prompts
+    )
+    let repeatedResult = try runner.guardAgentPrompt(
+      workflow: workflow, step: step, payload: payload, request: request,
+      session: session, resolvedInputPayload: resolved, prompts: prompts
+    )
+
+    XCTAssertNil(result.rejection)
+    XCTAssertEqual(result.evidence, repeatedResult.evidence)
+    XCTAssertEqual(result.prompts.promptText, repeatedResult.prompts.promptText)
+    XCTAssertEqual(result.prompts.systemPromptText, repeatedResult.prompts.systemPromptText)
+    XCTAssertTrue(result.prompts.promptText.contains("$rielaSpilled"))
+    XCTAssertFalse(result.prompts.promptText.contains(String(repeating: "message-payload", count: 100)))
+    guard case let .array(spills)? = result.evidence?["spills"],
+          case let .object(firstSpill)? = spills.first else {
+      return XCTFail("expected latest alias spill evidence")
+    }
+    XCTAssertEqual(firstSpill["pointer"], .string("/_rielaInput/messages/0/payload"))
     guard case let .array(repeatedSpills)? = repeatedResult.evidence?["spills"],
           case let .object(repeatedSpill)? = repeatedSpills.first else {
       return XCTFail("expected deterministic repeated spill evidence")

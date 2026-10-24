@@ -65,7 +65,8 @@ extension DeterministicWorkflowRunner {
         resolvedInputPayload: compactedResolvedInputPayload
       )
       let candidates = promptSpillCandidates(view)
-      guard step.placement == nil, let candidate = selectPromptSpillCandidate(candidates, excess: currentSize - budget) else {
+      guard promptSpillFilesAreAccessible(payload: payload, step: step),
+            let candidate = selectPromptSpillCandidate(candidates, excess: currentSize - budget) else {
         rejection = AdapterExecutionError(
           .invalidInput,
           "agent prompt exceeds budget: measured=\(currentSize) budget=\(budget) after \(spills.count) spill(s)",
@@ -143,6 +144,16 @@ extension DeterministicWorkflowRunner {
   }
 }
 
+// A spill changes inline data into a host file reference. Do not assume that
+// remote/isolated workers, SDK calls or custom tool policies can read that file.
+private func promptSpillFilesAreAccessible(payload: AgentNodePayload, step: WorkflowStepRef) -> Bool {
+  guard step.placement == nil, payload.sandbox == nil,
+        payload.executionBackend?.cliAgentBackend != nil else { return false }
+  guard let policy = payload.agentToolPolicy else { return true }
+  return policy.additionalArguments.isEmpty && policy.codexArguments.isEmpty
+    && policy.claudeArguments.isEmpty && policy.cursorArguments.isEmpty
+}
+
 private func promptSize(_ prompts: ComposedAdapterPrompts) -> Int {
   (prompts.systemPromptText ?? "").utf8.count + max(prompts.promptText.utf8.count, prompts.resumedPromptText.utf8.count)
 }
@@ -204,14 +215,13 @@ private func replacePromptSpill(
   }
   if let value = resolvedInputPayload[root] {
     var compactedInput = replacing(value, path: relative, with: stub)
-    if relative.count >= 4,
+    if relative.count >= 2,
        relative[0] == "messages",
-       relative[2] == "payload",
        let messageIndex = Int(relative[1]),
        case let .object(input) = value,
        case let .array(messages)? = input["messages"],
        messageIndex == messages.count - 1 {
-      let latestPath = ["latest", "payload"] + relative.dropFirst(3)
+      let latestPath = ["latest"] + relative.dropFirst(2)
       compactedInput = replacing(compactedInput, path: latestPath, with: stub)
     }
     resolvedInputPayload[root] = compactedInput

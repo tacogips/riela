@@ -69,6 +69,14 @@ public enum RielaCLIMain {
     if !result.stderr.isEmpty {
       FileHandle.standardError.write(Data((result.stderr + "\n").utf8))
     }
+    let retentionWarnings = AutomaticRetentionHook.runIfApplicable(
+      arguments: arguments,
+      exitCode: result.exitCode,
+      cancelled: runTask.isCancelled
+    )
+    for line in retentionWarnings {
+      FileHandle.standardError.write(Data((line + "\n").utf8))
+    }
     Foundation.exit(result.exitCode.rawValue)
   }
 }

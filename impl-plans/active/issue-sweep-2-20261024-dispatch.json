@@ -51,7 +51,8 @@
       "#74 is a runner-level transition extension rather than a builtin add-on, so it reuses cross-workflow nested reservation, publication hooks and recovery. The policy checker reads the raw envelope JSON because Codable drops unknown keys (user-QA 7, 8).",
       "A single prepareDynamicIteration helper (overBudget/invalid/valid) is shared by the pre-commit hook, post-commit dispatch and resume recovery, so iteration gating, validation, stamping and digest stay deterministic across resume (RV-74c-1, RV-74c-2).",
       "Shared-file ordering: 32 → 27c (SessionCommands.swift, FailClosedSQLiteWorkflowRuntimeStore.swift), 32 → 74b (WorkflowRunCommand.swift), 27a → 74b (RuntimeSession.swift), 27a → 74c (RuntimeStore.swift, +CrossWorkflow.swift), 74a → 74b → 74c → 74d.",
-      "Operator amendment (2026-10-24, after the blocked-only wave 1 of session-1): plans run strictly serially 27a → 32 → 27b → 74a → 27c → 74b → 74c → 74d to avoid shared-tree compile breakage. This order is a superset of every shared-file ordering above. ISW2-27a also owns TaskDispatch+Handover.swift and WorkStoreTakeoverTests.swift. Workers continue from the existing uncommitted session-1 work in the tree."
+      "Operator amendment (2026-10-24, after the blocked-only wave 1 of session-1): plans run strictly serially 27a → 32 → 27b → 74a → 27c → 74b → 74c → 74d to avoid shared-tree compile breakage. This order is a superset of every shared-file ordering above. ISW2-27a also owns TaskDispatch+Handover.swift and WorkStoreTakeoverTests.swift. Workers continue from the existing uncommitted session-1 work in the tree.",
+      "Checkpoint amendment round 1 (2026-10-24, dispatch-plans comm-000043, reason integration-paths-outside-writePaths): the integration finding ISW2-27a-INT-RETENTION-CANCELLED showed TerminalRetentionPlan.make protects every family containing a 'cancelled' session because its terminal set is the string literal [\"completed\", \"failed\"]. ISW2-27a now also owns Sources/RielaCore/TerminalRetentionPlan.swift, Tests/RielaCoreTests/TerminalRetentionPlanTests.swift and Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift (already modified by 27a work). No other plan, ordering or design decision changes."
     ],
     "intentionalTradeoffs": [
       "Between waves 1 and 2, the FailClosed terminal hook skips cancelled sessions until ISW2-27c lands item 8a.",
@@ -154,7 +155,10 @@
         "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
         "impl-plans/progress/issue-sweep-2-20261024-27a-cancelled-status.md",
         "Sources/RielaCLI/TaskDispatch+Handover.swift",
-        "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift"
+        "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
+        "Sources/RielaCore/TerminalRetentionPlan.swift",
+        "Tests/RielaCoreTests/TerminalRetentionPlanTests.swift",
+        "Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift"
       ],
       "sharedPaths": [],
       "artifactRoots": [],
@@ -164,7 +168,9 @@
         "Resume of a cancelled session is terminal with exitCode 1. Rerun and importAcceptedHistory accept cancelled sources. Cross-workflow, nested, fanout, lease-release, live-persistence, task-dispatch, director, work-reservation and scoped-parity predicates treat cancelled as terminal.",
         "The SQLite pending-cancellation and terminal-transition guards accept cancelled and still reject a second, different terminal write.",
         "Grep gates: 'status == .failed && .*failureKind == .cancelled' is empty in Sources. The terminal-predicate grep leaves only FailClosedSQLiteWorkflowRuntimeStore.swift:158,163, recorded as a dependency on ISW2-27c.",
-        "Build, the core/work/cli filters and lint exit 0 with integer evidence. The progress log lists every changed test file and the reason."
+        "Build, the core/work/cli filters and lint exit 0 with integer evidence. The progress log lists every changed test file and the reason.",
+        "Checkpoint amendment round 1 (ISW2-27a-INT-RETENTION-CANCELLED): TerminalRetentionPlan.make treats 'cancelled' as a terminal session status (terminal set completed/failed/cancelled). A single-status cancelled root older than the cutoff is selected; a family mixing cancelled with running stays protected as nonterminalOrConflictingStatus. The five existing TerminalRetentionPlanTests cases are unchanged; TerminalRetentionPlanTests, TerminalRetentionTests and WorkflowCancelledStatusTests exit 0 with testsRun > 0 and failureCount 0.",
+        "String-literal terminal-set gate: grep -rnE '\"completed\", \"failed\"\\]' Sources, excluding Sources/RielaApp/ and the Sources/RielaCLI/LoopCommands.swift --status allowlist (a CLI filter value list, not a terminal predicate; recorded as a follow-up in the progress log), is empty."
       ],
       "verification": [
         "mkdir -p tmp/issue-sweep-2-20261024/isw2-27a",
@@ -174,7 +180,11 @@
         "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskCancellationIntegrationTests|TaskHandoverDispatchTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|EventCronOverlapTests|ServeHTTPCommandTests|SpecialistMonitorControlCommandTests|SpecialistServiceResponsivenessTests|WorkflowCommandAutoImproveTests|SessionPreservedHistoryTests|LoopConcurrencyPreflightTests|WorkflowHistoryAdversarialTests\" > tmp/issue-sweep-2-20261024/isw2-27a/cli.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/cli.log'",
         "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/RuntimeSession.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift Sources/RielaCore/SessionObservability.swift Sources/RielaCore/LoopOutcomeNotification.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift Sources/RielaCLI/SpecialistCommands.swift Sources/RielaCLI/SessionObservabilityRendering.swift Sources/RielaWork/WorkStore+Reservation.swift Sources/RielaCLI/WorkflowRunLivePersistence.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift Sources/RielaCore/RuntimeHistoryImport.swift Sources/RielaCore/DeterministicWorkflowRunner+History.swift Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskDispatch+Director.swift Sources/RielaCLI/ScopedParityCommands.swift Tests/RielaCoreTests/WorkflowCancelledStatusTests.swift > tmp/issue-sweep-2-20261024/isw2-27a/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/lint.log'",
         "grep -rn \"status == .failed && .*failureKind == .cancelled\" Sources > tmp/issue-sweep-2-20261024/isw2-27a/cancel-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/cancel-grep.log",
-        "grep -rnE \"status == \\.completed \\|\\| .*status == \\.failed|status != \\.completed && .*status != \\.failed|terminalStatuses: \\[\\.completed, \\.failed\\]\" Sources | grep -v '^Sources/RielaApp/' > tmp/issue-sweep-2-20261024/isw2-27a/terminal-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/terminal-grep.log"
+        "grep -rnE \"status == \\.completed \\|\\| .*status == \\.failed|status != \\.completed && .*status != \\.failed|terminalStatuses: \\[\\.completed, \\.failed\\]\" Sources | grep -v '^Sources/RielaApp/' > tmp/issue-sweep-2-20261024/isw2-27a/terminal-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/terminal-grep.log",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-27a/build-int2.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/build-int2.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TerminalRetentionPlanTests|TerminalRetentionTests|WorkflowCancelledStatusTests\" > tmp/issue-sweep-2-20261024/isw2-27a/retention-int2.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/retention-int2.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaCore/TerminalRetentionPlan.swift Tests/RielaCoreTests/TerminalRetentionPlanTests.swift > tmp/issue-sweep-2-20261024/isw2-27a/lint-int2.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/lint-int2.log'",
+        "grep -rnE '\"completed\", \"failed\"\\]' Sources | grep -v '^Sources/RielaApp/' | grep -v '^Sources/RielaCLI/LoopCommands.swift:' > tmp/issue-sweep-2-20261024/isw2-27a/retention-literal-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/retention-literal-grep.log"
       ]
     },
     {

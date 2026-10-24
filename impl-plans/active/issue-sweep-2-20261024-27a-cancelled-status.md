@@ -188,3 +188,51 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 - [ ] The progress log lists every test file whose assertions changed, and the reason.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
+
+## Checkpoint amendment round 1 (2026-10-24): ISW2-27a-INT-RETENTION-CANCELLED
+
+Source: `dispatch-plans` comm-000043, `reason: integration-paths-outside-writePaths`, severity mid. Everything above stays as it is; this section only adds a repair. The plan ID and the serial order do not change.
+
+### Added write ownership
+
+- `Sources/RielaCore/TerminalRetentionPlan.swift`: only the family status check at about line 72.
+- `Tests/RielaCoreTests/TerminalRetentionPlanTests.swift`: append new test methods only.
+- `Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift`: 27a work already modified this file. Ownership is granted so the change is attributed to 27a. Make no further edits unless the core filter fails in it.
+
+### Problem
+
+`TerminalRetentionPlan.make` (`Sources/RielaCore/TerminalRetentionPlan.swift:72`) marks a family `nonterminalOrConflictingStatus` when any member's `statuses` is not a subset of the string literal `["completed", "failed"]`. `statuses` holds raw `session_status` strings: `TerminalRetentionMetadata.swift:12,20,89` reads them from `workflow_runtime_snapshots.session_status` and `cli_workflow_sessions.status`. Both are generated columns over `session.status` (`CLIWorkflowSessionStore.swift:431`), so a cancelled session reports `"cancelled"` in both sources. Since 27a persists `"cancelled"`, every family with a cancelled member is never pruned by automatic retention or `riela gc`. Before 27a, the same runs were stored as `failed` and were pruned.
+
+### Ordered changes
+
+1. In `TerminalRetentionPlan.make`, the terminal set becomes `"completed"`, `"failed"` and `"cancelled"`. A preferred, optional form derives it from `WorkflowSessionStatus.allCases.filter(\.isTerminal).map(\.rawValue)` (27a added `isTerminal` in `RuntimeSession.swift`; the enum is `CaseIterable`). Either form is acceptable. Keep the `statuses.count != 1` check unchanged.
+2. Append two methods to `TerminalRetentionPlanTests`, using the existing `row(...)` and `plan(...)` helpers:
+   - `row("cancelled-root", status: ["cancelled"])` (25 h old, retention 24 h) → `selected.map(\.rootId) == ["cancelled-root"]`, `protected` is empty.
+   - `row("root", status: ["cancelled"])` plus `row("child", hours: 1, status: ["running"], parent: "root", root: "root")` with `cap: 1` → `selected` is empty, and `protected.first?.protection == "nonterminalOrConflictingStatus"` with ids `["child", "root"]`.
+   - Optional: `row("mixed", status: ["cancelled", "failed"])` → protected (conflicting projection). This pins that `count != 1` is kept.
+3. Record the fail-before/pass-after evidence and the changed files in `impl-plans/progress/issue-sweep-2-20261024-27a-cancelled-status.md`. Evidence that the test fails before the change can be the assertion failure from a run of the new test before step 1, or a reasoned citation of line 72 if the source was already edited. Say which one you used.
+
+### Forbidden changes
+
+- Do not touch `Sources/RielaCLI/TerminalRetentionExecutor.swift` (locking, lineage, protection ordering) or `Sources/RielaCLI/TerminalRetentionMetadata.swift`.
+- Do not make `running`, `created` or `suspended` prunable, and do not remove the `statuses.count != 1` conflict check.
+- Do not edit `Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift:162,167`; ISW2-27c owns them.
+- Do not edit, weaken or delete the five existing `TerminalRetentionPlanTests` methods or `Tests/RielaCLITests/TerminalRetentionTests.swift`.
+- Do not edit `Sources/RielaCLI/LoopCommands.swift:294`. That line is the `riela loop list --status` value allowlist, not a terminal predicate. Record it in the progress log as the follow-up `{path: "Sources/RielaCLI/LoopCommands.swift", reason: "--status filter does not accept 'cancelled'"}`.
+
+### Amendment verification (logs under tmp/issue-sweep-2-20261024/isw2-27a/)
+
+Record `exitStatus`, `testsRun` and `failureCount` for each command:
+
+1. `arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-27a/build-int2.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/build-int2.log'` → exitStatus=0.
+2. `arch -arm64 /bin/zsh -lc 'swift test --filter "TerminalRetentionPlanTests|TerminalRetentionTests|WorkflowCancelledStatusTests" > tmp/issue-sweep-2-20261024/isw2-27a/retention-int2.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/retention-int2.log'` → exitStatus=0, testsRun > 0, failureCount 0. The log shows the two new methods passing.
+3. Rerun the core, work and full 137-test CLI filters from Verification 2-4 above into `core-int2.log`, `work-int2.log` and `cli-int2.log`. The CLI rerun also covers the earlier repair request ISW2-27a-INT-1. Each must show exitStatus=0 and failureCount 0.
+4. `arch -arm64 /bin/zsh -lc 'swiftlint lint --strict --quiet Sources/RielaCore/TerminalRetentionPlan.swift Tests/RielaCoreTests/TerminalRetentionPlanTests.swift > tmp/issue-sweep-2-20261024/isw2-27a/lint-int2.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/lint-int2.log'` → exitStatus=0.
+5. `grep -rnE '"completed", "failed"\]' Sources | grep -v '^Sources/RielaApp/' | grep -v '^Sources/RielaCLI/LoopCommands.swift:'` → empty (pipeline rc 1). Write the matches to `retention-literal-grep.log`. The appended `exitStatus=` line records the echo, so judge the gate by the empty match list.
+6. Re-run the two grep gates from Verification 6 above. The terminal-predicate gate must still leave only the FailClosed lines owned by ISW2-27c.
+
+### Amendment done criteria
+
+- [ ] Line 72 accepts `cancelled`; `count != 1` is unchanged.
+- [ ] Two new `TerminalRetentionPlanTests` methods pass; the five existing methods are byte-identical.
+- [ ] Amendment verification 1-6 pass, with log paths and integer evidence in the progress log, along with the LoopCommands follow-up.

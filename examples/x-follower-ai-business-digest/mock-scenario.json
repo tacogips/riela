@@ -10,6 +10,22 @@
       "conversationId": "-1001234567890"
     }
   },
+  "fetch-follower-posts": {
+    "payload": {
+      "xGateway": {
+        "data": {
+          "data": {
+            "followingTimeline": {
+              "posts": [],
+              "pageInfo": {
+                "resultCount": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "summarize-posts": {
     "when": {
       "should_send_telegram": false

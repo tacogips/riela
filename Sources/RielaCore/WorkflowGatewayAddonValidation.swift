@@ -152,6 +152,15 @@ private func requireObject(_ value: JSONValue?, path: String, diagnostics: inout
   }
 }
 
+private func requireArguments(_ value: JSONValue?, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
+  // Exact references preserve the object's type; interpolation remains a string.
+  if case let .string(template)? = value,
+     template.range(of: #"^\s*\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}\s*$"#, options: .regularExpression) != nil {
+    return
+  }
+  requireObject(value, path: path, diagnostics: &diagnostics)
+}
+
 private func forbid(_ keys: [String], in values: JSONObject, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
   for key in keys where values[key] != nil {
     diagnostics.append(gatewayError("\(path).\(key)", "is not allowed in this mode"))
@@ -196,7 +205,7 @@ private func validateGatewayModes(
   }
   if hasOperation {
     let operation = literalOperation(values["operation"], path: "\(path).operation", commandOperation: passthrough == "command", diagnostics: &diagnostics)
-    requireObject(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
+    requireArguments(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
     forbid(["queryTemplate", "variablesTemplate", "command", "argsTemplate", "select"], in: values,
            path: path, diagnostics: &diagnostics)
     if passthrough == "command" {
@@ -253,7 +262,7 @@ private func validateAppleGateway(
   let passthroughKeys = ["queryFile", "query", "variablesFile", "variables"]
   if values["operation"] != nil {
     let operation = literalOperation(values["operation"], path: "\(path).operation", diagnostics: &diagnostics)
-    requireObject(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
+    requireArguments(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
     forbid(passthroughKeys + ["queryTemplate", "variablesTemplate", "command", "argsTemplate", "select"], in: values, path: path, diagnostics: &diagnostics)
     if let selection = values["selection"] {
       validateSelection(selection, path: "\(path).selection", diagnostics: &diagnostics)

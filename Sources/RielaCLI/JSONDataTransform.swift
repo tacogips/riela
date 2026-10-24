@@ -97,7 +97,7 @@ enum JSONDataTransform {
     return try lookup(item, pointer: path) ?? spec["default"] ?? .null
   }
 
-  private static func lookup(_ root: JSONValue, pointer: JSONValue) throws -> JSONValue? {
+  static func lookup(_ root: JSONValue, pointer: JSONValue) throws -> JSONValue? {
     guard case let .string(path) = pointer, path.utf8.count <= 4096,
           path.isEmpty || path.hasPrefix("/") else { throw invalid() }
     if path.isEmpty { return root }

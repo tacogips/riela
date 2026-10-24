@@ -45,6 +45,19 @@ final class BuiltinGatewayJSONRequestTests: XCTestCase {
     XCTAssertEqual(built.variables["input"], request.variables["input"])
   }
 
+  func testWholeArgumentObjectKeepsTypesAndDoesNotRenderSourceAgain() throws {
+    let arguments: JSONObject = ["input": .object(["first": .integer(5), "query": .string("{{secret}}")])]
+    let request = try BuiltinGatewayJSONRequest.request(config: [
+      "operation": .string("threads"), "arguments": .string("{{input.arguments}}")
+    ], variables: ["input": .object(["arguments": .object(arguments)]), "secret": .string("must not expand")], addonName: "fixture")
+    XCTAssertEqual(request.variables["input"], .object(["first": .int(5), "query": .string("{{secret}}")]))
+    for invalid: JSONValue in [.array([]), .null, .string("{}"), .bool(false)] {
+      XCTAssertThrowsError(try BuiltinGatewayJSONRequest.request(config: [
+        "operation": .string("threads"), "arguments": .string("{{input.arguments}}")
+      ], variables: ["input": .object(["arguments": invalid])], addonName: "fixture"))
+    }
+  }
+
   func testInvalidInputsAndEscapingSelectionsNeverCallProvider() async throws {
     let configs: [JSONObject] = [
       ["operation": .string("accounts"), "queryTemplate": .string("{ accounts { id } }")],

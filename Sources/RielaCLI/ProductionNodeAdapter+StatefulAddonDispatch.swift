@@ -4,6 +4,8 @@ extension BuiltinWorkflowAddonResolver {
   func executeStatefulAddonIfSupported(
     _ input: WorkflowAddonExecutionInput
   ) async throws -> AdapterExecutionOutput? {
+    if input.addon.name == "riela/json-route" { return try executeJSONRoute(input) }
+    if input.addon.name == "riela/page-state" { return try executePageState(input) }
     if input.addon.name == "riela/collection-checkpoint" {
       return try executeCollectionCheckpoint(input)
     }

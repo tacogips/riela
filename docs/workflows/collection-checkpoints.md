@@ -88,3 +88,59 @@ pending work is never silently discarded. Old acknowledged pairs age out in
 insertion order, which can cause refetches but cannot discard pending work.
 This source addition does not migrate an existing application's checkpoint
 format or constitute an ART deployment.
+
+## Page traversal inside a workflow
+
+`riela/page-state` version `1` supplies provider-neutral pagination state. It
+does not call a gateway or write durable memory. Keep it inside the private
+workflow when its `context` or gateway response contains private data.
+
+Start with an array of query descriptors, an explicit collection bound and
+RFC 6901 pointers into the provider response:
+
+```json
+{"name":"riela/page-state","version":"1","config":{
+  "action":"start","queries":["in:inbox","label:news"],"maxItems":1000,
+  "itemsPath":"/edges","identityPath":"/node/id",
+  "cursorPath":"/pageInfo/endCursor","hasMorePath":"/pageInfo/hasNextPage",
+  "identitySyntax":"identifier","context":"{{input.privateContext}}"
+}}
+```
+
+The output contains `state`, stable deduplicated string `items`, `request`
+(`query` and nullable `cursor`), `complete`, and unchanged `context`.
+`when.more` selects another gateway call; `when.done` selects processing.
+After that call, use `action: "accept"`, passing the previous `state`, the
+gateway `response`, and any current `context`. Cursor cycles, missing cursors
+on a nonterminal page and exceeded limits fail without emitting new state.
+Completing one query clears its cursor before the next query starts.
+
+Defaults are `/items`, `/id`, `/nextCursor`, and a 10,000-item limit. Without
+`hasMorePath`, a nonempty cursor means another page. An empty `identityPath`
+selects scalar string items. `identitySyntax` is `opaque` (default),
+`identifier` (ASCII letters, digits, `_`, `-`; at most 256 bytes), or `decimal`
+(1–32 digits). At most 64 queries, 1,000 cursors per query and 10,000 unique
+IDs are accepted. State contains descriptors, IDs and cursors; bodies belong
+in the separate disposable cache. Exceeding `maxItems` is an error, not silent
+truncation or proof that the source was exhausted.
+
+## Routing and gateway arguments
+
+`riela/json-route` version `1` selects exactly one declared transition label:
+
+```json
+{"name":"riela/json-route","version":"1","config":{
+  "value":"{{input.stage}}","cases":["list","body"],"payload":"{{input}}"
+}}
+```
+
+An unknown value fails. Cases must be unique labels (1–64 ASCII letters,
+digits, `_`, `-`, or `.`), with 1–32 cases. The payload must be an object;
+an object containing both `when` and `payload` is rejected because it could
+override the selected route during output normalization.
+
+Gateway `arguments` accepts an object or one exact typed reference such as
+`"{{input.arguments}}"`. Its resolved value must be an object within the
+existing gateway size and catalog limits. Source strings are never rendered
+again; an argument containing literal `{{...}}` stays data. Operation names
+and selection paths remain literal and catalog-validated.

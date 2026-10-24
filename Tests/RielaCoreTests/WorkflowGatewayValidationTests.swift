@@ -43,6 +43,15 @@ final class WorkflowGatewayValidationTests: XCTestCase {
     }
   }
 
+  func testWholeArgumentObjectReferencesAreDeferredToRuntimeTypeChecks() {
+    for addon in ["riela/gmail-gateway-reader", "riela/google-docs-gateway-read", "riela/wrike-gateway-read", "riela/notion-gateway-read"] {
+      XCTAssertTrue(errors(addon, config: ["operation": .string("threads"), "arguments": .string("{{input.arguments}}")]).isEmpty)
+      for invalid in ["{}", "prefix {{input.arguments}}", "{{input.a}} {{input.b}}"] {
+        XCTAssertFalse(errors(addon, config: ["operation": .string("threads"), "arguments": .string(invalid)]).isEmpty)
+      }
+    }
+  }
+
   func testSelectionAndDocumentModes() {
     let graphql = "riela/gmail-gateway-draft"
     let base: JSONObject = ["operation": .string("draft"), "arguments": .object([:])]

@@ -143,7 +143,7 @@ func requireCommittedCanonicalTerminal(
   _ snapshot: WorkflowRuntimePersistenceSnapshot, sessionStoreRoot: String
 ) throws {
   let session = snapshot.session
-  guard session.status == .completed || session.status == .failed else { return }
+  guard session.status.isTerminal else { return }
   let canonical = try SQLiteWorkflowRuntimePersistenceStore(
     rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessionStoreRoot)
   ).load(sessionId: session.sessionId).session

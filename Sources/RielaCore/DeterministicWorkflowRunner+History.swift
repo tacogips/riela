@@ -54,7 +54,9 @@ extension DeterministicWorkflowRunner {
     }
     let prefix = source.executions[..<boundary].filter { $0.status == .completed }
     guard Set(prefix.map(\.stepId)).count == prefix.count,
-          source.executions[..<boundary].allSatisfy({ $0.status == .completed || $0.status == .failed }),
+          source.executions[..<boundary].allSatisfy({
+            [.completed, .failed, .cancelled].contains($0.status)
+          }),
           prefix.allSatisfy({ $0.acceptedOutput != nil }),
           source.executions[boundary...].allSatisfy({ $0.stepId == target && $0.status == .failed }) else {
       throw reject("ambiguous repeated or non-accepted step boundary; rerun without --preserve-history " +

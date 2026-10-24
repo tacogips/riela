@@ -345,7 +345,7 @@ final class WorkStoreTakeoverTests: XCTestCase {
       taskId: reserved.task.id, attemptId: attemptId, sessionId: reserved.attempt.sessionId,
       selectedHostStopProven: true
     ))
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     let attempt = try store.acknowledgeAttemptCancellation(
       attemptId: attemptId, outcome: WorkEvidenceProjector.outcome(from: snapshot)
     )

@@ -267,7 +267,7 @@ final class TaskCancellationIntegrationTests: XCTestCase {
     XCTAssertTrue(try reopened.openWritable().query("SELECT attempt_id FROM work_leases").isEmpty)
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: reopened.rootDirectory)
       .load(sessionId: attempt.sessionId)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
   }
 
@@ -298,7 +298,7 @@ final class TaskCancellationIntegrationTests: XCTestCase {
     XCTAssertNil(attempt.launch?.nodeStartedAt)
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
       .load(sessionId: attempt.sessionId)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
     XCTAssertTrue(snapshot.session.executions.isEmpty)
     XCTAssertTrue(try XCTUnwrap(harness.store.attemptCancellation(
@@ -362,7 +362,7 @@ final class TaskCancellationIntegrationTests: XCTestCase {
     }.count, 1)
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: harness.store.rootDirectory)
       .load(sessionId: attempt.sessionId)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
   }
 
@@ -390,7 +390,7 @@ final class TaskCancellationIntegrationTests: XCTestCase {
       let attempt = try XCTUnwrap(store.listAttempts(taskId: task.id).first)
       let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
         .load(sessionId: attempt.sessionId)
-      XCTAssertEqual(snapshot.session.status, .failed)
+      XCTAssertEqual(snapshot.session.status, .cancelled)
       XCTAssertEqual(snapshot.session.failureKind, .cancelled)
       XCTAssertEqual(attempt.state, .reconciled)
       XCTAssertTrue(try XCTUnwrap(store.attemptCancellation(

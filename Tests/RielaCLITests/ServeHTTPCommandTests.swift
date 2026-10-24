@@ -314,8 +314,8 @@ final class ServeHTTPCommandTests: XCTestCase {
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(
       rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: store.path)
     ).loadStrictReadOnly(sessionId: sessionId)
-    XCTAssertEqual(record.session.status, .failed)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(record.session.status, .cancelled)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
   }
 

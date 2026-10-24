@@ -6,6 +6,27 @@ public enum WorkflowSessionStatus: String, Codable, Sendable, CaseIterable {
   case suspended
   case completed
   case failed
+  case cancelled
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    let rawValue = try container.decode(String.self)
+    self = Self(rawValue: rawValue) ?? .failed
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+
+  public var isTerminal: Bool {
+    switch self {
+    case .completed, .failed, .cancelled:
+      true
+    case .created, .running, .suspended:
+      false
+    }
+  }
 }
 
 public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
@@ -14,6 +35,18 @@ public enum WorkflowStepExecutionStatus: String, Codable, Sendable {
   case completed
   case skipped
   case failed
+  case cancelled
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    let rawValue = try container.decode(String.self)
+    self = Self(rawValue: rawValue) ?? .failed
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 public struct WorkflowSessionFailureKind: RawRepresentable, Codable, Equatable, Hashable, Sendable {
@@ -377,6 +410,9 @@ public struct WorkflowSession: Codable, Equatable, Sendable {
   public var effectiveStepBudget: Int?
   public var suspend: SuspendRecord?
   public var newExecutionCount: Int { executions.filter { $0.importedFrom == nil }.count }
+  public var isCancellation: Bool {
+    failureKind == .cancelled && (status == .cancelled || status == .failed)
+  }
 
   public var workflowExecutionId: String {
     get { sessionId }

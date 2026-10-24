@@ -621,7 +621,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
     }
     let sessionId = snapshot.session.sessionId
     let workflowId = snapshot.session.workflowId
-    let isTerminal = snapshot.session.status == .completed || snapshot.session.status == .failed
+    let isTerminal = snapshot.session.status.isTerminal
     if isTerminal {
       try db.execute(
         """
@@ -815,7 +815,7 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       bindings: [.text(sessionId)]
     ).first?["attempt_id"] else { return }
     let status = snapshot.session.status
-    let isTerminal = status == .completed || status == .failed
+    let isTerminal = status.isTerminal
     if isTerminal, try db.tableExists("work_cancellations") {
       let pending = try db.query(
         "SELECT c.attempt_id FROM work_cancellations c "
@@ -831,10 +831,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
           + "AND d.kind = 'handover' AND d.attempt_id = c.attempt_id LIMIT 1",
         bindings: [.text(attemptId)]
       ).first != nil
-      let allowedPendingTerminal = status == .failed && (
-        snapshot.session.failureKind == .cancelled
-          || (snapshot.session.failureKind == .stalled && pendingHandover)
-      )
+      let allowedPendingTerminal = snapshot.session.isCancellation
+        || (status == .failed && snapshot.session.failureKind == .stalled && pendingHandover)
       if (pending || pendingHandover) && !allowedPendingTerminal {
         throw WorkflowRuntimePersistenceStoreError.cancellationPending(sessionId)
       }
@@ -845,7 +843,8 @@ public struct SQLiteWorkflowRuntimePersistenceStore: Sendable {
       bindings: [.text(sessionId)]
     ).first, let previousStatus = existing["session_status"] else { return }
     if previousStatus == WorkflowSessionStatus.completed.rawValue
-      || previousStatus == WorkflowSessionStatus.failed.rawValue {
+      || previousStatus == WorkflowSessionStatus.failed.rawValue
+      || previousStatus == WorkflowSessionStatus.cancelled.rawValue {
       let sameTerminal = isTerminal && status.rawValue == previousStatus
         && snapshot.session.failureKind?.rawValue == existing["failure_kind"]
       let notOlder = (existing["updated_at"] ?? "") <= Self.dateString(snapshot.session.updatedAt)

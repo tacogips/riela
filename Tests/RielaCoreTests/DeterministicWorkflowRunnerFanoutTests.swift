@@ -306,7 +306,7 @@ final class DeterministicWorkflowRunnerFanoutTests: XCTestCase {
     let cancelled = try XCTUnwrap(try persistence.nestedInvocationRecord(
       parentSessionId: result.session.sessionId, sourceStepExecutionId: "source-attempt-1-exec-1", branchId: "fanout-1"
     ))
-    XCTAssertEqual(cancelled.childTerminalSnapshot?.session.status, .failed)
+    XCTAssertEqual(cancelled.childTerminalSnapshot?.session.status, .cancelled)
     XCTAssertEqual(cancelled.childTerminalSnapshot?.session.failureKind, .cancelled)
     XCTAssertEqual(cancelled.phase, .delivered, "A partial join cannot outrun a cancelled child terminal snapshot")
     let capturedJoin = await tracker.joinRuntimeFanout()

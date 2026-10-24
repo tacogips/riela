@@ -649,6 +649,60 @@ extension WorkStoreReservationTests {
     XCTAssertEqual(persisted?.outcome?.costs, [cost])
   }
 
+  func testCancelledSessionWithoutPendingCancellationReconcilesAndReleasesLease() throws {
+    let store = WorkStore(rootDirectory: root.path)
+    try store.saveTask(sampleTask())
+    let reservation = try store.reserveAttempt(request(token: "remote-cancelled-terminal"))
+    _ = try store.authorizeAttemptLaunch(
+      attemptId: reservation.attempt.id,
+      launchToken: reservation.launchToken
+    )
+    XCTAssertNil(try store.attemptCancellation(
+      taskId: reservation.task.id,
+      attemptId: reservation.attempt.id,
+      sessionId: reservation.attempt.sessionId
+    ))
+
+    let timestamp = Date(timeIntervalSince1970: 1_800_000_001)
+    let cancelledExecution = WorkflowStepExecution(
+      executionId: "cancelled-execution",
+      stepId: "start",
+      nodeId: "start",
+      attempt: 1,
+      status: .cancelled,
+      failureReason: "workflow run cancelled",
+      createdAt: timestamp.addingTimeInterval(-1),
+      updatedAt: timestamp
+    )
+    let snapshot = WorkflowRuntimePersistenceSnapshot(session: WorkflowSession(
+      workflowId: "repair-workflow",
+      sessionId: reservation.attempt.sessionId,
+      status: .cancelled,
+      entryStepId: "start",
+      currentStepId: "start",
+      createdAt: timestamp.addingTimeInterval(-1),
+      updatedAt: timestamp,
+      executions: [cancelledExecution],
+      failureReason: "workflow run cancelled",
+      failureKind: .cancelled,
+      failedAt: timestamp
+    ))
+    try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: root.path).save(snapshot)
+
+    let reconciled = try store.reconcileAttempt(
+      attemptId: reservation.attempt.id,
+      outcome: WorkEvidenceProjector.outcome(from: snapshot)
+    )
+
+    XCTAssertEqual(reconciled.state, .reconciled)
+    XCTAssertEqual(reconciled.outcome?.sessionStatus, .cancelled)
+    XCTAssertEqual(try store.openWritable().query(
+      "SELECT attempt_id FROM work_leases WHERE attempt_id = ?",
+      bindings: [.text(reservation.attempt.id.rawValue)]
+    ).count, 0)
+    XCTAssertEqual(try store.loadTask(id: reservation.task.id)?.state, .verifying)
+  }
+
   func testTerminalFirstRejectsBothCancellationInsertionPathsWithoutMutation() throws {
     let cases: [(Bool, WorkflowSessionStatus)] = [
       (false, .completed), (true, .completed), (false, .failed), (true, .failed)
@@ -701,6 +755,27 @@ extension WorkStoreReservationTests {
       XCTAssertThrowsError(try persistence.save(stale))
       XCTAssertEqual(try persistence.load(sessionId: reservation.attempt.sessionId).session.status, terminalStatus)
     }
+  }
+
+  func testCancelledTerminalTransitionAcceptsCancellationAndRejectsDifferentTerminalWrite() throws {
+    let caseRoot = root.appendingPathComponent("cancelled-terminal-transition", isDirectory: true)
+    let store = WorkStore(rootDirectory: caseRoot.path)
+    try store.saveTask(sampleTask())
+    let reservation = try store.reserveAttempt(request(token: "cancelled-terminal-transition"))
+    let persistence = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: caseRoot.path)
+    var snapshot = try persistence.load(sessionId: reservation.attempt.sessionId)
+
+    snapshot.session.status = .cancelled
+    snapshot.session.failureKind = .cancelled
+    snapshot.session.failureReason = "cancelled"
+    snapshot.session.updatedAt = snapshot.session.updatedAt.addingTimeInterval(1)
+    try persistence.save(snapshot)
+
+    snapshot.session.status = .failed
+    snapshot.session.failureKind = .adapterFailure
+    snapshot.session.updatedAt = snapshot.session.updatedAt.addingTimeInterval(1)
+    XCTAssertThrowsError(try persistence.save(snapshot))
+    XCTAssertEqual(try persistence.load(sessionId: reservation.attempt.sessionId).session.status, .cancelled)
   }
 
   func testRequestFirstBlocksBothOrdinarySnapshotSaveOverloadsAcrossConnections() throws {
@@ -783,7 +858,7 @@ extension WorkStoreReservationTests {
       taskId: reservation.task.id, attemptId: reservation.attempt.id,
       sessionId: reservation.attempt.sessionId, selectedHostStopProven: true
     ))
-    XCTAssertEqual(cancelled.session.status, .failed)
+    XCTAssertEqual(cancelled.session.status, .cancelled)
     XCTAssertEqual(cancelled.session.failureKind, .cancelled)
   }
 

@@ -69,7 +69,7 @@ public struct TerminalRetentionPlan: Equatable, Sendable {
         ($0.parentId.map { !ids.contains($0) } ?? false) || !ids.contains($0.rootId)
       }) { reason = "unresolvedLineage" }
       if roots.count == 1, !workflows.contains(roots[0].workflowId) { reason = "rootOutsideScope" }
-      if members.contains(where: { $0.statuses.count != 1 || !$0.statuses.isSubset(of: ["completed", "failed"]) }) {
+      if members.contains(where: { $0.statuses.count != 1 || !$0.statuses.isSubset(of: ["completed", "failed", "cancelled"]) }) {
         reason = "nonterminalOrConflictingStatus"
       }
       if members.contains(where: { $0.updatedAt == nil || ($0.updatedAt ?? now) > now }) { reason = "unknownOrFutureTimestamp" }

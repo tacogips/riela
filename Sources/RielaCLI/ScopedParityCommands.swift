@@ -362,7 +362,7 @@ fileprivate extension ScopedParityCommandRunner {
       guard persisted.record.session.workflowId == workflowId else {
         throw CLIUsageError("workflow id mismatch: session '\(workflowRunId)' belongs to '\(persisted.record.session.workflowId)', not '\(workflowId)'")
       }
-      guard parsed.continueSession || (persisted.record.session.status != .completed && persisted.record.session.status != .failed) else {
+      guard parsed.continueSession || !persisted.record.session.status.isTerminal else {
         throw CLIUsageError("cannot call step '\(stepId)' on terminal session '\(workflowRunId)' with status '\(persisted.record.session.status.rawValue)'")
       }
       let resolution = WorkflowResolutionOptions(

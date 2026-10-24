@@ -339,7 +339,7 @@ extension DeterministicWorkflowRunner {
       var terminalFailureKind: WorkflowSessionFailureKind?
       if let reservedChildSessionId,
          let terminal = try await store.loadSession(id: reservedChildSessionId),
-         terminal.status == .completed || terminal.status == .failed {
+         terminal.status.isTerminal {
         terminalFailureKind = terminal.failureKind
         // Workflow cancellation is represented by a failed terminal session
         // with failureKind=.cancelled. Keep that distinction in the persisted

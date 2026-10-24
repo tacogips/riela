@@ -144,7 +144,7 @@ final class WorkflowRerunInputCarryoverTests: XCTestCase {
       XCTFail("running source must be rejected")
     } catch {
       XCTAssertTrue(String(describing: error).contains(
-        "rerun source session must be failed, suspended or completed"))
+        "rerun source session must be failed, cancelled, suspended or completed"))
     }
     let latest = await store.latestSession(workflowId: carryoverWorkflow.workflowId)
     XCTAssertEqual(latest?.sessionId, source.sessionId)

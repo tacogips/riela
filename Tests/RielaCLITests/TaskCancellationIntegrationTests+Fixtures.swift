@@ -230,7 +230,7 @@ extension TaskCancellationIntegrationTests {
     XCTAssertEqual(try reopened.openWritable().query("SELECT attempt_id FROM work_leases").count, 0)
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
       .load(sessionId: attempt.sessionId)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
     try await assertSelectedHostProcessesStopped(leader: leader, child: child)
     let evidenceCount = try reopened.listEvidence(taskId: taskId).count
@@ -277,7 +277,7 @@ extension TaskCancellationIntegrationTests {
     let attempt = try XCTUnwrap(store.listAttempts(taskId: taskId).first)
     let snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: store.rootDirectory)
       .load(sessionId: attempt.sessionId)
-    XCTAssertEqual(snapshot.session.status, .failed)
+    XCTAssertEqual(snapshot.session.status, .cancelled)
     XCTAssertEqual(snapshot.session.failureKind, .cancelled)
     let cancellation = try XCTUnwrap(store.attemptCancellation(
       taskId: taskId, attemptId: attempt.id, sessionId: attempt.sessionId

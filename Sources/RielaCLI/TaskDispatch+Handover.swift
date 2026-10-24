@@ -48,7 +48,8 @@ extension TaskDispatch {
       )
       snapshot = try SQLiteWorkflowRuntimePersistenceStore(rootDirectory: located.root)
         .load(sessionId: reservation.attempt.sessionId)
-      guard snapshot.session.status == .failed,
+      let expectedStatus: WorkflowSessionStatus = trigger.failureKind == .cancelled ? .cancelled : .failed
+      guard snapshot.session.status == expectedStatus,
             snapshot.session.failureKind == trigger.failureKind else {
         throw WorkStoreError(
           "handover trigger terminal mismatch: expected \(trigger.failureKind.rawValue), "

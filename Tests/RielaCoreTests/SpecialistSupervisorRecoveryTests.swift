@@ -109,12 +109,12 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
       parentSessionId: parent.sessionId, sourceStepExecutionId: sourceExecutionId, branchId: "cross-workflow"
     ))
     XCTAssertEqual(record.phase, .childTerminal)
-    XCTAssertEqual(record.childTerminalSnapshot?.session.status, .failed)
+    XCTAssertEqual(record.childTerminalSnapshot?.session.status, .cancelled)
     XCTAssertEqual(record.childTerminalSnapshot?.session.failureKind, .cancelled)
 
     // A cancellation is confirmed by the descendant's canonical terminal
-    // snapshot. Reopening the failed root must not launch that descendant a
-    // second time or invent a successful parent arrival.
+    // snapshot. Reopening the cancelled root keeps it terminal; it must not
+    // launch that descendant a second time or invent a successful parent arrival.
     let reopened = DeterministicWorkflowRunner(
       store: runtimeStore,
       adapter: adapter,
@@ -124,7 +124,7 @@ final class SpecialistSupervisorRecoveryTests: XCTestCase {
     let resumed = try await reopened.run(DeterministicWorkflowRunRequest(
       workflow: productionNestedCaller(), nodePayloads: productionNestedPayloads(), resumeSessionId: "cancel-parent"
     ))
-    XCTAssertEqual(resumed.status, .failed)
+    XCTAssertEqual(resumed.status, .cancelled)
     let resumedChildExecutions = await adapter.calleeExecutions()
     XCTAssertEqual(resumedChildExecutions, 1)
     XCTAssertTrue(try SQLiteWorkflowMessageLog(

@@ -573,6 +573,13 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
         session.failedAt = date
       }
       session.status = .failed
+    case .cancelled:
+      if let failureKind = input.failureKind {
+        session.failureReason = input.failureReason
+        session.failureKind = failureKind
+        session.failedAt = date
+      }
+      session.status = .cancelled
     case .suspended:
       session.status = .suspended
     case .completed where input.acceptedOutput?.isRootOutput == true || input.completesRootWithoutOutput:
@@ -607,7 +614,8 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
     }
 
     let date = clock.now()
-    session.status = .failed
+    let cancelled = input.failureKind == .cancelled
+    session.status = cancelled ? .cancelled : .failed
     session.updatedAt = date
     session.failureReason = input.reason
     session.failureKind = input.failureKind
@@ -619,7 +627,7 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
         return execution
       }
       var failedExecution = execution
-      failedExecution.status = .failed
+      failedExecution.status = cancelled ? .cancelled : .failed
       failedExecution.failureReason = input.reason
       failedExecution.updatedAt = date
       return finalizeBackendLiveTail(on: failedExecution)
@@ -882,7 +890,7 @@ private enum WorkflowStreamedResponseText {
 private extension WorkflowStepExecutionStatus {
   var isTerminal: Bool {
     switch self {
-    case .completed, .failed, .skipped:
+    case .completed, .failed, .skipped, .cancelled:
       return true
     case .running:
       return false

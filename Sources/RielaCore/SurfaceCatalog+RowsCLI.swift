@@ -277,7 +277,7 @@ extension SurfaceCatalog {
       ("keys", .query, ["--scope"]),
       ("protect", .mutation, ["--scope", "--entries-file"]),
       ("reconcile", .mutation, ["--scope", "--references-file"]),
-      ("maintain", .mutation, ["--keys-file", "--max-duration-seconds"]),
+      ("maintain", .mutation, ["--cache-ids-file", "--max-duration-seconds"]),
       ("delete", .mutation, ["--scope", "--entries-file", "--key", "--expected-revision"]),
       ("prune", .mutation, [])
     ].map { name, kind, options in

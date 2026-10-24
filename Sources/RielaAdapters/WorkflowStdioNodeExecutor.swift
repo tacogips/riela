@@ -32,17 +32,18 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     let startedAt = Date()
     let result = try await runner.run(configuration: configuration, stdin: inputLine, deadline: context.deadline)
     let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
+    let diagnosticsPolicy = input.kind == .command ? input.node.command?.failureDiagnostics : nil
+    // Measure what the runner retained, not a re-encoded decoded string.
+    let retainedStdoutBytes = result.stdoutRetainedByteCount ?? result.stdout.utf8.count
+    let stdoutOverflowed = retainedStdoutBytes > WorkflowFailureDiagnostics.stdoutByteLimit
     guard result.terminationStatus == 0 else {
-      if input.kind == .command, let policy = input.node.command?.failureDiagnostics {
-        let selected = policy.metadata(from: result.stdout)
-        var metadata: JSONObject = [
-          "authoritative": .bool(false), "exitCode": .integer(Int64(result.terminationStatus)),
-          "captureStatus": .string(selected == nil ? "rejected" : "validated")
-        ]
-        if let selected { metadata["diagnostics"] = .object(selected) }
+      if let diagnosticsPolicy {
+        let selected = stdoutOverflowed || result.stdoutInvalidUTF8 ? nil : diagnosticsPolicy.metadata(from: result.stdout)
         await context.backendEventHandler?(AdapterBackendEvent(
-          provider: "command", eventType: "command_failure_diagnostics", channel: .lifecycle,
-          metadata: metadata
+          provider: WorkflowFailureDiagnostics.eventProvider,
+          eventType: WorkflowFailureDiagnostics.eventType,
+          channel: .lifecycle,
+          metadata: WorkflowFailureDiagnostics.eventMetadata(exitCode: result.terminationStatus, diagnostics: selected)
         ))
       }
       let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,9 +52,11 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
         "\(input.kind.rawValue) node '\(input.nodeId)' failed with exit code \(result.terminationStatus): \(detail)"
       )
     }
-    if input.kind == .command, input.node.command?.failureDiagnostics != nil,
-      result.stdout.utf8.count > WorkflowFailureDiagnostics.stdoutByteLimit {
+    if diagnosticsPolicy != nil, stdoutOverflowed {
       throw AdapterExecutionError(.providerError, "command stdout exceeded diagnostic capture limit")
+    }
+    if diagnosticsPolicy != nil, result.stdoutInvalidUTF8 {
+      throw AdapterExecutionError(.invalidOutput, "command node stdout is not valid UTF-8")
     }
     return WorkflowStdioNodeExecutionResult(
       payload: try outputPayload(fromStdout: result.stdout, kind: input.kind),

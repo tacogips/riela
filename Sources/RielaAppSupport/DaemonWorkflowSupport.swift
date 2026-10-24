@@ -772,6 +772,9 @@ public final class RielaAppDaemonWorkflowRuntime {
     var snapshot: RuntimeSnapshot
     var endpoint: String?
     var monitorTask: Task<Void, Never>?
+    /// Managed names of the private channel the child was started with; nil
+    /// for a child without a channel (or one that has not been prepared yet).
+    var channelNames: [String]?
   }
 
   private let eventSourceFactory: any WorkflowServeEventSourceFactory
@@ -827,38 +830,103 @@ public final class RielaAppDaemonWorkflowRuntime {
     return status
   }
 
+  /// Reloads the instance's loaders and, when a channel child is running,
+  /// installs the new snapshot into it before publishing.
+  ///
+  /// Preconditions fail before the store or the child is touched:
+  /// - a running child whose managed-name set would change (or a legacy child
+  ///   without a channel that would gain managed names) needs a stop/start:
+  ///   `environment_restart_required`;
+  /// - a concurrent reload of the same scope: `environment_reload_in_progress`.
+  /// A child that is (re)started or stopped while loaders run fails the reload
+  /// with `environment_instance_changed`, so the store never publishes a
+  /// generation the live child does not run.
   public func reloadEnvironment(
     for candidate: RielaAppDaemonWorkflowCandidate,
     configuration: WorkflowServeRuntimeConfiguration
   ) async throws -> RuntimeEnvironmentStatus {
     let scope = try environmentScope(identity: candidate.id, profile: configuration.environmentProfile ?? defaultEnvironmentProfile(identity: candidate.id))
-    let running = runningWorkflows[candidate.id]
-    let requiresChannel = configuration.environmentResolution != nil || !candidate.requiredEnvironment.isEmpty
-    let hasChannel = running.map {
-      $0.configuration.environmentResolution != nil || !$0.candidate.requiredEnvironment.isEmpty
-    } ?? false
-    // A legacy child has no private control pipe. Adding managed names requires a restart.
-    if running?.snapshot.status == .running, requiresChannel, !hasChannel {
-      throw RuntimeEnvironmentError.invalidConfiguration
+    let identity = candidate.id
+    let running = runningWorkflows[identity]
+    let resolution = configuration.environmentResolution ?? RuntimeEnvironmentConfiguration()
+    let requiredNames = candidate.requiredEnvironment.map(\.name)
+    let requiresChannel = configuration.environmentResolution != nil || !requiredNames.isEmpty
+    // Only an event-serve child holds managed values; a listener-only instance has none.
+    if let running, running.snapshot.status == .running, running.candidate.startsEventSources {
+      if let channelNames = running.channelNames {
+        let nextNames = RuntimeEnvironmentSnapshotStore.managedNames(configuration: resolution, requiredNames: requiredNames)
+        // The child validates every frame against its bootstrap names; a
+        // different set would be rejected and the child reaped.
+        guard nextNames == channelNames else { throw RuntimeEnvironmentError.restartRequired }
+      } else if requiresChannel {
+        // A legacy child has no private control pipe.
+        throw RuntimeEnvironmentError.restartRequired
+      }
     }
-    let controller = hasChannel ? running?.controller : nil
+    let captured = running?.controller
+    // A live (or starting) child keeps running the previous snapshot if loading
+    // fails, so the store keeps mirroring it even when the descriptor changed.
+    let liveChild = running.map { $0.snapshot.status == .running || $0.snapshot.status == .starting } ?? false
     do {
       let status = try await environmentStore.reload(
-        scope: scope, configuration: configuration.environmentResolution ?? RuntimeEnvironmentConfiguration(),
-        requiredNames: candidate.requiredEnvironment.map(\.name), baseEnvironment: configuration.inheritedEnvironment,
-        install: { snapshot in
-          try await controller?.updateRuntimeEnvironment(
-            generation: snapshot.generation, names: snapshot.names, values: snapshot.runtimeEnvironment()
-          )
+        scope: scope, configuration: resolution, requiredNames: requiredNames,
+        baseEnvironment: configuration.inheritedEnvironment, retainPreviousOnFailure: liveChild,
+        install: { [weak self] snapshot in
+          guard let self else { throw RuntimeEnvironmentError.instanceChanged }
+          guard let target = try await self.liveChannelController(identity: identity, captured: captured, names: snapshot.names) else {
+            return
+          }
+          do {
+            try await target.updateRuntimeEnvironment(
+              generation: snapshot.generation, names: snapshot.names, values: snapshot.runtimeEnvironment()
+            )
+          } catch let error as WorkflowServeRuntimeEnvironmentError {
+            throw RuntimeEnvironmentError(rawValue: error.rawValue) ?? .sourceFailed
+          }
         }
       )
       environmentStatuses[scope] = status
-      runningWorkflows[candidate.id]?.configuration = configuration
+      if let live = runningWorkflows[identity], live.controller === captured {
+        runningWorkflows[identity]?.configuration = configuration
+      }
       return status
     } catch {
       environmentStatuses[scope] = await environmentStore.status(scope: scope)
       throw error
     }
+  }
+
+  /// Re-reads the live instance after loaders complete (the monitor or a start
+  /// may have replaced the child while this reload was suspended).
+  private func liveChannelController(
+    identity: String, captured: WorkflowServingController?, names: [String]
+  ) throws -> WorkflowServingController? {
+    guard let live = runningWorkflows[identity], live.snapshot.status == .running || live.snapshot.status == .starting else {
+      // No child holds any generation: publishing alone is consistent.
+      return nil
+    }
+    // A replaced controller, or one still starting, owns a child that may have
+    // been bootstrapped from the previous snapshot.
+    guard let captured, live.controller === captured, live.snapshot.status == .running else {
+      throw RuntimeEnvironmentError.instanceChanged
+    }
+    guard let channelNames = live.channelNames else { return nil }
+    guard channelNames == names else { throw RuntimeEnvironmentError.restartRequired }
+    return live.controller
+  }
+
+  /// Drops one instance's in-memory credentials and status (instance deleted).
+  /// A running child keeps the values it already holds until it is stopped.
+  public func evictEnvironment(identity: String, profile: String) async {
+    guard let scope = try? environmentScope(identity: identity, profile: profile) else { return }
+    environmentStatuses.removeValue(forKey: scope)
+    await environmentStore.evict(scope: scope)
+  }
+
+  /// Drops every in-memory credential and status of one profile (profile switched away).
+  public func evictEnvironment(profile: String) async {
+    for scope in environmentStatuses.keys where scope.profile == profile { environmentStatuses.removeValue(forKey: scope) }
+    await environmentStore.evict(profile: profile)
   }
 
   /// An unspecified profile means the instance's own profile, never a mismatch.
@@ -984,6 +1052,9 @@ public final class RielaAppDaemonWorkflowRuntime {
         preparedConfiguration.runtimeEnvironmentValues = environment.runtimeEnvironment()
         preparedConfiguration.runtimeEnvironmentGeneration = environment.generation
         preparedConfiguration.runtimeEnvironmentNames = environment.names
+        if candidate.startsEventSources, runningWorkflows[candidate.id]?.controller === controller {
+          runningWorkflows[candidate.id]?.channelNames = environment.names
+        }
       }
       let state = try await controller.start(WorkflowServeStartRequest(
         selection: candidate.serveSelection,

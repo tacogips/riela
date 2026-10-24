@@ -1,5 +1,4 @@
 import Foundation
-import Crypto
 import Darwin
 import RielaCore
 import RielaEvents
@@ -491,6 +490,7 @@ final class EventCronOverlapTests: XCTestCase {
     let firstReceipt = try decodeReceipt(url: receiptURL(root: root, eventId: "sd-1"))
     let queuedReceipt = try decodeReceipt(url: receiptURL(root: root, eventId: "sd-2"))
     XCTAssertEqual(firstReceipt.status, "cancelled")
+    XCTAssertEqual(firstReceipt.reason, "overlap-shutdown-cancelled:binding")
     XCTAssertEqual(queuedReceipt.status, "discarded")
     XCTAssertEqual(queuedReceipt.reason, "overlap-shutdown-discarded:binding")
     let runningIds = await dispatcher.runningSessionIds(bindingId: "binding")
@@ -651,12 +651,13 @@ final class EventCronOverlapTests: XCTestCase {
       cancelSettleTimeout: .seconds(30)
     )
     _ = await dispatcher.submit(fire(eventId: "real-first", workflowName: "sleep-flow"))
-    var sessionId: String?
-    for _ in 0..<250 {
-      sessionId = await dispatcher.runningSessionIds(bindingId: "binding").compactMap { $0 }.first
-      if sessionId != nil, FileManager.default.fileExists(atPath: pidFile.path) { break }
-      try await Task.sleep(for: .milliseconds(20))
+    // A real workflow run compiles nothing but still spawns a shell; on a
+    // loaded machine that took longer than 5 s, so wait on a wall-clock bound.
+    _ = await waitUntil("runtime session and child pid", timeout: .seconds(90)) {
+      let started = await dispatcher.runningSessionIds(bindingId: "binding").contains { $0 != nil }
+      return started && FileManager.default.fileExists(atPath: pidFile.path)
     }
+    let sessionId = await dispatcher.runningSessionIds(bindingId: "binding").compactMap { $0 }.first
     let recordPath = eventRoot.appendingPathComponent("serve-record.json")
     let diagnostic = (try? String(contentsOf: recordPath, encoding: .utf8)) ?? "no serve record"
     let receiptDiagnostic = (try? String(contentsOf: receiptURL(root: eventRoot, eventId: "real-first"), encoding: .utf8)) ?? "no first receipt"
@@ -664,11 +665,8 @@ final class EventCronOverlapTests: XCTestCase {
     let observedSessionId = try XCTUnwrap(sessionId, "runtime session did not start; \(debug)")
     let childPid = try XCTUnwrap(Int32(try String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
     _ = await dispatcher.submit(fire(eventId: "real-second", workflowName: "sleep-flow"))
-    var secondSessionStarted = false
-    for _ in 0..<250 {
-      let ids = await dispatcher.runningSessionIds(bindingId: "binding").compactMap { $0 }
-      if ids.contains(where: { $0 != observedSessionId }) { secondSessionStarted = true; break }
-      try await Task.sleep(for: .milliseconds(20))
+    let secondSessionStarted = await waitUntil("superseding runtime session", timeout: .seconds(90)) {
+      await dispatcher.runningSessionIds(bindingId: "binding").compactMap { $0 }.contains { $0 != observedSessionId }
     }
     XCTAssertTrue(secondSessionStarted)
     let receiptDecoder = JSONDecoder()
@@ -679,6 +677,13 @@ final class EventCronOverlapTests: XCTestCase {
     )
     XCTAssertEqual(receipt.cancelledSessionIds, [observedSessionId])
     XCTAssertEqual(receipt.reason, "overlap-cancel-running:binding:\(observedSessionId)")
+    let firstReceipt = try receiptDecoder.decode(
+      PersistedEventReceipt.self,
+      from: Data(contentsOf: receiptURL(root: eventRoot, eventId: "real-first"))
+    )
+    XCTAssertEqual(firstReceipt.status, "cancelled")
+    XCTAssertEqual(firstReceipt.workflowExecutionId, observedSessionId)
+    XCTAssertEqual(firstReceipt.reason, "overlap-cancelled:binding:\(receipt.receiptId)")
     let runtimeStore = SQLiteWorkflowRuntimePersistenceStore(rootDirectory: canonicalRuntimeStoreRoot(sessionStoreRoot: sessions.path))
     let cancelled = try runtimeStore.load(sessionId: observedSessionId)
     XCTAssertEqual(cancelled.session.failureKind, .cancelled)
@@ -687,70 +692,105 @@ final class EventCronOverlapTests: XCTestCase {
     await dispatcher.shutdownCancelling()
   }
 
+  func testSessionStartedJustBeforeCancellationReachesSupersedingReceipt() async throws {
+    let root = try temporaryRoot("session-hop")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = GatedSessionRunner()
+    let dispatcher = CronOverlapDispatcher(
+      server: DefaultEventLiveServer(workflowRunner: runner), eventRoot: root,
+      parsed: try ParsedParityOptions([]),
+      policies: ["binding": EffectiveEventOverlapPolicy(policy: .cancelRunning, source: .binding)],
+      clock: ManualEventServeClock(), cancelSettleTimeout: .seconds(30)
+    )
+    _ = await dispatcher.submit(fire(eventId: "hop-1"))
+    let gated = await waitUntil("first run reaches the gate") { await runner.isGated }
+    XCTAssertTrue(gated)
+    let outcome = await dispatcher.submit(fire(eventId: "hop-2"))
+    XCTAssertEqual(outcome, .cancelPending)
+    // The first run now emits session_started and throws CancellationError at once.
+    await runner.openGate()
+    await waitForSession(dispatcher, expected: "session-2")
+    let superseding = try decodeReceipt(url: receiptURL(root: root, eventId: "hop-2"))
+    XCTAssertEqual(superseding.cancelledSessionIds, ["session-1"])
+    XCTAssertEqual(superseding.reason, "overlap-cancel-running:binding:session-1")
+    let cancelled = try decodeReceipt(url: receiptURL(root: root, eventId: "hop-1"))
+    XCTAssertEqual(cancelled.status, "cancelled")
+    XCTAssertEqual(cancelled.workflowExecutionId, "session-1")
+    XCTAssertEqual(cancelled.reason, "overlap-cancelled:binding:\(superseding.receiptId)")
+    await dispatcher.drain()
+  }
+
+  func testRunEndingAfterCancelTimeoutKeepsSupersedingReceiptId() async throws {
+    let root = try temporaryRoot("timeout-reason")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let clock = ManualEventServeClock()
+    let runner = BlockingCronRunner(ignoresCancellation: true)
+    let dispatcher = CronOverlapDispatcher(
+      server: DefaultEventLiveServer(workflowRunner: runner), eventRoot: root,
+      parsed: try ParsedParityOptions([]),
+      policies: ["binding": EffectiveEventOverlapPolicy(policy: .cancelRunning, source: .binding)],
+      clock: clock, cancelSettleTimeout: .seconds(30)
+    )
+    _ = await dispatcher.submit(fire(eventId: "late-1"))
+    await waitForSession(dispatcher)
+    await waitForRunnerWaiters(runner, expected: 1)
+    _ = await dispatcher.submit(fire(eventId: "late-2"))
+    await waitForClock(clock)
+    clock.advance(by: .seconds(30))
+    await waitForReceipt(root: root, eventId: "late-2", status: "skipped")
+    await runner.fail(index: 0)
+    await dispatcher.drain()
+    let cancelled = try decodeReceipt(url: receiptURL(root: root, eventId: "late-1"))
+    XCTAssertEqual(cancelled.status, "cancelled")
+    XCTAssertEqual(
+      cancelled.reason,
+      "overlap-cancelled:binding:\(receiptId(sourceId: "cron", eventId: "late-2", bindingId: "binding"))"
+    )
+  }
+
   private func fire(
     eventId: String,
     workflowName: String = "flow",
     routineId: String? = nil,
     routineStoreRoot: String? = nil
   ) -> CronOverlapFire {
-    let date = Date(timeIntervalSince1970: 1_754_438_400)
-    return CronOverlapFire(
-      bindingId: "binding",
-      sourceId: "cron",
-      workflowName: workflowName,
-      runtimeVariables: [:],
-      envelope: ExternalEventEnvelope(
-        sourceId: "cron", eventId: eventId, provider: "riela", eventType: "cron.tick",
-        receivedAt: date, input: [:]
-      ),
-      scheduledAt: date,
-      firedAt: date,
-      routineId: routineId,
-      routineStoreRoot: routineStoreRoot,
-      coalescedTickCount: 0
+    CronOverlapTestSupport.fire(
+      eventId: eventId, workflowName: workflowName, routineId: routineId, routineStoreRoot: routineStoreRoot
     )
   }
 
   private func writeServeCronConfig(root: URL, overlapPolicy: String? = nil) throws {
-    let sources = root.appendingPathComponent("sources", isDirectory: true)
-    let bindings = root.appendingPathComponent("bindings", isDirectory: true)
-    try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: bindings, withIntermediateDirectories: true)
-    try """
-    {"id":"cron","kind":"cron","schedule":"* * * * * *","timezone":"UTC"}
-    """.write(to: sources.appendingPathComponent("cron.json"), atomically: true, encoding: .utf8)
-    let policyField = overlapPolicy.map { ",\"overlapPolicy\":\"\($0)\"" } ?? ""
-    try """
-    {"id":"binding","sourceId":"cron","workflowName":"flow","match":{"eventType":"cron.tick"},"inputMapping":{"mode":"event-input"}\(policyField)}
-    """.write(to: bindings.appendingPathComponent("binding.json"), atomically: true, encoding: .utf8)
+    try CronOverlapTestSupport.writeServeCronConfig(root: root, overlapPolicy: overlapPolicy)
   }
 
   private func receiptFiles(root: URL) throws -> [URL] {
-    try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("receipts"), includingPropertiesForKeys: nil)
-      .filter { $0.pathExtension == "json" }
+    try CronOverlapTestSupport.receiptFiles(root: root)
   }
 
   private func decodeReceipt(url: URL) throws -> PersistedEventReceipt {
-    let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
-    return try decoder.decode(PersistedEventReceipt.self, from: Data(contentsOf: url))
+    try CronOverlapTestSupport.decodeReceipt(url: url)
   }
 
   private func receiptId(sourceId: String, eventId: String, bindingId: String) -> String {
-    "event-cron-" + SHA256.hash(data: Data((sourceId + "\u{0}" + eventId + "\u{0}" + bindingId).utf8))
-      .map { String(format: "%02x", $0) }.joined()
+    cronOverlapReceiptId(sourceId: sourceId, eventId: eventId, bindingId: bindingId)
   }
 
   private func receiptURL(root: URL, eventId: String) -> URL {
-    root.appendingPathComponent("receipts", isDirectory: true)
-      .appendingPathComponent(receiptId(sourceId: "cron", eventId: eventId, bindingId: "binding") + ".json")
+    CronOverlapTestSupport.receiptURL(root: root, eventId: eventId)
   }
 
   private func temporaryRoot(_ suffix: String) throws -> URL {
-    let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("riela-cron-\(suffix)-\(UUID().uuidString)", isDirectory: true)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
+    try CronOverlapTestSupport.temporaryRoot(suffix)
+  }
+
+  private func waitUntil(
+    _ description: String,
+    timeout: Duration = .seconds(30),
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ condition: () async -> Bool
+  ) async -> Bool {
+    await CronOverlapTestSupport.waitUntil(description, timeout: timeout, file: file, line: line, condition)
   }
 
   // Advancing before a sleeper registers would strand it, so wait on real time
@@ -763,23 +803,22 @@ final class EventCronOverlapTests: XCTestCase {
     XCTFail("clock did not register \(expected) sleeper(s)")
   }
 
-  private func waitForReceipt(root: URL, eventId: String, status: String? = nil) async {
+  private func waitForReceipt(
+    root: URL, eventId: String, status: String? = nil, file: StaticString = #filePath, line: UInt = #line
+  ) async {
     let url = receiptURL(root: root, eventId: eventId)
-    for _ in 0..<500 {
+    _ = await waitUntil("receipt \(eventId) reaches \(status ?? "any status")", file: file, line: line) {
       if let status {
-        if (try? decodeReceipt(url: url))?.status == status { return }
-      } else if FileManager.default.fileExists(atPath: url.path) {
-        return
+        return (try? self.decodeReceipt(url: url))?.status == status
       }
-      await Task.yield()
+      return FileManager.default.fileExists(atPath: url.path)
     }
   }
 
-  private func waitForSession(_ dispatcher: CronOverlapDispatcher, expected: String = "session-1") async {
-    for _ in 0..<500 {
-      if await dispatcher.runningSessionIds(bindingId: "binding").contains(where: { $0 == expected }) { return }
-      await Task.yield()
-    }
+  private func waitForSession(
+    _ dispatcher: CronOverlapDispatcher, expected: String = "session-1", file: StaticString = #filePath, line: UInt = #line
+  ) async {
+    await CronOverlapTestSupport.waitForSession(dispatcher, expected: expected, file: file, line: line)
   }
 
   private func waitForRunnerWaiters(_ runner: BlockingCronRunner, expected: Int) async {
@@ -835,7 +874,7 @@ private enum TestResolverError: Error, Sendable {
   case unavailable
 }
 
-private actor BlockingCronRunner: EventWorkflowRunning {
+actor BlockingCronRunner: EventWorkflowRunning {
   private var continuations: [Int: CheckedContinuation<WorkflowRunResult, Error>] = [:]
   private var nextIndex = 0
   private(set) var requestCount = 0
@@ -904,11 +943,11 @@ private actor BlockingCronRunner: EventWorkflowRunning {
   }
 }
 
-private enum BlockingCronRunnerError: Error {
+enum BlockingCronRunnerError: Error {
   case expectedFailure
 }
 
-private final class ManualEventServeClock: EventServeClock, @unchecked Sendable {
+final class ManualEventServeClock: EventServeClock, @unchecked Sendable {
   private let lock = NSLock()
   private var current = Date(timeIntervalSince1970: 1_754_438_400)
   private var continuations: [CheckedContinuation<Void, Error>] = []
@@ -944,7 +983,7 @@ private final class ManualEventServeClock: EventServeClock, @unchecked Sendable 
   }
 }
 
-private final class AutoAdvanceEventServeClock: EventServeClock, @unchecked Sendable {
+final class AutoAdvanceEventServeClock: EventServeClock, @unchecked Sendable {
   private let lock = NSLock()
   private var current = Date(timeIntervalSince1970: 1_754_438_400)
 
@@ -994,5 +1033,36 @@ private actor SecondCronReleasesFirstRunner: EventWorkflowRunning {
       createdAt: date, updatedAt: date, executions: []
     )
     return WorkflowRunResult(workflowId: workflowName, session: session, rootOutput: nil, exitCode: 0, transitions: 0)
+  }
+}
+
+/// Blocks the first run (not cancellably) until the test opens the gate; the
+/// run then emits `session_started` and throws `CancellationError` at once.
+private actor GatedSessionRunner: EventWorkflowRunning {
+  private var gate: CheckedContinuation<Void, Never>?
+  private var nextIndex = 0
+
+  var isGated: Bool { gate != nil }
+
+  func runWorkflow(_ request: EventWorkflowRunRequest) async throws -> WorkflowRunResult {
+    nextIndex += 1
+    let index = nextIndex
+    if index == 1 {
+      await withCheckedContinuation { gate = $0 }
+      request.onSessionStarted?("session-1")
+      throw CancellationError()
+    }
+    request.onSessionStarted?("session-\(index)")
+    let date = Date(timeIntervalSince1970: 0)
+    let session = WorkflowSession(
+      workflowId: "flow", sessionId: "session-\(index)", status: .completed, entryStepId: "entry",
+      createdAt: date, updatedAt: date, executions: []
+    )
+    return WorkflowRunResult(workflowId: "flow", session: session, rootOutput: nil, exitCode: 0, transitions: 0)
+  }
+
+  func openGate() {
+    gate?.resume()
+    gate = nil
   }
 }

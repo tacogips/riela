@@ -42,11 +42,26 @@ public struct LocalProcessResult: Equatable, Sendable {
   public var stdout: String
   public var stderr: String
   public var terminationStatus: Int32
+  /// Bytes of stdout the runner retained, measured before decoding. Set when
+  /// `stdoutCaptureByteLimit` bounded the capture; nil means "measure
+  /// `stdout`" (runners without a capture limit and test doubles).
+  public var stdoutRetainedByteCount: Int?
+  /// True when a bounded capture was not valid UTF-8. `stdout` is then empty;
+  /// it is never replaced by substitution characters.
+  public var stdoutInvalidUTF8: Bool
 
-  public init(stdout: String, stderr: String, terminationStatus: Int32) {
+  public init(
+    stdout: String,
+    stderr: String,
+    terminationStatus: Int32,
+    stdoutRetainedByteCount: Int? = nil,
+    stdoutInvalidUTF8: Bool = false
+  ) {
     self.stdout = stdout
     self.stderr = stderr
     self.terminationStatus = terminationStatus
+    self.stdoutRetainedByteCount = stdoutRetainedByteCount
+    self.stdoutInvalidUTF8 = stdoutInvalidUTF8
   }
 }
 
@@ -776,22 +791,18 @@ public struct FoundationLocalProcessRunner: LocalProcessRunning, LocalProcessEve
               }
 
               let stdoutData = outputData.load()
-              let output: String
-              if configuration.stdoutCaptureByteLimit == nil {
-                output = String(data: stdoutData, encoding: .utf8) ?? ""
-              } else if let decoded = String(data: stdoutData, encoding: .utf8) {
-                output = decoded
-              } else {
-                output = String(repeating: "\u{FFFD}", count: max(1, stdoutData.count))
-              }
+              let decodedOutput = String(data: stdoutData, encoding: .utf8)
+              let boundedCapture = configuration.stdoutCaptureByteLimit != nil
               let error = String(data: errorData.load(), encoding: .utf8) ?? ""
               cancellationState.finish()
               completion.resume(
                 .success(
                   LocalProcessResult(
-                    stdout: output,
+                    stdout: decodedOutput ?? "",
                     stderr: error,
-                    terminationStatus: terminationStatus(fromWaitStatus: status)
+                    terminationStatus: terminationStatus(fromWaitStatus: status),
+                    stdoutRetainedByteCount: boundedCapture ? stdoutData.count : nil,
+                    stdoutInvalidUTF8: boundedCapture && decodedOutput == nil
                   )
                 )
               )

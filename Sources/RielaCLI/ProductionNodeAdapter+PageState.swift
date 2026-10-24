@@ -5,6 +5,10 @@ import RielaCore
 /// Provider-neutral pagination. Only IDs/cursors persist in the state; opaque
 /// workflow context is carried separately and never interpreted as a program.
 extension BuiltinWorkflowAddonResolver {
+  static let pageStateRegistration = BuiltinAddonHandlerRegistration(name: "riela/page-state") { resolver, input, _ in
+    try resolver.executePageState(input)
+  }
+
   func executePageState(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),

@@ -13,6 +13,8 @@ final class ServeWebHost: RielaHTTPRouteHandling {
   let sessionStoreOverride: String?
   var profile: RielaAppProfileName
   var runtimeProfile: RielaAppProfileName
+  /// Profile whose instances may hold in-memory runtime-environment snapshots.
+  var environmentProfile: RielaAppProfileName
   var state: RielaAppDaemonWorkflowState
   var sources: [RielaAppDaemonWorkflowCandidate]
   var instances: [WorkflowInstance]
@@ -59,6 +61,7 @@ final class ServeWebHost: RielaHTTPRouteHandling {
     let profile = RielaAppProfileStore(appRootURL: appRoot).loadActiveProfileName()
     self.profile = profile
     runtimeProfile = profile
+    environmentProfile = profile
     sessionStoreOverride = sessionStoreRoot
     let state = RielaAppDaemonWorkflowStore(profileName: profile, homeDirectory: homeDirectory).load()
     self.state = state
@@ -98,7 +101,8 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       revision: revision,
       sessionStoreRoot: sessionStoreRoot,
       runtimeSnapshot: { [self] identity in runtime.snapshot(for: identity) },
-      environment: { [self] instance in instanceEnvironment(instance) }
+      environment: { [self] instance in instanceEnvironment(instance) },
+      environmentStatus: { [self] identity in runtime.cachedEnvironmentStatus(identity: identity, profile: profile.rawValue) }
     )
   }
 
@@ -139,10 +143,12 @@ final class ServeWebHost: RielaHTTPRouteHandling {
       instanceOperationInProgress = true
       await runtime.stopAll()
       runtimeProfile = profile
+      await evictStaleProfileEnvironment()
       instanceOperationInProgress = false
       await startConfiguredInstances()
     }
     if let response = instanceCreationResponse(for: request) { return response }
+    if let response = await instanceEnvironmentResponse(for: request) { return response }
     if let response = await instanceActionResponse(for: request) { return response }
     if request.path == "/graphql" {
       guard request.headers["x-riela-profile"] == profile.rawValue else {

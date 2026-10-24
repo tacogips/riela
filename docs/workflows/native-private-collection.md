@@ -26,8 +26,11 @@ unsupported by the pinned X CLI surface. Mutation operations are refused.
 ```
 
 Only the six X token/OAuth1 credential names may be env binding targets. The SDK
-gets one HTTP attempt with a timeout bounded by the node deadline and 30 seconds;
-the workflow owns pagination, retry and partial-result decisions. Provider error
+gets no retries (`--retry 0`). Each HTTP request has a timeout of 30 seconds or the
+remaining node deadline, whichever is smaller. One X query can issue several
+requests (expansions, references, author lookups). The node deadline bounds the
+whole step: at the deadline the step fails with `timeout` and the abandoned SDK
+call is discarded. The workflow owns pagination, retry and partial-result decisions. Provider error
 bodies are replaced by fixed messages. Its raw output remains in the calling
 runtime: use the private workflow boundary for ART acquisition before making it
 an active source node.
@@ -89,7 +92,36 @@ before Swift creates threads. The host refuses unsupported configuration and
 reserved environment names before launching; there is no host execution fallback.
 Selected secrets travel on attached stdin only. Failures use finite fixed text;
 provider events, prompt text, usage and vendor session IDs are not exported.
+Exception: with `config.xUsageScope`, normalized X resource-usage telemetry (no
+source data or credentials) is forwarded to the host's `x-gateway-api-usage` cache
+over a bounded stderr marker channel (at most 2,000,000 bytes per line, 10,000
+resources per record and 256 records per run).
 The owned container is removed after completion, deadline or cancellation.
+
+Guest identity requirements:
+
+- Run the image with a non-root uid **and** a non-zero gid (`USER 10001:10001`).
+  `docker run --user 1000` or `USER 1000` without a group yields gid 0 and is
+  refused. The shipped `containers/builtin-addons/Containerfile` runs as root and
+  cannot host this worker.
+- Do not share the guest uid with host users. `RLIMIT_NPROC` counts every task of
+  the real uid, and rootful Docker/Podman on Linux share the host uid space, so a
+  busy host user can exhaust the guest's thread/child budget. Prefer a dedicated
+  uid and add a per-container `--pids-limit` where the runtime supports it.
+- The process limit is `min(inherited hard limit, 1024)`. A lower inherited hard
+  limit (for example `--ulimit nproc=512`) is honored instead of failing.
+- A refused identity or limit exits the worker with status 112 before any input
+  is read. The controller reports it as `policyBlocked` with the fixed message
+  "private worker refused the guest identity or resource limits".
+
+Controller-side mapping: only the validated root payload is guest-controlled. The
+controller sets the exported `provider` (`riela-private-workflow`), `model` (the
+inner `workflowId`) and routing (`always`) itself instead of trusting guest stdout.
+An inner graph that reaches its deadline fails with `timeout`, so outer
+`nodeTimeout` retry policy applies. Any other non-zero worker exit is a
+`providerError` (the same mapping the sandboxed agent host uses). The request and
+record protocol is v2; a v1 worker refuses a v2 request before reading private
+input, and the controller refuses v1 records as an outdated worker image.
 
 Focused unit coverage exercises builtin dispatch, actual embedded graph execution,
 strict final output, metadata rejection, configuration validation, selected-secret

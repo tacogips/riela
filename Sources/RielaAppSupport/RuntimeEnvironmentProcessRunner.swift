@@ -10,17 +10,29 @@ import Glibc
 public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning {
   public init() {}
   public func run(source: RuntimeEnvironmentCommandSource, baseEnvironment: [String: String], maxOutputBytes: Int) async throws -> Data {
-    let task = Task.detached { try Self.capture(source, environment: baseEnvironment, limit: maxOutputBytes) }
-    return try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+    // The capture loop blocks (poll + waitpid) for up to the source timeout, so it
+    // runs on its own thread instead of pinning a cooperative-pool thread.
+    let cancellation = RuntimeEnvironmentRunnerCancellation()
+    return try await withTaskCancellationHandler(operation: {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+        let thread = Thread {
+          continuation.resume(with: Result { try Self.capture(source, environment: baseEnvironment, limit: maxOutputBytes, cancellation: cancellation) })
+        }
+        thread.name = "riela.runtime-environment.loader"
+        thread.start()
+      }
+    }, onCancel: { cancellation.cancel() })
   }
 
-  private static func capture(_ source: RuntimeEnvironmentCommandSource, environment: [String: String], limit: Int) throws -> Data {
+  private static func capture(_ source: RuntimeEnvironmentCommandSource, environment: [String: String], limit: Int,
+                              cancellation: RuntimeEnvironmentRunnerCancellation) throws -> Data {
     // Inherited entries such as exported shell functions (BASH_FUNC_x%%) are not
     // portable names; drop them instead of failing every configured source.
     let environment = environment.filter { isValidEnvironmentVariableName($0.key) && !$0.value.contains("\0") }
     guard let first = source.command.first, !first.isEmpty, limit > 0,
       source.timeoutSeconds.isFinite, source.timeoutSeconds > 0,
       source.command.allSatisfy({ !$0.contains("\0") }) else { throw RuntimeEnvironmentError.invalidConfiguration }
+    if cancellation.isCancelled { throw CancellationError() }
     let executable: String
     if first.hasPrefix("/") { executable = first } else {
       guard let path = (environment["PATH"] ?? "/usr/bin:/bin").split(separator: ":").map({ String($0) + "/" + first })
@@ -89,7 +101,7 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
     var output = Data(); var eof = false; var exited = false
     var buffer = [UInt8](repeating: 0, count: 4096)
     while !eof || !exited {
-      try Task.checkCancellation()
+      if cancellation.isCancelled { throw CancellationError() }
       if ProcessInfo.processInfo.systemUptime >= end { throw RuntimeEnvironmentError.sourceTimeout }
       if !eof {
         let count = buffer.withUnsafeMutableBytes { read(descriptors[0], $0.baseAddress, $0.count) }
@@ -113,4 +125,11 @@ public struct RuntimeEnvironmentProcessRunner: RuntimeEnvironmentCommandRunning 
     guard waited == child, status & 0x7f == 0, (status >> 8) & 0xff == 0 else { throw RuntimeEnvironmentError.sourceFailed }
     return output
   }
+}
+
+private final class RuntimeEnvironmentRunnerCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancelled = false
+  var isCancelled: Bool { lock.withLock { cancelled } }
+  func cancel() { lock.withLock { cancelled = true } }
 }

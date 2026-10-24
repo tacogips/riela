@@ -396,6 +396,17 @@ sleeps.
 - No queue persistence: queued fires exist only in the serve process. They
   are discarded and recorded on shutdown, and they are not restored on
   restart. This is documented operator-facing behavior.
+- Abandoned receipts: after `kill -9`, or a shutdown that outlives its
+  bound, cron receipts can be left `queued` or `dispatched`. Every receipt a
+  dispatcher writes carries a `serveInstanceId` stamp (`<pid>-<random>`). When
+  a dispatcher starts, it closes each binding-scoped receipt in one of those
+  states whose stamp names a process that is no longer running (or that has
+  no stamp): `queued` becomes `discarded` and `dispatched` becomes `failed`,
+  both with `overlap-abandoned:<bindingId>` (plus `:<sessionId|pending>` for
+  `dispatched`). Receipts stamped by a live process, including another serve
+  on the same event root, are left alone. The sweep does not read the runtime
+  store; the runtime session named by `workflowExecutionId` keeps its own
+  terminal state through the runtime finalizer and orphan handling.
 
 ### 6.8 Concurrency safety of shared records
 
@@ -425,6 +436,12 @@ Every cron fire outcome, per (tick, binding), is persisted to
   - `overlapPolicySource` (`binding` | `workflow` | `default`)
   - `cancelledSessionIds: [String]`
   - `coalescedTickCount`
+- `serveInstanceId` (optional) is set on dispatcher-written receipts (§6.7)
+  and omitted elsewhere, so older receipts decode unchanged. All receipt
+  reads and writes (CLI, read-only ingestion and dispatcher) go through one
+  receipt store
+  that checks the id and containment and writes the directory 0700 and the
+  files 0600.
 - Status lifecycle: `queued` → `dispatched` → `completed` | `failed` |
   `cancelled`. A fire can also end as `skipped` or as `discarded`.
   `workflowExecutionId` is set from `onSessionStarted` and updated from the
@@ -433,12 +450,31 @@ Every cron fire outcome, per (tick, binding), is persisted to
   cancelled run's own receipt gets `cancelled` with
   `overlap-cancelled:<bindingId>:<supersedingReceiptId>`, unless the run won
   the race and completed first, in which case its real terminal status is
-  recorded.
+  recorded. The superseding receipt id is stored on the run when the cancel
+  is requested (and moves to the newest fire if a pending fire is
+  superseded), so it stays correct when the run ends after a settle timeout.
+  A run cancelled only by signal or error shutdown gets
+  `overlap-shutdown-cancelled:<bindingId>`.
+- A fire the routine gate stops at submit time is recorded `skipped` with the
+  gate's reason (`routine-<status>:<id>`, `routine-missing:<id>`,
+  `routine-store-error:<id>`), exactly like the deferred-start re-check. It
+  still does not count toward `--limit` (§6.3).
 - `riela events list` keeps its line format and appends ` reason=<reason>`
   when a reason exists and ` binding=<bindingId>` when a binding id exists.
   The existing `--status` filter works with the new statuses (for example
-  `--status skipped`).
-- `events replay` keeps its semantics for these receipts.
+  `--status skipped`). Receipts are listed newest first (`updatedAt`
+  descending, then `receiptId`), so `--limit` returns recent outcomes even
+  though cron receipt ids are hashes.
+- Retention: a cron writes one receipt per fire and binding (86,400 per day
+  for a per-second schedule). `riela gc --retention-days <n>` removes aged
+  files under the user and project `.riela/events/receipts` roots only, and
+  only when it runs. Receipts under a custom `--event-root` (including a
+  routine's `eventRoot`) are not collected.
+- `events replay` keeps its semantics for these receipts. A replay of a
+  binding-scoped receipt is keyed like a fire,
+  `event-cron-` + `sha256hex(sourceId + "\0" + "<eventId>-replay" + "\0" + bindingId)`,
+  so replays for several bindings of one tick never overwrite each other, and
+  it copies `bindingId`, `overlapPolicy` and `overlapPolicySource`.
 
 Read-only mode is unchanged. It records the read-only receipt and evaluates no
 overlap policy. When several ticks are due, it writes one read-only receipt
@@ -460,6 +496,8 @@ All reasons have the form `overlap-<kind>:<bindingId>[:<detail>]`:
 | `overlap-cancel-pending:<bindingId>` | `cancelRunning` fire recorded `queued` while cancelled runs settle |
 | `overlap-superseded:<bindingId>` | `cancelRunning` pending fire replaced by a newer fire |
 | `overlap-shutdown-discarded:<bindingId>` | queued or pending fire discarded on signal or error shutdown |
+| `overlap-shutdown-cancelled:<bindingId>` | in-flight run cancelled by signal or error shutdown (no superseding fire) |
+| `overlap-abandoned:<bindingId>[:<sessionId\|pending>]` | receipt left `queued` or `dispatched` by a serve instance that is no longer running, closed at the next serve start (§6.7) |
 
 `skipped` outcomes, overflow outcomes and cancel-timeout outcomes also set
 the serve record's `lastIgnoredReason` to the same string. That covers the
@@ -479,7 +517,14 @@ intake's `overlap-skip:<bindingId>:<runningSessionId>` example.
 - Routine inspect (CLI) and GraphQL `Routine` expose the binding-level fields
   (§11).
 - Telemetry: one log per non-start outcome, `riela.events.cron.overlap`, with
-  attributes `binding.id`, `overlap.policy`, `overlap.reason`.
+  attributes `binding.id`, `overlap.policy`, `overlap.reason`. Non-start
+  outcomes are `skipped`, `discarded`, `queued` (`overlap-queued`),
+  cancel-pending (`overlap-cancel-pending`) and startup-abandoned receipts.
+  `overlap.reason` carries the finite reason kind (the part before the first
+  `:`, for example `overlap-skip` or `routine-disabled`); the binding id is in
+  `binding.id` and the full reason with session ids stays on the receipt.
+  `RielaTelemetryRedactor` keeps `overlap.policy` and `overlap.reason` values
+  only when they are short tokens that do not look secret.
 
 ## 8. `cancelRunning` and the existing cancellation path
 

@@ -25,6 +25,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check container gateway pins match Package.resolved
+        run: python3 -I scripts/check-container-pins.py
+
       - name: Build release CLI in Swift amd64 container
         env:
           SWIFT_IMAGE: swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278
@@ -43,13 +46,6 @@ jobs:
               apt-get install -y libsqlite3-dev >/dev/null
               # SwiftPM can fetch stale macOS-only pins before resolving the
               # Linux manifest. Do not grant private-repository credentials.
-              swift -e '\''import Foundation
-                let file = URL(fileURLWithPath: "Package.resolved")
-                var lock = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-                let pins = lock["pins"] as! [[String: Any]]
-                lock["pins"] = pins.filter { $0["identity"] as? String != "notion-gateway" }
-                lock.removeValue(forKey: "originHash")
-                try JSONSerialization.data(withJSONObject: lock, options: [.prettyPrinted, .sortedKeys]).write(to: file)
-              '\''
+              swift scripts/strip-macos-only-pins.swift Package.resolved
               swift build -c release --product riela --triple x86_64-unknown-linux-gnu
             '

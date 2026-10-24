@@ -227,7 +227,9 @@ struct LocalGatewayGraphQLEngine {
 
 /// Applies the step deadline to an in-process gateway call. A linked gateway
 /// has no process to terminate, so the call is cancelled and the same timeout
-/// error a spawned gateway would have produced is raised.
+/// error a spawned gateway would have produced is raised. The task group waits
+/// for the cancelled operation, so an operation that blocks a thread must be
+/// cancellation-aware (see `xGatewayRunOffCooperativePool`).
 func localGatewayRunWithDeadline(
   deadline: Date?,
   addonName: String,

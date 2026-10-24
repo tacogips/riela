@@ -1,9 +1,13 @@
 import Foundation
 
 /// References can be nested in queue/checkpoint metadata. No application schema
-/// or source body is needed: only objects containing a key and SHA256 revision.
+/// or source body is needed. The reserved reference shape is any object that has
+/// both a `key` and a `revision` member: its revision must be a SHA256 hex
+/// digest, otherwise the snapshot is rejected. An object whose string `scope`
+/// member names a different scope (for example a put receipt from another
+/// scope) is skipped, so receipts can be passed through verbatim.
 enum CacheReferenceSnapshot {
-  static func collect(_ value: MemoryJSONValue) throws -> [String: String] {
+  static func collect(_ value: MemoryJSONValue, scope: String) throws -> [String: String] {
     var result: [String: String] = [:]
     var remaining = 1_000_000
     func visit(_ value: MemoryJSONValue, depth: Int) throws {
@@ -12,6 +16,7 @@ enum CacheReferenceSnapshot {
       switch value {
       case let .object(object):
         if let keyValue = object["key"], let revisionValue = object["revision"] {
+          if case let .string(referenceScope) = object["scope"], referenceScope != scope { return }
           guard case let .string(key) = keyValue, case let .string(revision) = revisionValue,
             !key.isEmpty, key.utf8.count <= 1024, !key.contains("\0"),
             key == key.trimmingCharacters(in: .whitespacesAndNewlines),

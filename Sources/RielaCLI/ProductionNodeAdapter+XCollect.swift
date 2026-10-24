@@ -3,6 +3,10 @@ import RielaAddonSupport
 import RielaCore
 
 extension BuiltinWorkflowAddonResolver {
+  static let xCollectionRegistration = BuiltinAddonHandlerRegistration(name: "riela/x-collect") { resolver, input, context in
+    try await resolver.executeXCollect(input, context: context)
+  }
+
   /// All reads stay in this SDK process, so a private workflow can inspect the
   /// result before exporting it. No scripts, subprocesses or nested containers.
   func executeXCollect(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {

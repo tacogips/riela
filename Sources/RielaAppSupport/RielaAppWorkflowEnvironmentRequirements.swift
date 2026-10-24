@@ -1,155 +1,91 @@
 import Foundation
-import RielaAddons
 import RielaCore
 
+/// App-facing required-environment rows. The NAMES come from the same RielaCore
+/// collector the CLI child (`riela events serve`) enforces
+/// (`WorkflowEnvironmentRequirements.names`), so the managed-name set the App
+/// sends over the private channel matches what the child checks. This type only
+/// adds package descriptions and secret flags (`RielaAppEnvRequirement`).
+///
+/// Residual difference: the CLI also follows reachable called workflows, shared
+/// node references and local add-on host requirements, which need the CLI's
+/// bundle resolver. Those names are enforced by the child and reported through
+/// its safe stderr code (`environment_required_missing`).
 enum RielaAppWorkflowEnvironmentRequirements {
   static func requiredEnvironment(
     workflowDirectory: URL,
     packageRequirements: [RielaAppEnvRequirement] = []
   ) -> [RielaAppEnvRequirement] {
     var requirements = packageRequirements
-    for requirement in workflowRequirements(workflowDirectory: workflowDirectory)
-      where !requirements.contains(where: { $0.name == requirement.name }) {
-      requirements.append(requirement)
+    for name in workflowNames(workflowDirectory: workflowDirectory)
+      where !requirements.contains(where: { $0.name == name }) {
+      requirements.append(RielaAppEnvRequirement(name: name))
     }
     return requirements.sorted {
       $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
     }
   }
 
-  private static func workflowRequirements(workflowDirectory: URL) -> [RielaAppEnvRequirement] {
-    let workflowURL = workflowDirectory.appendingPathComponent("workflow.json")
-    guard let workflow = decode(WorkflowEnvironmentDescriptor.self, from: workflowURL) else {
+  /// The top-level workflow's required names as the CLI computes them: the
+  /// authored workflow is validated with the same Core validator the bundle
+  /// loader uses and node payloads are read from `nodeFile` references inside
+  /// the workflow directory. An unreadable or invalid workflow (which the CLI
+  /// also refuses to run) contributes no names.
+  static func workflowNames(workflowDirectory: URL) -> [String] {
+    guard let data = try? Data(contentsOf: workflowDirectory.appendingPathComponent("workflow.json")),
+          let workflow = validateAuthoredWorkflowData(data).workflow else {
       return []
     }
-    var requirements: [RielaAppEnvRequirement] = []
-    appendExplicitRequirements(workflow.requiredEnvironment, into: &requirements)
-    appendRequirements(from: workflow.nodes, workflowDirectory: workflowDirectory, into: &requirements)
-    return requirements
-  }
-
-  private static func appendRequirements(
-    from nodes: [WorkflowEnvironmentNode],
-    workflowDirectory: URL,
-    into requirements: inout [RielaAppEnvRequirement]
-  ) {
-    for node in nodes {
-      appendExplicitRequirements(node.requiredEnvironment, into: &requirements)
-      appendRequirement(node.apiKeyEnvironment, into: &requirements)
-      appendAddonRequirements(from: node.addon, into: &requirements)
-      appendAgentRequirements(from: node.agentEnvironment, into: &requirements)
-      if let nodeFile = node.nodeFile,
-        let referenced = decode(
-          WorkflowEnvironmentNodePayload.self,
-          from: workflowDirectory.appendingPathComponent(nodeFile)
-        ) {
-        appendExplicitRequirements(referenced.requiredEnvironment, into: &requirements)
-        appendRequirement(referenced.apiKeyEnvironment, into: &requirements)
-        appendAddonRequirements(from: referenced.addon, into: &requirements)
-        appendAgentRequirements(from: referenced.agentEnvironment, into: &requirements)
+    var payloads: [String: AgentNodePayload] = [:]
+    for node in workflow.nodeRegistry {
+      guard let nodeFile = node.nodeFile,
+            let url = containedFile(nodeFile, in: workflowDirectory),
+            let payloadData = try? Data(contentsOf: url),
+            let payload = try? JSONDecoder().decode(AgentNodePayload.self, from: payloadData) else {
+        continue
       }
+      payloads[node.id] = payload
     }
+    return (try? WorkflowEnvironmentRequirements.names(workflow: workflow, nodePayloads: payloads)) ?? []
   }
 
-  private static func appendExplicitRequirements(_ names: [String]?, into requirements: inout [RielaAppEnvRequirement]) {
-    for name in names ?? [] {
-      appendRequirement(name, into: &requirements)
-    }
-  }
-
-  private static func appendAddonRequirements(
-    from addon: WorkflowEnvironmentAddon?,
-    into requirements: inout [RielaAppEnvRequirement]
-  ) {
-    guard let env = addon?.env else {
-      return
-    }
-    for binding in env.values where binding.required != false {
-      appendRequirement(binding.fromEnv, into: &requirements)
-    }
-  }
-
-  private static func appendAgentRequirements(
-    from agentEnvironment: [String: WorkflowEnvironmentAgentBinding]?,
-    into requirements: inout [RielaAppEnvRequirement]
-  ) {
-    guard let agentEnvironment else {
-      return
-    }
-    for binding in agentEnvironment.values where binding.required {
-      appendRequirement(binding.fromEnv, into: &requirements)
-    }
-  }
-
-  private static func appendRequirement(_ name: String?, into requirements: inout [RielaAppEnvRequirement]) {
-    guard let name, WorkflowPackageManifestValidator.isValidEnvironmentVariableName(name) else {
-      return
-    }
-    if !requirements.contains(where: { $0.name == name }) {
-      requirements.append(RielaAppEnvRequirement(name: name))
-    }
-  }
-
-  private static func decode<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
-    guard let data = try? Data(contentsOf: url) else {
-      return nil
-    }
-    return try? JSONDecoder().decode(type, from: data)
+  private static func containedFile(_ relativePath: String, in directory: URL) -> URL? {
+    let root = directory.resolvingSymlinksInPath().standardizedFileURL.path
+    let file = directory.appendingPathComponent(relativePath).resolvingSymlinksInPath().standardizedFileURL
+    return file.path.hasPrefix(root + "/") ? file : nil
   }
 }
 
-private struct WorkflowEnvironmentDescriptor: Decodable {
-  var nodes: [WorkflowEnvironmentNode]
-  var requiredEnvironment: [String]?
-
-  private enum CodingKeys: String, CodingKey {
-    case nodes
-    case requiredEnvironment
+/// One presence rule for required names, shared by the native window's
+/// "Missing" column and the console projection, so loader-managed names are
+/// not reported missing just because they are absent from the pre-loader
+/// environment.
+public enum RielaAppEnvironmentPresence {
+  /// - A non-blank pre-loader value (process, `.env`, inline) is present.
+  /// - After a successful load the published snapshot decides (`configuredNames`).
+  /// - Before any load, a name an instance loader declares counts as present:
+  ///   start runs the loader and fails with its own safe code if it is absent.
+  /// - After a failed first load (no snapshot) only the pre-loader value counts.
+  public static func isPresent(
+    _ name: String,
+    environment: [String: String],
+    resolution: RuntimeEnvironmentConfiguration?,
+    status: RuntimeEnvironmentStatus
+  ) -> Bool {
+    if environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { return true }
+    switch status.readiness {
+    case .ready: return status.configuredNames.contains(name)
+    case .unprepared: return resolution?.sources.contains { $0.names.contains(name) } ?? false
+    case .failed: return false
+    }
   }
 
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    nodes = try container.decodeIfPresent([WorkflowEnvironmentNode].self, forKey: .nodes) ?? []
-    requiredEnvironment = try container.decodeIfPresent([String].self, forKey: .requiredEnvironment)
-  }
-}
-
-private struct WorkflowEnvironmentNode: Decodable {
-  var nodeFile: String?
-  var requiredEnvironment: [String]?
-  var apiKeyEnvironment: String?
-  var addon: WorkflowEnvironmentAddon?
-  var agentEnvironment: [String: WorkflowEnvironmentAgentBinding]?
-}
-
-private struct WorkflowEnvironmentNodePayload: Decodable {
-  var requiredEnvironment: [String]?
-  var apiKeyEnvironment: String?
-  var addon: WorkflowEnvironmentAddon?
-  var agentEnvironment: [String: WorkflowEnvironmentAgentBinding]?
-}
-
-private struct WorkflowEnvironmentAddon: Decodable {
-  var env: [String: WorkflowEnvironmentAddonBinding]?
-}
-
-private struct WorkflowEnvironmentAddonBinding: Decodable {
-  var fromEnv: String?
-  var required: Bool?
-}
-
-private struct WorkflowEnvironmentAgentBinding: Decodable {
-  var fromEnv: String?
-  var required: Bool
-
-  private enum CodingKeys: String, CodingKey {
-    case fromEnv
-    case required
-  }
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    fromEnv = try container.decodeIfPresent(String.self, forKey: .fromEnv)
-    required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? false
+  public static func missingNames(
+    _ names: [String],
+    environment: [String: String],
+    resolution: RuntimeEnvironmentConfiguration?,
+    status: RuntimeEnvironmentStatus
+  ) -> [String] {
+    names.filter { !isPresent($0, environment: environment, resolution: resolution, status: status) }
   }
 }

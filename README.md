@@ -95,9 +95,12 @@ and the `examples/brain-generated-workflow-loop` mock-scenario example.
 For failed sequential agent workflows, [history-preserving recovery](docs/preserved-history-recovery.md)
 reuses accepted discussion without rerunning earlier agents and records explicit
 source lineage in the new session. A plain `riela session rerun SESSION STEP`
-also carries the target's recorded accepted inbox (for example checkpoint
-messages) into the new session, and rejects created or running sources and
-missing or unaccepted inbox evidence before creating a session.
+also carries the source's accepted inbox state as of the target's latest
+execution into the new session: the target's recorded inbox plus the messages
+every step reachable from it had received, so a loop back-edge (for example
+`integration-review` returning to `dispatch-plans`) still finds its checkpoint
+message. It rejects missing or unaccepted inbox evidence, and created or running
+sources whose evidence would be carried, before creating a session.
 `riela session resume SESSION --retry-failed-step` also accepts a step that
 failed with a node timeout. Step reruns of the protected git-finalization
 workflow bind the latest accepted commit/push/mode evidence or reject in
@@ -808,8 +811,16 @@ Surfaces:
 - CLI: `riela routine create --name <n> --task <t> (--schedule "0 */30 * * * *" | --every 30m) --workflow routine-task-runner [--completion-criteria <c>] [--timezone Asia/Tokyo] [--deactivate-workflow-on-completion] [--overlap-policy <skip|cancelRunning|queue|concurrent>] [--max-queued-runs <n>] [--max-concurrent-runs <n>]`,
   plus `list`, `inspect <id>`, `complete <id> [--note ...]`, `enable <id>`,
   `disable <id>`, `set-overlap-policy <id> (--overlap-policy <v> | --clear-overlap-policy) [--max-queued-runs <n>] [--max-concurrent-runs <n>]`,
-  and `delete <id>`. `inspect` prints `overlapPolicy=<v|inherit>`. A policy
-  change takes effect the next time `riela events serve` starts.
+  and `delete <id>`. `inspect` prints `overlapPolicy=<v|inherit>`. `inherit`
+  means the routine's binding sets no policy, so serve uses the workflow's
+  `triggerDefaults` policy or, without one, `skip`; that layer is resolved
+  when `riela events serve` starts and is shown in `serve-record.json`
+  (`overlapPolicies`), not by `inspect`. `set-overlap-policy` replaces the
+  whole policy: a cap you omit is removed, so
+  `--overlap-policy queue` alone resets `maxQueuedRuns` to its default of 1.
+  It patches only the overlap keys of the binding file and keeps its
+  `enabled` state and other edits. A policy change takes effect the next time
+  `riela events serve` starts.
 - GraphQL (locally trusted hosts): `routines` / `routine` queries and
   `createRoutine` / `completeRoutine` / `setRoutineStatus` / `deleteRoutine` /
   `setRoutineOverlapPolicy` mutations (`Routine` and `CreateRoutineInput` carry
@@ -860,9 +871,17 @@ resolved once when serve starts. Existing configs that do not set it get
 `"overlapPolicy": "queue"` to keep that catch-up behavior. Unknown values fail
 `riela events validate` (JSON `status: failed`) and `riela workflow validate`.
 
-Every outcome is recorded as a cron receipt. `riela events list` adds
-` reason=overlap-...` and ` binding=<id>` to each line, and `--status skipped`
-filters skipped fires. `serve-record.json` gains `overlapPolicies` and
+Every outcome is recorded as a cron receipt, including a fire the routine
+gate skips. `riela events list` adds ` reason=overlap-...` and ` binding=<id>`
+to each line, lists receipts newest first (so `--limit` returns the most
+recent outcomes), and `--status skipped` filters skipped fires. A frequent
+cron writes one receipt file per fire and binding: `riela gc --retention-days
+<n>` ages out receipts under the user and project `.riela/events/receipts`
+roots, while receipts under a custom `--event-root` are never collected and
+need their own cleanup. Queued fires are not persisted across restarts; a
+serve that starts after `kill -9` closes receipts a dead serve left `queued`
+(as `discarded`) or `dispatched` (as `failed`) with reason
+`overlap-abandoned:<bindingId>`. `serve-record.json` gains `overlapPolicies` and
 `lastIgnoredReason`. `riela workflow inspect` prints a `triggerDefaults:` line.
 A routine counts only runs that complete successfully. Skipped, dropped,
 cancelled and failed fires are not counted, and `lastRunAt` never moves
@@ -1587,19 +1606,38 @@ failures prevent execution and appear as safe errors in environment status.
 
 An instance loads once before its first execution. Later scheduled and manual
 runs reuse its in-memory snapshot, including when the credential store becomes
-locked. Use **Reload environment** in the App or target the App's HTTP server:
+locked. Use **Reload environment** in the App or web console, or target the
+App's HTTP server or a `riela serve` host (both run the same loaders and serve
+the same status and reload routes):
 
 ```bash
 riela environment status --instance INSTANCE_ID --profile default --server http://127.0.0.1:8787
 riela environment reload --instance INSTANCE_ID --profile default --server http://127.0.0.1:8787
 ```
 
-Status exposes names, missing names and generation, never values. A successful
-reload atomically supplies a new snapshot to future executions; already running
-executions keep their captured snapshot. A failed credential reload preserves
-the last successful snapshot. Changing managed names or loader descriptors on a
-running instance requires stopping and starting it. Restarting the App clears
-memory and requires the store to be readable again.
+Status exposes names, missing names and generation, never values. Credentials
+are scoped per profile; deleting or renaming an App run configuration, or
+switching the active profile (App or `riela serve`), drops the affected
+in-memory values and statuses. A successful
+reload atomically supplies a new snapshot to future executions, including
+executions dispatched by a running event listener and the listener's own next
+poll (chat and gateway tokens); Webhooky streams reconnect with the reloaded
+credentials. Already running executions keep their captured snapshot. A failed credential reload preserves the last successful snapshot.
+Changing the set of managed names (required names plus loader `names`) on a
+running instance requires stopping and starting it; reload refuses with
+`environment_restart_required` before running any loader or touching the
+listener. A changed loader command or format with the same names is applied by
+reload; if the new loader fails, the running instance keeps the previous
+snapshot. Reload errors are safe codes: `environment_reload_in_progress` when
+another reload of the same instance is still running, and
+`environment_instance_changed` when the listener was restarted or stopped while
+loaders ran (retry the reload). `riela environment reload` prints the failing
+code (for example `environment_source_failed`) on stderr and exits non-zero.
+A managed event listener receives values on a private close-on-exec channel
+that its subprocesses never inherit, and it stops with
+`environment_channel_closed` when the App goes away instead of serving with its
+last snapshot. Restarting the App clears memory and requires the store to be
+readable again.
 
 Local one-shot CLI runs accept `--runtime-environment-file /path/to/descriptor.json`.
 Bare CLI resident processes can load the descriptor at startup too; the reload

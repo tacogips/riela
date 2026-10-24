@@ -56,6 +56,9 @@ COPY Tests ./Tests
 COPY Resources ./Resources
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 RUN python3 /prepare.py riela /src
+# Same Linux lock adjustment as the CI builds: never fetch macOS-only pins.
+COPY scripts/strip-macos-only-pins.swift /strip-macos-only-pins.swift
+RUN swift /strip-macos-only-pins.swift /src/Package.resolved
 # Keep incremental compiler outputs in the builder, never in the runtime image.
 # The lock prevents simultaneous builds from mutating one SwiftPM directory.
 RUN --mount=type=cache,id=riela-builtin-swift633,target=/src/.build,sharing=locked \

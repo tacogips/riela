@@ -136,7 +136,9 @@ public func normalizeRuntimeAdapterOutput(
     payload: extracted.payload,
     completionPassed: normalized.completionPassed,
     when: normalized.when,
-    routingDiagnostics: normalized.routingDiagnostics,
+    // Adapters that normalize their own envelope (agent-gateway) hand over an
+    // already-stripped payload, so their notes must be carried explicitly.
+    routingDiagnostics: output.routingDiagnostics + normalized.routingDiagnostics,
     handover: extracted.handover
   )
 }

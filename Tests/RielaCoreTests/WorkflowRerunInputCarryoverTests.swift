@@ -90,7 +90,7 @@ final class WorkflowRerunInputCarryoverTests: XCTestCase {
     let input = try await DeterministicWorkflowRunner(store: store, adapter: StaticAdapter(output: AdapterExecutionOutput(
       provider: "test", model: "fixture", promptText: "prompt", completionPassed: true,
       payload: ["answer": .string("ready")]
-    ))).rerunCarriedInbox(source: source, targetStepId: "consumer")
+    ))).rerunCarriedInbox(source: source, workflow: carryoverWorkflow, targetStepId: "consumer")
     XCTAssertNil(input)
   }
 
@@ -132,22 +132,113 @@ final class WorkflowRerunInputCarryoverTests: XCTestCase {
     XCTAssertEqual(latest?.sessionId, source.sessionId)
   }
 
-  func testRunningSourceIsRejectedBeforeSessionCreation() async throws {
-    var source = try await failedSource().session
-    source.status = .running
+  func testFailedProducerOfRecordedInboxIsRejectedBeforeSessionCreation() async throws {
+    let fixture = try await failedSource()
+    var source = fixture.session
+    let producerIndex = try XCTUnwrap(source.executions.firstIndex { $0.stepId == "checkpoint" })
+    source.executions[producerIndex].status = .failed
+    source.executions[producerIndex].acceptedOutput = nil
     let store = InMemoryWorkflowRuntimeStore()
     await store.seedSession(source)
+    await store.seedWorkflowMessages(fixture.messages)
 
     do {
       _ = try await DeterministicWorkflowRunner(store: store, adapter: InboxCheckingAdapter(failTail: false)).run(
         request(workflow: carryoverWorkflow, sourceSessionId: source.sessionId, targetStepId: "consumer"))
-      XCTFail("running source must be rejected")
+      XCTFail("an inbox message from a failed producer must be rejected, not silently dropped")
     } catch {
-      XCTAssertTrue(String(describing: error).contains(
-        "rerun source session must be failed, cancelled, suspended or completed"))
+      let description = String(describing: error)
+      XCTAssertTrue(description.contains("is missing or unaccepted"), description)
+      XCTAssertTrue(description.contains("producer checkpoint execution"), description)
+      XCTAssertTrue(description.contains("is failed without accepted output"), description)
     }
     let latest = await store.latestSession(workflowId: carryoverWorkflow.workflowId)
     XCTAssertEqual(latest?.sessionId, source.sessionId)
+  }
+
+  func testRunningSourceWithNothingToCarryStartsFresh() async throws {
+    let fixture = try await failedSource()
+    var source = fixture.session
+    source.status = .running
+    let store = InMemoryWorkflowRuntimeStore()
+    await store.seedSession(source)
+    await store.seedWorkflowMessages(fixture.messages)
+
+    // Entry step: its recorded inbox is empty, so nothing is imported.
+    let entry = try await DeterministicWorkflowRunner(store: store, adapter: InboxCheckingAdapter(failTail: false)).run(
+      request(workflow: carryoverWorkflow, sourceSessionId: source.sessionId, targetStepId: "checkpoint"))
+    XCTAssertEqual(entry.status, .completed)
+    XCTAssertTrue(entry.session.executions.allSatisfy { $0.importedFrom == nil })
+
+    // Never-executed target: also nothing to carry.
+    var unexecuted = source
+    unexecuted.sessionId = "orphaned-running-source"
+    unexecuted.executions.removeAll { $0.stepId == "tail" }
+    await store.seedSession(unexecuted)
+    let tail = try await DeterministicWorkflowRunner(store: store, adapter: InboxCheckingAdapter(failTail: false)).run(
+      request(workflow: carryoverWorkflow, sourceSessionId: unexecuted.sessionId, targetStepId: "tail"))
+    XCTAssertEqual(tail.status, .completed)
+    XCTAssertTrue(tail.session.executions.allSatisfy { $0.importedFrom == nil })
+  }
+
+  func testRunningSourceIsRejectedBeforeSessionCreationWhenEvidenceWouldBeCarried() async throws {
+    let fixture = try await failedSource()
+    var source = fixture.session
+    source.status = .running
+    let store = InMemoryWorkflowRuntimeStore()
+    await store.seedSession(source)
+    await store.seedWorkflowMessages(fixture.messages)
+
+    do {
+      _ = try await DeterministicWorkflowRunner(store: store, adapter: InboxCheckingAdapter(failTail: false)).run(
+        request(workflow: carryoverWorkflow, sourceSessionId: source.sessionId, targetStepId: "consumer"))
+      XCTFail("a running source whose inbox would be carried must be rejected")
+    } catch {
+      let description = String(describing: error)
+      XCTAssertTrue(description.contains("rerun source session must be failed, cancelled, suspended or completed"), description)
+      XCTAssertTrue(description.contains("use session resume \(source.sessionId)"), description)
+    }
+    let latest = await store.latestSession(workflowId: carryoverWorkflow.workflowId)
+    XCTAssertEqual(latest?.sessionId, source.sessionId)
+  }
+
+  func testPlainRerunLineageDoesNotDependOnCarriedEvidence() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    await XCTAssertThrowsErrorAsync(try await DeterministicWorkflowRunner(
+      store: store, adapter: InboxCheckingAdapter(failTail: true)
+    ).run(request(workflow: carryoverWorkflow)))
+    let maybeSource = await store.latestSession(workflowId: carryoverWorkflow.workflowId)
+    let source = try XCTUnwrap(maybeSource)
+
+    let carrying = try await DeterministicWorkflowRunner(store: store, adapter: InboxCheckingAdapter(failTail: false)).run(
+      request(workflow: carryoverWorkflow, sourceSessionId: source.sessionId, targetStepId: "consumer"))
+    let fresh = try await DeterministicWorkflowRunner(store: store, adapter: InboxCheckingAdapter(failTail: false)).run(
+      request(workflow: carryoverWorkflow, sourceSessionId: source.sessionId, targetStepId: "checkpoint"))
+    XCTAssertTrue(carrying.session.executions.contains { $0.importedFrom != nil })
+    XCTAssertTrue(fresh.session.executions.allSatisfy { $0.importedFrom == nil })
+    XCTAssertNil(carrying.session.parentSessionId)
+    XCTAssertNil(fresh.session.parentSessionId)
+    XCTAssertEqual(carrying.session.rootSessionId == nil, fresh.session.rootSessionId == nil)
+    XCTAssertEqual(carrying.session.rootSessionId.map { $0 == carrying.session.sessionId },
+      fresh.session.rootSessionId.map { $0 == fresh.session.sessionId })
+    XCTAssertEqual(carrying.recovery?.parentSessionId, source.sessionId)
+    XCTAssertEqual(fresh.recovery?.parentSessionId, source.sessionId)
+  }
+
+  func testRecordedInboxIsReadFromCommandAndAddonSnapshots() {
+    let date = Date(timeIntervalSince1970: 100)
+    let ids: JSONValue = .object(["_rielaInput": .object(["communicationIds": .array([.string("c-1"), .string("c-2")])])])
+    let command = WorkflowStepExecution(
+      executionId: "command", stepId: "dispatch", nodeId: "dispatch", attempt: 1,
+      inputSnapshot: ["variables": .object([:]), "resolvedInputPayload": ids],
+      status: .failed, createdAt: date, updatedAt: date
+    )
+    XCTAssertEqual(DeterministicWorkflowRunner.recordedInboxCommunicationIds(of: command), ["c-1", "c-2"])
+    var agent = command
+    agent.inputSnapshot = ["mergedVariables": ids]
+    XCTAssertEqual(DeterministicWorkflowRunner.recordedInboxCommunicationIds(of: agent), ["c-1", "c-2"])
+    agent.inputSnapshot = ["mergedVariables": .object(["_rielaInput": .object(["communicationIds": .array([.integer(1)])])])]
+    XCTAssertNil(DeterministicWorkflowRunner.recordedInboxCommunicationIds(of: agent))
   }
 
   private func failedSource() async throws -> (session: WorkflowSession, messages: [WorkflowMessageRecord]) {

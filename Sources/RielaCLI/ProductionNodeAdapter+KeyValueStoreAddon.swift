@@ -3,7 +3,7 @@ import RielaAddonSupport
 import RielaCore
 import RielaMemory
 
-enum BuiltinKeyValueAddon: String {
+enum BuiltinKeyValueAddon: String, CaseIterable, Sendable {
   case set = "riela/kv-set"
   case get = "riela/kv-get"
   case delete = "riela/kv-delete"

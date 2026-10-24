@@ -1,3 +1,5 @@
+import Foundation
+import RielaAdapters
 import RielaAddons
 import RielaCore
 import XCTest
@@ -56,6 +58,22 @@ final class AppleGatewayContainerCapabilityTests: XCTestCase {
   }
   #endif
 
+  /// Apple Container X reads bound each SDK request by the node deadline, like
+  /// the embedded and Docker/Podman readers.
+  func testAppleContainerXReaderPassesTheNodeDeadlineToReaderArguments() async throws {
+    let runner = DeadlineRecordingExecRunner()
+    _ = try await AppleContainerGatewayProcess(executable: "/usr/local/bin/container", environment: [:],
+      workingDirectory: URL(fileURLWithPath: "/tmp"), runner: runner)
+      .run(image: "fixture", mounts: [], networkAllowed: false, gateway: .xRead, document: "query { accountMe { id } }",
+           bindings: [:], deadline: Date().addingTimeInterval(5))
+    let calls = await runner.arguments
+    let exec = try XCTUnwrap(calls.first { $0.first == "exec" })
+    XCTAssertEqual(exec.firstIndex(of: "--retry").map { exec[$0 + 1] }, "0")
+    let timeout = try XCTUnwrap(exec.firstIndex(of: "--timeout-ms").flatMap { Int(exec[$0 + 1]) })
+    XCTAssertGreaterThan(timeout, 0)
+    XCTAssertLessThanOrEqual(timeout, 5_000)
+  }
+
   func testMailReadGrantsIncludeRequiredPermissionAndMailboxQueries() throws {
     let list = AppleGatewayContainerCapability(addonName: "riela/apple-mail-list")
     try list.validate(arguments: ["graphql", "--query", "query { permissions { mailFullDiskAccess } mailAccounts { id } mailboxes { id } mailMessages { totalCount } }"])
@@ -108,5 +126,13 @@ final class AppleGatewayContainerCapabilityTests: XCTestCase {
       "query { note(noteId: \"n\") { id } } mutation { deleteNote(noteId: \"n\") { success } }"
     ] { XCTAssertThrowsError(try capability.validate(arguments: ["graphql", "--query", document])) }
     XCTAssertThrowsError(try capability.validate(arguments: ["graphql", "--query", "query { note { id } }", "--variables", "[]"]))
+  }
+}
+
+private actor DeadlineRecordingExecRunner: LocalProcessRunning {
+  var arguments: [[String]] = []
+  func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
+    arguments.append(configuration.arguments)
+    return .init(stdout: "{}", stderr: "", terminationStatus: 0)
   }
 }

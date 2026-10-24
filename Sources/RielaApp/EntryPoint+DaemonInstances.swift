@@ -155,6 +155,7 @@ extension RielaApp {
     }
     Task { @MainActor in
       await daemonRuntime.stop(identity: identity)
+      await daemonRuntime.evictEnvironment(identity: identity, profile: resolvedIdentity.profileName.rawValue)
       status = "Removed run configuration: \(resolvedIdentity.localIdentity) (\(resolvedIdentity.profileName.rawValue))"
       refreshDaemonWorkflowWindow()
     }
@@ -296,6 +297,7 @@ extension RielaApp {
     Task { @MainActor in
       if result.identity != resolved.localIdentity {
         await daemonRuntime.stop(identity: identity)
+        await daemonRuntime.evictEnvironment(identity: identity, profile: resolved.profileName.rawValue)
       }
       status = "Renamed run configuration: \(result.identity)"
       refreshDaemonWorkflowWindow()

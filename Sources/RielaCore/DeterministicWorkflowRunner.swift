@@ -232,15 +232,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     let entryContext: SessionEntryContext
     switch try await resolveSessionEntry(effectiveRequest) {
     case let .terminal(result):
-      await reconcileAcceptedFinalizations(in: result.session)
-      await recordTerminalFinalization(in: result.session)
+      await reconcileAcceptedFinalizations(in: result.session, handler: effectiveRequest.eventHandler)
+      await recordTerminalFinalization(in: result.session, handler: effectiveRequest.eventHandler)
       return result
     case let .proceed(context):
       entryContext = context
     }
     var session = entryContext.session
     try effectiveRequest.sessionExecutionAdmission?(session.sessionId)
-    await reconcileAcceptedFinalizations(in: session)
+    await reconcileAcceptedFinalizations(in: session, handler: effectiveRequest.eventHandler)
     var currentStepId = entryContext.currentStepId
     effectiveRequest.parentSessionId = session.parentSessionId
     effectiveRequest.rootSessionId = session.rootSessionId ?? session.sessionId
@@ -265,7 +265,11 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
     var publishedTransitions = 0
     var rootOutput: JSONObject?
     var stoppedAfterRequestedStep = false
-    var executionCounts = Dictionary(grouping: session.executions, by: \.stepId).mapValues { executions in
+    // Imported evidence is not an attempt of this session: seed attempt
+    // numbers (and RIELA_NODE_EXEC_ID / mock-scenario indices) only from
+    // executions this session ran itself.
+    let ownExecutions = session.executions.filter { $0.importedFrom == nil }
+    var executionCounts = Dictionary(grouping: ownExecutions, by: \.stepId).mapValues { executions in
       executions.map(\.attempt).max() ?? 0
     }
     while let stepId = currentStepId {
@@ -377,7 +381,9 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       if let changes = effectiveRequest.fanoutChangeContext {
         _ = try await changes.evidence.capture(branchId: changes.branchId, paths: changes.paths, artifactRoots: changes.artifactRoots, stepId: "after:\(stepId)")
       }
-      await acknowledgeAcceptedFinalization(in: publishResult.stepExecution)
+      await acknowledgeAcceptedFinalization(
+        in: publishResult.stepExecution, session: session, handler: effectiveRequest.eventHandler
+      )
       try await enforceLoopConvergenceIfNeeded(
         publishResult: publishResult,
         workflow: effectiveRequest.workflow,
@@ -463,7 +469,7 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
       transitions: publishedTransitions,
       recovery: recoveryLineage
     )
-    await recordTerminalFinalization(in: loadedSession)
+    await recordTerminalFinalization(in: loadedSession, handler: effectiveRequest.eventHandler)
     await emitSessionCompletedEvent(result: completedResult, handler: effectiveRequest.eventHandler)
     await finishOwnedWorkflowRun(ownedWorkflowRunId)
     return completedResult
@@ -628,7 +634,13 @@ extension DeterministicWorkflowRunner {
       resolvedInputPayload: resolvedInput.payload
     )
     executionPayload.output = try resolveNodeOutputContract(executionPayload.output, variables: mergedVariables)
-    executionPayload.agentToolPolicy = try resolveAgentToolPolicy(executionPayload.agentToolPolicy, variables: mergedVariables)
+    executionPayload.agentToolPolicy = try resolveAgentToolPolicy(
+      executionPayload.agentToolPolicy,
+      variables: mergedVariables,
+      trustedVariables: agentToolPolicyTrustedVariables(
+        nodeVariables: executionPayload.variables, workflowInput: request.variables
+      )
+    )
     let prompts = try composedPromptsWithFinalizationEvidence(
       workflow: request.workflow,
       step: step,

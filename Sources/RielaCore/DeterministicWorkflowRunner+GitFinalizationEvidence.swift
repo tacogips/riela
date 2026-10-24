@@ -10,6 +10,63 @@ struct WorkflowGitFinalizationEvidencePolicy: Equatable, Sendable {
   var planPushStepId: String?
 }
 
+extension WorkflowGitFinalizationEvidencePolicy {
+  /// Step ids the protected topology names literally. Every finalization
+  /// evidence function reads them from here.
+  static let terminalStepId = "workflow-output"
+  static let implementationStepId = "step6-implement"
+  static let combinedReviewStepId = "integration-review"
+  static let planningOnlyLabel = "planning_only"
+
+  /// Steps that transition directly into the final commit step.
+  static func commitPreparationStepIds(workflow: WorkflowDefinition, commitStepId: String) -> Set<String> {
+    Set(workflow.steps.compactMap { step in
+      step.transitions?.contains(where: { $0.toStepId == commitStepId }) == true ? step.id : nil
+    })
+  }
+
+  /// A planning route starts at a step, ends at a commit-preparation step and
+  /// carries a `planning_only` label. The policy derives
+  /// `planningModeStepIds` from this test, and rerun preflight removes exactly
+  /// these edges when it computes plan-evidence dominance.
+  static func isPlanningRoute(_ transition: WorkflowStepTransition, commitPreparationStepIds: Set<String>) -> Bool {
+    commitPreparationStepIds.contains(transition.toStepId) &&
+      transition.label?.contains(planningOnlyLabel) == true
+  }
+
+  /// The policy's own planning routes as graph edges.
+  func planningRoutes(in workflow: WorkflowDefinition) -> [RerunGraphEdge] {
+    let preparation = Self.commitPreparationStepIds(workflow: workflow, commitStepId: commitStepId)
+    return workflow.steps.flatMap { step in
+      (step.transitions ?? []).compactMap { transition -> RerunGraphEdge? in
+        guard planningModeStepIds.contains(step.id),
+              Self.isPlanningRoute(transition, commitPreparationStepIds: preparation),
+              let destination = DeterministicWorkflowRunner.rerunGraphDestination(of: transition) else {
+          return nil
+        }
+        return RerunGraphEdge(fromStepId: step.id, toStepId: destination, label: transition.label)
+      }
+    }
+  }
+
+  /// Mode-determining steps that exist in `workflow`.
+  func modeStepIds(in workflow: WorkflowDefinition) -> Set<String> {
+    var stepIds = planningModeStepIds
+    if workflow.steps.contains(where: { $0.id == Self.implementationStepId }) {
+      stepIds.insert(Self.implementationStepId)
+    }
+    if let implementationReviewStepId {
+      stepIds.insert(implementationReviewStepId)
+    }
+    return stepIds
+  }
+
+  /// Git-evidence steps; the validator reads them with `last(where:)`.
+  var gitEvidenceStepIds: Set<String> {
+    Set([commitStepId, pushStepId, integrationStepId, planCommitStepId, planPushStepId].compactMap { $0 })
+  }
+}
+
 enum WorkflowGitFinalizationMode: String {
   case designPlanOnly = "design-plan-only"
   case issueResolution = "issue-resolution"
@@ -64,7 +121,7 @@ extension DeterministicWorkflowRunner {
     terminalStep: WorkflowStepRef
   ) -> Bool {
     workflow.workflowId == "codex-design-and-implement-review-loop" &&
-      terminalStep.id == "workflow-output"
+      terminalStep.id == WorkflowGitFinalizationEvidencePolicy.terminalStepId
   }
 
   static func gitFinalizationEvidencePolicy(
@@ -139,13 +196,12 @@ extension DeterministicWorkflowRunner {
     guard commitStep.transitions?.map(\.toStepId) == [pushStep.id] else {
       return nil
     }
-    let commitPreparationStepIds = Set(workflow.steps.compactMap { step in
-      step.transitions?.contains(where: { $0.toStepId == commitStep.id }) == true ? step.id : nil
-    })
+    let commitPreparationStepIds = WorkflowGitFinalizationEvidencePolicy.commitPreparationStepIds(
+      workflow: workflow, commitStepId: commitStep.id
+    )
     let planningModeStepIds = Set(workflow.steps.compactMap { step in
       let hasPlanningRoute = step.transitions?.contains(where: { transition in
-        commitPreparationStepIds.contains(transition.toStepId) &&
-          transition.label?.contains("planning_only") == true
+        WorkflowGitFinalizationEvidencePolicy.isPlanningRoute(transition, commitPreparationStepIds: commitPreparationStepIds)
       }) == true
       return hasPlanningRoute ? step.id : nil
     })
@@ -157,8 +213,8 @@ extension DeterministicWorkflowRunner {
       pushStepId: pushStep.id,
       planningModeStepIds: planningModeStepIds,
       integrationStepId: integratedTerminal ? integrationStep?.id : nil,
-      implementationReviewStepId: workflow.steps.contains { $0.id == "integration-review" }
-        ? "integration-review" : nil,
+      implementationReviewStepId: workflow.steps.contains { $0.id == WorkflowGitFinalizationEvidencePolicy.combinedReviewStepId }
+        ? WorkflowGitFinalizationEvidencePolicy.combinedReviewStepId : nil,
       planCommitStepId: hasValidPlanCommit ? planCommitStep?.id : nil,
       planPushStepId: planPushStep?.id
     )
@@ -304,7 +360,8 @@ extension DeterministicWorkflowRunner {
       return .issueResolution
     }
     if session.executions.contains(where: {
-      $0.stepId == "step6-implement" && $0.status == .completed && $0.acceptedOutput != nil
+      $0.stepId == WorkflowGitFinalizationEvidencePolicy.implementationStepId &&
+        $0.status == .completed && $0.acceptedOutput != nil
     }) {
       return .issueResolution
     }
@@ -314,8 +371,8 @@ extension DeterministicWorkflowRunner {
             let acceptedOutput = execution.acceptedOutput else {
         return false
       }
-      return acceptedOutput.when["planning_only"] == true ||
-        acceptedOutput.payload["planning_only"] == .bool(true)
+      let label = WorkflowGitFinalizationEvidencePolicy.planningOnlyLabel
+      return acceptedOutput.when[label] == true || acceptedOutput.payload[label] == .bool(true)
     }) {
       return .designPlanOnly
     }

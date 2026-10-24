@@ -103,8 +103,13 @@ export function SettingsView(props: { profileKey: string; profileName: string; s
     await runMutation('server', async () => {
       const current = configuration()
       if (!current) throw new Error('Configuration is still loading.')
-      await configurationClient.setHTTPServerEnabled(current, isEnabled)
-      await refetch()
+      // A listener failure rejects the mutation with its reason (shown by
+      // runMutation); refetch either way so the state chip shows "failed".
+      try {
+        await configurationClient.setHTTPServerEnabled(current, isEnabled)
+      } finally {
+        await refetch()
+      }
     }, isEnabled ? 'Server started.' : 'Server stopped.')
   }
   const openServerInBrowser = async () => {

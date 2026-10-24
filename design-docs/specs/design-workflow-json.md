@@ -684,6 +684,14 @@ Initial built-in add-ons:
 - `riela/google-drive-gateway-read` / `riela/google-drive-gateway-write`:
   worker nodes that run the locally installed google-drive-gateway role
   binaries with a fixed command plus validated flag map
+- `riela/json-compose`, `riela/array-batch` and `riela/json-transform`
+  (version `1`): deterministic data-wiring nodes. Templates render once,
+  unknown config keys are errors, output is capped at 8 MB, and an optional
+  literal `config.jsonSchema` validates the output
+  (`docs/workflows/declarative-data-and-private-agents.md`)
+- `riela/private-workflow`: runs a whole private graph inside one isolated
+  guest under the add-on's `sandbox`; only an explicitly validated root output
+  crosses back (`docs/workflows/native-private-collection.md`)
 
 Detailed design:
 `design-docs/specs/design-node-addon-catalog-and-chat-reply-worker.md`.
@@ -908,6 +916,13 @@ Optional:
 - `templateEngine`
 - `timeoutMs`
 - `output`
+- `includeRuntimeVariablesInPrompt` (default `true`; `false` stops appending
+  the whole `runtimeVariables` object to the system prompt; templates still
+  resolve)
+- `agentToolPolicy` (per-backend argv lists; one-pass templates bind only node
+  `variables` and workflow input, see
+  `docs/workflows/declarative-data-and-private-agents.md`)
+- `sandbox` (agent execution boundary; see "`sandbox`" below)
 
 Important rules:
 
@@ -1145,6 +1160,29 @@ retries repeat that resolution: a successful fresh fallback that captured a
 session id resumes without the session-start text, while explicit `new` or an
 id-less fallback creates another fresh session and includes the text again.
 
+### `sandbox`
+
+`sandbox` runs a vendor agent node (or a built-in add-on through
+`addon.sandbox`) behind an isolated worker. Reference fields added since
+0.2.37:
+
+- `backend`, `container`, `networkPolicy`, `environment`, read/write paths and
+  credential projections select the boundary
+- `ephemeralHome: true` creates HOME in the guest's `/tmp` tmpfs, mounts no
+  host workspace or session HOME, rejects session reuse and requires an
+  explicit output schema
+- `credentialEnvironment` maps a host environment value to a relative file
+  under the guest HOME; values travel only on the worker's stdin. Never put
+  secrets in `environment`, which is passed on the container `run` argv
+- `admission` (`directoryEnvironment`, `capacity`, `weight`,
+  `waitTimeoutSeconds`, `minimumRemainingSeconds`) shares a host capacity pool
+  across runs and processes
+
+Details: `docs/workflows/declarative-data-and-private-agents.md`,
+`docs/workflows/shared-execution-admission.md` and
+`docs/workflows/native-private-collection.md`. Workflow GraphQL and the web
+console do not expose sandbox settings yet.
+
 ## Structured Arguments
 
 `argumentsTemplate` and `argumentBindings` let the runtime build structured arguments separately from prompt text.
@@ -1172,10 +1210,20 @@ Supported `source` values:
 - optional `description`
 - optional `jsonSchema`
 - optional `maxValidationAttempts`
+- optional `jsonSchemaFrom`: a JSON pointer into the step's merged prompt
+  variables that selects an object schema at run time (1 MB cap, same
+  dialect). With a static `jsonSchema`, both apply through `allOf`
+- optional `nativeStructuredOutput`: hand the schema to Codex as
+  `--output-schema`; fresh `codex-agent` sessions only, exactly one of
+  `jsonSchema` or `jsonSchemaFrom`
 
 Rules:
 
 - at least one of `description` or `jsonSchema` must be present when `output` exists
+- static validation cannot inspect a `jsonSchemaFrom` schema; with no static
+  `jsonSchema`, downstream payload dependencies are enforced only at run time
+- a top-level `when` key is reserved for the routing envelope
+  (`docs/output-contracts.md`)
 - the runtime validates candidate payloads before writing final `output.json`
 - candidate-file submission is only allowed when `output` is configured
 

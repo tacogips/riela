@@ -3,7 +3,7 @@ import RielaAddonSupport
 import RielaCore
 import RielaMemory
 
-enum BuiltinMemoryAddon: String {
+enum BuiltinMemoryAddon: String, CaseIterable, Sendable {
   case save = "riela/memory-save"
   case update = "riela/memory-update"
   case load = "riela/memory-load"

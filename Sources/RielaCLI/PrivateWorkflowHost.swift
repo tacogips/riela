@@ -21,12 +21,7 @@ struct PrivateWorkflowHost {
       throw PrivateWorkflowPlan.invalid()
     }
     let plan = try PrivateWorkflowPlan(config: config)
-    let usageCache: XGatewayUsageCacheExchange?
-    if let scope = plan.xUsageScope {
-      let usageInput = WorkflowAddonExecutionInput(workflowId: input.workflowId, stepId: input.stepId, nodeId: input.nodeId,
-        addon: .init(name: "riela/x-gateway-read", config: ["usageCache": .bool(true), "usageScope": .string(scope)]))
-      usageCache = try XGatewayUsageCacheExchange(input: usageInput, workingDirectory: workingDirectory, environment: environment)
-    } else { usageCache = nil }
+    let usageCache = try plan.xUsageScope.map { try XGatewayUsageCacheExchange(scope: $0, environment: environment) }
     let projectedEnvironment = try resolveAddonEnvironment(input.addon.env, runtimeEnvironment: environment)
     try PrivateWorkflowPlan.validateEnvironment(projectedEnvironment)
     var credentials: [SandboxRuntimeCredential] = []
@@ -38,8 +33,6 @@ struct PrivateWorkflowHost {
     let deadline = min(context.deadline ?? .distantFuture,
       Date().addingTimeInterval(TimeInterval(plan.timeoutSeconds ?? 600)))
     guard deadline > Date() else { throw AdapterExecutionError(.timeout, "private workflow deadline expired") }
-    let admission = try await SandboxExecutionAdmission.acquire(sandbox.admission, environment: environment, deadline: deadline)
-    defer { withExtendedLifetime(admission) {} }
     let request = PrivateWorkflowRequest(plan: plan, deadline: deadline,
       environment: projectedEnvironment, credentials: credentials)
     let bytes = try JSONEncoder().encode(request)
@@ -54,46 +47,59 @@ struct PrivateWorkflowHost {
       controls.contains($0.key) || $0.key.hasPrefix("RIELA_CONTAINER_")
     })
     let executable = try launcher.workerExecutable()
-    let directory = try SandboxExecutionDirectory(parent: directoryParent ?? FileManager.default.temporaryDirectory)
-    defer { withExtendedLifetime(directory) {} }
-    var configuration = try launcher.process(executable: executable, arguments: [PrivateWorkflowWorker.command],
-      workspace: workingDirectory, options: launcher.workerOptions(sandbox, executable: executable), directory: directory,
-      explicitEnvironment: [:], containerExecutable: "/opt/riela/riela", homeDirectory: directory.root.appendingPathComponent("home"))
-    guard let index = configuration.arguments.firstIndex(of: "--tmpfs"), index + 1 < configuration.arguments.count else {
-      throw PrivateWorkflowPlan.invalid()
-    }
-    configuration.arguments[index + 1] = "/tmp:rw,nosuid,nodev,noexec,size=256m"
-    let records = SandboxNodeRecordCollector(privateOutput: true)
-    let usageExports = XGatewayUsageExportCollector(cache: usageCache)
-    let result: LocalProcessResult
-    do {
-      result = try await EphemeralContainerNodeProcess(runner: runner).run(configuration: configuration,
-        stdin: stdin + "\n", deadline: deadline) { event in
-          if event.stream == .stdout { _ = records.accept(event.line) }
-          if event.stream == .stderr { usageExports.accept(event.line) }
-        }
-    } catch is CancellationError {
+    // Wait for a pool slot only after every static refusal above.
+    return try await SandboxExecutionAdmission.withLease(sandbox.admission, environment: environment, deadline: deadline) {
+      let directory = try SandboxExecutionDirectory(parent: directoryParent ?? FileManager.default.temporaryDirectory)
+      defer { withExtendedLifetime(directory) {} }
+      var configuration = try launcher.process(executable: executable, arguments: [PrivateWorkflowWorker.command],
+        workspace: workingDirectory, options: launcher.workerOptions(sandbox, executable: executable), directory: directory,
+        explicitEnvironment: [:], containerExecutable: "/opt/riela/riela", homeDirectory: directory.root.appendingPathComponent("home"))
+      guard let index = configuration.arguments.firstIndex(of: "--tmpfs"), index + 1 < configuration.arguments.count else {
+        throw PrivateWorkflowPlan.invalid()
+      }
+      configuration.arguments[index + 1] = "/tmp:rw,nosuid,nodev,noexec,size=256m"
+      let records = SandboxNodeRecordCollector(privateOutput: true)
+      let usageExports = XGatewayUsageExportCollector(cache: usageCache)
+      let result: LocalProcessResult
+      do {
+        result = try await EphemeralContainerNodeProcess(runner: runner).run(configuration: configuration,
+          stdin: stdin + "\n", deadline: deadline) { event in
+            if event.stream == .stdout { _ = records.accept(event.line) }
+            if event.stream == .stderr { usageExports.accept(event.line) }
+          }
+      } catch is CancellationError {
+        if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
+          eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
+        throw CancellationError()
+      } catch {
+        if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
+          eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
+        throw AdapterExecutionError(deadline <= Date() ? .timeout : .providerError, "private workflow transport failed")
+      }
       if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
         eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
-      throw CancellationError()
-    } catch {
-      if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
-        eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
-      throw AdapterExecutionError(deadline <= Date() ? .timeout : .providerError, "private workflow transport failed")
+      guard result.terminationStatus == 0 else {
+        throw isolatedWorkerExitError(status: result.terminationStatus, deadline: deadline,
+          subject: "private workflow worker", recognizesGuestRefusal: true)
+      }
+      let terminal = try records.result()
+      if let failure = terminal.failure {
+        let source = try failure.executionError()
+        throw AdapterExecutionError(source.code, "private workflow execution failed")
+      }
+      guard var output = terminal.output, terminal.vendorSessionId == nil, output.promptText.isEmpty, output.usage == nil else {
+        throw AdapterExecutionError(.invalidOutput, "private workflow returned invalid result metadata")
+      }
+      // Only the validated root payload is guest-controlled; routing and model
+      // metadata are fixed by the controller instead of trusted from stdout.
+      output.provider = "riela-private-workflow"
+      output.model = plan.workflowId
+      output.when = ["always": true]
+      do {
+        return try SandboxNodeWorker.privateOutput(output, contract: .init(jsonSchema: plan.outputSchema))
+      } catch WorkflowPublicationError.validationRejected {
+        throw AdapterExecutionError(.invalidOutput, "private workflow output contract rejected")
+      }
     }
-    if usageCache != nil { await context.backendEventHandler?(.init(provider: "riela-private-workflow",
-      eventType: "x-resource-usage-cache", metadata: usageExports.metadata)) }
-    guard result.terminationStatus == 0 else {
-      throw AdapterExecutionError(.policyBlocked, "private workflow worker did not complete")
-    }
-    let terminal = try records.result()
-    if let failure = terminal.failure {
-      let source = try failure.executionError()
-      throw AdapterExecutionError(source.code, "private workflow execution failed")
-    }
-    guard let output = terminal.output, terminal.vendorSessionId == nil, output.promptText.isEmpty, output.usage == nil else {
-      throw AdapterExecutionError(.invalidOutput, "private workflow returned invalid result metadata")
-    }
-    return try SandboxNodeWorker.privateOutput(output, contract: .init(jsonSchema: plan.outputSchema))
   }
 }

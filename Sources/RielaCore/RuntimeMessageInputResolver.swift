@@ -127,7 +127,9 @@ private func resolvedInputMessageMetadata(_ message: WorkflowMessageRecord) -> J
   return .object(metadata)
 }
 
-private extension WorkflowMessageRecord {
+extension WorkflowMessageRecord {
+  /// Lifecycle test for messages a step resolves as input. Shared by the
+  /// default resolver and plain-rerun inbox carry-over.
   var isResolvableInput: Bool {
     switch lifecycleStatus {
     case .delivered, .consumed:

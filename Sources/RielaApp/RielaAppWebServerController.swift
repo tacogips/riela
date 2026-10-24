@@ -55,23 +55,6 @@ final class RielaAppWebServerController {
     return URL(string: "http://127.0.0.1:\(port)/")
   }
 
-  var statusDescription: String {
-    switch state {
-    case .stopped:
-      "Web Server: Stopped · configured 127.0.0.1:\(settings.port)"
-    case let .starting(port):
-      "Web Server: Starting 127.0.0.1:\(port)…"
-    case let .running(port):
-      restartRequired
-        ? "Web Server: Running 127.0.0.1:\(port) · restart for :\(settings.port)"
-        : "Web Server: Running 127.0.0.1:\(port)"
-    case let .stopping(port):
-      "Web Server: Stopping\(port.map { " 127.0.0.1:\($0)" } ?? "")…"
-    case let .failed(message):
-      "Web Server: Failed · \(message)"
-    }
-  }
-
   func startIfRequested(by options: RielaAppLaunchOptions) async {
     guard options.startsWebServer else { return }
     await start()

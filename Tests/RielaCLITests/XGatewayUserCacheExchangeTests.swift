@@ -24,13 +24,35 @@ final class XGatewayUserCacheExchangeTests: XCTestCase {
     XCTAssertEqual(rows.count, 2)
   }
 
-  func testRejectsUnsupportedImageAndCredentialFieldsWithoutPersisting() throws {
+  func testUnsupportedImageKeepsPaidDataAndCredentialFieldsAreRejectedWithoutPersisting() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let memory = try exchange(root)
-    XCTAssertThrowsError(try memory.consume(#"{"ok":true,"data":{"data":{}}}"#))
+    // A paid read from an image without the exchange is returned, not failed.
+    let unsupported = try memory.consume(#"{"ok":true,"data":{"data":{"accountMe":{"id":"9"}}}}"#)
+    let decoded = try JSONDecoder().decode(JSONObject.self, from: Data(unsupported.utf8))
+    guard case let .object(graphQL)? = decoded["data"], case let .object(extensions)? = graphQL["extensions"] else {
+      return XCTFail("unsupported status missing")
+    }
+    XCTAssertEqual(graphQL["data"], .object(["accountMe": .object(["id": .string("9")])]))
+    XCTAssertEqual(extensions["userCacheStatus"], .string("unsupported"))
     XCTAssertThrowsError(try memory.consume(#"{"ok":true,"data":{"data":{},"extensions":{"userMemory":[{"id":"1","username":"valid","token":"secret"}]}}}"#))
+    XCTAssertThrowsError(try memory.consume(#"{"ok":true,"data":{"data":{},"extensions":{"userMemory":{"id":"1"}}}}"#))
     XCTAssertEqual(try snapshot(memory), "[]")
+    // Failed envelopes pass through for the caller's own failure handling.
+    let failed = #"{"ok":false,"error":{"code":"RATE_LIMITED"}}"#
+    XCTAssertEqual(try JSONDecoder().decode(JSONObject.self, from: Data(memory.consume(failed).utf8)),
+      try JSONDecoder().decode(JSONObject.self, from: Data(failed.utf8)))
+  }
+
+  func testCacheRootHelperAndDirectInitializerShareTheStore() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    XCTAssertEqual(XGatewayCacheRoot.path(environment: ["RIELA_CACHE_ROOT": root.path]), root.path)
+    XCTAssertEqual(XGatewayCacheRoot.path(environment: ["HOME": "/fixture-home"]), "/fixture-home/.riela/cache")
+    _ = try exchange(root).consume(response(id: "5"))
+    let direct = XGatewayUserCacheExchange(environment: ["RIELA_CACHE_ROOT": root.path])
+    XCTAssertTrue(try snapshot(direct).contains("user_5"))
   }
 
   func testLargeMemoryIsSplitBelowLinuxPerEnvironmentValueLimit() throws {

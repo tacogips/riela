@@ -12,6 +12,15 @@ public func validateAgentNodePayload(
     if payload.output?.jsonSchema == nil && payload.output?.jsonSchemaFrom == nil {
       diagnostics.append(error("\(path).output.nativeStructuredOutput", "requires jsonSchema or jsonSchemaFrom"))
     }
+    if payload.output?.jsonSchema != nil && payload.output?.jsonSchemaFrom != nil {
+      // The composed contract is a root `allOf`, which strict structured
+      // output does not accept as the vendor schema.
+      diagnostics.append(error("\(path).output.nativeStructuredOutput",
+        "cannot combine jsonSchema with jsonSchemaFrom; declare one schema"))
+    }
+  }
+  if let failureDiagnostics = payload.command?.failureDiagnostics {
+    diagnostics += commandFailureDiagnosticsWarnings(failureDiagnostics, path: "\(path).command.failureDiagnostics")
   }
   if let sandbox = payload.sandbox {
     do { try sandbox.validate() } catch {
@@ -262,5 +271,16 @@ func validateRawInputFilters(
     if let config = filter["config"], !(config is [String: Any]) {
       diagnostics.append(error("\(filterPath).config", "must be an object"))
     }
+  }
+}
+/// `failureDiagnostics` is best-effort at run time: a setting the restricted
+/// checker can never accept silently records `captureStatus: rejected`.
+/// Surface those cases at validate time with the runtime's own policy check.
+private func commandFailureDiagnosticsWarnings(
+  _ diagnostics: WorkflowFailureDiagnostics,
+  path: String
+) -> [WorkflowValidationDiagnostic] {
+  diagnostics.validationDiagnostics().map {
+    .init(severity: .warning, path: path, message: "\($0); failure diagnostics will always be rejected")
   }
 }

@@ -47,12 +47,16 @@ final class WorkflowCancelledStatusTests: XCTestCase {
     _ = try await store.markSessionFailed(WorkflowSessionFailureInput(
       sessionId: source.sessionId, reason: "cancelled", failureKind: .cancelled
     ))
-    let target = try await store.createSession(WorkflowSessionCreateInput(workflowId: "workflow", entryStepId: "entry"))
+    let target = try await store.createSession(WorkflowSessionCreateInput(
+      workflowId: "workflow", entryStepId: "entry", parentSessionId: "caller-parent", rootSessionId: "caller-root"
+    ))
 
     let imported = try await store.importAcceptedHistory(WorkflowHistoryImportInput(
       sessionId: target.sessionId, sourceSessionId: source.sessionId, executions: [], messages: []
     ))
-    XCTAssertEqual(imported.parentSessionId, source.sessionId)
+    XCTAssertEqual(imported.sessionId, target.sessionId)
+    XCTAssertEqual(imported.parentSessionId, "caller-parent")
+    XCTAssertEqual(imported.rootSessionId, "caller-root")
   }
 
 }

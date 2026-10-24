@@ -49,55 +49,6 @@ def prepare_x(root: Path) -> None:
     executor.write_text(text)
 
 
-def prepare_gmail(root: Path, crypto_version: str = "4.5.2") -> None:
-    crypto_import = "#if canImport(CryptoKit)\nimport CryptoKit\n#else\nimport Crypto\n#endif\n"
-    bootstrap = root / "Sources/GmailGatewayCore/GmailOAuthBootstrap.swift"
-    replace(bootstrap, "import CryptoKit\n", crypto_import)
-    replace(bootstrap, "import Darwin\n", "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\n")
-    replace(bootstrap, "import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
-    replace(bootstrap, "import Security\n", "")
-    replace(root / "Sources/GmailGatewayCore/GmailGatewayUtilities.swift", "import Foundation\n", "import Foundation\nimport CoreFoundation\n")
-    replace(root / "Sources/GmailGatewayCore/MessageFileDownloads.swift", "import CryptoKit\n", crypto_import)
-    for name in ("GmailCredentialResolution.swift", "GmailOAuthClientFingerprint.swift", "GmailArchiveReads.swift"):
-        replace(root / "Sources/GmailGatewayCore" / name, "import CryptoKit\n", crypto_import)
-    replace(root / "Sources/GmailGatewayCore/GraphQL/GmailGatewayProviderCancellation.swift",
-            "import Foundation\n", "import Foundation\n#if canImport(FoundationNetworking)\nimport FoundationNetworking\n#endif\n")
-    add_crypto_dependency(root, "GmailGatewayCore", crypto_version)
-    replace(bootstrap, "    hints.ai_socktype = SOCK_STREAM\n",
-            "#if os(Linux)\n    hints.ai_socktype = Int32(SOCK_STREAM.rawValue)\n#else\n    hints.ai_socktype = SOCK_STREAM\n#endif\n")
-    replace(bootstrap, "    hints.ai_protocol = IPPROTO_TCP\n", "    hints.ai_protocol = Int32(IPPROTO_TCP)\n")
-    token_files = root / "Sources/GmailGatewayCore/GmailPersistentTokenFileSecurity.swift"
-    token_files.write_text(token_files.read_text().replace("RENAME_EXCL", "Int32(gatewayRenameExclusive)"))
-    shim = Path(__file__).with_name("container-gateway-support") / "GatewayPOSIX.swift"
-    (token_files.parent / shim.name).write_text(shim.read_text())
-    replace(bootstrap, "    let descriptor = socket(addressFamily, SOCK_STREAM, 0)\n",
-            "#if os(Linux)\n    let descriptor = socket(addressFamily, Int32(SOCK_STREAM.rawValue), 0)\n#else\n    let descriptor = socket(addressFamily, SOCK_STREAM, 0)\n#endif\n")
-    replace(bootstrap, "        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)\n",
-            "#if !os(Linux)\n        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)\n#endif\n")
-    replace(bootstrap, "        address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)\n",
-            "#if !os(Linux)\n        address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)\n#endif\n")
-    replace(bootstrap, "Darwin.bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))",
-            "bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in>.size))")
-    replace(bootstrap, "Darwin.bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in6>.size))",
-            "bind(fd, socketAddress, socklen_t(MemoryLayout<sockaddr_in6>.size))")
-    for function in ("read", "write"):
-        replace(bootstrap, f"Darwin.{function}(", f"{function}(")
-    text = bootstrap.read_text()
-    if text.count("Darwin.poll(") != 2:
-        raise SystemExit("Expected exactly two poll adaptations")
-    bootstrap.write_text(text.replace("Darwin.poll(", "poll("))
-    replace(bootstrap, '    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")\n',
-            '#if os(Linux)\n    process.executableURL = URL(fileURLWithPath: "/usr/bin/xdg-open")\n#else\n    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")\n#endif\n')
-    replace(bootstrap, """    var bytes = [UInt8](repeating: 0, count: byteCount)
-    let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-    guard status == errSecSuccess else {
-        throw authError("Failed to generate secure OAuth random value")
-    }
-    return base64URLString(Data(bytes))""", """    let key = SymmetricKey(size: SymmetricKeySize(bitCount: byteCount * 8))
-    let bytes = key.withUnsafeBytes { Data($0) }
-    return base64URLString(bytes)""")
-
-
 def prepare_analytics(root: Path, crypto_version: str = "4.5.2") -> None:
     core = root / "Sources/GoogleAnalyticsGatewayCore"
     portable_posix = "#if os(Linux)\nimport Glibc\n#else\nimport Darwin\n#endif\n"
@@ -199,11 +150,12 @@ def prepare_riela(root: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("gateway", choices=("x", "gmail", "analytics", "documents", "riela"))
+    parser.add_argument("gateway", choices=("x", "analytics", "documents", "riela"))
     parser.add_argument("source", type=Path)
     parser.add_argument("--crypto-version", choices=("4.5.2",), default="4.5.2")
     arguments = parser.parse_args()
-    if arguments.gateway in ("gmail", "analytics", "documents"):
-        {"gmail": prepare_gmail, "analytics": prepare_analytics, "documents": prepare_documents}[arguments.gateway](arguments.source, arguments.crypto_version)
+    # Gmail needs no adaptation: the pinned gmail-gateway SDK is portable upstream.
+    if arguments.gateway in ("analytics", "documents"):
+        {"analytics": prepare_analytics, "documents": prepare_documents}[arguments.gateway](arguments.source, arguments.crypto_version)
     else:
         {"x": prepare_x, "riela": prepare_riela}[arguments.gateway](arguments.source)

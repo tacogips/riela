@@ -1,6 +1,6 @@
 import { rielaFetch } from '../transport'
 import { APIError, api } from '../api'
-import type { ConfigurationRevision, RielaConfiguration } from '../contracts'
+import type { ConfigurationRevision, RielaConfiguration, RuntimeEnvironmentStatus } from '../contracts'
 
 interface GraphQLResponse<T> {
   data?: T
@@ -218,3 +218,66 @@ export class RielaConfigurationClient {
 }
 
 export const configurationClient = new RielaConfigurationClient()
+
+/** Outcome of an environment request: the status on success, or the safe code
+ *  from the 422 status body (`lastError`) / 409 error body (`error.code`). */
+export type EnvironmentResult =
+  | { ok: true; status: RuntimeEnvironmentStatus }
+  | { ok: false; httpStatus: number; code: string; status?: RuntimeEnvironmentStatus }
+
+function isEnvironmentStatus(value: unknown): value is RuntimeEnvironmentStatus {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.readiness === 'string' && typeof candidate.generation === 'number'
+    && Array.isArray(candidate.names)
+}
+
+export async function parseEnvironmentResponse(response: Response): Promise<EnvironmentResult> {
+  let body: unknown
+  try { body = JSON.parse(await response.text()) } catch { body = undefined }
+  if (response.ok && isEnvironmentStatus(body)) return { ok: true, status: body }
+  if (isEnvironmentStatus(body)) {
+    const code = typeof body.lastError === 'string' && body.lastError ? body.lastError : 'environment_request_failed'
+    return { ok: false, httpStatus: response.status, code, status: body }
+  }
+  const error = (body as { error?: { code?: unknown } } | undefined)?.error
+  const code = typeof error?.code === 'string' ? error.code : response.ok ? 'invalid_response' : 'environment_request_failed'
+  return { ok: false, httpStatus: response.status, code }
+}
+
+/** Short operator guidance for the environment codes the hosts return. */
+export function environmentErrorMessage(code: string): string {
+  switch (code) {
+    case 'environment_restart_required': return 'Managed names changed. Stop and start this configuration to apply them.'
+    case 'environment_reload_in_progress': return 'Another reload is running. Retry shortly.'
+    case 'environment_instance_changed': return 'The configuration restarted during the reload. Retry.'
+    case 'profile_conflict':
+    case 'revision_conflict':
+    case 'profile_or_instance_conflict': return 'Changed elsewhere. Refresh before continuing.'
+    default: return `Environment reload failed (${code}). The previous snapshot is kept.`
+  }
+}
+
+export class RielaEnvironmentClient {
+  constructor(
+    private readonly request: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> =
+      (input, init) => rielaFetch(input, init),
+  ) {}
+
+  async status(identity: string, profile: string): Promise<EnvironmentResult> {
+    return parseEnvironmentResponse(await this.request(`/api/v1/instances/${encodeURIComponent(identity)}/environment`, {
+      credentials: 'same-origin', headers: { ...api.noteHeaders(), 'X-Riela-Profile': profile },
+    }))
+  }
+
+  async reload(identity: string, profile: string, expectedRevision: number): Promise<EnvironmentResult> {
+    return parseEnvironmentResponse(await this.request(`/api/v1/instances/${encodeURIComponent(identity)}/actions`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...api.noteHeaders(), 'X-Riela-Profile': profile },
+      body: JSON.stringify({ action: 'reloadEnvironment', expectedProfile: profile, expectedRevision }),
+    }))
+  }
+}
+
+export const environmentClient = new RielaEnvironmentClient()

@@ -9,35 +9,51 @@ struct XGatewayUserCacheExchange: Sendable {
   static let cacheId = "x-gateway-users"
   static let scope = "public-users"
   static let policy = CachePolicy(ttlSeconds: 30 * 86_400, maxBytes: 512 * 1024)
+  /// Finite health values reported as `userCacheStatus`.
+  static let statuses: Set<String> = ["ok", "write-unavailable", "unsupported"]
+  /// Snapshot handed to the SDK; a larger cache is sent as empty (misses are refetched).
+  static let maximumSnapshotBytes = 800_000
+  /// Unicode scalars per `X_GW_USER_MEMORY_JSON_n` part (below Linux's ~128 KiB per value).
+  static let partScalars = 20_000
+  /// Rows accepted from one SDK reply.
+  static let maximumAdditions = 10_000
+  private static let maximumStoreReadBytes = 8_000_000
   let store: RielaCacheStore
   private let clock: @Sendable () -> Date
 
-  init?(input: WorkflowAddonExecutionInput, workingDirectory: URL, environment: [String: String] = [:],
+  init(environment: [String: String], clock: @escaping @Sendable () -> Date = { Date() }) {
+    self.clock = clock
+    store = RielaCacheStore(rootDirectory: XGatewayCacheRoot.path(environment: environment), clock: clock)
+    // An unavailable store degrades to an empty exchange; consume() reports it.
+    _ = try? store.configure(cacheId: Self.cacheId, policy: Self.policy)
+  }
+
+  init?(input: WorkflowAddonExecutionInput, environment: [String: String] = [:],
         clock: @escaping @Sendable () -> Date = { Date() }) throws {
     guard let value = input.addon.config?["userCache"] else { return nil }
     guard case let .bool(enabled) = value else {
       throw AdapterExecutionError(.invalidInput, "X userCache must be true or false")
     }
     guard enabled else { return nil }
-    let home = CLIRuntimeEnvironment.homeDirectory(environment: environment)
-    let root = nonEmptyString(environment["RIELA_CACHE_ROOT"])
-      ?? URL(fileURLWithPath: home).appendingPathComponent(".riela/cache").path
-    self.clock = clock
-    store = RielaCacheStore(rootDirectory: root, clock: clock)
-    // An unavailable store degrades to an empty exchange; consume() reports it.
-    _ = try? store.configure(cacheId: Self.cacheId, policy: Self.policy)
+    self.init(environment: environment, clock: clock)
+  }
+
+  /// Compatibility initializer; the working directory does not affect the cache root.
+  init?(input: WorkflowAddonExecutionInput, workingDirectory _: URL, environment: [String: String] = [:],
+        clock: @escaping @Sendable () -> Date = { Date() }) throws {
+    try self.init(input: input, environment: environment, clock: clock)
   }
 
   func bindings() throws -> [String: String] {
     var json = try JSONValue.array(cachedRows()).compactJSONString()
-    if json.utf8.count > 800_000 { json = "[]" }
+    if json.utf8.count > Self.maximumSnapshotBytes { json = "[]" }
     // The SDK exchange uses bounded in-memory parts; Linux limits individual
     // environment values to about 128 KiB. Nothing here contains credentials.
     let scalars = json.unicodeScalars
     var parts: [String] = []
     var start = scalars.startIndex
     while start < scalars.endIndex {
-      let end = scalars.index(start, offsetBy: 20_000, limitedBy: scalars.endIndex) ?? scalars.endIndex
+      let end = scalars.index(start, offsetBy: Self.partScalars, limitedBy: scalars.endIndex) ?? scalars.endIndex
       parts.append(String(scalars[start..<end])); start = end
     }
     var bindings = ["X_GW_USER_MEMORY_PARTS": String(parts.count)]
@@ -52,7 +68,7 @@ struct XGatewayUserCacheExchange: Sendable {
       var rows: [JSONValue] = []
       for offset in stride(from: 0, to: keys.count, by: 1024) {
         let batch = Array(keys[offset..<min(offset + 1024, keys.count)])
-        let result = try store.get(cacheId: Self.cacheId, scope: Self.scope, keys: batch, maxOutputBytes: 8_000_000, touch: false)
+        let result = try store.get(cacheId: Self.cacheId, scope: Self.scope, keys: batch, maxOutputBytes: Self.maximumStoreReadBytes, touch: false)
         rows += result.results.compactMap { $0.entry?.payload }.map { jsonValue(from: $0) }
       }
       return rows
@@ -62,17 +78,32 @@ struct XGatewayUserCacheExchange: Sendable {
   }
 
   func consume(_ stdout: String) throws -> String {
-    var envelope: JSONObject
+    let envelope: JSONObject
     do { envelope = try JSONDecoder().decode(JSONObject.self, from: Data(stdout.utf8)) } catch {
       throw AdapterExecutionError(.invalidOutput, "X gateway returned invalid JSON")
     }
-    guard envelope["ok"] == .bool(true), case var .object(graphQL)? = envelope["data"],
-          case var .object(extensions)? = graphQL["extensions"],
-          case let .array(rows)? = extensions.removeValue(forKey: "userMemory") else {
-      if envelope["ok"] == .bool(false) { return stdout }
-      throw AdapterExecutionError(.invalidOutput, "X gateway image does not support the user cache exchange")
+    return try JSONValue.object(consume(envelope: envelope)).compactJSONString()
+  }
+
+  /// Strips `userMemory` from a successful envelope and merges its rows into the
+  /// cache. Failed or malformed envelopes pass through for the caller to reject.
+  /// An image without the exchange still returns its paid data, marked
+  /// `userCacheStatus: "unsupported"`.
+  func consume(envelope input: JSONObject) throws -> JSONObject {
+    var envelope = input
+    guard envelope["ok"] == .bool(true), case var .object(graphQL)? = envelope["data"] else { return envelope }
+    var extensions: JSONObject = [:]
+    if case let .object(current)? = graphQL["extensions"] { extensions = current }
+    guard let memory = extensions.removeValue(forKey: "userMemory") else {
+      extensions["userCacheStatus"] = .string("unsupported")
+      graphQL["extensions"] = .object(extensions)
+      envelope["data"] = .object(graphQL)
+      return envelope
     }
-    guard rows.count <= 10_000 else { throw AdapterExecutionError(.invalidOutput, "X user cache additions exceed their bound") }
+    guard case let .array(rows) = memory else {
+      throw AdapterExecutionError(.invalidOutput, "X gateway returned invalid user cache metadata")
+    }
+    guard rows.count <= Self.maximumAdditions else { throw AdapterExecutionError(.invalidOutput, "X user cache additions exceed their bound") }
     var additions: [String: JSONObject] = [:]
     for row in rows {
       guard case let .object(user) = row,
@@ -100,7 +131,7 @@ struct XGatewayUserCacheExchange: Sendable {
       let used = authorIDs(in: graphQL["data"] ?? .object([:])).sorted()
       for offset in stride(from: 0, to: used.count, by: 1024) {
         _ = try store.get(cacheId: Self.cacheId, scope: Self.scope,
-          keys: Array(used[offset..<min(offset + 1024, used.count)]), maxOutputBytes: 8_000_000)
+          keys: Array(used[offset..<min(offset + 1024, used.count)]), maxOutputBytes: Self.maximumStoreReadBytes)
       }
       extensions["userCacheStatus"] = .string("ok")
     } catch {
@@ -110,7 +141,7 @@ struct XGatewayUserCacheExchange: Sendable {
     }
     graphQL["extensions"] = extensions.isEmpty ? nil : .object(extensions)
     envelope["data"] = .object(graphQL)
-    return try JSONValue.object(envelope).compactJSONString()
+    return envelope
   }
 
   private func authorIDs(in value: JSONValue) -> Set<String> {

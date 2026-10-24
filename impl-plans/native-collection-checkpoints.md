@@ -115,3 +115,29 @@ still pending. The matching Linux runtime and guest must be rebuilt and checked
 before this source change is deployed. Full remaining Gmail/Web coordination,
 durable ownership, release/install, deployment and the final two-hour check
 remain required for the original goal.
+
+## Preserved main checkout integration
+
+The user requested integration of the 185-file main checkout snapshot
+`backup/main-wip-20261024` (`bf707004`) with current upstream. It was applied
+three-way over the native collection commits, preserving newer cancellation,
+typed gateway references, pagination and example fixes. Conflicts combined
+optional empty arguments with deferred typed references, finite JSON bounds,
+and evidence validation with the newer cancelled status. Import preserves the
+caller's explicitly selected lineage. Tests now locate the actual scratch-build
+worker binary rather than assuming `.build/debug/riela`.
+
+The common stateful dispatcher now uses registered handlers; it contains no
+provider-name branches. All 31 prior handlers retain their callbacks and context.
+Actual Opus 5.5 medium reviews covered both the backup integration and registry.
+The final 304 focused tests pass (one opt-in real container test skipped), as do
+all 71 memory tests and 110 Web tests, typecheck, lint and Web build. Eight
+container source/crypto pins match Package.resolved. The Linux context now
+includes the lockfile portability helper referenced by its Containerfile.
+
+The original dirty checkout was byte-checked against all 185 backup files and
+also saved in a local stash before its duplicate checkpoint commit was skipped
+during rebase. Keep the remote backup and local stash. The current matching
+Linux rebuild/private gate and production deployment remain separate gates:
+an older test guest was correctly refused for its worker record protocol after
+this host update. No production image or warm App process was changed.

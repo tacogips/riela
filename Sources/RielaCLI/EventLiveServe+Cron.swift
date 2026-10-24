@@ -50,24 +50,7 @@ extension DefaultEventLiveServer {
       if policy.policy != .concurrent && !isLatestDueTick {
         continue
       }
-      if let binding, let routineId = binding.routineId {
-        let gate = routineDispatchGate(
-          routineId: routineId,
-          storeRoot: binding.routineStoreRoot,
-          parsed: parsed
-        )
-        if let skipReason = gate.skipReason {
-          try? writeServeRecord(
-            eventRoot: eventRoot,
-            status: "ready",
-            pollingTarget: source.id,
-            lastIgnoredReason: skipReason
-          )
-          continue
-        }
-        _ = gate
-      }
-      _ = await dispatcher.submit(CronOverlapFire(
+      let fire = CronOverlapFire(
         bindingId: trigger.bindingId,
         sourceId: source.id,
         workflowName: workflowName,
@@ -78,7 +61,21 @@ extension DefaultEventLiveServer {
         routineId: binding?.routineId,
         routineStoreRoot: binding?.routineStoreRoot,
         coalescedTickCount: policy.policy == .concurrent ? 0 : coalescedTickCount
-      ))
+      )
+      if let binding, let routineId = binding.routineId {
+        let gate = routineDispatchGate(
+          routineId: routineId,
+          storeRoot: binding.routineStoreRoot,
+          parsed: parsed
+        )
+        if let skipReason = gate.skipReason {
+          // Persisted like the deferred-start gate skip (design §7.1), but the
+          // tick still does not count toward --limit (design §6.3).
+          await dispatcher.recordRoutineGateSkip(fire, reason: skipReason)
+          continue
+        }
+      }
+      _ = await dispatcher.submit(fire)
       submitted = true
     }
     return submitted ? 1 : 0

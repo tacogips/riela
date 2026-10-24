@@ -9,6 +9,10 @@ import RielaAddonSupport
 import RielaCore
 
 extension BuiltinWorkflowAddonResolver {
+  static let gmailDigestRegistration = BuiltinAddonHandlerRegistration(name: "riela/gmail-digest") { resolver, input, _ in
+    try await resolver.executeGmailDigest(input)
+  }
+
   func executeGmailDigest(_ input: WorkflowAddonExecutionInput) async throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")
@@ -844,6 +848,8 @@ private struct GmailDigestEngine {
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = command
     process.environment = environment
+    // Never inherit this process's stdin (for example a private channel).
+    process.standardInput = FileHandle.nullDevice
     let outputPipe = Pipe()
     let errorPipe = Pipe()
     process.standardOutput = outputPipe

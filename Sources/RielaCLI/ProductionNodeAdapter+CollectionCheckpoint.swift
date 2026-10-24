@@ -6,6 +6,10 @@ import RielaMemory
 /// Metadata only. One authored key identifies one provider/account/query/window.
 /// Acquisition can continue while earlier items await independent processing.
 extension BuiltinWorkflowAddonResolver {
+  static let collectionCheckpointRegistration = BuiltinAddonHandlerRegistration(name: "riela/collection-checkpoint") { resolver, input, _ in
+    try resolver.executeCollectionCheckpoint(input)
+  }
+
   func executeCollectionCheckpoint(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw collectionInputError()

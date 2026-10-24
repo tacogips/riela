@@ -103,24 +103,63 @@ struct DefaultEventLiveServer: EventLiveServing {
     if parsed.runtimeEnvironmentChannel && parsed.runtimeEnvironmentFile != nil {
       throw CLIUsageError("environment_channel_cannot_load_sources")
     }
+    // Move the private channel off fd 0/1 before anything can spawn a
+    // subprocess, so grandchildren never inherit managed values or the ACK pipe.
+    let descriptors = parsed.runtimeEnvironmentChannel ? try RuntimeEnvironmentChannelDescriptors.detach() : nil
     let required = workflowRunner is CLIEventWorkflowRunner
       ? try await eventRequiredEnvironment(eventRoot: eventRoot, target: target, parsed: parsed) : []
     let prepared = try await CLIRuntimeEnvironmentPreparation.prepare(path: parsed.runtimeEnvironmentFile,
       required: parsed.runtimeEnvironmentChannel ? [] : required, base: CLIRuntimeEnvironment.mergedProcessEnvironment(),
       workingDirectory: parsed.workingDirectory ?? FileManager.default.currentDirectoryPath)
     let runtime = EventRuntimeEnvironment(base: prepared, requiresBootstrap: parsed.runtimeEnvironmentChannel)
-    let channel = parsed.runtimeEnvironmentChannel ? RuntimeEnvironmentChannel(state: runtime) : nil
+    let channel = descriptors.map { RuntimeEnvironmentChannel(state: runtime, input: $0.input, output: $0.output) }
     defer { channel?.stop() }
+    do {
+      return try await serve(eventRoot: eventRoot, target: target, parsed: parsed, runtime: runtime,
+        required: required, stopsOnChannelClose: channel != nil)
+    } catch let error as CLIUsageError where channel != nil {
+      // The managing parent reads only safe codes from a managed child's
+      // stderr; stdout (the structured result) is /dev/null in channel mode.
+      RuntimeEnvironmentChannelDescriptors.reportSafeCode(error.message)
+      throw error
+    }
+  }
+
+  /// Serves with an already wired runtime environment. With
+  /// `stopsOnChannelClose`, EOF on the private channel after bootstrap means
+  /// the managing parent is gone: serving is cancelled and the command fails
+  /// with `environment_channel_closed` instead of running on stale values.
+  func serve(eventRoot: URL, target: String?, parsed: ParsedParityOptions, runtime: EventRuntimeEnvironment,
+             required: [String], stopsOnChannelClose: Bool) async throws -> ScopedParityCommandResult {
     try await runtime.awaitInitial()
-    var server = self
-    server.runtimeEnvironment = runtime
+    let server = { var server = self; server.runtimeEnvironment = runtime; return server }()
     let captured = try await runtime.capture()
     if required.contains(where: { captured[$0]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false }) {
       throw CLIUsageError("environment_required_missing")
     }
-    return try await CLIRuntimeEnvironment.$captured.withValue(captured) {
-      try await server.servePrepared(eventRoot: eventRoot, target: target, parsed: parsed)
+    let serve: @Sendable () async throws -> ScopedParityCommandResult = {
+      try await CLIRuntimeEnvironment.$captured.withValue(captured) {
+        try await server.servePrepared(eventRoot: eventRoot, target: target, parsed: parsed)
+      }
     }
+    guard stopsOnChannelClose else { return try await serve() }
+    return try await withThrowingTaskGroup(of: ScopedParityCommandResult.self) { group in
+      group.addTask(operation: serve)
+      group.addTask {
+        try await runtime.awaitClosed()
+        throw CLIUsageError("environment_channel_closed")
+      }
+      guard let result = try await group.next() else { throw CancellationError() }
+      group.cancelAll()
+      return result
+    }
+  }
+
+  /// The environment of the latest accepted channel generation (or the
+  /// prepared process environment without a channel). Listeners read it on
+  /// every poll so a reload reaches the next poll, not only dispatches.
+  func currentEnvironment() async throws -> [String: String] {
+    try await runtimeEnvironment?.capture() ?? CLIRuntimeEnvironment.mergedProcessEnvironment()
   }
 
   private func servePrepared(eventRoot: URL, target: String?, parsed: ParsedParityOptions) async throws -> ScopedParityCommandResult {
@@ -461,7 +500,10 @@ extension DefaultEventLiveServer {
     poll: () async throws -> Int
   ) async throws -> Int {
     do {
-      return try await poll()
+      let environment = try await currentEnvironment()
+      return try await CLIRuntimeEnvironment.$captured.withValue(environment) {
+        try await poll()
+      }
     } catch let error as EventLiveSourcePollFailure {
       let message = error.description
       try? writeServeRecord(

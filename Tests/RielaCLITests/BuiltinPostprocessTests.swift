@@ -92,6 +92,37 @@ final class BuiltinPostprocessTests: XCTestCase {
     XCTAssertEqual(count, 1)
   }
 
+  /// Container readers keep the gateway response twice (`xGateway.data` and
+  /// `xGateway.response`). A 4.5 MB response must not fail shaping because the
+  /// duplicated envelope exceeds the 8 MiB intermediate-value limit.
+  func testContainerPayloadDuplicatingLargeResponseStillShapesPickedSubtree() throws {
+    let body = String(repeating: "x", count: 4_500_000)
+    let response: JSONValue = .object(["data": .object(["homeTimeline": .object(["posts": .array([
+      .object(["id": .string("1"), "text": .string(body)]), .object(["id": .string("2")])
+    ])])])])
+    let payload: JSONObject = ["xGateway": .object(["data": response, "response": response])]
+    let plan = try BuiltinPostprocessPlan(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
+      addon: .init(name: "riela/x-gateway-read", version: "1", config: ["postprocess": .array([
+        .object(["pick": .string("/xGateway/data/data/homeTimeline/posts")]), .object(["take": .integer(1)])
+      ])])))
+    let output = plan.apply(to: .init(provider: "fixture", model: "fixture", promptText: "", completionPassed: true,
+                                      payload: payload))
+    XCTAssertEqual(output.when["postprocessPassed"], true)
+    XCTAssertEqual(output.payload["processed"], .array([.object(["id": .string("1"), "text": .string(body)])]))
+
+    // Values that are returned stay bounded: an empty program returns the whole
+    // duplicated envelope, and a pick of an oversized subtree fails.
+    for steps: JSONValue in [.array([]), .array([.object(["pick": .string("/xGateway")])])] {
+      let bounded = try BuiltinPostprocessPlan(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
+        addon: .init(name: "riela/x-gateway-read", version: "1", config: ["postprocess": steps])))
+      let failed = bounded.apply(to: .init(provider: "fixture", model: "fixture", promptText: "",
+                                           completionPassed: true, payload: payload))
+      XCTAssertEqual(failed.when["postprocessFailed"], true)
+      XCTAssertNil(failed.payload["processed"])
+      XCTAssertNotNil(failed.payload["xGateway"])
+    }
+  }
+
   private func request(_ name: String, steps: JSONValue) -> WorkflowAddonExecutionInput {
     .init(workflowId: "fixture", stepId: "gateway", nodeId: "gateway",
       addon: .init(name: name, version: "1", config: [

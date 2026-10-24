@@ -120,7 +120,7 @@ extension DeterministicWorkflowRunner {
     let importInput: WorkflowHistoryImportInput?
     if request.preserveHistory {
       let history = try await preservedHistory(request, source: sourceSession, target: entryStepId)
-      _ = try Self.rerunFinalizationEvidenceExecutions(
+      try Self.validateRerunFinalizationEvidence(
         workflow: request.workflow,
         source: sourceSession,
         targetStepId: entryStepId,
@@ -128,37 +128,23 @@ extension DeterministicWorkflowRunner {
       )
       importInput = history
     } else {
-      guard sourceSession.status == .failed || sourceSession.status == .cancelled
-        || sourceSession.status == .suspended || sourceSession.status == .completed else {
-        throw DeterministicWorkflowRunnerError.rerunValidation(
-          "rerun source session must be failed, cancelled, suspended or completed")
-      }
-      let carriedInbox = try await rerunCarriedInbox(source: sourceSession, targetStepId: entryStepId)
-      let boundEvidence = try Self.rerunFinalizationEvidenceExecutions(
-        workflow: request.workflow,
-        source: sourceSession,
-        targetStepId: entryStepId,
-        available: sourceSession.executions
-      )
-      let executionsToImport = Set((carriedInbox?.executions ?? []).map(\.executionId)
-        + boundEvidence.map(\.executionId))
-      let executions = sourceSession.executions.filter { executionsToImport.contains($0.executionId) }
-      let messages = carriedInbox?.messages ?? []
-      importInput = executions.isEmpty && messages.isEmpty ? nil : WorkflowHistoryImportInput(
-        sessionId: "",
-        sourceSessionId: sourceSession.sessionId,
-        executions: executions,
-        messages: messages
-      )
+      importInput = try await plainRerunImport(request, source: sourceSession, target: entryStepId)
     }
+    // Lineage is decided here, once: a preserved-history rerun is a child of
+    // its source; a plain rerun keeps the caller's lineage whether or not it
+    // carries evidence. Recovery lineage records the source either way, and
+    // the import never rewrites session lineage for session sources.
+    let parentSessionId = request.preserveHistory ? sourceSession.sessionId : request.parentSessionId
+    let rootSessionId = request.preserveHistory
+      ? (sourceSession.rootSessionId ?? sourceSession.sessionId) : request.rootSessionId
     try await validateCrossWorkflowDispatchTargets(in: request.workflow)
     var session = try await store.createSession(
       WorkflowSessionCreateInput(
         workflowId: request.workflow.workflowId,
         entryStepId: entryStepId,
         effectiveInstance: request.effectiveInstance,
-        parentSessionId: request.preserveHistory ? sourceSession.sessionId : request.parentSessionId,
-        rootSessionId: request.preserveHistory ? (sourceSession.rootSessionId ?? sourceSession.sessionId) : request.rootSessionId,
+        parentSessionId: parentSessionId,
+        rootSessionId: rootSessionId,
         effectiveStepBudget: request.effectiveStepBudget
       )
     )
@@ -180,6 +166,44 @@ extension DeterministicWorkflowRunner {
         targetStepId: entryStepId
       )
     ))
+  }
+
+  /// Plain-rerun preflight: the carried inbox (D2) plus bound finalization
+  /// evidence (D3). Nil when nothing would be imported. A source that is
+  /// still `created` or `running` is rejected only when something would be
+  /// imported, because the store import needs a settled source; a rerun that
+  /// carries nothing (for example of an orphaned `running` session) starts
+  /// with fresh input.
+  private func plainRerunImport(
+    _ request: DeterministicWorkflowRunRequest,
+    source: WorkflowSession,
+    target: String
+  ) async throws -> WorkflowHistoryImportInput? {
+    let carried = try await rerunCarriedInbox(source: source, workflow: request.workflow, targetStepId: target)
+    let boundEvidence = try Self.rerunFinalizationEvidenceExecutions(
+      workflow: request.workflow,
+      source: source,
+      targetStepId: target,
+      available: source.executions
+    )
+    let executionIds = Set((carried?.executions ?? []).map(\.executionId) + boundEvidence.map(\.executionId))
+    let executions = source.executions.filter { executionIds.contains($0.executionId) }
+    let messages = carried?.messages ?? []
+    guard !executions.isEmpty || !messages.isEmpty else {
+      return nil
+    }
+    guard source.status == .failed || source.status == .cancelled || source.status == .suspended || source.status == .completed else {
+      throw DeterministicWorkflowRunnerError.rerunValidation(
+        "rerun source session must be failed, cancelled, suspended or completed to carry its accepted evidence " +
+          "(source \(source.sessionId) is \(source.status.rawValue)); use session resume \(source.sessionId) " +
+          "for a live session, or rerun the entry step for fresh input")
+    }
+    return WorkflowHistoryImportInput(
+      sessionId: "",
+      sourceSessionId: source.sessionId,
+      executions: executions,
+      messages: messages
+    )
   }
 
   func runRecoveryLineage() -> LoopRecoveryLineage {

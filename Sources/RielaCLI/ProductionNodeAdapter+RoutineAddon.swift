@@ -3,7 +3,7 @@ import RielaAddonSupport
 import RielaCore
 import RielaWorkflowRegistry
 
-enum BuiltinRoutineAddon: String {
+enum BuiltinRoutineAddon: String, CaseIterable, Sendable {
   case create = "riela/routine-create"
   case complete = "riela/routine-complete"
   case get = "riela/routine-get"

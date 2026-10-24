@@ -13,6 +13,15 @@ public struct RielaCacheStore: Sendable {
     self.clock = clock
   }
 
+  /// Cache ids reserved for built-in runtime caches (the X gateway user and
+  /// API-usage caches). Workflow add-ons and CLI write paths refuse them so a
+  /// workflow cannot poison or read guest-exported runtime data.
+  public static let reservedBuiltinCacheIdPrefix = "x-gateway-"
+
+  public static func isReservedBuiltinCacheId(_ cacheId: String) -> Bool {
+    cacheId.hasPrefix(reservedBuiltinCacheIdPrefix)
+  }
+
   public static func defaultRootDirectory(workingDirectory: String = FileManager.default.currentDirectoryPath) -> String {
     URL(fileURLWithPath: workingDirectory).appendingPathComponent(".riela/cache").path
   }
@@ -48,7 +57,7 @@ public struct RielaCacheStore: Sendable {
   /// Enumerate a bounded cache namespace after TTL pruning. This is metadata
   /// only; callers fetch payloads through the normal budgeted get boundary.
   public func keys(cacheId: String, scope: String, limit: Int = 10_000) throws -> [String] {
-    try validate(scope: scope, keys: ["namespace-enumeration"])
+    try validate(scope: scope)
     guard (1...10_000).contains(limit) else { throw RielaCacheError.invalid("invalid cache key limit") }
     return try transaction(cacheId) { db, now in
       let policy = try readPolicy(db)
@@ -99,8 +108,9 @@ public struct RielaCacheStore: Sendable {
         prepared.append((stored, fetched, String(decoding: data, as: UTF8.self), revision, bytes))
       }
       // Validation above precedes any eviction, even when a later batch item is invalid.
-      if let references { _ = try reconcileReferences(db, scope: scope, references: references) }
+      // Expire before reconciling, like reconcile(), so an expired row never conflicts.
       let expired = try expire(db, now: now, policy: policy)
+      if let references { _ = try reconcileReferences(db, scope: scope, references: references) }
       var lookups: [CacheLookup] = skipped
       for (entry, fetched, payload, revision, bytes) in prepared {
         let sequence = try nextSequence(db)
@@ -222,8 +232,10 @@ public struct RielaCacheStore: Sendable {
   /// Reconcile capacity protection with a committed reference snapshot. The caller
   /// holds its metadata writer lock until this transaction completes. Unreferenced
   /// artifacts become ordinary TTL/LRU cache entries; payloads are never deleted here.
+  /// Results list changed rows (`protected`/`released`) and then every referenced
+  /// key without a live row (`missing`), so callers can see dangling references.
   public func reconcile(cacheId: String, scope: String, references: MemoryJSONValue) throws -> CacheResult {
-    try validate(scope: scope, keys: ["reference-snapshot"])
+    try validate(scope: scope)
     return try transaction(cacheId) { db, now in
       let policy = try readPolicy(db)
       let expired = try expire(db, now: now, policy: policy)
@@ -233,48 +245,71 @@ public struct RielaCacheStore: Sendable {
   }
 
   private func reconcileReferences(_ db: OpaquePointer, scope: String, references: MemoryJSONValue) throws -> [CacheLookup] {
-    let retained = try CacheReferenceSnapshot.collect(references)
-    let rows = try queryRows(db, sql: "SELECT key, revision, protected FROM cache_entries WHERE scope = ?",
-      bindings: [.text(scope)])
+    let retained = try CacheReferenceSnapshot.collect(references, scope: scope)
+    // Set-based reconciliation: the snapshot (at most 10,000 references) goes
+    // into a connection-local temp table, so the scope is never loaded row by row.
+    try execute(db, "CREATE TEMP TABLE IF NOT EXISTS cache_retained_refs(key TEXT PRIMARY KEY, revision TEXT NOT NULL)")
+    try execute(db, "DELETE FROM temp.cache_retained_refs")
+    defer { try? execute(db, "DROP TABLE IF EXISTS temp.cache_retained_refs") }
+    for (key, revision) in retained {
+      try execute(db, "INSERT INTO temp.cache_retained_refs(key, revision) VALUES (?, ?)",
+        bindings: [.text(key), .text(revision)])
+    }
     // Validate the entire snapshot before changing any protection. A stale revision
     // must never release another producer's newer artifact.
-    for row in rows {
-      if let expected = retained[row.columns["key"]!], expected != row.columns["revision"] {
-        throw RielaCacheError.revisionConflict(row.columns["key"]!)
-      }
+    if let conflict = try queryRows(db, sql: """
+      SELECT e.key AS key FROM cache_entries e JOIN temp.cache_retained_refs r ON r.key = e.key
+      WHERE e.scope = ? AND e.revision != r.revision ORDER BY e.key LIMIT 1
+      """, bindings: [.text(scope)]).first?.columns["key"] {
+      throw RielaCacheError.revisionConflict(conflict)
     }
-    var results: [CacheLookup] = []
-    for row in rows {
-      let key = row.columns["key"]!
-      let desired = retained[key] != nil
-      guard desired != (row.columns["protected"] == "1") else { continue }
-      try execute(db, "UPDATE cache_entries SET protected = ? WHERE scope = ? AND key = ?",
-        bindings: [.int(desired ? 1 : 0), .text(scope), .text(key)])
-      results.append(.init(key: key, status: desired ? "protected" : "released"))
+    let desired = "(key IN (SELECT key FROM temp.cache_retained_refs))"
+    let changed = try queryRows(db, sql: """
+      SELECT key, \(desired) AS desired FROM cache_entries
+      WHERE scope = ? AND protected != \(desired) ORDER BY key
+      """, bindings: [.text(scope)])
+    try execute(db, "UPDATE cache_entries SET protected = \(desired) WHERE scope = ? AND protected != \(desired)",
+      bindings: [.text(scope)])
+    var results = changed.map { row in
+      CacheLookup(key: row.columns["key"]!, status: row.columns["desired"] == "1" ? "protected" : "released")
     }
+    results += try queryRows(db, sql: """
+      SELECT r.key AS key FROM temp.cache_retained_refs r
+      WHERE NOT EXISTS (SELECT 1 FROM cache_entries e WHERE e.scope = ? AND e.key = r.key) ORDER BY r.key
+      """, bindings: [.text(scope)]).map { CacheLookup(key: $0.columns["key"]!, status: "missing", reason: "notFound") }
     return results
   }
 
   /// Bounded maintenance of explicitly owned existing stores. Never creates a
   /// missing cache or resets its configured policy. Foreign databases are skipped.
-  public func maintain(cacheIds: [String], maxDurationSeconds: Double = 120) throws -> CacheMaintenanceResult {
+  ///
+  /// The time bound is checked before each store, not inside one: a store that
+  /// starts within the budget finishes its expire/evict pass even if that pass
+  /// overruns. Stores left after the budget, and stores that stay busy past the
+  /// SQLite busy timeout, are reported as deferred. `uptime` is the monotonic
+  /// clock used for the budget; tests inject it.
+  public func maintain(cacheIds: [String], maxDurationSeconds: Double = 120,
+                       uptime: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws -> CacheMaintenanceResult {
     guard !cacheIds.isEmpty, cacheIds.count <= 1024, Set(cacheIds).count == cacheIds.count,
       maxDurationSeconds.isFinite, maxDurationSeconds > 0, maxDurationSeconds <= 3600 else {
       throw RielaCacheError.invalid("invalid cache maintenance bounds")
     }
     for id in cacheIds { _ = try databasePath(cacheId: id) }
     var summary = CacheMaintenanceResult()
-    let started = ProcessInfo.processInfo.systemUptime
+    let started = uptime()
     for id in cacheIds.sorted() {
       let path = try databasePath(cacheId: id)
-      guard FileManager.default.fileExists(atPath: path) else { continue }
-      guard ProcessInfo.processInfo.systemUptime - started < maxDurationSeconds else {
+      // attributesOfItem does not follow a final symlink; the open below also
+      // refuses links (SQLITE_OPEN_NOFOLLOW), closing the check-then-open race.
+      guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+        attributes[.type] as? FileAttributeType == .typeRegular,
+        (attributes[.referenceCount] as? NSNumber)?.intValue == 1 else {
+        summary.skippedCacheCount += 1; continue
+      }
+      guard uptime() - started < maxDurationSeconds else {
         summary.deferredCacheCount += 1; continue
       }
       do {
-        let attributes = try FileManager.default.attributesOfItem(atPath: path)
-        guard attributes[.type] as? FileAttributeType == .typeRegular,
-          (attributes[.referenceCount] as? NSNumber)?.intValue == 1 else { continue }
         let response = try transaction(id, existingOnly: true) { db, now in
           let policy = try readPolicy(db)
           let expired = try expire(db, now: now, policy: policy)
@@ -287,9 +322,14 @@ public struct RielaCacheStore: Sendable {
         summary.expiredEntryCount += response.stats.expiredCount
         summary.evictedEntryCount += response.stats.evictedCount
       } catch RielaCacheError.foreignDatabase {
-        continue
+        summary.skippedCacheCount += 1
+      } catch RielaCacheError.busy {
+        summary.deferredCacheCount += 1
       } catch {
         summary.failedCacheCount += 1
+        if summary.failedCacheIds.count < CacheMaintenanceResult.maximumReportedFailedCacheIds {
+          summary.failedCacheIds.append(id)
+        }
       }
     }
     summary.status = summary.failedCacheCount > 0 ? "failed" : summary.deferredCacheCount > 0 ? "deferred" : "ok"
@@ -301,9 +341,16 @@ public struct RielaCacheStore: Sendable {
       bindings: [.text(scope), .text(key)]).first?.columns["protected"] == "1"
   }
 
+  private func validate(scope: String) throws {
+    guard !scope.isEmpty, scope.utf8.count <= 512, !scope.contains("\0"),
+      scope == scope.trimmingCharacters(in: .whitespacesAndNewlines) else {
+      throw RielaCacheError.invalid("scope/key invalid, duplicate key, or batch outside 1...1024")
+    }
+  }
+
   private func validate(scope: String, keys: [String]) throws {
-    guard !scope.isEmpty, scope.utf8.count <= 512, !scope.contains("\0"), scope == scope.trimmingCharacters(in: .whitespacesAndNewlines),
-      !keys.isEmpty, keys.count <= 1024, Set(keys).count == keys.count,
+    try validate(scope: scope)
+    guard !keys.isEmpty, keys.count <= 1024, Set(keys).count == keys.count,
       keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 && !$0.contains("\0") && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }) else {
       throw RielaCacheError.invalid("scope/key invalid, duplicate key, or batch outside 1...1024")
     }
@@ -316,12 +363,29 @@ public struct RielaCacheStore: Sendable {
         attributes: [.posixPermissions: 0o700])
     }
     var handle: OpaquePointer?
-    guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE | (existingOnly ? 0 : SQLITE_OPEN_CREATE), nil) == SQLITE_OK, let db = handle else {
+    // existingOnly (maintenance) never creates a store and refuses a symlinked path.
+    let flags = SQLITE_OPEN_READWRITE | (existingOnly ? Self.sqliteOpenNoFollow : SQLITE_OPEN_CREATE)
+    guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK, let db = handle else {
       if let handle { sqlite3_close(handle) }
       throw RielaMemoryError.openFailed("cache database could not be opened")
     }
     defer { sqlite3_close(db) }
     sqlite3_busy_timeout(db, 5_000)
+    do {
+      return try openedTransaction(db, path: path, existingOnly: existingOnly, body: body)
+    } catch let error as RielaMemoryError {
+      let code = sqlite3_errcode(db) & 0xff
+      if code == SQLITE_BUSY || code == SQLITE_LOCKED { throw RielaCacheError.busy }
+      throw error
+    }
+  }
+
+  /// SQLITE_OPEN_NOFOLLOW (SQLite 3.31+); spelled as a literal so older system
+  /// headers that lack the macro still compile.
+  private static let sqliteOpenNoFollow: Int32 = 0x0100_0000
+
+  private func openedTransaction<T>(_ db: OpaquePointer, path: String, existingOnly: Bool,
+                                    body: (OpaquePointer, Int64) throws -> T) throws -> T {
     let application = try queryRows(db, sql: "PRAGMA application_id", bindings: []).first?.columns["application_id"]
     let tables = try queryRows(db, sql: "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table'", bindings: []).first?.columns["count"]
     guard application == "1380533064" || (!existingOnly && application == "0" && tables == "0") else { throw RielaCacheError.foreignDatabase }
@@ -353,7 +417,13 @@ public struct RielaCacheStore: Sendable {
       let value = try body(db, Int64((seconds * 1000).rounded(.down)))
       try execute(db, "COMMIT")
       return value
-    } catch { try? execute(db, "ROLLBACK"); throw error }
+    } catch {
+      // Keep the failing statement's error code readable by the caller's busy check.
+      let code = sqlite3_errcode(db)
+      try? execute(db, "ROLLBACK")
+      if error is RielaMemoryError, code & 0xff == SQLITE_BUSY || code & 0xff == SQLITE_LOCKED { throw RielaCacheError.busy }
+      throw error
+    }
   }
 
   private func readPolicy(_ db: OpaquePointer) throws -> CachePolicy {

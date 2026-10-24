@@ -34,6 +34,65 @@ final class BuiltinAddonContainerResolverTests: XCTestCase {
     XCTAssertEqual(observations, 3)
   }
 
+  func testTerminalFinalizationContinuesPastAFailedInvocationAndKeepsRecords() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("addon-terminal-continues")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runner = BuiltinContainerRecordingRunner(output: testOutput())
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker"],
+      workingDirectory: root, runner: runner)
+    for image in ["first:image", "second:image"] {
+      _ = try await resolver.execute(.init(workflowId: "w", stepId: "commit", nodeId: "commit",
+        addon: .init(name: "riela/git-commit", version: "1", container: .init(image: image)),
+        executionIdentity: .init(workflowExecutionId: "terminal-session", stepExecutionId: "step-\(image)",
+          operationExecutionId: "step-\(image)", attempt: 1)), context: .init())
+    }
+    await runner.failTerminalCalls(1, status: 9)
+    do {
+      try await resolver.recordTerminalFinalization(workflowExecutionId: "terminal-session", stepExecutionIds: ["s"])
+      XCTFail("a failed terminal invocation was swallowed")
+    } catch let error as AdapterExecutionError {
+      // Shared isolated-worker exit mapping (same contract as the node and private hosts).
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertEqual(error.message, "built-in add-on worker exited with status 9")
+    }
+    var terminals = await runner.requests.filter { $0.operation == .terminal }
+    XCTAssertEqual(terminals.count, 2, "the second invocation must still receive its terminal record")
+    // Records survive the failure, so a re-drive reaches both invocations again.
+    try await resolver.recordTerminalFinalization(workflowExecutionId: "terminal-session", stepExecutionIds: ["s"])
+    terminals = await runner.requests.filter { $0.operation == .terminal }
+    XCTAssertEqual(terminals.count, 4)
+    try await resolver.recordTerminalFinalization(workflowExecutionId: "terminal-session", stepExecutionIds: ["s"])
+    terminals = await runner.requests.filter { $0.operation == .terminal }
+    XCTAssertEqual(terminals.count, 4, "records are removed once every invocation succeeded")
+  }
+
+  func testTerminalFinalizationUnderSaturatedPoolTimesOutAndKeepsRecords() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("addon-terminal-saturated")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let pool = root.appendingPathComponent("pool")
+    let runner = BuiltinContainerRecordingRunner(output: testOutput())
+    let worker = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent(".build/debug/riela").resolvingSymlinksInPath().path
+    let resolver = BuiltinAddonContainerResolver(transportRootDirectory: builtinContainerTransportRoot(for: root, testCase: self),
+      primary: ContainerTestNativeResolver(), environment: ["RIELA_CONTAINER_RUNTIME": "docker", "TEST_POOL": pool.path,
+        "RIELA_SANDBOX_WORKER_EXECUTABLE": worker], workingDirectory: root, runner: runner)
+    let admission = WorkflowExecutionAdmission(directoryEnvironment: "TEST_POOL", capacity: 1, waitTimeoutSeconds: 1)
+    _ = try await resolver.execute(.init(workflowId: "w", stepId: "commit", nodeId: "commit",
+      addon: .init(name: "riela/git-commit", version: "1", sandbox: .init(backend: .container, admission: admission)),
+      executionIdentity: .init(workflowExecutionId: "busy-session", stepExecutionId: "busy-step",
+        operationExecutionId: "busy-step", attempt: 1)), context: .init())
+    var held = try await SandboxExecutionAdmission.acquire(admission, environment: ["TEST_POOL": pool.path], deadline: nil)
+    do {
+      try await resolver.recordTerminalFinalization(workflowExecutionId: "busy-session", stepExecutionIds: ["busy-step"])
+      XCTFail("terminal worker ran outside a saturated pool")
+    } catch let error as AdapterExecutionError { XCTAssertEqual(error.code, .timeout) }
+    XCTAssertNotNil(held); held = nil
+    try await resolver.recordTerminalFinalization(workflowExecutionId: "busy-session", stepExecutionIds: ["busy-step"])
+    let operations = await runner.requests.map(\.operation)
+    XCTAssertEqual(operations, [.execute, .terminal])
+  }
+
   func testAdmissionWaitPolicyDoesNotRelocateSandboxWorkerState() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("addon-admission-state")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -378,8 +437,12 @@ private actor BuiltinContainerRecordingRunner: LocalProcessRunning {
   let output: AdapterExecutionOutput
   let pool: URL?
   var heldObservations = 0
+  var failingTerminalCalls = 0
+  var failingStatus: Int32 = 1
 
   init(output: AdapterExecutionOutput, pool: URL? = nil) { self.output = output; self.pool = pool }
+
+  func failTerminalCalls(_ count: Int, status: Int32) { failingTerminalCalls = count; failingStatus = status }
 
   func run(configuration: LocalProcessConfiguration, stdin: String, deadline: Date?) async throws -> LocalProcessResult {
     let request = try JSONDecoder().decode(BuiltinAddonContainerRequest.self, from: Data(stdin.utf8))
@@ -393,6 +456,10 @@ private actor BuiltinContainerRecordingRunner: LocalProcessRunning {
     }
     requests.append(request)
     configurations.append(configuration)
+    if request.operation == .terminal, failingTerminalCalls > 0 {
+      failingTerminalCalls -= 1
+      return .init(stdout: "", stderr: "", terminationStatus: failingStatus)
+    }
     let reply = BuiltinAddonContainerReply(output: request.operation == .execute ? output : nil)
     let stdout = try XCTUnwrap(String(data: JSONEncoder().encode(reply), encoding: .utf8))
     return .init(stdout: stdout + "\n", stderr: "", terminationStatus: 0)

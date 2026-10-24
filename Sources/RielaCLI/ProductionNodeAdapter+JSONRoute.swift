@@ -3,6 +3,10 @@ import RielaAddonSupport
 import RielaCore
 
 extension BuiltinWorkflowAddonResolver {
+  static let jsonRouteRegistration = BuiltinAddonHandlerRegistration(name: "riela/json-route") { resolver, input, _ in
+    try resolver.executeJSONRoute(input)
+  }
+
   func executeJSONRoute(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),

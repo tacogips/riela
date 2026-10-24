@@ -56,6 +56,37 @@ final class WorkflowObservabilityTests: XCTestCase {
     XCTAssertEqual(redacted["prompt"], "[redacted]")
   }
 
+  func testTelemetryRedactorKeepsOnlyTokenValuesForOverlapKeys() {
+    let kept = RielaTelemetryRedactor.redactedAttributes([
+      "overlap.policy": "cancelRunning",
+      "overlap.reason": "overlap-queue-full",
+      "binding.id": "routine-a-binding"
+    ])
+    XCTAssertEqual(kept["overlap.policy"], "cancelRunning")
+    XCTAssertEqual(kept["overlap.reason"], "overlap-queue-full")
+    XCTAssertEqual(kept["binding.id"], "routine-a-binding")
+
+    let masked = RielaTelemetryRedactor.redactedAttributes([
+      // Full reasons carry ids and separators; only the kind may be exported.
+      "overlap.reason": "overlap-skip:binding:flow-session-1",
+      // Token-shaped but secret-looking values stay redacted.
+      "overlap.policy": "api-key",
+      // Free text under the exact key is not a token.
+      "overlap.reason ": "overlap-skip",
+      // Other reason/policy keys are not allowlisted by this change.
+      "failure.reason": "disk-full",
+      "retry.policy": "queue"
+    ])
+    XCTAssertEqual(masked["overlap.reason"], "[redacted]")
+    XCTAssertEqual(masked["overlap.policy"], "[redacted]")
+    XCTAssertEqual(masked["overlap.reason "], "[redacted]")
+    XCTAssertEqual(masked["failure.reason"], "[redacted]")
+    XCTAssertEqual(masked["retry.policy"], "[redacted]")
+    XCTAssertEqual(
+      RielaTelemetryRedactor.redactedAttributes(["overlap.reason": "token-refresh"])["overlap.reason"], "[redacted]"
+    )
+  }
+
   func testWorkflowRunnerEmitsInMemoryTelemetryForWorkflowAndStep() async throws {
     let telemetry = InMemoryRielaTelemetry()
     let runner = DeterministicWorkflowRunner(

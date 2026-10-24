@@ -32,6 +32,7 @@ tar -cf - --exclude=.build --exclude=.git --exclude=tmp -C "$repo_root" \
 cp "$repo_root/containers/builtin-addons/Containerfile" "$build_context/Containerfile"
 mkdir -p "$build_context/scripts"
 cp "$repo_root/scripts/prepare-container-gateway-source.py" "$build_context/scripts/prepare-container-gateway-source.py"
+cp "$repo_root/scripts/strip-macos-only-pins.swift" "$build_context/scripts/strip-macos-only-pins.swift"
 cp "$repo_root/scripts/collect-swift-runtime.sh" "$build_context/scripts/collect-swift-runtime.sh"
 cp -R "$repo_root/scripts/container-gateway-support" "$build_context/scripts/container-gateway-support"
 "$runtime" build -t "$image" -f "$build_context/Containerfile" "$@" "$build_context"

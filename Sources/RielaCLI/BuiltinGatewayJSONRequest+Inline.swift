@@ -14,7 +14,7 @@ extension BuiltinGatewayJSONRequest {
       let types = Dictionary(uniqueKeysWithValues: parsed.variableDefinitions.map { ($0.name, $0.type) })
       let renderer = InlineReaderRenderer(variables: built.variables, types: types, catalog: catalog)
       let document = try "query { " + parsed.selectionSet.map { try renderer.selection($0, depth: 0) }.joined(separator: " ") + " }"
-      guard document.utf8.count <= 120_000 else { throw inlineFailure() }
+      guard document.utf8.count <= ContainerGatewayAddon.legacyDocumentByteLimit else { throw inlineFailure() }
       _ = try GatewayGraphQLValidator(catalog: catalog).validate(GatewayGraphQLParser.parse(document))
       return document
     } catch {

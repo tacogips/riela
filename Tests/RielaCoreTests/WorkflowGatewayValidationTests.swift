@@ -31,8 +31,9 @@ final class WorkflowGatewayValidationTests: XCTestCase {
       [:],
       ["queryTemplate": .null],
       ["operation": .null, "arguments": .object([:])],
-      ["operation": .string("tasks")],
       ["operation": .string("{{input.operation}}"), "arguments": .object([:])],
+      ["operation": .string("tasks"), "arguments": .string("prefix {{input.arguments}}")],
+      ["operation": .string("tasks"), "arguments": .null],
       ["operation": .string("tasks"), "arguments": .array([])],
       ["queryTemplate": .string("query"), "operation": .string("tasks"), "arguments": .object([:])],
       ["operation": .string("tasks"), "arguments": .object([:]), "select": .object([:])],
@@ -50,6 +51,32 @@ final class WorkflowGatewayValidationTests: XCTestCase {
         XCTAssertFalse(errors(addon, config: ["operation": .string("threads"), "arguments": .string(invalid)]).isEmpty)
       }
     }
+  }
+
+  func testMissingArgumentsMatchesRuntimeEmptyObject() {
+    // Runtime renders a missing `arguments` as `{}` (renderGatewayJSONArguments).
+    for (addon, config) in [
+      ("riela/wrike-gateway-read", ["operation": JSONValue.string("tasks")]),
+      ("riela/gmail-gateway-reader", ["operation": .string("labels")]),
+      ("riela/notion-gateway-read", ["operation": .string("search"), "selection": .array([.string("id")])]),
+      ("riela/google-docs-gateway-read", ["operation": .string("documents get")]),
+      ("riela/apple-gateway-graphql", ["operation": .string("read")])
+    ] as [(String, JSONObject)] {
+      XCTAssertTrue(errors(addon, config: config).isEmpty, "\(addon) \(config)")
+    }
+    let present = errors("riela/apple-gateway-graphql", config: ["operation": .string("read"), "arguments": .array([])])
+    XCTAssertTrue(present.contains { $0.path.hasSuffix(".addon.config.arguments") && $0.message == "must be an object" })
+  }
+
+  func testRemovedGmailAddonNamesAreNotGatewayValidated() {
+    // No runtime resolver exists for these names; the schema tiers stay for `riela gateway schema`.
+    for name in ["riela/gmail-gateway-threads", "riela/gmail-gateway-message-box"] {
+      XCTAssertFalse(errors(name, config: ["operation": .string("x"), "arguments": .object([:])]).contains {
+        $0.path.hasSuffix(".addon.config") && $0.message.contains("exactly one of")
+      })
+      XCTAssertFalse(errors(name, config: [:]).contains { $0.message.contains("exactly one of") })
+    }
+    XCTAssertTrue(WorkflowGatewayProvider.gmail.tiers.isSuperset(of: ["threads", "message-box"]))
   }
 
   func testSelectionAndDocumentModes() {

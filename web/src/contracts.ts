@@ -24,7 +24,7 @@ export interface Instance {
   enabledAtLaunch: boolean
   workingDirectory: string | null
   environmentFilePath: string | null
-  environmentStatus?: { readiness: string; generation: number; names: string[]; missingNames: string[]; lastError?: string } | null
+  environmentStatus?: RuntimeEnvironmentStatus | null
   environmentResolution?: { required: string[]; sources: Array<{ id: string; names: string[]; command: string[]; format: "json" | "env0"; timeoutSeconds: number }> } | null
   environmentVariables: MaskedEnvironmentVariable[]
   requiredEnvironment: RequiredEnvironmentVariable[]
@@ -32,6 +32,20 @@ export interface Instance {
   nodePatchCount: number
   nodePatches: Record<string, NodePatch>
   eventSources: Array<{ id: string; kind: string }>
+}
+
+/** Names-and-codes status of an instance's runtime environment; never values.
+ *  `lastError` is a plain string so new server codes display verbatim
+ *  (e.g. environment_restart_required, environment_reload_in_progress,
+ *  environment_instance_changed). */
+export interface RuntimeEnvironmentStatus {
+  readiness: string
+  generation: number
+  names: string[]
+  configuredNames?: string[]
+  missingNames: string[]
+  sourceIDs?: string[]
+  lastError?: string | null
 }
 
 export interface NodePatch {

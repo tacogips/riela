@@ -23,7 +23,7 @@ final class MemoryHistoryRetirementTests: XCTestCase {
       requiredTags: ["checkpoint"], expectedHeadVersion: head, throughVersion: head - 1, dryRun: dryRun)
   }
 
-  func testSinglePassMatchesEverySnapshotAndVisitsEachEdgeOnce() throws {
+  func testSinglePassMatchesEverySnapshotAndAppliesEachEdgeOnce() throws {
     let (store, initial) = try fixture()
     var head = initial
     var snapshots = [try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 1), head]
@@ -36,11 +36,16 @@ final class MemoryHistoryRetirementTests: XCTestCase {
     let db = try store.openDatabase(memoryId: "m")
     defer { sqlite3_close(db) }
     var visited: [MemoryRecord] = []
-    XCTAssertTrue(try store.walkHistoricalRecords(current: head, head: 96, floor: 1, db: db) {
+    var appliedEdges: [Int64] = []
+    XCTAssertTrue(try store.walkHistoricalRecords(current: head, head: 96, floor: 1, db: db,
+      onEdge: { appliedEdges.append($0) }, visit: {
       visited.append($0); return true
-    })
+    }))
     XCTAssertEqual(visited, Array(snapshots.dropLast().reversed()))
     XCTAssertEqual(visited.count, 95)
+    // Each reverse delta (version 96 down to 2) is decoded and applied exactly once;
+    // reconstructing every version independently would apply ~95*96/2 edges.
+    XCTAssertEqual(appliedEdges, Array((2...96).reversed()))
     XCTAssertEqual(try retire(store, head, dryRun: true, head: 96).status, "planned")
     XCTAssertEqual(try retire(store, head, head: 96).status, "retired")
     XCTAssertEqual(try store.recordVersion(memoryId: "m", recordId: head.recordId, version: 96), head)

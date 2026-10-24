@@ -13,6 +13,11 @@ public func resolveNodeOutputContract(_ output: NodeOutputContract?, variables: 
   if case let .object(properties)? = schema["properties"], properties["handover"] != nil {
     throw AdapterExecutionError(.invalidInput, "output schema must not declare the reserved handover key")
   }
+  // Native structured output hands the schema to the vendor verbatim; a
+  // composed root `allOf` is not an accepted strict-output root.
+  guard output.nativeStructuredOutput != true || output.jsonSchema == nil else {
+    throw AdapterExecutionError(.invalidInput, "output.nativeStructuredOutput cannot combine jsonSchema with jsonSchemaFrom")
+  }
   output.jsonSchema = output.jsonSchema.map { ["allOf": .array([.object($0), .object(schema)])] } ?? schema
   output.jsonSchemaFrom = nil
   return output

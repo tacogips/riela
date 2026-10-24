@@ -141,7 +141,8 @@ public struct AgentGatewayNodeAdapter: NodeAdapter {
       completionPassed: normalized.completionPassed,
       when: normalized.when,
       payload: normalized.payload,
-      usage: turn.usage
+      usage: turn.usage,
+      routingDiagnostics: normalized.routingDiagnostics
     )
   }
 

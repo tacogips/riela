@@ -4,7 +4,7 @@
 **Issue**: `tacogips/riela#135`  
 **Workflow mode**: full `issue-resolution`  
 **Branch**: `feat/issue-sweep-20261024`  
-**Status**: implementation and ISW135-TI-1 repair complete; independent review and finalization pending.
+**Status**: completed and merged (PR #177); review follow-up 2026-10-24 applied (D2 time-cut carry, running-source guard only when evidence is carried, unaccepted-producer rejection, lineage and execution-count fixes).
 
 ## Readiness and design alignment
 

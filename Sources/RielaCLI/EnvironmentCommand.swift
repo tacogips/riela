@@ -3,7 +3,6 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import RielaAppSupport
 
 private struct EnvironmentArguments: ParsableArguments {
   @Argument var action: String
@@ -69,16 +68,11 @@ struct EnvironmentCommand {
       }
       var statusRequest = URLRequest(url: try url(path + "/environment"))
       statusRequest.setValue(args.profile, forHTTPHeaderField: "x-riela-profile")
-      let data = try await fetch(statusRequest)
-      let status: RuntimeEnvironmentStatus
-      if let direct = try? JSONDecoder().decode(RuntimeEnvironmentStatus.self, from: data) {
-        status = direct
-      } else {
-        struct Envelope: Decodable { var environment: RuntimeEnvironmentStatus }
-        status = try JSONDecoder().decode(Envelope.self, from: data).environment
-      }
-      // Re-encode the finite status contract; never forward arbitrary server output.
-      return CLICommandResult(exitCode: .success, stdout: (String(data: try JSONEncoder().encode(status), encoding: .utf8) ?? "") + "\n")
+      let status = try Self.decodeStatus(try await fetch(statusRequest))
+      return CLICommandResult(exitCode: .success, stdout: try Self.render(status))
+    } catch let failure as EnvironmentHTTPFailure {
+      return CLICommandResult(exitCode: .failure, stdout: failure.status.map { (try? Self.render($0)) ?? "" } ?? "",
+        stderr: failure.code + "\n")
     } catch let error as CLIUsageError {
       return CLICommandResult(exitCode: .failure, stderr: error.message + "\n")
     } catch {
@@ -86,11 +80,85 @@ struct EnvironmentCommand {
     }
   }
 
+  /// Re-encodes the finite status contract; never forwards arbitrary server output.
+  private static func render(_ status: EnvironmentClientStatus) throws -> String {
+    (String(data: try JSONEncoder().encode(status), encoding: .utf8) ?? "") + "\n"
+  }
+
+  private static func decodeStatus(_ data: Data) throws -> EnvironmentClientStatus {
+    if let direct = try? JSONDecoder().decode(EnvironmentClientStatus.self, from: data) { return direct }
+    struct Envelope: Decodable { var environment: EnvironmentClientStatus }
+    return try JSONDecoder().decode(Envelope.self, from: data).environment
+  }
+
+  /// Maps a non-2xx response to a safe code: the status body's `lastError`
+  /// (422 reload failures), else an `{"error":{"code":...}}` envelope code,
+  /// else `environment_http_<status>`. Only safe-code shaped strings are used.
+  static func failure(status: Int, body: Data) -> EnvironmentHTTPFailure {
+    let fallback = "environment_http_" + String(status)
+    guard body.count <= 1_048_576 else { return EnvironmentHTTPFailure(code: fallback, status: nil) }
+    if let decoded = try? decodeStatus(body), let code = decoded.lastError {
+      return EnvironmentHTTPFailure(code: code, status: decoded)
+    }
+    if let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: body),
+      let code = EnvironmentClientStatus.safeCode(envelope.error.code) {
+      return EnvironmentHTTPFailure(code: code, status: nil)
+    }
+    return EnvironmentHTTPFailure(code: fallback, status: nil)
+  }
+
   private func fetch(_ request: URLRequest) async throws -> Data {
     let (data, status) = try await transport(request)
-    guard (200..<300).contains(status) else { throw CLIUsageError("environment_http_" + String(status)) }
+    guard (200..<300).contains(status) else { throw Self.failure(status: status, body: data) }
     guard data.count <= 1_048_576 else { throw CLIUsageError("environment_response_too_large") }
     return data
+  }
+}
+
+private struct ErrorEnvelope: Decodable {
+  struct Detail: Decodable { var code: String }
+  var error: Detail
+}
+
+struct EnvironmentHTTPFailure: Error {
+  var code: String
+  var status: EnvironmentClientStatus?
+}
+
+/// Client view of `RuntimeEnvironmentStatus`. `readiness` and `lastError` are
+/// decoded as strings so codes added by a newer server (for example
+/// `environment_restart_required`) print verbatim instead of failing decode;
+/// values that are not safe-code shaped are replaced, never forwarded.
+struct EnvironmentClientStatus: Codable, Equatable, Sendable {
+  var names: [String]
+  var configuredNames: [String]
+  var missingNames: [String]
+  var sourceIDs: [String]
+  var generation: UInt64
+  var readiness: String
+  var lastError: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case names, configuredNames, missingNames, sourceIDs, generation, readiness, lastError
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    names = try container.decode([String].self, forKey: .names)
+    configuredNames = try container.decode([String].self, forKey: .configuredNames)
+    missingNames = try container.decode([String].self, forKey: .missingNames)
+    sourceIDs = try container.decode([String].self, forKey: .sourceIDs)
+    generation = try container.decode(UInt64.self, forKey: .generation)
+    readiness = Self.safeCode(try container.decode(String.self, forKey: .readiness)) ?? "unknown"
+    lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+      .map { Self.safeCode($0) ?? "environment_request_failed" }
+  }
+
+  /// Lowercase snake-case token of at most 96 bytes, or nil.
+  static func safeCode(_ value: String) -> String? {
+    guard (1...96).contains(value.utf8.count), let first = value.utf8.first, (97...122).contains(first),
+      value.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 95 }) else { return nil }
+    return value
   }
 }
 

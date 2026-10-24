@@ -362,3 +362,14 @@ public enum WorkflowServeError: Error, Equatable, Sendable, CustomStringConverti
     }
   }
 }
+
+/// Typed runtime-environment failures raised by the serving layer. Raw values
+/// belong to the App's finite environment error vocabulary, so callers can map
+/// them without inventing codes (RielaServer cannot see RielaAppSupport).
+public enum WorkflowServeRuntimeEnvironmentError: String, Error, Equatable, Sendable, CustomStringConvertible {
+  /// The event source has no private runtime-environment channel.
+  case unsupported = "environment_not_prepared"
+  /// The controller has no active generation (stopped or replaced mid-update).
+  case noActiveGeneration = "environment_instance_changed"
+  public var description: String { rawValue }
+}

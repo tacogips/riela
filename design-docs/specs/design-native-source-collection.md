@@ -5,6 +5,13 @@ acquisition. Workflows retain source-specific inspection and presentation.
 Use them inside a private workflow when provider content requires screening;
 their output is raw provider content until inspected.
 
+Stateful addon dispatch uses a handler registry. Each feature declares its name
+and callback next to its implementation; enum-based families register all their
+cases. The common dispatcher only looks up the handler and forwards the resolver,
+input and execution context. Adding a collector must not introduce a provider
+name branch there. Registry tests check unique registrations, public catalog
+membership and unknown-addon fallback; normal collector tests exercise dispatch.
+
 ## Specified X authors: `riela/x-collect`, version `1`
 
 ```json

@@ -7,6 +7,9 @@ public enum RielaCacheError: Error, Equatable, Sendable {
   case revisionConflict(String)
   case protectedCapacityExceeded(limit: Int)
   case foreignDatabase
+  /// Another connection held the store past the busy timeout. Maintenance
+  /// reports such a store as deferred rather than failed.
+  case busy
 }
 
 public struct CachePolicy: Codable, Equatable, Sendable {
@@ -96,11 +99,19 @@ func cacheTimestamp(_ milliseconds: Int64) -> String {
   return formatter.string(from: Date(timeIntervalSince1970: Double(milliseconds) / 1000))
 }
 
+/// Aggregate maintenance outcome. `status` is `failed` when any store failed,
+/// `deferred` when a store was left for a later run (time budget or busy), and
+/// `ok` otherwise. Missing, foreign, symlinked and hard-linked stores are
+/// counted in `skippedCacheCount` and never opened for writing.
 public struct CacheMaintenanceResult: Codable, Equatable, Sendable {
+  /// At most this many failing cache ids are listed in `failedCacheIds`.
+  public static let maximumReportedFailedCacheIds = 32
   public var status = "ok"
   public var cacheCount = 0
   public var failedCacheCount = 0
+  public var failedCacheIds: [String] = []
   public var deferredCacheCount = 0
+  public var skippedCacheCount = 0
   public var entryCount = 0
   public var byteCount = 0
   public var protectedByteCount = 0

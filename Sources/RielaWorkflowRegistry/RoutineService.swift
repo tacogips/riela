@@ -299,17 +299,57 @@ public struct RoutineService: Sendable {
       )
     }
 
-    let record = try routineStore.update(routineId: routineId) { record in
-      record.overlapPolicy = candidate.overlapPolicy
-      record.maxQueuedRuns = candidate.maxQueuedRuns
-      record.maxConcurrentRuns = candidate.maxConcurrentRuns
+    // The binding file is patched first (only the overlap keys change, so its
+    // current `enabled` state and any hand edits survive) and restored if the
+    // SQLite commit fails, so record and serve never disagree.
+    let bindingURL = bindingFileURL(for: candidate)
+    let previousBinding = try? Data(contentsOf: bindingURL)
+    try writeBindingFile(
+      patchedOverlapBinding(previousBinding, candidate: candidate, storeRoot: routineStore.rootDirectory),
+      to: bindingURL
+    )
+    let record: RoutineRecord
+    do {
+      record = try routineStore.update(routineId: routineId) { record in
+        record.overlapPolicy = candidate.overlapPolicy
+        record.maxQueuedRuns = candidate.maxQueuedRuns
+        record.maxConcurrentRuns = candidate.maxConcurrentRuns
+      }
+    } catch {
+      if let previousBinding {
+        try? previousBinding.write(to: bindingURL, options: .atomic)
+      } else {
+        try? FileManager.default.removeItem(at: bindingURL)
+      }
+      throw error
     }
-    let updatedBinding = eventBinding(for: record, storeRoot: routineStore.rootDirectory)
-    try writeBindingFile(updatedBinding, record: record)
     return RoutineMutationResult(
       routine: record,
-      diagnostics: ["binding=\(bindingFileURL(for: record).path) overlapPolicy=\(record.overlapPolicy ?? "inherit")"]
+      diagnostics: ["binding=\(bindingURL.path) overlapPolicy=\(record.overlapPolicy ?? "inherit")"]
     )
+  }
+
+  /// `set-overlap-policy` replaces the whole binding-level policy: absent caps
+  /// are removed, so an omitted cap falls back to its default.
+  private func patchedOverlapBinding(
+    _ existing: Data?,
+    candidate: RoutineRecord,
+    storeRoot: String
+  ) throws -> Data {
+    guard let existing,
+          case var .object(object)? = try? JSONDecoder().decode(JSONValue.self, from: existing) else {
+      // No readable binding file: regenerate it, keeping the routine status as `enabled`.
+      return try prettyJSONEncoder().encode(eventBinding(for: candidate, storeRoot: storeRoot))
+    }
+    let fields: [(String, JSONValue?)] = [
+      ("overlapPolicy", candidate.overlapPolicy.map(JSONValue.string)),
+      ("maxQueuedRuns", candidate.maxQueuedRuns.map { .integer(Int64($0)) }),
+      ("maxConcurrentRuns", candidate.maxConcurrentRuns.map { .integer(Int64($0)) })
+    ]
+    for (key, value) in fields {
+      object[key] = value
+    }
+    return try prettyJSONEncoder().encode(JSONValue.object(object))
   }
 
   /// Deletes the routine record and removes its event source/binding files.
@@ -395,8 +435,10 @@ public struct RoutineService: Sendable {
   }
 
   private func writeBindingFile(_ binding: EventBindingContract, record: RoutineRecord) throws {
-    let data = try prettyJSONEncoder().encode(binding)
-    let url = bindingFileURL(for: record)
+    try writeBindingFile(try prettyJSONEncoder().encode(binding), to: bindingFileURL(for: record))
+  }
+
+  private func writeBindingFile(_ data: Data, to url: URL) throws {
     try FileManager.default.createDirectory(
       at: url.deletingLastPathComponent(),
       withIntermediateDirectories: true

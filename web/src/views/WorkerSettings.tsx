@@ -14,6 +14,8 @@ interface Snapshot {
   status: string
   running: boolean
   workers: WorkerStatus[]
+  /** Set when the controller store cannot be read; `workers` is then empty, not "no workers". */
+  workerStatusError?: string | null
 }
 
 function workerStatusLabel(worker: WorkerStatus): string {
@@ -72,6 +74,7 @@ export function WorkerSettings(props: { profileKey: string }) {
     <Show when={snapshot.error}><ErrorBanner message={String(snapshot.error)} /></Show>
     <Show when={draft()}>{(value) => <form onSubmit={(event) => { event.preventDefault(); void save() }}>
       <p role="status">{snapshot()?.status}</p>
+      <Show when={snapshot()?.workerStatusError}>{(error) => <ErrorBanner message={error()} />}</Show>
       <Show when={snapshot()?.workers.length}><div class="requirements"><For each={snapshot()?.workers}>{(worker) =>
         <div class="requirement-row"><div><strong>{worker.id}</strong><span>{workerStatusLabel(worker)}</span></div></div>}</For></div></Show>
       <fieldset disabled={saving()} class="worker-settings-fields">

@@ -3,6 +3,10 @@ import RielaAddonSupport
 import RielaCore
 
 extension BuiltinWorkflowAddonResolver {
+  static let xDigestRegistration = BuiltinAddonHandlerRegistration(name: "riela/x-digest") { resolver, input, _ in
+    try resolver.executeXDigest(input)
+  }
+
   func executeXDigest(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1" else {
       throw AdapterExecutionError(.policyBlocked, "unsupported \(input.addon.name) version '\(input.addon.version ?? "")'")

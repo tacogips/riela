@@ -75,10 +75,9 @@ extension RielaApp: NSMenuDelegate {
     return item
   }
 
-  private func menuItem(_ title: String, action: Selector, enabled: Bool = true) -> NSMenuItem {
+  private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
     item.target = self
-    item.isEnabled = enabled
     return item
   }
 

@@ -1,4 +1,5 @@
 import Foundation
+import RielaAddonSupport
 import RielaCore
 
 /// Small, finite JSON operations. Paths are RFC 6901 pointers, never programs.
@@ -15,9 +16,16 @@ enum JSONDataTransform {
   struct Program: Sendable {
     fileprivate let operations: [Operation]
 
-    func run(_ input: JSONValue) throws -> JSONValue {
+    /// `checkInputSize: false` is for runtime-owned inputs that are already in
+    /// memory, such as a provider payload that repeats its response (container
+    /// readers keep both `data` and `response`). Every intermediate value and the
+    /// result stay bounded; a program without operations returns its input, so the
+    /// input is then still checked.
+    func run(_ input: JSONValue, checkInputSize: Bool = true) throws -> JSONValue {
       var value = input
-      try checkSize(value)
+      if checkInputSize || operations.isEmpty {
+        try checkSize(value)
+      }
       for operation in operations {
         if case let .pick(pointer) = operation {
           guard let found = try lookup(value, pointer: pointer) else { throw invalid() }
@@ -122,7 +130,7 @@ enum JSONDataTransform {
   }
 
   private static func checkSize(_ value: JSONValue) throws {
-    guard try JSONEncoder().encode(value).count <= 8_000_000 else { throw invalid() }
+    guard try JSONEncoder().encode(value).count <= GatewayJSONLimits.maximumEncodedBytes else { throw invalid() }
   }
 
   private static func invalid() -> AdapterExecutionError {

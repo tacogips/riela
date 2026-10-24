@@ -1,4 +1,5 @@
 import Foundation
+import RielaObservability
 
 extension DeterministicWorkflowRunner {
   func executeAddonAndPublish(
@@ -196,31 +197,49 @@ extension DeterministicWorkflowRunner {
     }
   }
 
-  func reconcileAcceptedFinalizations(in session: WorkflowSession) async {
+  /// Event type reported when an accepted add-on finalization (acknowledgment
+  /// or terminal record) could not complete, for example because a shared
+  /// admission pool stayed busy past the finalization deadline. The runtime
+  /// record is unchanged; the add-on keeps its pending state for a re-drive.
+  static let addonFinalizationSkippedEventType = "riela.addon.finalization.skipped"
+
+  func reconcileAcceptedFinalizations(in session: WorkflowSession, handler: WorkflowRunEventHandler? = nil) async {
     guard let acknowledger = addonResolver as? any WorkflowAddonFinalizationAcknowledging else {
       return
     }
-    let tokens = Set<WorkflowAddonFinalizationToken>(session.executions.compactMap { execution in
-      guard execution.status == .completed else {
-        return nil
+    var seen = Set<WorkflowAddonFinalizationToken>()
+    for execution in session.executions where execution.status == .completed {
+      guard let token = execution.acceptedOutput?.runtimeFinalizationToken, seen.insert(token).inserted else {
+        continue
       }
-      return execution.acceptedOutput?.runtimeFinalizationToken
-    })
-    for token in tokens {
-      try? await acknowledger.acknowledgeAcceptedFinalization(token)
+      do {
+        try await acknowledger.acknowledgeAcceptedFinalization(token)
+      } catch {
+        await reportSkippedAddonFinalization(error, operation: "acknowledge", session: session,
+          execution: execution, handler: handler)
+      }
     }
   }
 
-  func acknowledgeAcceptedFinalization(in execution: WorkflowStepExecution) async {
+  func acknowledgeAcceptedFinalization(
+    in execution: WorkflowStepExecution,
+    session: WorkflowSession? = nil,
+    handler: WorkflowRunEventHandler? = nil
+  ) async {
     guard execution.status == .completed,
           let token = execution.acceptedOutput?.runtimeFinalizationToken,
           let acknowledger = addonResolver as? any WorkflowAddonFinalizationAcknowledging else {
       return
     }
-    try? await acknowledger.acknowledgeAcceptedFinalization(token)
+    do {
+      try await acknowledger.acknowledgeAcceptedFinalization(token)
+    } catch {
+      await reportSkippedAddonFinalization(error, operation: "acknowledge", session: session,
+        execution: execution, handler: handler)
+    }
   }
 
-  func recordTerminalFinalization(in session: WorkflowSession) async {
+  func recordTerminalFinalization(in session: WorkflowSession, handler: WorkflowRunEventHandler? = nil) async {
     let isTerminal = session.status == .completed || (
       session.status == .failed && session.failureKind != .maxStepsExceeded
     )
@@ -228,9 +247,52 @@ extension DeterministicWorkflowRunner {
           let recorder = addonResolver as? any WorkflowAddonTerminalRecording else {
       return
     }
-    try? await recorder.recordTerminalFinalization(
-      workflowExecutionId: session.sessionId,
-      stepExecutionIds: session.executions.map(\.executionId)
-    )
+    do {
+      try await recorder.recordTerminalFinalization(
+        workflowExecutionId: session.sessionId,
+        stepExecutionIds: session.executions.map(\.executionId)
+      )
+    } catch {
+      await reportSkippedAddonFinalization(error, operation: "terminal", session: session,
+        execution: nil, handler: handler)
+    }
+  }
+
+  /// Finalization stays best-effort (it never fails an accepted step or a
+  /// finished session), but it must not fail silently: every skip is logged
+  /// as a warning and, when a run event handler is known, streamed as a
+  /// backend event. Only the finite error code and a bounded message leave.
+  private func reportSkippedAddonFinalization(
+    _ error: any Error,
+    operation: String,
+    session: WorkflowSession?,
+    execution: WorkflowStepExecution?,
+    handler: WorkflowRunEventHandler?
+  ) async {
+    let adapterError = error as? AdapterExecutionError
+    let code = adapterError?.code.rawValue ?? (isWorkflowRunCancellation(error) ? "cancelled" : "error")
+    let reason = String((adapterError?.message ?? "add-on finalization failed").prefix(512))
+    // Keys follow the telemetry redactor allowlist (`session.id` is always
+    // redacted there, like on every other runner log).
+    var attributes = ["finalization.kind": operation, "error_code": code, "error_class": reason,
+      "runtime.surface": "workflow"]
+    attributes["workflow.id"] = session?.workflowId
+    attributes["session.id"] = session?.sessionId
+    attributes["node.step.id"] = execution?.stepId
+    await telemetry.recordLog(RielaTelemetryLog(name: "riela.workflow.addon.finalization.skipped",
+      severity: "WARNING", attributes: attributes))
+    guard let session, let handler else { return }
+    await handler(WorkflowRunEvent(
+      type: .backendEvent,
+      workflowId: session.workflowId,
+      sessionId: session.sessionId,
+      status: session.status,
+      currentStepId: session.currentStepId,
+      stepId: execution?.stepId,
+      nodeId: execution?.nodeId,
+      executionId: execution?.executionId,
+      backendEventType: Self.addonFinalizationSkippedEventType,
+      backendEventMetadata: ["operation": .string(operation), "errorCode": .string(code), "reason": .string(reason)]
+    ))
   }
 }

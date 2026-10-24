@@ -89,7 +89,7 @@ final class XGatewaySDKAddonTests: XCTestCase {
           .execute(.init(workflowId: "fixture", stepId: "read", nodeId: "read",
             addon: .init(name: "riela/x-gateway-reader", config: config)), context: .init())
         XCTFail("invalid JSON mode accepted")
-      } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .invalidInput) }
+      } catch { XCTAssertEqual((error as? AdapterExecutionError)?.code, .policyBlocked) }
       XCTAssertNil(gateway.lastCall())
     }
   }

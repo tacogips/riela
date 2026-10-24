@@ -3,7 +3,7 @@ import RielaAddonSupport
 import RielaCore
 import RielaMemory
 
-enum BuiltinCacheAddon: String {
+enum BuiltinCacheAddon: String, CaseIterable, Sendable {
   case configure = "riela/cache-configure"
   case put = "riela/cache-put"
   case get = "riela/cache-get"
@@ -39,21 +39,36 @@ extension BuiltinWorkflowAddonResolver {
       guard let number else { throw AdapterExecutionError(.invalidInput, "cache \(key) must be an integer") }
       return number
     }
+    func number(_ key: String, fallback: Double) throws -> Double {
+      guard let raw = value(key) else { return fallback }
+      switch raw {
+      case let .integer(item): return Double(item)
+      case let .number(item) where item.isFinite: return item
+      default: throw AdapterExecutionError(.invalidInput, "cache \(key) must be a number")
+      }
+    }
     func decode<T: Decodable>(_ type: T.Type, _ raw: JSONValue?) throws -> T {
       guard let raw else { throw AdapterExecutionError(.invalidInput, "cache entries or keys are required") }
       do { return try JSONDecoder().decode(type, from: JSONEncoder().encode(raw)) } catch { throw AdapterExecutionError(.invalidInput, "invalid cache entries or keys") }
     }
-    let cacheId = try text("cacheId", fallback: "retrieval-cache")
-    let scope = try text("scope", fallback: input.workflowId)
     let store = RielaCacheStore(rootDirectory: try text("cacheRoot",
       fallback: RielaCacheStore.defaultRootDirectory(workingDirectory: workingDirectory.path)))
     if operation == .maintain {
+      // Maintenance only applies each store's own stored policy, so built-in
+      // runtime caches may be listed. A failed store fails the node.
       let result = try store.maintain(cacheIds: decode([String].self, value("cacheIds")),
-        maxDurationSeconds: Double(integer("maxDurationSeconds", fallback: 120)))
+        maxDurationSeconds: number("maxDurationSeconds", fallback: 120))
       let payload = try JSONDecoder().decode(JSONObject.self, from: JSONEncoder().encode(result))
       return AdapterExecutionOutput(provider: "riela-builtin-addon", model: input.addon.name,
-        promptText: "", completionPassed: true, payload: payload)
+        promptText: "", completionPassed: result.status != "failed", payload: payload)
     }
+    let cacheId = try text("cacheId", fallback: "retrieval-cache")
+    // Every other operation reads or writes rows: x-gateway-* caches hold
+    // guest-exported runtime data and are off limits to workflows.
+    guard !RielaCacheStore.isReservedBuiltinCacheId(cacheId) else {
+      throw AdapterExecutionError(.policyBlocked, "cacheId '\(cacheId)' is reserved for a built-in runtime cache")
+    }
+    let scope = try text("scope", fallback: input.workflowId)
     let response: CacheResult
     switch operation {
     case .maintain: throw AdapterExecutionError(.invalidInput, "unreachable maintenance operation")

@@ -302,6 +302,59 @@ private func appendImageDescriptorPaths(_ object: JSONObject, paths: inout [Stri
   }
 }
 
+/// Redaction seam for agent-adapter failures. A thrown failure becomes the step
+/// and session `failureReason` ("code: message") verbatim, so credential values
+/// are removed before the error leaves the production adapter chain. The
+/// values come from the execution environment snapshot the adapter was built
+/// with (`CLIRuntimeEnvironment.mergedProcessEnvironment()`, which includes
+/// loader-provided names that never enter `ProcessInfo`) and from the node's
+/// resolved agent environment.
+public struct AdapterFailureRedactingNodeAdapter: NodeAdapter {
+  public let primary: any NodeAdapter
+  private let sensitiveValues: [String]
+
+  public init(primary: any NodeAdapter, environment: [String: String]) {
+    self.primary = primary
+    sensitiveValues = Self.values(environment)
+  }
+
+  /// Same minimum length as the process-environment rule, so short public
+  /// values ("true", "1000") under a sensitive-looking name do not mangle text.
+  private static func values(_ environment: [String: String]) -> [String] {
+    sensitiveAdapterEnvironmentValues(environment).filter { $0.count >= 8 }
+  }
+
+  public func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    do {
+      return try await primary.execute(input, context: context)
+    } catch {
+      throw redactedAdapterFailure(
+        error, sensitiveValues: sensitiveValues + Self.values(input.agentEnvironment)
+      )
+    }
+  }
+
+  public func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {
+    await primary.workflowRunDidEnd(context)
+  }
+}
+
+/// Redacts an adapter failure. Only `AdapterExecutionError` is changed: it keeps
+/// its code and retry metadata with a redacted message. Every other error
+/// (cancellation, `WorkflowPublicationError.validationRejected` that drives the
+/// runner's retry loop, ...) is rethrown unchanged so control flow is preserved.
+/// The sensitive values are only used for in-memory replacement; nothing here
+/// logs or persists them.
+public func redactedAdapterFailure(_ error: Error, sensitiveValues: [String]) -> Error {
+  guard let error = error as? AdapterExecutionError else { return error }
+  return AdapterExecutionError(
+    error.code,
+    redactAdapterSensitiveText(error.message, additionalSensitiveValues: sensitiveValues),
+    isRetryable: error.isRetryable,
+    retryAfter: error.retryAfter
+  )
+}
+
 public func redactAdapterSensitiveText(_ text: String, additionalSensitiveValues: [String] = []) -> String {
   var redacted = text
 

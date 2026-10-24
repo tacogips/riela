@@ -1,12 +1,11 @@
-import { rielaFetch } from '../transport'
 import { instanceEditorSnapshot } from './instanceEditorState'
 export { instanceSelectionForProfile, instanceEditorSnapshot, instanceEditorIdentity } from './instanceEditorState'
 import { ActionButton } from '../components/ActionButton'
 import { For, Show, createMemo, createSignal } from 'solid-js'
 import { APIError, api, requireExpectedProfile } from '../api'
-import { configurationClient } from '../config/client'
+import { configurationClient, environmentClient, environmentErrorMessage } from '../config/client'
 import { getConsoleInstance } from '../console/client'
-import type { Instance } from '../contracts'
+import type { Instance, RuntimeEnvironmentStatus } from '../contracts'
 import { MutationMessage } from '../components/Primitives'
 import { validateJSONObject } from '../workflows/validation'
 
@@ -32,7 +31,7 @@ export function InstanceEditor(props: {
   const [workingDirectory, setWorkingDirectory] = createSignal(initialSnapshot.workingDirectory)
   const [environmentFilePath, setEnvironmentFilePath] = createSignal(initialSnapshot.environmentFilePath)
   const [environmentResolution, setEnvironmentResolution] = createSignal(JSON.stringify(initialInstance.environmentResolution ?? { required: [], sources: [] }, null, 2))
-  const [environmentStatus, setEnvironmentStatus] = createSignal<{ readiness: string; generation: number; names: string[]; missingNames: string[]; lastError?: string }>()
+  const [environmentStatus, setEnvironmentStatus] = createSignal<RuntimeEnvironmentStatus>()
   const [environmentUpdates, setEnvironmentUpdates] = createSignal<Record<string, string>>({})
   const [environmentToClear, setEnvironmentToClear] = createSignal<string[]>([])
   const [newEnvironmentName, setNewEnvironmentName] = createSignal('')
@@ -144,22 +143,26 @@ export function InstanceEditor(props: {
   }
 
   const loadEnvironmentStatus = async () => {
-    const response = await rielaFetch(`/api/v1/instances/${encodeURIComponent(props.instance().id)}/environment`, {
-      credentials: 'same-origin', headers: { 'X-Riela-Profile': props.profileName },
-    })
-    if (!response.ok) throw new Error(`Environment status unavailable (${response.status})`)
-    setEnvironmentStatus(await response.json())
+    const result = await environmentClient.status(props.instance().id, props.profileName)
+    if (!result.ok) throw new Error(environmentErrorMessage(result.code))
+    setEnvironmentStatus(result.status)
   }
   const reloadEnvironment = async () => {
-    setSaving(true); setMessage(''); setSaveError(false)
+    setSaving(true); setMessage(''); setSaveError(false); setConflict(false)
     try {
-      await api.mutate<{ revision?: number }>(`/api/v1/instances/${encodeURIComponent(props.instance().id)}/actions`, 'POST',
-        { action: 'reloadEnvironment', expectedProfile: props.profileName }, expectedRevision())
-      setMessage('Environment reloaded. Active configurations resume; existing runs retain their captured environment.')
-    } catch {
-      setSaveError(true); setMessage('Environment reload failed. The previous successful snapshot is retained. Unlock the loader and reload; restart after changing managed names or loader configuration.')
+      const result = await environmentClient.reload(props.instance().id, props.profileName, expectedRevision())
+      // The reload response carries the status (or, on 422, the status with the
+      // safe code in lastError), so no second read can show a stale code.
+      if (result.status) setEnvironmentStatus(result.status)
+      if (result.ok) {
+        setMessage(`Environment reloaded (generation ${result.status.generation}).`)
+      } else {
+        setSaveError(true); setConflict(result.httpStatus === 409)
+        setMessage(environmentErrorMessage(result.code))
+      }
+    } catch (error) {
+      setSaveError(true); setMessage(errorMessage(error))
     } finally {
-      await loadEnvironmentStatus().catch(() => undefined)
       await props.onRefresh(); setSaving(false)
     }
   }

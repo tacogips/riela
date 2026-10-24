@@ -117,9 +117,15 @@ extension RielaApp {
   private func daemonEnvironmentStatus(for candidate: RielaAppDaemonWorkflowCandidate) -> EnvironmentStatusSummary {
     let preference = daemonPreference(for: candidate)
     let environment = daemonEnvironment(for: candidate, preference: preference)
-    let missingNames = candidate.requiredEnvironment.map(\.name).filter { name in
-      environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
-    }
+    // Loader-managed names live only in the runtime snapshot; the same rule as
+    // the console projection keeps them from showing as "Missing".
+    let profileName = resolveDaemonWorkflowInstance(identity: candidate.id)?.profileName ?? daemonProfileName
+    let missingNames = RielaAppEnvironmentPresence.missingNames(
+      candidate.requiredEnvironment.map(\.name),
+      environment: environment,
+      resolution: preference.configuration.environmentResolution,
+      status: daemonRuntime.cachedEnvironmentStatus(identity: candidate.id, profile: profileName.rawValue)
+    )
     return EnvironmentStatusSummary(
       fileDisplayName: preference.environmentFilePath.map { URL(fileURLWithPath: $0).lastPathComponent },
       inlineCount: preference.environmentVariables.count,

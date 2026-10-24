@@ -22,11 +22,42 @@ public actor RuntimeEnvironmentSnapshotStore {
     var task: Task<RuntimeEnvironmentSnapshot, Error>
   }
   private var preparations: [RuntimeEnvironmentScope: Preparation] = [:]
+  /// Bumped by `evict`; an in-flight reload whose epoch changed publishes nothing.
+  private var epochs: [RuntimeEnvironmentScope: UInt64] = [:]
+  /// Last generation of an evicted scope, so a later snapshot never reuses a number.
+  private var retiredGenerations: [RuntimeEnvironmentScope: UInt64] = [:]
   private let runner: any RuntimeEnvironmentCommandRunning
   private let maxOutputBytes: Int
 
   public init(runner: any RuntimeEnvironmentCommandRunning = RuntimeEnvironmentProcessRunner(), maxOutputBytes: Int = 1_048_576) {
     self.runner = runner; self.maxOutputBytes = maxOutputBytes
+  }
+
+  /// The required names a descriptor and workflow declare, sorted and unique.
+  public nonisolated static func requiredNames(configuration: RuntimeEnvironmentConfiguration, requiredNames: [String]) -> [String] {
+    Array(Set(configuration.required + requiredNames)).sorted()
+  }
+
+  /// The managed-name set a snapshot (and a channel child) carries: required names plus every source name.
+  public nonisolated static func managedNames(configuration: RuntimeEnvironmentConfiguration, requiredNames: [String]) -> [String] {
+    Array(Set(Self.requiredNames(configuration: configuration, requiredNames: requiredNames) + configuration.sources.flatMap(\.names))).sorted()
+  }
+
+  /// Drops the scope's credentials and status (instance deleted, profile switched).
+  /// An in-flight preparation is cancelled and an in-flight reload publishes nothing.
+  public func evict(scope: RuntimeEnvironmentScope) {
+    epochs[scope, default: 0] += 1
+    let generation = max(statuses[scope]?.generation ?? 0, entries[scope]?.snapshot.generation ?? 0, retiredGenerations[scope] ?? 0)
+    if generation > 0 { retiredGenerations[scope] = generation }
+    entries.removeValue(forKey: scope)
+    statuses.removeValue(forKey: scope)
+    preparations.removeValue(forKey: scope)?.task.cancel()
+  }
+
+  /// Evicts every scope of one profile.
+  public func evict(profile: String) {
+    let scopes = Set(entries.keys).union(statuses.keys).union(preparations.keys).union(busy)
+    for scope in scopes where scope.profile == profile { evict(scope: scope) }
   }
 
   public func status(scope: RuntimeEnvironmentScope) -> RuntimeEnvironmentStatus {
@@ -40,7 +71,7 @@ public actor RuntimeEnvironmentSnapshotStore {
 
   public func prepare(scope: RuntimeEnvironmentScope, configuration: RuntimeEnvironmentConfiguration,
                       requiredNames: [String], baseEnvironment: [String: String]) async throws -> RuntimeEnvironmentSnapshot {
-    let required = Array(Set(configuration.required + requiredNames)).sorted()
+    let required = Self.requiredNames(configuration: configuration, requiredNames: requiredNames)
     if let entry = entries[scope], entry.configuration == configuration, entry.required == required {
       return try rebase(scope: scope, baseEnvironment: baseEnvironment)
     }
@@ -68,7 +99,7 @@ public actor RuntimeEnvironmentSnapshotStore {
     for name in entry.configuration.sources.flatMap(\.names) { environment[name] = previous[name] }
     guard entry.required.allSatisfy({ !Self.empty(environment[$0]) }) else { throw RuntimeEnvironmentError.requiredMissing }
     if previous != environment {
-      guard !busy.contains(scope) else { throw RuntimeEnvironmentError.sourceFailed }
+      guard !busy.contains(scope) else { throw RuntimeEnvironmentError.reloadInProgress }
       entry.snapshot = RuntimeEnvironmentSnapshot(generation: entry.snapshot.generation + 1, names: entry.snapshot.names, environment: environment)
       entries[scope] = entry
       if var status = statuses[scope] {
@@ -84,17 +115,27 @@ public actor RuntimeEnvironmentSnapshotStore {
     value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
   }
 
+  /// Runs every loader, then (optionally) installs the candidate into a live
+  /// child before publishing it. Failure never swaps in a partial snapshot.
+  ///
+  /// Descriptor-change rule: the previous entry stays in place while loaders run.
+  /// On failure it is dropped only when `retainPreviousOnFailure` is false, so a
+  /// new descriptor never executes with an old descriptor's values; a caller with
+  /// a live child that still runs the previous snapshot passes true so the store
+  /// keeps mirroring what that child executes.
   public func reload(scope: RuntimeEnvironmentScope, configuration: RuntimeEnvironmentConfiguration,
                      requiredNames: [String], baseEnvironment: [String: String],
+                     retainPreviousOnFailure: Bool = false,
                      install: (@Sendable (RuntimeEnvironmentSnapshot) async throws -> Void)? = nil) async throws -> RuntimeEnvironmentStatus {
-    guard !busy.contains(scope) else { throw RuntimeEnvironmentError.sourceFailed }
+    // A concurrent reload is a precondition failure: no status or entry is touched.
+    guard !busy.contains(scope) else { throw RuntimeEnvironmentError.reloadInProgress }
     busy.insert(scope)
     defer { busy.remove(scope) }
-    let required = Array(Set(configuration.required + requiredNames)).sorted()
-    let names = Array(Set(required + configuration.sources.flatMap(\.names))).sorted()
-    let generation = statuses[scope]?.generation ?? 0
-    // A new descriptor must not accidentally execute with an old descriptor's values.
-    if let old = entries[scope], old.configuration != configuration || old.required != required { entries.removeValue(forKey: scope) }
+    let epoch = epochs[scope] ?? 0
+    let required = Self.requiredNames(configuration: configuration, requiredNames: requiredNames)
+    let names = Self.managedNames(configuration: configuration, requiredNames: requiredNames)
+    let generation = statuses[scope]?.generation ?? retiredGenerations[scope] ?? 0
+    let descriptorChanged = entries[scope].map { $0.configuration != configuration || $0.required != required } ?? false
     var environment = baseEnvironment
     do {
       try validate(configuration, required: required)
@@ -110,22 +151,28 @@ public actor RuntimeEnvironmentSnapshotStore {
       }
       let missing = required.filter { Self.empty(environment[$0]) }
       guard missing.isEmpty else { throw RuntimeEnvironmentError.requiredMissing }
+      guard epochs[scope] ?? 0 == epoch else { throw RuntimeEnvironmentError.notPrepared }
       let snapshot = RuntimeEnvironmentSnapshot(generation: generation + 1, names: names, environment: environment)
       // A parent may require its private child-pipe ACK before publication.
       // Failure preserves the last successful snapshot without a partial swap.
       if let install { try await install(snapshot) }
+      guard epochs[scope] ?? 0 == epoch else { throw RuntimeEnvironmentError.notPrepared }
       entries[scope] = Entry(configuration: configuration, required: required, snapshot: snapshot)
       statuses[scope] = RuntimeEnvironmentStatus(names: names, configuredNames: names.filter { !Self.empty(environment[$0]) },
         sourceIDs: configuration.sources.map(\.id), generation: snapshot.generation, readiness: .ready)
       return statuses[scope]!
     } catch {
       let safe = error as? RuntimeEnvironmentError ?? .sourceFailed
-      let previous = entries[scope]?.snapshot
-      statuses[scope] = RuntimeEnvironmentStatus(names: names,
-        configuredNames: previous.map { snapshot in names.filter { !Self.empty(snapshot.runtimeEnvironment()[$0]) } } ?? [],
-        missingNames: previous == nil ? required.filter { Self.empty(environment[$0]) } : [],
-        sourceIDs: configuration.sources.map(\.id), generation: generation,
-        readiness: previous == nil ? .failed : .ready, lastError: safe)
+      // An evicted scope stays empty: no status or entry is written back.
+      if epochs[scope] ?? 0 == epoch {
+        if descriptorChanged && !retainPreviousOnFailure { entries.removeValue(forKey: scope) }
+        let previous = entries[scope]?.snapshot
+        statuses[scope] = RuntimeEnvironmentStatus(names: names,
+          configuredNames: previous.map { snapshot in names.filter { !Self.empty(snapshot.runtimeEnvironment()[$0]) } } ?? [],
+          missingNames: previous == nil ? required.filter { Self.empty(environment[$0]) } : [],
+          sourceIDs: configuration.sources.map(\.id), generation: previous?.generation ?? generation,
+          readiness: previous == nil ? .failed : .ready, lastError: safe)
+      }
       if error is CancellationError { throw CancellationError() }
       throw safe
     }

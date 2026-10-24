@@ -33,12 +33,12 @@ public enum GraphQLRoutineStatus: String, Codable, Equatable, Sendable {
   }
 }
 
-public enum GraphQLEventOverlapPolicy: String, Codable, Equatable, Sendable {
-  case skip
-  case cancelRunning
-  case queue
-  case concurrent
-}
+/// The GraphQL enum is the core policy enum itself, so the two cannot drift.
+/// Its SDL values stay lowercase (`skip cancelRunning queue concurrent`), unlike
+/// `RoutineStatus`, because they are the literal values written to binding
+/// files and `workflow.triggerDefaults`; the committed SDL contract and design
+/// §9 fix that spelling.
+public typealias GraphQLEventOverlapPolicy = EventOverlapPolicy
 
 public struct GraphQLRoutine: Codable, Equatable, Sendable {
   public var routineId: String

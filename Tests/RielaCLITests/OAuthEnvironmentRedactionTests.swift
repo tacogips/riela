@@ -3,11 +3,7 @@ import RielaAdapters
 import RielaCore
 import RielaGraphQL
 import XCTest
-#if canImport(Darwin)
-import Darwin
-#else
-import Glibc
-#endif
+@testable import RielaCLI
 
 final class OAuthEnvironmentRedactionTests: XCTestCase {
   func testCredentialAliasSelectionDoesNotSelectSimilarPublicNames() {
@@ -26,86 +22,183 @@ final class OAuthEnvironmentRedactionTests: XCTestCase {
     XCTAssertEqual(Set(sensitiveAdapterEnvironmentValues(supplied)), Set(credentials.values))
   }
 
-  func testErrorAndRecursiveJSONRedactionUseSyntheticEnvironmentAliases() throws {
-    try withSyntheticCredentials { client, consumer, clientSecret in
-      let raw = "provider failed: \(client) and \(consumer); ordinary diagnostic survives"
-      let normalized = normalizeAdapterFailure(
-        AdapterExecutionError(.providerError, raw, isRetryable: true), fallbackMessage: "failed"
-      )
-      XCTAssertEqual(normalized.code, .providerError)
-      XCTAssertEqual(normalized.isRetryable, true)
-      let preflight = agentPreflightErrorDetail(
-        AdapterExecutionError(.providerError, raw), fallback: "preflight failed"
-      )
-      let value = redactAdapterSensitiveJSONValue(.object([
-        "message": .string(raw),
-        consumer: .array([.string(client), .object(["nested": .string(consumer)])]),
-        "public": .string("ordinary-public-document")
-      ]))
-      let encoded = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
-      for text in [normalized.message, preflight, encoded] {
-        assertNoCanaries(text, values: [client, consumer, clientSecret])
-        XCTAssertTrue(text.contains("<redacted>"))
-      }
-      XCTAssertTrue(normalized.message.contains("ordinary diagnostic survives"))
-      XCTAssertTrue(encoded.contains("ordinary-public-document"))
+  /// Real path: an agent adapter failure travels through the redaction seam
+  /// (`AdapterFailureRedactingNodeAdapter`, the outermost production adapter)
+  /// into the real runner, which
+  /// persists it as the step/session `failureReason`.
+  /// The credentials exist ONLY in the execution snapshot (as loader-provided
+  /// values do), never in `ProcessInfo`, so a ProcessInfo-only redactor would leak.
+  func testAgentFailureReasonIsRedactedFromTheExecutionSnapshot() async throws {
+    let fixture = SyntheticCredentials()
+    for value in fixture.values {
+      XCTAssertFalse(ProcessInfo.processInfo.environment.values.contains(value), "credential must be snapshot-only")
+    }
+    let store = InMemoryWorkflowRuntimeStore()
+    let adapter = AdapterFailureRedactingNodeAdapter(
+      primary: EchoingFailureAdapter(echoed: fixture.values), environment: fixture.snapshot
+    )
+    let runner = DeterministicWorkflowRunner(store: store, adapter: adapter, runtimeEnvironment: fixture.snapshot)
+    do {
+      _ = try await runner.run(request())
+      XCTFail("expected adapter failure")
+    } catch let error as AdapterExecutionError {
+      XCTAssertEqual(error.code, .providerError)
+      XCTAssertEqual(error.isRetryable, false)
+      assertNoCanaries(error.message, values: fixture.canaries)
+    }
+    let latest = await store.latestSession(workflowId: "synthetic-redaction")
+    let session = try XCTUnwrap(latest)
+    let reason = try XCTUnwrap(session.failureReason)
+    assertNoCanaries(reason, values: fixture.canaries)
+    XCTAssertTrue(reason.hasPrefix("provider_error: "), reason)
+    XCTAssertTrue(reason.contains("<redacted>"), reason)
+    XCTAssertTrue(reason.contains("ordinary diagnostic survives"), reason)
+
+    // The persisted artifact and the GraphQL projection carry the same redacted reason.
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("tmp/oauth-redaction-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let persistence = FileWorkflowRuntimePersistenceStore(rootDirectory: root.path)
+    try persistence.save(WorkflowRuntimePersistenceSnapshot(session: session, diagnostics: [reason]))
+    let artifact = try String(
+      contentsOf: root.appendingPathComponent(session.sessionId).appendingPathComponent("runtime-snapshot.json"),
+      encoding: .utf8
+    )
+    let loaded = try persistence.load(sessionId: session.sessionId)
+    let projected = GraphQLContractProjector.project(
+      session: loaded.session, logs: [.init(level: "error", message: loaded.diagnostics[0])]
+    )
+    let graphqlText = try XCTUnwrap(String(bytes: try JSONEncoder().encode(projected), encoding: .utf8))
+    for text in [artifact, graphqlText] {
+      assertNoCanaries(text, values: fixture.canaries)
+      XCTAssertTrue(text.contains("redacted"))
     }
   }
 
-  func testNormalizedDiagnosticsStayRedactedInRuntimeArtifactAndGraphQLProjection() throws {
-    try withSyntheticCredentials { client, consumer, clientSecret in
-      let normalized = normalizeAdapterFailure(
-        AdapterExecutionError(.providerError, "synthetic failure \(client) \(consumer)"),
-        fallbackMessage: "adapter failed"
+  /// Only `AdapterExecutionError` is redacted. Every other error passes through
+  /// the seam unchanged (same type and value), including
+  /// `WorkflowPublicationError.validationRejected`, which the runner's retry
+  /// loop matches on, and cancellation.
+  func testNonAdapterErrorsPassThroughTheSeamUnchanged() async throws {
+    let fixture = SyntheticCredentials()
+    let values = sensitiveAdapterEnvironmentValues(fixture.snapshot)
+    let rejected = WorkflowPublicationError.validationRejected("schema mismatch")
+    XCTAssertEqual(redactedAdapterFailure(rejected, sensitiveValues: values) as? WorkflowPublicationError, rejected)
+    XCTAssertTrue(redactedAdapterFailure(CancellationError(), sensitiveValues: values) is CancellationError)
+    let other = redactedAdapterFailure(SyntheticError(text: "plain"), sensitiveValues: values)
+    XCTAssertEqual((other as? SyntheticError)?.text, "plain")
+
+    let adapter = AdapterFailureRedactingNodeAdapter(primary: ThrowingAdapter(error: rejected), environment: fixture.snapshot)
+    do {
+      _ = try await adapter.execute(
+        AdapterExecutionInput(node: AgentNodePayload(id: "node", model: "gpt-5.5"), promptText: "hello"),
+        context: AdapterExecutionContext()
       )
-      let log = agentPreflightErrorDetail(
-        AdapterExecutionError(.providerError, "synthetic preflight \(client) \(consumer)"),
-        fallback: "preflight failed"
-      )
-      let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        .deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("tmp/oauth-redaction-\(UUID().uuidString)", isDirectory: true)
-      defer { try? FileManager.default.removeItem(at: root) }
-      let date = Date(timeIntervalSince1970: 1_700_000_000)
-      let session = WorkflowSession(
-        workflowId: "synthetic-redaction", sessionId: "synthetic-redaction-session",
-        status: .failed, entryStepId: "inspect", createdAt: date, updatedAt: date,
-        failureReason: normalized.message
-      )
-      let snapshot = WorkflowRuntimePersistenceSnapshot(session: session, diagnostics: [log])
-      let store = FileWorkflowRuntimePersistenceStore(rootDirectory: root.path)
-      try store.save(snapshot)
-      let artifact = root.appendingPathComponent(session.sessionId)
-        .appendingPathComponent("runtime-snapshot.json")
-      let artifactText = try String(contentsOf: artifact, encoding: .utf8)
-      let loaded = try store.load(sessionId: session.sessionId)
-      let projected = GraphQLContractProjector.project(
-        session: loaded.session, logs: [.init(level: "error", message: loaded.diagnostics[0])]
-      )
-      let graphqlText = String(decoding: try JSONEncoder().encode(projected), as: UTF8.self)
-      for text in [artifactText, graphqlText] {
-        assertNoCanaries(text, values: [client, consumer, clientSecret])
-        XCTAssertTrue(text.contains("redacted"))
-        XCTAssertTrue(text.contains("synthetic"))
-      }
+      XCTFail("expected validationRejected")
+    } catch let error as WorkflowPublicationError {
+      XCTAssertEqual(error, rejected)
     }
   }
 
-  private func withSyntheticCredentials(_ body: (String, String, String) throws -> Void) rethrows {
-    let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "_")
-    let clientName = "RIELA_SYNTHETIC_\(suffix)_OAUTH_CLIENT_JSON"
-    let consumerName = "RIELA_SYNTHETIC_\(suffix)_CONSUMER_KEY"
-    let secret = "synthetic-oauth-inner-canary-\(suffix)"
-    let client = "{\"installed\":{\"client_secret\":\"\(secret)\"}}"
-    let consumer = "synthetic-consumer-canary-\(suffix)"
-    setenv(clientName, client, 1)
-    setenv(consumerName, consumer, 1)
-    defer { unsetenv(clientName); unsetenv(consumerName) }
-    // Unique synthetic names: never inspect or replace an existing real credential.
-    try body(client, consumer, secret)
+  /// Successful outputs are returned untouched.
+  func testSuccessfulOutputPassesThroughTheSeamUnchanged() async throws {
+    let fixture = SyntheticCredentials()
+    let output = AdapterExecutionOutput(
+      provider: "codex", model: "gpt-5.5", promptText: "echo \(fixture.consumer)", completionPassed: true,
+      when: ["done": true], payload: ["text": .string(fixture.consumer)]
+    )
+    let adapter = AdapterFailureRedactingNodeAdapter(primary: SucceedingAdapter(output: output), environment: fixture.snapshot)
+    let result = try await adapter.execute(
+      AdapterExecutionInput(node: AgentNodePayload(id: "node", model: "gpt-5.5"), promptText: "hello"),
+      context: AdapterExecutionContext()
+    )
+    XCTAssertEqual(result, output)
+  }
+
+  /// The production chain (agent backends, sandboxed or not) ends in the seam,
+  /// fed from the execution snapshot the adapter is built with.
+  func testProductionAdapterChainIsWrappedByTheRedactionSeam() {
+    XCTAssertTrue(makeProductionNodeAdapter(environment: [:]) is AdapterFailureRedactingNodeAdapter)
+  }
+
+  private func request() -> DeterministicWorkflowRunRequest {
+    DeterministicWorkflowRunRequest(
+      workflow: WorkflowDefinition(
+        workflowId: "synthetic-redaction",
+        defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 3),
+        entryStepId: "inspect",
+        nodeRegistry: [WorkflowNodeRegistryRef(id: "node", nodeFile: "nodes/node.json")],
+        steps: [WorkflowStepRef(id: "inspect", nodeId: "node")],
+        nodes: [WorkflowNodeRef(id: "node", nodeFile: "nodes/node.json")]
+      ),
+      nodePayloads: [
+        "node": AgentNodePayload(id: "node", executionBackend: .codexAgent, model: "gpt-5.5", agentSandbox: .readOnly)
+      ]
+    )
   }
 
   private func assertNoCanaries(_ text: String, values: [String], file: StaticString = #filePath, line: UInt = #line) {
     for value in values { XCTAssertFalse(text.contains(value), "synthetic credential leaked", file: file, line: line) }
   }
+}
+
+/// Synthetic snapshot-only credentials with unique names. Nothing is exported
+/// to the process environment (no `setenv`), so parallel tests are unaffected.
+private struct SyntheticCredentials {
+  let client: String
+  let consumer: String
+  let secret: String
+  let snapshot: [String: String]
+
+  init() {
+    let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "_")
+    secret = "synthetic-oauth-inner-canary-\(suffix)"
+    client = "{\"installed\":{\"client_secret\":\"\(secret)\"}}"
+    consumer = "synthetic-consumer-canary-\(suffix)"
+    snapshot = [
+      "RIELA_SYNTHETIC_\(suffix)_OAUTH_CLIENT_JSON": client,
+      "RIELA_SYNTHETIC_\(suffix)_CONSUMER_KEY": consumer,
+      "PUBLIC_DOCUMENT_TITLE": "ordinary-public-document"
+    ]
+  }
+
+  var values: [String] { [client, consumer] }
+  var canaries: [String] { [client, consumer, secret] }
+}
+
+/// Simulates a provider that echoes credentials into its failure text.
+private struct EchoingFailureAdapter: NodeAdapter {
+  let echoed: [String]
+
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    throw AdapterExecutionError(
+      .providerError,
+      "provider rejected credentials \(echoed.joined(separator: " ")); ordinary diagnostic survives",
+      isRetryable: false
+    )
+  }
+
+  func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {}
+}
+
+private struct SyntheticError: Error, CustomStringConvertible {
+  let text: String
+  var description: String { text }
+}
+
+private struct ThrowingAdapter: NodeAdapter {
+  let error: any Error
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    throw error
+  }
+  func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {}
+}
+
+private struct SucceedingAdapter: NodeAdapter {
+  let output: AdapterExecutionOutput
+  func execute(_ input: AdapterExecutionInput, context: AdapterExecutionContext) async throws -> AdapterExecutionOutput {
+    output
+  }
+  func workflowRunDidEnd(_ context: WorkflowRunLifecycleContext) async {}
 }

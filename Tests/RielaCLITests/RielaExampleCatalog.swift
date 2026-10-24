@@ -43,6 +43,7 @@ func rielaExampleWorkflowNames() -> [String] {
     "loop-outcome-notifications",
     "loop-stall-guard",
     "managed-cache-checkpoint",
+    "managed-cache-maintenance",
     "matrix-agent-trio-chat",
     "matrix-chat-reply",
     "memory-consolidation",

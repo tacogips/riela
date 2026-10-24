@@ -19,6 +19,9 @@ public func validateAgentNodePayload(
         "cannot combine jsonSchema with jsonSchemaFrom; declare one schema"))
     }
   }
+  if let locks = payload.command?.executionLocks {
+    do { try locks.validate() } catch { diagnostics.append(.init(severity: .error, path: "\(path).command.executionLocks", message: "invalid command execution locks")) }
+  }
   if let failureDiagnostics = payload.command?.failureDiagnostics {
     diagnostics += commandFailureDiagnosticsWarnings(failureDiagnostics, path: "\(path).command.failureDiagnostics")
   }

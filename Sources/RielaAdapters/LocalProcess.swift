@@ -16,6 +16,7 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
   public var inheritEnvironment: Bool
   /// Maximum retained stdout bytes; excess bytes are drained without retaining or streaming them.
   public var stdoutCaptureByteLimit: Int?
+  public var inheritedDescriptors: Set<Int32>
 
   public init(
     executableURL: URL,
@@ -25,7 +26,8 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     workingDirectoryURL: URL? = nil,
     sandboxPolicy: LocalProcessSandboxPolicy? = nil,
     inheritEnvironment: Bool = true,
-    stdoutCaptureByteLimit: Int? = nil
+    stdoutCaptureByteLimit: Int? = nil,
+    inheritedDescriptors: Set<Int32> = []
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
@@ -35,6 +37,7 @@ public struct LocalProcessConfiguration: Equatable, Sendable {
     self.sandboxPolicy = sandboxPolicy
     self.inheritEnvironment = inheritEnvironment
     self.stdoutCaptureByteLimit = stdoutCaptureByteLimit
+    self.inheritedDescriptors = inheritedDescriptors
   }
 }
 
@@ -613,6 +616,17 @@ private func spawnProcess(
   try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, outputWriteDescriptor), operation: "close child stdout pipe")
   try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, errorReadDescriptor), operation: "close child stderr reader")
   try checkPosixSpawn(posix_spawn_file_actions_addclose(&fileActions, errorWriteDescriptor), operation: "close child stderr pipe")
+  for descriptor in configuration.inheritedDescriptors.sorted() {
+    guard descriptor > STDERR_FILENO,
+      ![inputReadDescriptor, inputWriteDescriptor, outputReadDescriptor, outputWriteDescriptor, errorReadDescriptor, errorWriteDescriptor].contains(descriptor) else {
+      throw AdapterExecutionError(.policyBlocked, "invalid inherited command descriptor")
+    }
+    #if canImport(Darwin)
+    try checkPosixSpawn(posix_spawn_file_actions_addinherit_np(&fileActions, descriptor), operation: "inherit command lock")
+    #else
+    try checkPosixSpawn(posix_spawn_file_actions_adddup2(&fileActions, descriptor, descriptor), operation: "inherit command lock")
+    #endif
+  }
   if let workingDirectoryURL = configuration.workingDirectoryURL {
     try workingDirectoryURL.path.withCString { path in
       try checkPosixSpawn(posix_spawn_file_actions_addchdir_np(&fileActions, path), operation: "set working directory")

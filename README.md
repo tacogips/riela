@@ -1865,6 +1865,9 @@ RielaApp and `riela serve` can host a worker controller, with outbound
 See [controller and worker setup](docs/distributed-workers.md) for configuration,
 workspace mapping, verified platform coverage and operational limits.
 
+Command nodes can declare [execution locks](docs/command-execution-locks.md)
+held through process completion and cancellation cleanup.
+
 Command nodes can opt into non-authoritative failure metadata with
 `command.failureDiagnostics: {"path": ["diagnostics"], "schema": ..., "maxBytes": 16384}`.
 The trusted path selects an object; raw sibling fields are never retained. Opted-in

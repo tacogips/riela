@@ -28,7 +28,22 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
     }
     try enforcePolicy(input.policy, input: input)
     let inputLine = try invocationInputJSONL(for: input)
-    let configuration = try processConfiguration(for: input)
+    var configuration = try processConfiguration(for: input)
+    var lease: CommandExecutionLockLease?
+    if let policy = input.node.command?.executionLocks, input.kind == .command {
+      try Task.checkCancellation()
+      if let deadline = context.deadline, deadline <= Date() { throw AdapterExecutionError(.timeout, "command execution deadline reached") }
+      if let acquired = try CommandExecutionLockLease.acquire(policy, environment: hostEnvironment, workingDirectory: configuration.workingDirectoryURL) {
+        lease = acquired
+        configuration.inheritedDescriptors = acquired.descriptors
+        configuration.environment[CommandExecutionLockLease.environmentKey] = try acquired.receipt()
+        configuration.unsetEnvironmentKeys.remove(CommandExecutionLockLease.environmentKey)
+      } else if policy.onBusy != .run {
+        guard let payload = policy.busyPayload else { throw AdapterExecutionError(.policyBlocked, "command execution resources busy") }
+        return .init(payload: payload)
+      }
+    }
+    defer { lease?.release() }
     let startedAt = Date()
     let result = try await runner.run(configuration: configuration, stdin: inputLine, deadline: context.deadline)
     let durationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
@@ -235,7 +250,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   }
 
   private func workingDirectoryURL(_ path: String?) -> URL? {
-    path.map { URL(fileURLWithPath: $0) }
+    path.map { URL(fileURLWithPath: $0, isDirectory: true) }
   }
 
   private func processInvocation(executable: String, arguments: [String]) -> (executableURL: URL, arguments: [String]) {
@@ -300,7 +315,7 @@ public struct LocalWorkflowStdioNodeExecutor: WorkflowStdioNodeExecuting {
   }
 
   private var strippedEnvironmentKeys: Set<String> {
-    ["RIELA_MAILBOX_DIR", "RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT"]
+    ["RIELA_MAILBOX_DIR", "RIELA_WORKFLOW_INPUT", "RIELA_WORKFLOW_OUTPUT", CommandExecutionLockLease.environmentKey]
   }
 
   private func commandEvidence(

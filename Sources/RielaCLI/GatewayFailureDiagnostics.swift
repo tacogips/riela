@@ -24,6 +24,8 @@ enum GatewayFailureDiagnostics {
   private static let providerReasons: Set<String> = [
     "client-not-enrolled", "insufficient-scope", "unsupported-authentication", "usage-capped", "unknown"
   ]
+  private static let xRequestParameters: Set<String> = ["query", "since_id", "until_id", "start_time", "end_time",
+    "next_token", "pagination_token", "max_results", "expansions", "tweet.fields", "user.fields", "media.fields"]
 
   private static let gmailBodyReasons: Set<String> = [
     "messageEnvelope", "bodyDescriptor", "externalBodyDescriptor", "externalBodyResponse", "treeLimit",
@@ -39,6 +41,32 @@ enum GatewayFailureDiagnostics {
   /// Largest envelope inspected when its size comes from X `error.resourceUsage`
   /// telemetry; the rest of the envelope must still fit `maximumEnvelopeBytes`.
   static let maximumTelemetryEnvelopeBytes = XGatewayUsageCacheExchange.maximumEnvelopeBytes
+
+  /// Re-admit only the finite suffix already emitted by a reader. Collector
+  /// partial results must never copy an arbitrary exception/provider message.
+  static func fields(readerMessage: String) -> JSONObject {
+    guard readerMessage.utf8.count <= maximumEnvelopeBytes, readerMessage.hasSuffix(")"),
+      let range = readerMessage.range(of: " (code=", options: .backwards) else { return [:] }
+    let body = readerMessage[range.lowerBound...].dropFirst(2).dropLast()
+    var raw: JSONObject = [:]
+    for field in body.components(separatedBy: ", ") {
+      let pair = field.split(separator: "=", omittingEmptySubsequences: false)
+      guard pair.count == 2, pair[0].utf8.count <= 64, pair[1].utf8.count <= 64 else { return [:] }
+      let key = String(pair[0]), value = String(pair[1])
+      guard raw[key] == nil else { return [:] }
+      if value == "true" || value == "false" { raw[key] = .bool(value == "true")
+      } else if let number = Int64(value) { raw[key] = .integer(number)
+      } else { raw[key] = .string(value) }
+    }
+    guard let clean = suffix(error: raw) else { return [:] }
+    let keys = clean.dropFirst(2).dropLast().components(separatedBy: ", ").compactMap { $0.split(separator: "=").first.map(String.init) }
+    var result = raw.filter { keys.contains($0.key) }
+    if raw["code"] == .string("UPSTREAM_FAILURE"), raw["httpStatus"] == .integer(400),
+      case let .string(parameter)? = raw["xInvalidRequestParameter"], xRequestParameters.contains(parameter) || parameter == "multiple" {
+      result["xInvalidRequestParameter"] = .string(parameter)
+    }
+    return result
+  }
 
   static func suffix(stdout: String, stderr: String = "") -> String {
     for text in [stderr, stdout] {
@@ -129,12 +157,10 @@ enum GatewayFailureDiagnostics {
     guard case let .string(details)? = error["details"], details.utf8.count <= maximumEnvelopeBytes,
           let provider = try? JSONDecoder().decode(JSONObject.self, from: Data(details.utf8)),
           case let .array(errors)? = provider["errors"] else { return nil }
-    let allowed: Set<String> = ["query", "since_id", "until_id", "start_time", "end_time",
-      "next_token", "pagination_token", "max_results", "expansions", "tweet.fields", "user.fields", "media.fields"]
     var parameters = Set<String>()
     for value in errors.prefix(16) {
       guard case let .object(item) = value, case let .object(values)? = item["parameters"] else { continue }
-      parameters.formUnion(values.keys.filter { allowed.contains($0) })
+      parameters.formUnion(values.keys.filter { xRequestParameters.contains($0) })
     }
     if parameters.count == 1 { return parameters.first }
     return parameters.isEmpty ? nil : "multiple"

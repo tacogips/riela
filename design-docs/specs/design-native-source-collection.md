@@ -387,3 +387,41 @@ An actual offline cache/snapshot test verifies LRU misses retain unpublished IDs
 fresh polling advances independently, and a stale writer cannot replace the new
 head. This migration does not certify the remaining Web/outer-coordination,
 matching Linux/release/production cutover or post-cutover two-hour gate.
+
+
+## Exact-ID X body recovery
+
+`riela/x-collect` accepts `options.mode: "lookup"` for cache-missing known roots.
+It takes `ids` (at most5000 distinct numeric IDs), `expectedHandle`,
+`expectedAccount`, optional `maxPosts` (1..100, default100), optional aware
+`start`/`end` bounds, `includeStatusLinks` and `includeCoverageMetadata`.
+The same native SDK reader handles user/usage caches and credentials. This mode
+never performs timeline/search requests. Before the single bounded `posts`
+request it verifies the authenticated account. An empty ID list makes no paid
+request. Cancellation propagates. Invalid scope/options fail before API reads;
+root response IDs/text/timestamps/bounds must match the attempted set.
+
+The result contains `posts`, `requestedIds`, `returnedIds`, `deferredIds`,
+`pendingIds`, `accountId`, `complete`, `failures`, plus the opaque caller
+`context`. At most100 roots are attempted in one turn; every deferred or
+unavailable root remains pending. A failed/malformed lookup preserves the whole
+attempted set as pending; it is not a source cursor update or publication ACK.
+Embedded quote/media data is handled as optional context by the private domain
+normalizer, so invalid context does not hold unrelated accepted roots. Posts
+are bounded to6MB before export and the whole output to8MB. The collector
+reserves space for context and exact-ID metadata before payment; an unusable
+frame is rejected before account/lookup calls. Individually oversized bodies
+remain pending while fitting peers continue. Results are raw
+provider data and belong inside a private acquisition workflow until inspected.
+
+ART's specified-author private graph uses this mode for both ordinary cache
+recovery and missing originals during research. ART supplies allowed author IDs,
+account/window metadata and legacy logical-ID mappings. The native node owns the
+actual lookup/availability partition. Existing native batch/fanout/gather nodes
+inspect accepted roots in that same private graph. The host commits only checked
+versions with native manifest recovery/CAS; screening rejections remain pending.
+The task binds the exact original source-head token and preserves the acquisition
+cursor. A resumed research turn reuses its selected ID prefix instead of rotating
+its attempt journal again. The old non-native compatibility collector is not a
+fallback from this native handoff. Matching guest/release/cutover and a new real
+two-hour acquisition/publication audit still remain mandatory.

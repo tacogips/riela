@@ -93,7 +93,7 @@ struct XCollectionOptions {
     return Int(value)
   }
 
-  private static func postFields(depth: Int, links: Bool, coverage: Bool) -> JSONObject {
+  static func postFields(depth: Int, links: Bool, coverage: Bool) -> JSONObject {
     func fields(_ names: [String]) -> JSONValue { .object(Dictionary(uniqueKeysWithValues: names.map { ($0, .bool(true)) })) }
     var value: JSONObject = ["id": .bool(true), "text": .bool(true), "createdAt": .bool(true),
       "author": fields(["id", "username", "name"]), "media": fields(["kind", "contentType", "sourceUrl", "previewImageUrl"])]

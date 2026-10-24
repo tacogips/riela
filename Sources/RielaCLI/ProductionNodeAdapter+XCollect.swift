@@ -14,11 +14,9 @@ extension BuiltinWorkflowAddonResolver {
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
       Set(config.keys).isSubset(of: ["options", "context", "userCache", "usageCache", "usageScope"]),
       case let .object(values)? = config["options"], try JSONEncoder().encode(config).count <= 8_000_000 else { throw xCollectionInvalid() }
-    let options = try XCollectionOptions(values)
     var cache = config.filter { ["userCache", "usageCache", "usageScope"].contains($0.key) }
     for name in ["userCache", "usageCache"] where cache[name] == nil { cache[name] = .bool(false) }
-    let collector = XAuthorCollector(options: options)
-    var payload = try await collector.collect { operation, arguments, selection in
+    func fetch(_ operation: String, _ arguments: JSONObject, _ selection: JSONObject) async throws -> JSONObject {
       var request = cache
       request.merge(["operation": .string(operation), "arguments": .string("{{collectorArguments}}"),
         "select": .object(selection), "postprocess": .array([.object(["pick": .string("/data/" + operation)])])]) { _, new in new }
@@ -28,6 +26,14 @@ extension BuiltinWorkflowAddonResolver {
       let output = try await execute(child, context: context)
       guard case let .object(response)? = output.payload["processed"] else { throw xCollectionInvalid() }
       return response
+    }
+    var payload: JSONObject
+    switch values["mode"] {
+    case .string("lookup")?:
+      let budget = 8_000_000 - (try JSONEncoder().encode(config["context"] ?? .null).count) - 64
+      payload = try await XLookupCollection(values).collect(outputByteBudget: budget, fetch: fetch)
+    case nil: payload = try await XAuthorCollector(options: .init(values)).collect(fetch: fetch)
+    default: throw xCollectionInvalid()
     }
     payload["context"] = config["context"] ?? .null
     guard try JSONEncoder().encode(payload).count <= 8_000_000 else { throw xCollectionInvalid() }
@@ -107,8 +113,7 @@ struct XAuthorCollector {
     posts = posts.filter { value in value["id"].flatMap { nonEmptyString($0) }.map { seen.insert($0).inserted } ?? false }
     guard posts.count <= options.maximum, try JSONEncoder().encode(posts).count <= 6_000_000 else { throw xCollectionInvalid() }
     let checkpoint: JSONObject
-    if groups.count == 1, case let .object(single)? = checkpoints["0"] { checkpoint = single }
-    else {
+    if groups.count == 1, case let .object(single)? = checkpoints["0"] { checkpoint = single } else {
       let children = checkpoints.values.compactMap { if case let .object(value) = $0 { return value }; return nil }
       let complete = children.allSatisfy { if case let .object(coverage)? = $0["coverage"] { return coverage["complete"] == .bool(true) }; return false }
       var combined: JSONObject = ["author_scope": .string(options.scope), "author_shards": .object(checkpoints),
@@ -146,8 +151,7 @@ struct XAuthorCollector {
         if future > 0 { try await Task.sleep(for: .seconds(future)) }
         let response = try await fetch("searchPosts", arguments, options.selection)
         try window.accept(response, at: ISO8601DateFormatter().string(from: clock()))
-      } catch is CancellationError { throw CancellationError() }
-      catch {
+      } catch is CancellationError { throw CancellationError() } catch {
         window.failed = true
         failures.append(.object(["shard": .integer(Int64(shard)), "stage": .string(label), "code": .string("page-unavailable")]))
         return false

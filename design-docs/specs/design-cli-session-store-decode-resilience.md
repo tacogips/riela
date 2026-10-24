@@ -120,6 +120,99 @@ The approved minimal observation seam belongs to
 `Sources/RielaCore/RuntimeStore.swift`; the scope decision is recorded in
 `design-docs/user-qa/qa-cli-session-store-decode-resilience.md`.
 
+## Recovery hydration scope (issue #32, 2026-10-24)
+
+- Status: design, ready for implementation planning
+- Issue: tacogips/riela#32, "session resume of a maxStepsExceeded codex
+  session stalls with no output and no backend child" (local copy
+  `tmp/run/issue-32.md`). `session rerun` has the same symptom.
+- Precedent: `impl-plans/fresh-run-identity-hydration.md` (#156, `fb912a5a`,
+  `fca928cd`) made fresh runs metadata-only. It deliberately left resume,
+  rerun and recovery on full hydration.
+
+### Root cause (confirmed part)
+
+`riela session resume` (`SessionCommands.swift:743`) and `session rerun`
+(`:471`) call `makeSeededProductionRuntimeStore` with the default
+`hydrateSessions: true`. `seedRuntimeStoreFromPersistedCLIState` then decodes
+the whole store before the runner emits its first event:
+
+- every CLI record (`loadAll()`), plus one canonical snapshot load with all
+  `workflowMessages` for each record;
+- every remaining canonical snapshot (`persistenceStore.loadAll()`).
+
+`workflow run --resume` does the same, and its fail-closed wrapper then calls
+`FailClosedSQLiteWorkflowRuntimeStore.hydrate()`, which runs a second full
+`loadAll()` (`WorkflowRunCommand.swift:322-331`). The cost before the first
+JSONL line is therefore O(entire store: sessions × executions × payload and
+backend-event bytes), not O(target session). The stall scales with unrelated
+history.
+
+The report's ~2 s CPU over 15 minutes points to blocking rather than parsing.
+That part was not reproduced on the current tree. It is recorded as residual
+risk; this design adds no speculative change for it. The fix below removes
+the unbounded pre-first-event work, and the regression test asserts that the
+first event comes promptly. If a hung resume or rerun reproduces after the fix,
+the implementer captures a process `sample` (stack) of it under `tmp/<task>/`
+before closing #32. That captures the remaining blocking cause without
+guessing at it here.
+
+### Contract
+
+1. `makeSeededProductionRuntimeStore(sessionStoreRoot:executionLocks:hydration:)`
+   replaces `hydrateSessions: Bool` with a required
+   `hydration: .none | .family(of: sessionId)`. There is no default, so every
+   call site chooses explicitly. Call sites that pass
+   `resumeSessionId`/`rerunFromSessionId` use `.family`. Fresh-run call sites
+   (including `WorkflowPackageParityCommands.swift:449` if it never resumes)
+   use `.none`.
+2. Identity high-water marks are always metadata-only, in both modes:
+   `observeStartupIdentities` plus `observePersistedIdentities`, with the
+   existing stale-projection retry. Unrelated sessions therefore still advance
+   the session, execution and communication counters, but are never decoded.
+3. Family resolution uses the indexed canonical columns:
+   `root = (SELECT root_session_id FROM workflow_runtime_snapshots WHERE workflow_execution_id = ?)`,
+   then every snapshot with `root_session_id = root` (index
+   `idx_workflow_runtime_snapshots_root`), plus the target itself. The family
+   covers what resume/rerun actually reads through the runtime store:
+   - the target session and its messages (`resolveResumeEntry`,
+     `resolveRerunEntry`, `rerunCarriedInbox`, preserved history);
+   - reserved cross-workflow/fanout children that
+     `recoverNestedInvocationsBeforeResuming` re-enters through
+     `run(resumeSessionId: child)`;
+   - a durable-supervisor reserved child snapshot with no CLI record yet,
+     which is the reason for the comment at `CLIWorkflowSessionStore.swift:570-572`.
+
+   A target that has only a CLI record and no canonical snapshot is a family
+   of one.
+4. Seeding order per family member does not change: the CLI record session
+   (targeted `load(sessionId:)`) when present, otherwise the canonical
+   snapshot, then that member's `workflowMessages`. Undecodable records keep
+   the existing targeted-read warning and not-found contract above.
+5. `FailClosedSQLiteWorkflowRuntimeStore.hydrate()` takes the same family id
+   set instead of calling `loadAll()`.
+6. Non-goals: no schema change and no new index (the root index exists). No
+   change to fresh-run behavior or to decode tolerance.
+
+### Regression coverage
+
+- New tests in `Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift`
+  (or a sibling suite). The isolated synthetic store holds about 200 unrelated
+  sessions, each with multi-hundred-KiB execution payloads, backend event
+  streams and messages, plus a target family (a parent with one reserved
+  cross-workflow child).
+- Structural assertion (deterministic): after `.family(target)` seeding, the
+  runtime store returns sessions only for family ids. Unrelated ids are not
+  loaded, and the next allocated session id is still above every unrelated id.
+- Bound assertion: family seeding finishes within a generous absolute bound
+  (seconds). It is a guard against a return to O(store) work, not a
+  micro-benchmark; the structural assertion is the primary oracle.
+- CLI assertion: `session resume <target> --output jsonl` (provider-free
+  command or mock workflow) emits its first JSONL record within the bound, and
+  `session rerun` from the same store does the same.
+- Existing nested-resume, durable-reservation and fresh-run identity suites
+  stay green.
+
 ## Validation and regression coverage
 
 The regression fixture uses `RielaCLITemporaryDirectory`, saves one current

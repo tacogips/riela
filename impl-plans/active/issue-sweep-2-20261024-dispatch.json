@@ -1,0 +1,440 @@
+{
+  "taskId": "issue-sweep-2-20261024",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/issue-sweep-2-20261024",
+  "baseBranch": "feat/issue-sweep-2-20261024",
+  "remote": "origin",
+  "originalHead": "90d445210e64990da64631aefb7433b7851a67ea",
+  "designDocPaths": [
+    "design-docs/specs/design-cli-session-store-decode-resilience.md",
+    "design-docs/specs/design-cancellation-and-orphan-session-resilience.md",
+    "design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md",
+    "design-docs/user-qa/qa-issue-sweep-2-2026-10-24.md"
+  ],
+  "evidenceRoot": "tmp/issue-sweep-2-20261024",
+  "reviewContext": {
+    "issueReference": "tacogips/riela#32, #27, #74; plan review comm-000010 (step5-impl-plan-review, accepted)",
+    "userProblem": "Three riela issues are still open. (1) #32: riela session resume/rerun and workflow run --resume hydrate the entire persisted store (every CLI record, message and canonical snapshot, plus a second full loadAll in FailClosedSQLiteWorkflowRuntimeStore.hydrate) before the first JSONL event. On a large store this stalls for minutes. (2) #27: graceful cancellation is persisted as failed with failureKind cancelled. Agent-gateway turns cancelled by the host surface as providerError, invalid output or adapterFailure. Sessions whose runner was hard-killed stay running forever. (3) #74: there is no first-class way for an LLM brain node to generate a workflow, have the runtime validate and run it as a bounded child session, and get its result back.",
+    "requiredOutcomes": [
+      "#32: resume, rerun and --resume hydrate only the target's session family (same root_session_id plus the target). Identity high-water marks stay metadata-only. A synthetic 200-session large-payload regression seeds in under 5 s and emits the first JSONL record within 5 s. The root cause is documented.",
+      "#27 P1: WorkflowSessionStatus and WorkflowStepExecutionStatus gain a persisted 'cancelled' case with tolerant decode (unknown → failed). Graceful cancellation persists status cancelled with failureKind cancelled. Every terminal predicate treats cancelled as terminal. Exit code stays 1, and cancelled is not resumable but can be rerun.",
+      "#27 P2: agent-gateway turns and executeWithRetry rethrow CancellationError when the host task is cancelled, never providerError or policy errors. Deadline expiry still reports timeout.",
+      "#27 P4: riela session reconcile (dry run by default, --apply) marks running sessions whose per-session flock can be acquired as cancelled with a stable 'runner process lost' reason, and never modifies live sessions. blocksResume and the FailClosed terminal hook handle cancelled. A docs file describes what is done and the follow-ups.",
+      "#74: authored transition.dynamicWorkflow is validated by DefaultWorkflowValidator. DynamicWorkflowPolicy enforces deny-by-default privileges, size bounds and a key allowlist on the brain envelope. The runner materializes a generated workflow through the shared TemporaryWorkflowPayload materializer, validates it, runs it as a child session with parent/root lineage and generatedWorkflow provenance (iteration, digest), delivers one dynamicWorkflowResult message, and repeats until finish or maxIterations (budgetExceeded). Durable resume and invalid-iteration recovery never re-run the brain.",
+      "#74 example: examples/brain-generated-workflow-loop validates cleanly and completes two distinct generate/execute iterations under riela workflow run --mock-scenario. It is registered in the catalog (expectedMockScenarioCount 45) and has user docs.",
+      "swift build succeeds and swiftlint reports no new warnings in changed files."
+    ],
+    "nonGoals": [
+      "Detach/reattach for short-lived drivers (#27 P5); this is a follow-up.",
+      "Cancellation-aware auto-improve supervision (#27 P3), which no longer applies because auto-improve was removed.",
+      "pid/host/heartbeat ownership fields, passive orphan reporting in status/list, and GraphQL/web/library surfaces for reconcile.",
+      "Mapping cancelled to exit code 128+signal; making cancelled sessions resumable.",
+      "Timeout or abort logic for the unreproduced low-CPU #32 stall; schema or index changes.",
+      "Registry persistence or promotion of generated workflows (#40); wall-clock or cost budgets for the whole loop.",
+      "Running the full swift test suite as a gate; RielaExampleParityTests.testMockScenarioExamplesRunThroughSwiftCLI (known red for x-follower-ai-business-digest).",
+      "Pushing (gitPush=false)."
+    ],
+    "constraints": [
+      "Run swift build/test and swiftlint through arch -arm64 /bin/zsh -lc from the repository root.",
+      "Every verification record includes integer exitStatus, testsRun and failureCount and the complete log path under tmp/issue-sweep-2-20261024/<plan>/.",
+      "The runtime store owns identities. The next allocated session, step-execution and communication ids stay above every persisted value, including unrelated and unreadable rows.",
+      "New enum cases decode tolerantly; there are no backward-compat shims beyond that and no rewrites of old store rows.",
+      "Shared files are edited only in the hunks listed in each plan's sharedPathNotes. Re-read the file just before editing and confirm the earlier plan's hunks are intact afterwards.",
+      "Workers run no index- or worktree-changing git commands and record pre/post sha256 for every edit under their scratch snapshots directory.",
+      "Blockers are dependency objects naming the out-of-scope path.",
+      "Scratch files go only under tmp/issue-sweep-2-20261024/. Do not modify tmp/opus-luna-bundle or tmp/run."
+    ],
+    "designDecisionsAndRationale": [
+      "#32 hydrates the session family rather than only the target, because nested resume re-enters reserved children (user-QA 1). It uses the existing idx_workflow_runtime_snapshots_root through a new SessionFamily extension file, so SQLiteWorkflowRuntimePersistenceStore.swift stays owned by ISW2-27a.",
+      "#27 makes cancelled a real persisted status picked up by the generated session_status column, and keeps failureKind cancelled. isCancellation lets legacy failed+cancelled rows behave the same (user-QA 3, 6).",
+      "#27 orphan detection reuses the per-session execution flock, which the kernel releases on process death. The lock is held across the re-read and save to avoid a resume race (user-QA 5).",
+      "#74 is a runner-level transition extension rather than a builtin add-on, so it reuses cross-workflow nested reservation, publication hooks and recovery. The policy checker reads the raw envelope JSON because Codable drops unknown keys (user-QA 7, 8).",
+      "A single prepareDynamicIteration helper (overBudget/invalid/valid) is shared by the pre-commit hook, post-commit dispatch and resume recovery, so iteration gating, validation, stamping and digest stay deterministic across resume (RV-74c-1, RV-74c-2).",
+      "Wave ordering: 32 → 27c (SessionCommands.swift, FailClosedSQLiteWorkflowRuntimeStore.swift), 32 → 74b (WorkflowRunCommand.swift), 27a → 74b (RuntimeSession.swift), 27a → 74c (RuntimeStore.swift, +CrossWorkflow.swift), 74a → 74b → 74c → 74d."
+    ],
+    "intentionalTradeoffs": [
+      "Between waves 1 and 2, the FailClosed terminal hook skips cancelled sessions until ISW2-27c lands item 8a.",
+      "Only the confirmed O(store) hydration is removed for #32; the low-CPU stall cause stays unreproduced (user-QA 2).",
+      "Unknown persisted status strings decode as failed and the raw string is not preserved (user-QA 6).",
+      "Reconcile marks orphans cancelled rather than adding a new abandoned status; network-filesystem stores are unsupported.",
+      "Invalid generated definitions and child failures return to the brain (onFailure return) and count toward maxIterations (user-QA 9).",
+      "Add-on names in dynamicWorkflow.allow are checked only for shape if no add-on registry is reachable from RielaCore."
+    ],
+    "supportedEdgeCases": [
+      "A CLI-only resume target with no canonical row is seeded as a family of one.",
+      "A canonical-only reserved child snapshot rooted at the target is hydrated.",
+      "Legacy failed+cancelled rows satisfy isCancellation; a cancelled cross-workflow child, fanout branch or nested child terminal is recorded as terminal.",
+      "A rerun from a cancelled source and importAcceptedHistory from a cancelled source both succeed.",
+      "Reconcile handles a canonical-only running snapshot, a tombstoned id (retired), a --session id that is not running (notRunning), and a session that changes during reconcile (skipped).",
+      "A vendor stopReason cancelled without host cancellation keeps existing behaviour; a timeout racing cancellation reports timeout only when the deadline expired.",
+      "A dynamic transition selected for the (maxIterations+1)th time fails with budgetExceeded before any reservation, in both the durable hook and post-commit dispatch.",
+      "A crash after reservation and before delivery, or after the parent commit and before an invalid result append, resumes with exactly one result message and no brain re-run.",
+      "Under simulatesCrossWorkflowDispatch the dynamic child still really runs through the scenario adapter."
+    ],
+    "outOfScopeEdgeCases": [
+      "Sessions whose lock lives on a network filesystem.",
+      "Detached execution surviving a short-lived driver (P5).",
+      "Generated workflows calling registered workflows or nesting dynamic calls (rejected by policy).",
+      "Unowned suites that fail because of new behaviour; these are reported as dependency objects."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-cli-session-store-decode-resilience.md",
+      "design-docs/specs/design-cancellation-and-orphan-session-resilience.md",
+      "design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md",
+      "design-docs/user-qa/qa-issue-sweep-2-2026-10-24.md",
+      "impl-plans/active/issue-sweep-2-20261024-32-recovery-hydration.md",
+      "impl-plans/active/issue-sweep-2-20261024-27a-cancelled-status.md",
+      "impl-plans/active/issue-sweep-2-20261024-27b-gateway-cancellation.md",
+      "impl-plans/active/issue-sweep-2-20261024-27c-session-reconcile.md",
+      "impl-plans/active/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md",
+      "impl-plans/active/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md",
+      "impl-plans/active/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md",
+      "impl-plans/active/issue-sweep-2-20261024-74d-brain-loop-example.md",
+      "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+      "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+      "Sources/RielaCLI/SessionExecutionLock.swift",
+      "Sources/RielaCore/RuntimeSession.swift",
+      "Sources/RielaCore/RuntimeStore.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+      "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift",
+      "Sources/RielaCore/RuntimePublication.swift"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "step5-impl-plan-review (comm-000010) accepted all eight plans with no findings and no repair requests. RV-27a-1 (high), RV-74c-1 (mid) and RV-74c-2 (mid) were verified fixed; RV-LOW-1 was addressed. The waves are: wave 1 (ISW2-32, ISW2-27a, ISW2-27b, ISW2-74a) with pairwise-disjoint writePaths; wave 2 (ISW2-27c, ISW2-74b); wave 3 (ISW2-74c); wave 4 (ISW2-74d). Each shared file is written by the earlier plan and listed as a sharedPath, with intended edits, by the later dependent plan.",
+    "residualRisks": [
+      "The FailClosed terminal hook skips cancelled sessions between waves 1 and 2, until ISW2-27c lands.",
+      "The low-CPU stall cause behind #32 is still unreproduced; only the confirmed O(store) hydration is removed.",
+      "Restructuring recoverNestedInvocationsBeforeResuming in ISW2-74c must keep the cross-workflow and fanout branches byte-identical; their regression suites guard this."
+    ]
+  },
+  "plans": [
+    {
+      "planId": "ISW2-32-recovery-hydration",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-32-recovery-hydration.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCLI/CLIWorkflowSessionStore.swift",
+        "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift",
+        "Sources/RielaCLI/WorkflowPackageParityCommands.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift",
+        "Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift",
+        "Tests/RielaCLITests/StartupIdentityRealStoreBenchmarks.swift",
+        "Tests/RielaCLITests/SessionRecoveryHydrationScopeTests.swift",
+        "impl-plans/progress/issue-sweep-2-20261024-32-recovery-hydration.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "makeSeededProductionRuntimeStore takes a required hydration: RuntimeStoreHydration (.none | .family(of:)) parameter. The metadata-only identity block always runs. grep -rn hydrateSessions Sources is empty.",
+        "seedRuntimeStoreFromPersistedCLIState(_:sessionStoreRoot:familyOf:) and FailClosedSQLiteWorkflowRuntimeStore.hydrate(familyOf:) seed only [target] ∪ sessionFamilyIds(of:), and neither calls loadAll().",
+        "Rerun and resume call sites use .family(of:); --resume uses .family and fresh runs use .none. WorkflowPackageParityCommands uses .none. The FailClosed persist() terminal predicates are untouched.",
+        "SessionRecoveryHydrationScopeTests: family-only sessions are loaded; the new id exceeds every unrelated id; seeding takes under 5 s; .none advances identity; a CLI-only target works; FailClosed family-only seeding; resume and rerun each emit the first JSONL record within 5 s.",
+        "Build, the focused and regression filters, and lint exit 0 with integer evidence. The progress log records the root cause and the measured times."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-32",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-32/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-32/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionRecoveryHydrationScopeTests|CLIWorkflowSessionStoreResilienceTests\" > tmp/issue-sweep-2-20261024/isw2-32/focused.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-32/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowCommandLivePersistenceTests|DeterministicWorkflowRunnerCrossWorkflowDispatchTests|WorkflowCommandSessionDiscoveryTests|NestedPublication|NestedRecovery\" > tmp/issue-sweep-2-20261024/isw2-32/regression.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-32/regression.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/CLIWorkflowSessionStore.swift Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift Sources/RielaCLI/SessionCommands.swift Sources/RielaCLI/WorkflowRunCommand.swift Sources/RielaCLI/WorkflowPackageParityCommands.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+SessionFamily.swift Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift Tests/RielaCLITests/StartupIdentityRealStoreBenchmarks.swift Tests/RielaCLITests/SessionRecoveryHydrationScopeTests.swift > tmp/issue-sweep-2-20261024/isw2-32/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-32/lint.log'",
+        "grep -n \"loadAll()\" Sources/RielaCLI/CLIWorkflowSessionStore.swift Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift > tmp/issue-sweep-2-20261024/isw2-32/loadall-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-32/loadall-grep.log",
+        "grep -rn \"hydrateSessions\" Sources > tmp/issue-sweep-2-20261024/isw2-32/hydrate-sessions-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-32/hydrate-sessions-grep.log"
+      ]
+    },
+    {
+      "planId": "ISW2-27a-cancelled-status",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-27a-cancelled-status.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/RuntimeSession.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift",
+        "Sources/RielaCore/SessionObservability.swift",
+        "Sources/RielaCore/LoopOutcomeNotification.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift",
+        "Sources/RielaCLI/SpecialistCommands.swift",
+        "Sources/RielaCLI/SessionObservabilityRendering.swift",
+        "Sources/RielaWork/WorkStore+Reservation.swift",
+        "Sources/RielaCLI/WorkflowRunLivePersistence.swift",
+        "Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift",
+        "Sources/RielaCore/RuntimeHistoryImport.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+History.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift",
+        "Sources/RielaCLI/TaskDispatch.swift",
+        "Sources/RielaCLI/TaskDispatch+Director.swift",
+        "Sources/RielaCLI/ScopedParityCommands.swift",
+        "Tests/RielaCoreTests/WorkflowCancelledStatusTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerFailureStateTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerFanoutTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerTests.swift",
+        "Tests/RielaCoreTests/RuntimeStoreTests.swift",
+        "Tests/RielaCoreTests/SpecialistSupervisorRecoveryTests.swift",
+        "Tests/RielaWorkTests/WorkStoreCancellationTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests.swift",
+        "Tests/RielaCLITests/TaskCancellationIntegrationTests+Fixtures.swift",
+        "Tests/RielaCLITests/TaskHandoverDispatchTests.swift",
+        "Tests/RielaCLITests/TaskDispatcherIntegrationTests+GuardPolicy.swift",
+        "Tests/RielaCLITests/TaskRuntimeExampleTests.swift",
+        "Tests/RielaCLITests/EventCronOverlapTests.swift",
+        "Tests/RielaCLITests/ServeHTTPCommandTests.swift",
+        "Tests/RielaCLITests/SpecialistMonitorControlCommandTests.swift",
+        "Tests/RielaCLITests/SpecialistServiceResponsivenessTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandAutoImproveTests.swift",
+        "impl-plans/progress/issue-sweep-2-20261024-27a-cancelled-status.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "WorkflowSessionStatus and WorkflowStepExecutionStatus have a persisted 'cancelled' case with tolerant init(from:) (unknown → .failed). WorkflowSession.isCancellation and WorkflowSessionStatus.isTerminal exist.",
+        "markSessionFailed with failureKind .cancelled writes status .cancelled (and cancels running executions); stalled and leaseLost stay failed. The unpersisted fallback matches. Exit code stays 1.",
+        "Resume of a cancelled session is terminal with exitCode 1. Rerun and importAcceptedHistory accept cancelled sources. Cross-workflow, nested, fanout, lease-release, live-persistence, task-dispatch, director, work-reservation and scoped-parity predicates treat cancelled as terminal.",
+        "The SQLite pending-cancellation and terminal-transition guards accept cancelled and still reject a second, different terminal write.",
+        "Grep gates: 'status == .failed && .*failureKind == .cancelled' is empty in Sources. The terminal-predicate grep leaves only FailClosedSQLiteWorkflowRuntimeStore.swift:158,163, recorded as a dependency on ISW2-27c.",
+        "Build, the core/work/cli filters and lint exit 0 with integer evidence. The progress log lists every changed test file and the reason."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-27a",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-27a/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowCancelledStatusTests|RuntimeStoreTests|DeterministicWorkflowRunnerFailureStateTests|DeterministicWorkflowRunnerFanoutTests|DeterministicWorkflowRunnerCrossWorkflowDispatchTests|DeterministicWorkflowRunnerTests|LoopConcurrencyLeaseTests|RuntimeHistoryImportHandoverTests|WorkflowPreservedHistoryTests|WorkflowRerunFinalizationEvidenceTests|WorkflowRerunInputCarryoverTests|WorkflowHistoryModelsTests\" > tmp/issue-sweep-2-20261024/isw2-27a/core.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/core.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RielaWorkTests > tmp/issue-sweep-2-20261024/isw2-27a/work.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/work.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"TaskCancellationIntegrationTests|TaskHandoverDispatchTests|TaskDispatcherIntegrationTests|TaskRuntimeExampleTests|EventCronOverlapTests|ServeHTTPCommandTests|SpecialistMonitorControlCommandTests|SpecialistServiceResponsivenessTests|WorkflowCommandAutoImproveTests|SessionPreservedHistoryTests|LoopConcurrencyPreflightTests|WorkflowHistoryAdversarialTests\" > tmp/issue-sweep-2-20261024/isw2-27a/cli.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/cli.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/RuntimeSession.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaCore/DeterministicWorkflowRunner+Cancellation.swift Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift Sources/RielaCore/SessionObservability.swift Sources/RielaCore/LoopOutcomeNotification.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore.swift Sources/RielaCLI/SpecialistCommands.swift Sources/RielaCLI/SessionObservabilityRendering.swift Sources/RielaWork/WorkStore+Reservation.swift Sources/RielaCLI/WorkflowRunLivePersistence.swift Sources/RielaCore/SQLiteWorkflowRuntimePersistenceStore+NestedInvocations.swift Sources/RielaCore/RuntimeHistoryImport.swift Sources/RielaCore/DeterministicWorkflowRunner+History.swift Sources/RielaCore/DeterministicWorkflowRunner+Fanout.swift Sources/RielaCLI/TaskDispatch.swift Sources/RielaCLI/TaskDispatch+Director.swift Sources/RielaCLI/ScopedParityCommands.swift Tests/RielaCoreTests/WorkflowCancelledStatusTests.swift > tmp/issue-sweep-2-20261024/isw2-27a/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/lint.log'",
+        "grep -rn \"status == .failed && .*failureKind == .cancelled\" Sources > tmp/issue-sweep-2-20261024/isw2-27a/cancel-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/cancel-grep.log",
+        "grep -rnE \"status == \\.completed \\|\\| .*status == \\.failed|status != \\.completed && .*status != \\.failed|terminalStatuses: \\[\\.completed, \\.failed\\]\" Sources | grep -v '^Sources/RielaApp/' > tmp/issue-sweep-2-20261024/isw2-27a/terminal-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27a/terminal-grep.log"
+      ]
+    },
+    {
+      "planId": "ISW2-27b-gateway-cancellation",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-27b-gateway-cancellation.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
+        "Sources/RielaAdapters/AdapterUtilities.swift",
+        "Tests/RielaAdaptersTests/AgentGatewayCancellationTests.swift",
+        "impl-plans/progress/issue-sweep-2-20261024-27b-gateway-cancellation.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "consumeGatewayTurn throws CancellationError when Task.isCancelled and the watchdog deadline has not expired. The existing deadline-expired → .timeout check keeps priority.",
+        "An ACPError raised while the host task is cancelled becomes CancellationError, not providerError.",
+        "executeWithRetry throws CancellationError when the task is cancelled, before normalizeError and before any retry sleep.",
+        "A vendor stopReason cancelled without host cancellation keeps the existing behaviour, and withGatewayTurnLifetime cleanup still runs.",
+        "AgentGatewayCancellationTests (5 cases), AgentGatewayNodeAdapterTests, GatewayTurnLifetimeTests, build and lint exit 0 with integer evidence. grep 'authentication is unavailable' Sources is empty, as recorded in the progress log."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-27b",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-27b/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27b/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"AgentGatewayCancellationTests|AgentGatewayNodeAdapterTests|GatewayTurnLifetimeTests\" > tmp/issue-sweep-2-20261024/isw2-27b/focused.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27b/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaAdapters/AgentGatewayNodeAdapter.swift Sources/RielaAdapters/AdapterUtilities.swift Tests/RielaAdaptersTests/AgentGatewayCancellationTests.swift > tmp/issue-sweep-2-20261024/isw2-27b/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27b/lint.log'",
+        "grep -rn \"authentication is unavailable\" Sources > tmp/issue-sweep-2-20261024/isw2-27b/auth-preflight-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27b/auth-preflight-grep.log"
+      ]
+    },
+    {
+      "planId": "ISW2-74a-dynamic-workflow-policy",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/DynamicWorkflowPolicy.swift",
+        "Tests/RielaCoreTests/DynamicWorkflowPolicyTests.swift",
+        "impl-plans/progress/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "The public names match the plan's Contract block exactly: WorkflowDynamicWorkflowTransition, WorkflowDynamicWorkflowOnFailure, WorkflowDynamicWorkflowLimits, WorkflowDynamicWorkflowAllow, ResolvedDynamicWorkflowBounds, and DynamicWorkflowPolicy (ceilings, authoredDiagnostics, resolve, check).",
+        "The defaults are 4 iterations, 65536 bytes, 8 nodes, 16 steps and 32 child steps; the ceilings are (16, 262144, 32, 64, 256). nodeTypes defaults to [agent]; backends and models default to the parent's; addons default to [].",
+        "check() is total and deterministic. It enforces the envelope shape, size (rule 1), the key allowlist (rule 9), no workflow calls and a workflowId different from the parent's (rule 5), payload presence in nodePayloads (rule 10), node type and add-on allowlists (rule 2), and a required executionBackend plus backend and model allowlists (rule 3). Every message is prefixed 'dynamic workflow policy:'.",
+        "Every DynamicWorkflowPolicyTests case passes, and build and lint exit 0 with integer evidence."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-74a",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-74a/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74a/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter DynamicWorkflowPolicyTests > tmp/issue-sweep-2-20261024/isw2-74a/focused.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74a/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DynamicWorkflowPolicy.swift Tests/RielaCoreTests/DynamicWorkflowPolicyTests.swift > tmp/issue-sweep-2-20261024/isw2-74a/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74a/lint.log'"
+      ]
+    },
+    {
+      "planId": "ISW2-27c-session-reconcile",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-27c-session-reconcile.md",
+      "dependsOn": [
+        "ISW2-32-recovery-hydration",
+        "ISW2-27a-cancelled-status"
+      ],
+      "writePaths": [
+        "Sources/RielaCLI/SessionReconcileCommand.swift",
+        "Sources/RielaCLI/RielaClientFamilyArguments.swift",
+        "Sources/RielaCLI/RielaCommand.swift",
+        "Sources/RielaCLI/RielaCommand+SessionParsing.swift",
+        "Sources/RielaCLI/RielaCLIApplication.swift",
+        "Sources/RielaCLI/CLISurfaceEnumeration.swift",
+        "Sources/RielaCore/SurfaceCatalog+Rows.swift",
+        "Tests/RielaCLITests/SessionReconcileCommandTests.swift",
+        "docs/session-cancellation-and-reconcile.md",
+        "impl-plans/progress/issue-sweep-2-20261024-27c-session-reconcile.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCLI/SessionCommands.swift",
+          "intendedEdit": "After ISW2-32: only blocksResume (about line 962) also returns true for session.status == .cancelled. ISW2-32's two makeSeededProductionRuntimeStore .family(of:) call sites must stay intact."
+        },
+        {
+          "path": "Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift",
+          "intendedEdit": "After ISW2-32 and ISW2-27a: in persist(sessionId:) (about lines 158 and 163), replace 'session.status == .completed || session.status == .failed' with session.status.isTerminal. ISW2-32's hydrate(familyOf:) must stay intact."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "riela session reconcile [--scope project|user] [--session-store] [--working-dir] [--session]... [--apply] [--output json|text] exists, is parsed and routed, and is listed in help, CLISurfaceEnumeration and the SurfaceCatalog session.reconcile row.",
+        "Candidates come from scalar SQL only (never loadAll) over running CLI records and canonical snapshots. The verdicts are orphaned, live, retired, skipped and notRunning, using one SessionExecutionLockRegistry per sweep with a release in a defer.",
+        "--apply holds the lock across the re-read and the save, and marks orphans cancelled/cancelled with the reason 'runner process lost; reconciled by riela session reconcile', cancelling their running executions. Live sessions stay byte-identical, and a dry run writes nothing.",
+        "blocksResume treats cancelled as terminal. The FailClosed beforeTerminalPersistence hook runs exactly once for a cancelled session.",
+        "docs/session-cancellation-and-reconcile.md covers cancelled, gateway cancellation, reconcile, P3 not applicable and the P5 follow-up.",
+        "Build, the focused filter, the CLI smoke run on an empty store, lint and the FailClosed grep gate exit 0 or come back empty, with integer evidence."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-27c",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-27c/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27c/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionReconcileCommandTests|SurfaceParityCLITests|SurfaceCatalogTests|CommandParsingTests\" > tmp/issue-sweep-2-20261024/isw2-27c/focused.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27c/focused.log'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela session reconcile --session-store \"$PWD/tmp/issue-sweep-2-20261024/isw2-27c/empty-store\" --output json > tmp/issue-sweep-2-20261024/isw2-27c/cli-smoke.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27c/cli-smoke.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCLI/SessionReconcileCommand.swift Sources/RielaCLI/RielaClientFamilyArguments.swift Sources/RielaCLI/RielaCommand.swift Sources/RielaCLI/RielaCommand+SessionParsing.swift Sources/RielaCLI/RielaCLIApplication.swift Sources/RielaCLI/CLISurfaceEnumeration.swift Sources/RielaCore/SurfaceCatalog+Rows.swift Sources/RielaCLI/SessionCommands.swift Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift Tests/RielaCLITests/SessionReconcileCommandTests.swift > tmp/issue-sweep-2-20261024/isw2-27c/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27c/lint.log'",
+        "grep -n \"status == .completed || session.status == .failed\" Sources/RielaCLI/FailClosedSQLiteWorkflowRuntimeStore.swift > tmp/issue-sweep-2-20261024/isw2-27c/failclosed-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-27c/failclosed-grep.log"
+      ]
+    },
+    {
+      "planId": "ISW2-74b-dynamic-workflow-contract",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md",
+      "dependsOn": [
+        "ISW2-74a-dynamic-workflow-policy",
+        "ISW2-27a-cancelled-status",
+        "ISW2-32-recovery-hydration"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/WorkflowValidation.swift",
+        "Sources/RielaCore/TemporaryWorkflowPayload.swift",
+        "Tests/RielaCoreTests/WorkflowDynamicWorkflowContractTests.swift",
+        "impl-plans/progress/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/RuntimeSession.swift",
+        "Sources/RielaCLI/WorkflowRunCommand.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCore/RuntimeSession.swift",
+          "intendedEdit": "After ISW2-27a: add the WorkflowGeneratedWorkflowOrigin struct, and add an optional generatedWorkflow field to WorkflowSession (CodingKeys, decodeIfPresent/encodeIfPresent, and an init parameter defaulting to nil). Do not touch the status enums that ISW2-27a edited."
+        },
+        {
+          "path": "Sources/RielaCLI/WorkflowRunCommand.swift",
+          "intendedEdit": "After ISW2-32: delete the private TemporaryWorkflowPayload struct and nodePayloads(from:workflow:). loadTemporaryWorkflowIfPresent decodes the RielaCore TemporaryWorkflowPayload and calls materializeTemporaryWorkflowPayload, with identical behaviour and errors. ISW2-32's makeProductionDurableRuntime hydration hunk must stay intact."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "WorkflowStepTransition gains an optional dynamicWorkflow field (JSON key 'dynamicWorkflow'); existing JSON decodes unchanged.",
+        "DefaultWorkflowValidator rejects dynamicWorkflow combined with toWorkflowId, resumeStepId or fanout, and rejects a missing toStepId. It appends DynamicWorkflowPolicy.authoredDiagnostics, and warns on a self-loop when maxLoopIterations ≤ the resolved maxIterations. Diagnostics for existing workflows are unchanged.",
+        "WorkflowSession.generatedWorkflow round-trips, and legacy JSON decodes it as nil.",
+        "RielaCore materializeTemporaryWorkflowPayload resolves payloads by nodeFile and then by id, and returns empty nodePayloads when validation fails. The CLI temp-workflow path uses it with identical behaviour, and grep 'private struct TemporaryWorkflowPayload' Sources/RielaCLI/WorkflowRunCommand.swift is empty.",
+        "Build, the focused and WorkflowValidat filters, and lint exit 0 with integer evidence."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-74b",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-74b/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74b/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowDynamicWorkflowContractTests|DynamicWorkflowPolicyTests|WorkflowCommandCatalogTests|DeterministicWorkflowRunnerCrossWorkflowDispatchTests\" > tmp/issue-sweep-2-20261024/isw2-74b/focused.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74b/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowValidat > tmp/issue-sweep-2-20261024/isw2-74b/validation.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74b/validation.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/WorkflowValidation.swift Sources/RielaCore/RuntimeSession.swift Sources/RielaCore/TemporaryWorkflowPayload.swift Sources/RielaCLI/WorkflowRunCommand.swift Tests/RielaCoreTests/WorkflowDynamicWorkflowContractTests.swift > tmp/issue-sweep-2-20261024/isw2-74b/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74b/lint.log'",
+        "grep -n \"private struct TemporaryWorkflowPayload\" Sources/RielaCLI/WorkflowRunCommand.swift > tmp/issue-sweep-2-20261024/isw2-74b/temp-payload-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74b/temp-payload-grep.log"
+      ]
+    },
+    {
+      "planId": "ISW2-74c-dynamic-workflow-dispatch",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md",
+      "dependsOn": [
+        "ISW2-74b-dynamic-workflow-contract",
+        "ISW2-74a-dynamic-workflow-policy",
+        "ISW2-27a-cancelled-status"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+DynamicWorkflow.swift",
+        "Sources/RielaCore/RuntimePublication.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+NestedPublication.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerDynamicWorkflowTests.swift",
+        "impl-plans/progress/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCore/RuntimeStore.swift",
+          "intendedEdit": "After ISW2-27a: only WorkflowSessionCreateInput gains generatedWorkflow: WorkflowGeneratedWorkflowOrigin? = nil, applied in InMemoryWorkflowRuntimeStore.createSession. ISW2-27a's markSessionFailed/updateStepExecution/isTerminal hunks must stay intact."
+        },
+        {
+          "path": "Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift",
+          "intendedEdit": "After ISW2-27a, and only if needed: extract a shared child-run helper (reservation reuse, running-child fence, existing-terminal checks) used by dispatchCrossWorkflowCallee and dispatchDynamicWorkflow. Cross-workflow behaviour stays byte-identical, and ISW2-27a's cancelled terminal check must stay intact."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "RuntimePublication produces a WorkflowDynamicWorkflowDispatchDirective for a selected dynamicWorkflow transition regardless of simulatesCrossWorkflowDispatch, and rejects more than one dynamic transition. Static toWorkflowId and fanout are unchanged.",
+        "A single prepareDynamicIteration helper (.overBudget/.invalid/.valid) does the iteration count, policy check, materialization, DefaultWorkflowValidator, agentSandbox/agentToolPolicy stamping, timeout and loop clamping, and the digest. The hook, post-commit dispatch and resume recovery all use it.",
+        "A valid iteration reserves a child with branchId 'dynamic-workflow', parent/root lineage and generatedWorkflow provenance, runs it in-process, and delivers exactly one dynamicWorkflowResult (completed, failed, cancelled or invalid) to toStepId. onFailure fail fails the parent. Over budget fails with budgetExceeded 'dynamic workflow iteration budget exhausted (<max>)' before any reservation.",
+        "Parent cancellation during a child propagates; the parent ends cancelled and no result message is written. Durable resume reuses the persisted definition and digest, and invalid-iteration recovery delivers exactly one invalid result; neither re-runs the brain.",
+        "Every DeterministicWorkflowRunnerDynamicWorkflowTests case passes. The cross-workflow, fanout, nested and cancelled regression suites, build and lint exit 0 with integer evidence. grep 'dynamic-workflow' Sources/RielaCore shows the dispatch, hook and recovery sites."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-74c",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-74c/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74c/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeterministicWorkflowRunnerDynamicWorkflowTests|DynamicWorkflowPolicyTests|WorkflowDynamicWorkflowContractTests\" > tmp/issue-sweep-2-20261024/isw2-74c/focused.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74c/focused.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeterministicWorkflowRunnerCrossWorkflowDispatchTests|DeterministicWorkflowRunnerFanoutTests|ScopedParityCallStepFanoutTests|WorkflowCancelledStatusTests|Nested\" > tmp/issue-sweep-2-20261024/isw2-74c/regression.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74c/regression.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+DynamicWorkflow.swift Sources/RielaCore/RuntimePublication.swift Sources/RielaCore/DeterministicWorkflowRunner.swift Sources/RielaCore/DeterministicWorkflowRunner+NestedPublication.swift Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift Sources/RielaCore/DeterministicWorkflowRunner+CrossWorkflow.swift Sources/RielaCore/RuntimeStore.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerDynamicWorkflowTests.swift > tmp/issue-sweep-2-20261024/isw2-74c/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74c/lint.log'",
+        "grep -rn \"dynamic-workflow\" Sources/RielaCore > tmp/issue-sweep-2-20261024/isw2-74c/branch-id-grep.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74c/branch-id-grep.log"
+      ]
+    },
+    {
+      "planId": "ISW2-74d-brain-loop-example",
+      "planPath": "impl-plans/active/issue-sweep-2-20261024-74d-brain-loop-example.md",
+      "dependsOn": [
+        "ISW2-74c-dynamic-workflow-dispatch"
+      ],
+      "writePaths": [
+        "examples/brain-generated-workflow-loop",
+        "Tests/RielaCLITests/RielaExampleCatalog.swift",
+        "Tests/RielaCLITests/RielaExampleParityTests.swift",
+        "examples/catalog/workflow-composition-and-coding.md",
+        "docs/workflows/brain-generated-workflow-loop.md",
+        "impl-plans/progress/issue-sweep-2-20261024-74d-brain-loop-example.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "examples/brain-generated-workflow-loop contains workflow.json, nodes/node-brain.json, prompts/brain.md, mock-scenario.json, README.md and EXPECTED_RESULTS.md. Generated payloads use only rule-9 allowlisted keys, with node ids inventory and verify, and maxLoopIterations is 6, above maxIterations 4.",
+        "riela workflow validate reports no errors and no warnings. riela workflow run --mock-scenario exits 0 with status completed.",
+        "The EXPECTED_RESULTS.md assertions hold and are recorded with exit statuses: two child sessions whose parent and root are the brain session, iterations 1 and 2, two distinct digests, iteration 2's input.missingVerification equal to iteration 1's rootOutput, root output decision finish, and three brain executions.",
+        "brain-generated-workflow-loop is registered in rielaExampleWorkflowNames() in alphabetical position, expectedMockScenarioCount is 45, and the catalog section and docs/workflows/brain-generated-workflow-loop.md exist.",
+        "RielaExampleParityTests (skipping testMockScenarioExamplesRunThroughSwiftCLI) exits 0 with integer evidence, and the progress log records the child session ids and digests."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-2-20261024/isw2-74d",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-74d/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74d/build.log'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow validate brain-generated-workflow-loop --workflow-definition-dir ./examples > tmp/issue-sweep-2-20261024/isw2-74d/validate.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74d/validate.log'",
+        "arch -arm64 /bin/zsh -lc '.build/debug/riela workflow run brain-generated-workflow-loop --workflow-definition-dir ./examples --mock-scenario ./examples/brain-generated-workflow-loop/mock-scenario.json --session-store \"$PWD/tmp/issue-sweep-2-20261024/isw2-74d/store\" --output json > tmp/issue-sweep-2-20261024/isw2-74d/run.json 2>&1; echo exitStatus=$? > tmp/issue-sweep-2-20261024/isw2-74d/run.exit'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RielaExampleParityTests --skip testMockScenarioExamplesRunThroughSwiftCLI > tmp/issue-sweep-2-20261024/isw2-74d/parity.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-2-20261024/isw2-74d/parity.log'"
+      ]
+    }
+  ]
+}

@@ -120,6 +120,37 @@ public struct RielaKeyValueStore: Sendable {
     return try entry(storeId: storeId, scope: scope, key: key, db: db)
   }
 
+  /// Replace one value only if it still matches the caller's snapshot. A nil
+  /// expectation means the key must not exist. The comparison and write share
+  /// one SQLite transaction, including across independent runtime processes.
+  @discardableResult
+  public func compareExchange(
+    storeId: String, scope: String, key: String,
+    expectedValue: MemoryJSONValue?, value: MemoryJSONValue
+  ) throws -> Bool {
+    try validateStoreId(storeId)
+    try validateScope(scope)
+    try validateKey(key)
+    let valueJSON = try encodedJSONString(value)
+    let db = try openDatabase(storeId: storeId)
+    defer { sqlite3_close(db) }
+    try ensureSchema(db)
+    try execute(db, "BEGIN IMMEDIATE", bindings: [])
+    defer { try? execute(db, "ROLLBACK", bindings: []) }
+    guard try entry(storeId: storeId, scope: scope, key: key, db: db)?.value == expectedValue else {
+      return false
+    }
+    let timestamp = currentTimestamp()
+    try execute(db, """
+      INSERT INTO kv_entries (scope, key, value_json, created_at, updated_at)
+      VALUES (?, ?, jsonb(?), ?, ?)
+      ON CONFLICT(scope, key) DO UPDATE SET
+        value_json = excluded.value_json, updated_at = excluded.updated_at
+      """, bindings: [.text(scope), .text(key), .text(valueJSON), .text(timestamp), .text(timestamp)])
+    try execute(db, "COMMIT", bindings: [])
+    return true
+  }
+
   @discardableResult
   public func delete(storeId: String, scope: String, key: String) throws -> Bool {
     try validateStoreId(storeId)

@@ -1,0 +1,19 @@
+{
+  "workflowId": "collection-checkpoint",
+  "description": "Credential-free metadata fixture: native cursor and pending-version persistence without scripts or provider requests.",
+  "defaults": {"maxLoopIterations": 1, "nodeTimeoutMs": 30000},
+  "entryStepId": "load",
+  "nodes": [
+    {"id": "load", "addon": {"name": "riela/collection-checkpoint", "version": "1", "config": {
+      "action": "load", "key": "fixture/account/window"
+    }}},
+    {"id": "record", "addon": {"name": "riela/collection-checkpoint", "version": "1", "config": {
+      "action": "record", "key": "fixture/account/window", "expectedRevision": "{{input.revision}}",
+      "items": "{{fixtureItems}}", "cursor": "{{fixtureCursor}}", "acquisitionComplete": "{{fixtureComplete}}"
+    }}}
+  ],
+  "steps": [
+    {"id": "load", "nodeId": "load", "role": "worker", "transitions": [{"toStepId": "record"}]},
+    {"id": "record", "nodeId": "record", "role": "worker"}
+  ]
+}

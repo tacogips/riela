@@ -236,3 +236,5 @@ Record `exitStatus`, `testsRun` and `failureCount` for each command:
 - [ ] Line 72 accepts `cancelled`; `count != 1` is unchanged.
 - [ ] Two new `TerminalRetentionPlanTests` methods pass; the five existing methods are byte-identical.
 - [ ] Amendment verification 1-6 pass, with log paths and integer evidence in the progress log, along with the LoopCommands follow-up.
+
+> Operator amendment 2 (2026-10-24): every remaining plan also owns its own active plan file (this file) so it can update its completion checklist.

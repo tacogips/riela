@@ -158,7 +158,8 @@
         "Tests/RielaWorkTests/WorkStoreTakeoverTests.swift",
         "Sources/RielaCore/TerminalRetentionPlan.swift",
         "Tests/RielaCoreTests/TerminalRetentionPlanTests.swift",
-        "Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift"
+        "Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift",
+        "impl-plans/active/issue-sweep-2-20261024-27a-cancelled-status.md"
       ],
       "sharedPaths": [],
       "artifactRoots": [],
@@ -203,7 +204,8 @@
         "Tests/RielaCLITests/CLIWorkflowSessionStoreResilienceTests.swift",
         "Tests/RielaCLITests/StartupIdentityRealStoreBenchmarks.swift",
         "Tests/RielaCLITests/SessionRecoveryHydrationScopeTests.swift",
-        "impl-plans/progress/issue-sweep-2-20261024-32-recovery-hydration.md"
+        "impl-plans/progress/issue-sweep-2-20261024-32-recovery-hydration.md",
+        "impl-plans/active/issue-sweep-2-20261024-32-recovery-hydration.md"
       ],
       "sharedPaths": [],
       "artifactRoots": [],
@@ -234,7 +236,8 @@
         "Sources/RielaAdapters/AgentGatewayNodeAdapter.swift",
         "Sources/RielaAdapters/AdapterUtilities.swift",
         "Tests/RielaAdaptersTests/AgentGatewayCancellationTests.swift",
-        "impl-plans/progress/issue-sweep-2-20261024-27b-gateway-cancellation.md"
+        "impl-plans/progress/issue-sweep-2-20261024-27b-gateway-cancellation.md",
+        "impl-plans/active/issue-sweep-2-20261024-27b-gateway-cancellation.md"
       ],
       "sharedPaths": [],
       "artifactRoots": [],
@@ -262,7 +265,8 @@
       "writePaths": [
         "Sources/RielaCore/DynamicWorkflowPolicy.swift",
         "Tests/RielaCoreTests/DynamicWorkflowPolicyTests.swift",
-        "impl-plans/progress/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md"
+        "impl-plans/progress/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md",
+        "impl-plans/active/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md"
       ],
       "sharedPaths": [],
       "artifactRoots": [],
@@ -297,7 +301,8 @@
         "Sources/RielaCore/SurfaceCatalog+Rows.swift",
         "Tests/RielaCLITests/SessionReconcileCommandTests.swift",
         "docs/session-cancellation-and-reconcile.md",
-        "impl-plans/progress/issue-sweep-2-20261024-27c-session-reconcile.md"
+        "impl-plans/progress/issue-sweep-2-20261024-27c-session-reconcile.md",
+        "impl-plans/active/issue-sweep-2-20261024-27c-session-reconcile.md"
       ],
       "sharedPaths": [
         "Sources/RielaCLI/SessionCommands.swift",
@@ -345,7 +350,8 @@
         "Sources/RielaCore/WorkflowValidation.swift",
         "Sources/RielaCore/TemporaryWorkflowPayload.swift",
         "Tests/RielaCoreTests/WorkflowDynamicWorkflowContractTests.swift",
-        "impl-plans/progress/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md"
+        "impl-plans/progress/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md",
+        "impl-plans/active/issue-sweep-2-20261024-74b-dynamic-workflow-contract.md"
       ],
       "sharedPaths": [
         "Sources/RielaCore/RuntimeSession.swift",
@@ -393,7 +399,8 @@
         "Sources/RielaCore/DeterministicWorkflowRunner+NestedPublication.swift",
         "Sources/RielaCore/DeterministicWorkflowRunner+NestedReservations.swift",
         "Tests/RielaCoreTests/DeterministicWorkflowRunnerDynamicWorkflowTests.swift",
-        "impl-plans/progress/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md"
+        "impl-plans/progress/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md",
+        "impl-plans/active/issue-sweep-2-20261024-74c-dynamic-workflow-dispatch.md"
       ],
       "sharedPaths": [
         "Sources/RielaCore/RuntimeStore.swift",
@@ -438,7 +445,8 @@
         "Tests/RielaCLITests/RielaExampleParityTests.swift",
         "examples/catalog/workflow-composition-and-coding.md",
         "docs/workflows/brain-generated-workflow-loop.md",
-        "impl-plans/progress/issue-sweep-2-20261024-74d-brain-loop-example.md"
+        "impl-plans/progress/issue-sweep-2-20261024-74d-brain-loop-example.md",
+        "impl-plans/active/issue-sweep-2-20261024-74d-brain-loop-example.md"
       ],
       "sharedPaths": [],
       "artifactRoots": [],

@@ -4,6 +4,9 @@ extension BuiltinWorkflowAddonResolver {
   func executeStatefulAddonIfSupported(
     _ input: WorkflowAddonExecutionInput
   ) async throws -> AdapterExecutionOutput? {
+    if input.addon.name == "riela/collection-checkpoint" {
+      return try executeCollectionCheckpoint(input)
+    }
     if let dataAddon = BuiltinDataAddon(rawValue: input.addon.name) {
       return try executeDataAddon(input, operation: dataAddon)
     }

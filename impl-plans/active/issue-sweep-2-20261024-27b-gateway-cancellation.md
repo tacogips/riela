@@ -1,6 +1,6 @@
 # ISW2-27b: agent-gateway turns surface cancellation as `CancellationError`
 
-**Status**: Active (not started)
+**Status**: Implementation complete; pending downstream review
 **planId**: ISW2-27b-gateway-cancellation
 **Issue**: https://github.com/tacogips/riela/issues/27 (P2)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)", subsection "P2 contract"
@@ -70,9 +70,9 @@ Per-edit fresh read, with pre/post hash snapshots under `tmp/issue-sweep-2-20261
 
 ## Done criteria
 
-- [ ] All three gaps are closed.
-- [ ] The 5 tests pass and verification 1-3 pass, with logs.
-- [ ] The progress log states that no CLI-agent auth preflight exists anymore, with evidence: `grep -rn "authentication is unavailable" Sources` returns empty.
+- [x] All three gaps are closed.
+- [x] The 5 tests pass and verification 1-3 pass, with logs.
+- [x] The progress log states that no CLI-agent auth preflight exists anymore, with evidence: `grep -rn "authentication is unavailable" Sources` returns empty.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
 

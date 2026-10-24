@@ -302,6 +302,9 @@ private func consumeGatewayTurn(
     } onCancel: {
       watchdog.cancelTurn()
     }
+    if Task.isCancelled, !watchdog.deadlineExpired {
+      throw CancellationError()
+    }
     guard let response else {
       throw AdapterExecutionError(.invalidOutput, "agent-gateway stream ended without a session/prompt response")
     }
@@ -310,6 +313,9 @@ private func consumeGatewayTurn(
     }
     return collector.turn(response: response)
   } catch let error as ACPError {
+    if Task.isCancelled {
+      throw CancellationError()
+    }
     throw AdapterExecutionError(.providerError, "agent-gateway error \(error.code): \(error.message)")
   }
 }

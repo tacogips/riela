@@ -149,6 +149,9 @@ public func executeWithRetry<T: Sendable>(
       return try await operation()
     } catch {
       try rethrowIfCancellation(error)
+      if Task.isCancelled {
+        throw CancellationError()
+      }
       let normalized = normalizeError(error)
       let retryDelay = retryDelay(for: normalized, attempt: attempt, policy: policy, randomUnitInterval: randomUnitInterval)
       if !shouldRetryAdapterFailure(normalized, attempt: attempt, policy: policy, delay: retryDelay, deadline: deadline, now: now()) {

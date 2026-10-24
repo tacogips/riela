@@ -50,7 +50,8 @@ replays a successful write. Invalid instruction syntax fails before the effect.
 
 - Complete behavioral coverage of typed requests for every affected gateway,
   legacy container gateways and already structured product-specific nodes.
-- Reconcile Core validation/catalog discovery with all runtime modes and aliases.
+- **Complete for catalog-backed built-ins covered by the Riela CLI production context (V0–V5).** `riela workflow validate` now checks operation/legacy mode conflicts, operation and selection literal bounds, non-templated postprocess programs, and known operations when a pinned SDK catalog is available. Notion read/write are included; aliases and legacy modes remain valid. `GatewaySchemaCatalog.operations` publicly lists GraphQL root operations and full document command names; production projection uses these names. Verification: see `impl-plans/progress/issue-sweep-20261024-176-gateway-validation.md`.
+- **Still open:** X readers, legacy container readers (`riela/x-gateway-read`, `riela/gmail-gateway-read`), Google Service and Kaiba nested-argument validation remain runtime-only.
 - Reconcile named operations and compatibility surfaces in the final matrix;
   preserve fixed operations of product-specific Apple nodes.
 - Complete the provider matrix, workflow examples and user-facing reference.

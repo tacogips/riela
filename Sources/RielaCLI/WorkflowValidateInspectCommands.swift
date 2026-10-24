@@ -55,7 +55,7 @@ public struct WorkflowValidateCommand: Sendable {
       }
       let hostDiagnostics = await hostDiagnostics(bundle: bundle, options: options)
       let diagnostics = bundle.diagnostics +
-        DefaultWorkflowValidator().validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
+        DefaultWorkflowValidator(context: .production()).validate(bundle.workflow, nodePayloads: bundle.nodePayloads) +
         patchedProviderDiagnostics +
         (await runtimeCapabilityDiagnostics(
           bundle: bundle,

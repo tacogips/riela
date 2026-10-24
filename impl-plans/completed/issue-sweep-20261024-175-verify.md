@@ -1,6 +1,6 @@
 # ISW-175: verify the cherry-picked #175 fixes
 
-**Status**: Ready
+**Status**: Completed 2026-10-24. Test-integrity, adversarial and E2E-skip reviews accepted; combined-tree rerun `tmp/issue-sweep-20261024/reconcile-wave-004/isw175.log` exit 0. Evidence: [progress log](../progress/issue-sweep-20261024-175-verify.md) (AdapterUtilitiesTests 24/0, WorkflowStepFailurePolicyTests 4/0). Historical unchecked boxes below are preserved.
 **planId**: ISW-175-verify
 **Issue**: https://github.com/tacogips/riela/issues/175
 **Design Reference**: none (verification only; see design-docs/specs/design-rerun-input-carryover-and-finalization-evidence.md mapping note in the Step 2 output)

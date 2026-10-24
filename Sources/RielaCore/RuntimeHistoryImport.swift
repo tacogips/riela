@@ -58,9 +58,11 @@ extension InMemoryWorkflowRuntimeStore {
     switch input.source {
     case .session:
       guard let canonicalSource = sessions[input.sourceSessionId],
-            canonicalSource.status == .failed || canonicalSource.status == .suspended,
+            canonicalSource.status == .failed || canonicalSource.status == .suspended
+              || canonicalSource.status == .completed,
             canonicalSource.workflowId == session.workflowId else {
-        throw WorkflowRuntimeStoreError.messageAppendRejected("history import requires a failed or suspended source session in the same workflow")
+        throw WorkflowRuntimeStoreError.messageAppendRejected(
+          "history import requires a failed, suspended or completed source session in the same workflow")
       }
       guard input.messages.allSatisfy({ messagesBySession[input.sourceSessionId, default: []].contains($0) }) else {
         throw WorkflowRuntimeStoreError.messageAppendRejected("history import must reference canonical source evidence")

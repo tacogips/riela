@@ -95,13 +95,39 @@ final class WorkflowPreservedHistoryTests: XCTestCase {
     XCTAssertEqual(calls.count, 1)
   }
 
+  func testPreserveHistoryImportsCompletedRetryAfterFailedPrefixAttempt() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    var source = try await failedSource(store)
+    var failedFirst = try XCTUnwrap(source.executions.first { $0.stepId == "first" })
+    failedFirst.executionId = "failed-first-attempt"
+    failedFirst.status = .failed
+    failedFirst.acceptedOutput = nil
+    source.executions.insert(failedFirst, at: 0)
+    await store.seedSession(source)
+
+    let adapter = HistoryAdapter(failFinal: false)
+    let result = try await DeterministicWorkflowRunner(store: store, adapter: adapter).run(
+      DeterministicWorkflowRunRequest(workflow: workflow, nodePayloads: nodes,
+        rerunFromSessionId: source.sessionId, rerunFromStepId: "final", preserveHistory: true))
+
+    XCTAssertEqual(result.session.executions.map(\.stepId), ["first", "second", "final"])
+    XCTAssertEqual(result.session.executions[0].importedFrom?.executionId,
+      source.executions.first { $0.stepId == "first" && $0.status == .completed }?.executionId)
+    XCTAssertEqual(result.nodeExecutions, 1)
+    let calls = await adapter.inputs
+    XCTAssertEqual(calls.map { $0.node.id }, ["final"])
+  }
+
   func testPublicImportRejectsTamperedExecutionIdentityAndInput() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let source = try await failedSource(store)
     for mode in ["step", "input"] {
       var candidate = try XCTUnwrap(source.executions.first)
-      if mode == "step" { candidate.stepId = "forged" }
-      else { candidate.inputSnapshot = ["forged": .bool(true)] }
+      if mode == "step" {
+        candidate.stepId = "forged"
+      } else {
+        candidate.inputSnapshot = ["forged": .bool(true)]
+      }
       let destination = try await store.createSession(WorkflowSessionCreateInput(workflowId: "history", entryStepId: "final"))
       do {
         _ = try await store.importAcceptedHistory(WorkflowHistoryImportInput(
@@ -175,6 +201,18 @@ final class WorkflowPreservedHistoryTests: XCTestCase {
             rerunFromSessionId: source.sessionId, rerunFromStepId: "final", preserveHistory: true))
         XCTFail("must reject \(mode)")
       } catch { XCTAssertTrue(String(describing: error).contains("cannot preserve history")) }
+      if mode == "ambiguous" {
+        do {
+          _ = try await DeterministicWorkflowRunner(store: store, adapter: HistoryAdapter(failFinal: false)).run(
+            DeterministicWorkflowRunRequest(workflow: workflow, nodePayloads: changed,
+              rerunFromSessionId: source.sessionId, rerunFromStepId: "final", preserveHistory: true))
+          XCTFail("ambiguous boundary must reject")
+        } catch {
+          XCTAssertTrue(String(describing: error).contains(
+            "rerun without --preserve-history or use session resume --retry-failed-step"
+          ))
+        }
+      }
     }
   }
 }

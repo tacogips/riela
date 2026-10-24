@@ -61,12 +61,13 @@ extension DeterministicWorkflowRunner {
     let canResumeBudgetFailure = existing.status == .failed && existing.failureKind == .maxStepsExceeded
     let failedExecution = existing.executions.last
     let retryableFailureKind = existing.failureKind == .adapterFailure || existing.failureKind == .policyBlocked
+      || existing.failureKind == .nodeTimeout
     let canRetryFailedStep = existing.status == .failed && retryableFailureKind
       && failedExecution?.status == .failed && failedExecution?.stepId == existing.currentStepId
       && failedExecution?.acceptedOutput == nil && failedExecution?.pendingRoutePublication == nil
     if request.retryFailedStep && !canRetryFailedStep {
       throw DeterministicWorkflowRunnerError.resumeValidation(
-        "--retry-failed-step requires an adapter-failed or policy-blocked current step with no accepted output"
+        "--retry-failed-step requires an adapter-failed, policy-blocked or timed-out current step with no accepted output"
       )
     }
     if existing.status == .completed || (existing.status == .failed && !canResumeBudgetFailure && !request.retryFailedStep) {
@@ -115,8 +116,39 @@ extension DeterministicWorkflowRunner {
     } catch let error as WorkflowSessionEntryValidationError {
       throw DeterministicWorkflowRunnerError.rerunValidation(errorMessage(error))
     }
-    let history = try await request.preserveHistory
-      ? preservedHistory(request, source: sourceSession, target: entryStepId) : nil
+    let importInput: WorkflowHistoryImportInput?
+    if request.preserveHistory {
+      let history = try await preservedHistory(request, source: sourceSession, target: entryStepId)
+      _ = try Self.rerunFinalizationEvidenceExecutions(
+        workflow: request.workflow,
+        source: sourceSession,
+        targetStepId: entryStepId,
+        available: history.executions
+      )
+      importInput = history
+    } else {
+      guard sourceSession.status == .failed || sourceSession.status == .suspended || sourceSession.status == .completed else {
+        throw DeterministicWorkflowRunnerError.rerunValidation(
+          "rerun source session must be failed, suspended or completed")
+      }
+      let carriedInbox = try await rerunCarriedInbox(source: sourceSession, targetStepId: entryStepId)
+      let boundEvidence = try Self.rerunFinalizationEvidenceExecutions(
+        workflow: request.workflow,
+        source: sourceSession,
+        targetStepId: entryStepId,
+        available: sourceSession.executions
+      )
+      let executionsToImport = Set((carriedInbox?.executions ?? []).map(\.executionId)
+        + boundEvidence.map(\.executionId))
+      let executions = sourceSession.executions.filter { executionsToImport.contains($0.executionId) }
+      let messages = carriedInbox?.messages ?? []
+      importInput = executions.isEmpty && messages.isEmpty ? nil : WorkflowHistoryImportInput(
+        sessionId: "",
+        sourceSessionId: sourceSession.sessionId,
+        executions: executions,
+        messages: messages
+      )
+    }
     try await validateCrossWorkflowDispatchTargets(in: request.workflow)
     var session = try await store.createSession(
       WorkflowSessionCreateInput(
@@ -128,9 +160,9 @@ extension DeterministicWorkflowRunner {
         effectiveStepBudget: request.effectiveStepBudget
       )
     )
-    if var history {
-      history.sessionId = session.sessionId
-      session = try await store.importAcceptedHistory(history)
+    if var importInput {
+      importInput.sessionId = session.sessionId
+      session = try await store.importAcceptedHistory(importInput)
     }
     return .proceed(SessionEntryContext(
       session: session,

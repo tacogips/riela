@@ -1,6 +1,6 @@
 # ISW-135: nodeTimeout retry and plain-rerun inbox carry-over
 
-**Status**: Ready
+**Status**: Completed 2026-10-24. Test-integrity, adversarial and E2E-skip reviews accepted; combined-tree reruns `tmp/issue-sweep-20261024/reconcile-wave-004/core-rerun.log` (138/0) and `cli-rerun.log` exit 0. Evidence: [progress log](../progress/issue-sweep-20261024-135-retry-timeout-rerun-carryover.md). Optional test ISW135-DEFER-2 deferred. Historical unchecked boxes below are preserved.
 **planId**: ISW-135-retry-timeout-rerun-carryover
 **Issue**: https://github.com/tacogips/riela/issues/135
 **Design Reference**: design-docs/specs/design-rerun-input-carryover-and-finalization-evidence.md (D1, D2)

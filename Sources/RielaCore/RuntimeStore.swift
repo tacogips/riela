@@ -700,7 +700,8 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       channel: input.channel,
       content: input.contentSnapshot ?? input.contentDelta,
       toolName: input.toolName,
-      usage: input.usage
+      usage: input.usage,
+      metadata: input.eventType == "command_failure_diagnostics" ? input.metadata : nil
     ))
     if events.count > 100 {
       events.removeFirst(events.count - 100)

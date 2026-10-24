@@ -1,6 +1,6 @@
 # ISW-163: opt-in bounded command failure diagnostics
 
-**Status**: Ready
+**Status**: Completed 2026-10-24. Test-integrity, adversarial and E2E-skip reviews accepted; combined-tree rerun `tmp/issue-sweep-20261024/reconcile-wave-004/isw163.log` exit 0. Evidence: [progress log](../progress/issue-sweep-20261024-163-command-failure-diagnostics.md). Historical unchecked boxes below are preserved.
 **planId**: ISW-163-command-failure-diagnostics
 **Issue**: https://github.com/tacogips/riela/issues/163
 **Design Reference**: design-docs/specs/design-command-failure-diagnostics.md

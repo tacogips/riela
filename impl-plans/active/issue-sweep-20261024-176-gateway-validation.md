@@ -1,6 +1,6 @@
 # ISW-176: reconcile `riela workflow validate` with gateway JSON requests
 
-**Status**: Ready
+**Status**: Active (V0-V5 implemented and accepted 2026-10-24; kept active). Combined-tree focused gates pass (`tmp/issue-sweep-20261024/reconcile-wave-004/isw176.log` exit 0, `parity-skipped.log` 8/0), but the unskipped `RielaExampleParityTests` aggregate is still 9/2 (`parity-full.log`). Remaining evidence: an independent disposition of the X/container baseline (ISW176-DEFER-2, dependency `examples/x-follower-ai-business-digest`), plus optional test ISW176-DEFER-3. See the [progress log](../progress/issue-sweep-20261024-176-gateway-validation.md).
 **planId**: ISW-176-gateway-validation
 **Issue**: https://github.com/tacogips/riela/issues/176 (riela-side remainder only)
 **Design Reference**: design-docs/specs/design-gateway-sdk-addons.md, section "Reconciliation with gateway JSON requests (#176, 2026-10-24)", rules V0-V5

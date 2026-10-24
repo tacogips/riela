@@ -40,26 +40,21 @@ final class RuntimeHistoryImportHandoverTests: XCTestCase {
     }
   }
 
-  func testRejectsCompletedSessionSourceWithoutMutatingTarget() async throws {
+  func testImportsCompletedSessionSource() async throws {
     let store = InMemoryWorkflowRuntimeStore()
     let source = makeSource(status: .completed, sessionId: "completed-source")
     await store.seedSession(source.session)
     await store.seedWorkflowMessages(source.messages)
     let target = try await store.createSession(WorkflowSessionCreateInput(workflowId: "history", entryStepId: "resume"))
 
-    do {
-      _ = try await store.importAcceptedHistory(WorkflowHistoryImportInput(
+    let imported = try await store.importAcceptedHistory(WorkflowHistoryImportInput(
         sessionId: target.sessionId, sourceSessionId: source.session.sessionId,
         executions: source.session.executions, messages: source.messages))
-      XCTFail("completed sources must be refused")
-    } catch {
-      XCTAssertTrue(String(describing: error).contains("failed or suspended source session"))
-    }
 
-    let unchangedTarget = try await store.loadSession(id: target.sessionId)
-    let unchangedMessages = try await store.listMessages(for: target.sessionId, toStepId: nil)
-    XCTAssertEqual(unchangedTarget, target)
-    XCTAssertTrue(unchangedMessages.isEmpty)
+    XCTAssertEqual(imported.executions.first?.importedFrom?.sessionId, source.session.sessionId)
+    let importedMessages = try await store.listMessages(for: target.sessionId, toStepId: nil)
+    XCTAssertEqual(importedMessages.count, 1)
+    XCTAssertNotEqual(importedMessages.first?.communicationId, source.messages.first?.communicationId)
   }
 
   func testImportsBundleWithoutStoredSourceAndRecordsHandoverProvenance() async throws {

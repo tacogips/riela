@@ -1,7 +1,8 @@
 # Built-in gateway JSON requests
 
-Available in Riela 0.2.45, tracked by issue #176. The complete ART migration,
-validation/catalog reconciliation and production cutover remain unfinished.
+Available in Riela 0.2.45, tracked by issue #176. Riela-side workflow
+validation/catalog reconciliation for linked built-in gateways is implemented;
+the complete ART migration and production cutover remain unfinished.
 
 Gateway nodes can receive typed JSON and shape their results without a Python,
 shell or JavaScript helper. The workflow still owns pagination, retries,
@@ -37,9 +38,16 @@ common cache root; otherwise the current user's `.riela/cache` is used, so a
 workflow checkout change does not reset the cache. A private ephemeral guest
 still needs durable runtime cache storage to reuse it across guest executions.
 
-The matrix describes execution support. Core catalog discovery and validation
-reconciliation are still acceptance work; structural workflow validation alone
-does not prove that every operation exists in an installed gateway image.
+The matrix describes execution support. `riela workflow validate` checks
+catalog-backed built-in gateway operation requests when the corresponding SDK
+catalog is available: it rejects mixed operation and legacy modes, non-literal
+or malformed operation/selection values, invalid non-templated
+`config.postprocess` programs, and unknown catalog operations. It accepts the
+existing aliases and legacy request modes. Templated postprocess programs and
+providers without an available catalog are deferred to runtime. Validation for
+X readers, legacy container readers, Google Service and Kaiba nested arguments
+remains runtime-only; ART migration, release and deployment work also remain
+open.
 Availability of a host SDK does not make it available in a Linux guest: only
 Gmail, Wrike and X in this matrix have portable linked execution, while native
 Apple operations use the host bridge. Existing provider authorization still

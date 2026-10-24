@@ -149,6 +149,31 @@ boxes, no deferred live QA). See "Recently Completed" below.
 
 ## Recently Completed
 
+Issue sweep 2026-10-24 (issues
+[#175](https://github.com/tacogips/riela/issues/175),
+[#163](https://github.com/tacogips/riela/issues/163),
+[#135](https://github.com/tacogips/riela/issues/135),
+[#104](https://github.com/tacogips/riela/issues/104); designs
+[command failure diagnostics](../design-docs/specs/design-command-failure-diagnostics.md)
+and [rerun input carryover and finalization evidence](../design-docs/specs/design-rerun-input-carryover-and-finalization-evidence.md)):
+[`issue-sweep-20261024-175-verify`](completed/issue-sweep-20261024-175-verify.md),
+[`issue-sweep-20261024-163-command-failure-diagnostics`](completed/issue-sweep-20261024-163-command-failure-diagnostics.md),
+[`issue-sweep-20261024-135-retry-timeout-rerun-carryover`](completed/issue-sweep-20261024-135-retry-timeout-rerun-carryover.md)
+and [`issue-sweep-20261024-104-rerun-finalization-evidence`](completed/issue-sweep-20261024-104-rerun-finalization-evidence.md)
+were archived on 2026-10-24 after test-integrity and adversarial reviews
+accepted them. The combined-tree reruns in
+`tmp/issue-sweep-20261024/reconcile-wave-004/` passed: core 138/0, ISW-163,
+ISW-175 and CLI filters exit 0, and strict lint exit 0. Browser E2E was skipped
+because no browser-facing file changed. Optional tests ISW104-DEFER-2 and
+ISW135-DEFER-2 are deferred. Commit is a downstream workflow step (no push).
+[`issue-sweep-20261024-176-gateway-validation`](active/issue-sweep-20261024-176-gateway-validation.md)
+stays active: V0-V5 are accepted, but the unskipped `RielaExampleParityTests`
+aggregate is still 9/2 because of the out-of-scope X container baseline
+(ISW176-DEFER-2). The dispatch manifest stays at
+[`active/issue-sweep-20261024-dispatch.json`](active/issue-sweep-20261024-dispatch.json);
+it records the original plan paths. Progress logs:
+`progress/issue-sweep-20261024-*.md`.
+
 Scheduled workflow overlap policy
 ([design](../design-docs/specs/design-scheduled-overlap-policy.md)):
 [`schedule-overlap-policy-01-contracts`](completed/schedule-overlap-policy-01-contracts.md),

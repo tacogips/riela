@@ -15,16 +15,23 @@ private func historyDigest<T: Encodable>(_ value: T) throws -> String {
 }
 
 extension DeterministicWorkflowRunner {
-  func historyInvocationSnapshot(_ input: AdapterExecutionInput, request: DeterministicWorkflowRunRequest,
-    step: WorkflowStepRef, payload: AgentNodePayload) throws -> JSONObject {
+  func historyInvocationSnapshot(
+    _ input: AdapterExecutionInput,
+    request: DeterministicWorkflowRunRequest,
+    step: WorkflowStepRef,
+    payload: AgentNodePayload
+  ) throws -> JSONObject {
     var snapshot = input.invocationSnapshot
     let contract = try historyContract(request, step: step, payload: payload)
     snapshot["_rielaHistoryContract"] = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(contract))
     return snapshot
   }
 
-  private func historyContract(_ request: DeterministicWorkflowRunRequest, step: WorkflowStepRef,
-    payload: AgentNodePayload) throws -> HistoryInvocationContract {
+  private func historyContract(
+    _ request: DeterministicWorkflowRunRequest,
+    step: WorkflowStepRef,
+    payload: AgentNodePayload
+  ) throws -> HistoryInvocationContract {
     var workflow = request.workflow
     workflow.steps = [step]
     return try HistoryInvocationContract(workflowDigest: historyDigest(workflow),
@@ -33,8 +40,11 @@ extension DeterministicWorkflowRunner {
         "variables": .object(payload.variables)]), variablesDigest: historyDigest(request.variables))
   }
 
-  func preservedHistory(_ request: DeterministicWorkflowRunRequest, source: WorkflowSession,
-    target: String) async throws -> WorkflowHistoryImportInput {
+  func preservedHistory(
+    _ request: DeterministicWorkflowRunRequest,
+    source: WorkflowSession,
+    target: String
+  ) async throws -> WorkflowHistoryImportInput {
     func reject(_ message: String) -> DeterministicWorkflowRunnerError {
       .rerunValidation("cannot preserve history: \(message)")
     }
@@ -47,7 +57,8 @@ extension DeterministicWorkflowRunner {
           source.executions[..<boundary].allSatisfy({ $0.status == .completed || $0.status == .failed }),
           prefix.allSatisfy({ $0.acceptedOutput != nil }),
           source.executions[boundary...].allSatisfy({ $0.stepId == target && $0.status == .failed }) else {
-      throw reject("ambiguous repeated or non-accepted step boundary")
+      throw reject("ambiguous repeated or non-accepted step boundary; rerun without --preserve-history " +
+        "or use session resume --retry-failed-step")
     }
     for execution in Array(prefix) + [source.executions[boundary]] {
       guard let raw = execution.inputSnapshot?["_rielaHistoryContract"],

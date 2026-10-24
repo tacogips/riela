@@ -1,6 +1,6 @@
 # ISW2-74a: dynamic-workflow transition types and DynamicWorkflowPolicy
 
-**Status**: Active (not started)
+**Status**: Implementation complete; pending downstream review
 **planId**: ISW2-74a-dynamic-workflow-policy
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" and "Privilege and bounds" (rules 1-5, 9 and 10)
@@ -184,8 +184,8 @@ Both files are new, so no drift is expected. Still save a post-hash under `tmp/i
 
 ## Done criteria
 
-- [ ] All public names match the Contract block exactly.
-- [ ] Every listed test passes, and verification 1-3 pass, with logs.
+- [x] All public names match the Contract block exactly.
+- [x] Every listed policy case is covered and `DynamicWorkflowPolicyTests` passes; `swift build` and strict lint of the exact changed Swift files pass with plan-local logs.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
 

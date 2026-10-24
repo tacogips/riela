@@ -4,7 +4,7 @@
 **planId**: ISW2-74a-dynamic-workflow-policy
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" and "Privilege and bounds" (rules 1-5, 9 and 10)
-**dependsOn**: ISW2-27b-gateway-cancellation (serial operator amendment)
+**dependsOn**: ISW2-27b-gateway-cancellation (serial operator amendment; ISW2-27a accepted in 7f087cc4)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-74a-dynamic-workflow-policy.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-74a/
 

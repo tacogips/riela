@@ -4,7 +4,7 @@
 **planId**: ISW2-27b-gateway-cancellation
 **Issue**: https://github.com/tacogips/riela/issues/27 (P2)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)", subsection "P2 contract"
-**dependsOn**: ISW2-32-recovery-hydration (serial operator amendment)
+**dependsOn**: ISW2-32-recovery-hydration (serial operator amendment; ISW2-27a accepted in 7f087cc4)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-27b-gateway-cancellation.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-27b/
 

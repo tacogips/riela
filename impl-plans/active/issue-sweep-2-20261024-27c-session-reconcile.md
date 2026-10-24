@@ -4,7 +4,7 @@
 **planId**: ISW2-27c-session-reconcile
 **Issue**: https://github.com/tacogips/riela/issues/27 (P4, plus CLI resume parity and docs)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)": the P4 contract, and P1 items 6-7
-**dependsOn**: ISW2-32-recovery-hydration, ISW2-27a-cancelled-status, ISW2-74a-dynamic-workflow-policy (serial operator amendment)
+**dependsOn**: ISW2-32-recovery-hydration, ISW2-74a-dynamic-workflow-policy (serial operator amendment; ISW2-27a accepted in 7f087cc4)
 **Progress log**: impl-plans/progress/issue-sweep-2-20261024-27c-session-reconcile.md
 **Scratch root**: tmp/issue-sweep-2-20261024/isw2-27c/
 

@@ -33,6 +33,7 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,
     BuiltinWorkflowAddonResolver.snapshotStoreRegistration,
     BuiltinWorkflowAddonResolver.cacheExchangeRegistration,
+    BuiltinWorkflowAddonResolver.recordManifestRegistration,
     BuiltinWorkflowAddonResolver.xDigestRegistration,
     BuiltinWorkflowAddonResolver.gmailDigestRegistration
   ] + BuiltinAddonHandlerRegistration.family(BuiltinDataAddon.self) { resolver, input, operation, _ in

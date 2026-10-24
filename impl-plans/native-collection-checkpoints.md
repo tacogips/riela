@@ -237,3 +237,34 @@ and production pin have not been updated. Live App root322 was observed running
 with root321/320 completed. News body manifests/recovery selection, Web/HN/feed
 and outer progress orchestration still need migration before the final matching
 release/install/deploy and a new two-hour real acquisition/Notion proof.
+
+## Native record manifest decisions
+
+Moved missing/available/oversized/exact-acknowledged partitioning, pending metadata
+retention and bounded recovery-set/context validation to `riela/record-manifest`.
+The node is provider-independent and composes cache-exchange with snapshot-store;
+it does not infer cache misses are acknowledgements or acquisition completion.
+Original refs/frozen metadata remain opaque. ART adapts its source/ID/account
+receipts and retains the existing wire partition format for publication.
+
+Actual Opus5.5medium review identified four compatibility edges: domain IDs whose
+account binding changes their logical key, an unscoped >10000 historical ACK
+catalogue, Swift Unicode canonical equivalence, and missing-builtin preflight.
+All were fixed with focused regressions and source-only own closure, no second
+paid call. Native identity/version sets use UTF8 Data, ACKs are key/version arrays,
+and contexts also compare encoded bytes. Default source cache setup exercises an
+empty manifest partition before any acquisition work. Test fixtures now reflect
+the already-current snapshot head API and route only native metadata calls past
+mocked inspector processes. The forbidden-process inventory test explicitly
+mocks this dependency; a separate real CLI/cache/CAS test covers that boundary.
+
+The source refactor still leaves cache IO, domain receipt/eligibility and legacy
+publication partition serialization in Python. Remaining Web/HN/feed and outer
+coordination work, matching release/install/Linux guest and idle production
+cutover precede a new7200s real-acquisition/Notion verification period.
+
+Final gates for this chunk:17 native CLI/manifest/registry/snapshot/cache tests
+and125 ART tests across16 suites, all passed with zero skips. Focused SwiftLint
+and diff checks are clean. The actual temporary cache/snapshot integration gate
+passes independently of inspector/metadata-only mocks. Production root323 was
+observed running while322/321 were completed; warm App/CLI/pin19 are unchanged.

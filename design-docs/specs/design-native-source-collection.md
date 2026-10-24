@@ -288,3 +288,59 @@ payload. A 69 MiB synthetic staging operation was verified end to end through
 the actual native CLI, including protection across all three frames. News manifest/recovery selection and outer work
 coordination are still separate migrations. This does not prove production
 installation, source acquisition, or the required post-cutover two-hour gate.
+
+## Record manifests and bounded recovery sets
+
+`riela/record-manifest` v1 is a pure metadata node composed after cache reads
+and before `snapshot-store`. Its config is `{action, value}`. Each entry is
+`{key, version, value}`: `key` identifies a logical item within a caller-selected
+provider/account/window scope, `version` identifies its inspected revision, and
+`value` is opaque metadata (for example original body references and provider
+IDs). The node never fetches, acknowledges, deletes, or advances a cursor.
+Entries/sets are limited to10000 items and requests/results to64 MiB minus8 KiB.
+Whole typed references keep template-looking metadata literal; CLI data can use
+stdin `--variables @-`. Common postprocessing remains supported.
+
+Actions:
+
+- `partition`: `entries`, `availableKeys`, optional `oversizedKeys`,
+  `selectedKeys`, `acknowledged`, and `unavailableAcknowledgedKeys`. It returns
+  `available`, `pending`, `acknowledgedMissing`, `oversized`, and `needsRecovery`
+  for the selected scope. An acknowledgement is an array item `{key, version}`;
+  only the exact current version exempts a missing body from recovery. Verified
+  unavailable metadata outside a selected hydration slice remains metadata only.
+  `needsRecovery:false` is not acquisition or publication completion.
+- `merge`: `entries`, `current`, `retainKeys`. It returns the current entries
+  followed by still-pending original metadata not superseded by a current key,
+  plus `retainedKeys`. Unknown retained keys and ambiguous duplicates fail. A
+  domain adapter can explicitly exclude a superseded domain ID when its account
+  binding changes its logical key; the generic node never guesses that mapping.
+- `recover`: `entries`, `requestedKeys`, `returnedKeys`, `pendingKeys`,
+  `availableKeys`, `unavailableAcknowledgedKeys`, `acknowledged`, `context`, and
+  `expectedContext`, with optional paired `attemptedKeys`/`deferredKeys`.
+  Returned and pending must exactly partition the request. Attempts and deferred
+  work also partition it, returns must have been attempted, and deferred work
+  remains pending. Available, pending and exact acknowledged-unavailable rows
+  must cover the entire original manifest without overlap. Changed context,
+  invented IDs or incorrect acknowledged versions fail. The result preserves
+  original `retainedPending`/`retainedAcknowledged` entries. `hasProgress:false`
+  when no inspected return was accepted never implies a successful checkpoint.
+
+Keys and versions compare UTF-8 bytes, including canonically equivalent Unicode
+spellings. Acknowledgements use arrays to avoid Swift String dictionary-key
+normalization. Context compares typed JSON equality and canonical encoded bytes;
+property order is immaterial, while different string code points remain distinct.
+The node validates metadata consistency only. Actual cache integrity, source
+inspection, publication receipts and snapshot CAS remain their respective nodes'
+contracts.
+
+ART `NewsMemory` now delegates these set decisions, scopes acknowledgement input
+to the manifest instead of the full historical receipt catalogue, and checks
+builtin availability before default cache/provider setup. Its adapter retains
+source-specific receipt generation, identity/time-window eligibility, selected
+body size limits, legacy partition/hash format, cache-group transport and image
+inspection. State persistence already uses the atomic native snapshot API.
+An actual offline cache/snapshot test verifies LRU misses retain unpublished IDs,
+fresh polling advances independently, and a stale writer cannot replace the new
+head. This migration does not certify the remaining Web/outer-coordination,
+matching Linux/release/production cutover or post-cutover two-hour gate.

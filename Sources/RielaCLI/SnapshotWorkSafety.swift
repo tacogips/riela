@@ -11,12 +11,17 @@ func checkSnapshotWork(_ context: AdapterExecutionContext) throws {
 func preflightSnapshotFiles(_ database: URL) throws {
   for suffix in ["", "-wal", "-shm", "-journal"] {
     let file = database.path + suffix
-    if FileManager.default.fileExists(atPath: file) || (try? FileManager.default.destinationOfSymbolicLink(atPath: file)) != nil {
+    if (try? FileManager.default.destinationOfSymbolicLink(atPath: file)) != nil {
+      throw AdapterExecutionError(.invalidInput, "unsafe snapshot metadata path")
+    }
+    do {
       let attributes = try FileManager.default.attributesOfItem(atPath: file)
       guard attributes[.type] as? FileAttributeType == .typeRegular,
         (attributes[.referenceCount] as? NSNumber)?.intValue == 1 else {
         throw AdapterExecutionError(.invalidInput, "unsafe snapshot metadata path")
       }
+    } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+      continue
     }
   }
 }
@@ -44,5 +49,17 @@ func snapshotDirectoryExists(_ directory: URL) throws -> Bool {
     return true
   } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
     return false
+  }
+}
+
+func snapshotDatabaseIdentity(_ database: URL) throws -> String? {
+  do {
+    let attributes = try FileManager.default.attributesOfItem(atPath: database.path)
+    guard let device = attributes[.systemNumber] as? NSNumber, let inode = attributes[.systemFileNumber] as? NSNumber else {
+      throw AdapterExecutionError(.invalidInput, "invalid snapshot metadata identity")
+    }
+    return device.stringValue + ":" + inode.stringValue
+  } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+    return nil
   }
 }

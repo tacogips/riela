@@ -11,12 +11,11 @@ extension BuiltinWorkflowAddonResolver {
   func executeSnapshotScan(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
-      Set(config.keys).isSubset(of: ["storage", "valueFrom", "whereAny", "sortBy", "maxDatabases", "maxPayloadBytes"]),
+      Set(config.keys).isSubset(of: ["storage", "valueFrom", "whereAny", "sortBy", "maxDatabases", "maxPayloadBytes", "presence", "valueSchema"]),
       case let .object(storage)? = config["storage"],
-      Set(storage.keys).isSubset(of: ["memoryPrefix", "workflowId", "nodeId", "tag", "memoryRoot"]),
-      case let .string(prefix)? = storage["memoryPrefix"], prefix.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$"#, options: .regularExpression) != nil,
+      Set(storage.keys).isSubset(of: ["memoryPrefix", "memoryIds", "workflowId", "nodeId", "tag", "memoryRoot"]),
       case let .integer(maximum) = config["maxDatabases"] ?? .integer(4096), (1...4096).contains(maximum),
-      case let .integer(limit) = config["maxPayloadBytes"] ?? .integer(7_990_000), (1...8_000_000).contains(limit),
+      case let .integer(limit) = config["maxPayloadBytes"] ?? .integer(7_990_000), (1...64 * 1024 * 1024).contains(limit),
       try JSONEncoder().encode(config).count <= 8_000_000 else { throw snapshotScanInvalid() }
     func text(_ key: String, fallback: String) throws -> String {
       guard let value = storage[key] else { return fallback }
@@ -29,22 +28,39 @@ extension BuiltinWorkflowAddonResolver {
     let rawRoot = try text("memoryRoot", fallback: environment["RIELA_MEMORY_ROOT"] ?? RielaMemoryStore.defaultRootDirectory(workingDirectory: workingDirectory.path))
     let directory = URL(fileURLWithPath: rawRoot, relativeTo: workingDirectory).standardizedFileURL.resolvingSymlinksInPath()
     let store = RielaMemoryStore(rootDirectory: directory.path)
-    _ = try store.databasePath(memoryId: prefix)
     let selection = try SnapshotScanSelection(config)
     var paths: [URL] = []
-    if try snapshotDirectoryExists(directory) {
-      let failure = SnapshotScanEnumerationFailure()
-      guard let iterator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil,
-        options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in failure.mark(); return false }) else { throw snapshotScanInvalid() }
-      var visited = 0
-      for case let path as URL in iterator {
-        visited += 1; guard visited <= 100_000 else { throw snapshotScanInvalid() }
-        guard path.lastPathComponent.hasPrefix(prefix), path.pathExtension == "sqlite" else { continue }
-        paths.append(path); guard paths.count <= maximum else { throw snapshotScanInvalid() }
-        _ = try store.databasePath(memoryId: path.deletingPathExtension().lastPathComponent)
-        try preflightSnapshotFiles(path)
+    // Validate the complete request before a legacy read can install baselines.
+    if case let .array(ids)? = storage["memoryIds"], storage["memoryPrefix"] == nil {
+      guard ids.count <= maximum else { throw snapshotScanInvalid() }
+      var seen = Set<Data>()
+      paths = try ids.map { id in
+        guard case let .string(memory) = id, seen.insert(Data(memory.utf8)).inserted else { throw snapshotScanInvalid() }
+        return URL(fileURLWithPath: try store.databasePath(memoryId: memory))
       }
-      guard !failure.failed else { throw snapshotScanInvalid() }
+    } else if case let .string(prefix)? = storage["memoryPrefix"], storage["memoryIds"] == nil,
+      prefix.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$"#, options: .regularExpression) != nil {
+      _ = try store.databasePath(memoryId: prefix)
+      if try snapshotDirectoryExists(directory) {
+        let failure = SnapshotScanEnumerationFailure()
+        guard let iterator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil,
+          options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in failure.mark(); return false }) else { throw snapshotScanInvalid() }
+        var visited = 0
+        for case let path as URL in iterator {
+          try checkSnapshotWork(context)
+          visited += 1; guard visited <= 100_000 else { throw snapshotScanInvalid() }
+          guard path.lastPathComponent.hasPrefix(prefix), path.pathExtension == "sqlite" else { continue }
+          paths.append(path); guard paths.count <= maximum else { throw snapshotScanInvalid() }
+          _ = try store.databasePath(memoryId: path.deletingPathExtension().lastPathComponent)
+        }
+        guard !failure.failed else { throw snapshotScanInvalid() }
+      }
+    } else { throw snapshotScanInvalid() }
+    _ = try snapshotDirectoryExists(directory)
+    var files = Set<String>()
+    for path in paths {
+      try checkSnapshotWork(context); try preflightSnapshotFiles(path)
+      if let identity = try snapshotDatabaseIdentity(path), !files.insert(identity).inserted { throw snapshotScanInvalid() }
     }
     var rows: [SnapshotScanRow] = [], bytes = 2
     for path in paths.sorted(by: { Data($0.lastPathComponent.utf8).lexicographicallyPrecedes(Data($1.lastPathComponent.utf8)) }) {
@@ -52,7 +68,7 @@ extension BuiltinWorkflowAddonResolver {
       let memory = path.deletingPathExtension().lastPathComponent
       guard let snapshot = try store.loadSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag, maxPayloadBytes: Int(limit)) else { continue }
       let raw = jsonValue(from: snapshot.record.payload)
-      guard let value = try JSONDataTransform.lookup(raw, pointer: selection.pointer) else { throw snapshotScanInvalid() }
+      let value = try selection.project(raw)
       guard try selection.accepts(value) else { continue }
       let row: JSONValue = .object(["memoryId": .string(memory), "head": .object(["recordId": .integer(snapshot.head.recordId),
         "version": .integer(snapshot.head.version), "scope": .string(snapshot.head.scope)]), "value": value])
@@ -79,7 +95,19 @@ private struct SnapshotScanSelection {
   var pointer: JSONValue
   var conditions: [JSONObject]
   var sort: [JSONObject]
+  var presence: JSONObject?
+  var schema: JSONObject?
   init(_ config: JSONObject) throws {
+    if let raw = config["valueSchema"] {
+      guard case let .object(value) = raw, DefaultWorkflowOutputValidator().validateContractSchema(value) == nil else { throw snapshotScanInvalid() }
+      schema = value
+    }
+    if let raw = config["presence"] {
+      guard case let .object(fields) = raw, !fields.isEmpty, fields.count <= 64, config["valueFrom"] == nil,
+        fields.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 }) else { throw snapshotScanInvalid() }
+      for path in fields.values { _ = try JSONDataTransform.lookup(.null, pointer: path) }
+      presence = fields
+    }
     pointer = config["valueFrom"] ?? .string("")
     _ = try JSONDataTransform.lookup(.null, pointer: pointer)
     func specs(_ key: String) throws -> [JSONObject] {
@@ -104,6 +132,21 @@ private struct SnapshotScanSelection {
       if let value = row["default"], case .string = value {} else if row["default"] != nil { throw snapshotScanInvalid() }
       _ = try JSONDataTransform.lookup(.null, pointer: path)
     }
+  }
+  func project(_ raw: JSONValue) throws -> JSONValue {
+    if let schema {
+      guard case let .object(value) = raw,
+        try DefaultWorkflowOutputValidator().validate(.init(source: .inlineCandidate, payload: value, completionPassed: true),
+          contract: .init(schema: schema, requiredObject: true)).status == .accepted else { throw snapshotScanInvalid() }
+    }
+    if let presence {
+      return .object(try presence.mapValues { pointer in
+        let value = try JSONDataTransform.lookup(raw, pointer: pointer)
+        return .bool(value != nil && value != .null)
+      })
+    }
+    guard let value = try JSONDataTransform.lookup(raw, pointer: pointer) else { throw snapshotScanInvalid() }
+    return value
   }
   func accepts(_ value: JSONValue) throws -> Bool {
     var matched = conditions.isEmpty

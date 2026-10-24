@@ -33,6 +33,7 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,
     BuiltinWorkflowAddonResolver.snapshotStoreRegistration,
     BuiltinWorkflowAddonResolver.snapshotScanRegistration,
+    BuiltinWorkflowAddonResolver.arraySelectRegistration,
     BuiltinWorkflowAddonResolver.snapshotRotateRegistration,
     BuiltinWorkflowAddonResolver.cacheExchangeRegistration,
     BuiltinWorkflowAddonResolver.recordManifestRegistration,

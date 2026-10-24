@@ -27,12 +27,33 @@ metadata to inspect:
 }
 ```
 
+Instead of `memoryPrefix`, `storage.memoryIds` can specify up to `maxDatabases`
+distinct exact memory IDs. The two options are mutually exclusive. All IDs and
+paths are validated before any head is loaded; missing heads are omitted. Exact
+sets never enumerate unrelated databases. `scannedCount` then counts requested
+IDs, including missing heads. Different IDs that alias the same physical database
+on a case-insensitive filesystem are refused without changing case-sensitive IDs.
+
 The result contains `items: [{memoryId, head, value}]` and `scannedCount`.
 Only matching scoped heads are read; source bodies outside `valueFrom` are not
 returned. `nodeId: null` explicitly selects the latest matching node in a workflow.
 The scope defaults to the invoking workflow/node and tag `checkpoint`.
 `memoryRoot` defaults to `RIELA_MEMORY_ROOT` or the working directory's default
 memory root. Relative roots resolve against the execution working directory.
+
+For existence checks, replace `valueFrom` with e.g.
+`"presence": {"pending": "/state/pending"}`. Each of at most 64 named pointers
+returns `true` when the field exists and is non-null, otherwise `false`. Empty
+objects, strings and arrays count as present. Source values are never returned
+by this projection. The selected per-record snapshot can therefore contain a
+large pending document while the scan only returns a boolean. Missing heads
+remain omitted; they are distinct from a found head with `pending: false`.
+
+Optional `valueSchema` validates the raw stored object before either projection
+using Riela's supported JSON output-schema dialect. Its schema is checked before
+storage IO. For a versioned journal, require its version, object state and array
+records here; a corrupt envelope then refuses the probe instead of clearing a
+pending barrier. Validation failures return finite errors without stored values.
 
 Pointers use RFC 6901. `whereAny` ORs up to eight equality conditions for booleans,
 strings, null or integers in the exactly representable range ±(2⁵³−1);
@@ -50,11 +71,45 @@ Scanning is immediate-directory only, at most 100,000 directory entries and
 symlinks, hard links and non-regular files are refused before any snapshot load.
 Directory read errors refuse the operation. A missing directory returns an empty
 queue without creating it. `maxPayloadBytes` bounds each stored snapshot
-(default 7,990,000, maximum 8,000,000 bytes); the selected result is independently
+(default 7,990,000, maximum 64 MiB); the selected result is independently
 bounded to 7,990,000 bytes. Deadline/cancellation is checked between databases.
 Legacy snapshot revision baselines may be initialized on read, without changing
 the payload. This is a sequence of atomic per-memory reads, not a global queue
 transaction or a work lease; recheck the source head before committing work.
+
+## Select and order metadata
+
+`riela/array-select` (version `1`) accepts `items`, `whereAll`, `sortBy` and
+`limit`. It performs no storage or provider IO. For example:
+
+```json
+{
+  "items": [{"id": "work-a", "date": "2026-10-25", "source": "mail"}],
+  "whereAll": [{"path": "/id", "notIn": ["already-attempted"]}],
+  "sortBy": [
+    {"path": "/date", "rank": ["2026-10-25"]},
+    {"path": "/last_attempt", "default": ""},
+    {"path": "/source", "rank": ["mail", "x"]}
+  ],
+  "limit": 1
+}
+```
+
+All filter fields must be strings. Each condition declares `path` and exactly
+one of `equals` (string), `in` or `notIn` (up to 10,000 strings). All conditions
+must match. Sorting also uses string fields, with an optional string `default`
+for absent fields. Without `rank`, keys compare by exact UTF-8 bytes. With
+`rank`, listed values have increasing priority and all unlisted values share the
+last rank; later sort fields resolve ties. Equal full keys retain input order.
+Every required filter and sort field is checked even on excluded rows; invalid
+metadata refuses the operation. Source strings are data, never templates or code.
+
+There are at most 16 conditions, 16 sort fields and 256 distinct values in each
+rank list. Input items are bounded to 10,000, and the request and response each
+to 8,000,000 bytes. `limit` is 0–10,000 (default 10,000). The result contains
+`items` (the selected prefix), `matchedCount` before the limit, and `inputCount`.
+Selection has no side effects; callers still validate domain permissions and
+recheck the selected source head before recording a work attempt.
 
 ## Reserve an attempted prefix fairly
 

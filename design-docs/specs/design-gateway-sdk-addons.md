@@ -327,6 +327,85 @@ Apple uses its effective input/config precedence; defer template-dependent value
 until execution rather than rejecting valid existing input-driven passthroughs. Runtime repeats policy-sensitive checks
 so a workflow that was not prevalidated still fails closed.
 
+### Reconciliation with gateway JSON requests (#176, 2026-10-24)
+
+The source contradicts the injection decision above. Every production
+`DefaultWorkflowValidator()` call site passes no context, including
+`WorkflowValidateInspectCommands.swift`. `DefaultWorkflowValidator.validate`
+calls `validateGatewayNodeAddon` only when a context is present. As a result,
+neither the shape checks nor the catalog checks run anywhere today. The
+"other Core callers retain shape-only validation" sentence is also stale:
+those callers run no gateway checks at all. That stays true after this change,
+and the runtime still fails closed. The rules below replace the parts they
+contradict.
+
+- **V0 wiring.** Only the explicit `riela workflow validate` path
+  (`WorkflowValidateCommand.run`) builds `DefaultWorkflowValidator(context:)`
+  with a production context from `RielaCLI`. `workflow inspect`, run preflight,
+  the registry and the server stay context-free.
+  - The context's `gatewayCatalog` closure projects operation names from the
+    same pinned SDK constructors the runtime descriptors use (their
+    `operationCatalog`). It returns nil where `#if canImport` excludes the SDK,
+    in which case only the existence check is skipped.
+  - The context gains one optional closure, `postprocessCompiler`, which the
+    CLI implements with the runtime `JSONDataTransform.compile`.
+  - `RielaCore` still imports no gateway SDK and no transform compiler.
+- **V1 provider coverage.** Add `WorkflowGatewayProvider.notion` with tiers
+  `reader` and `writer`. Map `riela/notion-gateway-read` and
+  `riela/notion-gateway-write` like the other GraphQL add-ons, with passthrough
+  key `queryTemplate`.
+- **V2 mixed modes.** In operation mode, reject every legacy key the runtime
+  builder (`BuiltinGatewayJSONRequest.request`) refuses: `queryTemplate`,
+  `variablesTemplate`, `command`, `argsTemplate` and `select`. This applies to
+  the GraphQL and Google Documents/Sheets/Drive add-ons. Apple keeps rejecting
+  `query`, `queryFile`, `variables` and `variablesFile` on its effective
+  config+inputs. The Gmail tiers also reject passthrough `variablesTemplate`,
+  matching the runtime `acceptsVariables: false`. This supersedes the stale
+  "no `acceptsVariables` exception" statement above.
+- **V3 literals.** These bounds match runtime.
+  - `operation`: at most 256 bytes and no `{{`. GraphQL and Apple names must
+    match `^[_A-Za-z][_0-9A-Za-z]*$`. Documents command names must match
+    `^[A-Za-z][A-Za-z0-9_-]*( [A-Za-z][A-Za-z0-9_-]*)*$`.
+  - Array `selection`: 1 to 256 entries. Each entry must match
+    `^[_A-Za-z][_0-9A-Za-z]*(\.[_A-Za-z][_0-9A-Za-z]*)*$` and be at most 4,096
+    bytes.
+  - String `selection`: brace-leading (the existing rule), at most 65,536
+    bytes and no `{{`. GraphQL field aliases (`alias: field`) inside a literal
+    selection set stay valid.
+- **V4 postprocess.** For every add-on named `riela/*` or `kaiba/*` with
+  `config.postprocess`, the value is compiled with `postprocessCompiler` when
+  it contains no `{{` placeholder. A compile failure is an error at
+  `workflow.nodes[i].addon.config.postprocess`. A templated program is
+  deferred, because the runtime compiles it after rendering and before any
+  provider effect.
+- **V5 unknown operations.** Once V0 is wired, the existing
+  `validateKnownOperation` runs for these catalogs: Wrike, Analytics, Gmail
+  reader/draft/sender (plus threads/message-box when their SDK exposes a
+  catalog), Notion, the six Documents roles, and Apple `full`. Documents names
+  are projected in the same command-word form that runtime operation mode
+  accepts.
+- **Unchanged and still valid.**
+  - passthrough `queryTemplate` + `variablesTemplate` (non-Gmail);
+  - Documents `command` + `argsTemplate`;
+  - Apple passthrough with inputs precedence and template-dependent values;
+  - empty `arguments`; the default selection;
+  - renamed add-on diagnostics.
+- **Still runtime-only** (remaining #176 work):
+  - X readers, including the nested `select` compatibility;
+  - legacy container readers (`riela/x-gateway-read`,
+    `riela/gmail-gateway-read`);
+  - Google Service;
+  - Kaiba nested arguments.
+
+V0–V5 gate: focused `WorkflowGatewayValidationTests` (Core rules with a stub
+context), a CLI `workflow validate` test that proves the production context is
+injected, and `riela workflow validate` staying valid for every gateway
+example: `examples/builtin-gateway-json`, `gmail-latest-mail-digest-telegram`,
+`wrike-project-kanban-agent`, `wrike-webhook-realtime`, `apple-gateway-admin`
+and `apple-gateway-packaging-plan`. `docs/builtin-gateway-json.md` and
+`impl-plans/builtin-gateway-json-176.md` record V0–V5 as done. ART migration,
+release and deployment remain open.
+
 ## Provider wiring and compatibility
 
 Wrike, google-analytics, and gmail descriptors are made from their facade's

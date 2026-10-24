@@ -53,3 +53,32 @@ adapter, but it must not own pagination, subprocess orchestration or generic
 progress. Acquisition and article processing remain independent. The current
 production pin and its older monitoring window are not final acceptance for
 this migration.
+
+## ART Gmail listing source migration
+
+The active ART source graph now uses native `page-state` for query traversal,
+deduplication, limits and cursor cycle checks, and `json-route` for fixed read
+dispatch. The former Python listing loop and route phase are removed. A small
+domain binder passes native IDs/state back to existing Gmail version/body and
+inspection policy. Exact typed gateway argument-object references are accepted
+by static validation and checked as objects before bounded SDK/catalog execution.
+Literal template-looking source data is never evaluated again.
+
+Evidence: 28 focused Riela tests pass, including actual runner X page/resume
+tests and typed gateway/static validation tests. ART's Gmail domain suite has
+13 passing tests using the native CLI page node; the separate actual private
+guest test is explicitly skipped until the matching Linux binary is built.
+Both updated Gmail definitions validate. Actual Opus 5.5 medium review found
+no blockers. None of this is a production cutover or the final two-hour check.
+
+The Linux addon image builder still pinned analytics/documents sources older
+than Package.swift. Their source pins must match the package dependencies;
+the existing portability adaptations are checked on copies of those exact
+sources before rebuilding. Do not patch unrelated installed production images.
+
+Still required: native X account/query/window cursor ownership, Gmail remaining
+generic iteration/checkpoint handling, Web acquisition/progress, source selection
+and independent scheduling in the authored graph, legacy metadata import,
+matching host/guest release and install, idle deployment, and two hours of real
+post-cutover collection plus Notion verification. Existing production monitoring
+and examples remain insufficient for those gates.

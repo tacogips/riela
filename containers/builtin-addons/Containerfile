@@ -20,7 +20,7 @@ FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b7
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /google-analytics-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-analytics-gateway.git && \
-    git fetch --depth 1 origin 6b5bf1eda3d0c6ba73439b398ffd616e6b0834e0 && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin 3bd0048a01295ed3559da65b9aef9e767268a907 && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 RUN python3 /prepare.py analytics /google-analytics-gateway --crypto-version 4.5.2
 
@@ -28,7 +28,7 @@ FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b7
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /google-documents-gateway
 RUN git init . && git remote add origin https://github.com/tacogips/google-documents-gateway.git && \
-    git fetch --depth 1 origin dadc2f7d0070f92df07278873262f9f7aad5d16e && git checkout --detach FETCH_HEAD
+    git fetch --depth 1 origin e97d952459305828461e3a808d0dfdace902079f && git checkout --detach FETCH_HEAD
 COPY scripts/prepare-container-gateway-source.py /prepare.py
 COPY scripts/container-gateway-support /container-gateway-support
 RUN python3 /prepare.py documents /google-documents-gateway --crypto-version 4.5.2

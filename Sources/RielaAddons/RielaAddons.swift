@@ -120,6 +120,8 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/page-state", version: "1"),
     .init(name: "riela/collection-checkpoint", version: "1"),
     .init(name: "riela/snapshot-store", version: "1"),
+    .init(name: "riela/snapshot-scan", version: "1"),
+    .init(name: "riela/snapshot-rotate", version: "1"),
     .init(name: "riela/cache-exchange", version: "1"),
     .init(name: "riela/record-manifest", version: "1"),
     .init(name: "riela/public-web", version: "1"),

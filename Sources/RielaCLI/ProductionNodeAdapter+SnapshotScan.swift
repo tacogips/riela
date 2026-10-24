@@ -1,0 +1,133 @@
+import Foundation
+import RielaAddonSupport
+import RielaCore
+import RielaMemory
+
+extension BuiltinWorkflowAddonResolver {
+  static let snapshotScanRegistration = BuiltinAddonHandlerRegistration(name: "riela/snapshot-scan", bindsCLIVariablesAsInputs: false) { resolver, input, context in
+    try snapshotWorkResult { try resolver.executeSnapshotScan(input, context: context) }
+  }
+
+  func executeSnapshotScan(_ input: WorkflowAddonExecutionInput, context: AdapterExecutionContext) throws -> AdapterExecutionOutput {
+    guard input.addon.version == nil || input.addon.version == "1",
+      case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
+      Set(config.keys).isSubset(of: ["storage", "valueFrom", "whereAny", "sortBy", "maxDatabases", "maxPayloadBytes"]),
+      case let .object(storage)? = config["storage"],
+      Set(storage.keys).isSubset(of: ["memoryPrefix", "workflowId", "nodeId", "tag", "memoryRoot"]),
+      case let .string(prefix)? = storage["memoryPrefix"], prefix.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}$"#, options: .regularExpression) != nil,
+      case let .integer(maximum) = config["maxDatabases"] ?? .integer(4096), (1...4096).contains(maximum),
+      case let .integer(limit) = config["maxPayloadBytes"] ?? .integer(7_990_000), (1...8_000_000).contains(limit),
+      try JSONEncoder().encode(config).count <= 8_000_000 else { throw snapshotScanInvalid() }
+    func text(_ key: String, fallback: String) throws -> String {
+      guard let value = storage[key] else { return fallback }
+      guard case let .string(text) = value, !text.isEmpty else { throw snapshotScanInvalid() }; return text
+    }
+    try checkSnapshotWork(context)
+    let workflow = try text("workflowId", fallback: input.workflowId), tag = try text("tag", fallback: "checkpoint")
+    let node = storage["nodeId"] == .null ? nil : try text("nodeId", fallback: input.nodeId)
+    guard !workflow.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw snapshotScanInvalid() }
+    let rawRoot = try text("memoryRoot", fallback: environment["RIELA_MEMORY_ROOT"] ?? RielaMemoryStore.defaultRootDirectory(workingDirectory: workingDirectory.path))
+    let directory = URL(fileURLWithPath: rawRoot, relativeTo: workingDirectory).standardizedFileURL.resolvingSymlinksInPath()
+    let store = RielaMemoryStore(rootDirectory: directory.path)
+    _ = try store.databasePath(memoryId: prefix)
+    let selection = try SnapshotScanSelection(config)
+    var paths: [URL] = []
+    if try snapshotDirectoryExists(directory) {
+      let failure = SnapshotScanEnumerationFailure()
+      guard let iterator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil,
+        options: [.skipsSubdirectoryDescendants], errorHandler: { _, _ in failure.mark(); return false }) else { throw snapshotScanInvalid() }
+      var visited = 0
+      for case let path as URL in iterator {
+        visited += 1; guard visited <= 100_000 else { throw snapshotScanInvalid() }
+        guard path.lastPathComponent.hasPrefix(prefix), path.pathExtension == "sqlite" else { continue }
+        paths.append(path); guard paths.count <= maximum else { throw snapshotScanInvalid() }
+        _ = try store.databasePath(memoryId: path.deletingPathExtension().lastPathComponent)
+        try preflightSnapshotFiles(path)
+      }
+      guard !failure.failed else { throw snapshotScanInvalid() }
+    }
+    var rows: [SnapshotScanRow] = [], bytes = 2
+    for path in paths.sorted(by: { Data($0.lastPathComponent.utf8).lexicographicallyPrecedes(Data($1.lastPathComponent.utf8)) }) {
+      try checkSnapshotWork(context)
+      let memory = path.deletingPathExtension().lastPathComponent
+      guard let snapshot = try store.loadSnapshot(memoryId: memory, workflowId: workflow, nodeId: node, tag: tag, maxPayloadBytes: Int(limit)) else { continue }
+      let raw = jsonValue(from: snapshot.record.payload)
+      guard let value = try JSONDataTransform.lookup(raw, pointer: selection.pointer) else { throw snapshotScanInvalid() }
+      guard try selection.accepts(value) else { continue }
+      let row: JSONValue = .object(["memoryId": .string(memory), "head": .object(["recordId": .integer(snapshot.head.recordId),
+        "version": .integer(snapshot.head.version), "scope": .string(snapshot.head.scope)]), "value": value])
+      bytes += try JSONEncoder().encode(row).count + 1
+      guard bytes <= 7_990_000 else { throw snapshotScanInvalid() }
+      rows.append(.init(value: row, keys: try selection.keys(value), index: rows.count))
+    }
+    rows.sort { left, right in
+      for (first, second) in zip(left.keys, right.keys) where first != second { return first.lexicographicallyPrecedes(second) }
+      return left.index < right.index
+    }
+    return .init(provider: "riela-builtin-addon", model: input.addon.name, promptText: "", completionPassed: true,
+      payload: ["items": .array(rows.map(\.value)), "scannedCount": .integer(Int64(paths.count))])
+  }
+}
+
+private struct SnapshotScanRow {
+  let value: JSONValue
+  let keys: [Data]
+  let index: Int
+}
+
+private struct SnapshotScanSelection {
+  var pointer: JSONValue
+  var conditions: [JSONObject]
+  var sort: [JSONObject]
+  init(_ config: JSONObject) throws {
+    pointer = config["valueFrom"] ?? .string("")
+    _ = try JSONDataTransform.lookup(.null, pointer: pointer)
+    func specs(_ key: String) throws -> [JSONObject] {
+      guard case let .array(values) = config[key] ?? .array([]), values.count <= 8 else { throw snapshotScanInvalid() }
+      return try values.map { guard case let .object(row) = $0 else { throw snapshotScanInvalid() }; return row }
+    }
+    conditions = try specs("whereAny"); sort = try specs("sortBy")
+    for row in conditions {
+      guard Set(row.keys) == ["path", "equals"], let path = row["path"], let value = row["equals"] else { throw snapshotScanInvalid() }
+      switch value {
+      case .bool, .string, .null: break
+      case let .integer(value):
+        // Memory JSON uses Double for numbers. Refuse predicates whose exact
+        // integer identity cannot survive that representation.
+        guard (-9_007_199_254_740_991...9_007_199_254_740_991).contains(value) else { throw snapshotScanInvalid() }
+      default: throw snapshotScanInvalid()
+      }
+      _ = try JSONDataTransform.lookup(.null, pointer: path)
+    }
+    for row in sort {
+      guard Set(row.keys).isSubset(of: ["path", "default"]), let path = row["path"] else { throw snapshotScanInvalid() }
+      if let value = row["default"], case .string = value {} else if row["default"] != nil { throw snapshotScanInvalid() }
+      _ = try JSONDataTransform.lookup(.null, pointer: path)
+    }
+  }
+  func accepts(_ value: JSONValue) throws -> Bool {
+    var matched = conditions.isEmpty
+    for row in conditions {
+      guard let actual = try JSONDataTransform.lookup(value, pointer: row["path"]!) else { continue }
+      let expected = row["equals"]!
+      switch (actual, expected) {
+      case let (.number(number), .integer(integer)):
+        guard number.isFinite else { throw snapshotScanInvalid() }
+        if number == Double(integer) { matched = true }
+        continue
+      case (.bool, .bool), (.string, .string), (.integer, .integer), (.null, .null): break
+      default: throw snapshotScanInvalid()
+      }
+      if actual == expected { matched = true }
+    }
+    return matched
+  }
+  func keys(_ value: JSONValue) throws -> [Data] {
+    try sort.map { row in
+      guard case let .string(text)? = try JSONDataTransform.lookup(value, pointer: row["path"]!) ?? row["default"] else { throw snapshotScanInvalid() }
+      return Data(text.utf8)
+    }
+  }
+}
+
+private func snapshotScanInvalid() -> AdapterExecutionError { .init(.invalidInput, "invalid bounded snapshot scan or metadata") }

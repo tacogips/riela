@@ -151,3 +151,7 @@ evidence that the OS boundary passed.
   node into this graph. Preserve its token/auth lifecycle and read-only tier.
 
 This foundation is not an ART deployment or completion of Python minimization.
+
+Host-side pending metadata discovery and fair recovery turns can use
+[`snapshot-scan` and `snapshot-rotate`](native-metadata-queues.md). These builtins
+retain exact scoped heads and legacy cursors without a per-file Python/CLI loop.

@@ -22,6 +22,7 @@ struct BuiltinAddonHandlerRegistration: Sendable {
 enum BuiltinStatefulAddonRegistry {
   static let registrations: [BuiltinAddonHandlerRegistration] = [
     BuiltinWorkflowAddonResolver.xCollectionRegistration,
+    BuiltinWorkflowAddonResolver.gmailCollectionRegistration,
     BuiltinWorkflowAddonResolver.jsonRouteRegistration,
     BuiltinWorkflowAddonResolver.pageStateRegistration,
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,

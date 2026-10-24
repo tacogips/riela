@@ -141,3 +141,34 @@ during rebase. Keep the remote backup and local stash. The current matching
 Linux rebuild/private gate and production deployment remain separate gates:
 an older test guest was correctly refused for its worker record protocol after
 this host update. No production image or warm App process was changed.
+
+## Native Gmail collector and private source graphs
+
+The Gmail profile/list/thread/body loop now lives in a registered native
+`riela/gmail-collect` handler. ART passes raw JSON options and keeps normalization,
+request/source binding and content screening. The obsolete Gmail read workflow
+and X read/turn workflows are removed from source and image dependency lists.
+
+Actual Opus 5.5 medium review found retry starvation, frozen-discovery gaps,
+scope loss and aggregate byte/deadline risks. The native coordinator now rotates
+exact pending scans independently of fresh discovery, preserves older discovery
+floors and intent-scoped metadata, retains fresh membership when old cursors
+drain, and evicts only completed scope history. Per-item output reservations and
+bounded SDK deadlines preserve accepted prefixes. SDK-compatible opaque account
+names and deterministic deferred-ID retry turns have regression coverage.
+
+Matching-protocol Linux host/guest builds and both ART private graph gates pass
+(13 tests per source, no skips). These private gates use whole-collector offline
+fixtures: they verify isolation, binding and durable source-plan behavior, not
+provider SDK execution inside the guest. Native linked Gmail/X SDK execution is
+covered separately with injected transports. No production image was changed.
+Durable source-writer migration, Web acquisition, outer coordination, release /
+install / idle cutover and two hours of real publication remain outstanding.
+
+Final component verification: 60 selected native tests, one optional live-cursor
+fixture skipped, zero failures; both 13-test ART private suites pass. Actual
+Opus review plus source-only follow-up closure found no remaining material
+issue in this collector chunk. The 70-profile permanent-poison regression keeps
+one retry backlog while completing 35 fresh acquisitions. Focused SwiftLint has
+no errors; the two collector functions retain complexity warnings. These are
+component checks, not the required real post-cutover two-hour run.

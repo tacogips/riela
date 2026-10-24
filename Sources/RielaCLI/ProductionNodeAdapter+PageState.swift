@@ -12,7 +12,7 @@ extension BuiltinWorkflowAddonResolver {
   func executePageState(_ input: WorkflowAddonExecutionInput) throws -> AdapterExecutionOutput {
     guard input.addon.version == nil || input.addon.version == "1",
       case let .object(config) = try renderAddonConfig(.object(input.addon.config ?? [:]), variables: addonVariables(for: input)),
-      let action = nonEmptyString(config["action"]), ["start", "accept"].contains(action)
+      let action = nonEmptyString(config["action"]), ["start", "accept", "resume"].contains(action)
     else { throw pageStateError() }
     var state: PageCollectionState
     if action == "start" {
@@ -39,6 +39,10 @@ extension BuiltinWorkflowAddonResolver {
         itemsPath: try pointer("itemsPath", fallback: "/items"),
         identityPath: try pointer("identityPath", fallback: "/id"),
         cursorPath: try pointer("cursorPath", fallback: "/nextCursor"), hasMorePath: more, identitySyntax: syntax)
+    } else if action == "resume" {
+      guard Set(config.keys).isSubset(of: ["action", "state", "context"]), let saved = config["state"] else { throw pageStateError() }
+      do { state = try JSONDecoder().decode(PageCollectionState.self, from: JSONEncoder().encode(saved)) } catch { throw pageStateError() }
+      try state.validate()
     } else {
       guard Set(config.keys).isSubset(of: ["action", "state", "response", "context"]),
         let saved = config["state"], let response = config["response"] else { throw pageStateError() }

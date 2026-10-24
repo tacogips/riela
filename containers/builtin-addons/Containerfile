@@ -36,7 +36,7 @@ RUN swiftc /container-gateway-support/GatewayPOSIX.swift \
     /container-gateway-support/GatewayPOSIXSmoke.swift -o /posix-smoke && /posix-smoke
 
 FROM swift:6.3.3-noble@sha256:c2f3ac2eb806ce43f68859c3d52bd3bb1cfc88672fb3a948b76e136d98e39278 AS build
-RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev python3 pkg-config && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev libcurl4-openssl-dev libxml2-dev python3 pkg-config && rm -rf /var/lib/apt/lists/*
 # Rust's ARM64 static library uses relocations unsupported by GNU gold.
 # Provision LLD only when it is absent from the Swift builder toolchain.
 RUN if ! command -v ld.lld >/dev/null 2>&1; then \

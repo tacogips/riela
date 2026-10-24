@@ -116,6 +116,8 @@ let package = Package(
       ]
     ),
     .target(name: "CRielaPrivateWorker"),
+    .target(name: "CRielaPublicWeb", cSettings: [.unsafeFlags(["-iwithsysroot", "/usr/include/libxml2"])],
+      linkerSettings: [.linkedLibrary("curl"), .linkedLibrary("xml2")]),
     .target(
       name: "RielaVersion",
       publicHeadersPath: "include",
@@ -246,6 +248,7 @@ let package = Package(
       name: "RielaCLI",
       dependencies: [
         "CRielaPrivateWorker",
+        "CRielaPublicWeb",
         .product(name: "ACP", package: "agent-gateway"),
         .product(name: "AgentGateway", package: "agent-gateway"),
         .product(name: "GoogleServiceGatewayCore", package: "google-service-gateway"),
@@ -293,7 +296,8 @@ let package = Package(
         "RielaWorkflowRegistry",
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "WebHooky", package: "web-hooky")
-      ] + notionTargetDependencies
+      ] + notionTargetDependencies,
+      resources: [.copy("Resources/PublicWebBrowser.py")]
     ),
     .executableTarget(
       name: "RielaCLIExecutable",

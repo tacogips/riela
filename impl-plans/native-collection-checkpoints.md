@@ -172,3 +172,29 @@ issue in this collector chunk. The 70-profile permanent-poison regression keeps
 one retry backlog while completing 35 fresh acquisitions. Focused SwiftLint has
 no errors; the two collector functions retain complexity warnings. These are
 component checks, not the required real post-cutover two-hour run.
+
+## Atomic native snapshot store
+
+`riela/snapshot-store` now owns transactional load/head/compare-and-commit of
+existing tagged Riela memory. Scope digests prevent row/revision collisions
+across namespaces. Native baseline installation supports pre-evolution schema-3
+records; no source payload, timestamps or IDs change. ART's compatibility layer
+uses the builtin via bounded stdin JSON and no longer implements update/readback
+or payload/history head pairing. Existing body caches are unchanged.
+
+Actual Opus 5.5 medium source review identified missing legacy baselines and
+implicit head adoption. Baseline migration and repeated blind-write refusal are
+fixed with regressions. Source-only closure also checked scope binding and
+opaque CLI values through shared postprocess. Generic registry metadata avoids
+rerendering CLI data as authored input templates; legacy input behavior defaults
+unchanged. This chunk does not yet migrate body-manifest logic, recovery selection,
+outer work coordination or Web retrieval, and is not a production cutover.
+
+Snapshot component verification: the full Memory package passes 77 tests;
+15 focused CLI/registry/stdin tests pass, including a real declared three-node
+workflow over two executions with no scripts. ART acquisition/news work/cache/
+source-pipeline suites pass 74 tests. Both private source suites pass 13 each
+with the offline whole-collector fixtures and native host snapshot storage.
+Focused SwiftLint is clean. The final source review closure has no material
+findings. Production and the installed CLI remain unchanged; deployment and
+post-final-cutover two-hour evidence are still absent.

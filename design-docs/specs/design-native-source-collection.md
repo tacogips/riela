@@ -146,6 +146,63 @@ do not make a hung or failing provider complete.
 `riela/page-state` also supports `action: "resume"` with an unchanged saved
 `state`, validates it and returns derived request/items/completion without I/O.
 
+## Durable snapshots: `riela/snapshot-store`, version `1`
+
+```json
+{
+  "name": "riela/snapshot-store",
+  "version": "1",
+  "config": {
+    "action": "commit",
+    "storage": {
+      "memoryId": "source-window",
+      "workflowId": "source-poll",
+      "nodeId": "collect",
+      "tag": "checkpoint"
+    },
+    "expectedHead": "{{input.loaded_head}}",
+    "value": "{{input.checked_snapshot}}"
+  }
+}
+```
+
+Use `action: "load"` without `expectedHead`/`value` first. Results are `found`,
+`head` (record ID, evolution version and scope digest), `value`, and unchanged
+optional `context`. `expectedHead: null` means create only if no matching record
+exists. An update requires the exact head read from the same storage namespace.
+The namespace digest covers the canonical memory root, memory/workflow/node IDs
+and tag, so equal row/revision numbers in separate databases cannot authorize a
+cross-scope update. The default root follows `RIELA_MEMORY_ROOT` or the ordinary
+Riela memory root. An explicit `nodeId: null` selects the workflow-wide view;
+omitting it selects the current node. Omit `workflowId` to use the current workflow.
+
+The native store selects the latest matching tagged memory record, reads its
+payload and revision atomically, and performs compare-and-commit with readback
+under one SQLite write transaction. Existing records, tags, attachments, row IDs
+and evolution history remain in place. Legacy schema-3 records without evolution
+metadata get a baseline v1 atomically without changing source data or timestamps.
+Missing retired history fails closed. Storage directories/files are private;
+provider content, cache ownership and processing/publication ACKs are not inferred.
+
+The node defaults to a 7,990,000-byte payload budget and an 8 MB frame. An explicit
+`maxPayloadBytes` supports existing larger metadata snapshots up to 64 MiB minus
+4 KiB, reserving the transport envelope. The whole response is bounded, including
+context, before a commit. This is a metadata/transport limit, not article cache
+capacity. Disposable bodies still use their independently configured normal LRU.
+
+`node run ... --variables @-` accepts UTF-8 JSON directly on stdin, bounded to
+64 MiB. Whole typed configuration references retain literal template-looking
+strings in snapshot data. The snapshot feature declares that CLI variables are
+data rather than authored addon input bindings; the generic node runner reads
+this registration metadata. Workflow-authored bindings and common postprocess
+remain supported. No provider-name branch is added to common dispatch.
+
+ART's compatibility client now uses this native operation for snapshot reads,
+revision fences and commits. Read-only inspection does not refresh a writer's
+observed head. Updating an existing snapshot requires an explicit prior load;
+blind writes never adopt a new head implicitly. The remaining ART body-manifest,
+missing-body recovery selection and outer coordination still need migration.
+
 ## Verification and rollout scope
 
 XCollectionTests exercises the real linked SDK addon with an injected transport,

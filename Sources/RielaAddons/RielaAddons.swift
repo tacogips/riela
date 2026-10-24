@@ -119,6 +119,7 @@ public enum RielaBuiltinAddonCatalog {
     .init(name: "riela/json-route", version: "1"),
     .init(name: "riela/page-state", version: "1"),
     .init(name: "riela/collection-checkpoint", version: "1"),
+    .init(name: "riela/snapshot-store", version: "1"),
     .init(name: "riela/json-transform", version: "1"),
     .init(name: "riela/json-compose", version: "1"),
     .init(name: "riela/array-batch", version: "1")

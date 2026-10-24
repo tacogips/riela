@@ -833,7 +833,23 @@ public enum NodePatchError: Error, Equatable, Sendable {
 }
 
 public struct JSONReferenceLoader: Sendable {
-  public init() {}
+  private let standardInput: @Sendable () throws -> Data
+  private static let maximumStdinBytes = 64 * 1024 * 1024
+
+  public init() { self.standardInput = Self.readStandardInput }
+
+  init(standardInput: @escaping @Sendable () throws -> Data) { self.standardInput = standardInput }
+
+  private static func readStandardInput() throws -> Data {
+    var data = Data()
+    while let part = try FileHandle.standardInput.read(upToCount: 65_536), !part.isEmpty {
+      data.append(part)
+      guard data.count <= maximumStdinBytes else {
+        throw WorkflowResolutionError.invalidJSONReference("stdin JSON reference exceeds 64 MiB")
+      }
+    }
+    return data
+  }
 
   public func object(from reference: String, workingDirectory: String = FileManager.default.currentDirectoryPath) throws -> JSONObject {
     let value = try value(from: reference, workingDirectory: workingDirectory)
@@ -845,7 +861,13 @@ public struct JSONReferenceLoader: Sendable {
 
   public func value(from reference: String, workingDirectory: String = FileManager.default.currentDirectoryPath) throws -> JSONValue {
     let text: String
-    if reference.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+    if reference == "@-" {
+      let data = try standardInput()
+      guard data.count <= Self.maximumStdinBytes, let value = String(data: data, encoding: .utf8) else {
+        throw WorkflowResolutionError.invalidJSONReference("stdin JSON reference must be UTF-8 and at most 64 MiB")
+      }
+      text = value
+    } else if reference.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
       text = reference
     } else {
       let rawPath = reference.hasPrefix("@") ? String(reference.dropFirst()) : reference

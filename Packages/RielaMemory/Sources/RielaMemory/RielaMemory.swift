@@ -680,14 +680,14 @@ public struct RielaMemoryStore: Sendable {
     return try memoryRecord(from: row, memoryId: memoryId)
   }
 
-  private func validateMemoryId(_ memoryId: String) throws {
+  func validateMemoryId(_ memoryId: String) throws {
     let pattern = #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#
     guard memoryId.range(of: pattern, options: .regularExpression) != nil else {
       throw RielaMemoryError.invalidMemoryId(memoryId)
     }
   }
 
-  private func validateWorkflowId(_ workflowId: String) throws {
+  func validateWorkflowId(_ workflowId: String) throws {
     let trimmed = workflowId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       throw RielaMemoryError.invalidWorkflowId(workflowId)
@@ -702,7 +702,7 @@ public struct RielaMemoryStore: Sendable {
     }
   }
 
-  private func validateTags(_ tags: [String]) throws {
+  func validateTags(_ tags: [String]) throws {
     guard tags.count <= maximumMemoryTags else {
       throw RielaMemoryError.tooManyTags(tags.count)
     }

@@ -6,6 +6,11 @@ struct BuiltinAddonHandlerRegistration: Sendable {
   typealias Handler = @Sendable (BuiltinWorkflowAddonResolver, WorkflowAddonExecutionInput, AdapterExecutionContext) async throws -> AdapterExecutionOutput
   let name: String
   let handler: Handler
+  let bindsCLIVariablesAsInputs: Bool
+
+  init(name: String, bindsCLIVariablesAsInputs: Bool = true, handler: @escaping Handler) {
+    self.name = name; self.handler = handler; self.bindsCLIVariablesAsInputs = bindsCLIVariablesAsInputs
+  }
 
   static func family<Operation: CaseIterable & RawRepresentable & Sendable>(
     _ type: Operation.Type,
@@ -26,6 +31,7 @@ enum BuiltinStatefulAddonRegistry {
     BuiltinWorkflowAddonResolver.jsonRouteRegistration,
     BuiltinWorkflowAddonResolver.pageStateRegistration,
     BuiltinWorkflowAddonResolver.collectionCheckpointRegistration,
+    BuiltinWorkflowAddonResolver.snapshotStoreRegistration,
     BuiltinWorkflowAddonResolver.xDigestRegistration,
     BuiltinWorkflowAddonResolver.gmailDigestRegistration
   ] + BuiltinAddonHandlerRegistration.family(BuiltinDataAddon.self) { resolver, input, operation, _ in

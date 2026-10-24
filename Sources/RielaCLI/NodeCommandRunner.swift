@@ -204,8 +204,11 @@ public struct NodeCommandRunner: Sendable {
     }
     guard container == nil || sandbox == nil else { throw CLIUsageError("--sandbox and --container cannot be combined") }
     try sandbox?.validate()
+    // Data variables already populate resolvedInputPayload. Config-only addons
+    // opt out of treating their literal data as authored template bindings.
+    let bindsInputs = BuiltinStatefulAddonRegistry.registrations.first { $0.name == target }?.bindsCLIVariablesAsInputs ?? true
     return WorkflowNodeAddonRef(name: target, version: container == nil && sandbox == nil ? nil : "1",
-      config: config, env: env, inputs: variables, container: container, sandbox: sandbox)
+      config: config, env: env, inputs: bindsInputs ? variables : nil, container: container, sandbox: sandbox)
   }
 
   private func nodeAddonPackages(options: CLICommandOptions, parsed: ParsedParityOptions) async throws -> [WorkflowPackageSummary] {

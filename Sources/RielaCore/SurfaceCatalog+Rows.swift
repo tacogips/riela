@@ -210,6 +210,18 @@ extension SurfaceCatalog {
   static let sessionRows: [SurfaceOperation] = [
     surfaceRow(
       sessionDefaults,
+      id: "session.reconcile",
+      family: "session",
+      kind: .mutation,
+      cli: "session reconcile",
+      cliOptions: ["--scope", "--session-store", "--working-dir", "--session", "--apply", "--output"],
+      graphqlState: SurfaceExclusion.localProcess("session reconciliation"),
+      webState: SurfaceExclusion.notAConsoleOperation("session reconciliation"),
+      libraryState: SurfaceExclusion.notALibraryEntryPoint("session reconciliation"),
+      skills: []
+    ),
+    surfaceRow(
+      sessionDefaults,
       id: "session.handover",
       family: "session",
       kind: .mutation,

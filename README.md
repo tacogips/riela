@@ -84,6 +84,14 @@ Authored [node output contracts](docs/output-contracts.md) are checked before
 execution and included in agent instructions. The guide describes the supported
 JSON Schema dialect and how payload contracts interact with routing envelopes.
 
+A transition with `dynamicWorkflow` lets a brain node return an inline workflow
+definition. The runtime checks it against a deny-by-default allowlist and size
+limits, runs it as a child session linked to its parent and root sessions, and
+sends back one `dynamicWorkflowResult` message. This repeats until the brain
+returns `finish` or the loop reaches `maxIterations`. See the
+[brain-generated workflow loop guide](docs/workflows/brain-generated-workflow-loop.md)
+and the `examples/brain-generated-workflow-loop` mock-scenario example.
+
 For failed sequential agent workflows, [history-preserving recovery](docs/preserved-history-recovery.md)
 reuses accepted discussion without rerunning earlier agents and records explicit
 source lineage in the new session. A plain `riela session rerun SESSION STEP`
@@ -130,8 +138,11 @@ when an older writer replaces a snapshot. Existing stores need a one-time ID-onl
 backfill, after which startup reads small projections and covering ID indexes.
 Missing trigger lineage rebuilds the projection, while unsupported projection
 versions fail closed. This changes neither session reservations nor stored payloads.
-Resume and recovery retain their persisted-history hydration behavior;
-existing session records and execution locks remain authoritative.
+`riela session resume`, `riela session rerun` and `riela workflow run --resume`
+load only the target's session family (the target plus sessions that share its
+root session id), not the whole persisted store. On large stores they now emit
+their first JSONL event promptly. Existing session records and execution locks
+remain authoritative.
 
 The default SQLite session-store connections wait for another process to
 release its database lock, including during WAL initialization. Parallel runs
@@ -149,6 +160,16 @@ that session fails before any node effect starts. The operating system
 releases the lock when its owner exits, so an interrupted session can be
 resumed without waiting for a stale heartbeat timeout. Different session IDs
 remain independently executable.
+
+Graceful cancellation (SIGINT/SIGTERM or host task cancellation) now records
+the session and step status as `cancelled`, with `failureKind: cancelled`. The
+CLI still exits with code 1. A cancelled session can be rerun but not resumed.
+When the host cancels an agent-gateway turn, Riela reports a cancellation, not
+a provider, authentication or policy failure. If a runner is hard-killed, its
+sessions can be left `running`. `riela session reconcile` lists them (dry run
+by default), and `--apply` marks them cancelled. Sessions whose execution lock
+is still held are never changed. See
+[session cancellation and reconciliation](docs/session-cancellation-and-reconcile.md).
 
 Installed workflow packages are local workflow sources. After
 `riela package install <name>`, package-provided workflows appear in
@@ -819,8 +840,8 @@ binding's overlap policy decides what happens:
   `overlap-skip:<bindingId>:<runningSessionId>`.
 - `cancelRunning`: the in-flight run is cancelled through the runtime's normal
   cancellation path. The new fire waits up to 30 seconds for that run to
-  settle and then starts. The cancelled session ends as `failed` with
-  `failureKind: cancelled`. If it does not settle within 30 seconds, the new
+  settle and then starts. The cancelled session ends with status
+  `cancelled` and `failureKind: cancelled`. If it does not settle within 30 seconds, the new
   fire is not started and is recorded as `overlap-cancel-timeout`.
 - `queue`: the fire waits in an in-memory FIFO of at most `maxQueuedRuns`
   entries (default `1`). A fire that finds the queue full is dropped. A

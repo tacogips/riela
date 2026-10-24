@@ -1,6 +1,6 @@
 # ISW2-74c: runtime dispatch of brain-generated workflows
 
-**Status**: Active (not started)
+**Status**: Completed 2026-10-24 (test-integrity, adversarial and combined-tree integration reviews accepted, comm-000178; uncommitted until the downstream commit step)
 **planId**: ISW2-74c-dynamic-workflow-dispatch
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Runtime data flow", "Result message", "Session lineage and provenance", "Privilege and bounds" (rules 6-8 plus stamping), "Failure, timeout and cancellation", "Mock scenarios", "Resume and rerun" and "Session scope"
@@ -163,7 +163,7 @@ Record `exitStatus`, `testsRun` and `failureCount` for each command:
 
 1. `arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-74c/build.log 2>&1'` → exit 0.
 2. `arch -arm64 /bin/zsh -lc 'swift test --filter "DeterministicWorkflowRunnerDynamicWorkflowTests|DynamicWorkflowPolicyTests|WorkflowDynamicWorkflowContractTests" > tmp/issue-sweep-2-20261024/isw2-74c/focused.log 2>&1'` → exit 0.
-3. `arch -arm64 /bin/zsh -lc 'swift test --filter "DeterministicWorkflowRunnerCrossWorkflowDispatchTests|DeterministicWorkflowRunnerFanoutTests|ScopedParityCallStepFanoutTests|WorkflowCancelledStatusTests" > tmp/issue-sweep-2-20261024/isw2-74c/regression.log 2>&1'` → exit 0. Also add every suite named `*Nested*` that `ls Tests/RielaCoreTests Tests/RielaCLITests` finds.
+3. `arch -arm64 /bin/zsh -lc 'swift test --filter "DeterministicWorkflowRunnerCrossWorkflowDispatchTests|DeterministicWorkflowRunnerFanoutTests|ScopedParityCallStepFanoutTests|WorkflowCancelledStatusTests|ClientArgumentParserNestedActionTests" > tmp/issue-sweep-2-20261024/isw2-74c/regression.log 2>&1'` → exit 0. Also add every suite named `*Nested*` that `ls Tests/RielaCoreTests Tests/RielaCLITests` finds.
 4. `arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet <owned Swift files>'` → no new warnings.
 
 ## Execution protocol
@@ -172,8 +172,8 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 
 ## Done criteria
 
-- [ ] All listed tests pass, and verification 1-4 pass, with logs.
-- [ ] `grep -rn "dynamic-workflow" Sources/RielaCore` shows the branch id in the dispatch, the hook and the recovery code.
+- [x] All listed tests pass, and verification 1-4 pass, with logs.
+- [x] `grep -rn "dynamic-workflow" Sources/RielaCore` shows the branch id in the dispatch, the hook and the recovery code.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
 

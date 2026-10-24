@@ -1,6 +1,6 @@
 # ISW2-27c: `riela session reconcile` for orphaned running sessions
 
-**Status**: Source implementation is present; acceptance verification is blocked by the unrelated `cache keys` CLI surface parity violation (`Sources/RielaCore/SurfaceCatalog+RowsCLI.swift` is outside this plan's write paths).
+**Status**: Completed 2026-10-24 (test-integrity, adversarial and combined-tree integration reviews accepted, comm-000178; uncommitted until the downstream commit step)
 **planId**: ISW2-27c-session-reconcile
 **Issue**: https://github.com/tacogips/riela/issues/27 (P4, plus CLI resume parity and docs)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)": the P4 contract, and P1 items 6-7
@@ -146,7 +146,7 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 ## Done criteria
 
 - [x] `riela session reconcile` exists, defaults to a dry run, and `--apply` marks only lock-free running sessions `cancelled`.
-- [ ] Verification 1-4 pass, with logs. Build, command smoke, strict lint, and the empty FailClosed grep gate pass; the focused aggregate remains blocked by the recorded `cache keys` surface parity mismatch.
+- [x] Verification 1-5 pass on the current tree, with complete logs and integer exit/test/failure evidence. The focused aggregate includes the previously failing surface parity gate and passes.
 - [x] The docs file exists, and the progress log records the verification evidence.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
@@ -154,3 +154,5 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 > Operator amendment 2 (2026-10-24): every remaining plan also owns its own active plan file (this file) so it can update its completion checklist.
 
 > Operator amendment 4 (2026-10-24): the pre-existing `cache keys` catalog-row parity failure (5 failures on base 90d44521) was fixed by the operator in commit fc59fbf8; SurfaceParityCLITests now passes. No catalog change is needed in this plan.
+
+> Current-tree verification update (2026-10-24): all assigned gates pass. Complete logs and integer evidence are recorded under `tmp/issue-sweep-2-20261024/ISW2-27c-session-reconcile/`; the focused aggregate ran 52 tests with 0 failures.

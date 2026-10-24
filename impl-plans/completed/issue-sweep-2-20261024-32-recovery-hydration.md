@@ -1,6 +1,6 @@
 # ISW2-32: hydrate only the session family on resume and rerun
 
-**Status**: Implementation complete; regression gate has reproduced out-of-scope session-resume failures and needs owning-plan disposition
+**Status**: Completed 2026-10-24 (accepted at 01fb5397 after the session-resume regression was fixed in scope; combined-tree integration review accepted, comm-000178)
 **planId**: ISW2-32-recovery-hydration
 **Issue**: https://github.com/tacogips/riela/issues/32
 **Design Reference**: design-docs/specs/design-cli-session-store-decode-resilience.md, section "Recovery hydration scope (issue #32, 2026-10-24)", Contract 1-6

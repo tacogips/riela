@@ -698,17 +698,16 @@ public struct WorkflowRunCommand: Sendable {
     }
 
     if let payload = try? JSONDecoder().decode(TemporaryWorkflowPayload.self, from: data) {
-      let authoredData = try JSONEncoder().encode(payload.workflow)
-      let validation = validateAuthoredWorkflowData(authoredData)
-      guard let workflow = validation.workflow else {
-        throw WorkflowResolutionError.invalidWorkflow(validation.diagnostics)
+      let materialized = materializeTemporaryWorkflowPayload(payload)
+      guard let workflow = materialized.validation.workflow else {
+        throw WorkflowResolutionError.invalidWorkflow(materialized.validation.diagnostics)
       }
       return ResolvedWorkflowBundle(
         workflow: workflow,
-        nodePayloads: nodePayloads(from: payload, workflow: workflow),
+        nodePayloads: materialized.nodePayloads,
         sourceScope: .direct,
         workflowDirectory: directory.path,
-        diagnostics: validation.diagnostics
+        diagnostics: materialized.validation.diagnostics
       )
     }
 
@@ -723,18 +722,6 @@ public struct WorkflowRunCommand: Sendable {
       workflowDirectory: directory.path,
       diagnostics: validation.diagnostics
     )
-  }
-
-  private func nodePayloads(from payload: TemporaryWorkflowPayload, workflow: WorkflowDefinition) -> [String: AgentNodePayload] {
-    var byNodeId: [String: AgentNodePayload] = [:]
-    for registryNode in workflow.nodeRegistry {
-      if let nodeFile = registryNode.nodeFile, let nodePayload = payload.nodePayloads[nodeFile] {
-        byNodeId[registryNode.id] = nodePayload
-      } else if let nodePayload = payload.nodePayloads[registryNode.id] {
-        byNodeId[registryNode.id] = nodePayload
-      }
-    }
-    return byNodeId
   }
 
   private func renderRunResult(
@@ -817,11 +804,6 @@ public struct WorkflowRunCommand: Sendable {
     )
     return try? store.load(sessionId: sessionId)
   }
-}
-
-private struct TemporaryWorkflowPayload: Codable {
-  var workflow: AuthoredWorkflowJSON
-  var nodePayloads: [String: AgentNodePayload]
 }
 
 private struct WorkflowRunProductionDurableRuntime {

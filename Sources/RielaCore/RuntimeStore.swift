@@ -116,6 +116,7 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
   public var parentSessionId: String?
   public var rootSessionId: String?
   public var effectiveStepBudget: Int?
+  public var generatedWorkflow: WorkflowGeneratedWorkflowOrigin?
 
   public init(
     sessionId: String? = nil,
@@ -124,7 +125,8 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
     effectiveInstance: EffectiveWorkflowInstance? = nil,
     parentSessionId: String? = nil,
     rootSessionId: String? = nil,
-    effectiveStepBudget: Int? = nil
+    effectiveStepBudget: Int? = nil,
+    generatedWorkflow: WorkflowGeneratedWorkflowOrigin? = nil
   ) {
     self.sessionId = sessionId
     self.workflowId = workflowId
@@ -133,6 +135,7 @@ public struct WorkflowSessionCreateInput: Equatable, Sendable {
     self.parentSessionId = parentSessionId
     self.rootSessionId = rootSessionId
     self.effectiveStepBudget = effectiveStepBudget
+    self.generatedWorkflow = generatedWorkflow
   }
 }
 
@@ -491,7 +494,8 @@ public actor InMemoryWorkflowRuntimeStore: WorkflowRuntimeStore {
       instanceConfiguration: input.effectiveInstance?.configurationJSONObject,
       parentSessionId: input.parentSessionId,
       rootSessionId: input.rootSessionId ?? sessionId,
-      effectiveStepBudget: input.effectiveStepBudget
+      effectiveStepBudget: input.effectiveStepBudget,
+      generatedWorkflow: input.generatedWorkflow
     )
     sessions[sessionId] = session
     messagesBySession[sessionId] = []

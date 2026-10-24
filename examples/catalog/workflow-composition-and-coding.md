@@ -93,6 +93,24 @@ riela workflow run workflow-call-live-echo \
   --output json
 ```
 
+### `brain-generated-workflow-loop`
+
+A bounded brain-driven workflow example: the brain generates an inventory child,
+uses its structured result to generate a verification child, then returns a
+finish decision. The generated node ids are `inventory` and `verify`; both
+children inherit the reviewed backend/model allowlist and run as session-scoped
+children.
+
+Validate and run the deterministic scenario:
+
+```bash
+riela workflow validate brain-generated-workflow-loop --workflow-definition-dir ./examples
+riela workflow run brain-generated-workflow-loop \
+  --workflow-definition-dir ./examples \
+  --mock-scenario ./examples/brain-generated-workflow-loop/mock-scenario.json \
+  --output json
+```
+
 ### `design-and-implement-review-loop`
 
 Real development workflow sample adapted from the project-local workflow catalog:

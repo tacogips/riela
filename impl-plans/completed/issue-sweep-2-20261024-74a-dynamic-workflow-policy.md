@@ -1,6 +1,6 @@
 # ISW2-74a: dynamic-workflow transition types and DynamicWorkflowPolicy
 
-**Status**: Implementation complete; pending downstream review
+**Status**: Completed 2026-10-24 (accepted at f85d9add; combined-tree integration review accepted, comm-000178)
 **planId**: ISW2-74a-dynamic-workflow-policy
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" and "Privilege and bounds" (rules 1-5, 9 and 10)

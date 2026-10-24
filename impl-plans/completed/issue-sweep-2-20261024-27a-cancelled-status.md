@@ -1,6 +1,6 @@
 # ISW2-27a: first-class `cancelled` session and step status
 
-**Status**: Active (not started)
+**Status**: Completed 2026-10-24 (accepted at 7f087cc4; combined-tree integration review accepted, comm-000178)
 **planId**: ISW2-27a-cancelled-status
 **Issue**: https://github.com/tacogips/riela/issues/27 (P1)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)", subsection "P1 contract", items 1-8

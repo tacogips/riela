@@ -416,6 +416,15 @@ public struct DeterministicWorkflowRunner: DeterministicWorkflowRunning {
         )
         publishedTransitions += 1
       }
+      if let dispatch = publishResult.dynamicWorkflowDispatch {
+        try await dispatchDynamicWorkflow(
+          directive: dispatch,
+          parentSessionId: session.sessionId,
+          parentStepId: step.id,
+          request: effectiveRequest
+        )
+        publishedTransitions += 1
+      }
       if let dispatch = publishResult.fanoutDispatch {
         let fanoutJoin = try await dispatchFanout(
           directive: dispatch,

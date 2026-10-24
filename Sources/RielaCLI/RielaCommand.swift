@@ -108,6 +108,7 @@ public enum PackageHelpScope: String, Codable, Sendable {
 }
 
 public enum SessionCommand: Equatable, Sendable {
+  case reconcile([String])
   case prune([String])
   case rerun(SessionRerunOptions)
   case resume(SessionResumeOptions)

@@ -1,6 +1,6 @@
 # ISW2-74b: authored `transition.dynamicWorkflow`, child provenance field, shared temp-workflow materializer
 
-**Status**: Active (not started)
+**Status**: Completed 2026-10-24 (test-integrity, adversarial and combined-tree integration reviews accepted, comm-000178; uncommitted until the downstream commit step)
 **planId**: ISW2-74b-dynamic-workflow-contract
 **Issue**: https://github.com/tacogips/riela/issues/74
 **Design Reference**: design-docs/specs/design-loop-engineering-brain-generated-workflow-loop.md, sections "Authored contract", "Brain decision envelope" (shared materializer) and "Session lineage and provenance"
@@ -62,7 +62,7 @@ Runtime behaviour is unchanged in this plan. A workflow carrying `dynamicWorkflo
    public func materializeTemporaryWorkflowPayload(_ payload: TemporaryWorkflowPayload) -> MaterializedTemporaryWorkflow
    ```
 
-   - It calls `validateAuthoredWorkflowJSON(payload.workflow)`.
+   - It JSON-encodes `payload.workflow` and calls `validateAuthoredWorkflowData`, preserving the raw authored checks and the `DefaultWorkflowValidator` checks used by the CLI before extraction. An encoding failure returns a validation error.
    - When a workflow results, it maps payloads by node id, taking the `nodeFile` key first and then the `id` key, exactly like today's `nodePayloads(from:workflow:)`.
    - When validation fails, `nodePayloads` is empty.
 5. **`WorkflowRunCommand.swift`**:
@@ -91,13 +91,14 @@ Runtime behaviour is unchanged in this plan. A workflow carrying `dynamicWorkflo
 - `toStepId` naming a missing step → error.
 - A `WorkflowSession` JSON round trip with `generatedWorkflow` → equal. Legacy JSON without the field → decodes, and the field is nil.
 - `materializeTemporaryWorkflowPayload` with payloads keyed by `nodeFile` and by `id` → both resolve. An invalid workflow → `validation.workflow == nil` and `nodePayloads` empty.
+- A terminal step with `failurePolicy: advisory` → raw authored validation error and empty `nodePayloads`.
 
 ## Verification (logs under tmp/issue-sweep-2-20261024/isw2-74b/)
 
 Record `exitStatus`, `testsRun` and `failureCount` for each command:
 
 1. `arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-2-20261024/isw2-74b/build.log 2>&1'` → exit 0.
-2. `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowDynamicWorkflowContractTests|DynamicWorkflowPolicyTests|WorkflowCommandCatalogTests|DeterministicWorkflowRunnerCrossWorkflowDispatchTests" > tmp/issue-sweep-2-20261024/isw2-74b/focused.log 2>&1'` → exit 0.
+2. `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowDynamicWorkflowContractTests|DynamicWorkflowPolicyTests|WorkflowCommandCatalogTests|DeterministicWorkflowRunnerCrossWorkflowDispatchTests|WorkflowCommandTests/testScenarioLookupUsesExecutingStepIdWhenNodeIsReusable|WorkflowCommandTests/testMockScenarioUsesDefaultGuardUnlessCLIExplicitlyOptsOut|WorkflowCommandTests/testSessionResumeUsesMockScenarioForCommandNodes" > tmp/issue-sweep-2-20261024/isw2-74b/focused.log 2>&1'` → exit 0.
 3. `arch -arm64 /bin/zsh -lc 'swift test --filter "WorkflowValidat" > tmp/issue-sweep-2-20261024/isw2-74b/validation.log 2>&1'` → exit 0. This runs every existing validation suite whose name contains `WorkflowValidat`.
 4. `arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet <owned Swift files>'` → no new warnings.
 
@@ -107,9 +108,9 @@ Per-edit fresh read, with pre/post hash and intent snapshots under `tmp/issue-sw
 
 ## Done criteria
 
-- [ ] `grep -n "private struct TemporaryWorkflowPayload" Sources/RielaCLI/WorkflowRunCommand.swift` → empty.
-- [ ] `grep -n "dynamicWorkflow" Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/WorkflowValidation.swift` → matches.
-- [ ] Verification 1-4 pass, with logs.
+- [x] `grep -n "private struct TemporaryWorkflowPayload" Sources/RielaCLI/WorkflowRunCommand.swift` → empty.
+- [x] `grep -n "dynamicWorkflow" Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/WorkflowValidation.swift` → matches.
+- [x] Verification 1-4 pass, with logs under `tmp/issue-sweep-2-20261024/isw2-74b/`.
 
 > Operator amendment (2026-10-24, after blocked-only wave 1 of session-1): the remaining plans run strictly serially to avoid shared-tree compile breakage; ISW2-27a also owns `Sources/RielaCLI/TaskDispatch+Handover.swift` and `Tests/RielaWorkTests/WorkStoreTakeoverTests.swift` (handover predicates/tests that must accept the new `cancelled` terminal). Continue from the existing uncommitted work in the tree.
 

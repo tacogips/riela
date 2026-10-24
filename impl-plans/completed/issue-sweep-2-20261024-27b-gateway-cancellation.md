@@ -1,6 +1,6 @@
 # ISW2-27b: agent-gateway turns surface cancellation as `CancellationError`
 
-**Status**: Implementation complete; pending downstream review
+**Status**: Completed 2026-10-24 (accepted at 1345a471; combined-tree integration review accepted, comm-000178)
 **planId**: ISW2-27b-gateway-cancellation
 **Issue**: https://github.com/tacogips/riela/issues/27 (P2)
 **Design Reference**: design-docs/specs/design-cancellation-and-orphan-session-resilience.md, section "2026-10-24 Contract (issue #27)", subsection "P2 contract"

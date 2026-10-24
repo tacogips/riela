@@ -37,6 +37,7 @@ enum WorkflowClientSubcommand: String, CaseIterable, ExpressibleByArgument {
 }
 
 enum SessionClientSubcommand: String, CaseIterable, ExpressibleByArgument {
+  case reconcile
   case rerun
   case resume
   case list

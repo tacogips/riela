@@ -14,6 +14,8 @@ extension RielaArgumentParser {
     }
     let family = try ParsedSessionFamily.parseCLI(arguments)
     switch family.subcommand {
+    case .reconcile:
+      return .session(.reconcile(family.remainder))
     case .rerun:
       return try parseSessionRerun(family.remainder)
     case .resume:

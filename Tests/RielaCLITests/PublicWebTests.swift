@@ -71,6 +71,20 @@ final class PublicWebTests: XCTestCase {
     }
   }
 
+  func testDiscoveryPolicyRejectsUnsafeLinksBeforeTheyConsumeLinkBudget() async throws {
+    let invalid = (0..<60).map { "<a href='http://example.com/article/A\($0)'>unsafe</a>" }.joined()
+    let html = "<html><head><title>Index</title></head><body>" + invalid +
+      "<a href='https://user:secret@example.com/article/credential'>unsafe</a>" +
+      "<a href='https://example.com:444/article/port'>unsafe</a>" +
+      "<a href='/article/valid'>article</a></body></html>"
+    let reader = PublicWebReader(transport: { request in
+      .init(status: 200, headers: [:], body: Data(html.utf8), url: request.url)
+    }, browser: { _, _, _, _ in throw PublicWebError.transport })
+    let output = try await reader.page(url: "https://example.com", options: .init(), blockedHosts: [],
+      metadataOnly: true, includeRaw: false, linkPattern: #"^/article/[A-Za-z0-9]+/?$"#, deadline: nil)
+    XCTAssertEqual(output["links"], .array([.string("https://example.com/article/valid")]))
+  }
+
   func testAddressPolicyRejectsLocalReservedAndTransitionNetworks() {
     for ip in ["127.0.0.1", "10.1.2.3", "169.254.169.254", "100.64.0.1", "192.168.1.1",
       "192.0.2.1", "224.0.0.1", "::1", "::ffff:127.0.0.1", "fc00::1", "fe80::1", "2002:7f00:1::", "2001:db8::1"] {

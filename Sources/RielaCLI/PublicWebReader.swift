@@ -24,7 +24,11 @@ struct PublicWebReader: Sendable {
       guard pattern.utf8.count <= 512, let regex = try? NSRegularExpression(pattern: pattern) else { throw PublicWebError.invalidInput }
       keepLink = { href in
         guard let target = URL(string: href, relativeTo: URL(string: url))?.absoluteURL,
-          target.host == URL(string: url)?.host, target.absoluteString.utf8.count <= 4096 else { return false }
+          let components = URLComponents(url: target, resolvingAgainstBaseURL: true),
+          components.scheme?.lowercased() == "https", components.user == nil, components.password == nil,
+          components.port == nil || components.port == 443,
+          target.host?.lowercased() == URL(string: url)?.host?.lowercased(),
+          target.absoluteString.utf8.count <= 4096 else { return false }
         return regex.firstMatch(in: target.path, range: NSRange(target.path.startIndex..., in: target.path)) != nil
       }
     }

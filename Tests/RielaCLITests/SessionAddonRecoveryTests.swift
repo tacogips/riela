@@ -51,6 +51,69 @@ final class SessionAddonRecoveryTests: XCTestCase {
     XCTAssertEqual(rerunResult.rerunFromStepId, "first-signal")
   }
 
+  func testPlainRerunCarriesAcceptedInboxForMockScenarioConsumer() async throws {
+    let root = try makeRielaCLITestTemporaryDirectory("session-rerun-inbox-carryover")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let workflowRoot = root.appendingPathComponent("workflows", isDirectory: true)
+    let workflowDirectory = workflowRoot.appendingPathComponent("inbox-carryover", isDirectory: true)
+    let nodesDirectory = workflowDirectory.appendingPathComponent("nodes", isDirectory: true)
+    let sessionStore = root.appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: nodesDirectory, withIntermediateDirectories: true)
+    try writeInboxCarryoverWorkflow(workflowDirectory: workflowDirectory, nodesDirectory: nodesDirectory)
+    let scenario = root.appendingPathComponent("mock-scenario.json")
+    try """
+    {
+      "checkpoint": { "provider": "scenario-mock", "model": "gpt-5.5", "payload": { "status": "ready" } },
+      "consumer": { "provider": "scenario-mock", "model": "gpt-5.5", "payload": { "status": "consumed" } }
+    }
+    """.write(to: scenario, atomically: true, encoding: .utf8)
+
+    let app = RielaCLIApplication()
+    let initialRun = await app.run([
+      "workflow", "run", "inbox-carryover",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--mock-scenario", scenario.path,
+      "--working-dir", root.path,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(initialRun.exitCode, .success, initialRun.stderr + initialRun.stdout)
+    let source = try decode(WorkflowSessionIDEnvelope.self, from: initialRun.stdout)
+    let store = CLIWorkflowSessionStore(rootDirectory: sessionStore.path)
+    let persistedSource = try store.load(sessionId: source.session.sessionId)
+    let sourceCheckpoint = try XCTUnwrap(persistedSource.session.executions.first { $0.stepId == "checkpoint" })
+    let sourceConsumer = try XCTUnwrap(persistedSource.session.executions.first { $0.stepId == "consumer" })
+    let sourceCommunicationIds = try XCTUnwrap(communicationIds(in: sourceConsumer))
+    XCTAssertEqual(sourceCommunicationIds.count, 1)
+
+    let rerun = await app.run([
+      "session", "rerun", source.session.sessionId, "consumer",
+      "--workflow-definition-dir", workflowRoot.path,
+      "--mock-scenario", scenario.path,
+      "--working-dir", root.path,
+      "--session-store", sessionStore.path,
+      "--output", "json"
+    ])
+    XCTAssertEqual(rerun.exitCode, .success, rerun.stderr + rerun.stdout)
+    let result = try decode(SessionRerunCommandResult.self, from: rerun.stdout)
+    XCTAssertEqual(result.status, .completed)
+    XCTAssertEqual(result.rerunFromStepId, "consumer")
+
+    let persistedRerun = try store.load(sessionId: result.sessionId)
+    let executions = persistedRerun.session.executions
+    XCTAssertEqual(executions.map(\.stepId), ["checkpoint", "consumer"])
+    XCTAssertEqual(executions[0].importedFrom?.sessionId, persistedSource.session.sessionId)
+    XCTAssertEqual(executions[0].importedFrom?.executionId, sourceCheckpoint.executionId)
+    XCTAssertNil(executions[1].importedFrom)
+    XCTAssertEqual(persistedRerun.session.newExecutionCount, 1)
+    let rerunCommunicationIds = try XCTUnwrap(communicationIds(in: executions[1]))
+    XCTAssertEqual(rerunCommunicationIds.count, 1)
+    let rerunCommunicationId = try XCTUnwrap(rerunCommunicationIds.first)
+    let sourceCommunicationId = try XCTUnwrap(sourceCommunicationIds.first)
+    XCTAssertNotEqual(rerunCommunicationId, sourceCommunicationId)
+    XCTAssertEqual(executions[0].importedFrom?.communicationIds[rerunCommunicationId], sourceCommunicationId)
+  }
+
   func testSessionResumeRetriesPolicyBlockedAddonAfterRepair() async throws {
     let root = try makeRielaCLITestTemporaryDirectory("session-policy-retry")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -133,7 +196,55 @@ final class SessionAddonRecoveryTests: XCTestCase {
     """.write(to: url, atomically: true, encoding: .utf8)
   }
 
+  private func writeInboxCarryoverWorkflow(workflowDirectory: URL, nodesDirectory: URL) throws {
+    try """
+    {
+      "workflowId": "inbox-carryover",
+      "defaults": { "maxLoopIterations": 2, "nodeTimeoutMs": 30000 },
+      "entryStepId": "checkpoint",
+      "nodes": [
+        { "id": "checkpoint", "nodeFile": "nodes/checkpoint.json" },
+        { "id": "consumer", "nodeFile": "nodes/consumer.json" }
+      ],
+      "steps": [
+        { "id": "checkpoint", "nodeId": "checkpoint", "transitions": [{ "toStepId": "consumer" }] },
+        { "id": "consumer", "nodeId": "consumer" }
+      ]
+    }
+    """.write(to: workflowDirectory.appendingPathComponent("workflow.json"), atomically: true, encoding: .utf8)
+    try """
+    { "id": "checkpoint", "executionBackend": "codex-agent", "agentSandbox": "read-only", "model": "gpt-5.5", "variables": {} }
+    """.write(to: nodesDirectory.appendingPathComponent("checkpoint.json"), atomically: true, encoding: .utf8)
+    try """
+    {
+      "id": "consumer", "executionBackend": "codex-agent", "agentSandbox": "read-only", "model": "gpt-5.5",
+      "promptTemplate": "Consume the upstream status {{_rielaInput.latest.payload.status}}.", "variables": {}
+    }
+    """.write(to: nodesDirectory.appendingPathComponent("consumer.json"), atomically: true, encoding: .utf8)
+  }
+
   private func decode<T: Decodable>(_ type: T.Type, from value: String) throws -> T {
     try JSONDecoder().decode(type, from: Data(value.utf8))
   }
+
+  private func communicationIds(in execution: WorkflowStepExecution) -> [String]? {
+    guard case let .object(mergedVariables)? = execution.inputSnapshot?["mergedVariables"],
+          case let .object(rielaInput)? = mergedVariables["_rielaInput"],
+          case let .array(rawIds)? = rielaInput["communicationIds"] else {
+      return nil
+    }
+    let ids = rawIds.compactMap { value -> String? in
+      guard case let .string(id) = value else { return nil }
+      return id
+    }
+    return ids.count == rawIds.count ? ids : nil
+  }
+}
+
+private struct WorkflowSessionIDEnvelope: Decodable {
+  struct Session: Decodable {
+    var sessionId: String
+  }
+
+  var session: Session
 }

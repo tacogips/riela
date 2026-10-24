@@ -87,6 +87,16 @@ Keep these accepted low-severity follow-ups explicit in later handoffs:
   garbage-collection safety suite, so run the explicit filter or the aggregate
   CLI/Core gate as well.
 
+Step reruns of this workflow (issue `tacogips/riela#104`): plain and
+`--preserve-history` step reruns check git finalization evidence in preflight.
+They bind the latest accepted commit, push, integration and plan commit/push
+executions (a completed retry wins over an earlier failed attempt), and import
+mode evidence only from steps outside the rerun's reachable path. When evidence
+is incomplete, the rerun is rejected before any session is created; rerun from
+the first unbound evidence step or use
+`riela session resume SOURCE_SESSION_ID --retry-failed-step`. See
+[preserved-history recovery](../../../docs/preserved-history-recovery.md).
+
 ## Riela Note Workspace Behavior
 
 Accepted Riela Note workspace hardening on

@@ -1,0 +1,284 @@
+{
+  "taskId": "issue-sweep-20261024",
+  "workflowMode": "issue-resolution",
+  "implementationBranch": "feat/issue-sweep-20261024",
+  "baseBranch": "feat/issue-sweep-20261024",
+  "remote": "origin",
+  "originalHead": "b25430453d3faa94604824d7f91560aee0fbe262",
+  "designDocPaths": [
+    "design-docs/specs/design-command-failure-diagnostics.md",
+    "design-docs/specs/design-rerun-input-carryover-and-finalization-evidence.md",
+    "design-docs/specs/design-gateway-sdk-addons.md",
+    "design-docs/user-qa/qa-issue-sweep-2026-10-24.md"
+  ],
+  "evidenceRoot": "tmp/issue-sweep-20261024",
+  "reviewContext": {
+    "issueReference": "tacogips/riela#163, #135, #104, #176 (riela-side remainder), #175 (verify 64a4927f, b2543045); plan review comm-000014 (step5-impl-plan-review, accepted)",
+    "userProblem": "Four runtime issues remain open. (1) #163: a command node that exits nonzero drops its stdout, so no bounded diagnostics survive. (2) #135: --retry-failed-step rejects nodeTimeout failures, and a plain step rerun starts with an empty inbox, so downstream command nodes such as dispatch-plans fail. (3) #104: a step rerun of a protected git-finalization workflow fails late with 'authoritative workflow mode evidence is missing' when a failed attempt was followed by a successful retry. (4) #176: riela workflow validate never runs the gateway JSON request rules because no production caller passes a WorkflowValidationContext. The cherry-picked #175 fix (64a4927f, b2543045) also still needs verification.",
+    "requiredOutcomes": [
+      "#175: AdapterUtilitiesTests and WorkflowStepFailurePolicyTests pass, and both commits are ancestors of HEAD.",
+      "#163: an opt-in command.failureDiagnostics policy records one non-authoritative command_failure_diagnostics backend event (captureStatus validated or rejected) on a nonzero exit. Nothing is captured by default. A nonzero exit still fails. Oversize, invalid or unexpected fields are rejected.",
+      "#135 D1: --retry-failed-step accepts a nodeTimeout current step.",
+      "#135 D2: a plain rerun carries the target's recorded accepted inbox through importAcceptedHistory. Missing or unaccepted recorded communications, and created or running sources, are rejected in preflight.",
+      "#104 D3: a protected rerun binds the latest accepted git and mode evidence, or rejects in preflight with the pinned recovery message before any session is created.",
+      "#176 V0-V5: riela workflow validate (production context only) rejects operation requests mixed with legacy keys, non-literal operations or selections, invalid config.postprocess programs (same JSONDataTransform compiler as the runtime) and unknown operations where a catalog exists. Aliases and legacy modes stay valid, and the docs matrix is updated.",
+      "swift build succeeds and swiftlint reports no new warnings in changed files."
+    ],
+    "nonGoals": [
+      "Any ART migration, release or deployment work for #176.",
+      "Gateway validation in workflow inspect, run preflight, the registry or the server.",
+      "New CLI flags, request fields, GraphQL fields or store tables.",
+      "Side-effect deduplication for retried timed-out steps.",
+      "Changes to the semantics of validateGitFinalizationEvidence or to unprotected workflows.",
+      "Running the full swift test suite as a gate.",
+      "Pushing (gitPush=false)."
+    ],
+    "constraints": [
+      "Run swift build/test and swiftlint through arch -arm64 /bin/zsh -lc from the repository root.",
+      "Every verification record includes integer exitStatus, testsRun and failureCount and the complete log path under tmp/issue-sweep-20261024/<plan>/.",
+      "A failed command node still fails; failure metadata never becomes acceptedOutput or rootOutput.",
+      "The runtime store owns identities. Imported executions and messages get new ids and importedFrom, and are never copied through appendWorkflowMessage.",
+      "155f1145 (fix/command-failure-metadata) is read-only reference material. Port it by hand, keeping inheritEnvironment: false.",
+      "RielaCore must not import gateway SDKs, GatewaySDKKit or JSONDataTransform.",
+      "Workers run no index- or worktree-changing git commands and record pre/post sha256 for every edit.",
+      "Blockers are dependency objects naming the out-of-scope path."
+    ],
+    "designDecisionsAndRationale": [
+      "#163 stores diagnostics only as metadata on the command_failure_diagnostics backend event, so the failure stays authoritative and no store schema changes.",
+      "#135 D2 reuses the runtime-owned importAcceptedHistory path, which already enforces identity remapping, instead of appending messages.",
+      "#104 D3 binds git-evidence steps whenever their latest attempt is accepted. It binds mode steps only when they are unreachable from the target, so a full restart never inherits a stale mode. The Guaranteed check uses node-removal dominance, with planning_only routes filtered only for plan commit/push.",
+      "#176 injects the production context only in WorkflowValidateCommand.run, through a RielaCLI extension, so RielaCore stays SDK-free and the default validator behaves as before.",
+      "ISW-104 runs after ISW-135 (wave 2) because both edit Recovery.swift, RerunCarryover.swift and docs/preserved-history-recovery.md. ISW-135 pins the rerunCarriedInbox contract."
+    ],
+    "intentionalTradeoffs": [
+      "A plain rerun from a created or running source, including a stale-running session left by a killed process, is now rejected (user-QA item 2).",
+      "D2 reads only inputSnapshot.mergedVariables._rielaInput, so a rerun of an add-on or output-projection target (plan-git-commit, plan-git-push) carries no inbox.",
+      "No opt-out flag restores fresh-input reruns (user-QA item 1).",
+      "Templated postprocess programs and providers without a public operation-name listing are deferred to runtime. V5 is skipped for a provider whose catalog projection returns nil.",
+      "An invalid failureDiagnostics policy is reported at runtime as a rejected receipt, not at workflow validate time."
+    ],
+    "supportedEdgeCases": [
+      "Command stdout of exactly 65,536 bytes is allowed; 65,537 is rejected, or throws on exit zero with a policy.",
+      "A sibling key outside the diagnostics path is never retained.",
+      "A rerun of a target that never executed, or whose inbox holds only non-execution messages, starts fresh as before.",
+      "Completed sources can be carried over and imported.",
+      "step10 history [failed, completed] binds the completed retry.",
+      "A plan-git-commit that is Guaranteed after the target is not bound.",
+      "Gmail passthrough variablesTemplate is rejected only for Gmail tiers; Wrike, Analytics and Notion passthrough stay valid.",
+      "Selection aliases inside literal brace strings stay valid."
+    ],
+    "outOfScopeEdgeCases": [
+      "X readers, legacy container readers, Google Service and Kaiba nested-argument validation (still runtime-only).",
+      "Container nodes, mock-scenario stdio executors and distributed workers for failure diagnostics.",
+      "Binding individual step6-implement fanout children.",
+      "Gated rerun suites not owned by any plan (for example SessionCommandJSONLStreamingTests) that fail because of the new behavior. These are reported as dependency objects."
+    ],
+    "sourcePaths": [
+      "design-docs/specs/design-command-failure-diagnostics.md",
+      "design-docs/specs/design-rerun-input-carryover-and-finalization-evidence.md",
+      "design-docs/specs/design-gateway-sdk-addons.md",
+      "design-docs/user-qa/qa-issue-sweep-2026-10-24.md",
+      "impl-plans/active/issue-sweep-20261024-175-verify.md",
+      "impl-plans/active/issue-sweep-20261024-163-command-failure-diagnostics.md",
+      "impl-plans/active/issue-sweep-20261024-135-retry-timeout-rerun-carryover.md",
+      "impl-plans/active/issue-sweep-20261024-104-rerun-finalization-evidence.md",
+      "impl-plans/active/issue-sweep-20261024-176-gateway-validation.md",
+      "impl-plans/builtin-gateway-json-176.md",
+      "docs/builtin-gateway-json.md",
+      "docs/preserved-history-recovery.md",
+      "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+      "Sources/RielaCore/DeterministicWorkflowRunner+GitFinalizationEvidence.swift",
+      "Sources/RielaCore/RuntimeHistoryImport.swift",
+      "Sources/RielaCore/WorkflowGatewayAddonValidation.swift",
+      "Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift"
+    ],
+    "codexAgentReferences": [],
+    "reviewDecision": "All five plans were accepted by step5-impl-plan-review (comm-000014: accepted true, no findings, no repair requests). Prior finding ISW135-F1-UNOWNED-RERUN-TEST-REGRESSION was verified fixed. Wave 1 (ISW-175, ISW-163, ISW-135, ISW-176) has pairwise-disjoint writePaths. Wave 2 (ISW-104) depends on ISW-135 for three sharedPaths, uses hash-checked drift handling, and re-runs ISW-135's suites in its regression filter."
+  },
+  "plans": [
+    {
+      "planId": "ISW-175-verify",
+      "planPath": "impl-plans/active/issue-sweep-20261024-175-verify.md",
+      "dependsOn": [],
+      "writePaths": [
+        "impl-plans/progress/issue-sweep-20261024-175-verify.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "64a4927f and b2543045 are confirmed ancestors of HEAD (git merge-base --is-ancestor exit 0).",
+        "AdapterUtilitiesTests and WorkflowStepFailurePolicyTests each exit 0 with failureCount 0 and testsRun > 0, including the flattened when-without-payload cases and the validationRejected -> adapterFailure assertion.",
+        "No file outside the progress log and tmp/ changes."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-20261024/ISW-175-verify",
+        "git merge-base --is-ancestor 64a4927f HEAD && git merge-base --is-ancestor b2543045 HEAD",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter AdapterUtilitiesTests > tmp/issue-sweep-20261024/ISW-175-verify/adapter-utilities.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-175-verify/adapter-utilities.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowStepFailurePolicyTests > tmp/issue-sweep-20261024/ISW-175-verify/failure-policy.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-175-verify/failure-policy.log'"
+      ]
+    },
+    {
+      "planId": "ISW-163-command-failure-diagnostics",
+      "planPath": "impl-plans/active/issue-sweep-20261024-163-command-failure-diagnostics.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowFailureDiagnostics.swift",
+        "Sources/RielaCore/WorkflowModel.swift",
+        "Sources/RielaCore/RuntimeStore.swift",
+        "Sources/RielaAdapters/LocalProcess.swift",
+        "Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift",
+        "Tests/RielaAdaptersTests/CommandFailureDiagnosticsTests.swift",
+        "Tests/RielaCoreTests/RuntimeStoreTests.swift",
+        "README.md",
+        "impl-plans/command-failure-metadata.md",
+        "impl-plans/progress/issue-sweep-20261024-163-command-failure-diagnostics.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "command.failureDiagnostics is opt-in. Without it, the process configuration and behavior are unchanged: no capture limit and no event.",
+        "On a nonzero exit with a policy, exactly one command_failure_diagnostics backend event carries authoritative false, an integer exitCode and captureStatus validated or rejected. The command still throws providerError with the message unchanged.",
+        "Oversize stdout (65,537 bytes), invalid schemas and unexpected fields are rejected, and no raw stdout, fragment or sibling key is retained.",
+        "RuntimeStore retains metadata only for command_failure_diagnostics, and acceptedOutput stays nil.",
+        "README paragraph and impl-plans/command-failure-metadata.md exist.",
+        "Build, CommandFailureDiagnosticsTests, WorkflowStdioNodeExecutorTests, RuntimeStoreTests and swiftlint exit 0, with integer evidence recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-20261024/ISW-163",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-20261024/ISW-163/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-163/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter CommandFailureDiagnosticsTests > tmp/issue-sweep-20261024/ISW-163/cfd.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-163/cfd.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowStdioNodeExecutorTests > tmp/issue-sweep-20261024/ISW-163/stdio.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-163/stdio.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RuntimeStoreTests > tmp/issue-sweep-20261024/ISW-163/store.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-163/store.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/WorkflowFailureDiagnostics.swift Sources/RielaCore/WorkflowModel.swift Sources/RielaCore/RuntimeStore.swift Sources/RielaAdapters/LocalProcess.swift Sources/RielaAdapters/WorkflowStdioNodeExecutor.swift Tests/RielaAdaptersTests/CommandFailureDiagnosticsTests.swift Tests/RielaCoreTests/RuntimeStoreTests.swift > tmp/issue-sweep-20261024/ISW-163/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-163/lint.log'"
+      ]
+    },
+    {
+      "planId": "ISW-135-retry-timeout-rerun-carryover",
+      "planPath": "impl-plans/active/issue-sweep-20261024-135-retry-timeout-rerun-carryover.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+RerunCarryover.swift",
+        "Sources/RielaCore/RuntimeHistoryImport.swift",
+        "Sources/RielaCLI/SessionCommands.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerFailureStateTests.swift",
+        "Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift",
+        "Tests/RielaCoreTests/RuntimeHistoryImportHandoverTests.swift",
+        "Tests/RielaCLITests/SessionAddonRecoveryTests.swift",
+        "Tests/RielaCLITests/SessionPreservedHistoryTests.swift",
+        "Tests/RielaCLITests/SurfaceParitySessionLineageTests.swift",
+        "Tests/RielaCLITests/WorkflowCommandSessionDiscoveryTests.swift",
+        "Tests/RielaCoreTests/DeterministicWorkflowRunnerTests.swift",
+        "docs/preserved-history-recovery.md",
+        "impl-plans/progress/issue-sweep-20261024-135-retry-timeout-rerun-carryover.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "D1: --retry-failed-step accepts a nodeTimeout current step (same session, executions [failed, completed]). The new error text is used for ineligible sessions, and CLI retry guidance covers nodeTimeout.",
+        "D2: a plain rerun carries the target's recorded accepted inbox via importAcceptedHistory, and the rerun target gets new communication ids. A missing or unaccepted recorded communication, or a source that is not failed, suspended or completed, is rejected before createSession.",
+        "rerunCarriedInbox(source:targetStepId:) matches the pinned contract consumed by ISW-104.",
+        "importAcceptedHistory accepts completed session sources, and newExecutionCount excludes imported producers.",
+        "testRerunCreatesNewSessionStartingAtRequestedStep is updated to [step-a imported, step-b new] with lineage assertions unchanged.",
+        "docs/preserved-history-recovery.md describes D2 and nodeTimeout retry.",
+        "All listed filters and lint exit 0 with testsRun > 0 and failureCount 0. Failures in unowned suites are reported as dependency objects."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-20261024/ISW-135",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-20261024/ISW-135/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter DeterministicWorkflowRunnerFailureStateTests > tmp/issue-sweep-20261024/ISW-135/failure-state.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/failure-state.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowRerunInputCarryoverTests > tmp/issue-sweep-20261024/ISW-135/carryover.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/carryover.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter RuntimeHistoryImportHandoverTests > tmp/issue-sweep-20261024/ISW-135/import.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/import.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowPreservedHistoryTests > tmp/issue-sweep-20261024/ISW-135/preserved.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/preserved.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"DeterministicWorkflowRunnerTests|DeterministicWorkflowRunnerBudgetTests|WorkflowSessionEntryValidationTests\" > tmp/issue-sweep-20261024/ISW-135/runner-rerun.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/runner-rerun.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"SessionAddonRecoveryTests|SessionPreservedHistoryTests|SurfaceParitySessionLineageTests|WorkflowCommandSessionDiscoveryTests|SessionCommandJSONLStreamingTests|WorkflowCommandInspectionTests|WorkflowCommandPackageLifecycleTests\" > tmp/issue-sweep-20261024/ISW-135/cli-rerun.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/cli-rerun.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Sources/RielaCore/DeterministicWorkflowRunner+RerunCarryover.swift Sources/RielaCore/RuntimeHistoryImport.swift Sources/RielaCLI/SessionCommands.swift Tests/RielaCoreTests/WorkflowRerunInputCarryoverTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerFailureStateTests.swift Tests/RielaCoreTests/DeterministicWorkflowRunnerTests.swift > tmp/issue-sweep-20261024/ISW-135/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-135/lint.log'"
+      ]
+    },
+    {
+      "planId": "ISW-176-gateway-validation",
+      "planPath": "impl-plans/active/issue-sweep-20261024-176-gateway-validation.md",
+      "dependsOn": [],
+      "writePaths": [
+        "Sources/RielaCore/WorkflowGatewayAddonValidation.swift",
+        "Sources/RielaCLI/WorkflowValidationContext+Production.swift",
+        "Sources/RielaCLI/WorkflowValidateInspectCommands.swift",
+        "Tests/RielaCoreTests/WorkflowGatewayValidationTests.swift",
+        "Tests/RielaCLITests/WorkflowValidateGatewayContextTests.swift",
+        "docs/builtin-gateway-json.md",
+        "impl-plans/builtin-gateway-json-176.md",
+        "impl-plans/progress/issue-sweep-20261024-176-gateway-validation.md"
+      ],
+      "sharedPaths": [],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "Only WorkflowValidateCommand.run uses DefaultWorkflowValidator(context: .production()). Without a context, the validator behaves as before.",
+        "Catalog-backed builtin gateway nodes are rejected for: an operation mixed with queryTemplate/variablesTemplate/command/argsTemplate/select; a non-literal or malformed operation or selection; Gmail passthrough variablesTemplate; an invalid non-templated config.postprocess (production JSONDataTransform compiler); an unknown operation when a catalog projection exists.",
+        "Notion read/write addons are covered. Aliases, legacy modes and the six listed examples still validate.",
+        "docs/builtin-gateway-json.md and impl-plans/builtin-gateway-json-176.md record what is done and keep the X, legacy container, Google Service, Kaiba and ART/release/deploy items open.",
+        "Build, WorkflowGatewayValidationTests, WorkflowValidateGatewayContextTests, RielaExampleParityTests|WorkflowHostCapabilityTests and lint exit 0, with integer evidence (including skips) recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-20261024/ISW-176",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-20261024/ISW-176/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-176/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowGatewayValidationTests > tmp/issue-sweep-20261024/ISW-176/core.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-176/core.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowValidateGatewayContextTests > tmp/issue-sweep-20261024/ISW-176/cli.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-176/cli.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"RielaExampleParityTests|WorkflowHostCapabilityTests\" > tmp/issue-sweep-20261024/ISW-176/examples.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-176/examples.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/WorkflowGatewayAddonValidation.swift Sources/RielaCLI/WorkflowValidationContext+Production.swift Sources/RielaCLI/WorkflowValidateInspectCommands.swift Tests/RielaCoreTests/WorkflowGatewayValidationTests.swift Tests/RielaCLITests/WorkflowValidateGatewayContextTests.swift > tmp/issue-sweep-20261024/ISW-176/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-176/lint.log'"
+      ]
+    },
+    {
+      "planId": "ISW-104-rerun-finalization-evidence",
+      "planPath": "impl-plans/active/issue-sweep-20261024-104-rerun-finalization-evidence.md",
+      "dependsOn": [
+        "ISW-135-retry-timeout-rerun-carryover"
+      ],
+      "writePaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+RerunFinalizationEvidence.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+GitFinalizationEvidence.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+History.swift",
+        "Tests/RielaCoreTests/WorkflowRerunFinalizationEvidenceTests.swift",
+        "Tests/RielaCoreTests/WorkflowGitFinalizationEvidenceTests.swift",
+        "Tests/RielaCoreTests/WorkflowPreservedHistoryTests.swift",
+        "impl-plans/progress/issue-sweep-20261024-104-rerun-finalization-evidence.md"
+      ],
+      "sharedPaths": [
+        "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+        "Sources/RielaCore/DeterministicWorkflowRunner+RerunCarryover.swift",
+        "docs/preserved-history-recovery.md"
+      ],
+      "sharedPathNotes": [
+        {
+          "path": "Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift",
+          "intendedEdit": "After ISW-135: merge rerunFinalizationEvidenceExecutions results with rerunCarriedInbox executions (dedupe by executionId, source order) into one import on the plain-rerun path before createSession, and run the check (discarding the result) on the preserve-history path."
+        },
+        {
+          "path": "Sources/RielaCore/DeterministicWorkflowRunner+RerunCarryover.swift",
+          "intendedEdit": "Only if needed: a small helper to merge/deduplicate import executions; the rerunCarriedInbox signature must not change."
+        },
+        {
+          "path": "docs/preserved-history-recovery.md",
+          "intendedEdit": "Append a 'Protected finalization evidence' paragraph documenting the D3 binding rule and the recovery message."
+        }
+      ],
+      "artifactRoots": [],
+      "acceptanceCriteria": [
+        "static rerunFinalizationEvidenceExecutions(workflow:source:targetStepId:available:) exists with the pinned signature. It is pure, returns [] for unprotected workflows, and is wired into both the plain and preserve-history rerun paths.",
+        "Latest accepted git evidence (commit, push, integration, plan commit/push) is bound. Mode steps are bound only when unreachable from the target. A failed-then-retried step binds the completed retry.",
+        "Incomplete evidence is rejected in preflight with the exact pinned recovery message; no session is created and no adapter is invoked.",
+        "The only change in DeterministicWorkflowRunner+GitFinalizationEvidence.swift is visibility (private -> internal) for expectedGitFinalizationMode and WorkflowGitFinalizationMode.",
+        "The ambiguous-boundary rejection gets the recovery-hint suffix, and docs/preserved-history-recovery.md documents D3.",
+        "All test table rows, the validator round trip and the runner-level test pass. Build, the four filters and lint exit 0 with integer evidence recorded."
+      ],
+      "verification": [
+        "mkdir -p tmp/issue-sweep-20261024/ISW-104",
+        "arch -arm64 /bin/zsh -lc 'swift build > tmp/issue-sweep-20261024/ISW-104/build.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-104/build.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowRerunFinalizationEvidenceTests > tmp/issue-sweep-20261024/ISW-104/rerun-evidence.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-104/rerun-evidence.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowGitFinalizationEvidenceTests > tmp/issue-sweep-20261024/ISW-104/git-evidence.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-104/git-evidence.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter WorkflowPreservedHistoryTests > tmp/issue-sweep-20261024/ISW-104/preserved.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-104/preserved.log'",
+        "arch -arm64 /bin/zsh -lc 'swift test --filter \"WorkflowRerunInputCarryoverTests|DeterministicWorkflowRunnerFailureStateTests|DeterministicWorkflowRunnerTests|WorkflowModelTests\" > tmp/issue-sweep-20261024/ISW-104/regression.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-104/regression.log'",
+        "arch -arm64 /bin/zsh -lc 'swiftlint lint --quiet Sources/RielaCore/DeterministicWorkflowRunner+RerunFinalizationEvidence.swift Sources/RielaCore/DeterministicWorkflowRunner+GitFinalizationEvidence.swift Sources/RielaCore/DeterministicWorkflowRunner+History.swift Sources/RielaCore/DeterministicWorkflowRunner+Recovery.swift Tests/RielaCoreTests/WorkflowRerunFinalizationEvidenceTests.swift > tmp/issue-sweep-20261024/ISW-104/lint.log 2>&1; echo exitStatus=$? >> tmp/issue-sweep-20261024/ISW-104/lint.log'"
+      ]
+    }
+  ]
+}

@@ -564,7 +564,11 @@ final class DeterministicWorkflowRunnerTests: XCTestCase {
 
     XCTAssertNotEqual(rerun.session.sessionId, first.session.sessionId)
     XCTAssertEqual(rerun.status, .completed)
-    XCTAssertEqual(rerun.session.executions.map(\.stepId), ["step-b"])
+    XCTAssertEqual(rerun.session.executions.map(\.stepId), ["step-a", "step-b"])
+    XCTAssertEqual(rerun.session.executions[0].importedFrom?.sessionId, first.session.sessionId)
+    XCTAssertEqual(rerun.session.executions[0].importedFrom?.executionId, first.session.executions[0].executionId)
+    XCTAssertNil(rerun.session.executions[1].importedFrom)
+    XCTAssertEqual(rerun.session.newExecutionCount, 1)
     XCTAssertEqual(rerun.rootOutput?["status"], .string("second"))
     XCTAssertEqual(rerun.recovery?.entryMode, .rerun)
     XCTAssertEqual(rerun.recovery?.sourceSessionId, first.session.sessionId)

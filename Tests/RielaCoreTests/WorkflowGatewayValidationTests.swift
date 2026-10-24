@@ -35,6 +35,7 @@ final class WorkflowGatewayValidationTests: XCTestCase {
       ["operation": .string("{{input.operation}}"), "arguments": .object([:])],
       ["operation": .string("tasks"), "arguments": .array([])],
       ["queryTemplate": .string("query"), "operation": .string("tasks"), "arguments": .object([:])],
+      ["operation": .string("tasks"), "arguments": .object([:]), "select": .object([:])],
       ["queryTemplate": .string("query"), "selection": .array([])],
       ["queryTemplate": .string("query"), "variablesTemplate": .null]
     ] {
@@ -50,12 +51,35 @@ final class WorkflowGatewayValidationTests: XCTestCase {
     for selection: JSONValue in [.null, .string("id"), .array([]), .array([.string("draft..id")]), .array([.integer(1)])] {
       XCTAssertFalse(errors(graphql, config: base.merging(["selection": selection]) { _, rhs in rhs }).isEmpty)
     }
+    XCTAssertTrue(errors(graphql, config: base.merging(["selection": .string("{ alias: id }")]) { _, rhs in rhs }).isEmpty)
+    XCTAssertFalse(errors(graphql, config: base.merging(["selection": .string("{ id {{input.x}} }")]) { _, rhs in rhs }).isEmpty)
+    XCTAssertFalse(errors(graphql, config: base.merging(["selection": .array([.string("posts.{{x}}")])]) { _, rhs in rhs }).isEmpty)
     let docs = "riela/google-docs-gateway-read"
     XCTAssertTrue(errors(docs, config: ["command": .string("documents get")]).isEmpty)
     XCTAssertTrue(errors(docs, config: ["command": .string("documents get"), "argsTemplate": .object(["id": .string("123")])]).isEmpty)
     XCTAssertFalse(errors(docs, config: ["command": .string("documents get"), "argsTemplate": .array([])]).isEmpty)
     XCTAssertTrue(errors(docs, config: base).isEmpty)
+    XCTAssertFalse(errors(docs, config: ["operation": .string("docs get"), "arguments": .object([:]), "argsTemplate": .object([:])]).isEmpty)
+    XCTAssertFalse(errors(docs, config: ["operation": .string("bad name!"), "arguments": .object([:])]).isEmpty)
     XCTAssertFalse(errors(docs, config: base.merging(["selection": .array([])]) { _, rhs in rhs }).isEmpty)
+  }
+
+  func testNotionGmailAndPostprocessRules() {
+    let catalogContext = WorkflowValidationContext(gatewayCatalog: { provider, tier in
+      WorkflowGatewayCatalogProjection(provider: provider, tier: tier, operationNames: ["pages"])
+    }, postprocessCompiler: { _ in "invalid test program" })
+    XCTAssertTrue(errors("riela/notion-gateway-write", config: ["queryTemplate": .string("{ pages { id } }")]).isEmpty)
+    XCTAssertFalse(errors("riela/notion-gateway-read", config: ["operation": .string("missing"), "arguments": .object([:])], context: catalogContext).isEmpty)
+    XCTAssertFalse(errors("riela/gmail-gateway-reader", config: ["queryTemplate": .string("{ x }"), "variablesTemplate": .object([:])]).isEmpty)
+    XCTAssertTrue(errors("riela/wrike-gateway-read", config: ["queryTemplate": .string("{ x }"), "variablesTemplate": .object([:])]).isEmpty)
+    let postprocessErrors = errors("riela/gmail-gateway-reader", config: ["postprocess": .array([.object(["pick": .integer(5)])])], context: catalogContext)
+    XCTAssertTrue(postprocessErrors.contains { $0.path.hasSuffix(".addon.config.postprocess") })
+    let templatedErrors = errors("riela/gmail-gateway-reader", config: [
+      "operation": .string("pages"), "arguments": .object([:]),
+      "postprocess": .array([.object(["pick": .string("{{input.n}}")])])
+    ], context: catalogContext)
+    XCTAssertFalse(templatedErrors.contains { $0.path.hasSuffix(".addon.config.postprocess") })
+    XCTAssertTrue(errors("custom/addon", config: ["postprocess": .array([.integer(2)])], context: catalogContext).isEmpty)
   }
 
   func testCatalogChecksAndDefaultInitializer() {
@@ -106,6 +130,7 @@ final class WorkflowGatewayValidationTests: XCTestCase {
                               inputs: ["variables": .object(["enabled": .bool(true)])]).isEmpty)
     XCTAssertFalse(errors(apple, config: ["query": .string("q"), "variables": .integer(3)]).isEmpty)
     XCTAssertTrue(errors(apple, config: ["operation": .string("read"), "arguments": .object([:])]).isEmpty)
+    XCTAssertFalse(errors(apple, config: ["operation": .string("bad name!"), "arguments": .object([:])]).isEmpty)
     XCTAssertFalse(errors(apple, config: ["operation": .string("read"), "arguments": .object([:]),
                                       "variablesFile": .string("vars.json")]).isEmpty)
     XCTAssertFalse(errors(apple, config: ["query": .string("q"), "binaryPath": .string("/bin/true")]).isEmpty)

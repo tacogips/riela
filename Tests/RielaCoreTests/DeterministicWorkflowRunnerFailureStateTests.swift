@@ -278,3 +278,70 @@ extension DeterministicWorkflowRunnerTests {
     XCTAssertEqual(messages, [])
   }
 }
+
+// This suite name matches the accepted implementation-plan verification filter.
+// swiftlint:disable:next type_name
+final class DeterministicWorkflowRunnerFailureStateTests: XCTestCase {
+  func testExplicitRetryOfTimedOutStepKeepsSessionHistory() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    await XCTAssertThrowsErrorAsync(try await runner(store: store, adapter: FailingAdapter(
+      error: AdapterExecutionError(.timeout, "timed out")
+    )).run(request()))
+    let maybeFailed = await store.latestSession(workflowId: "timeout-retry")
+    let failed = try XCTUnwrap(maybeFailed)
+    XCTAssertEqual(failed.failureKind, .nodeTimeout)
+
+    var resume = request()
+    resume.resumeSessionId = failed.sessionId
+    let unchanged = try await runner(store: store, adapter: StaticAdapter(output: output())).run(resume)
+    XCTAssertEqual(unchanged.session.status, .failed)
+    XCTAssertEqual(unchanged.session.executions.map(\.status), [.failed])
+
+    resume.retryFailedStep = true
+    let recovered = try await runner(store: store, adapter: StaticAdapter(output: output())).run(resume)
+    XCTAssertEqual(recovered.session.sessionId, failed.sessionId)
+    XCTAssertEqual(recovered.session.status, .completed)
+    XCTAssertEqual(recovered.session.executions.map(\.status), [.failed, .completed])
+  }
+
+  func testRetryFailedStepErrorNamesTimeoutForCompletedSession() async throws {
+    let store = InMemoryWorkflowRuntimeStore()
+    let completed = try await runner(store: store, adapter: StaticAdapter(output: output())).run(request())
+    var resume = request()
+    resume.resumeSessionId = completed.session.sessionId
+    resume.retryFailedStep = true
+    do {
+      _ = try await runner(store: store, adapter: StaticAdapter(output: output())).run(resume)
+      XCTFail("completed sessions cannot retry a failed step")
+    } catch {
+      XCTAssertTrue(String(describing: error).contains(
+        "--retry-failed-step requires an adapter-failed, policy-blocked or timed-out current step with no accepted output"))
+    }
+  }
+
+  private func runner(store: InMemoryWorkflowRuntimeStore, adapter: some NodeAdapter) -> DeterministicWorkflowRunner {
+    DeterministicWorkflowRunner(store: store, adapter: adapter)
+  }
+
+  private func request() -> DeterministicWorkflowRunRequest {
+    let workflow = WorkflowDefinition(
+      workflowId: "timeout-retry",
+      defaults: WorkflowDefaults(nodeTimeoutMs: 120_000, maxLoopIterations: 2),
+      entryStepId: "step",
+      nodeRegistry: [WorkflowNodeRegistryRef(id: "node", nodeFile: "node.json")],
+      steps: [WorkflowStepRef(id: "step", nodeId: "node")],
+      nodes: [WorkflowNodeRef(id: "node", nodeFile: "node.json")]
+    )
+    let payload = AgentNodePayload(id: "node", model: "fixture", output: NodeOutputContract(
+      jsonSchema: ["type": .string("object"), "required": .array([.string("status")])]
+    ))
+    return DeterministicWorkflowRunRequest(workflow: workflow, nodePayloads: ["node": payload])
+  }
+
+  private func output() -> AdapterExecutionOutput {
+    AdapterExecutionOutput(
+      provider: "test", model: "fixture", promptText: "prompt", completionPassed: true,
+      payload: ["status": .string("ok")]
+    )
+  }
+}

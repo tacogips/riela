@@ -999,7 +999,8 @@ public struct SessionResumeCommand: Sendable {
     let failureKind = session.failureKind?.rawValue ?? "unknown"
     let rerunStepId = session.currentStepId ?? session.entryStepId
     let retryGuidance = session.failureKind == .adapterFailure || session.failureKind == .policyBlocked
-      ? "`riela session resume \(session.sessionId) --retry-failed-step` to explicitly retry the failed adapter step, "
+      || session.failureKind == .nodeTimeout
+      ? "`riela session resume \(session.sessionId) --retry-failed-step` to explicitly retry the failed step, "
       : ""
     return """
     session \(session.sessionId) failed with failureKind \(failureKind) and cannot be resumed normally; use \

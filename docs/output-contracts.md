@@ -1,6 +1,6 @@
 # Node output contracts
 
-Declare `output.jsonSchema` in the node payload. Riela appends that authored schema to the agent's system prompt after rendering workflow and persona templates. Schema strings such as `{{example}}` remain literal. Keep persona prompts focused on the task; duplicating the output shape there is unnecessary. The agent should return the JSON object directly, without prose or fences. When authored instructions require routing metadata, the existing `{ "when": { "condition": true }, "payload": {...} }` envelope remains supported: the schema validates `payload`, not the envelope.
+Declare `output.jsonSchema` in the node payload. Riela appends that authored schema to the agent's system prompt after rendering workflow and persona templates. Schema strings such as `{{example}}` remain literal. Keep persona prompts focused on the task; duplicating the output shape there is unnecessary. The agent should return the JSON object directly, without prose or fences. When authored instructions require routing metadata, the existing `{ "when": { "condition": true }, "payload": {...} }` envelope remains supported: the schema validates `payload`, not the envelope. If an agent returns a valid boolean `when` map but places its business fields beside it instead of under `payload`, Riela normalizes those sibling fields (excluding `when` and `completionPassed`) as the payload, records a routing diagnostic, and still validates them against the schema. A non-object `payload` or a non-boolean `when` value is still rejected.
 
 Both workflow bundle validation and runtime preflight use the same dialect checker as output publication. Invalid or unsupported contracts fail before an adapter runs, including unsupported keywords nested in properties, items, additional properties, or combinators.
 
@@ -22,6 +22,9 @@ rejection. An undeclared `maxValidationAttempts` defaults to 2 for every node
 with an `output` block, including description-only contracts. A node without
 an `output` block gets one attempt and its full answer is always published as
 `{"text": ...}`; it is never interpreted opportunistically as an envelope.
+When every attempt is rejected, the session fails with failureKind
+`adapterFailure`, so `riela session resume <session-id> --retry-failed-step`
+can retry that step after the prompt or contract is fixed.
 
 Declare `output.jsonSchema` whenever a downstream add-on config/input template
 reads the payload (`{{field}}`, `{{input.field}}`, or

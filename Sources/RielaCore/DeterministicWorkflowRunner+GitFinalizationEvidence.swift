@@ -10,7 +10,7 @@ struct WorkflowGitFinalizationEvidencePolicy: Equatable, Sendable {
   var planPushStepId: String?
 }
 
-private enum WorkflowGitFinalizationMode: String {
+enum WorkflowGitFinalizationMode: String {
   case designPlanOnly = "design-plan-only"
   case issueResolution = "issue-resolution"
 }
@@ -289,7 +289,7 @@ extension DeterministicWorkflowRunner {
     }
   }
 
-  private static func expectedGitFinalizationMode(
+  static func expectedGitFinalizationMode(
     session: WorkflowSession,
     policy: WorkflowGitFinalizationEvidencePolicy
   ) throws -> WorkflowGitFinalizationMode {

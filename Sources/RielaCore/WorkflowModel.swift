@@ -656,17 +656,20 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
   public var arguments: [String]
   public var environment: [String: String]
   public var workingDirectory: String?
+  public var failureDiagnostics: WorkflowFailureDiagnostics?
 
   public init(
     executable: String,
     arguments: [String] = [],
     environment: [String: String] = [:],
-    workingDirectory: String? = nil
+    workingDirectory: String? = nil,
+    failureDiagnostics: WorkflowFailureDiagnostics? = nil
   ) {
     self.executable = executable
     self.arguments = arguments
     self.environment = environment
     self.workingDirectory = workingDirectory
+    self.failureDiagnostics = failureDiagnostics
   }
 
   enum CodingKeys: String, CodingKey {
@@ -674,6 +677,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case arguments
     case environment
     case workingDirectory
+    case failureDiagnostics
   }
 
   enum RielaCommandCodingKeys: String, CodingKey {
@@ -684,6 +688,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
     case environment
     case envTemplate
     case workingDirectory
+    case failureDiagnostics
   }
 
   public init(from decoder: Decoder) throws {
@@ -701,6 +706,7 @@ public struct WorkflowCommandExecution: Codable, Equatable, Sendable {
       ?? container.decodeIfPresent([String: String].self, forKey: .envTemplate)
       ?? [:]
     self.workingDirectory = workingDirectory
+    self.failureDiagnostics = try container.decodeIfPresent(WorkflowFailureDiagnostics.self, forKey: .failureDiagnostics)
   }
 }
 

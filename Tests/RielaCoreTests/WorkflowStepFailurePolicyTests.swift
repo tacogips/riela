@@ -284,6 +284,11 @@ final class RunnerNonTerminalStepFailureTests: XCTestCase {
     let maybeSession = await store.latestSession(workflowId: "validated-runner")
     let session = try XCTUnwrap(maybeSession)
     XCTAssertEqual(session.status, .failed)
+    XCTAssertEqual(
+      session.failureKind,
+      .adapterFailure,
+      "exhausted output validation must stay retryable with --retry-failed-step, not become internal"
+    )
     XCTAssertEqual(session.executions.map(\.status), [.failed, .failed])
     let observed = await store.sessionStatusesAfterFailedStepUpdates()
     XCTAssertEqual(observed.first, .running)

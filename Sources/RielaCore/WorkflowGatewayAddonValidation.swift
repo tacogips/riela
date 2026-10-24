@@ -4,12 +4,14 @@ public enum WorkflowGatewayProvider: String, CaseIterable, Sendable {
   case wrike = "wrike-gateway"
   case analytics = "google-analytics-gateway"
   case gmail = "gmail-gateway"
+  case notion = "notion-gateway"
   case documents = "google-documents-gateway"
   case apple = "apple-gateway"
 
   public var tiers: Set<String> {
     switch self {
     case .wrike, .analytics: ["reader", "writer", "admin"]
+    case .notion: ["reader", "writer"]
     case .gmail: ["reader", "draft", "sender", "threads", "message-box"]
     case .documents: ["docs-read", "docs-write", "sheets-read", "sheets-write", "drive-read", "drive-write"]
     case .apple: ["full", "reader"]
@@ -31,9 +33,14 @@ public struct WorkflowGatewayCatalogProjection: Sendable {
 
 public struct WorkflowValidationContext: Sendable {
   public var gatewayCatalog: (@Sendable (WorkflowGatewayProvider, String) -> WorkflowGatewayCatalogProjection?)?
+  public var postprocessCompiler: (@Sendable (JSONValue) -> String?)?
 
-  public init(gatewayCatalog: (@Sendable (WorkflowGatewayProvider, String) -> WorkflowGatewayCatalogProjection?)? = nil) {
+  public init(
+    gatewayCatalog: (@Sendable (WorkflowGatewayProvider, String) -> WorkflowGatewayCatalogProjection?)? = nil,
+    postprocessCompiler: (@Sendable (JSONValue) -> String?)? = nil
+  ) {
     self.gatewayCatalog = gatewayCatalog
+    self.postprocessCompiler = postprocessCompiler
   }
 }
 
@@ -48,7 +55,9 @@ private let graphQLAddons: [String: (WorkflowGatewayProvider, String)] = [
   "riela/gmail-gateway-draft": (.gmail, "draft"),
   "riela/gmail-gateway-sender": (.gmail, "sender"),
   "riela/gmail-gateway-threads": (.gmail, "threads"),
-  "riela/gmail-gateway-message-box": (.gmail, "message-box")
+  "riela/gmail-gateway-message-box": (.gmail, "message-box"),
+  "riela/notion-gateway-read": (.notion, "reader"),
+  "riela/notion-gateway-write": (.notion, "writer")
 ]
 
 private let documentAddons: [String: String] = [
@@ -74,6 +83,12 @@ func validateGatewayAddon(
   }
   let fieldPath = "\(path).addon.config"
   var diagnostics: [WorkflowValidationDiagnostic] = []
+  if addon.name.hasPrefix("riela/") || addon.name.hasPrefix("kaiba/"),
+     let postprocess = addon.config?["postprocess"],
+     !containsTemplatePlaceholder(postprocess),
+     let message = context.postprocessCompiler?(postprocess) {
+    diagnostics.append(gatewayError("\(fieldPath).postprocess", message))
+  }
   if let (provider, tier) = graphQLAddons[addon.name] {
     validateGatewayModes(effective, passthrough: "queryTemplate", provider: provider, tier: tier,
                          path: fieldPath, context: context, diagnostics: &diagnostics)
@@ -100,6 +115,15 @@ private func gatewayError(_ path: String, _ message: String) -> WorkflowValidati
   WorkflowValidationDiagnostic(severity: .error, path: path, message: message)
 }
 
+private func containsTemplatePlaceholder(_ value: JSONValue) -> Bool {
+  switch value {
+  case let .string(text): text.contains("{{")
+  case let .array(values): values.contains(where: containsTemplatePlaceholder)
+  case let .object(values): values.values.contains(where: containsTemplatePlaceholder)
+  default: false
+  }
+}
+
 private func requiredString(_ value: JSONValue?, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) -> String? {
   guard case let .string(text)? = value, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
     diagnostics.append(gatewayError(path, "must be a non-empty string"))
@@ -108,9 +132,13 @@ private func requiredString(_ value: JSONValue?, path: String, diagnostics: inou
   return text
 }
 
-private func literalOperation(_ value: JSONValue?, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) -> String? {
+private func literalOperation(
+  _ value: JSONValue?, path: String, commandOperation: Bool = false,
+  diagnostics: inout [WorkflowValidationDiagnostic]
+) -> String? {
   guard let operation = requiredString(value, path: path, diagnostics: &diagnostics) else { return nil }
-  if operation.contains("{{") || operation.contains("}}") {
+  let pattern = commandOperation ? #"^[A-Za-z][A-Za-z0-9_-]*( [A-Za-z][A-Za-z0-9_-]*)*$"# : #"^[_A-Za-z][_0-9A-Za-z]*$"#
+  if operation.utf8.count > 256 || operation.contains("{{") || operation.range(of: pattern, options: .regularExpression) == nil {
     diagnostics.append(gatewayError(path, "must be a literal catalog operation name"))
     return nil
   }
@@ -133,17 +161,17 @@ private func forbid(_ keys: [String], in values: JSONObject, path: String, diagn
 private func validateSelection(_ value: JSONValue, path: String, diagnostics: inout [WorkflowValidationDiagnostic]) {
   switch value {
   case let .string(raw) where raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{"):
-    break
+    if raw.utf8.count > 65_536 || raw.contains("{{") {
+      diagnostics.append(gatewayError(path, "must be a bounded literal selection set"))
+    }
   case let .array(fields):
-    if fields.isEmpty {
-      diagnostics.append(gatewayError(path, "must contain at least one dot-path string"))
+    if fields.isEmpty || fields.count > 256 {
+      diagnostics.append(gatewayError(path, "must contain 1 to 256 dot-path strings"))
     }
     for (index, field) in fields.enumerated() {
-      guard case let .string(text) = field,
-            !text.split(separator: ".", omittingEmptySubsequences: false).contains(where: {
-              $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }) else {
-        diagnostics.append(gatewayError("\(path)[\(index)]", "must be a non-empty dot-path string"))
+      guard case let .string(text) = field, text.utf8.count <= 4_096,
+            text.range(of: #"^[_A-Za-z][_0-9A-Za-z]*(\.[_A-Za-z][_0-9A-Za-z]*)*$"#, options: .regularExpression) != nil else {
+        diagnostics.append(gatewayError("\(path)[\(index)]", "must be a literal field path of at most 4096 bytes"))
         continue
       }
     }
@@ -167,9 +195,9 @@ private func validateGatewayModes(
     diagnostics.append(gatewayError(path, "must specify exactly one of \(passthrough) or operation"))
   }
   if hasOperation {
-    let operation = literalOperation(values["operation"], path: "\(path).operation", diagnostics: &diagnostics)
+    let operation = literalOperation(values["operation"], path: "\(path).operation", commandOperation: passthrough == "command", diagnostics: &diagnostics)
     requireObject(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
-    forbid([passthrough, passthrough == "command" ? "argsTemplate" : "variablesTemplate"], in: values,
+    forbid(["queryTemplate", "variablesTemplate", "command", "argsTemplate", "select"], in: values,
            path: path, diagnostics: &diagnostics)
     if passthrough == "command" {
       forbid(["selection"], in: values, path: path, diagnostics: &diagnostics)
@@ -187,6 +215,9 @@ private func validateGatewayModes(
       }
     } else if let variables = values["variablesTemplate"] {
       requireObject(variables, path: "\(path).variablesTemplate", diagnostics: &diagnostics)
+      if provider == .gmail {
+        diagnostics.append(gatewayError("\(path).variablesTemplate", "is not supported; use operation with arguments"))
+      }
     }
   }
 }
@@ -223,7 +254,7 @@ private func validateAppleGateway(
   if values["operation"] != nil {
     let operation = literalOperation(values["operation"], path: "\(path).operation", diagnostics: &diagnostics)
     requireObject(values["arguments"], path: "\(path).arguments", diagnostics: &diagnostics)
-    forbid(passthroughKeys, in: values, path: path, diagnostics: &diagnostics)
+    forbid(passthroughKeys + ["queryTemplate", "variablesTemplate", "command", "argsTemplate", "select"], in: values, path: path, diagnostics: &diagnostics)
     if let selection = values["selection"] {
       validateSelection(selection, path: "\(path).selection", diagnostics: &diagnostics)
     }

@@ -120,6 +120,12 @@ extension DeterministicWorkflowRunner {
         return .adapterFailure
       }
     }
+    // Exhausted output-contract validation is an invalid adapter output, like
+    // AdapterExecutionError.invalidOutput, not a runtime defect. Classifying it
+    // as adapterFailure keeps `session resume --retry-failed-step` available.
+    if case WorkflowPublicationError.validationRejected = error {
+      return .adapterFailure
+    }
     return .internalFailure
   }
 

@@ -86,7 +86,14 @@ JSON Schema dialect and how payload contracts interact with routing envelopes.
 
 For failed sequential agent workflows, [history-preserving recovery](docs/preserved-history-recovery.md)
 reuses accepted discussion without rerunning earlier agents and records explicit
-source lineage in the new session.
+source lineage in the new session. A plain `riela session rerun SESSION STEP`
+also carries the target's recorded accepted inbox (for example checkpoint
+messages) into the new session, and rejects created or running sources and
+missing or unaccepted inbox evidence before creating a session.
+`riela session resume SESSION --retry-failed-step` also accepts a step that
+failed with a node timeout. Step reruns of the protected git-finalization
+workflow bind the latest accepted commit/push/mode evidence or reject in
+preflight with a recovery path; see the same guide.
 
 Fanout change evidence accepts explicit repository-relative file or directory
 `writePaths`, including paths that do not exist yet. Directory snapshots include
@@ -453,6 +460,16 @@ collide.
   `addon.env` targets are exactly the five
   `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_<ROLE>_*` variables of the add-on's own
   role, plus `GOOGLE_DOCUMENTS_GATEWAY_CREDENTIAL_DIR`.
+
+`riela workflow validate` checks catalog-backed built-in gateway JSON
+`operation` requests when the SDK catalog is available. It rejects an
+operation mixed with legacy request keys, a non-literal or malformed
+operation/selection, Gmail `variablesTemplate` passthrough, an invalid
+non-templated `config.postprocess` program, and an unknown catalog operation.
+Aliases and legacy modes stay valid; `inspect`, run preflight, the registry and
+the server do not apply these checks. See
+[built-in gateway JSON requests](docs/builtin-gateway-json.md) for the matrix
+and the cases that remain runtime-only.
 
 ### Notion pages and images
 
@@ -1685,6 +1702,21 @@ RielaApp and `riela serve` can host a worker controller, with outbound
 `riela worker --config` processes and step-level worker ID/group selection.
 See [controller and worker setup](docs/distributed-workers.md) for configuration,
 workspace mapping, verified platform coverage and operational limits.
+
+Command nodes can opt into non-authoritative failure metadata with
+`command.failureDiagnostics: {"path": ["diagnostics"], "schema": ..., "maxBytes": 16384}`.
+The trusted path selects an object; raw sibling fields are never retained. Opted-in
+commands drain stdout while retaining at most 64 KiB plus one overflow byte; oversized
+stdout is rejected even on exit zero, never accepted as a truncated result. Only a deliberately
+restricted metadata schema is supported: closed objects (`additionalProperties:false`,
+`properties`, `required`), bounded arrays (`items`, `maxItems`), enum-only strings,
+bounded integers (`minimum`, `maximum`), booleans and null. On a nonzero exit,
+unexpected fields, invalid schemas/values or oversized stdout produce only a
+`rejected` receipt.
+Validated metadata is stored in the execution's `command_failure_diagnostics`
+backend event. Nonzero commands still fail; this metadata never becomes an accepted
+output or root output. Default behavior persists no failed stdout. See
+[the implementation plan](impl-plans/command-failure-metadata.md) for exact limits.
 
 ### Run a desktop configuration once
 

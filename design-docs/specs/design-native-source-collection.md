@@ -215,3 +215,76 @@ These tests do not prove deployment. ART integration must preserve its private
 screening boundary, durable metadata and original fetched timestamps; release
 and install matching host/guest binaries, cut over when idle, then observe real
 collection and publication for two hours after the final migration.
+
+## Inspected body cache exchange
+
+`riela/cache-exchange` version 1 owns bounded batch admission, readback,
+revision/fetch-time/integrity matching and miss classification. Its `storage`
+object supplies `cacheId`, `scope`, optional `cacheRoot`, `ttlSeconds` (86400),
+`maxBytes` (10485760), and `capacityProtection` (false). This is independent of
+provider names and durable memory. Reserved `x-gateway-*` caches are rejected.
+
+Actions are `configure`, `put`, `get`, `protect`, `reconcile`, and `prune`.
+`put` takes normal cache `entries` (`key`, `fetchedAt`, `payload`, optional
+`protectFromEviction`) and optional `retainedReferences`. It returns a
+`references` map. `get` takes a references array and returns `hits`, `missing`,
+and `expired`. `protect` takes that array and `enabled`; `reconcile` takes the
+committed reference snapshot. As with low-level cache nodes, configure the
+policy before the first read of an existing cache; reading never refreshes TTL.
+
+Example configuration for a script-free body write:
+
+```json
+{
+  "action": "put",
+  "storage": {
+    "cacheId": "inspected-bodies",
+    "scope": "account-query-window",
+    "maxBytes": 10485760,
+    "capacityProtection": false
+  },
+  "entries": "{{checkedEntries}}"
+}
+```
+
+Input can use `--variables @-`; literal template-looking strings inside data
+are not rendered again. Inputs and output are bounded below the 64 MiB wire
+limit, with at most 10000 entries/references and 1024 entries per SDK batch.
+Admission leaves serialization headroom; a single entry must fit both the
+cache and the actual serialized wire frame minus 8 KiB. Batches target half a
+frame, while a wider single entry remains admissible when it fits on its own. Invalid dates, oversized entries
+and duplicate keys are rejected before any batch is written. Concurrent
+writers or expiration during a multi-batch operation can still cause failure;
+no durable cursor is advanced by this operation.
+
+Disposable batches can exceed total cache capacity: each admitted chunk is
+read back before the next, which may evict earlier bodies. References for all
+admitted bodies remain available to durable pending-work manifests. Protection
+requests on disposable caches release old protection without requiring evicted
+rows to still exist. Protected staging is explicit and keeps revision-CAS
+failures strict. Its final readback must include the whole admitted set.
+
+Reference wire names preserve existing metadata (`key`, `revision`,
+`fetched_at`, `payload_sha256`, `byte_count`), plus `hash_format: riela-json-v1`.
+A caller with an existing domain proof digest may retain it in
+`payload_sha256` and carry the native digest as `integrity_sha256`. ART does
+this to preserve publication/source proofs and checks both. Legacy references
+without a hash format or size are accepted. For all references the built-in
+recomputes the stored SHA256 revision over scope/key/fetch-time/body, avoiding
+false misses caused by domain serializer differences while detecting changed
+stored payloads. Native integrity digests are also checked when supplied. The
+original domain hash remains the domain adapter’s responsibility. No cache miss
+discards an exact pending ID/version or changes a frozen acquisition window.
+
+ART's `RetrievalCache` now delegates its batching/readback/protection to this
+node. The remaining adapter holds ART cache names/defaults, transports JSON,
+and retains existing domain proof hashes; raw lookups used by older domain
+callers remain available. For protected staging operations larger than one
+frame, the thin adapter splits only the wire transport (16 MiB target and
+reference-size-bounded responses), merges results and sends a retained snapshot
+only with the first frame. Cache admission/readback and SDK batching remain
+native. Thus 256 MiB staging capacity does not imply a single 256 MiB node
+payload. A 69 MiB synthetic staging operation was verified end to end through
+the actual native CLI, including protection across all three frames. News manifest/recovery selection and outer work
+coordination are still separate migrations. This does not prove production
+installation, source acquisition, or the required post-cutover two-hour gate.

@@ -198,3 +198,42 @@ with the offline whole-collector fixtures and native host snapshot storage.
 Focused SwiftLint is clean. The final source review closure has no material
 findings. Production and the installed CLI remain unchanged; deployment and
 post-final-cutover two-hour evidence are still absent.
+
+## Native inspected cache exchange
+
+Added `riela/cache-exchange` with a feature-local registry registration and
+`RielaMemory` implementation for cache admission, SDK batching, matching
+readback, exact revision/fetch-time validation and explicit miss/expiry results.
+The default is disposable 10 MiB/24-hour LRU; capacity protection is a separate
+explicit setting, without provider-name branches. Loss or replacement of a
+body never acknowledges a provider ID or changes acquisition completion.
+
+ART delegates these operations through its existing cache adapter. Remaining
+Python consists of its cache naming/defaults, domain proof hashes, low-level
+legacy lookups, finite diagnostics and bounded wire framing. Native readback
+checks an independent integrity digest, while Python preserves existing domain
+proofs. Legacy references are validated by recomputing the stored SHA revision
+(scope/key/fetch-time/body), avoiding dependence on domain serializer choices.
+
+One actual Opus 5.5 medium review found protected prior batches being released,
+a whole-operation frame regression for large staging, and legacy digest
+compatibility. All were fixed: retained snapshots apply only at the first
+native batch and first transport frame; large staging is transmitted in bounded
+frames and merged; legacy revisions remain cryptographically verified. Own
+closure also moved all JSON/wire validation before sending any frame, with a
+late-NaN regression proving no preceding frame is sent. No extra paid review.
+
+Validation: all 84 Memory tests and eight CLI/registry/snapshot tests pass;
+13 ART suites total 111 tests with zero failures/skips. Focused SwiftLint and
+diff checks pass. An actual offline CLI proof round-trips 69 MiB of protected
+staging across three frames without releasing any, plus a 35 MiB individual
+entry, using separate temporary synthetic caches. No credentials, provider API
+or production store is used by these tests. A broader X editorial fixture
+suite has six failures/four errors/one skip, identically reproduced with the
+unchanged HEAD cache adapter; it is not counted as a successful gate.
+
+This chunk is source integration only. The native Linux guest, installed CLI
+and production pin have not been updated. Live App root322 was observed running
+with root321/320 completed. News body manifests/recovery selection, Web/HN/feed
+and outer progress orchestration still need migration before the final matching
+release/install/deploy and a new two-hour real acquisition/Notion proof.

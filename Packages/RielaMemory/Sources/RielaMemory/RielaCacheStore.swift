@@ -13,6 +13,8 @@ public struct RielaCacheStore: Sendable {
     self.clock = clock
   }
 
+  func referenceDate() -> Date { clock() }
+
   /// Cache ids reserved for built-in runtime caches (the X gateway user and
   /// API-usage caches). Workflow add-ons and CLI write paths refuse them so a
   /// workflow cannot poison or read guest-exported runtime data.

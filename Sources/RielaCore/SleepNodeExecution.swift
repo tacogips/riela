@@ -17,8 +17,9 @@ public enum SleepNodeExecution {
       return nil
     }
     let durationMs = max(0, input.node.sleep?.durationMs ?? 0)
-    if durationMs > 0 {
-      try await Task.sleep(nanoseconds: UInt64(durationMs) * 1_000_000)
+    let nanoseconds = sleepDurationNanoseconds(durationMs: durationMs)
+    if nanoseconds > 0 {
+      try await Task.sleep(nanoseconds: nanoseconds)
     }
     return AdapterExecutionOutput(
       provider: "sleep",
@@ -32,5 +33,14 @@ public enum SleepNodeExecution {
         "durationMs": .integer(Int64(durationMs))
       ]
     )
+  }
+
+  static func sleepDurationNanoseconds(durationMs: Int) -> UInt64 {
+    let milliseconds = UInt64(max(0, durationMs))
+    let multiplier: UInt64 = 1_000_000
+    guard milliseconds <= UInt64.max / multiplier else {
+      return UInt64.max
+    }
+    return milliseconds * multiplier
   }
 }

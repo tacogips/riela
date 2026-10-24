@@ -4,6 +4,17 @@ import XCTest
 @testable import RielaCore
 
 final class SleepNodeExecutionTests: XCTestCase {
+  func testSleepNanosecondConversionClampsWithoutOverflow() {
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: Int.min), 0)
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: 0), 0)
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: 1), 1_000_000)
+    let boundary = Int(UInt64.max / 1_000_000)
+    XCTAssertEqual(
+      SleepNodeExecution.sleepDurationNanoseconds(durationMs: boundary), UInt64(boundary) * 1_000_000)
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: boundary + 1), UInt64.max)
+    XCTAssertEqual(SleepNodeExecution.sleepDurationNanoseconds(durationMs: Int.max), UInt64.max)
+  }
+
   func testAgentNodePayloadDecodesSleepConfiguration() throws {
     let json = """
     {
